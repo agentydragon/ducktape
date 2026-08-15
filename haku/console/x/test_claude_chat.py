@@ -1889,6 +1889,7 @@ async def test_a_live_session_whose_holder_stopped_renewing_is_failed(
     told why. The expired lease is the evidence that makes it reclaimable by anyone.
     """
     view, _ = await chat_store.create(operator_id, SpaSession())
+    await chat_store.renew_lease(view.session_id)
     await _age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 
     assert await chat_store.expire_stale_leases() == 1
@@ -1986,6 +1987,26 @@ async def test_an_unheld_session_says_no_replica_ever_attached(chat_store, migra
 
     assert await chat_store.expire_stale_leases() == 1
     assert "never attached" in (await chat_store.get(operator_id, view.session_id)).error
+
+
+async def test_a_released_session_nobody_readopted_is_not_called_never_attached(
+    chat_store, recording_claims, chat_service, migrated_sessions, operator_id
+) -> None:
+    """The production case behind a misleading message: a runner attached, then its lease was
+    handed back (a roll, or the sandbox reaching its TTL) and no runner returned. `release` clears
+    `lease_holder`, so the old message fell through to 'no replica (never attached)' — for a
+    session that was very much attached, for hours. The failure must say the runner went away, not
+    that one never came."""
+    session = await chat_service.create(operator_id, SpaSession())
+    token = recording_claims.tokens[session.session_id]
+    assert await chat_store.authenticate_bridge(session.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.release_lease(session.session_id)
+    await _age_lease(migrated_sessions, session.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
+
+    assert await chat_store.expire_stale_leases() == 1
+    error = (await chat_store.get(operator_id, session.session_id)).error
+    assert "never attached" not in error, "it was attached; the runner went away"
+    assert "runner went away" in error
 
 
 async def test_a_failed_session_names_the_replica_that_held_it(chat_store, migrated_sessions, operator_id) -> None:

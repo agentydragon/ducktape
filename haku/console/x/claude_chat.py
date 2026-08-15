@@ -885,12 +885,22 @@ class ClaudeChatStore:
                 chat = await db.get(ClaudeChatSession, session_id, with_for_update=True)
                 if chat is None or chat.status not in LIVE_SESSION_STATUSES:
                     continue
-                # Naming the holder is the whole point of recording it: without it the room says
-                # a session died and no query can say which process to go read.
-                held_by = chat.lease_holder or "no replica (never attached)"
-                logger.error("Claude chat session %s lease expired; holder was %s", session_id, held_by)
+                # Say what actually happened, not one hardcoded sentence for three different
+                # events. `lease_holder` set means a replica died without handing it back; cleared
+                # but `bridge_connected_at` set means a runner was here and released/dropped and
+                # nobody re-adopted (a roll, or the sandbox reaching its TTL) — the common case,
+                # and the one the old "no replica (never attached)" got exactly backwards; neither
+                # set means the sandbox never connected. "mid-turn" only if a turn was in fact open.
+                mid_turn = " mid-turn" if chat.status == ChatSessionStatus.RESPONDING else ""
+                if chat.lease_holder is not None:
+                    detail = f"the console replica holding it ({chat.lease_holder}) went away"
+                elif chat.bridge_connected_at is not None:
+                    detail = "its runner went away and no replica took it back over"
+                else:
+                    detail = "a runner never attached"
+                logger.error("Claude chat session %s lease expired: %s", session_id, detail)
                 chat.status = ChatSessionStatus.FAILED
-                chat.error = f"console replica holding this session went away mid-turn ({held_by})"
+                chat.error = f"console session ended{mid_turn}: {detail}"
                 chat.updated_at = datetime.now(UTC)
                 await notify(db, ChatEventKind.UPDATE, session_id)
             return len(expired)
