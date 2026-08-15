@@ -18,14 +18,14 @@ The index is derived state: it can be thrown away and rebuilt from git and Postg
 
 One shared table and a per-corpus set around it:
 
-| table                 | keyed by                 | holds                                                                    |
-| --------------------- | ------------------------ | ------------------------------------------------------------------------ |
-| `chunks`              | `(corpus, content_sha)`  | every embedding ever computed, including for content no longer reachable |
-| `git_tip`             | `path`                   | the tree at the indexed commit, replaced wholesale per sync              |
-| `git_sync_state`      | singleton                | which commit `git_tip` holds                                             |
-| `chat_chunks`         | `(session_id, chunk_no)` | the searchable windows of each chat session                              |
-| `chat_chunk_messages` | window + ordinal         | **which messages each window holds**                                     |
-| `chat_sessions`       | `session_id`             | each session's shape as last indexed, which is what decides re-indexing  |
+| table                 | keyed by                  | holds                                                                    |
+| --------------------- | ------------------------- | ------------------------------------------------------------------------ |
+| `chunks`              | `(corpus, content_sha)`   | every embedding ever computed, including for content no longer reachable |
+| `git_tip`             | `path`                    | the tree at the indexed commit, replaced wholesale per sync              |
+| `git_sync_state`      | singleton                 | which commit `git_tip` holds                                             |
+| `chat_chunks`         | `(session_id, window_no)` | the searchable windows of each chat session                              |
+| `chat_chunk_messages` | window + ordinal          | **which messages each window holds**                                     |
+| `chat_sessions`       | `session_id`              | each session's shape as last indexed, which is what decides re-indexing  |
 
 `chunks` is content-addressed, so it has no notion of where content currently lives and keeps
 embeddings for content that has left the indexed set. That is the cache: a revert, a rebase, a
@@ -34,8 +34,8 @@ their vectors. The cache key is `(corpus, content_sha, byte_start, chunker_key, 
 or the embedding model misses the cache rather than silently serving vectors computed over
 different text or by a different model. `byte_start` is what tells one chunk of a blob from the
 next — an ordinal beside it would be a second name for the same fact, and the offsets are the ones
-a caller can actually slice with. (The `chunk_no` in `chat_chunks` is a different thing: a
-window's position in its session, which is what `chat_chunk_messages` hangs off.)
+a caller can actually slice with. (`chat_chunks.window_no` is a different thing wearing a similar
+name: a window's position in its session, which is what `chat_chunk_messages` hangs off.)
 
 **Chunk size is configurable, and it lives inside `chunker_key`** — canonical JSON,
 `{"max_bytes":3000,"target_bytes":1500,"version":1}` — rather than beside it. The same blob chunked to a different size is different text, so a re-tune has to

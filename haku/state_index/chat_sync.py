@@ -19,10 +19,10 @@ from more_itertools import batched
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.state_index.chat_corpus import MessageChunk, chat_chunker_key, chunk_messages
-from haku.state_index.chat_source import load_messages, session_shapes
+from haku.state_index.chat_source import SessionShape, load_messages, session_shapes
 from haku.state_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
-from haku.state_index.embedder import Embedder
-from haku.state_index.schema import Corpus
+from haku.state_index.embedder import EMBED_BATCH, Embedder
+from haku.state_index.schema import ChatSessionState, Corpus
 from haku.state_index.store import (
     ChunkRow,
     cached_content,
@@ -34,9 +34,6 @@ from haku.state_index.store import (
 )
 
 logger = logging.getLogger(__name__)
-
-_EMBED_BATCH = 32
-
 
 # How long a session must go without a new message before it is worth indexing. A changed
 # session is re-windowed wholesale, so indexing one mid-exchange re-chunks its whole tail and
@@ -55,6 +52,22 @@ class ChatSyncReport:
     windows_written: int
     windows_embedded: int
     windows_reused: int
+
+
+def is_indexed(
+    state: ChatSessionState | None, shape: SessionShape, *, model_key: str, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET
+) -> bool:
+    """Whether a session's indexed form still matches the source, under this regime.
+
+    Public because `index_status` answers "how far behind is the corpus" with exactly this
+    question, and two spellings of it would let the report disagree with what a sweep does.
+    """
+    return state is not None and (state.message_count, state.last_message_at, state.chunker_key, state.model_key) == (
+        shape.message_count,
+        shape.last_message_at,
+        chat_chunker_key(budget),
+        model_key,
+    )
 
 
 async def sync_chat(
@@ -84,12 +97,7 @@ async def sync_chat(
     windows_reused = 0
     for shape in shapes:
         state = states.get(shape.session_id)
-        if state is not None and (state.message_count, state.last_message_at, state.chunker_key, state.model_key) == (
-            shape.message_count,
-            shape.last_message_at,
-            regime,
-            embedder.model_key,
-        ):
+        if is_indexed(state, shape, model_key=embedder.model_key, budget=budget):
             unchanged += 1
             continue
 
@@ -111,7 +119,7 @@ async def sync_chat(
         pending = [chunk for content_sha, chunk in sorted(by_content.items()) if content_sha not in cached]
 
         rows: list[ChunkRow] = []
-        for batch in batched(pending, _EMBED_BATCH):
+        for batch in batched(pending, EMBED_BATCH):
             vectors = await embedder.embed_documents([chunk.text for chunk in batch])
             rows.extend(
                 _chunk_row(chunk, vector, chunker_key=regime, model_key=embedder.model_key)

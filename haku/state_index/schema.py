@@ -140,7 +140,7 @@ class ChatChunk(Base):
     __tablename__ = "chat_chunks"
 
     session_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
-    chunk_no: Mapped[int] = mapped_column(Integer, primary_key=True)
+    window_no: Mapped[int] = mapped_column(Integer, primary_key=True)
     content_sha: Mapped[str] = mapped_column(Text, nullable=False)
     first_message_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_message_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -157,8 +157,8 @@ class ChatChunkMessage(Base):
     __tablename__ = "chat_chunk_messages"
     __table_args__ = (
         ForeignKeyConstraint(
-            ["session_id", "chunk_no"],
-            [f"{SCHEMA}.chat_chunks.session_id", f"{SCHEMA}.chat_chunks.chunk_no"],
+            ["session_id", "window_no"],
+            [f"{SCHEMA}.chat_chunks.session_id", f"{SCHEMA}.chat_chunks.window_no"],
             ondelete="CASCADE",
         ),
         # The reverse direction: which window holds a given message.
@@ -166,7 +166,7 @@ class ChatChunkMessage(Base):
     )
 
     session_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
-    chunk_no: Mapped[int] = mapped_column(Integer, primary_key=True)
+    window_no: Mapped[int] = mapped_column(Integer, primary_key=True)
     ordinal: Mapped[int] = mapped_column(Integer, primary_key=True)
     message_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
 

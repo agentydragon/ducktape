@@ -17,8 +17,8 @@ import pygit2
 from more_itertools import batched
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.state_index.chunking import DEFAULT_CHUNK_BUDGET, Chunk, ChunkBudget, chunk_text, git_chunker_key
-from haku.state_index.embedder import Embedder
+from haku.state_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, Span, chunk_text, git_chunker_key
+from haku.state_index.embedder import EMBED_BATCH, Embedder
 from haku.state_index.git_tree import list_tip, read_blob
 from haku.state_index.schema import Corpus, GitSyncState
 from haku.state_index.store import (
@@ -36,8 +36,6 @@ logger = logging.getLogger(__name__)
 # stays in `tip` (the tip is the tree, honestly reported) but is never chunked, so it simply
 # never matches.
 MAX_BLOB_BYTES = 1 << 20
-
-_EMBED_BATCH = 32
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,7 +114,7 @@ async def sync(
         session, Corpus.GIT, sorted(blob_shas), chunker_key=regime, model_key=embedder.model_key
     )
 
-    pending: list[tuple[str, Chunk]] = []
+    pending: list[tuple[str, Span]] = []
     skipped_binary = 0
     skipped_large = 0
     for blob_sha in sorted(blob_shas - cached):
@@ -132,7 +130,7 @@ async def sync(
         pending.extend((blob_sha, chunk) for chunk in chunk_text(blob_text, budget))
 
     rows: list[ChunkRow] = []
-    for batch in batched(pending, _EMBED_BATCH):
+    for batch in batched(pending, EMBED_BATCH):
         vectors = await embedder.embed_documents([chunk.text for _, chunk in batch])
         rows.extend(
             ChunkRow(

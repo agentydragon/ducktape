@@ -30,14 +30,11 @@ class HalfVector(UserDefinedType[Sequence[float]]):
     def get_col_spec(self, **_kwargs: Any) -> str:
         return "halfvec"
 
+    # Writes only: no query selects an embedding back into Python. The one that touches the
+    # vectors at all keeps them inside a CTE and returns a score, so a `result_processor` here
+    # would be a code path nothing exercises.
     def bind_processor(self, dialect: Dialect) -> Any:
         def process(value: Sequence[float] | None) -> str | None:
             return None if value is None else f"[{','.join(map(str, value))}]"
-
-        return process
-
-    def result_processor(self, dialect: Dialect, coltype: Any) -> Any:
-        def process(value: str | None) -> list[float] | None:
-            return None if value is None else [float(part) for part in value.strip("[]").split(",")]
 
         return process

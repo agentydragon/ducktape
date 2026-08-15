@@ -33,6 +33,7 @@ from haku.console.tools.state_index import (
 )
 from haku.state_index.chat_corpus import chat_chunker_key
 from haku.state_index.chat_source import session_shapes
+from haku.state_index.chat_sync import is_indexed
 from haku.state_index.embedder import Embedder
 from haku.state_index.schema import Corpus
 from haku.state_index.store import (
@@ -147,17 +148,12 @@ class PostgresIndexSearcher:
 
             chat_summary = await chat_index_summary(session)
             chat_counts = await chunk_counts(session, Corpus.CHAT, model_key=model_key)
-            # The same two reads `sync_chat` opens with, diffed the same way — so what this
-            # reports as waiting is exactly what a sync run would pick up.
+            # The same two reads `sync_chat` opens with, diffed by its own predicate — so what
+            # this reports as waiting is what a sync run would pick up, by construction rather
+            # than by two spellings agreeing.
             shapes = await session_shapes(session)
             states = await chat_session_states(session)
-        stale = [
-            shape
-            for shape in shapes
-            if (state := states.get(shape.session_id)) is None
-            or (state.message_count, state.last_message_at, state.chunker_key, state.model_key)
-            != (shape.message_count, shape.last_message_at, chat_chunker_key(), model_key)
-        ]
+        stale = [shape for shape in shapes if not is_indexed(states.get(shape.session_id), shape, model_key=model_key)]
         unindexed = sum(
             shape.message_count - state.message_count
             # A regime change strands every message in the session, not just the new ones.

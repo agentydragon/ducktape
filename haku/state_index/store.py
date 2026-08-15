@@ -54,14 +54,14 @@ _GIT_SEARCH_SQL = text("""
 # drills into, and aggregating it over every candidate window would be work thrown away.
 _CHAT_SEARCH_SQL = text("""
     WITH candidates AS MATERIALIZED (
-        SELECT w.session_id, w.chunk_no, w.first_message_at, w.last_message_at, c.text, c.embedding
+        SELECT w.session_id, w.window_no, w.first_message_at, w.last_message_at, c.text, c.embedding
         FROM state_index.chat_chunks w
         JOIN state_index.chunks c ON c.corpus = :corpus AND c.content_sha = w.content_sha
         WHERE c.chunker_key = :chunker_key
           AND c.model_key = :model_key
           AND (CAST(:session_id AS uuid) IS NULL OR w.session_id = CAST(:session_id AS uuid))
     ), ranked AS (
-        SELECT session_id, chunk_no, first_message_at, last_message_at, text,
+        SELECT session_id, window_no, first_message_at, last_message_at, text,
                1 - (embedding <=> CAST(:query AS halfvec)) AS score
         FROM candidates
         ORDER BY embedding <=> CAST(:query AS halfvec)
@@ -70,7 +70,7 @@ _CHAT_SEARCH_SQL = text("""
     SELECT ranked.*,
            ARRAY(
                SELECT m.message_id FROM state_index.chat_chunk_messages m
-               WHERE m.session_id = ranked.session_id AND m.chunk_no = ranked.chunk_no
+               WHERE m.session_id = ranked.session_id AND m.window_no = ranked.window_no
                ORDER BY m.ordinal
            ) AS message_ids
     FROM ranked
@@ -93,7 +93,7 @@ class GitSearchHit:
 @dataclass(frozen=True, slots=True)
 class ChatSearchHit:
     session_id: UUID
-    chunk_no: int
+    window_no: int
     message_ids: list[UUID]
     first_message_at: datetime.datetime
     last_message_at: datetime.datetime
@@ -333,7 +333,7 @@ async def replace_chat_session(
             [
                 {
                     "session_id": session_id,
-                    "chunk_no": chunk.chunk_no,
+                    "window_no": chunk.window_no,
                     "content_sha": chunk.content_sha,
                     "first_message_at": chunk.first_message_at,
                     "last_message_at": chunk.last_message_at,
@@ -344,7 +344,7 @@ async def replace_chat_session(
         await session.execute(
             insert(ChatChunkMessage),
             [
-                {"session_id": session_id, "chunk_no": chunk.chunk_no, "ordinal": ordinal, "message_id": message_id}
+                {"session_id": session_id, "window_no": chunk.window_no, "ordinal": ordinal, "message_id": message_id}
                 for chunk in chunks
                 for ordinal, message_id in enumerate(chunk.message_ids)
             ],

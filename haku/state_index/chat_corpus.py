@@ -47,7 +47,7 @@ class IndexedMessage:
 class MessageChunk:
     """One embeddable window of a session, and the messages it holds."""
 
-    chunk_no: int
+    window_no: int
     message_ids: tuple[UUID, ...]
     text: str
     first_message_at: datetime.datetime
@@ -117,7 +117,7 @@ def chunk_messages(
         for span in split_utf8("".join(item.text for item in group), budget.max_bytes):
             chunks.append(
                 MessageChunk(
-                    chunk_no=len(chunks),
+                    window_no=len(chunks),
                     message_ids=message_ids,
                     text=span.text,
                     first_message_at=group[0].message.created_at,

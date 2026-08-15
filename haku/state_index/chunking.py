@@ -64,17 +64,12 @@ def git_chunker_key(budget: ChunkBudget = DEFAULT_CHUNK_BUDGET) -> str:
 
 
 @dataclass(frozen=True, slots=True)
-class Chunk:
-    """One embeddable span of a blob, located by byte offsets into that blob."""
-
-    byte_start: int
-    byte_end: int
-    text: str
-
-
-@dataclass(frozen=True, slots=True)
 class Span:
-    """A run of text and where it sits, in bytes, inside the document it came from."""
+    """A run of text and where it sits, in bytes, inside the document it came from.
+
+    A chunk is one of these — the thing that gets embedded is a span of a blob, and once the
+    ordinal went there was nothing left to tell the two apart.
+    """
 
     byte_start: int
     byte_end: int
@@ -128,14 +123,14 @@ def _pack(lines: Iterator[Span], target_bytes: int) -> Iterator[list[Span]]:
         yield group
 
 
-def chunk_text(blob: str, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET) -> list[Chunk]:
+def chunk_text(blob: str, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET) -> list[Span]:
     """Chunk a decoded blob into embeddable spans.
 
     Blank-only spans are dropped: they embed to noise and would only ever be retrieved by
     accident. Offsets are byte offsets into the blob as stored in git, so a caller holding
     the blob can slice the exact span back out.
     """
-    chunks: list[Chunk] = []
+    chunks: list[Span] = []
     parts = (
         part
         for line in _lines(blob)
@@ -147,5 +142,5 @@ def chunk_text(blob: str, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET) -> list[Ch
         text = "".join(line.text for line in group)
         if not text.strip():
             continue
-        chunks.append(Chunk(byte_start=group[0].byte_start, byte_end=group[-1].byte_end, text=text))
+        chunks.append(Span(byte_start=group[0].byte_start, byte_end=group[-1].byte_end, text=text))
     return chunks

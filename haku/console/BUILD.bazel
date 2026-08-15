@@ -87,6 +87,7 @@ py_library(
         "//haku/console/tools:state_index",
         "//haku/state_index:chat_corpus",
         "//haku/state_index:chat_source",
+        "//haku/state_index:chat_sync",
         "//haku/state_index:embedder",
         "//haku/state_index:schema",
         "//haku/state_index:store",

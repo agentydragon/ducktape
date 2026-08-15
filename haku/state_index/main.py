@@ -169,7 +169,7 @@ async def _query_chat(database_url: str, query: str, limit: int, session_id: UUI
     for hit in hits:
         preview = " ".join(hit.text.split())[:160]
         typer.echo(
-            f"{hit.score:.3f} {hit.session_id}#{hit.chunk_no} "
+            f"{hit.score:.3f} {hit.session_id}#{hit.window_no} "
             f"{hit.first_message_at:%Y-%m-%d %H:%M} +{len(hit.message_ids)} msg {preview}"
         )
 

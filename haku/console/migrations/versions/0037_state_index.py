@@ -80,26 +80,26 @@ def upgrade() -> None:
     op.create_table(
         "chat_chunks",
         sa.Column("session_id", PGUUID(as_uuid=True), nullable=False),
-        sa.Column("chunk_no", sa.Integer(), nullable=False),
+        sa.Column("window_no", sa.Integer(), nullable=False),
         sa.Column("content_sha", sa.Text(), nullable=False),
         sa.Column("first_message_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("last_message_at", sa.DateTime(timezone=True), nullable=False),
-        sa.PrimaryKeyConstraint("session_id", "chunk_no"),
+        sa.PrimaryKeyConstraint("session_id", "window_no"),
         schema=SCHEMA,
     )
 
     op.create_table(
         "chat_chunk_messages",
         sa.Column("session_id", PGUUID(as_uuid=True), nullable=False),
-        sa.Column("chunk_no", sa.Integer(), nullable=False),
+        sa.Column("window_no", sa.Integer(), nullable=False),
         sa.Column("ordinal", sa.Integer(), nullable=False),
         sa.Column("message_id", PGUUID(as_uuid=True), nullable=False),
         sa.ForeignKeyConstraint(
-            ["session_id", "chunk_no"],
-            [f"{SCHEMA}.chat_chunks.session_id", f"{SCHEMA}.chat_chunks.chunk_no"],
+            ["session_id", "window_no"],
+            [f"{SCHEMA}.chat_chunks.session_id", f"{SCHEMA}.chat_chunks.window_no"],
             ondelete="CASCADE",
         ),
-        sa.PrimaryKeyConstraint("session_id", "chunk_no", "ordinal"),
+        sa.PrimaryKeyConstraint("session_id", "window_no", "ordinal"),
         schema=SCHEMA,
     )
     op.create_index("idx_chat_chunk_messages_message", "chat_chunk_messages", ["message_id"], schema=SCHEMA)

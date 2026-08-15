@@ -14,6 +14,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
+# How many documents go to the embedder in one call. A property of talking to an embedding
+# endpoint rather than of either corpus, so both syncs take it from here.
+EMBED_BATCH = 32
+
 
 class Embedder(Protocol):
     @property
