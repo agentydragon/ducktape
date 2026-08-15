@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
@@ -23,7 +23,7 @@ from haku.console.x.claude_chat import (
 )
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER, runtime_config
 from haku.console.x.matrix_client import EventTag, InboundMessage, MatrixError, RoomEventKind
-from haku.console.x.matrix_session import MatrixConversationStore, MatrixSessionSupervisor, MatrixSurface
+from haku.console.x.matrix_session import NOTHING_SAID, MatrixConversationStore, MatrixSessionSupervisor, MatrixSurface
 from haku.console.x.system_prompt import SystemPromptTemplate
 
 
@@ -238,15 +238,17 @@ class _RecordingRoom:
         self.shown: list[str] = []
         self.cleared = 0
         self.typing: list[bool] = []
+        self.announced: list[tuple[str, RoomEventKind]] = []
+        self.replied: list[tuple[str, EventTag]] = []
 
     async def recent_history(self, limit: int) -> Sequence[InboundMessage]:
         return await self._history(limit)
 
     async def announce(self, body: str, kind: RoomEventKind = RoomEventKind.LIFECYCLE) -> None:
-        raise AssertionError("the prompt path does not speak into the room")
+        self.announced.append((body, kind))
 
     async def reply(self, body: str, tag: EventTag) -> None:
-        raise AssertionError("the prompt path does not speak into the room")
+        self.replied.append((body, tag))
 
     async def show_status(self, body: str, session_id: UUID | None = None) -> None:
         self.shown.append(body)
@@ -258,13 +260,14 @@ class _RecordingRoom:
         self.typing.append(active)
 
 
+def surface_and_room(history: RecentHistory) -> tuple[MatrixSurface, _RecordingRoom]:
+    room = _RecordingRoom(history)
+    template = SystemPromptTemplate("{{ room_id }} {{ session_id }} {{ recent_messages | length }}")
+    return MatrixSurface(MATRIX_CONFIG, runtime_config(), template, room), room
+
+
 def surface(history: RecentHistory) -> MatrixSurface:
-    return MatrixSurface(
-        MATRIX_CONFIG,
-        runtime_config(),
-        SystemPromptTemplate("{{ room_id }} {{ session_id }} {{ recent_messages | length }}"),
-        _RecordingRoom(history),
-    )
+    return surface_and_room(history)[0]
 
 
 def served(*messages: InboundMessage) -> RecentHistory:
@@ -300,6 +303,47 @@ async def test_prompt_carries_both_sides_of_the_room_history(bound: UUID) -> Non
     )
 
     assert await surface(history).system_prompt(bound, MATRIX_ROOM) == f"{MATRIX_ROOM} {bound} 2"
+
+
+async def test_building_a_prompt_says_nothing_into_the_room(bound: UUID) -> None:
+    """Reading the room's history is not a reason to post in it."""
+    built, room = surface_and_room(served())
+
+    await built.system_prompt(bound, MATRIX_ROOM)
+
+    assert (room.announced, room.replied) == ([], [])
+
+
+async def test_an_answer_reaches_the_room_tagged_with_its_row(bound: UUID) -> None:
+    message_id = uuid4()
+    delivering, room = surface_and_room(served())
+
+    await delivering.deliver(MATRIX_ROOM, "  because the disk was full  ", bound, message_id, "msg_01abc")
+
+    [(body, tag)] = room.replied
+    assert body == "because the disk was full", "trimmed, since the room shows what it is given"
+    assert (tag.kind, tag.session_id, tag.message_id, tag.agent_message_id) == (
+        RoomEventKind.REPLY,
+        bound,
+        message_id,
+        "msg_01abc",
+    )
+
+
+async def test_a_turn_with_nothing_to_say_says_so(bound: UUID) -> None:
+    """R11.2 has no silence token, and the empty string was quietly working as one: a turn that
+    produced no text left the room with nothing at all, which from the operator's side is
+    indistinguishable from an answer the console lost.
+
+    A notice rather than a reply, because nothing was said — this is the console reporting an
+    outcome, not the agent talking.
+    """
+    delivering, room = surface_and_room(served())
+
+    await delivering.deliver(MATRIX_ROOM, "   ", bound)
+
+    assert room.replied == []
+    assert room.announced == [(NOTHING_SAID, RoomEventKind.NARRATION)]
 
 
 if __name__ == "__main__":

@@ -45,6 +45,11 @@ _SUPERVISOR_ADVISORY_LOCK = 0x4D58_5345  # "MXSE"
 # A session is worth keeping while it is in one of these; anything else (including a
 # missing row) means the room has no working sandbox behind it.
 
+# What the room hears when a turn ends with no text at all (R11.2). Phrased as an outcome the
+# operator can act on rather than as an error, because a turn that only ran tools is a legitimate
+# thing to have happened — it just must not look like the console lost the answer.
+NOTHING_SAID = "the turn finished without saying anything"
+
 SUPERVISE_INTERVAL = datetime.timedelta(seconds=10)
 # How long a replica that lost the election waits before contending again.
 LEADER_RETRY = datetime.timedelta(seconds=30)
@@ -245,7 +250,12 @@ class MatrixSurface:
         """
         del room_id  # The reply channel is already bound to the one room this console services.
         if not (body := text.strip()):
+            # R11.2: every turn speaks, and there is deliberately no silence token — returning
+            # here made the empty string into one, which is the single thing that requirement
+            # rules out. A notice rather than a reply, because nothing was said: this is the
+            # console reporting an outcome, not the agent talking.
             logger.warning("Matrix: a turn finished with no text to send")
+            await self._room.announce(NOTHING_SAID, RoomEventKind.NARRATION)
             return
         await self._room.reply(
             body,
