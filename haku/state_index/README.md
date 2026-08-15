@@ -161,6 +161,31 @@ is selected by any Cilium policy, and the CCNPs that exist are scoped to other n
 `endpointSelector`. Adding an ingress policy to `ollama` later would need this flow allowed
 explicitly.
 
+## An index nobody consults is not memory
+
+An agent that _can_ search does not thereby search. It answers from the context in front of it,
+which is the one place the answer reliably is not, and a tool it never reaches for is
+indistinguishable from a tool that does not exist. So recall is prompted in two places, both of
+which the agent cannot edit:
+
+- **The `search` tool's own description** (<../console/tools/state_index.py>) states it as a step
+  rather than an affordance, and names the question types that trigger it — prior work, decisions,
+  dates, people, preferences, commitments, anything asked for earlier. A tool description is what
+  a model actually reads; a server's `instructions` frequently are not surfaced by the client at
+  all, which is why the same point is not left there alone.
+- **The Matrix session prompt** (<../../cluster/k8s/haku/console/matrix_system_prompt.md.j2>),
+  which is operator-owned and mounted from the console's ConfigMap. It also fixes the prompt's
+  previous claim that anything older than the replayed tail lives "in the room itself, and Rai can
+  quote it to you" — with the chat corpus indexed, that is now something to look up rather than
+  something to ask for.
+
+Both say the same third thing: **a search that found nothing must be reported as a search that
+found nothing**, not as absence and not as silence. That is the failure the whole surface exists
+to prevent, and it is also why a behind corpus attaches its status to the result.
+
+The wording is deliberately close to OpenClaw's `memory-core` prompt section, which is the one
+comparable thing in reach and has had far more exposure to real sessions than this has.
+
 ## Evaluating it locally
 
 Everything here is runnable against a clone and a throwaway Postgres, which is the point:
@@ -218,6 +243,16 @@ Deliberately absent — it depends on the evaluation above:
   the same branch, every reader wants both, and "is the index behind" should be a comparison
   within a row. The indexed half is nullable because it becomes true later, and a check keeps it
   all-or-nothing so a commit can never be recorded without the regime it was indexed under.
+
+  **A search over a corpus that is behind carries the status back with it**, in `SearchResults.index`,
+  rather than relying on the caller to go ask. Being told to check a second tool before
+  believing an empty result only works on a caller that reads an empty result as suspicious,
+  which is exactly the caller that does not need telling. What rides along is the whole status
+  object and not a `stale: true` flag, because the useful question is _by how much_: four
+  messages waiting is a different answer from a tip that is nine commits behind. It is attached
+  only when a searched corpus is actually behind — a chat lag inside the sweep's own window
+  (`_SETTLED_WITHIN`, two minutes) is the pipeline working, and a field present on every search
+  is a field a reader learns to skip.
 
   **Search returns pointers, not content, and there are no read tools here.** A haku-state hit
   carries the path, the commit, and the blob sha — Haku reads the file from its own clone. A

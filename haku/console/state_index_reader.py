@@ -30,6 +30,7 @@ from haku.console.tools.state_index import (
     IndexStatus,
     SearchCorpus,
     SearchHit,
+    SearchResults,
 )
 from haku.state_index.chat_corpus import chat_chunker_key
 from haku.state_index.chat_source import session_shapes
@@ -46,6 +47,23 @@ from haku.state_index.store import (
     search_git,
 )
 
+# Under this, a corpus is not behind — it is mid-pipeline. The chat sweep runs every minute and
+# holds a session for thirty seconds after its last message, so a lag inside that window is the
+# thing working, and reporting it on every search would train a reader to ignore the field.
+_SETTLED_WITHIN = datetime.timedelta(minutes=2)
+
+
+def _behind(status: IndexStatus, corpus: SearchCorpus) -> bool:
+    """Whether a searched corpus holds less than its source does, by enough to explain a miss."""
+    if corpus in (SearchCorpus.HAKU_STATE, SearchCorpus.ALL) and (
+        status.haku_state.indexed_commit != status.haku_state.remote_commit
+    ):
+        return True
+    lag = status.conversations.lag_seconds
+    return corpus in (SearchCorpus.CONVERSATIONS, SearchCorpus.ALL) and (
+        lag is not None and lag > _SETTLED_WITHIN.total_seconds()
+    )
+
 
 class PostgresIndexSearcher:
     """`tools.state_index.IndexSearcher` over the console's database."""
@@ -56,7 +74,7 @@ class PostgresIndexSearcher:
 
     async def search(
         self, query: str, *, corpus: SearchCorpus, limit: int, path_prefix: str | None, session_id: UUID | None
-    ) -> list[SearchHit]:
+    ) -> SearchResults:
         embedding = await self._embedder.embed_query(query)
         hits: list[SearchHit] = []
         async with self._sessions() as session:
@@ -68,7 +86,12 @@ class PostgresIndexSearcher:
         # single ranking is meaningful. Each corpus was asked for `limit`, so `all` re-cuts here
         # rather than returning twice as much as the caller asked for.
         hits.sort(key=lambda hit: hit.score, reverse=True)
-        return hits[:limit]
+        # Status costs a handful of counts against a search that already paid for an embedding
+        # round trip, and it is only attached when it changes what the result means: a thin answer
+        # from a corpus that is behind is not evidence of absence, and the caller cannot tell the
+        # two apart without the numbers.
+        status = await self.status()
+        return SearchResults(hits=hits[:limit], index=status if _behind(status, corpus) else None)
 
     async def _haku_state(
         self, session: AsyncSession, embedding: list[float], *, limit: int, path_prefix: str | None

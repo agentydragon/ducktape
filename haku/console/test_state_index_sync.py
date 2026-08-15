@@ -99,10 +99,12 @@ async def test_a_chat_sweep_makes_a_session_searchable(
 
     await StateIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=None).sync_chat_once()
 
-    hits = await PostgresIndexSearcher(migrated_sessions, embedder).search(
+    results = await PostgresIndexSearcher(migrated_sessions, embedder).search(
         "egress", corpus=SearchCorpus.CONVERSATIONS, limit=5, path_prefix=None, session_id=None
     )
-    assert [hit.source.session_id for hit in hits if isinstance(hit.source, ConversationSource)] == [session_id]
+    assert [hit.source.session_id for hit in results.hits if isinstance(hit.source, ConversationSource)] == [session_id]
+    # Nothing is waiting, so an empty result here would have been evidence of absence.
+    assert results.index is None
 
 
 async def test_a_git_sweep_makes_the_tip_searchable(
@@ -113,10 +115,11 @@ async def test_a_git_sweep_makes_the_tip_searchable(
 ) -> None:
     await StateIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=haku_state).sync_git_once()
 
-    hits = await PostgresIndexSearcher(migrated_sessions, embedder).search(
+    results = await PostgresIndexSearcher(migrated_sessions, embedder).search(
         "egress", corpus=SearchCorpus.HAKU_STATE, limit=5, path_prefix=None, session_id=None
     )
-    assert [hit.source.path for hit in hits if isinstance(hit.source, HakuStateSource)] == ["notes/alpha.md"]
+    assert [hit.source.path for hit in results.hits if isinstance(hit.source, HakuStateSource)] == ["notes/alpha.md"]
+    assert results.index is None
 
 
 async def test_an_unmoved_remote_is_never_fetched(
@@ -153,6 +156,28 @@ async def test_status_reports_the_remote_before_anything_is_indexed(
     assert status.indexed_commit is None
     assert status.remote_commit is not None
     assert status.branch == "main"
+
+
+async def test_a_search_against_a_corpus_that_is_behind_carries_its_status(
+    migrated_engine: AsyncEngine,
+    migrated_sessions: async_sessionmaker[AsyncSession],
+    haku_state: HakuStateGitConfig,
+    embedder: FakeEmbedder,
+) -> None:
+    """The reason the field exists: this search returns nothing, and that is not an answer."""
+    with pytest.raises(RuntimeError):
+        await StateIndexMaintenance(
+            migrated_engine, migrated_sessions, embedder=ExplodingEmbedder(), git=haku_state
+        ).sync_git_once()
+
+    results = await PostgresIndexSearcher(migrated_sessions, embedder).search(
+        "egress", corpus=SearchCorpus.HAKU_STATE, limit=5, path_prefix=None, session_id=None
+    )
+    assert results.hits == []
+    assert results.index is not None
+    # Not a flag: the caller is told which commit it is missing, not merely that it is missing one.
+    assert results.index.haku_state.indexed_commit is None
+    assert results.index.haku_state.remote_commit is not None
 
 
 async def test_status_reports_the_indexed_commit_once_a_sync_lands(

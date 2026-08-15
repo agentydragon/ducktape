@@ -160,6 +160,19 @@ class IndexStatus(BaseModel):
     conversations: ConversationsStatus
 
 
+class SearchResults(BaseModel):
+    """Hits, plus the index's own state when it is behind enough to explain a thin result."""
+
+    hits: list[SearchHit]
+    index: IndexStatus | None = Field(
+        default=None,
+        description="Present only when a searched corpus is behind its source by more than its "
+        "sweep takes. The numbers are the point: how many messages are waiting, how long the lag "
+        "is, which commit is indexed against which the branch holds. Absent means the corpora "
+        "searched were current, so an empty result is evidence of absence.",
+    )
+
+
 class IndexSearcher(Protocol):
     """The index, as this server needs it.
 
@@ -169,7 +182,7 @@ class IndexSearcher(Protocol):
 
     async def search(
         self, query: str, *, corpus: SearchCorpus, limit: int, path_prefix: str | None, session_id: UUID | None
-    ) -> list[SearchHit]: ...
+    ) -> SearchResults: ...
 
     async def status(self) -> IndexStatus: ...
 
@@ -197,12 +210,18 @@ def build_mcp(searcher: IndexSearcher) -> FastMCP:
         session_id: Annotated[
             UUID | None, Field(default=None, description="Conversations only: restrict to one session.")
         ] = None,
-    ) -> list[SearchHit]:
+    ) -> SearchResults:
         """Search haku-state's files and what was said in past sessions.
 
-        Use this before answering from memory about prior work, decisions, or things the operator
-        asked for earlier — those live here, not in the current context. Results are ranked
-        together across corpora, so a note and a conversation compete on how well they match.
+        **Recall step, not an optional one.** Run this before answering about prior work,
+        decisions, dates, people, preferences, commitments, or anything the operator asked for
+        earlier: those live here, not in the context in front of you. Results are ranked together
+        across corpora, so a note and a conversation compete on how well they match.
+
+        **If it comes back thin, say that you looked.** "I searched and found nothing about that"
+        is a different claim from silence, and only one of them is honest. If `index` is present
+        the corpus was behind when you asked — quote what it says, because "nothing indexed yet"
+        and "nothing was ever said" are not the same answer.
 
         Each hit is a pointer to content that lives elsewhere: read a file from a haku-state clone
         at the `commit_sha`/`blob_sha` it names, and a conversation through `haku_conversations`.

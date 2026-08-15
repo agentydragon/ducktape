@@ -84,6 +84,16 @@ def test_deployed_template_carries_both_sides_of_the_history(deployed: SystemPro
     assert "no earlier conversation" not in rendered
 
 
+def test_deployed_template_points_at_the_index_whether_or_not_history_was_replayed(deployed: SystemPromptTemplate):
+    """Recall is the standing instruction. Mentioning it only where history happened to be
+    replayed would teach it as a special case of re-awakening."""
+    for rendered in (
+        deployed.render(introduction()),
+        deployed.render(introduction(history("@rai:allegedly.works", "did the OA thing happen?"))),
+    ):
+        assert "haku_index" in rendered
+
+
 def test_deployed_template_keeps_a_multiline_body_inside_its_bullet(deployed: SystemPromptTemplate):
     """An unindented continuation line would read as prompt text rather than as quoted input."""
     rendered = deployed.render(introduction(history("@rai:allegedly.works", "first line\nsecond line")))

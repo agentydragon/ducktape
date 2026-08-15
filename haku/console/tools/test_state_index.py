@@ -22,6 +22,7 @@ from haku.console.tools.state_index import (
     IndexStatus,
     SearchCorpus,
     SearchHit,
+    SearchResults,
     build_mcp,
 )
 
@@ -57,17 +58,18 @@ def _conversation(score: float) -> SearchHit:
 class _Searcher:
     """An `IndexSearcher` over fixed answers, recording how it was queried."""
 
-    def __init__(self, *hits: SearchHit) -> None:
+    def __init__(self, *hits: SearchHit, behind: bool = False) -> None:
         self.hits = list(hits)
+        self.behind = behind
         self.queries: list[dict] = []
 
     async def search(
         self, query: str, *, corpus: SearchCorpus, limit: int, path_prefix: str | None, session_id: UUID | None
-    ) -> list[SearchHit]:
+    ) -> SearchResults:
         self.queries.append(
             {"query": query, "corpus": corpus, "limit": limit, "path_prefix": path_prefix, "session_id": session_id}
         )
-        return self.hits
+        return SearchResults(hits=self.hits, index=await self.status() if self.behind else None)
 
     async def status(self) -> IndexStatus:
         return IndexStatus(
@@ -98,7 +100,7 @@ class _Searcher:
 # FastMCP reconstructs from the output schema, where the discriminated union is an `anyOf`.
 async def test_a_haku_state_hit_carries_what_it_takes_to_read_the_file() -> None:
     async with Client(build_mcp(_Searcher(_haku_state(0.9)))) as client:
-        (hit,) = (await client.call_tool("search", {"query": "intake"})).data
+        (hit,) = (await client.call_tool("search", {"query": "intake"})).data.hits
     # Path, the commit it is at, and the blob itself: a clone can resolve any of the three.
     assert (hit.source["path"], hit.source["commit_sha"], hit.source["blob_sha"]) == (
         "notes/intake.md",
@@ -109,14 +111,14 @@ async def test_a_haku_state_hit_carries_what_it_takes_to_read_the_file() -> None
 
 async def test_a_conversation_hit_names_the_session_the_room_and_its_messages() -> None:
     async with Client(build_mcp(_Searcher(_conversation(0.8)))) as client:
-        (hit,) = (await client.call_tool("search", {"query": "egress fence"})).data
+        (hit,) = (await client.call_tool("search", {"query": "egress fence"})).data.hits
     assert (hit.source["session_id"], hit.source["room_id"]) == (str(SESSION), "!room:allegedly.works")
     assert hit.source["message_ids"] == [str(message_id) for message_id in MESSAGES]
 
 
 async def test_both_corpora_come_back_from_one_call_and_say_where_each_is_from() -> None:
     async with Client(build_mcp(_Searcher(_haku_state(0.9), _conversation(0.8)))) as client:
-        hits = (await client.call_tool("search", {"query": "intake"})).data
+        hits = (await client.call_tool("search", {"query": "intake"})).data.hits
     # Score and snippet are the same shape either way; only the provenance discriminates.
     assert [hit.source["kind"] for hit in hits] == ["haku_state", "conversation"]
     assert [hit.score for hit in hits] == [0.9, 0.8]
@@ -135,6 +137,22 @@ async def test_the_corpus_and_session_filters_reach_the_searcher() -> None:
         await client.call_tool("search", {"query": "intake", "corpus": "conversations", "session_id": str(SESSION)})
     query = searcher.queries[-1]
     assert (query["corpus"], query["session_id"]) == (SearchCorpus.CONVERSATIONS, SESSION)
+
+
+async def test_a_current_index_says_nothing_about_itself() -> None:
+    """Attached on every search, the field would be noise the caller learns to skip."""
+    async with Client(build_mcp(_Searcher(_haku_state(0.9)))) as client:
+        assert (await client.call_tool("search", {"query": "intake"})).data.index is None
+
+
+async def test_a_behind_index_rides_along_with_the_numbers() -> None:
+    """An empty result from a corpus that is behind is not evidence of absence, and only the
+    numbers let a caller tell the two apart."""
+    async with Client(build_mcp(_Searcher(behind=True))) as client:
+        results = (await client.call_tool("search", {"query": "intake"})).data
+    assert results.hits == []
+    assert results.index is not None
+    assert results.index.conversations.unindexed_messages == 4
 
 
 async def test_status_reports_the_backlog_an_agent_needs_to_read_an_empty_result() -> None:

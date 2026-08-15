@@ -387,7 +387,9 @@ MCP servers from `@mcp.tool`-decorated functions:
   content**: a path, commit and blob sha to read from a haku-state clone, or a session, room and
   message ids to read through `haku_conversations`. `index_status` is the companion an empty
   result needs, since an index that has fallen behind is indistinguishable from a subject that
-  never came up. It reports the haku-state corpus even before a first index exists — what the
+  never came up — and a `search` whose corpus is behind attaches that status to its own result
+  rather than waiting to be asked, since a caller that would think to check is not the one that
+  needed telling. It reports the haku-state corpus even before a first index exists — what the
   last sweep saw on the remote, what is indexed, and how many chunks are embedded so far — so
   "not indexed yet", "indexing now" and "cannot reach the repository" are different answers
   rather than one absent object. Both auto-approve for Haku (`haku_recall_reads`, the same atom that grants the `haku_conversations` reads); both are unscoped across rooms
