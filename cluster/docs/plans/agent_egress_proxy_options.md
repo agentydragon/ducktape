@@ -24,6 +24,10 @@ decisions that later ones supersede. Current position:
 - **The console gate does not cache in Squid** (`ttl=0 negative_ttl=0`). The
   console is the only decision cache. See "Decided: do not cache the helper's
   response".
+- **The image has ICAP now** (Debian `squid-openssl`, #4025). Substitution can
+  therefore be a service call rather than generated config, which reopens the
+  shared-Squid option — see "ICAP: substitution can be a service call". Compiled
+  in, not yet exercised.
 - **Superseded**: the two-layer "iron in front of a central shared cache" target
   architecture, and the earlier "Decision: option B". Both are kept below for
   their reasoning and are labelled.
@@ -1018,6 +1022,48 @@ What does need solving is that `%>a` is a pod IP, which is ephemeral, while
 "agent-scoped" implies a stable identity. The helper should map IP → pod → a
 stable owner label via the Kubernetes API and send _that_ to the console, so
 decisions survive pod churn.
+
+### ICAP: substitution can be a service call, not generated config
+
+**`external_acl_type` cannot rewrite headers.** Its response keywords are a
+closed set — `user=`, `password=`, `message=`, `tag=`, `log=`, `clt_conn_tag=` —
+and `user=`/`password=` feed `cache_peer login=`, i.e. upstream _proxy_ auth, not
+origin credentials. `url_rewrite_program` only touches URLs. So the gate helper
+cannot also do substitution.
+
+**ICAP REQMOD can** (RFC 3507), as can eCAP. A REQMOD service receives the
+request after `ssl_bump` decrypts it and returns a _modified_ request: arbitrary
+header rewriting, in any language. It can also block, which means **one ICAP
+service could do policy and substitution in a single hop** against haku-console,
+with `icap_service … bypass=0` making adaptation failures fatal — the fail-closed
+posture this note already requires. That is a far more direct expression of "the
+console governs policy" than generating Squid config.
+
+**Alpine's squid has neither.** Confirmed from the image's own configure line:
+`--enable-openssl --enable-ssl-crtd …` and no adaptation flags. Debian enables
+`--enable-icap-client` and `--enable-ecap` in its shared build flags and ships a
+`squid-openssl` flavour adding `--with-openssl --enable-ssl-crtd`, so the spike
+image moved to `debian:testing` (#4025). 7.6 exists only in forky/sid; trixie is
+on 6.13.
+
+**What it changes for the topology question.** Without ICAP, per-client
+substitution in a _shared_ Squid could only be static ACLs keyed on client —
+agents × credentials, regenerated on every agent churn. That was the strongest
+argument for keeping credentials out of a shared instance. ICAP removes it, so
+"credentials stay in iron" becomes a choice rather than a constraint, and the
+shared-Squid option is live on much better terms.
+
+**Run 3, 2026-08-15 — the base swap cost nothing.** Debian `squid-openssl` 7.6,
+uid 13 (`--with-default-user=proxy`, where Alpine's was 31 — the Deployment had
+to follow, #4027). Clean start, zero restarts, and all four substitution cases
+behave exactly as on Alpine: placeholder → real credential, the
+other-destination placeholder passed through **unmodified**, an unrelated bearer
+untouched, and base64 `Basic` rewritten. So `ssl_bump`, certgen and the
+destination-scoped rules are unaffected by musl → glibc.
+
+ICAP itself is compiled in but **not yet exercised** — no `icap_service` is
+configured, and nothing has been adapted. That is the next thing to try, not a
+thing that works.
 
 ### Direction: one Squid per _agent_, provisioned by haku-console
 
