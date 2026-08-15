@@ -1,0 +1,14 @@
+# Kyverno validates generate policies against the background controller's
+# permissions before admitting them. The generated diagnostics RoleBindings
+# are synchronized by that controller, so it needs to be able to read them as
+# well as the create/update/patch/delete permissions supplied by the chart.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kyverno-background-controller-rolebindings
+  labels:
+    rbac.kyverno.io/aggregate-to-background-controller: "true"
+rules:
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["rolebindings"]
+    verbs: ["get"]
