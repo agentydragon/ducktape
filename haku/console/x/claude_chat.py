@@ -927,6 +927,13 @@ class ClaudeChatStore:
                     message.updated_at = now
 
     async def request_close(self, operator_id: UUID, session_id: UUID) -> None:
+        """Ask this session to end, and wake whoever is running it.
+
+        `CLOSING` is an ended status, so the turn loop stops as soon as it re-reads one — but it
+        re-reads only after a wake, and is otherwise parked in a 30-second prompt timeout. So the
+        `PROMPT` notify is what makes teardown prompt rather than eventual; without it a closing
+        session's runner holds its sandbox for the rest of that wait.
+        """
         async with self._sessions.begin() as db:
             chat = await db.scalar(
                 select(ClaudeChatSession)
@@ -937,6 +944,8 @@ class ClaudeChatStore:
                 raise KeyError(session_id)
             chat.status = ChatSessionStatus.CLOSING
             chat.updated_at = datetime.now(UTC)
+            await notify(db, ChatEventKind.PROMPT, session_id)
+            await notify(db, ChatEventKind.UPDATE, session_id)
 
     async def room_of(self, session_id: UUID) -> str | None:
         """The room this session was created to serve, or None if it serves none.

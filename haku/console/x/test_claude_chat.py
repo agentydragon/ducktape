@@ -326,6 +326,21 @@ async def test_deliberate_close_is_not_reclassified_as_runner_failure(
         assert record.bridge_token_fingerprint == b""
 
 
+async def test_requesting_a_close_wakes_the_turn_loop(chat_store, notifications, operator_id) -> None:
+    """Without this the runner sits out its 30s prompt wait before noticing it should stop.
+
+    `CLOSING` is an ended status, so the loop stops the moment it re-reads one — but it only
+    re-reads after a wake, which is why the notify and not the status write is what makes
+    teardown prompt.
+    """
+    view, _token = await chat_store.create(operator_id, SpaSession())
+
+    async with notifications.subscribe(ChatEventKind.PROMPT, view.session_id) as woken:
+        await chat_store.request_close(operator_id, view.session_id)
+        async with asyncio.timeout(5):
+            await woken.wait()
+
+
 def _assistant(*blocks: dict[str, Any]) -> dict[str, Any]:
     return {"type": "assistant", "message": {"role": "assistant", "content": list(blocks)}}
 
