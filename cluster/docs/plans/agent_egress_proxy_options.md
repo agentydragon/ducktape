@@ -1397,7 +1397,7 @@ origin, and `curl` — torn down afterwards.
 | hook can block without contacting the origin  | yes (encapsulated 403)                                           | yes (`flow.response`, 403)                            |
 | caller identity the client cannot forge       | yes (`X-Client-IP`)                                              | yes (`flow.client_conn.peername`)                     |
 | **request body reaches the decision service** | **yes** — structural; REQMOD encapsulates it                     | **no** — the addon runs in-proxy and calls out itself |
-| body buffered in the proxy                    | yes                                                              | yes, under fail-closed (streaming would avoid it)     |
+| body buffered in the proxy                    | yes                                                              | avoidable — stream on the allow path (see below)      |
 | **client keeps HTTP/2**                       | **no** — bumped side declines ALPN entirely                      | **yes** — `ALPN: server accepted h2`, end to end      |
 | **fail-closed when the hook fails**           | **yes** — `bypass=0` → `ERR_ICAP_FAILURE`                        | not by default; achievable as an addon structure      |
 | bounded wait whose expiry denies              | yes, once `icap_io_timeout` is set; deny at 2×                   | the callout is ours, so an ordinary client timeout    |
@@ -1469,9 +1469,9 @@ to bite: an orderly, deliberate "deny" decision was ignored and the request
 completed with a 200. A correct-looking optimisation removes enforcement, and
 nothing reports it.
 
-So **header-only decision and structural fail-closed cannot both be had.** Under
-the operator's requirement, the streaming option is off the table and mitmproxy
-buffers each request body before forwarding it.
+The naive reading of those last two rows is that streaming is simply off the
+table under fail-closed. That is too strong — see "Streaming does compose, with
+the right addon order" below.
 
 ### Buffering is not exposure
 
@@ -1480,8 +1480,8 @@ request bodies exactly like ICAP does", and therefore that the prompt-exposure
 cost accepted in "console holds the substituted credentials" applies either way.
 **That was wrong**, and it conflated two separate things:
 
-- **Who buffers.** Under fail-closed, mitmproxy holds the body in the proxy's own
-  memory before forwarding. Real, and it is what streaming would have avoided.
+- **Who buffers.** Without streaming, mitmproxy holds the body in the proxy's own
+  memory before forwarding. Real, but avoidable — see the next section.
 - **What the decision service receives.** With ICAP the callout _is_ the protocol:
   REQMOD encapsulates the whole request, so the body reaches console because that
   is the only way the service sees anything (measured in step 1). With mitmproxy
@@ -1490,8 +1490,8 @@ cost accepted in "console holds the substituted credentials" applies either way.
 
 **mitmproxy therefore keeps prompt bodies out of console whether or not streaming
 is available.** Streaming was never what bought that; the callout boundary is.
-The cost of losing streaming is proxy memory — which matters for large uploads
-through the fence, not for prompts.
+What streaming buys is only proxy memory, which matters for large uploads through
+the fence rather than for prompts.
 
 This holds because **no part of the fence needs to rewrite or inspect a body**
 (operator, 2026-08-15). Every credential in scope is header-borne: the LLM APIs
@@ -1501,16 +1501,50 @@ would be a start-line rewrite, not a body one. If a future policy needs to _read
 bodies — prompt DLP, say — this property lapses and the ICAP comparison levels
 back out.
 
+### Streaming does compose, with the right addon order
+
+The two streaming failures above both had `stream = True` set _before_ the
+decision was final — once by an addon that then deliberately denied, once by one
+that then raised. Neither shows streaming is incompatible with fail-closed; both
+show that enabling it early forfeits the ability to deny.
+
+Moving the assignment fixes it. Three addons, in order:
+
+1. **gate** (`requestheaders`) — decides, marks `flow.metadata["fence_allowed"]`
+   on a clean allow, touches streaming never.
+2. **streamer** (`requestheaders`, after the gate) — sets `flow.request.stream`
+   only if the mark is present. It runs at all only because the gate returned
+   cleanly, so a gate that raises can never leave a flow streaming past the point
+   where something could still deny it.
+3. **backstop** (`request`) — denies anything still unmarked.
+
+Measured:
+
+| case                           | result                                         |
+| ------------------------------ | ---------------------------------------------- |
+| gate allows                    | 200, streamed (`x-streamed: yes`), body intact |
+| gate denies                    | 403, origin never contacted                    |
+| **gate raises while deciding** | **403** — streamer skipped, backstop denied    |
+
+So **streaming and fail-closed are compatible**, and mitmproxy does not pay the
+proxy-memory cost after all. The invariant is not "never stream", it is
+**"nothing may enable streaming until every decision that could deny has been
+made"** — which is an ordering property of the addon list, and testable exactly
+as above.
+
+One incidental: a `flow.response` set in `requestheaders` did not end the
+transaction — the `request` hook still ran and its response won. Harmless here
+(both were denials) but worth knowing before relying on an early response.
+
 What survives of mitmproxy's case over Squid+ICAP is therefore **HTTP/2 and
 keeping prompt bodies away from console** — bought at the price of fail-closed
-being an addon-structure property rather than a proxy-level guarantee, and of
-holding each body in proxy memory. That is achievable
+being an addon-structure property rather than a proxy-level guarantee. That is achievable
 (row 3 above) but carries two invariants a reviewer cannot see by reading one
 addon, and both need tests:
 
 1. the gate and the backstop live in **different hooks**, gate first;
-2. `flow.request.stream` is **never** set, because it silently removes
-   enforcement.
+2. `flow.request.stream` is set **only by an addon that runs after every addon
+   which can deny**, and only on an affirmatively allowed flow — see below.
 
 ### Where this leaves the ICAP work
 
@@ -1526,7 +1560,7 @@ inbound non-HTTP listener on the credential authority, `icap_io_timeout` and its
 2× deny latency, and `icap_service_failure_limit`'s hard-down behaviour —
 replacing all of it with a Python function calling an ordinary console HTTP
 route — and it keeps HTTP/2 and keeps prompt bodies out of console. It adds the
-fail-open hazard above, and holds each request body in proxy memory.
+fail-open hazard above.
 
 ### Direction: one Squid per _agent_, provisioned by haku-console
 
