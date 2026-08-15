@@ -40,9 +40,14 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
-        runAsUser: 31
-        runAsGroup: 31
-        fsGroup: 31
+        # 13 = `proxy`, Debian's squid user (`--with-default-user=proxy`). It was
+        # 31 while the image was Alpine-based, whose user is `squid`. The image's
+        # CI verify step prints `id proxy` on every build so this number comes
+        # from the build rather than from memory -- a mismatch does not fail
+        # loudly, it fails as the cache directory being unwritable.
+        runAsUser: 13
+        runAsGroup: 13
+        fsGroup: 13
         seccompProfile:
           type: RuntimeDefault
       initContainers:
