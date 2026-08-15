@@ -1106,6 +1106,10 @@ class ClaudeChatFrame(Base):
     __table_args__ = (
         CheckConstraint("direction IN ('to_agent','from_agent')", name="ck_claude_chat_frames_direction"),
         Index("idx_claude_chat_frames_session", "session_id", "frame_seq"),
+        # Reading a session by kind used to be a filter over its whole log, which was affordable
+        # only while the log held no deltas. It holds them now, and `_rollout_calls` runs once per
+        # delta, so the filter it replaces grew with the length of the answer being streamed.
+        Index("idx_claude_chat_frames_kind", "session_id", "kind", "frame_seq"),
         # What makes a replayed frame a no-op rather than a second line in the rollout. Partial
         # because most rows have no identity; a plain unique index would be almost all nulls.
         Index(
