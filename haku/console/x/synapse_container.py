@@ -165,8 +165,16 @@ class Account:
         return _string(room, "room_id")
 
     def send_text(self, room_id: str, body: str) -> str:
+        return self.send(room_id, {"msgtype": "m.text", "body": body})
+
+    def send(self, room_id: str, content: dict[str, Any]) -> str:
+        """Put an arbitrary `m.room.message` in the room.
+
+        The homeserver does not police `content` beyond requiring a `msgtype`, which is what makes
+        this the way to produce the msgtypes the console has to cope with and cannot send.
+        """
         path = f"/_matrix/client/v3/rooms/{quote(room_id)}/send/m.room.message/{uuid4().hex}"
-        return _string(self._http.put(path, json={"msgtype": "m.text", "body": body}), "event_id")
+        return _string(self._http.put(path, json=content), "event_id")
 
     def event(self, room_id: str, event_id: str) -> dict[str, Any]:
         return _body(self._http.get(f"/_matrix/client/v3/rooms/{quote(room_id)}/event/{quote(event_id)}"))

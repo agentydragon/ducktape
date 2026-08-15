@@ -21,6 +21,7 @@ store, no `python-olm`.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -29,7 +30,8 @@ from uuid import UUID, uuid4
 from nio import AsyncClient, AsyncClientConfig, ErrorResponse, Response
 from nio.api import MessageDirection
 from nio.events.invite_events import InviteMemberEvent
-from nio.events.room_events import RoomMessageText
+from nio.events.misc import BadEvent, BadEventType, UnknownBadEvent
+from nio.events.room_events import Event, RoomMessageEmote, RoomMessageFormatted, RoomMessageText
 from nio.responses import (
     JoinResponse,
     LoginResponse,
@@ -87,6 +89,10 @@ MAX_RATE_LIMIT_RETRIES = 2
 # which is the Matrix convention for a field outside the spec's namespace.
 HAKU_CONTENT_KEY = "works.allegedly.haku"
 
+# The msgtype for "an automated client is talking". Everything Haku says that is not an answer
+# goes out under it, and nothing that arrives under it is ever read as input — see `_read`.
+NOTICE_MSGTYPE = "m.notice"
+
 
 class RoomEventKind(StrEnum):
     """What the console meant by an event it sent, in place of inferring it from the msgtype."""
@@ -97,6 +103,7 @@ class RoomEventKind(StrEnum):
     LIFECYCLE = "lifecycle"
     HOLDING = "holding"
     ROOM = "room"
+    UNREADABLE = "unreadable"
 
 
 class EventTag(BaseModel):
@@ -194,6 +201,25 @@ class InboundMessage:
 
 
 @dataclass(frozen=True)
+class UnmappableEvent:
+    """An `m.room.message` this console has no way to read as prose.
+
+    A screenshot, a voice memo, a file — anything whose meaning is in an attachment rather than
+    in `body`, plus any msgtype invented after this release. Carried out of the sync rather than
+    filtered away because R1.6 makes an event that cannot be mapped something the operator has to
+    be told about; `matrix_sync` is what tells them.
+
+    No body: what a media event's `body` holds is a filename, and repeating it back would read as
+    though the thing had been understood.
+    """
+
+    room_id: str
+    event_id: str
+    sender: str
+    msgtype: str
+
+
+@dataclass(frozen=True)
 class Invite:
     """A pending room invitation and who issued it."""
 
@@ -206,6 +232,9 @@ class SyncResult:
     next_batch: str
     messages: tuple[InboundMessage, ...]
     invites: tuple[Invite, ...]
+    # Defaulted because a sync with nothing unreadable in it is the ordinary case, and every
+    # caller that constructs one by hand means exactly that.
+    unmappable: tuple[UnmappableEvent, ...] = ()
 
 
 def _is_conversational(message: InboundMessage) -> bool:
@@ -215,6 +244,25 @@ def _is_conversational(message: InboundMessage) -> bool:
     got it this far is the only reading available, and it already said yes.
     """
     return message.tag is None or message.tag.kind is RoomEventKind.REPLY
+
+
+def _msgtype(event: Event | BadEvent) -> str | None:
+    """The `msgtype` of an `m.room.message`, or None for anything else in a timeline.
+
+    Read off the raw source rather than off nio's parsed class, because the events this exists to
+    catch are the ones nio models least: an msgtype it does not know becomes `RoomMessageUnknown`
+    with no shared base to check, and content that fails its schema becomes a `BadEvent` with no
+    msgtype attribute at all — while both carry it right there in `source`.
+
+    None covers three cases that all mean "not a message": a state event (membership, topic), a
+    non-message event (a reaction), and a redaction — which keeps its type and loses its content,
+    so there is nothing left to read and nothing the operator wants told back to them.
+    """
+    match event.source:
+        case {"type": "m.room.message", "content": {"msgtype": str(msgtype)}}:
+            return msgtype
+        case _:
+            return None
 
 
 def _unwrap[R: Response](response: Response, expected: type[R]) -> R:
@@ -270,10 +318,9 @@ class MatrixClient:
             ),
             SyncResponse,
         )
+        messages, unmappable = await self._timelines(response, since)
         return SyncResult(
-            next_batch=response.next_batch,
-            messages=await self._messages(response, since),
-            invites=self._invites(response),
+            next_batch=response.next_batch, messages=messages, invites=self._invites(response), unmappable=unmappable
         )
 
     async def join(self, token: str, room_id: str) -> None:
@@ -309,7 +356,7 @@ class MatrixClient:
             recent.extend(
                 message
                 for event in page.chunk
-                if isinstance(event, RoomMessageText)
+                if isinstance(event, RoomMessageText | RoomMessageEmote)
                 if _is_conversational(message := self._inbound(room_id, event))
             )
             # `end` is absent at the start of the room's history: there is no earlier page to ask
@@ -338,7 +385,7 @@ class MatrixClient:
         Lifecycle and status messages are notices rather than plain text (R7) so clients
         style them apart from Haku's answers and bots ignore them by convention.
         """
-        return await self._send(token, room_id, "m.notice", body, txn_id, tag)
+        return await self._send(token, room_id, NOTICE_MSGTYPE, body, txn_id, tag)
 
     async def edit_notice(self, token: str, room_id: str, event_id: str, body: str, txn_id: str, tag: EventTag) -> None:
         """Replace an earlier notice in place, rather than posting a second one.
@@ -352,7 +399,7 @@ class MatrixClient:
         self._client.access_token = token
         # The tag rides on both halves: `m.new_content` is what a client that understands the
         # edit renders, and the outer content is what one that does not falls back to reading.
-        new_content: dict[str, Any] = {"msgtype": "m.notice", "body": body, HAKU_CONTENT_KEY: tag.content()}
+        new_content: dict[str, Any] = {"msgtype": NOTICE_MSGTYPE, "body": body, HAKU_CONTENT_KEY: tag.content()}
         _unwrap(
             await self._client.room_send(
                 room_id,
@@ -409,25 +456,79 @@ class MatrixClient:
         )
         return response.event_id
 
-    async def _messages(self, response: SyncResponse, since: str | None) -> tuple[InboundMessage, ...]:
+    def _read(
+        self, room_id: str, events: Iterable[Event | BadEventType]
+    ) -> tuple[list[InboundMessage], list[UnmappableEvent]]:
+        """Split a room's timeline into what Haku can read and what it can only report.
+
+        The decisions that live here, each load-bearing:
+
+        - **Our own events are dropped first** (R1.5). Doing it here rather than over the result
+          is what keeps a notice about an unreadable event from being an unreadable event's worth
+          of notice: everything this console posts is excluded before anything is classified.
+        - **`m.emote` is prose and is serviced.** It is `m.text` phrased in the third person —
+          "/me is looking at the logs" — with the words in `body` where they can be read.
+        - **`m.notice` is ignored rather than reported.** It is the msgtype for automated clients,
+          which is what Haku's own status, lifecycle and unreadable-event lines go out under. The
+          sender rule above already excludes ours; this excludes anything else's, so no notice in
+          this room can ever produce a notice about it, from any sender. That is the second of the
+          two independent guards against a self-feeding loop, and the reason there is a second one
+          is that this is the failure whose cost is unbounded.
+
+        Everything else that is an `m.room.message` is unmappable: the meaning is in an attachment
+        or in an msgtype invented after this release, and either way the operator gets told rather
+        than nothing happening (R1.6).
+        """
         messages: list[InboundMessage] = []
+        unmappable: list[UnmappableEvent] = []
+        for event in events:
+            if isinstance(event, UnknownBadEvent):
+                # nio found no event id or no sender, so there is nothing to service and nothing
+                # to attribute. It logs the source itself when it gives up on one.
+                continue
+            if event.sender == self._user_id:
+                continue
+            if (msgtype := _msgtype(event)) is None:
+                continue
+            if isinstance(event, RoomMessageText | RoomMessageEmote):
+                messages.append(self._inbound(room_id, event))
+            elif msgtype == NOTICE_MSGTYPE:
+                logger.info("Matrix: ignoring notice %s from %s", event.event_id, event.sender)
+            else:
+                logger.warning(
+                    "Matrix: %s from %s is %s, which Haku cannot read", event.event_id, event.sender, msgtype
+                )
+                unmappable.append(
+                    UnmappableEvent(room_id=room_id, event_id=event.event_id, sender=event.sender, msgtype=msgtype)
+                )
+        return messages, unmappable
+
+    async def _timelines(
+        self, response: SyncResponse, since: str | None
+    ) -> tuple[tuple[InboundMessage, ...], tuple[UnmappableEvent, ...]]:
+        messages: list[InboundMessage] = []
+        unmappable: list[UnmappableEvent] = []
         for room_id, room in response.rooms.join.items():
             # A truncated timeline is the gap that would otherwise silently swallow whatever
             # arrived while the console was down — the very thing the watermark exists to
             # prevent (R1.7). On the first sync there is no range to recover, only a
             # position to take.
             if room.timeline.limited and since is not None and room.timeline.prev_batch is not None:
-                messages.extend(await self._backfill(room_id, room.timeline.prev_batch, since))
-            messages.extend(
-                self._inbound(room_id, event) for event in room.timeline.events if isinstance(event, RoomMessageText)
-            )
-        # Our own posts come back through /sync and are never input (R1.5).
-        return tuple(message for message in messages if message.sender != self._user_id)
+                recovered, unreadable = await self._backfill(room_id, room.timeline.prev_batch, since)
+                messages.extend(recovered)
+                unmappable.extend(unreadable)
+            live, unreadable = self._read(room_id, room.timeline.events)
+            messages.extend(live)
+            unmappable.extend(unreadable)
+        return tuple(messages), tuple(unmappable)
 
-    async def _backfill(self, room_id: str, prev_batch: str, since: str) -> list[InboundMessage]:
-        """Messages between `since` and the start of a truncated timeline, oldest first."""
+    async def _backfill(
+        self, room_id: str, prev_batch: str, since: str
+    ) -> tuple[list[InboundMessage], list[UnmappableEvent]]:
+        """What arrived between `since` and the start of a truncated timeline, oldest first."""
         logger.warning("Matrix: %s timeline truncated, backfilling from %s", room_id, since)
         recovered: list[InboundMessage] = []
+        unmappable: list[UnmappableEvent] = []
         start = prev_batch
         for _ in range(MAX_BACKFILL_PAGES):
             page = _unwrap(
@@ -436,23 +537,24 @@ class MatrixClient:
                 ),
                 RoomMessagesResponse,
             )
-            recovered.extend(
-                self._inbound(room_id, event) for event in page.chunk if isinstance(event, RoomMessageText)
-            )
+            messages, unreadable = self._read(room_id, page.chunk)
+            recovered.extend(messages)
+            unmappable.extend(unreadable)
             if not page.chunk or page.end is None:
                 # Reached the watermark: `/messages` stops at `end` and returns nothing past it.
-                recovered.reverse()
-                return recovered
+                break
             start = page.end
-        logger.error(
-            "Matrix: gave up backfilling %s after %d pages — messages between %s and %s are lost",
-            room_id,
-            MAX_BACKFILL_PAGES,
-            since,
-            prev_batch,
-        )
+        else:
+            logger.error(
+                "Matrix: gave up backfilling %s after %d pages — messages between %s and %s are lost",
+                room_id,
+                MAX_BACKFILL_PAGES,
+                since,
+                prev_batch,
+            )
         recovered.reverse()
-        return recovered
+        unmappable.reverse()
+        return recovered, unmappable
 
     def _invites(self, response: SyncResponse) -> tuple[Invite, ...]:
         return tuple(
@@ -464,7 +566,7 @@ class MatrixClient:
             and event.membership == "invite"
         )
 
-    def _inbound(self, room_id: str, event: RoomMessageText) -> InboundMessage:
+    def _inbound(self, room_id: str, event: RoomMessageFormatted) -> InboundMessage:
         return InboundMessage(
             room_id=room_id,
             event_id=event.event_id,

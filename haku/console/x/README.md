@@ -57,6 +57,15 @@ Two behaviours worth knowing before reading the code:
   `claude_chat_turns` whether an exchange is in flight; it used to ask whether the session's
   status was `ready`, which happened to mean the same thing only because `enqueue_prompt` itself
   wrote `responding`.
+- **An event Haku cannot read is announced, not held.** `m.text` and `m.emote` are prose and are
+  serviced; an `m.image`, `m.file`, voice memo, or an msgtype invented after this release is
+  carried out of the sync as an `UnmappableEvent`, said out loud in the room, and then
+  acknowledged. Refusing the batch instead would never converge — nothing about an already-sent
+  screenshot changes, so it would wedge ingress against every later message — which is the one
+  case the paragraph above cannot cover. `m.notice` is neither serviced nor announced: it is the
+  msgtype Haku's own status, lifecycle and unreadable-event lines go out under, and excluding it
+  from any sender is the second of two independent guards (the first is the R1.5 sender rule)
+  against a notice about an event that is itself an event.
 - **One replica syncs.** The loop holds a Postgres advisory lock (`MXSY`) for its lifetime —
   `/sync` is a long poll, so releasing between passes would let two replicas double-process a
   batch. The supervisor is a sibling task holding a **second** lock (`MXSE`), so provisioning

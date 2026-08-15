@@ -12,7 +12,15 @@ import pytest_bazel
 from pydantic import SecretStr
 
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
-from haku.console.x.matrix_client import EventTag, InboundMessage, Invite, MatrixAuthError, RoomEventKind, SyncResult
+from haku.console.x.matrix_client import (
+    EventTag,
+    InboundMessage,
+    Invite,
+    MatrixAuthError,
+    RoomEventKind,
+    SyncResult,
+    UnmappableEvent,
+)
 from haku.console.x.matrix_pacer import RoomPacer
 from haku.console.x.matrix_sync import MatrixSyncService, MatrixSyncStore
 
@@ -147,6 +155,10 @@ def _message(body: str, sender: str = MATRIX_OPERATOR, event_id: str = "$evt") -
     return InboundMessage(room_id=MATRIX_ROOM, event_id=event_id, sender=sender, body=body, origin_server_ts=1)
 
 
+def _unreadable(msgtype: str = "m.image", event_id: str = "$img", room_id: str = MATRIX_ROOM) -> UnmappableEvent:
+    return UnmappableEvent(room_id=room_id, event_id=event_id, sender=MATRIX_OPERATOR, msgtype=msgtype)
+
+
 async def test_hands_an_operator_message_to_the_session(service, matrix, turns, bound_room):
     matrix.result = SyncResult("s2", (_message("hello"),), ())
 
@@ -185,6 +197,72 @@ async def test_a_refused_batch_says_so_once(service, matrix, turns, bound_room):
     await settled(service)
 
     assert len(matrix.notices) == 1, "a held batch is re-offered every pass; saying so every pass is spam"
+
+
+async def test_an_unreadable_event_is_announced_and_the_batch_moves_on(service, matrix, turns, sync_store, bound_room):
+    """R1.6, the half a refusal cannot serve. Nothing about a sent `m.image` will ever change, so
+    holding the batch for it would wedge ingress on one screenshot forever; the operator is told
+    in the room they sent it to, and the watermark advances."""
+    matrix.result = SyncResult("s2", (), (), (_unreadable(),))
+
+    made_progress = await service.sync_once("tok")
+    await settled(service)
+
+    assert made_progress is True
+    assert await watermark(sync_store) == "s2"
+    assert turns.offered == [], "there is no prose in this batch to hand over"
+    [(room_id, body)] = matrix.notices
+    assert room_id == MATRIX_ROOM
+    assert "m.image" in body
+    assert "cannot read" in body
+    assert [tag.kind for tag in matrix.tags] == [RoomEventKind.UNREADABLE]
+
+
+async def test_the_text_of_a_mixed_batch_is_serviced_and_the_rest_announced(service, matrix, turns, bound_room):
+    """A "look at this" alongside a screenshot: the sentence still starts a turn."""
+    matrix.result = SyncResult("s2", (_message("look at this"),), (), (_unreadable(),))
+
+    await service.sync_once("tok")
+    await settled(service)
+
+    assert turns.offered == [["look at this"]]
+    [(_, body)] = matrix.notices
+    assert "m.image" in body
+
+
+async def test_an_unreadable_event_is_announced_once_the_batch_is_taken_and_not_before(
+    service, matrix, turns, bound_room
+):
+    """A refused batch is re-offered every pass. Announcing the attachment before the prose next
+    to it has been accepted would repeat the announcement for the length of the turn in flight."""
+    matrix.result = SyncResult("s2", (_message("look at this"),), (), (_unreadable(),))
+    turns.accepts = False
+
+    await service.sync_once("tok")
+    await service.sync_once("tok")
+    await settled(service)
+
+    assert [body for _, body in matrix.notices] == ["holding 1 message(s) until Haku is ready"], (
+        "the attachment is not announced while its batch is still being re-offered"
+    )
+
+    turns.accepts = True
+    await service.sync_once("tok")
+    await settled(service)
+
+    [(_, announced)] = matrix.notices[1:]
+    assert "m.image" in announced
+
+
+async def test_an_unreadable_event_from_an_unserviced_room_is_not_announced(service, matrix, bound_room):
+    """The notice goes to the room the operator sent it to, and only the bound room is that
+    room (R3.6a)."""
+    matrix.result = SyncResult("s2", (), (), (_unreadable(room_id="!stray:allegedly.works"),))
+
+    await service.sync_once("tok")
+    await settled(service)
+
+    assert matrix.notices == []
 
 
 async def test_joins_an_invite_from_the_operator(service, matrix):

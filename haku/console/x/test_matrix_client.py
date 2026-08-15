@@ -88,21 +88,143 @@ async def test_skips_our_own_messages():
     assert result.messages == ()
 
 
-async def test_skips_non_text_messages():
-    client, _ = _client(_sync_body(_message(OPERATOR, "photo.png", msgtype="m.image")))
+async def test_an_image_is_reported_rather_than_dropped():
+    """R1.6 — Haku cannot read an attachment, but the operator has to learn that it tried."""
+    client, _ = _client(_sync_body(_message(OPERATOR, "photo.png", event_id="$img", msgtype="m.image")))
 
     result = await client.sync("tok", since="s1")
 
     assert result.messages == ()
+    [unreadable] = result.unmappable
+    assert (unreadable.event_id, unreadable.sender, unreadable.msgtype, unreadable.room_id) == (
+        "$img",
+        OPERATOR,
+        "m.image",
+        ROOM,
+    )
+
+
+async def test_an_msgtype_this_release_has_never_heard_of_is_reported_too():
+    """The point of reporting by msgtype rather than by nio's class: an extensible-events
+    msgtype nio parses as `RoomMessageUnknown` is exactly as unreadable as an image."""
+    client, _ = _client(_sync_body(_message(OPERATOR, "?", msgtype="works.allegedly.hologram")))
+
+    result = await client.sync("tok", since="s1")
+
+    assert [event.msgtype for event in result.unmappable] == ["works.allegedly.hologram"]
+
+
+async def test_an_emote_is_read_as_prose():
+    """`m.emote` is `m.text` in the third person — the words are in `body`, so there is nothing
+    to fail to map and nothing to report."""
+    client, _ = _client(_sync_body(_message(OPERATOR, "waves at Haku", msgtype="m.emote")))
+
+    result = await client.sync("tok", since="s1")
+
+    assert [message.body for message in result.messages] == ["waves at Haku"]
+    assert result.unmappable == ()
+
+
+async def test_a_notice_produces_neither_a_message_nor_a_report():
+    """The loop guard. Everything Haku says that is not an answer is an `m.notice`, including the
+    notice it posts *about* an unreadable event — so a notice must never be reportable, from any
+    sender. The bot's own events are excluded a second time by sender (R1.5); this covers the
+    case where that is not what saves us."""
+    client, _ = _client(
+        _sync_body(
+            _message(USER, "received 1 message(s) Haku cannot read", event_id="$ours", msgtype="m.notice"),
+            _message(OPERATOR, "some other bot", event_id="$theirs", msgtype="m.notice"),
+        )
+    )
+
+    result = await client.sync("tok", since="s1")
+
+    assert (result.messages, result.unmappable) == ((), ())
+
+
+async def test_our_own_image_is_not_reported():
+    """R1.5 first, mapping second: an attachment Haku itself posted is not an event to tell the
+    operator about."""
+    client, _ = _client(_sync_body(_message(USER, "chart.png", msgtype="m.image")))
+
+    result = await client.sync("tok", since="s1")
+
+    assert (result.messages, result.unmappable) == ((), ())
 
 
 async def test_skips_non_message_events():
+    """Membership, topic and reactions are not messages, so there is nothing unmapped about them
+    and the operator must not be told anything happened."""
     topic = {"type": "m.room.topic", "event_id": "$t", "sender": OPERATOR, "origin_server_ts": 1, "content": {}}
-    client, _ = _client(_sync_body(topic))
+    reaction = {
+        "type": "m.reaction",
+        "event_id": "$r",
+        "sender": OPERATOR,
+        "origin_server_ts": 1,
+        "content": {"m.relates_to": {"rel_type": "m.annotation", "event_id": "$evt", "key": "👍"}},
+    }
+    member = {
+        "type": "m.room.member",
+        "event_id": "$m",
+        "state_key": OPERATOR,
+        "sender": OPERATOR,
+        "origin_server_ts": 1,
+        "content": {"membership": "join"},
+    }
+    client, _ = _client(_sync_body(topic, reaction, member))
 
     result = await client.sync("tok", since="s1")
 
-    assert result.messages == ()
+    assert (result.messages, result.unmappable) == ((), ())
+
+
+async def test_a_redacted_message_is_not_reported():
+    """A redaction keeps the type and loses the content. There is nothing left to read, and
+    telling the operator Haku could not read the message they just deleted is noise."""
+    redacted = {
+        "type": "m.room.message",
+        "event_id": "$gone",
+        "sender": OPERATOR,
+        "origin_server_ts": 1,
+        "content": {},
+        "unsigned": {"redacted_because": {"type": "m.room.redaction", "sender": OPERATOR}},
+    }
+    client, _ = _client(_sync_body(redacted))
+
+    result = await client.sync("tok", since="s1")
+
+    assert (result.messages, result.unmappable) == ((), ())
+
+
+async def test_the_text_of_a_mixed_batch_still_arrives():
+    """A "look at this" alongside a screenshot: the sentence is serviceable and must not be held
+    hostage by the attachment next to it."""
+    client, _ = _client(
+        _sync_body(
+            _message(OPERATOR, "look at this", event_id="$a"),
+            _message(OPERATOR, "screenshot.png", event_id="$b", msgtype="m.image"),
+        )
+    )
+
+    result = await client.sync("tok", since="s1")
+
+    assert [message.body for message in result.messages] == ["look at this"]
+    assert [event.event_id for event in result.unmappable] == ["$b"]
+
+
+async def test_a_gap_full_of_attachments_is_recovered_as_reportable():
+    """R1.7's backfill has the same filter as the live timeline, so it had the same hole."""
+    client, _ = _client(
+        _sync_body(limited=True),
+        pages=[
+            {"chunk": [_message(OPERATOR, "memo.ogg", event_id="$v", msgtype="m.audio")], "start": "p1", "end": "p2"},
+            {"chunk": [], "start": "p2"},
+        ],
+    )
+
+    result = await client.sync("tok", since="s1")
+
+    assert [event.msgtype for event in result.unmappable] == ["m.audio"]
 
 
 async def test_parses_an_invite_and_its_sender():

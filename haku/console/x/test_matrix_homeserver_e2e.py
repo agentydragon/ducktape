@@ -175,6 +175,41 @@ async def test_a_gap_larger_than_the_timeline_limit_delivers_every_message_once(
     assert [message.body for message in resumed.messages] == ["after the gap"]
 
 
+async def test_an_unreadable_event_is_reported_and_the_report_cannot_become_one(
+    bot: Bot, operator: Account, joined_room: str
+) -> None:
+    """R1.6 against the real thing, and the loop it would create if the guard were wrong.
+
+    The notice Haku posts about an event it cannot read is itself an event in the room, and comes
+    back on the very next `/sync`. If a notice were reportable, one screenshot would produce a
+    notice, which would produce a notice, until the room's send budget was the only thing left
+    stopping it — so the round trip through the homeserver is the test, not the classification in
+    isolation.
+
+    Also the msgtype split: an emote is prose the operator typed and is serviced, an image is not
+    and is reported, and both arrive in the same batch as the sentence next to them.
+    """
+    watermark = (await bot.client.sync(bot.token, since=None)).next_batch
+    image = operator.send(joined_room, {"msgtype": "m.image", "body": "screenshot.png", "url": "mxc://test/none"})
+    operator.send(joined_room, {"msgtype": "m.emote", "body": "waves"})
+    operator.send_text(joined_room, "look at this")
+
+    seen = await bot.client.sync(bot.token, since=watermark)
+
+    assert [message.body for message in seen.messages] == ["waves", "look at this"]
+    assert [(event.event_id, event.msgtype, event.sender) for event in seen.unmappable] == [
+        (image, "m.image", operator.user_id)
+    ]
+
+    tag = EventTag(kind=RoomEventKind.UNREADABLE)
+    await bot.client.send_notice(
+        bot.token, joined_room, "received 1 message(s) Haku cannot read", txn_id=tag.transaction_id(), tag=tag
+    )
+    echoed = await bot.client.sync(bot.token, since=seen.next_batch)
+
+    assert (echoed.messages, echoed.unmappable) == ((), ())
+
+
 async def test_a_tag_and_its_rendering_survive_the_homeserver(bot: Bot, operator: Account, joined_room: str) -> None:
     """The `works.allegedly.haku` key rides in `content`, so the homeserver is what it survives."""
     tag = EventTag(kind=RoomEventKind.REPLY, session_id=uuid4(), message_id=uuid4(), agent_message_id="msg_01abc")

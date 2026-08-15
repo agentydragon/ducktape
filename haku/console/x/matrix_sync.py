@@ -7,6 +7,10 @@ A batch the session cannot take yet is not held here: the watermark simply is no
 advanced, so the homeserver re-delivers it next pass. Queue-until-turn-end (R2.2) and
 "nothing is silently dropped" (R1.6) then need no local queue at all.
 
+The one thing that mechanism cannot cover is an event Haku has no way to read — a screenshot,
+a voice memo — because re-offering it would never converge on an answer. Those are announced in
+the room and then acknowledged (`_report_unreadable`), which is the other half of R1.6.
+
 It is also the only holder of a Matrix credential, so the session supervisor's lifecycle
 notices go out through `announce` rather than through a second login.
 """
@@ -27,7 +31,15 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.config import MatrixConfig
 from haku.console.database_schema import MatrixSyncState
-from haku.console.x.matrix_client import EventTag, InboundMessage, Invite, MatrixAuthError, MatrixClient, RoomEventKind
+from haku.console.x.matrix_client import (
+    EventTag,
+    InboundMessage,
+    Invite,
+    MatrixAuthError,
+    MatrixClient,
+    RoomEventKind,
+    UnmappableEvent,
+)
 from haku.console.x.matrix_pacer import RoomPacer
 from haku.console.x.matrix_session import MatrixConversationStore, MatrixTurns
 
@@ -279,24 +291,24 @@ class MatrixSyncService:
 
         self.pacer.send(post)
 
-    def _serviced(self, messages: tuple[InboundMessage, ...], live_room: str | None) -> list[InboundMessage]:
-        """The messages of a batch that are ours to act on.
+    def _serviced[T: (InboundMessage, UnmappableEvent)](self, events: tuple[T, ...], live_room: str | None) -> list[T]:
+        """The events of a batch that are ours to act on — read or report.
 
-        Haku's own posts are not among them, and are already gone: `MatrixClient._messages`
+        Haku's own posts are not among them, and are already gone: `MatrixClient._read`
         drops everything the bot sent (R1.5). This used to check them again against a set of
         every event id this process had ever sent — a filter that could not match, since every
         entry in it was excluded one layer down, and that cost memory for as long as the replica
         lived and was empty again the moment it restarted.
         """
         serviced = []
-        for message in messages:
-            if message.room_id != live_room:
+        for event in events:
+            if event.room_id != live_room:
                 # Only the bound room is serviced (R3.6a). Reachable for a room joined
                 # before the binding existed, and for anything that gets Haku into a room
                 # by a path other than an invite.
-                logger.warning("Matrix: ignoring %s from unserviced room %s", message.event_id, message.room_id)
+                logger.warning("Matrix: ignoring %s from unserviced room %s", event.event_id, event.room_id)
                 continue
-            serviced.append(message)
+            serviced.append(event)
         return serviced
 
     async def sync_once(self, token: str) -> bool:
@@ -320,6 +332,10 @@ class MatrixSyncService:
                 return False
             self._holding = False
             logger.info("Matrix: handed %d message(s) to the session", len(messages))
+        # After the offer, so a batch that was refused is not announced on every re-offer; and on
+        # this path only, which is the one that advances the watermark — so each unreadable event
+        # is announced exactly once, on the pass that acknowledges it.
+        self._report_unreadable(live_room, self._serviced(result.unmappable, live_room))
         await self._store.save_batch(self._config.user_id, result.next_batch)
         return True
 
@@ -356,6 +372,29 @@ class MatrixSyncService:
             return
         self._holding = True
         self._queue_notice(live_room, f"holding {count} message(s) until Haku is ready", RoomEventKind.HOLDING)
+
+    def _report_unreadable(self, live_room: str | None, events: list[UnmappableEvent]) -> None:
+        """Say in the room that something arrived which Haku has no way to read (R1.6).
+
+        **Surface and advance, rather than refuse the batch.** A refusal is only correct when it
+        converges, and nothing about an `m.image` that has already been sent ever changes: the
+        batch would be re-offered every pass forever, and one screenshot would wedge ingress
+        against every message the operator sent afterwards — strictly worse than the drop this
+        replaces. So the batch is acknowledged, and what is lost is an attachment that was never
+        readable, said out loud in the room the operator sent it to.
+
+        Said in the room and not only logged, because the room is where the operator is: a
+        screenshot that disappears with a line in a pod's stdout is the failure R1.6 names.
+        """
+        if not events or live_room is None:
+            return
+        msgtypes = ", ".join(sorted({event.msgtype for event in events}))
+        self._queue_notice(
+            live_room,
+            f"received {len(events)} message(s) Haku cannot read ({msgtypes}) — it reads text only; "
+            "describe them in words and they will reach the session",
+            RoomEventKind.UNREADABLE,
+        )
 
     async def _run_as_leader(self) -> None:
         """Sync until cancelled. Only ever entered holding the advisory lock."""
