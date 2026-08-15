@@ -222,6 +222,13 @@ input to a running turn**. Interrupt exists; steer does not.
 - **R3.1 [v1] One session.** There is a single long-running Agent SDK session, kept alive
   as long as it can be. Threads do not fork sessions; a thread root is context on the
   message, not a separate conversation.
+
+  **[later] "Bound to a room" becomes "one attached room plus N subscriptions".** A session's
+  transcript still lives in exactly one room; the others it watches and can write to are a
+  separate relation, owned by the agent rather than the session so a rotation does not lose them
+  (R5.4's note, and <information_trust_tiers.md> § Attachment and subscription). Only the
+  attachment is what R3.6a refuses a second of.
+
 - **R3.2 [v1] One long-lived sandbox, always up.** The sandbox backs that session
   continuously — not provisioned per turn, not expired on a short TTL, and **not scaled
   down when idle**. Every message pays no cold start. This makes the existing
@@ -463,6 +470,18 @@ input to a running turn**. Interrupt exists; steer does not.
 - **R5.4 [v1] Reading only.** The surface is read: fetch by event ID, fetch around an
   event, paginate history. There is no send, edit, react, redact, join, invite, leave, or
   room-state capability. Speaking happens by auto-forward (R11.1) and needs nothing.
+
+  **[later] A send tool arrives with subscriptions, and it takes a room id.** Once agents talk in
+  shared rooms (<information_trust_tiers.md>), an agent has **one attached room** — transcript
+  home, auto-forwarded, exactly today's behaviour — and **many subscribed rooms**, which it reads
+  as context and writes to through an explicit addressed tool. Auto-forward cannot serve the
+  second kind: it is 1:1 by construction, since "what the agent says is what the room sees" means
+  nothing with two candidate rooms. This relaxes R5.3's "not expressible rather than merely
+  denied" for that one tool, and what replaces the property is the console validating the room
+  against that agent's subscription set — server-side, small, and itself bounded by the room's
+  tier. Join, invite, leave and room-state stay out; the console still owns membership. R8.1's
+  "there is no send step to remember" becomes true of the attached room only, and R8.3's "one
+  room; it cannot address another" is what this supersedes.
 
 - **R5.4a [settled] Reads should not be a reimplemented Matrix API.** `/messages`, `/context`
   and `/event` are a public, well-documented read API; wrapping each in a bespoke tool is

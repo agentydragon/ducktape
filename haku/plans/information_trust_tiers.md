@@ -239,6 +239,66 @@ One console consequence, small but worth catching early: the sessions surface
 several agent kinds it needs to show **which agent** too, or two rooms' sessions become
 indistinguishable in the list.
 
+## Attachment and subscription: the room model a shared room forces
+
+Operator, 2026-08-15: **an agent may have its transcript connected to a Matrix room; it may also
+subscribe to other rooms and use a separate tool to send into them.** That is the right
+decomposition, and it is not an addition to the current model so much as a split of something
+that is one thing today only because there has only ever been one room.
+
+**Why the split is forced rather than chosen.** Auto-forward (R11.1) is 1:1 by construction — "what
+the agent says at the end of a turn is what the room sees" has no meaning once there are two
+candidate rooms. So exactly one room can be served implicitly, and every other room needs an
+addressed send. The two relations are genuinely different:
+
+| Relation       | How many    | Inbound                      | Outbound                      |
+| -------------- | ----------- | ---------------------------- | ----------------------------- |
+| **Attached**   | at most one | wakes a turn, as today       | auto-forward, no tool         |
+| **Subscribed** | many        | context; waking is **gated** | explicit tool, room-addressed |
+
+Six consequences, in the order they will bite:
+
+- **Subscriptions belong to the agent, not the session.** Sessions rotate on compaction and
+  failure, and a subscription is a durable property of an agent kind ("the ducktape agent watches
+  the coordination room"). Hanging them off `session_id` loses every subscription at each
+  rotation — the same data-losing shape R11.3a already flags for room bindings. The attachment
+  behaves as `matrix_conversation` does now: owned by the agent, with a session pointer that moves.
+- **Cleanup stage 7's `chat_attachment` is the right table, with a role.** It is already
+  `(session_id, surface, address, attached_at, detached_at)` with a partial unique index on the
+  address; add `role`, and a second partial unique index enforcing **at most one attached room per
+  agent**. One table, and the invalid state — two transcript homes — is unrepresentable rather
+  than checked.
+- **Mention gating comes back, and now it has a home.** matrix_chat_runtime puts mention gating,
+  sender allowlists and multi-bot loop protection out of scope because the one room is a DM
+  (R3.5). Subscriptions are exactly where they return: every message in a busy coordination room
+  must **not** wake a turn, or several agents burn budget answering each other. The attached room
+  keeps today's behaviour — every message wakes — and subscribed rooms wake only when addressed.
+  R1.5's "never treat your own events as input" generalizes at the same time: an agent must
+  ignore its own sends into subscribed rooms, and other agents' unless addressed.
+- **Provenance grows a room.** R2.4 gives each batched message a sender, timestamp, event id and
+  thread root. With several rooms in one context the agent cannot address a reply without knowing
+  which room each message came from, and which room is its own — so the room joins the batch's
+  provenance and the prompt has to say which one is home.
+- **The send tool takes a room id, which R5.3 forbids — deliberately relaxed, not overlooked.**
+  R5.3's property was that reaching another room is "not expressible rather than merely denied".
+  That cannot survive a tool whose whole job is addressing another room. What replaces it is
+  nearly as strong and is the reason this stays safe: **the console validates the room against
+  that agent's subscription set**, which is server-side, small, and itself constrained by the room
+  tier policy. So an agent can name only rooms it was put in, and it was put only in rooms its
+  tier allows. Reaching up is refused by the same rule that governs membership.
+- **Both sends still go through the outbox.** Auto-forward for the attached room and the tool for
+  a subscribed one converge on the same queue, so the classifier gates them identically and there
+  is no second delivery path to secure separately.
+
+**What does not change**, and is worth saying because this looks like the thing the plan ruled
+out: the console still holds every Matrix credential, the harness still owns ingress, and no agent
+polls `/sync`. matrix_chat_runtime's non-goal is "give the agent a Matrix account and let it drive
+the API", with the surviving rule "the harness owns ingress and the reply channel; agent tools are
+write-side extras and targeted reads, never the delivery path". A console-side send tool for
+subscribed rooms is precisely a write-side extra. The non-goals section already anticipates a send
+tool arriving as an in-process MCP server on the console; the one assumption it made that this
+breaks is that such a tool would need no room argument.
+
 ## What this inherits from doctrine, including the uncomfortable parts
 
 <../docs/security.md> already states the test, and it applies here unchanged: **every new write
