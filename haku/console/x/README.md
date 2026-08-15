@@ -137,3 +137,14 @@ dependency:
   whole database.
 - The `ReplySink` port is defined next to the service that calls it (`claude_chat.py`), and
   the composition in <../app.py> is what ties a sink to a surface.
+
+## Where the reasoning lives
+
+The code keeps the invariant; the evidence behind it is linked rather than restated.
+
+- <../docs/chat_runtime_facts.md> — behaviours of Synapse, nio, uvicorn and the CLI that this
+  surface depends on, with where each was checked. Read it before changing anything that looks
+  like belt and braces.
+- <../../plans/chat_runtime_cleanup.md> and <../../plans/chat_runtime_projection.md> — what is
+  still wrong and the order to fix it.
+- `debug/` holds dated findings from one incident and is not maintained.

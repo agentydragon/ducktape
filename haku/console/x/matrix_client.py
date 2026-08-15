@@ -76,13 +76,10 @@ _AUTH_ERRCODES = frozenset({"M_UNKNOWN_TOKEN", "M_MISSING_TOKEN"})
 
 # How many times nio may absorb a 429 inside one request before the error reaches us.
 #
-# **Gotcha: nio's default is unlimited, not off.** `AsyncClient._send` already loops on
-# `M_LIMIT_EXCEEDED`, sleeping the server's `retry_after_ms` (or five seconds when it gives
-# none), and `max_limit_exceeded=None` means it does that forever — so a rate-limited send
-# never returned an error, it just stopped returning. That is worse than a visible failure:
-# the caller is blocked inside `room_send` with nothing in any log, and `matrix_pacer` cannot
-# learn a budget it is never told about. Two retries keep a single burst invisible while
-# making a sustained one arrive somewhere it can be acted on.
+# **Gotcha: nio's default is unlimited, not off** — a rate-limited send never returned an error,
+# it stopped returning (<../docs/chat_runtime_facts.md>). Two retries keep a single
+# burst invisible while letting a sustained one reach `matrix_pacer`, which is the only place the
+# room's real budget can be learned.
 MAX_RATE_LIMIT_RETRIES = 2
 
 
@@ -92,12 +89,7 @@ HAKU_CONTENT_KEY = "works.allegedly.haku"
 
 
 class RoomEventKind(StrEnum):
-    """What the console meant by an event it sent.
-
-    Every one of these used to be inferred. "Is this conversational" was read off the msgtype —
-    true only because notices happen to be the things worth excluding — and "which transcript row
-    is this" could not be asked at all. A kind says it instead.
-    """
+    """What the console meant by an event it sent, in place of inferring it from the msgtype."""
 
     REPLY = "reply"
     STATUS = "status"
@@ -127,33 +119,21 @@ class EventTag(BaseModel):
     agent_message_id: str | None = None
 
     def content(self) -> dict[str, Any]:
-        """The tag as it goes on the wire, with absent fields left out rather than sent null.
-
-        `mode="json"` is what turns the UUIDs into strings, so this is the wire form rather than
-        the Python one; `exclude_none` is what keeps an absent field absent.
-        """
+        """The tag as it goes on the wire: `mode="json"` for the UUIDs, `exclude_none` so an
+        absent field is absent rather than null."""
         return self.model_dump(mode="json", exclude_none=True)
 
     def transaction_id(self) -> str:
         """What to send this event under, so a re-send of the same thing is not a second event.
 
-        **Derived where the event has an identity, fresh where it does not**, which sorts the
-        senders exactly as they want sorting. A reply names a transcript row, and re-posting that
-        row is always a mistake — so the row's id is the transaction, and the homeserver refuses
-        the duplicate on our behalf. A status edit and a lifecycle notice name no row: each is a
-        genuinely new event, and deriving one would be a way to lose it.
+        **Derived where the event names a transcript row, fresh where it does not.** Re-posting a
+        row is always a mistake, so its id is the transaction and the homeserver refuses the
+        duplicate; a status edit and a lifecycle notice name no row, and deriving one would be a
+        way to lose the event rather than to deduplicate it.
 
-        Two facts make the derived half work, both of them Synapse's rather than the spec's.
-        Its transaction cache keys on `(path, user, device_id)` — the **device**, not the access
-        token — and `MatrixClient` pins `device_id` at construction, so the replacement replica
-        that re-sends is the same device as the one that died. And an entry lives between 30 and
-        60 minutes, far longer than the seconds a console roll takes. Outside that window this
-        degrades to what it replaced, which is why it is a second line of defence and not the
-        first: the first is `frame_uid`, and a replayed `assistant` frame is dropped before any
-        of this is reached.
-
-        Impure by design and called once per send. It cannot be a field, because the fresh half
-        must differ between two events carrying an otherwise identical tag.
+        Second line of defence, not first — `frame_uid` drops a replayed frame before any send —
+        and it rests on how Synapse keys and expires its transaction cache
+        (<../docs/chat_runtime_facts.md>). Impure, and called once per send.
         """
         return self.message_id.hex if self.message_id is not None else uuid4().hex
 
@@ -304,28 +284,17 @@ class MatrixClient:
         """The last `limit` conversational messages before `since`, oldest first.
 
         **Filters the opposite way from `sync`.** Ingress drops Haku's own messages, because
-        answering yourself is a loop (R1.5); history must keep them, because half a
-        conversation is not context (R3.3a). Same room, same events, so the two read paths
-        cannot share a filter.
+        answering yourself is a loop (R1.5); history keeps them, because half a conversation is
+        not context (R3.3a). Same room and same events, so the two cannot share a filter.
 
-        Lifecycle notices are excluded twice over. They go out as `m.notice`, which nio parses
-        as `RoomMessageNotice` — a different class from the `RoomMessageText` this keeps — and
-        they now also carry a kind that says they are not the conversation. The msgtype was
-        doing that job by coincidence: it is true only for as long as everything worth excluding
-        happens to be a notice, which is a property of today's senders rather than a rule.
+        `since` is a `/sync` watermark, which is also a valid `/messages` pagination token, so
+        this reads back from wherever the loop has got to with no second position to keep.
 
-        `since` is a `/sync` watermark, which is also a valid `/messages` pagination token —
-        so this reads back from wherever the loop has got to, with no second position to keep.
-
-        **`limit` counts messages, not timeline events.** It used to be the page size, with the
-        filter applied afterwards — and this room's timeline is mostly the console talking to
-        itself: a provisioning announcement and one notice per line of bootstrap output on every
-        session start, plus the status line's creation, edits and redaction on every turn. Each
-        of those is excluded here, correctly, and each still spent one of the twenty events
-        fetched. A re-awakening could come back with two or three real messages, or none, while
-        believing it had asked for twenty — silently, since the prompt renders with whatever it
-        found. Paging until the count is met is the same shape `_backfill` beside this already
-        uses.
+        **`limit` counts messages, not timeline events**, and pages until it is met. This room's
+        timeline is mostly the console talking to itself — announcements, bootstrap narration, the
+        status line's edits and redaction — all correctly excluded here, and all of which would
+        otherwise spend the page. Asking for twenty and rendering three, silently, is what
+        counting events instead would do.
         """
         self._client.access_token = token
         recent: list[InboundMessage] = []

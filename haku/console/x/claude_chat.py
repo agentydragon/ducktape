@@ -410,11 +410,9 @@ class TurnStart:
 class TurnResumed:
     """A turn a departed holder opened and asked, and how far its answer had got.
 
-    The three state fields are what `_run_turn`'s locals held when that process died, and they
-    are load-bearing rather than tidy. The runner replays what a console may not have recorded
-    but deliberately **not** the stream deltas (`runner.DELTA_TYPE`) — they are the one class
-    that cannot survive being sent twice — so a resumed turn starting from nothing would write
-    the tail of an answer as a second message and post it into the room beside the first.
+    The state fields are required, not decorative: the runner never replays the stream deltas, so
+    a resumed turn starting from nothing would write the tail of an answer as a second message
+    beside the first.
     """
 
     turn_id: UUID
@@ -434,9 +432,7 @@ class TurnResumed:
 class SessionOutcome:
     """Where a session got to, and why if it ended badly.
 
-    The two travel together because every caller that acts on a dead session wants to say which
-    one it was: the supervisor announced `ended (failed)` into the room for years while the
-    sentence explaining it sat in `error`, reachable only by querying Postgres by hand.
+    The two travel together because every caller acting on a dead session wants to say which.
     """
 
     status: ChatSessionStatus
@@ -505,13 +501,9 @@ class ClaudeChatStore:
     async def authenticate_bridge(self, session_id: UUID, token: str) -> BridgeAuthentication:
         """Admit a runner to its session — the first time, and every time after.
 
-        **Taking the lease is the admission.** A reconnect used to be refused unconditionally
-        (`PROVISIONING` and no `bridge_connected_at`), which made the sandbox disposable: the
-        runner had no way back after any disconnect, so Kubernetes restarted it into a refusal
-        until the sweep replaced the whole session. Now a live session admits a runner that can
-        take its lease, and the lease is what stops both replicas adopting one CLI — whoever
-        writes it under this row lock has it, and the other is told to go away for as long as
-        the holder keeps renewing.
+        **Taking the lease is the admission.** A live session admits any runner that can take its
+        lease, and the lease is what stops two replicas adopting one CLI: whoever writes it under
+        this row lock has it, for as long as it keeps renewing.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -535,14 +527,10 @@ class ClaudeChatStore:
     async def release_lease(self, session_id: UUID) -> None:
         """Hand a live session back for adoption, without declaring it dead.
 
-        A replica going down cleanly knows the difference between "this session is over" and
-        "I am no longer the one holding it", and only the second is true during a roll. Clearing
-        the holder is what lets the returning runner be admitted immediately rather than waiting
-        out the previous holder's lease.
-
-        The short grant that replaces the deadline is what stops `expire_stale_leases` from
-        failing the session in the seconds before the runner redials — and what makes it fail
-        the session if none ever does.
+        "This session is over" and "I am no longer holding it" are different, and only the second
+        is true during a roll. The short grant replacing the deadline is what stops
+        `expire_stale_leases` failing the session in the seconds before the runner redials — and
+        what makes it fail the session if none ever does.
         """
         async with self._sessions.begin() as db:
             chat = await db.get(ClaudeChatSession, session_id, with_for_update=True)
@@ -554,24 +542,16 @@ class ClaudeChatStore:
     async def adopt_open_turn(self, session_id: UUID) -> TurnResumed | None:
         """Say what the previous holder's open turn was, and hand back the one worth finishing.
 
-        An adopting console inherits the session, and — since the sandbox outlived the replica —
-        the exchange with it. "A turn was open" is three different situations, and closing all
-        three was what made a roll mid-turn cost an answer:
+        The sandbox outlives the replica, so an adopting console inherits the exchange too. "A
+        turn was open" is three situations and only one of them is a closure:
 
-        1. **It never asked.** `next_prompt` claims the prompt and opens the turn in one
-           transaction, and `_run_turn` writes it to the CLI afterwards; a replica dying between
-           the two left the prompt claimed, the transcript row marked as handed over, and nothing
-           ever asked — invisible, because the room's answer to a message it will never get is
-           silence. The prompt goes back on the queue and the turn is closed.
-        2. **It finished and nobody wrote that down.** The `result` frame is in the log but
-           `end_turn` never ran. The record already holds the answer, so the turn is closed from
-           it rather than waited on — waiting would be forever, since a recorded frame is a
-           replay the recorder now refuses.
-        3. **It is still running.** Its remaining frames are on their way down the new socket,
-           so the turn stays open and is returned for `_run_turn` to finish.
+        1. **Never asked** — no prompt frame was written. The prompt goes back on the queue.
+        2. **Finished, unrecorded** — the `result` is logged but `end_turn` never ran. Closed from
+           the record; waiting would be forever, since the replay of a recorded frame is refused.
+        3. **Still running** — returned for `_run_turn` to finish.
 
-        Leaving a turn open is only safe because exactly one may be: `uq_claude_chat_turns_open`
-        is what stops `next_prompt` opening a second beside the inherited one.
+        Leaving a turn open is safe only because `uq_claude_chat_turns_open` permits exactly one,
+        which is what stops `next_prompt` opening a second beside the inherited one.
         """
         async with self._sessions.begin() as db:
             turn = await db.scalar(
@@ -638,11 +618,9 @@ class ClaudeChatStore:
                 raise KeyError(session_id)
             if chat.status != ChatSessionStatus.READY:
                 raise RuntimeError(f"session is not ready (status={chat.status})")
-            # Admission asks about the turn, not the session's status. It used to ask for
-            # `READY`, which was also how "not mid-turn" was expressed — so the moment the
-            # column stopped carrying `responding` this gate would have started accepting
-            # prompts during a turn, which is the fold-into-turn feature arriving by accident
-            # with no fold path wired (R2.2 holds a batch until the turn ends).
+            # Admission asks about the turn, not the session's status: gating on `READY` alone
+            # would accept a prompt mid-turn, which is the fold-into-turn feature arriving by
+            # accident with no fold path wired (R2.2 holds a batch until the turn ends).
             if await _open_turn(db, session_id) is not None:
                 raise RuntimeError("a turn is already in flight")
             if await _queued_prompt(db, session_id) is not None or await _legacy_pending(db, session_id) is not None:
@@ -786,22 +764,15 @@ class ClaudeChatStore:
     ) -> bool:
         """Append one frame to the session's rollout, unless this session already has it.
 
-        Returns whether the frame was recorded. **False means a replay** — the same
-        agent-assigned identity already in this session's log — and the caller's job is then to
-        not act on it a second time, which is the whole point of deduplicating here rather than
-        letting the row be written twice and reconciling later. A frame with no identity
-        (`frame_identity.frame_uid` explains which those are) is always recorded, because "no
-        identity" is not "the same as the last one".
+        **False means a replay** — the same agent-assigned identity already in this log — and the
+        caller must then not act on it again. A frame with no identity is always recorded, since
+        "no identity" is not "the same as the last one" (`frame_identity.frame_uid`).
 
-        *kind* is passed rather than read out of the payload because the payload's discriminator
-        is not the console's to assume: a CLI frame keeps it in `type`, the bridge envelope keeps
-        it in `kind`, and deriving one from the other is what would make everything in this table
-        have to look like a CLI frame whether it was one or not.
+        *kind* is passed rather than read out of the payload: a CLI frame keeps its discriminator
+        in `type` and the bridge envelope keeps it in `kind`, and this table holds both.
 
-        Failures are not swallowed. Every other write in a turn reaches the same database, so
-        one that cannot record has already lost the session — and a rollout with quiet holes is
-        exactly the record that looks complete while being wrong, which is what this table
-        exists to stop.
+        Failures are not swallowed — a rollout with quiet holes is the record that looks complete
+        while being wrong.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -1041,20 +1012,13 @@ class ClaudeChatStore:
     async def expire_stale_leases(self) -> int:
         """Fail every live session whose holder stopped renewing, and report how many.
 
-        A live status is written by the replica holding the runner websocket and only ever
-        corrected by that same replica. When it dies without running its finalizer — SIGKILL,
-        OOM, node loss, or a cancellation that raced the event loop's shutdown — the row keeps
-        claiming a turn is in flight, `supervise_once` treats it as healthy, and the room is
-        never answered again. Nothing in the previous design could observe that, because every
-        observer was the process that had gone away.
+        A live status is only ever corrected by the replica that wrote it, so a replica dying
+        without its finalizer — SIGKILL, OOM, node loss — leaves a row claiming a turn is in
+        flight that `supervise_once` reads as healthy. This is the only observer that is not that
+        process.
 
-        Set-based and idempotent, in the shape `node_daemons._expire` already uses: any replica
-        may run it, concurrent runners converge, and a session whose owner is merely slow gets
-        its lease back on the next renewal well before the TTL.
-
-        No null check: the column is required (0029), so "has no lease" is unrepresentable
-        rather than a case to filter for. It used to be both representable and invisible here,
-        which is how a session predating the column stayed wedged after the lease shipped.
+        Set-based and idempotent, like `node_daemons._expire`: any replica may run it, concurrent
+        runners converge, and a merely slow owner renews well before the TTL.
         """
         async with self._sessions.begin() as db:
             expired = (
@@ -1071,9 +1035,8 @@ class ClaudeChatStore:
                 chat = await db.get(ClaudeChatSession, session_id, with_for_update=True)
                 if chat is None or chat.status not in LIVE_SESSION_STATUSES:
                     continue
-                # Naming the holder is the whole point of recording it: this message and the
-                # `error` below were previously identical for every such failure, so the room
-                # said a session died and no query could say which process to go read.
+                # Naming the holder is the whole point of recording it: without it the room says
+                # a session died and no query can say which process to go read.
                 held_by = chat.lease_holder or "no replica (never attached)"
                 logger.error("Claude chat session %s lease expired; holder was %s", session_id, held_by)
                 chat.status = ChatSessionStatus.FAILED
@@ -1183,17 +1146,10 @@ def _frame_kind(payload: dict[str, Any]) -> str:
 class RolloutRecorder:
     """One session's `FrameSink`: every protocol frame either way, into `claude_chat_frames`.
 
-    **Everything, in both directions, with no exceptions left.** Control frames are kept because
-    an interrupt that did not take is only diagnosable from them, and stream deltas are now kept
-    because a log with a hole in it cannot be folded over — which is what a reader reconstructing
-    a session, and eventually the console itself, has to do
-    (<../../plans/chat_runtime_projection.md>). They were the one exclusion for as long as the
-    console's own answer to "how far did that answer get" was a local variable plus a single
-    rewritten `partial` row; both of those are what the log is replacing.
-
-    Deltas cost a row each rather than an argument about which of them matter. `read_frames`
-    leaves them out of its default view, which is where "would bury the log for a reader" is
-    actually answered.
+    **No exclusions.** Control frames are kept because an interrupt that did not take is only
+    diagnosable from them, and deltas because a log with a hole in it cannot be folded over
+    (<../../plans/chat_runtime_projection.md>). `read_frames` is where "do not bury the reader"
+    is answered, by leaving deltas out of its default view.
     """
 
     def __init__(self, store: ClaudeChatStore, session_id: UUID):
@@ -1209,9 +1165,8 @@ class RolloutRecorder:
     async def _record(self, direction: FrameDirection, payload: dict[str, Any]) -> bool:
         """Record the frame, answering whether the caller should act on it.
 
-        A delta has no agent-assigned identity, so it is always recorded and always fresh. That is
-        correct rather than lax: the runner never replays one (`runner.DELTA_TYPE`), because a
-        delta is the one frame class that cannot survive being sent twice.
+        A delta has no agent-assigned identity, so it is always recorded and always fresh — safe
+        because the runner never replays one (`runner.DELTA_TYPE`).
         """
         return await self._store.record_frame(self._session_id, direction, _frame_kind(payload), payload)
 
@@ -1318,12 +1273,9 @@ class _TurnStatus:
             if time.monotonic() - self._typed_at >= TYPING_REFRESH_SECONDS:
                 self._typed_at = time.monotonic()
                 await self._typing(True)
-            # One owner for the pace. The floor used to be the sink's, which dropped anything
-            # offered inside it while this loop had already recorded it as shown — so a state
-            # that changed twice within the floor left the room reading the older of the two
-            # until the *next* change, which on a turn that then settles into one long tool call
-            # is the rest of the turn. Deferring here instead means the value is still waiting on
-            # the next tick.
+            # One owner for the pace, and it defers rather than drops: a sink that discarded what
+            # arrived inside its floor would leave the room reading a stale state until the *next*
+            # change, which on a turn settling into one long tool call is the rest of the turn.
             if (
                 self._state is not None
                 and self._state != self._shown
@@ -1348,17 +1300,11 @@ class _TurnStatus:
 class RoomSurface(Protocol):
     """The front end for sessions that serve a room, for the parts a turn cannot do itself.
 
-    The SPA needs none of this: its client reads the message rows over SSE, so a finished turn
-    is already delivered by being written down. A room has to be spoken to, and told who it is
-    talking to.
+    The SPA needs none of this — its client reads the message rows over SSE, so a finished turn is
+    delivered by being written down. A room has to be spoken to.
 
-    **The service picks this by reading the session's `surface`, rather than offering every
-    session to every listener.** It used to be three optional callbacks fired for all sessions,
-    each implementation opening with the same four lines — load the current room binding,
-    compare its `session_id`, return if it did not match. That is the session row's own fact
-    (`surface`, `room_id`), so re-deriving it at three call sites was both a lookup per
-    delivery and a way for a mis-derived answer to fail silently: a surface that wrongly
-    decided a session was not its own simply said nothing.
+    **The service picks this by reading the session's `surface`**, rather than offering every
+    session to every listener and letting each one re-derive whether it is its own.
     """
 
     async def system_prompt(self, session_id: UUID, room_id: str) -> str: ...
@@ -1503,11 +1449,8 @@ class ClaudeChatService:
     def _progress_reporter(self, session_id: UUID, room_id: str | None) -> Callable[[str], Awaitable[None]]:
         """Record every sandbox progress report, log it, and show it to the room if there is one.
 
-        Recorded first because the rollout is the only durable copy. This narration is where a
-        bootstrap says why it failed and where the CLI's own stderr now arrives, and until this
-        it lived in the pod's log and in the room — the first reaped with the sandbox, the
-        second interleaved with everything else. A session that died before producing a single
-        CLI frame therefore explained itself nowhere.
+        Recorded first because the rollout is the only durable copy: the pod's log is reaped with
+        the sandbox, and a session that died before its first CLI frame has its whole account here.
         """
 
         async def report(detail: str) -> None:
@@ -1576,10 +1519,8 @@ class ClaudeChatService:
         # failed with, the outer one is this whole activity being cancelled.
         try:
             try:
-                # `TaskGroup` rather than bare `create_task`: both helpers run for exactly
-                # this block's lifetime, and it owns awaiting and cancelling them. The
-                # previous hand-rolled cancel/await/suppress dance had to remember to swallow
-                # `CancelledError` and to log rather than raise, or cleanup was skipped.
+                # `TaskGroup` rather than bare `create_task`: both helpers run for exactly this
+                # block's lifetime, and it owns awaiting and cancelling them.
                 async with asyncio.TaskGroup() as helpers:
                     # The operator's abort lands on whichever replica the Service picks, which
                     # is rarely the one holding this websocket — so the event is driven by
@@ -1590,15 +1531,11 @@ class ClaudeChatService:
                     renewal = helpers.create_task(self._renew_lease(session_id))
                     try:
                         await client.connect()
-                        # One stream for the session, not one per turn. `receive_response()`
-                        # is request-scoped — it assumes this process issued the turn and ends
-                        # at that turn's `result` — which is wrong in two directions we now
-                        # care about: a prompt folded into a running turn is answered inside
-                        # the same response with no second `result`, and an adopted mid-flight
-                        # turn was issued by a replica that is gone
-                        # (<../../plans/cli_protocol_ownership.md>). Consuming a session-scoped
-                        # stream and dispatching by frame makes the turn a bracket over it
-                        # rather than a request/response pair.
+                        # One stream for the session, not one per turn: a folded prompt is
+                        # answered with no second `result`, and an adopted turn was issued by a
+                        # process that is gone. So a turn is a bracket over this stream rather
+                        # than a request/response pair
+                        # (<../../plans/cli_protocol_ownership.md>).
                         frames = client.frames().__aiter__()
                         while True:
                             status = await self._store.status(session_id)
@@ -1616,12 +1553,9 @@ class ClaudeChatService:
                                 # Wait for a LISTEN/NOTIFY instead of polling.
                                 await self._notifications.wait(ChatEventKind.PROMPT, session_id, timeout_seconds=30.0)
                                 continue
-                            # Cleared before the turn rather than after it: an abort notified
-                            # just as the previous turn ended would otherwise sit set through
-                            # the idle wait and kill the next turn on arrival. The remaining
-                            # window is a notify racing these few statements, and `request_abort`
-                            # no longer opens it from the other side — an abort is refused
-                            # unless a turn is actually open.
+                            # Cleared before the turn, not after: an abort notified just as the
+                            # previous one ended would otherwise sit set through the idle wait and
+                            # kill this turn on arrival.
                             abort_event.clear()
                             try:
                                 await self._run_turn(
@@ -1637,10 +1571,9 @@ class ClaudeChatService:
                         abort_watch.cancel()
                         renewal.cancel()
             except* WebSocketDisconnect:
-                # The runner went away, which is no longer the same as the session being over:
-                # it keeps the CLI alive across a lost socket and redials. Hand the session back
-                # and let the lease decide — a runner that returns is admitted, and one that
-                # never does lets the grant lapse into the sweep.
+                # The runner went away, which is not the session being over: it keeps the CLI
+                # alive across a lost socket and redials. Hand the session back and let the lease
+                # decide — one that never returns lets the grant lapse into the sweep.
                 logger.info("Claude chat session %s lost its runner; leaving it for adoption", session_id)
                 keep_sandbox = True
                 await self._store.release_lease(session_id)
@@ -1652,9 +1585,8 @@ class ClaudeChatService:
         except asyncio.CancelledError:
             # `CancelledError` is a `BaseException`, so neither clause above sees it. This is
             # this replica going away — a rolling update, an evicted pod — which says nothing
-            # about the session. It used to be recorded as a failure, which is what made every
-            # console roll end every conversation: the row went terminal, so the runner's
-            # reconnect was refused as `TERMINAL` and the supervisor built a replacement.
+            # about the session, so it must not be recorded as a failure: a terminal row refuses
+            # the runner's reconnect and the supervisor builds a replacement.
             #
             # Hand it back instead. The sandbox outlives this process, the runner redials, and
             # whichever replica answers adopts it. Nothing is swallowed: the grant `release_lease`
@@ -1750,12 +1682,9 @@ class ClaudeChatService:
         aborted = asyncio.ensure_future(abort_event.wait())
         try:
             while True:
-                # Exactly one `anext` in flight at a time, and the abort path consumes the one it
-                # finds rather than starting another: `frames` is an async generator, which
-                # refuses to be advanced twice at once ("anext(): asynchronous generator is
-                # already running"), and an abort always arrives while this call is parked here.
-                # Draining through a fresh `async for` therefore raised, so every mid-turn abort
-                # failed the whole session instead of ending its turn.
+                # Exactly one `anext` in flight, and the abort path consumes the one it finds
+                # rather than starting another: an async generator refuses to be advanced twice at
+                # once, and an abort always arrives while this call is parked here.
                 next_frame = asyncio.ensure_future(anext(frames))
                 await asyncio.wait([next_frame, aborted], return_when=asyncio.FIRST_COMPLETED)
                 if abort_event.is_set():
@@ -1816,9 +1745,8 @@ class ClaudeChatService:
                         spoken_id, assistant_id = assistant_id, None
                         streamed = ""
                         # Speak each message as it finishes rather than only the final answer
-                        # (R11.1). A turn that says what it is about to do, works, and then
-                        # reports back is three messages in the transcript and used to be one in
-                        # the room — so the room saw the conclusion and never the reasoning.
+                        # (R11.1), so a turn that narrates, works and reports back is three
+                        # messages in the room and not just its conclusion.
                         if said:
                             # The row and the agent's own id travel with it, so the room event
                             # states which message it is showing instead of leaving that to be
@@ -1850,8 +1778,7 @@ class ClaudeChatService:
                 await self._store.update_assistant(session_id, assistant_id, final_text, tool_uses=[], complete=True)
                 assistant_id = None
             # Closed with what the `result` frame reported, which is the only place a turn's
-            # cost, usage and duration exist — the console used to read `is_error` off that frame
-            # and drop the rest for want of anywhere to put it.
+            # cost, usage and duration exist.
             await self._store.end_turn(
                 turn_id, TurnOutcome.ABORTED if abort_event.is_set() else TurnOutcome.ANSWERED, result
             )
@@ -2046,10 +1973,9 @@ async def _legacy_pending(db: AsyncSession, session_id: UUID, *, lock: bool = Fa
 async def _open_turn(db: AsyncSession, session_id: UUID) -> UUID | None:
     """The turn *session_id* is in the middle of, if it is in the middle of one.
 
-    The one question three things used to ask of `status == 'responding'`: whether a prompt may
-    be accepted, whether there is anything to abort, and what the SPA should be told. A partial
-    unique index makes "at most one" a schema property, so this is a lookup rather than a scan
-    with a rule attached.
+    The one question behind three: whether a prompt may be accepted, whether there is anything to
+    abort, and what the SPA should be told. A partial unique index makes "at most one" a schema
+    property, so this is a lookup rather than a scan with a rule attached.
     """
     turn_id: UUID | None = await db.scalar(
         select(ClaudeChatTurn.turn_id).where(ClaudeChatTurn.session_id == session_id, ClaudeChatTurn.ended_at.is_(None))
