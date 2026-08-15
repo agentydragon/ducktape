@@ -115,12 +115,66 @@ through the transport. Three things it needs:
 - **Unlabelled is highest, so it fails closed.** Every session predating the column has no tier
   and must read as top-tier — unreadable by anything lower — rather than as "unclassified,
   therefore fine".
-- **Semantic search is the case this actually unblocks.** `haku_index`'s `chat` corpus is
-  deliberately not exposed to any agent yet, and <../console/TODO.md> names settling this policy as
-  the prerequisite: a drilldown makes reading another conversation a deliberate act, where ranked
-  retrieval surfaces it by accident at the top of the results. The index stores session and room
-  ids, so the filter can join — but denormalizing the tier onto the index rows is cheaper than a
-  join on every query, and is the kind of thing to decide before the index is large.
+- **Semantic search is where this bites first, and it is already live.** `haku_index`'s `search`
+  and `index_status` are exposed to Haku **unscoped**, decided 2026-08-15 and auto-approved through
+  `haku_recall_reads` — an easy call at the time because it granted no new reachability over
+  `haku_conversations`, which was itself unscoped. <../state_index/README.md> § Read scoping names
+  the exact condition for revisiting: "the moment a second operator or a room Haku should not see
+  exists, ranked retrieval is where that leaks first". Several agents at several tiers is that
+  moment. A drilldown makes reading another conversation deliberate — you have to name the
+  session; ranked retrieval surfaces it by accident, at the top of the results, in answer to an
+  innocent question.
+
+### Corpus as a type, with an instance per tier
+
+Operator, 2026-08-15, and it is a better mechanism than the per-row tier predicate this document
+proposed first. `Corpus` in <../state_index/schema.py> is today an enum of `git` and `chat`, doing
+two jobs at once. Split them: **the type says how content is indexed, the instance says who may
+read it.** One `chat` instance per tier, one `git` instance per repo.
+
+The type keeps the job it already has, which is real — `chunker_key` is scoped by corpus because
+the two chunk by different rules, and `content_sha` means a blob sha for `git` and a hash of a
+rendered message window for `chat`. The instance is the new axis, and **the argument for putting
+it in the primary key is the one the enum's own docstring already makes**: different namespaces
+that a lookup forgetting to name is a bug the key shape should catch.
+
+**Why this beats filtering rows by tier at query time:** enforcement moves to index time. The
+sweep routes a session's chunks into a corpus; the gate becomes "which corpora may this agent
+search", which is coarse, structural, and the kind of check doctrine prefers. A missed predicate
+on one read path leaks — a corpus an agent cannot name does not. The tier does not disappear; it
+becomes the sweep's **routing input** rather than a filter every reader must remember.
+
+One subtlety worth recording before someone optimizes it away: **content addressing makes
+identical text collide across instances.** For `git` that is a dedup win — the same file vendored
+in two repos is one embedding. For `chat` across tiers it is precisely the leak being prevented,
+one row serving a high and a low corpus at once. So the instance belongs in the key and the
+duplicate embedding for identical text is the correct trade; separation beats dedup here.
+
+What it touches, none of it large:
+
+- **`Chunk`'s primary key** gains the instance. The searches already filter `corpus` + `model_key`
+  in a materialized CTE before the distance operator ever runs — described there as load-bearing
+  rather than cosmetic, since pgvector errors on mixed dimensions — so the instance joins a filter
+  that already exists in the hot path.
+- **`GitTipEntry` and `GitSyncState` stop being singletons.** Both are one row today, with `id`
+  pinned to 1; they become one per git instance.
+- **The sweeps run per instance.** `state_index_sync.py` takes an advisory lock per corpus; one
+  lock per type iterating its instances is the simpler first step, exactly as with the Matrix
+  supervisor.
+- **`state_index_reader.py` is where the grant lands.** It already maps the tool surface's
+  `haku_state`/`conversations` vocabulary onto the index's `git`/`chat`; that mapping becomes
+  instance-aware and is the one place to check what the caller may search.
+- **The grant is config, in a shape that exists.** `haku_recall_reads` is one atom granting the
+  index reads; it becomes per-corpus grants.
+
+**The migration is cheap because embeddings are a cache.** `chunks` is derived data, recomputable
+from its sources, so mis-attribution is a re-index rather than a loss: add the column, backfill to
+a default instance, re-embed whatever was routed wrongly. That also makes this much safer to do
+early than late.
+
+**It makes the RLS option more attractive**, without deciding it. <../state_index/README.md> keeps
+a scoped-Postgres-role alternative in its inventory; with corpora as first-class the natural RLS
+policy is per corpus, which would move the gate from the query builder into the database.
 
 ## Running more than one agent at once
 

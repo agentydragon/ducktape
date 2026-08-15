@@ -282,10 +282,22 @@ Three things it needs, in order:
 3. **The decision function at the one call site** R5.3a identified, in the shape the approval
    policy already has — never scoping smeared through the transport.
 
-This is also what unblocks exposing the `chat` corpus (<../state_index/README.md>) to agents:
-ranked retrieval surfaces another conversation by accident where a drilldown makes it deliberate,
-and settling the policy was the stated prerequisite. Denormalizing the tier onto the index rows
-beats joining on every query, and is worth deciding before the index is large. The full inventory
-of what a scope touches — the search query, the drilldown tools, the identity it keys on, the
-auto-approval config, and the RLS-scoped-Postgres-role alternative — stays in
-<../state_index/README.md> § Read scoping. Design: <../plans/information_trust_tiers.md>.
+**Semantic search is the urgent half, because it is already unscoped and live.** `haku_index`'s
+`search`/`index_status` were exposed to Haku unscoped on 2026-08-15 — a fair call then, since they
+granted no reachability `haku_conversations` did not already have — and
+<../state_index/README.md> § Read scoping names the condition for revisiting: the moment a room
+Haku should not see exists, ranked retrieval is where it leaks first. Several agents is that
+moment. A drilldown makes reading another conversation deliberate; ranked retrieval surfaces it by
+accident, at the top of the results.
+
+**Do it by splitting the corpus rather than filtering rows.** `Corpus` (<../state_index/schema.py>)
+is an enum doing two jobs; make it a **type** (`git`/`chat`, which decides how content is chunked
+and addressed) with an **instance** per tier and per repo (which decides who may read it). The
+gate then becomes "which corpora may this agent search" — checked once in
+<../state_index_reader.py>, where the `haku_state`/`conversations` mapping already lives, and
+granted per corpus where `haku_recall_reads` is one atom today. That beats a per-row tier filter:
+a missed predicate on one read path leaks, a corpus an agent cannot name does not. Full design,
+including why the instance belongs in `chunks`' primary key and why the migration is cheap
+(embeddings are a recomputable cache): <../plans/information_trust_tiers.md>. The wider inventory
+— the drilldown tools, the identity it keys on, and the RLS-scoped-Postgres-role alternative —
+stays in <../state_index/README.md> § Read scoping.

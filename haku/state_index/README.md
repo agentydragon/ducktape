@@ -347,6 +347,16 @@ Nothing here is blocked on it — indexing everything and searching everything i
 local evaluation, where there is one operator and a restored database. It is a prerequisite for
 exposing the corpus through `/mcp` to any agent.
 
+**The trigger condition has since arrived, and the intended answer is not a filter.** Several
+agent kinds at several information trust levels (<../plans/information_trust_tiers.md>) is exactly
+the "a room Haku should not see" case above. The direction chosen there is to make `Corpus` a
+**type** (`git`/`chat` — how content is chunked and addressed) with an **instance** per tier and
+per repo (who may read it), so the gate is which corpora a caller may search rather than a
+predicate every read path has to remember. Consequences for this package: the instance joins
+`chunks`' primary key and the `corpus`/`model_key` filter the searches already run; `git_tip` and
+`git_sync_state` stop being single rows; the sweeps iterate instances. Embeddings are a
+recomputable cache, so this is much cheaper to do while the index is small.
+
 What settling it touches:
 
 - **`haku/state_index/store.py`** — `search_chat` takes an optional `session_id` and nothing
