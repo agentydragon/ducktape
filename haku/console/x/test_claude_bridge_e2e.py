@@ -30,7 +30,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.chat_models import LIVE_SESSION_STATUSES, ChatMessageRole, SessionStatus, TurnOutcome
 from haku.console.x.claude_chat import SETUP_OUTPUT_KIND, SessionService, SessionStore, SpaSession, internal_router
-from haku.console.x.conftest import MCP_TOKEN, RecordingClaims, runtime_config
+from haku.console.x.conftest import MCP_TOKEN, runtime_config
+from haku.console.x.recording_claims import RecordingClaims
 from haku.console.x.session_notifications import SessionNotifications
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port

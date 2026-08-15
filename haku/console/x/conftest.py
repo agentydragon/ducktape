@@ -1,15 +1,14 @@
 """Shared setup for the experimental console surfaces' tests.
 
-Two kinds of thing live here: fixtures more than one module needs, and stand-ins for what is
-genuinely outside the process. Stores are never stood in for — see <README.md> § Tests run
-against a real database.
+Two kinds of thing live here: fixtures more than one module needs, and fixtures handing out
+stand-ins for what is genuinely outside the process (the stand-ins themselves live in modules
+of their own, e.g. `recording_claims.py`, so a non-pytest process can reach them too). Stores
+are never stood in for — see <README.md> § Tests run against a real database.
 """
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from datetime import datetime
-from typing import Any
 from uuid import UUID
 
 import pytest
@@ -20,7 +19,7 @@ from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.claude_chat import SessionService, SessionStore
 from haku.console.x.matrix_session import MatrixConversationStore
-from haku.console.x.sandbox_claims import ProvisioningStep, provisioning_view
+from haku.console.x.recording_claims import RecordingClaims
 from haku.console.x.session_notifications import SessionNotifications
 
 MATRIX_USER = "@haku:allegedly.works"
@@ -55,35 +54,6 @@ def runtime_config(**overrides: object) -> ClaudeRuntimeConfig:
 
 
 MCP_TOKEN = SecretStr("haku-static-bearer")
-
-
-class RecordingClaims:
-    """The `SandboxClaims` surface, recording instead of reaching Kubernetes."""
-
-    def __init__(self) -> None:
-        self.created: list[UUID] = []
-        self.deleted: list[UUID] = []
-        self.renewed: list[tuple[UUID, datetime]] = []
-        self.tokens: dict[UUID, str] = {}
-
-    async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None:
-        assert expires_at > datetime.now(expires_at.tzinfo)
-        self.created.append(session_id)
-        # The claim is where a test reaches the bridge credential: the store mints it and
-        # `SessionService.create` does not hand it back.
-        self.tokens[session_id] = bridge_token
-
-    async def renew(self, *, session_id: UUID, expires_at: datetime) -> None:
-        self.renewed.append((session_id, expires_at))
-
-    async def delete(self, *, session_id: UUID) -> None:
-        self.deleted.append(session_id)
-
-    async def inspect(self, *, session_id: UUID) -> Any:
-        return provisioning_view(f"claude-{session_id.hex}", step=ProvisioningStep.CLAIM_CREATED)
-
-    async def aclose(self) -> None:
-        return None
 
 
 @pytest.fixture
