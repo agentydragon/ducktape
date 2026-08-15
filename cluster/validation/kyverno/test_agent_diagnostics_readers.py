@@ -20,11 +20,7 @@ AGENT_SUBJECTS = [
     {"kind": "Group", "name": "oidc-ksbx-groups:haku", "apiGroup": "rbac.authorization.k8s.io"},
     {"kind": "ServiceAccount", "name": "haku", "namespace": "haku-sandbox"},
     {"kind": "ServiceAccount", "name": "haku-claude", "namespace": "haku-claude-sandbox"},
-    {
-        "kind": "Group",
-        "name": "oidc-ksbx-groups:kubectl-sandbox-users",
-        "apiGroup": "rbac.authorization.k8s.io",
-    },
+    {"kind": "Group", "name": "oidc-ksbx-groups:kubectl-sandbox-users", "apiGroup": "rbac.authorization.k8s.io"},
 ]
 
 
