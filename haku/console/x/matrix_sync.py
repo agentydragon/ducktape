@@ -183,7 +183,7 @@ class MatrixSyncService:
         the state is and never learns how it is shown.
 
         **Idempotent, and paced by the room rather than by this call.** The floor moved to the
-        caller (`_TurnStatus`), because deciding what the line should say and deciding when it
+        caller (`room_status.TurnStatus`), because deciding what the line should say and deciding when it
         may change have to be one decision; the room's own budget is `matrix_pacer`'s, where
         the status line is the one sender allowed to overwrite what it has not yet said.
 

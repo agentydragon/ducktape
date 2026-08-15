@@ -1,6 +1,6 @@
 """Index the rollout by kind, because recording the deltas made scanning it by kind expensive.
 
-`_rollout_calls` reads every `assistant` and `user` frame of a session and re-parses their content
+`rollout_calls` reads every `assistant` and `user` frame of a session and re-parses their content
 blocks, and it runs **per stream delta** — `update_assistant` NOTIFYs, `_sse_stream` wakes, and the
 whole session view is rebuilt. That was already O(session) per token batch. Recording the deltas
 multiplies the rows it has to scan past by roughly the length of an answer, which turns a known

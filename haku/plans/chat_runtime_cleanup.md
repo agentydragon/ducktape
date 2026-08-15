@@ -120,18 +120,19 @@ loop's signatures.
   asked about. A live console session view multiplies it: refetching the whole transcript per delta
   pays this once per open tab, which is why that design coalesces per session rather than treating
   the debounce as polish (<../console/plans/session_channels.md> § 3).
-- **Split `claude_chat.py`** further. `KubernetesSandboxClaims` has left; what remains is view
-  models, the store, the recorder, the status driver, the service, the turn loop, the port and the
-  routes. `SessionStore`'s twenty-odd methods split along the seams the turn table and the
-  prompt queue already created — each split landing with the change that creates it, never as a
-  standalone reshuffle with no acceptance criterion.
+- **Split `claude_chat.py`** further. `KubernetesSandboxClaims`, the view models and their
+  projection, the frame vocabulary and the status driver have left; what remains is the store, the
+  recorder, the SQL helpers, the service, the turn loop, the port and the routes — and those are
+  the ones a split cannot be mechanical about. `SessionStore`'s twenty-odd methods split along the
+  seams the turn table and the prompt queue already created — each split landing with the change
+  that creates it, never as a standalone reshuffle with no acceptance criterion.
 - **Prune the archaeology.** Roughly 150 of `claude_chat.py`'s lines narrate what the code used to be
   and which bug that caused; STYLE puts those under Remove. Keep the invariant as one imperative
   line ("do not gate on session status: admission asks the turn"), move the story to `debug/`.
 - **`bridge_token_fingerprint = b""`** is a cleanup-pending tri-state on a credential column, and the
   zero value STYLE says never to use for absence. It wants to be `claim_cleaned_at`.
-- Smaller: the store imports its read models from the MCP tool that reads it; `_message_view`'s
-  `_NO_CALLS` default serves one caller that structurally cannot need it; "surface" names five
+- Smaller: the store imports its read models from the MCP tool that reads it; `message_view`'s
+  `NO_CALLS` default serves one caller that structurally cannot need it; "surface" names five
   things and "turn" three.
 
 ## When their rolls converge

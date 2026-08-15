@@ -43,6 +43,18 @@ Delta streaming (`StreamEvent`) exists for the SPA alone. The Matrix path forwar
 assistant messages, each as it completes (R11.1), so if the SPA view is ever retired that
 machinery goes with it.
 
+### What has been lifted out of it
+
+Three leaves, each a module nothing in `claude_chat.py` reaches into — so the store, the service and
+the turn loop kept their shape while the file lost the parts that never needed to be beside them
+(<../../plans/chat_runtime_cleanup.md> § Anytime).
+
+| Path                | Role                                                                                                                                                                             |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_frames.py` | The `kind` vocabulary of the frame log, the two frames the console authors itself (`partial` answers and sandbox narration), and the readers that pick a value out of a payload. |
+| `session_views.py`  | The read models the API returns for a session or a conversation, and the projection that assembles one out of the session row, its transcript and its rollout.                   |
+| `room_status.py`    | The per-turn status driver: what the room is shown while a turn runs, and when. It is handed two coroutines and never learns which room it speaks to.                            |
+
 ## Matrix chat surface
 
 - `matrix_client.py` — the client-API calls the loop makes, over `matrix-nio`.

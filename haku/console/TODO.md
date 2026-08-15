@@ -199,9 +199,9 @@ one timing — `session_ttl_seconds`. Every other number the runtime's behaviour
 module-level constant, so changing one is a code edit, a CI build and a roll. The ones that are
 genuinely operational knobs should move onto the config model:
 
-- `x/claude_chat.py` — `STATUS_AFTER_SECONDS` (8s before a turn says anything, R6.2),
-  `STATUS_EDIT_INTERVAL_SECONDS` (5s edit floor, R6.5), `TYPING_REFRESH_SECONDS`,
-  `LEASE_TTL` / `LEASE_RENEW_INTERVAL`, `PROVISION_LEASE`, `ADOPTION_GRACE`.
+- `x/room_status.py` — `STATUS_AFTER_SECONDS` (8s before a turn says anything, R6.2),
+  `STATUS_EDIT_INTERVAL_SECONDS` (5s edit floor, R6.5), `TYPING_REFRESH_SECONDS`.
+- `x/claude_chat.py` — `LEASE_TTL` / `LEASE_RENEW_INTERVAL`, `PROVISION_LEASE`, `ADOPTION_GRACE`.
 - `x/matrix_pacer.py` — `SENDS_PER_SECOND`, `SEND_BURST`, `MAX_QUEUED_SENDS`, `FLUSH_SECONDS`.
 - `x/matrix_session.py` — `SUPERVISE_INTERVAL`, `LEADER_RETRY`, `PROVISION_BACKOFF`,
   `RE_AWAKENING_MESSAGES` (the N of R3.3a).
@@ -254,7 +254,7 @@ streaming, which wears `assistant` and is told apart by a boolean column rather 
 - There is deliberately **no enum over `kind`**. One would give a name to a concept the schema does
   not have, and an enum over the union of two vocabularies is what made the first attempt confusing
   enough to back out.
-- The loose `*_FRAME_KIND` constants in `x/claude_chat.py` stay loose, with a pointer to
+- The loose `*_FRAME_KIND` constants in `x/session_frames.py` stay loose, with a pointer to
   `SessionFrame` and to the projection plan's stage 2.
 - The table's own docstring says the same thing, since that is where a reader meets it first.
 

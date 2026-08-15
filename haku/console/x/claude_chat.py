@@ -11,19 +11,17 @@ import json
 import logging
 import os
 import secrets
-import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
-from types import MappingProxyType
 from typing import Annotated, Any, ClassVar, Protocol, cast
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr
 from sqlalchemy import CursorResult, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -50,13 +48,33 @@ from haku.console.database_schema import (
 )
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.tools.conversations import Conversation, RolloutFrame, TurnRecord
-from haku.console.x.sandbox_claims import (
-    ClaudeSandboxProvisioningView,
-    ProvisioningStep,
-    SandboxClaims,
-    provisioning_view,
+from haku.console.x.room_status import TurnStatus, ignore_clear, ignore_status
+from haku.console.x.sandbox_claims import ProvisioningStep, SandboxClaims, provisioning_view
+from haku.console.x.session_frames import (
+    ASSISTANT_FRAME_KIND,
+    DELTA_FRAME_KIND,
+    PROMPT_FRAME_KIND,
+    RESULT_FRAME_KIND,
+    SETUP_OUTPUT_KIND,
+    agent_message_id,
+    assistant_frame,
+    content_blocks,
+    frame_kind,
+    setup_output_frame,
+    text_delta,
 )
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications, notify
+from haku.console.x.session_views import (
+    NO_CALLS,
+    ConversationSessionSummary,
+    ConversationSessionView,
+    ConversationTurnView,
+    SessionMessageView,
+    SessionView,
+    message_view,
+    rollout_calls,
+    session_view,
+)
 from haku.runtime.x.claude_bridge.cli_client import ClaudeCli, cli_over_websocket
 from haku.runtime.x.claude_bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch
 from haku.runtime.x.claude_bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, TextWebSocket
@@ -120,109 +138,6 @@ class BridgeAuthentication(StrEnum):
     # Another replica is still serving this session and saying so. **Transient**: it lasts at most
     # until that lease expires, and the runner that waits it out is the one adopting the session.
     HELD = "held"
-
-
-class SessionToolResultView(BaseModel):
-    """What a tool answered, as the wire carried it.
-
-    `content` is passed through rather than normalized: the CLI sends a bare string for most
-    tools and a list of content blocks for those that return structured or mixed output, and
-    collapsing the two here would be this layer deciding what a tool's output means.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    content: Any
-    is_error: bool = False
-
-
-class SessionToolUseView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    tool_use_id: str
-    name: str
-    input: dict[str, Any]
-    # Absent while the call is still running, and on a turn that died before it answered — which
-    # is a state worth seeing rather than one to hide. It comes from the rollout, because
-    # `session_messages.tool_uses` never held it: the turn loop keeps the `tool_use` blocks
-    # that asked and drops the `user` frames that answered.
-    result: SessionToolResultView | None = None
-
-
-class SessionMessageView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    message_id: UUID
-    role: ChatMessageRole
-    status: ChatMessageStatus
-    content: str
-    tool_uses: list[SessionToolUseView]
-    error: str | None
-    created_at: datetime
-    updated_at: datetime
-
-
-class SessionView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    session_id: UUID
-    status: SessionStatus
-    error: str | None
-    created_at: datetime
-    updated_at: datetime
-    provisioning: ClaudeSandboxProvisioningView | None = None
-    messages: list[SessionMessageView]
-
-
-class ConversationSessionSummary(BaseModel):
-    """The operator-facing inventory entry for one conversation.
-
-    This deliberately names the resource generically. Claude/Matrix are the only current
-    producer values, but the console's read surface should not make either one part of its
-    navigation or response shape.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    session_id: UUID
-    surface: ChatSurface | None
-    room_id: str | None
-    status: SessionStatus
-    error: str | None
-    created_at: datetime
-    updated_at: datetime
-    message_count: int
-    last_message_at: datetime | None
-
-
-class ConversationTurnView(BaseModel):
-    """A turn summary, without exposing the raw frame range yet."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    turn_id: UUID
-    started_at: datetime
-    ended_at: datetime | None
-    outcome: TurnOutcome | None
-    cost_usd: float | None
-    duration_ms: int | None
-    usage: dict[str, Any] | None
-
-
-class ConversationSessionView(BaseModel):
-    """A readable conversation: metadata, transcript, and exchange summaries."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    session_id: UUID
-    surface: ChatSurface | None
-    room_id: str | None
-    status: SessionStatus
-    error: str | None
-    created_at: datetime
-    updated_at: datetime
-    messages: list[SessionMessageView]
-    turns: list[ConversationTurnView]
 
 
 class SessionPromptRequest(BaseModel):
@@ -357,7 +272,7 @@ class SessionStore:
                 ).all()
             )
             responding = await _open_turn(db, session_id) is not None
-            return _session_view(record, messages, responding=responding, calls=await _rollout_calls(db, session_id))
+            return session_view(record, messages, responding=responding, calls=await rollout_calls(db, session_id))
 
     async def list_operator_conversations(self, operator_id: UUID, *, limit: int) -> list[ConversationSessionSummary]:
         """List this Operator's conversations for the Console inventory.
@@ -599,7 +514,7 @@ class SessionStore:
             chat.updated_at = now
             await notify(db, SessionEventKind.PROMPT, session_id)
             await notify(db, SessionEventKind.UPDATE, session_id)
-        return _message_view(message, _NO_CALLS)
+        return message_view(message, NO_CALLS)
 
     async def next_prompt(self, session_id: UUID) -> TurnStart | None:
         """Take the queued prompt and open the turn that will answer it, or None if there is none.
@@ -825,14 +740,14 @@ class SessionStore:
                         session_id=session_id,
                         direction=FrameDirection.FROM_AGENT,
                         kind=ASSISTANT_FRAME_KIND,
-                        payload=_assistant_frame(text),
+                        payload=assistant_frame(text),
                         partial=True,
                         created_at=now,
                         updated_at=now,
                     )
                 )
                 return
-            partial.payload = _assistant_frame(text)
+            partial.payload = assistant_frame(text)
             partial.updated_at = now
 
     async def clear_partial_frame(self, session_id: UUID) -> None:
@@ -1068,62 +983,6 @@ class StarletteTextWebSocket(TextWebSocket):
         await self._websocket.close()
 
 
-# TODO(frame-vocabulary): these are not one vocabulary, and there is deliberately no enum over
-# them yet. Five of them are the CLI's own top-level `type`; `SETUP_OUTPUT_KIND` is the *bridge*
-# envelope's `kind` literal, put in the same column by a different sink. An enum over the union
-# would give a name to a concept the schema does not actually have — see `SessionFrame` and
-# stage 2 of <../../plans/chat_runtime_projection.md>, which is where this becomes one thing.
-
-# One token batch of an answer still being written. Hundreds per turn, and the completed
-# `assistant` frame repeats all of it, which is why `read_frames` leaves them out of its default
-# view.
-DELTA_FRAME_KIND = "stream_event"
-
-# The frame a prompt crosses the wire as. Only meaningful with a direction beside it: the CLI
-# sends `user` frames too, carrying tool results.
-PROMPT_FRAME_KIND = "user"
-
-# The frame that ends a turn, and the one that completes an assistant message. Both are read back
-# out of the log by `adopt_open_turn` to work out what a departed holder had got to.
-RESULT_FRAME_KIND = "result"
-ASSISTANT_FRAME_KIND = "assistant"
-
-# The bridge's, not the CLI's — see the TODO above.
-SETUP_OUTPUT_KIND = "setup_output"
-
-
-def _assistant_frame(text: str) -> dict[str, Any]:
-    """The frame shape the agent will send, for the one the console stands in for meanwhile.
-
-    Same shape as the wire's, so a reader needs no second case; the row's `partial` column is
-    what says it was reconstructed rather than observed.
-    """
-    return {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}}
-
-
-def _setup_output_frame(text: str) -> dict[str, Any]:
-    """One line the sandbox printed, as a rollout row.
-
-    **Console-authored, like `partial`, and it says so with its discriminator.** The bridge's
-    own frame is `SetupOutput(data: bytes)` — raw, unsplit, base64 on the wire — and what
-    arrives here is one line the transport has already decoded (`errors="replace"`) and split
-    for the room. So this is a rendering, not the wire, and putting it under `kind` rather than
-    the CLI's `type` is what keeps it from reading as a protocol frame that never existed.
-
-    It lives in the frame log rather than a table of its own because the question a reader asks
-    is "what happened in this session, in order" — and for a session that died before the CLI
-    produced anything, the answer is entirely here.
-    """
-    return {"kind": SETUP_OUTPUT_KIND, "text": text}
-
-
-def _frame_kind(payload: dict[str, Any]) -> str:
-    kind = payload.get("type")
-    if not isinstance(kind, str):
-        raise ValueError(f"protocol frame has no type: {payload=}")
-    return kind
-
-
 class RolloutRecorder:
     """One session's `FrameSink`: every protocol frame either way, into `session_frames`.
 
@@ -1149,133 +1008,7 @@ class RolloutRecorder:
         A delta has no agent-assigned identity, so it is always recorded and always fresh — safe
         because the runner never replays one (`runner.DELTA_TYPE`).
         """
-        return await self._store.record_frame(self._session_id, direction, _frame_kind(payload), payload)
-
-
-# How long a turn runs before the room is told anything about it (R6.2). Below this the
-# answer itself is the status, and a status/answer pair for a five-second exchange is
-# clutter.
-STATUS_AFTER_SECONDS = 8.0
-
-# How often a running turn re-asserts its typing notice. Comfortably inside the homeserver's
-# expiry (`matrix_client.TYPING_TIMEOUT_MS`, 30s), because the point of that expiry is to retire
-# the indicator when the console dies — not to blink it off mid-turn while it is still going.
-TYPING_REFRESH_SECONDS = 10.0
-
-# Floor on how often the room's status line is rewritten. Paced for a reader and for Synapse's
-# per-room rate limit, not for how fast the agent changes what it is doing.
-#
-# Here rather than at the send, because a floor and a "what should it say" have to be one
-# decision: a sink that silently declines to send inside its own floor loses the state the
-# driver had already recorded as shown. This is the driver's to defer, and the eventual
-# room-wide pacer takes it over along with every other sender.
-STATUS_EDIT_INTERVAL_SECONDS = 5.0
-
-
-def _coarse_status(frame: dict[str, Any]) -> str | None:
-    """What the room should be told this frame means, or None if it means nothing to it.
-
-    Coarse by rule, not by taste (R6.3): where a tool is named, the CLI's own identifier is
-    passed through verbatim, and where the CLI wrote a human-readable description of a task
-    it is used as-is. There is deliberately no per-tool copy and no mapping table, because
-    both would need maintaining every time the tool surface grows.
-    """
-    match frame.get("type"):
-        case "assistant":
-            names = [block["name"] for block in _content_blocks(frame) if block.get("type") == "tool_use"]
-            return f"running {', '.join(names)}" if names else "writing"
-        case "system":
-            match frame.get("subtype"):
-                # `description` here is the CLI's own prose for the step in flight, e.g.
-                # "Running Count regular files in the directory" — better than anything the
-                # console could reconstruct from a tool name and its arguments.
-                case "task_started" | "task_progress":
-                    return str(frame.get("description") or "working")
-    return None
-
-
-async def _ignore_status(text: str) -> None:
-    del text
-
-
-async def _ignore_clear() -> None:
-    pass
-
-
-async def _ignore_typing(active: bool) -> None:
-    del active
-
-
-class _TurnStatus:
-    """Drives what the room shows while one turn runs: the typing indicator and the status line.
-
-    A polled driver rather than a write on every frame, because everything that decides whether
-    to speak is about elapsed time — the typing notice's expiry, the status line's lazy-creation
-    threshold, its edit floor — and a turn can go a long while between frames. Frames set the
-    state; the loop decides when the room hears about it.
-
-    The two differ in when they start. Typing goes on immediately, because "Haku is working on
-    it" is the whole message and it is worth nothing after the fact; the status line waits for
-    `STATUS_AFTER_SECONDS`, because a status/answer pair for a five-second exchange is clutter.
-    """
-
-    def __init__(
-        self,
-        show: Callable[[str], Awaitable[None]],
-        clear: Callable[[], Awaitable[None]],
-        typing: Callable[[bool], Awaitable[None]] = _ignore_typing,
-    ):
-        self._show = show
-        self._clear = clear
-        self._typing = typing
-        self._state: str | None = None
-        # What the room was last told, so an unchanged state is not re-sent every tick. The sync
-        # service drops a repeat anyway, but a driver that says the same thing once a second is
-        # relying on that rather than meaning it.
-        self._shown: str | None = None
-        self._started = time.monotonic()
-        self._shown_at = 0.0
-        self._typed_at = 0.0
-        self._task: asyncio.Task[None] | None = None
-
-    def note(self, frame: dict[str, Any]) -> None:
-        if (state := _coarse_status(frame)) is not None:
-            self._state = state
-
-    def start(self) -> None:
-        self._task = asyncio.create_task(self._run())
-
-    async def _run(self) -> None:
-        while True:
-            # Refreshed rather than set once: the homeserver expires a typing notice by itself,
-            # which is what stops a dead console from leaving one stuck on — so a live turn has
-            # to keep saying it. Well inside `TYPING_TIMEOUT_MS`, so a slow round trip does not
-            # leave a gap the operator can see.
-            if time.monotonic() - self._typed_at >= TYPING_REFRESH_SECONDS:
-                self._typed_at = time.monotonic()
-                await self._typing(True)
-            # One owner for the pace, and it defers rather than drops: a sink that discarded what
-            # arrived inside its floor would leave the room reading a stale state until the *next*
-            # change, which on a turn settling into one long tool call is the rest of the turn.
-            if (
-                self._state is not None
-                and self._state != self._shown
-                and time.monotonic() - self._started >= STATUS_AFTER_SECONDS
-                and time.monotonic() - self._shown_at >= STATUS_EDIT_INTERVAL_SECONDS
-            ):
-                self._shown, self._shown_at = self._state, time.monotonic()
-                await self._show(self._state)
-            await asyncio.sleep(1.0)
-
-    async def finish(self) -> None:
-        """Stop driving and take both back, on every path out of the turn including failure."""
-        if self._task is not None:
-            self._task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._task
-            self._task = None
-        await self._typing(False)
-        await self._clear()
+        return await self._store.record_frame(self._session_id, direction, frame_kind(payload), payload)
 
 
 class RoomSurface(Protocol):
@@ -1411,7 +1144,7 @@ class SessionService:
             return None
         return await self._room_surface.system_prompt(session_id, room_id)
 
-    def _turn_status(self, room_id: str | None) -> _TurnStatus:
+    def _turn_status(self, room_id: str | None) -> TurnStatus:
         """A status driver for one turn, wired to the room if this session serves one.
 
         A session with no room still gets a driver rather than a `None` to branch on: the SPA
@@ -1420,8 +1153,8 @@ class SessionService:
         """
         surface, room = self._room_surface, room_id
         if surface is None or room is None:
-            return _TurnStatus(_ignore_status, _ignore_clear)
-        return _TurnStatus(
+            return TurnStatus(ignore_status, ignore_clear)
+        return TurnStatus(
             lambda text: surface.show_status(room, text),
             lambda: surface.clear_status(room),
             lambda active: surface.set_typing(room, active),
@@ -1437,7 +1170,7 @@ class SessionService:
         async def report(detail: str) -> None:
             logger.info("Claude sandbox %s: %s", session_id, detail)
             await self._store.record_frame(
-                session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, _setup_output_frame(detail)
+                session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, setup_output_frame(detail)
             )
             if self._room_surface is not None and room_id is not None:
                 await self._room_surface.report(room_id, detail)
@@ -1731,7 +1464,7 @@ class SessionService:
                 status.note(frame)
                 match frame.get("type"):
                     case "stream_event":
-                        if not (delta := _text_delta(frame.get("event", {}))):
+                        if not (delta := text_delta(frame.get("event", {}))):
                             continue
                         if assistant_id is None:
                             assistant_id = await self._store.begin_assistant(session_id)
@@ -1745,7 +1478,7 @@ class SessionService:
                         saw_assistant_message = True
                         if assistant_id is None:
                             assistant_id = await self._store.begin_assistant(session_id)
-                        blocks = _content_blocks(frame)
+                        blocks = content_blocks(frame)
                         text = "".join(
                             str(block.get("text", "")) for block in blocks if block.get("type") == "text"
                         ).strip()
@@ -1762,7 +1495,7 @@ class SessionService:
                             tool_uses=tool_uses,
                             # The wire's own id for this message, which is what lets a reader find
                             # its calls in the frame log rather than match them by position.
-                            agent_message_id=_agent_message_id(frame),
+                            agent_message_id=agent_message_id(frame),
                             complete=True,
                         )
                         # The real frame is already in the log — the recorder wrote it when
@@ -1778,7 +1511,7 @@ class SessionService:
                             # states which message it is showing instead of leaving that to be
                             # inferred from order and timing.
                             spoke = await self._deliver_reply(
-                                session_id, room_id, said, spoken_id, _agent_message_id(frame)
+                                session_id, room_id, said, spoken_id, agent_message_id(frame)
                             )
                     case "result":
                         result = frame
@@ -1878,107 +1611,6 @@ class SessionService:
         if released:
             logger.info("Released %d held session lease(s) on shutdown", released)
         await self._claims.aclose()
-
-
-def _agent_message_id(frame: dict[str, Any]) -> str | None:
-    """The agent's own id for an `assistant` frame's message, if it carried one."""
-    message = frame.get("message")
-    return str(agent_id) if isinstance(message, dict) and (agent_id := message.get("id")) else None
-
-
-def _content_blocks(frame: dict[str, Any]) -> list[dict[str, Any]]:
-    """The content blocks of an `assistant` frame, or none if it carries none.
-
-    Tolerant rather than strict: this reads the wire, where a block type we have never seen is
-    a new CLI feature and not a bug in us. The frame itself is already recorded verbatim, so
-    anything skipped here is still in the rollout.
-    """
-    message = frame.get("message")
-    if not isinstance(message, dict):
-        return []
-    return [block for block in message.get("content", []) if isinstance(block, dict)]
-
-
-def _text_delta(event: dict[str, Any]) -> str:
-    if event.get("type") != "content_block_delta":
-        return ""
-    delta = event.get("delta")
-    if not isinstance(delta, dict) or delta.get("type") != "text_delta":
-        return ""
-    text = delta.get("text")
-    return text if isinstance(text, str) else ""
-
-
-@dataclass(frozen=True, slots=True)
-class _RolloutCalls:
-    """What one session's frame log says about tool calls.
-
-    Two indexes over the same frames, because the transcript joins to them by different keys: an
-    assistant message finds its own calls by the agent's message id, and a call finds its answer by
-    its own id — unique within a session, so that half needs no per-message association at all.
-    """
-
-    by_message: Mapping[str, list[dict[str, Any]]]
-    results: Mapping[str, SessionToolResultView]
-
-
-async def _rollout_calls(db: AsyncSession, session_id: UUID) -> _RolloutCalls:
-    """Read the calls and their results out of the session's rollout.
-
-    Both live only here: `assistant` frames carry the `tool_use` blocks, `user` frames carry the
-    `tool_result` blocks the turn loop drops, and `session_messages.tool_uses` is a copy of the
-    first half with the second half missing.
-    """
-    frames = await db.execute(
-        select(SessionFrame.kind, SessionFrame.payload)
-        .where(SessionFrame.session_id == session_id, SessionFrame.kind.in_([ASSISTANT_FRAME_KIND, PROMPT_FRAME_KIND]))
-        .order_by(SessionFrame.frame_seq)
-    )
-    by_message: dict[str, list[dict[str, Any]]] = {}
-    results: dict[str, SessionToolResultView] = {}
-    for kind, payload in frames:
-        message = payload.get("message")
-        if not isinstance(message, dict):
-            continue
-        agent_id = message.get("id")
-        for block in message.get("content", []):
-            if not isinstance(block, dict):
-                continue
-            match block.get("type"):
-                case "tool_use" if kind == ASSISTANT_FRAME_KIND and agent_id:
-                    by_message.setdefault(str(agent_id), []).append(
-                        {"tool_use_id": block["id"], "name": block["name"], "input": block["input"]}
-                    )
-                case "tool_result" if call_id := block.get("tool_use_id"):
-                    results[str(call_id)] = SessionToolResultView(
-                        content=block.get("content"), is_error=bool(block.get("is_error"))
-                    )
-    return _RolloutCalls(by_message=by_message, results=results)
-
-
-# Passed explicitly rather than defaulted, so a caller says it has no rollout to join against
-# instead of inheriting that silently: exactly one does, and it is the row it just inserted.
-_NO_CALLS = _RolloutCalls(by_message=MappingProxyType({}), results=MappingProxyType({}))
-
-
-def _message_view(message: SessionMessage, calls: _RolloutCalls) -> SessionMessageView:
-    # The rollout where the row points into it, the column otherwise. That column is the lossy copy
-    # — the calls without their answers — and is kept only for rows with nothing to point at: ones
-    # that predate the pointer, and ones this console synthesized rather than observed.
-    recorded = calls.by_message.get(message.agent_message_id or "")
-    return SessionMessageView(
-        message_id=message.message_id,
-        role=message.role,
-        status=message.status,
-        content=message.content,
-        tool_uses=[
-            SessionToolUseView.model_validate(tool_use | {"result": calls.results.get(tool_use["tool_use_id"])})
-            for tool_use in (recorded if recorded is not None else message.tool_uses)
-        ],
-        error=message.error,
-        created_at=message.created_at,
-        updated_at=message.updated_at,
-    )
 
 
 async def _queued_prompt(db: AsyncSession, session_id: UUID, *, lock: bool = False) -> SessionPrompt | None:
@@ -2131,37 +1763,6 @@ async def _requeue(db: AsyncSession, turn_id: UUID) -> None:
         prompt.claimed_at = None
     await db.execute(delete(SessionTurnPrompt).where(SessionTurnPrompt.turn_id == turn_id))
     logger.warning("turn %s never asked its prompt; re-queued %d", turn_id, len(message_ids))
-
-
-def _session_view(
-    record: Session, messages: list[SessionMessage], *, responding: bool, calls: _RolloutCalls
-) -> SessionView:
-    """The session as the SPA reads it, with `responding` derived from an open turn.
-
-    `status` is the frontend's contract (`frontend/x/claude_chat_page.tsx` switches on it), so
-    the column underneath can stop carrying turn state without a frontend release. A live
-    session with a turn in flight reports `responding`; the session's own lifecycle —
-    provisioning, closing, closed, failed — always wins, because a turn left open by a replica
-    that died says nothing about a session the sweep has since failed.
-
-    The `record.status == RESPONDING` arm is the roll's other half: a replica on the previous
-    image still writes that column, and its sessions have no turn rows to derive from.
-    """
-    live = record.status in {SessionStatus.READY, SessionStatus.RESPONDING}
-    status = (
-        SessionStatus.RESPONDING
-        if live and (responding or record.status == SessionStatus.RESPONDING)
-        else record.status
-    )
-    return SessionView(
-        session_id=record.session_id,
-        status=status,
-        error=record.error,
-        created_at=record.created_at,
-        updated_at=record.updated_at,
-        provisioning=None,
-        messages=[_message_view(message, calls) for message in messages],
-    )
 
 
 def _service(request: Request) -> SessionService:

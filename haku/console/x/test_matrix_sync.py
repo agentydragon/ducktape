@@ -433,7 +433,7 @@ async def test_a_repeated_state_is_not_resent(service, matrix, bound_room) -> No
 
 async def test_every_state_it_is_given_reaches_the_line(service, matrix, bound_room) -> None:
     """Idempotent, not paced: what the line should say and when it may change are one decision,
-    and they belong to the caller (`claude_chat._TurnStatus`).
+    and they belong to the caller (`room_status.TurnStatus`).
 
     Declining here used to lose the update outright — the driver had already recorded it as
     shown, so it never offered it again and the room read the older state for the rest of the
