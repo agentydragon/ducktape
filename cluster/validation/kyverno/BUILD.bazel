@@ -28,7 +28,7 @@ py_test(
         "@multitool//tools/kyverno",
     ] + glob([
         "testdata/namespace_agent_*.yaml",
-        "testdata/namespace_without_agent_logs.yaml",
+        "testdata/namespace_without_agent_rbac.yaml",
     ]),
     deps = [
         ":apply",

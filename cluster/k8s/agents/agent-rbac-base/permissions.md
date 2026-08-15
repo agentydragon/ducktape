@@ -12,9 +12,9 @@ Use `roleRef.name` in those files to determine which permission class is bound:
 service-specific reader Role/ClusterRole such as `ollama-reader`,
 `langfuse-log-reader`, or `claude-props-reader`.
 
-The common `logs-configmaps-reader` and `namespace-diagnostics-reader` grants are the
-exception to the file matrix: a GitOps-owned Namespace opts in with the corresponding
-`rbac.ducktape.io/agent-*` label, and
+The common `namespace-diagnostics-reader` grant is the exception to the file matrix: a
+GitOps-owned Namespace opts in with the
+`rbac.ducktape.io/agent-namespace-diagnostics-reader: "true"` label, and
 `cluster/k8s/kyverno/policies/generate-agent-diagnostics-readers.yaml` generates one
 namespaced RoleBinding for the approved Haku and `kubectl-sandbox-users` identities.
 The `kubectl-sandbox-users` group remains a separate Claude Code Web identity.

@@ -5,5 +5,4 @@ metadata:
   labels:
     goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: "auto"
-    rbac.ducktape.io/agent-logs-configmaps-reader: "true"
     rbac.ducktape.io/agent-namespace-diagnostics-reader: "true"

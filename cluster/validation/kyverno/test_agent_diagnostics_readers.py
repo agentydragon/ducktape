@@ -24,21 +24,6 @@ AGENT_SUBJECTS = [
 ]
 
 
-def test_logs_labeled_namespace_gets_shared_reader(agent_diagnostics_policy: Path) -> None:
-    result = apply_policy(agent_diagnostics_policy, manifest("namespace_agent_logs.yaml"))
-    assert result.ok, result.stdout
-
-    [binding] = [resource for resource in result.mutated_resources if resource.get("kind") == "RoleBinding"]
-    assert binding["metadata"]["name"] == "agent-logs-configmaps-reader"
-    assert binding["metadata"]["namespace"] == "agent-logs-fixture"
-    assert binding["roleRef"] == {
-        "apiGroup": "rbac.authorization.k8s.io",
-        "kind": "ClusterRole",
-        "name": "logs-configmaps-reader",
-    }
-    assert binding["subjects"] == AGENT_SUBJECTS
-
-
 def test_namespace_diagnostics_labeled_namespace_gets_shared_reader(agent_diagnostics_policy: Path) -> None:
     result = apply_policy(agent_diagnostics_policy, manifest("namespace_agent_namespace_diagnostics.yaml"))
     assert result.ok, result.stdout
@@ -51,7 +36,7 @@ def test_namespace_diagnostics_labeled_namespace_gets_shared_reader(agent_diagno
 
 
 def test_unlabeled_namespace_does_not_get_agent_reader(agent_diagnostics_policy: Path) -> None:
-    result = apply_policy(agent_diagnostics_policy, manifest("namespace_without_agent_logs.yaml"))
+    result = apply_policy(agent_diagnostics_policy, manifest("namespace_without_agent_rbac.yaml"))
     assert result.ok, result.stdout
     assert not [resource for resource in result.mutated_resources if resource.get("kind") == "RoleBinding"]
 
