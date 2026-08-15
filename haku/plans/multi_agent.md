@@ -53,10 +53,11 @@ bounded-write MCP line above into a first design pass for a kitchen/household-st
 subagent (operator, 2026-07-11) — a candidate first real workload for the oai or local zone,
 using the existing `grocy_mcp/eval` harness (already model-agnostic) to pick the tier.
 
-Capability-oriented follow-up: <capability_dispatch.md>. It generalizes zone dispatch into
-model + prompt + reviewed capability-profile launches, integrates dispatch through
-haku-console/MCP, and sketches Google-data, public-coding, garden, and specialist profiles
-without conflating provider trust with tool authority.
+Capability-oriented follow-up: <information_trust_tiers.md>. It owns what may flow between
+tiers — where the label lives, why the classifier has to run locally, and why "delegate a
+capability, not a corpus" is the shape that lands first. It replaces a forward reference to a
+`capability_dispatch.md` that was never written; that reference's subject (capability-profile
+launches without conflating provider trust with tool authority) is the new document's.
 
 Garden-maintenance follow-up (haku-state, 2026-07-12 — lives in state, not here, since it's
 Haku's own method): operator asked for a principled model of the propagation checklists as a

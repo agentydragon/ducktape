@@ -50,6 +50,16 @@ history holds the original full design rationale. The **actionable build checkli
 - **Capability registry** (a ConfigMap mapping `service → facade URL → secret name`) —
   a possible later formalization of today's ad-hoc `kubectl get secret` discovery; not
   required by the current model.
+- **Several agents at different information trust levels** (operator, 2026-08-15), with Haku
+  delegating unsensitive work — k8s diagnostics, ducktape code, kitchen — down to them. Design
+  sketch in <plans/information_trust_tiers.md>; `plans/multi_agent.md` keeps the question of
+  which zones and providers exist. The reframing it turns on: the trust level belongs to the
+  **model provider**, not the agent, since everything in an agent's context reaches its provider —
+  so the thing to label is the corpus, and the enforcement points (mounted workspace, reflected
+  credential, LiteLLM route, egress perimeter) are ones this deployment already has per zone. Two
+  findings worth knowing before picking it up: an information-flow classifier must run on local
+  GPUs or it discloses the content to the party it is deciding about, and the first workloads need
+  no classifier at all because they **delegate a capability, not a corpus**.
 
 ## Future: letting Haku take some actions itself (permission-elevation tokens)
 
