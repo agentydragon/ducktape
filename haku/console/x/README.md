@@ -120,13 +120,17 @@ budget costs one dict rather than thousands of messages.
 repository answers questions about rows, and this wakes tasks. Merging the two is what let
 the listener be written against psycopg3's API while running on an asyncpg engine.
 
-**One channel, `claude_chat`, carrying a `SessionEvent`** — `{kind, session_id}`, where `kind`
+**One channel, `session_events`, carrying a `SessionEvent`** — `{kind, session_id}`, where `kind`
 is `prompt`, `update`, or `abort`. It used to be three channels each carrying a bare session
 id, which left the event kind implicit in the channel name and every new kind costing
 another `LISTEN`. Waiters register on `(kind, session_id)`, so the fan-out is unchanged.
 `console_events.py` stays a separate channel and a separate connection: it is a different
 subsystem with a different payload and its own lifecycle, and the only thing the two share
 is the mechanism.
+
+**Right now it is two names, mid-expand.** `claude_chat` is `LEGACY_CHANNEL`, notified and
+listened on beside the new one so neither half of a roll goes deaf, and dropped in the contract
+release — see the constant for the gate.
 
 `test_notify_puts_a_readable_event_on_the_channel` is the one that pins the wire format —
 channel name and envelope, read off a raw connection. Nothing else would notice if either
@@ -143,13 +147,14 @@ wakes are lost for that window — the same expand/contract discipline a destruc
 migration needs. Notify on both names for one release, then drop the old — and gate that
 second release on the roll having **converged** (every pod on an image at or after the
 first), not on a release having elapsed, since `maxUnavailable: 0` means a bad image stalls
-the roll with the old replica still serving. The channel merge was done exactly that way.
+the roll with the old replica still serving. The channel merge was done exactly that way, and
+so is the `claude_chat` → `session_events` rename in flight now.
 
-The trap in the overlap phase, worth knowing before staging the next one: while both names
-are being notified, every wake is delivered twice, so a woken waiter proves nothing about
-which name woke it. Tests and production alike will look healthy with the new path entirely
-broken, right up until the old one is deleted. Cover the new path end to end on its own
-before contracting.
+The trap in the overlap phase: while both names are being notified, every wake is delivered
+twice, so a woken waiter proves nothing about which name woke it. Tests and production alike
+will look healthy with the new path entirely broken, right up until the old one is deleted.
+`test_an_event_on_one_channel_alone_wakes_the_waiter` is what answers it — it drives
+`pg_notify` on exactly one name, which `notify` itself can no longer do.
 
 ## Cross-replica state, and the trap it sets
 
