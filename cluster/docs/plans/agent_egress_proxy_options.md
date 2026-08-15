@@ -1176,12 +1176,13 @@ placeholder) and never the 34-character substituted secret, and neither
 time. Substitution still fires afterwards: the same placeholder sent in
 `passthrough` mode arrived at the origin as `Bearer fake-real-bearer-do-not-use`.
 
-This is the answer that decides the shape of step 2. **haku-console can be handed
-ICAP endpoints without being handed the credentials** — it sees and rules on the
-agent's placeholder, and `credentials.conf` redeems it downstream, out of
+This is the answer that opens the shape of step 2. **haku-console _can_ be handed
+ICAP endpoints without being handed the credentials** — it would see and rule on
+the agent's placeholder, and `credentials.conf` would redeem it downstream, out of
 console's sight. The `option A` objection at the top of this document ("an ICAP
-service that now holds the credentials") does not apply to REQMOD-for-policy; it
-applies only if substitution itself moves into the service. It should not.
+service that now holds the credentials") is not forced by REQMOD-for-policy; it
+binds only if substitution itself moves into the service. That makes it a choice
+rather than a consequence — see the decision below.
 
 **Squid ignored a `Preview: 0` offer and sent the whole body anyway.** The stub
 advertises `Preview: 0` in its `OPTIONS`; Squid encapsulated `req-body` and
@@ -1215,6 +1216,40 @@ Still unanswered from the step-1 list: whether `http_access` runs before
 adaptation. The spike is `http_access allow all`, so denied traffic never existed
 to observe; answering it needs a deny rule, and it only matters as an optimisation
 (keeping already-denied traffic away from console), not for correctness.
+
+#### Decided: console holds the substituted credentials (operator, 2026-08-15)
+
+Step 1 turned "console is in the secret path" from a consequence into a choice.
+Taking it deliberately: **console does policy _and_ substitution.** The
+placeholder-only variant — console rules, `credentials.conf` redeems — is not
+what we are building.
+
+This is the version this section originally described, and it keeps the win that
+motivated it: no credential lives in the proxy at all. No `envsubst`, no tmpfs
+render, no per-proxy SOPS secrets, no generated per-agent credential config. The
+secret exists in console, transits Squid per request, and is never at rest there.
+"Which fence holds which credential" is deleted rather than answered, and
+per-agent-vs-shared stops being a credential-partitioning question.
+
+What is accepted along with it, all of it measured rather than assumed:
+
+- **Console sees live credentials**, by design. It is the credential authority
+  now, not merely a policy oracle. The operator's earlier judgement that Squid
+  can be trusted on the secret path (2026-08-10) extends to console here.
+- **Every credentialed request body transits console.** Squid ignored the
+  `Preview: 0` offer and encapsulated the full body, so for the LLM API that is
+  every prompt. `adaptation_access` scoping is the only lever, and it cannot be
+  applied to the credentialed hosts — they are exactly the ones that must go
+  through.
+- **Console down means no LLM access**, not merely no new domains. The
+  critical-path inversion above is now the operating reality rather than a trade
+  under consideration, and `icap_service_failure_limit` makes a _flapping_
+  console hard-down rather than degraded. Console HA is a prerequisite for this
+  design carrying production agent traffic, not a later refinement.
+
+`credentials.conf`, `envsubst`, and the fake-credential ConfigMap stay in the
+spike: they are what the placeholder-redemption half is measured against, and
+step 1 used them to prove the ordering. They do not survive into the real fence.
 
 ### Direction: one Squid per _agent_, provisioned by haku-console
 
