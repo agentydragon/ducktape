@@ -60,7 +60,31 @@ reads as drift from copy-paste divergence, not a decision.
 risk — the same image already runs as uid 65532 in both other deployments, and
 port 8080 needs no privilege. It restarts one proxy pod.
 
-## Verdict on the component itself
+## Outcome: declined (operator, 2026-08-10)
+
+**Not doing this.** #3894 implemented it — one strategic-merge patch shared by
+both haku proxies, `kustomize build` byte-identical before and after — and was
+closed unmerged: not worth the indirection.
+
+Two things carried that decision.
+
+**There was never a size win.** The implementation came out at 179 → 176 lines.
+A patch has to re-state the `spec.template.spec.containers` nesting to reach the
+fields it sets, so the saving this note estimated at ~80 lines did not survive
+contact. The only benefit left was drift prevention.
+
+**The premise expired.** This note assumed a small, stable set of hand-written
+proxy Deployments, growing to a fourth copy with the `haku-sandbox` migration.
+The direction is now **one Squid per agent, provisioned by haku-console**
+(<agent_egress_proxy_options.md>), where per-instance config is generated at
+provision time rather than committed. There is no growing set of copy-pasted
+manifests for a shared patch to single-source — the generator is the
+single-sourcing.
+
+The acute problem this note found was fixed directly and is not affected:
+`public-coder-agent-proxy` was hardened in #3890.
+
+## Verdict at the time (kept for the reasoning)
 
 Worth doing, but for drift-prevention rather than line count — the finding above
 is exactly the failure mode, and `//cluster/validation:test_egress_allowlists`
@@ -84,7 +108,11 @@ today's files; abandon it if the overlays approach the size of what they replace
 
 ## Next step
 
-1. Harden `public-coder-agent-proxy` (independent of everything else here).
-2. Only then decide the component, and fold it into the `haku-sandbox`
-   migration rather than doing it standalone — that migration is what creates
-   the fourth copy.
+1. ~~Harden `public-coder-agent-proxy`~~ — **done, #3890.**
+2. ~~Decide the component~~ — **declined, see Outcome above.**
+
+What survives as a live concern: `public-coder-agent-proxy` is still a separate
+copy in its own namespace and flux Kustomization, unreached by any of this, and
+it is the most credential-dense of the three. If the per-agent direction lands,
+it is the one deployment that will not be generated — so it stays hand-written
+and stays the place to check when the others change.
