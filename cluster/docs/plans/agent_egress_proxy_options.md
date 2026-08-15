@@ -1329,6 +1329,61 @@ njs, mitmproxy addons), none interoperating. **There is no standard callout
 protocol for HTTP/2-era proxies**, so the real choice is which proxy's native
 hook to write against.
 
+### Other proxies considered, and why the field is this narrow
+
+Surveyed once fail-closed became a hard requirement, since Squid and mitmproxy
+disagree on it.
+
+| proxy     | hook                     | on hook failure                                                         |
+| --------- | ------------------------ | ----------------------------------------------------------------------- |
+| Envoy     | `ext_authz` / `ext_proc` | **denies** — [`failure_mode_allow` defaults to `false`][envoy-extauthz] |
+| NGINX     | `auth_request`           | denies — a non-2xx subrequest fails the request                         |
+| Squid     | ICAP                     | denies with `bypass=0` (measured)                                       |
+| HAProxy   | SPOE                     | unverified; it is an _offload_ engine, so assume permissive             |
+| mitmproxy | addon                    | **allows** (measured)                                                   |
+
+[envoy-extauthz]: https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/http/ext_authz/v3/ext_authz.proto
+
+Envoy looks ideal on paper — fail-closed is the _default_ rather than a setting,
+`ext_authz` can add and remove request headers, and h2/h3 are native.
+
+**But almost none of them can intercept TLS.** Dynamic per-SNI certificate
+minting is the scarce capability, not the hook, and outside Squid and mitmproxy
+it belongs to MITM-specific libraries (goproxy, martian, proxy.py — all
+HTTP/1.1-centric) and commercial gateways. Envoy's story here is a run of
+ambiguous issues rather than a documented feature, with workarounds that bolt a
+separate tool in front; treat it as unavailable until someone proves otherwise.
+
+So the field is "has a good hook" versus "can intercept", and essentially nothing
+has both. That is the whole reason this comes down to Squid versus mitmproxy.
+
+#### Rejected: reverse-proxy the credentialed APIs instead of intercepting them
+
+If the agent's `ANTHROPIC_BASE_URL` points at the fence, the credentialed half
+stops being an interception problem and becomes an ordinary reverse proxy — no
+CA, no cert minting, no ALPN, h2 throughout, and Envoy's fail-closed default does
+the whole job. Arbitrary egress (`pip`, `npm`, `git`) would still need
+interception, but only to allow or deny, with no credentials passing through it.
+
+**Rejected** (operator, 2026-08-15): it only covers destinations you can
+enumerate _and_ configure the client for, so it reintroduces exactly the
+hand-maintained host list that the per-request console gate exists to avoid. The
+dynamic gate handles the open world uniformly; splitting the fence trades that
+for an endless config surface, and anything that hardcodes its endpoint stays on
+the interception path anyway.
+
+#### If both options fail: the ladder, in order
+
+1. Fix fail-closed structurally in a mitmproxy addon (done — see below).
+2. **Embed mitmproxy as a library** (`DumpMaster` inside a process we own), for
+   full control of the event loop and failure semantics without writing HTTP/2.
+3. Keep Squid and accept HTTP/1.1.
+4. Write a proxy. The expensive part is not CONNECT or cert minting — it is
+   HTTP/2 (HPACK, multiplexing, flow control, h2↔h1 translation) plus the long
+   tail of proxy correctness: connection reuse, trailers, 100-continue, HEAD,
+   WebSocket upgrade, timeout propagation. And it would rebuild the one thing
+   Squid still wins on.
+
 ### Measured
 
 Squid column is from step 1. mitmproxy column is from a probe deployment in
