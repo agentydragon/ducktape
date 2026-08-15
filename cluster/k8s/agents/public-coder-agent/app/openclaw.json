@@ -33,6 +33,21 @@
     "mcp": false,
     "restart": false
   },
+  "channels": {
+    "matrix": {
+      "enabled": true,
+      "homeserver": "https://matrix.allegedly.works",
+      "userId": "@public-coder-agent:allegedly.works",
+      "dm": {
+        "policy": "allowlist",
+        "allowFrom": ["@agentydragon:allegedly.works"],
+        "sessionScope": "per-room"
+      },
+      "groupPolicy": "disabled",
+      "autoJoin": "off",
+      "threadReplies": "always"
+    }
+  },
   "cron": {
     "enabled": true,
     "triggers": {
@@ -121,6 +136,13 @@
         "headers": {
           "Authorization": "Bearer ${HAKU_CONSOLE_TOKEN}"
         }
+      }
+    }
+  },
+  "plugins": {
+    "entries": {
+      "matrix": {
+        "enabled": true
       }
     }
   },

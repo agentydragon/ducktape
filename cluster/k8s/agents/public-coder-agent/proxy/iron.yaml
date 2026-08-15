@@ -1,5 +1,5 @@
-# iron-proxy configuration. The proxy holds the GitHub PAT; the agent holds only
-# a placeholder and never possesses the credential.
+# iron-proxy configuration. The proxy holds the real credentials; the agent
+# holds only placeholders and never possesses them.
 #
 # `replace` mode rather than `inject`: the agent presents `$GH_PAT` on requests it
 # wants authenticated, exactly as it would a real token, and the proxy swaps the
@@ -98,6 +98,20 @@ transforms:
             match_headers: ["Authorization"]
           rules:
             - host: "kubeapi.allegedly.works"
+        - source:
+            type: env
+            var: MATRIX_BOT_PASSWORD
+          replace:
+            # OpenClaw's password login sends this placeholder in the JSON
+            # body. iron-proxy's match_body support swaps it before Synapse
+            # sees the request; the app never receives the real password.
+            proxy_value: "proxy-matrix-password-placeholder"
+            match_headers: []
+            match_body: true
+          rules:
+            - host: "matrix.allegedly.works"
+              methods: ["POST"]
+              paths: ["/_matrix/client/v3/login"]
 
 log:
   level: "info"

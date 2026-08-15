@@ -24,6 +24,13 @@ pins every declaration in the repo to the same measured numbers.
 not a member and the gateway exits with
 `Invalid --bind. Use "loopback", "lan", "tailnet", "auto", or "custom".`
 
+The Matrix channel leaves `password` out of this file deliberately. OpenClaw
+reads the documented `MATRIX_PASSWORD` fallback, which is a stable placeholder;
+iron-proxy swaps the placeholder for the real SOPS-backed password only on the
+Matrix login body. OpenClaw then caches the resulting access token in its state
+directory. The Matrix DM config uses `sessionScope: "per-room"` and threaded
+replies so concurrent DM rooms remain independent.
+
 `requestTimeoutMs` on the haku-console server is load-bearing, and its absence is not
 a slow-server problem. OpenClaw gives the startup catalog listing a hardcoded
 `BUNDLE_MCP_CATALOG_LIST_TIMEOUT_MS = 1500` ms **unless the server entry declares

@@ -13,6 +13,12 @@ own GitHub account and pushes to its own forks.
 | `proxy/`     | Interception CA, trust bundle, iron-proxy, and the FQDN allowlist    |
 | `app/`       | OpenClaw Deployment, config, state PVC, credentials, NetworkPolicies |
 
+The agent also connects to Matrix as `@public-coder-agent:allegedly.works`.
+Matrix is an official plugin baked into the derivative OpenClaw image. The
+initial policy is deliberately DM-only and allowlisted to
+`@agentydragon:allegedly.works`; add explicit room policy/config before using
+it in group rooms.
+
 ## Egress model
 
 Two layers, and the split matters:
@@ -49,6 +55,14 @@ RBE outside this proxy. A placeholder therefore fails on the runner. This is an
 accepted credential-exposure tradeoff for remote Bazel plus remote execution;
 revisit it if the agent later uses only one of those layers.
 
+The Matrix bot password is generated and retained by the existing Matrix user
+provisioner. It is stored in the Matrix namespace as a SOPS-managed Secret and
+reflected into `public-coder-agent`, where only iron-proxy consumes it. The
+OpenClaw container sends `proxy-matrix-password-placeholder` in its password
+login body; iron-proxy replaces it only on Synapse's login endpoint. The
+provisioner sets the password only when creating the account, so reconciliation
+does not revoke the bot's cached access token.
+
 ## Deviations worth knowing
 
 - **Plain `Deployment`, not `OpenClawInstance`.** The operator's generated
@@ -80,6 +94,10 @@ revisit it if the agent later uses only one of those layers.
 
 ## Known gaps
 
+- **Matrix token auth.** TODO: replace the password-body swap with a
+  proxy-held Matrix access token once the provisioner can mint and rotate one
+  without revoking Haku Console's independent session. For v1, the pinned
+  iron-proxy's `match_body` replacement keeps the password out of OpenClaw.
 - The egress NetworkPolicy's DNS rule has no destination selector, so port 53
   reaches anywhere and DNS tunnelling is not prevented. Narrowing to kube-dns is
   the obvious tightening; it is left as a follow-up so the first deployment

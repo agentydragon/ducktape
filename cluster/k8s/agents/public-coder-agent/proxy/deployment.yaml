@@ -1,9 +1,9 @@
-# Egress proxy for the coder agent, and the holder of its GitHub credential.
+# Egress proxy for the coder agent, and the holder of its mediated credentials.
 #
 # Deviation from agents/haku-zones-mitmproxy, which this used to mirror: it runs
 # iron-proxy rather than mitmproxy, because it now does two jobs. It is still the
 # TLS-intercepting forward proxy, and it additionally swaps a placeholder for the
-# real GitHub PAT on the way out, so the agent container does not hold that PAT.
+# real credentials on the way out, so the agent container does not hold them.
 # mitmproxy could do that too, through an addon we wrote and tested;
 # iron-proxy was chosen because the substitution is a maintained project's product
 # rather than forty lines of ours, and because it handles the base64 `Basic` shape
@@ -85,6 +85,14 @@ spec:
                 secretKeyRef:
                   name: public-coder-agent-reader-token
                   key: token
+            # Matrix password login is the one credential that lives in a JSON
+            # body rather than Authorization. iron.yaml swaps the app's
+            # placeholder only on the Matrix login endpoint.
+            - name: MATRIX_BOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: public-coder-agent-matrix-bot-password
+                  key: password
           ports:
             - name: proxy
               containerPort: 8080

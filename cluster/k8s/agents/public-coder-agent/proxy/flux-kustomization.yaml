@@ -29,3 +29,6 @@ spec:
       namespace: ducktape-flux
     # The KUBERNETES_READER_TOKEN env comes from the reader SA's token Secret.
     - name: public-coder-agent-k8s-reader
+    # The proxy reads the reflected Matrix bot password from its namespace.
+    - name: matrix-secrets
+      namespace: ducktape-flux

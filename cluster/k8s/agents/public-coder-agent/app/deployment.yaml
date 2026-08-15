@@ -53,7 +53,7 @@ spec:
         # Reproduction, the verified fix, and the upstream operator's identical
         # exposure: plans/personal_agents/findings/harness_behaviour.md F19.
         - name: seed-config
-          image: ghcr.io/agentydragon/openclaw:devel-20260728182008-17ba82d
+          image: ghcr.io/agentydragon/openclaw:devel-20260728182008-17ba82d # {"$imagepolicy": "flux-system:openclaw"}
           command:
             - sh
             - -c
@@ -65,7 +65,7 @@ spec:
             - { name: data, mountPath: /state }
       containers:
         - name: openclaw
-          image: ghcr.io/agentydragon/openclaw:devel-20260728182008-17ba82d
+          image: ghcr.io/agentydragon/openclaw:devel-20260728182008-17ba82d # {"$imagepolicy": "flux-system:openclaw"}
           env:
             # The image does not set HOME to the state dir; without it the
             # gateway looks for openclaw.json elsewhere and exits "Missing config".
@@ -124,6 +124,11 @@ spec:
                 secretKeyRef:
                   name: litellm-key-public-coder-agent
                   key: api-key
+            # OpenClaw's password login puts this value in the Matrix JSON body.
+            # It is a proxy placeholder: iron-proxy replaces it with the real
+            # controller-owned password only on the Matrix login endpoint.
+            - name: MATRIX_PASSWORD
+              value: "proxy-matrix-password-placeholder"
             # Node does not honour proxy environment variables by default.
             - name: NODE_USE_ENV_PROXY
               value: "1"
