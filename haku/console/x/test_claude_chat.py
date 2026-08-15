@@ -39,7 +39,6 @@ from haku.console.x.claude_chat import (
     BridgeAuthentication,
     ClaudeChatService,
     ClaudeChatStore,
-    KubernetesSandboxClaims,
     MatrixSession,
     RolloutRecorder,
     SpaSession,
@@ -58,6 +57,7 @@ from haku.console.x.conftest import (
 )
 from haku.console.x.matrix_client import InboundMessage
 from haku.console.x.matrix_session import MatrixTurns
+from haku.console.x.sandbox_claims import KubernetesSandboxClaims
 from haku.runtime.x.claude_bridge.cli_client import ClaudeCli
 
 

@@ -69,7 +69,7 @@ from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
-from haku.console.x import chat_notifications, claude_chat, matrix_session, matrix_sync
+from haku.console.x import chat_notifications, claude_chat, matrix_session, matrix_sync, sandbox_claims
 from haku.console.x.system_prompt import SystemPromptTemplate
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
@@ -296,7 +296,7 @@ def create_app(
         claude_chat_service = claude_chat.ClaudeChatService(
             claude_runtime,
             claude_chat_store,
-            claude_chat.KubernetesSandboxClaims(claude_runtime),
+            sandbox_claims.KubernetesSandboxClaims(claude_runtime),
             claude_chat_notifications,
             mcp_token=mcp_agent.token,
             room_surface=matrix_surface,

@@ -134,12 +134,11 @@ loop's signatures.
   re-parses its content blocks. O(session) per token batch, paid only while the SPA is streaming.
   Fix by indexing incrementally on the agent message id, or by scoping the read to the messages
   asked about.
-- **Split `claude_chat.py`** (~2000 lines: view models, the Kubernetes claim client, the store, the
-  recorder, the status driver, the service, the turn loop, the port, the routes). The ~230 lines of
-  `KubernetesSandboxClaims` and its five dict-poking helpers have nothing to do with chat.
-  `ClaudeChatStore`'s twenty-odd methods split along the seams the turn table and the prompt queue
-  already created — each split landing with the change that creates it, never as a standalone
-  reshuffle with no acceptance criterion.
+- **Split `claude_chat.py`** further. `KubernetesSandboxClaims` has left; what remains is view
+  models, the store, the recorder, the status driver, the service, the turn loop, the port and the
+  routes. `ClaudeChatStore`'s twenty-odd methods split along the seams the turn table and the
+  prompt queue already created — each split landing with the change that creates it, never as a
+  standalone reshuffle with no acceptance criterion.
 - **Prune the archaeology.** Roughly 150 of `claude_chat.py`'s lines narrate what the code used to be
   and which bug that caused; STYLE puts those under Remove. Keep the invariant as one imperative
   line ("do not gate on session status: admission asks the turn"), move the story to `debug/`.
