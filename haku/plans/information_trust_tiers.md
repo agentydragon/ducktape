@@ -1,12 +1,14 @@
 # Information trust tiers — which provider may see what, and who enforces it
 
 **Status: design sketch, nothing built.** Operator, 2026-08-15: several agent kinds, each cloning
-a different workspace repo, talking to each other in Matrix rooms the operator is also in, with a
-classifier on what crosses and the high-trust agent delegating unsensitive work down. This
-records the shape and the hard parts. It is deliberately not a build order — the load-bearing
-decisions that remain are values calls (Open questions). Git-content classification is
-explicitly **out of scope and lower priority**; what was learned about it is parked below for the
-plan it needs.
+a different workspace repo, talking to each other in Matrix rooms the operator is also in, with
+the high-trust agent delegating unsensitive work down.
+
+**v0 ships the structural half only** — workspace repos, room tiers, enforced membership — and
+governs message content by instructing agents not to share, with a classifier added later as a
+backstop. What that bet does and does not rest on is § v0 below; the classifier's design is kept
+here because deferring it is not the same as leaving it unshaped. Git-content classification is
+out of scope and lower priority, with its findings parked for the plan it needs.
 
 **This supersedes the zone experiment.** <multi_agent.md> — the dispatch plane and its
 zai/oai/local zones — is retired (operator, 2026-08-15), so it is cited below only for the
@@ -53,6 +55,42 @@ Two things it does not do, and both matter:
   **starting** corpus, not the accumulated one — which is precisely why the channels between
   agents need their own check, and why that check cannot be inferred from the mount.
 
+## v0 is structure only, and the classifier is a later backstop
+
+Operator, 2026-08-15: agents will mostly be well behaved and will follow an instruction not to
+share sensitive information, so **v0 ships without any classifier** and the classifier arrives
+later as a backstop. That is a smaller bet than it sounds, and it is worth being precise about
+what it does and does not rest on.
+
+**What v0 still enforces structurally**, with no reliance on any agent behaving:
+
+| Control                           | Enforced by                          |
+| --------------------------------- | ------------------------------------ |
+| Which corpus an agent starts from | its workspace repo, a manifest fact  |
+| Which credentials it holds        | what is reflected into its namespace |
+| Which hosts it can reach          | its egress perimeter                 |
+| Which model provider it can reach | its LiteLLM route                    |
+| **Which rooms it can be in**      | the room's tier, console-enforced    |
+
+**What rests on instructions, and it is exactly one thing:** the content of a message the
+high-trust agent chooses to type into a lower-tier room. Everything a lower-tier agent can
+_reach_ is structural; the only path from the high corpus to a low room runs through Haku
+deciding to write it down. That is a narrow trusted surface for a v0, which is what makes this a
+reasonable place to start rather than an optimistic one.
+
+**The deviation, recorded rather than glossed.** <../docs/security.md>'s doctrine is enforcement
+at the perimeter, never by in-agent rules, and its threat model assumes Haku can be steered by
+prompt injection through any source it reads. v0 governs message content by instruction alone,
+which is an in-agent rule. That is a deliberate, scoped exception for one channel — not a
+revision of the doctrine — and the condition for closing it is the classifier below. Anyone
+reading the invariants and finding this inconsistent is reading correctly.
+
+**A structured task envelope helps more here than it did before.** It was proposed as a way to
+make a classifier's job tractable; with instructions as the primary control it does something
+better, which is make compliance easy. "State goal, inputs and acceptance criteria in fields" is
+a far more followable rule than "be careful what you mention", and it keeps free narrative — where
+inadvertent detail actually lives — out of mixed rooms by construction.
+
 ## What this inherits from doctrine, including the uncomfortable parts
 
 <../docs/security.md> already states the test, and it applies here unchanged: **every new write
@@ -76,7 +114,48 @@ Two inheritances that constrain the classifier specifically:
 **So the primary control is never "the classifier approved it".** It is that the lower tier never
 had the higher corpus mounted, never held its credential, and cannot reach it over the network.
 
-## Where the classifier runs: local is a preference, not a requirement
+## The classifier, when it comes
+
+### What it is for
+
+The threat is **not primarily a malicious lower tier extracting secrets**. It is the **high-trust
+agent volunteering something that should never have reached a room a lower-tier agent is sitting
+in** — Haku mentioning the operator's embarrassing medical condition while coordinating work, in
+a room where an OpenAI-backed agent is a member and therefore its provider sees every word. It is
+inadvertence rather than attack: a helpful agent supplying context. That is also why v0 can defer
+it — an instruction is a reasonable control against inadvertence, and a poor one against an
+adversary, which is the residual the backstop closes.
+
+### Halt and catch fire
+
+Operator, 2026-08-15: a triggered classifier may simply **halt** — no redaction, no
+continue-without-that-sentence, no negotiating with the agent about what it may rephrase. That
+choice deletes most of the design:
+
+- **No withheld-message rendering, and no incoherent-room problem.** An earlier draft wanted a
+  `withheld` event kind so the room stayed readable and the other agents were not left waiting.
+  If a trip ends the conversation, incoherence is the correct outcome.
+- **No "what does the agent learn" dilemma.** Telling an agent precisely why a message was
+  refused hands an adversarial author the decision boundary; telling it nothing invites a
+  rephrased retry. Halting answers both: nothing continues, so there is nothing to iterate
+  against.
+- **Recall matters more than precision.** A false positive costs an interrupted session and an
+  operator's attention — annoying, safe, and visible. A false negative is unrecoverable, because
+  a federated event cannot be unsent and the provider has already received it. Tune accordingly;
+  this is the rare case where a jumpy detector is the right failure direction.
+
+Two things still to decide, and they are cheap to decide late:
+
+- **What "halt" covers** — the offending agent's session, the room's delivery, or every agent.
+  Widest is safest and this is a backstop, so the burden is on arguing for narrower.
+- **Synchronous or after the fact.** Synchronous is the only version that prevents the specific
+  message, and costs latency on every message forever. Asynchronous costs nothing per message and
+  still stops messages 2..N — which is less of a concession than it first appears, since the
+  first message is already unrecoverable the instant it federates. Synchronous is the better
+  default for a backstop whose whole job is the one message; asynchronous is defensible if the
+  latency proves to matter.
+
+### Where it runs: local is a preference, not a requirement
 
 An earlier draft of this document argued that the classifier had to run on local GPUs or it would
 disclose the content to the party it was deciding about. **That is wrong for the topology
@@ -105,50 +184,17 @@ So placement is an ordinary engineering choice, and both options are live:
 forgotten: a tier whose corpus Anthropic must not see. Nothing in the current design has one, and
 if one is ever added the classifier's placement has to be revisited before that tier is.
 
-## What the classifier is actually for
+### Where it hooks in, and what it does not cover
 
-Operator, 2026-08-15, and it corrects the framing this document first had. The threat is **not
-primarily a malicious lower tier extracting secrets**. It is the **high-trust agent volunteering
-something that should never have reached a room a lower-tier agent is sitting in** — Haku
-mentioning the operator's embarrassing medical condition while coordinating work, in a channel
-where an OpenAI-backed agent is a member and therefore its provider sees every word.
+**The choke point already exists**, which is what will make the backstop enforceable when it
+lands. The console holds the only Matrix credential and posts everything the agent says (R11.1
+auto-forward — the agent has no send tool), so the classifier is a filter in the reply path,
+before the room send, in reviewed console code the agent cannot reach around.
 
-That is a different and harder problem than gating a delegation payload, in three ways:
-
-- **It is per message, not per handoff.** Every message the high-trust agent posts into a shared
-  room is a potential disclosure, including ones that are not delegating anything.
-- **It is inadvertence, not attack.** The failure is a helpful agent supplying context, so the
-  classifier is catching ordinary behaviour rather than an adversary. That makes it more likely to
-  fire and more valuable — and it does **not** retire the adversarial case, since the threat model
-  still assumes Haku can be steered.
-- **The judgment is relevance versus disclosure, not deny-all.** The lower tier genuinely needs
-  some context to do its job, so the classifier cannot simply refuse anything personal.
-
-Three channels follow, and they want different mechanisms:
-
-| Channel                   | What crosses                  | Right mechanism                                     |
-| ------------------------- | ----------------------------- | --------------------------------------------------- |
-| Message into a mixed room | anything the higher tier says | local classifier, synchronous, fail closed          |
-| A lower tier's output     | its results and its messages  | an **integrity** control, not a confidentiality one |
-| Git push                  | content leaving into a repo   | the destination, **not** the proxy — see below      |
-
-The asymmetry is worth naming: outbound is a disclosure control, inbound is an injection control.
-multi_agent.md already says sensor output is untrusted input to Haku; another agent's messages are
-the same thing, and need no classifier — they need the treatment every adversarial source already
-gets.
-
-**The choke point already exists, which is what makes this enforceable.** The console holds the
-only Matrix credential and posts everything the agent says (R11.1 auto-forward — the agent has no
-send tool). So the classifier is a filter in the reply path, before the room send, in reviewed
-console code that the agent cannot reach around. That satisfies "enforcement at the perimeter,
-never by in-agent rules" for a check that is otherwise in-band.
-
-**Make the channel narrow so the classifier's job is easy.** Free prose into a mixed room is the
-hardest possible input for a small local model — paraphrase, inference chains and oblique
-reference ("the thing from Tuesday") all defeat keyword-shaped judgment. A structured task
-envelope, where the higher tier states goal, inputs and acceptance criteria in fields rather than
-narrating, is dramatically more checkable and forces the agent to be deliberate about what it is
-handing over. Reserve free-form messages for same-tier rooms.
+It covers **outbound** only. A lower tier's messages and results coming back are an **integrity**
+concern, not a confidentiality one, and need no classifier — they need the treatment every
+adversarial source already gets. multi_agent.md made the same point about sensor output, and it
+survives that document's retirement.
 
 ### Git content: its own plan, and lower priority
 
@@ -263,22 +309,21 @@ on it.
 
 ## Open questions
 
-- **Where does the tier label live, and who may set it?** With agent kinds keyed on their
-  workspace repo, the repo is the natural home — which makes it a ducktape manifest fact and
-  therefore not Haku's to change. The residue is rooms: a room's floor is derived from
-  membership, so **whoever may invite may downgrade**, and that authority needs naming.
+- **What exactly the instruction says.** In v0 this **is** the control, not a supporting detail,
+  so the old "oai prompt line" question from multi_agent.md is promoted to the top: which
+  categories never enter a lower-tier room, stated concretely enough that an agent can follow it
+  and the operator can tell when it was not followed. Seed conservatively and widen from
+  observation.
+- **Who declares a room's tier?** The tier is immutable once set, which makes creation the only
+  moment that matters and the one authority to name. Agent kinds get theirs from a ducktape
+  manifest and so are not Haku's to change; rooms need the same answer.
 - **Does a lower-tier agent's memory inherit the tier of what it was told?** Anything durable it
-  keeps — a state repo, a scratch note, a session that outlives the task — carries what it was
-  told forward into unrelated work unless the tier travels with it. Its workspace repo bounds
-  where it can write that down, which is one more reason the repo is the right label.
-- **What happens on refusal?** A held message is visible as held, but the agent still needs to
-  learn something — telling it exactly what was withheld and why hands an adversarial author the
-  classifier's decision boundary, while telling it nothing makes it retry the same disclosure
-  differently. Leaning toward: tell the agent it was withheld, tell the **operator** why.
-- **How much does the operator want to see?** Coordination chatter between agents in a room the
-  operator is in becomes a notification surface. Muting it defeats the point of being there;
-  not muting it makes the room unusable for the operator's own conversation with Haku, which is
-  an argument for inter-agent rooms being separate from the operator's DM even though the
-  operator is a member of both.
-- **The oai prompt line** — still open from multi_agent.md, and it is the values call this whole
-  design is parameterized by.
+  keeps — a state repo, a scratch note, a session outliving the task — carries what it was told
+  forward into unrelated work unless the tier travels with it. Its workspace repo bounds where it
+  can write that down, which is one more reason the repo is the right label.
+- **How much does the operator want to see?** Coordination chatter in a room the operator is in
+  becomes a notification surface. Muting it defeats the point of being there; not muting it makes
+  the room unusable for the operator's own conversation with Haku — an argument for inter-agent
+  rooms being separate from the operator's DM even though the operator is in both. It matters
+  more in v0 than later, because until the classifier exists **the operator is the only
+  detector**: nothing else will ever notice a leak.
