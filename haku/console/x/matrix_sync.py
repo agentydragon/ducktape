@@ -19,7 +19,7 @@ import datetime
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from pydantic import SecretStr
 from sqlalchemy import select, text
@@ -141,9 +141,9 @@ class MatrixSyncService:
     async def reply(self, body: str, tag: EventTag) -> None:
         """Post Haku's answer into the live room as ordinary text (R11.1).
 
-        `tag` is what makes the event say which transcript row it is. Nothing reads it back yet;
-        the ledger stage 4 needs to tell a replayed frame from a new one is exactly this, and
-        writing it now is what makes that a lookup rather than a migration.
+        `tag` is what makes the event say which transcript row it is — and, through
+        `EventTag.transaction_id`, what stops the same row being posted twice: this is the one
+        send whose identity the homeserver can hold us to.
         """
         conversation = await self._conversations.load(self._config.user_id)
         if conversation is None:
@@ -152,7 +152,7 @@ class MatrixSyncService:
         room_id = conversation.room_id
 
         async def post() -> None:
-            await self._client.send_text(await self._token(), room_id, body, txn_id=uuid4().hex, tag=tag)
+            await self._client.send_text(await self._token(), room_id, body, txn_id=tag.transaction_id(), tag=tag)
 
         self.pacer.send(post)
 
@@ -187,10 +187,12 @@ class MatrixSyncService:
             token = await self._token()
             if self._status_event_id is None:
                 self._status_event_id = await self._client.send_notice(
-                    token, room_id, body, txn_id=uuid4().hex, tag=tag
+                    token, room_id, body, txn_id=tag.transaction_id(), tag=tag
                 )
                 return
-            await self._client.edit_notice(token, room_id, self._status_event_id, body, txn_id=uuid4().hex, tag=tag)
+            await self._client.edit_notice(
+                token, room_id, self._status_event_id, body, txn_id=tag.transaction_id(), tag=tag
+            )
 
         self.pacer.set_status(post)
 
@@ -267,11 +269,7 @@ class MatrixSyncService:
         tag = EventTag(kind=kind)
 
         async def post() -> None:
-            # A fresh transaction ID rather than a derived one: Synapse deduplicates per access
-            # token, the token outlives a restart, and any counter we could derive would reset —
-            # so a notice after a restart would be silently swallowed as a replay of an older
-            # one. Notices have no retry to make idempotent, so there is nothing to trade away.
-            await self._client.send_notice(await self._token(), room_id, body, txn_id=uuid4().hex, tag=tag)
+            await self._client.send_notice(await self._token(), room_id, body, txn_id=tag.transaction_id(), tag=tag)
 
         self.pacer.send(post)
 

@@ -24,7 +24,7 @@ import logging
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from nio import AsyncClient, AsyncClientConfig, ErrorResponse, Response
 from nio.api import MessageDirection
@@ -133,6 +133,29 @@ class EventTag(BaseModel):
         the Python one; `exclude_none` is what keeps an absent field absent.
         """
         return self.model_dump(mode="json", exclude_none=True)
+
+    def transaction_id(self) -> str:
+        """What to send this event under, so a re-send of the same thing is not a second event.
+
+        **Derived where the event has an identity, fresh where it does not**, which sorts the
+        senders exactly as they want sorting. A reply names a transcript row, and re-posting that
+        row is always a mistake — so the row's id is the transaction, and the homeserver refuses
+        the duplicate on our behalf. A status edit and a lifecycle notice name no row: each is a
+        genuinely new event, and deriving one would be a way to lose it.
+
+        Two facts make the derived half work, both of them Synapse's rather than the spec's.
+        Its transaction cache keys on `(path, user, device_id)` — the **device**, not the access
+        token — and `MatrixClient` pins `device_id` at construction, so the replacement replica
+        that re-sends is the same device as the one that died. And an entry lives between 30 and
+        60 minutes, far longer than the seconds a console roll takes. Outside that window this
+        degrades to what it replaced, which is why it is a second line of defence and not the
+        first: the first is `frame_uid`, and a replayed `assistant` frame is dropped before any
+        of this is reached.
+
+        Impure by design and called once per send. It cannot be a field, because the fresh half
+        must differ between two events carrying an otherwise identical tag.
+        """
+        return self.message_id.hex if self.message_id is not None else uuid4().hex
 
     @classmethod
     def parse(cls, content: dict[str, Any]) -> EventTag | None:
@@ -335,7 +358,8 @@ class MatrixClient:
         formatting, and it is what a plain-text reader should see (R11.7).
 
         `txn_id` makes the send idempotent: a retry with the same value is deduplicated by
-        the homeserver rather than posting twice.
+        the homeserver rather than posting twice. `EventTag.transaction_id` is where a caller
+        gets one, and says which events have a value worth repeating.
         """
         return await self._send(token, room_id, "m.text", body, txn_id, tag, formatted=to_formatted_body(body))
 

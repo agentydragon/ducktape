@@ -29,12 +29,10 @@ downstream trusts it (<../console/debug/2026_08_13_sessions_boot_and_die.md>).
 
 ## Stage 4 — survive a roll mid-turn
 
-_Unblocked: stage 3 landed, so the envelope can gain the `frame_uid` below without a flag day.
-This is where the queues earn their place._
+_One item left. Frame identity, the replay window, the prompt a dead turn never asked, and the
+homeserver's own refusal of a duplicated reply have all landed; what remains is where a resumed
+turn's frames are delivered._
 
-- **Derive Matrix's `txn_id` from the message id** instead of `uuid4().hex`, so the homeserver is a
-  second line of defence against a replayed `assistant` reaching the room twice. Cheap now that
-  `works.allegedly.haku` already carries the id on the event.
 - **Route an adopted turn by turn**, not by session.
 
 **Done when** a roll during a turn loses no answer and posts nothing twice.

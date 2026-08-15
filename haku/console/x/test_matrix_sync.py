@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
@@ -28,6 +28,7 @@ class _FakeMatrix:
     edits: list[tuple[str, str]] = field(default_factory=list)
     redacted: list[str] = field(default_factory=list)
     tags: list[EventTag] = field(default_factory=list)
+    transactions: list[str] = field(default_factory=list)
     since: str | None = None
     token_valid: bool = True
     logins: int = 0
@@ -49,16 +50,19 @@ class _FakeMatrix:
     async def send_text(self, token: str, room_id: str, body: str, txn_id: str, tag: EventTag) -> str:
         self.sent.append((room_id, body))
         self.tags.append(tag)
+        self.transactions.append(txn_id)
         return f"$sent-{len(self.sent)}"
 
     async def send_notice(self, token: str, room_id: str, body: str, txn_id: str, tag: EventTag) -> str:
         self.notices.append((room_id, body))
         self.tags.append(tag)
+        self.transactions.append(txn_id)
         return f"$notice-{len(self.notices)}"
 
     async def edit_notice(self, token: str, room_id: str, event_id: str, body: str, txn_id: str, tag: EventTag) -> None:
         self.edits.append((event_id, body))
         self.tags.append(tag)
+        self.transactions.append(txn_id)
 
     async def redact(self, token: str, room_id: str, event_id: str, reason: str) -> None:
         self.redacted.append(event_id)
@@ -402,6 +406,29 @@ async def test_a_reply_says_which_transcript_row_it_is(service, matrix, sync_sto
         message_id,
         "msg_01abc",
     )
+
+
+async def test_a_replayed_reply_is_the_same_transaction(service, matrix, sync_store, bound_room) -> None:
+    """The homeserver's half of not posting an answer twice: the same transcript row re-sent is
+    the same transaction, so Synapse returns the first event rather than making a second."""
+    message_id = uuid4()
+    tag = EventTag(kind=RoomEventKind.REPLY, session_id=SESSION, message_id=message_id)
+    await service.reply("the answer", tag)
+    await service.reply("the answer", tag)
+    await settled(service)
+
+    first, second = matrix.transactions
+    assert first == second == message_id.hex
+
+
+async def test_a_status_edit_is_a_new_transaction_every_time(service, matrix, bound_room) -> None:
+    """The other half of the rule: a line with no row to name is a genuinely new event each time,
+    and deriving its transaction would be a way to lose the edit rather than a way to dedupe."""
+    await service.show_status("running Bash", SESSION)
+    await service.show_status("reading a file", SESSION)
+    await settled(service)
+
+    assert len(set(matrix.transactions)) == len(matrix.transactions) == 2
 
 
 async def test_each_kind_of_notice_says_which_it_is(service, matrix, turns, bound_room) -> None:
