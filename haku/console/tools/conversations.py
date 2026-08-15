@@ -28,6 +28,7 @@ import datetime
 import json
 from collections.abc import Sequence
 from typing import Annotated, Any, Literal, Protocol
+from uuid import UUID
 
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
@@ -107,10 +108,10 @@ class RolloutReader(Protocol):
     # `Sequence` rather than `list` so the tool can narrow `kinds` to a Literal union for its
     # generated schema: `list` is invariant, so `list[Literal[...]]` would not satisfy `list[str]`.
     async def read_frames(
-        self, session_id: str, *, after_seq: int | None, limit: int, kinds: Sequence[str] | None
+        self, session_id: UUID, *, after_seq: int | None, limit: int, kinds: Sequence[str] | None
     ) -> list[RolloutFrame]: ...
 
-    async def list_turns(self, session_id: str, *, limit: int) -> list[TurnRecord]: ...
+    async def list_turns(self, session_id: UUID, *, limit: int) -> list[TurnRecord]: ...
 
 
 def clip(frame: RolloutFrame) -> RolloutFrame:
@@ -163,7 +164,8 @@ def build_mcp(reader: RolloutReader) -> FastMCP:
     ) -> RolloutPage:
         """Read one session's protocol frames in order, a page at a time."""
         frames = [
-            clip(frame) for frame in await reader.read_frames(session_id, after_seq=after_seq, limit=limit, kinds=kinds)
+            clip(frame)
+            for frame in await reader.read_frames(UUID(session_id), after_seq=after_seq, limit=limit, kinds=kinds)
         ]
         # A short page is the last one. Cheaper than a second count query, and the caller only
         # needs to know whether to ask again.
@@ -181,6 +183,6 @@ def build_mcp(reader: RolloutReader) -> FastMCP:
         Each carries the frame range it produced, so this is the cheap way to find the exchange
         worth reading before paging its frames.
         """
-        return await reader.list_turns(session_id, limit=limit)
+        return await reader.list_turns(UUID(session_id), limit=limit)
 
     return mcp

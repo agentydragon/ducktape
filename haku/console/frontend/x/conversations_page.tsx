@@ -1,4 +1,4 @@
-import { Badge, Box, Button, Code, Group, Loader, Paper, Stack, Text, Title } from "@mantine/core";
+import { Badge, Box, Button, Group, Loader, Paper, Stack, Text, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 
 import {
@@ -10,6 +10,7 @@ import {
   type ConversationSessionSummary,
 } from "../client";
 import { CONVERSATIONS_PATH } from "../routing";
+import { ClaudeToolUseView } from "./claude_tool_use";
 import { Markdown } from "./markdown";
 
 function openConversation(sessionId: string): void {
@@ -39,10 +40,6 @@ function surfaceLabel(summary: { surface: ConversationSessionSummary["surface"];
   return "Conversation";
 }
 
-function resultText(content: unknown): string {
-  return typeof content === "string" ? content : JSON.stringify(content, null, 2);
-}
-
 function MessageView({ message }: { message: ClaudeChatMessage }) {
   return (
     <Paper withBorder p="sm" className={`haku-chat-message haku-chat-message-${message.role}`}>
@@ -59,43 +56,19 @@ function MessageView({ message }: { message: ClaudeChatMessage }) {
       {message.tool_uses.length > 0 && (
         <Stack gap="xs" mb="sm">
           {message.tool_uses.map((toolUse) => (
-            <Paper key={toolUse.tool_use_id} withBorder p="sm" radius="sm">
-              <Group gap="xs" mb="xs">
-                <Badge variant="light" color="gray">
-                  Tool
-                </Badge>
-                <Code style={{ overflowWrap: "anywhere" }}>{toolUse.name}</Code>
-                {toolUse.result?.is_error && (
-                  <Badge variant="light" color="red">
-                    failed
-                  </Badge>
-                )}
-              </Group>
-              <Code block style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                {JSON.stringify(toolUse.input, null, 2)}
-              </Code>
-              {toolUse.result && (
-                <>
-                  <Text c="dimmed" size="xs" mt="xs" mb={4}>
-                    Result
-                  </Text>
-                  <Code
-                    block
-                    c={toolUse.result.is_error ? "red" : undefined}
-                    style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-                  >
-                    {resultText(toolUse.result.content)}
-                  </Code>
-                </>
-              )}
-            </Paper>
+            <ClaudeToolUseView key={toolUse.tool_use_id} toolUse={toolUse} />
           ))}
         </Stack>
       )}
       <Markdown
-        source={message.content || (message.status === "streaming" ? "…" : "")}
+        source={message.content.trim() || (message.status === "streaming" ? "…" : "")}
         className="haku-chat-markdown"
       />
+      {!message.content.trim() && message.tool_uses.length === 0 && message.status === "complete" && (
+        <Text c="dimmed" size="xs">
+          No assistant text was captured.
+        </Text>
+      )}
       {message.error && (
         <Text c="red" size="xs" mt="xs">
           {message.error}

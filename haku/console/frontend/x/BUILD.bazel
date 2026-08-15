@@ -26,11 +26,25 @@ ts_library(
 )
 
 ts_library(
+    name = "claude_tool_use",
+    srcs = ["claude_tool_use.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//haku/console/frontend:client",
+        "//haku/console/frontend:code_block",
+    ],
+)
+
+ts_library(
     name = "claude_chat_page",
     srcs = ["claude_chat_page.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":chat_scroll",
+        ":claude_tool_use",
         ":markdown",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -44,6 +58,7 @@ ts_library(
     srcs = ["conversations_page.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":claude_tool_use",
         ":markdown",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
