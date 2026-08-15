@@ -529,6 +529,59 @@ The Bazel test `//cluster/validation:test_cluster_integration` catches dangling
 resource references in `cluster/k8s/kustomization.yaml` (its orphaned-files and
 dependency checks), preventing this class of silent wedge from reaching `devel`.
 
+## Diagnosing From an Agent Sandbox
+
+Four traps that all produce a _plausible wrong answer_ rather than an error, so
+they cost a conclusion rather than a retry. All hit while running the egress-fence
+spike from `haku-sandbox` (2026-08-15).
+
+### `kubectl auth can-i` disagrees with the API server
+
+It answered `yes` for `pods/log` in a namespace where the real request came back
+`Forbidden`, twice in one session and twice before that. It is a
+`SelfSubjectAccessReview`, evaluated against rules the client can enumerate, and
+for the OIDC-group agent identities it does not reflect what actually happens.
+
+**Never plan around `can-i`. Issue the real request** — a `kubectl logs --tail=1`
+costs the same and cannot be wrong.
+
+### Sandbox pods inherit `NO_PROXY` covering `.svc.cluster.local`
+
+Pods in `haku-sandbox` get the egress-proxy environment injected:
+`HTTP_PROXY`/`HTTPS_PROXY` pointing at `haku-egress-proxy`, and a `NO_PROXY`
+listing `.svc`, `.svc.cluster.local`, and `10.0.0.0/8`.
+
+So `curl -x http://some-proxy.svc.cluster.local:3128 https://origin.svc.cluster.local/`
+**silently ignores `-x` and connects directly**. The response looks completely
+normal; it simply never went through the proxy under test. Pass `--noproxy ''`
+whenever the thing being tested _is_ a proxy, and confirm from the far side (a
+`Via` header, the proxy's own added header, a cert issued by its CA) rather than
+from a 200.
+
+### An experimental namespace can have no log path at all
+
+`pods/log` is refused outside the sandbox namespaces, and `loki-read-proxy`
+serves only its `NAMESPACE_ALLOWLIST` (infrastructure namespaces plus a few
+services). A new `x/` namespace is in neither, so **its pods' logs are
+unreadable** — `kubectl logs` is Forbidden and Loki returns "namespace not in the
+allowlist".
+
+Design experiments to self-report instead: have the workload reflect what it saw
+back through the response path. The Squid spike's echo origin exists for this, and
+its ICAP stub answers questions by adding `X-Icap-Saw-*` headers to the request it
+is already modifying. Adding a namespace to the Loki allowlist is the alternative
+when the workload cannot be made to report.
+
+### A binary with file capabilities cannot exec under restricted PodSecurity
+
+`caddy:2.9-alpine` dies at startup with `exec /usr/bin/caddy: operation not
+permitted` — no stack trace, no config error, just EPERM. The binary carries
+`cap_net_bind_service`, and `allowPrivilegeEscalation: false` (mandatory under
+restricted PodSecurity) forbids exec'ing a file that would grant capabilities.
+
+Pick an image whose binary carries none — `nginxinc/nginx-unprivileged` works
+where `caddy` does not — rather than trying to loosen the pod's security context.
+
 ## Quick Reference
 
 | Issue                                     | Fix                                                           |
