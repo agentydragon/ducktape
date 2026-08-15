@@ -52,11 +52,11 @@ class FrameKind(StrEnum):
     never heard of, and a record that refuses to store one is worse than a name it cannot match.
     The column stays text; this names the closed subset.
 
-    `SETUP_OUTPUT` is the odd member, and a known defect rather than a design. That table holds
-    three different things — the CLI's frames verbatim, the console's rendering of the runner's
-    `SetupOutput` bytes, and a `partial` reconstruction wearing `assistant` — so `kind` answers a
-    different question for each. <../plans/chat_runtime_projection.md> is where it gets one
-    meaning back.
+    `SETUP_OUTPUT` is the odd member, and a known defect rather than a design: it is the *bridge's*
+    discriminator sitting in a column that otherwise holds the *CLI's* `type`, because two unrelated
+    sinks write here. Stage 2 of <../plans/chat_runtime_projection.md> makes the column the bridge's
+    vocabulary throughout, at which point that half of this splits off into a closed enum that can
+    be the column's type — and this one keeps the CLI's, which must stay open.
     """
 
     ASSISTANT = "assistant"

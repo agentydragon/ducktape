@@ -1061,13 +1061,14 @@ class ClaudeChatFrame(Base):
     would silently inherit whatever the reader unpacks — thinking blocks are on the wire and
     are dropped by the turn loop's extraction, as is a result's cost and usage.
 
-    **Three provenances share this table and only two are distinguishable by `kind`.** A
-    ``setup_output`` row is one decoded line of the runner's `SetupOutput` bytes, so it is neither
-    the CLI's frame nor the runner's; a ``partial`` row is the console's reconstruction of an
-    answer still streaming, and it wears ``assistant`` and is told apart by its own column. So
-    "what is this row" has three answers and no single field gives them. Both non-CLI kinds are on
-    their way out — the partial with the tombstone on `update_partial_frame`, the setup output to
-    a table of its own — in <../plans/chat_runtime_projection.md>.
+    **`kind` holds two discriminator vocabularies**, because two unrelated sinks write here:
+    `RolloutRecorder` puts the CLI's own top-level ``type`` in it, and the setup reporter puts the
+    *bridge* envelope's ``setup_output`` literal in it. A ``partial`` row is a third thing again —
+    the console's reconstruction of an answer still streaming — and wears ``assistant`` while being
+    told apart by its own column. So "what is this row" has three answers and no one field gives
+    them. Stage 2 of <../plans/chat_runtime_projection.md> makes this table the log of the bridge:
+    ``kind`` becomes the envelope's discriminator throughout and the CLI's type gets its own
+    column.
     """
 
     __tablename__ = "claude_chat_frames"

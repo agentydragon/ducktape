@@ -75,7 +75,7 @@ before stage 2 commits to it. `read_frames` leaves them out of its default view,
 "would bury the log for a reader" is actually answered. One extra write per delta until stage 2
 removes the `partial` row it replaces, at which point it is a wash.
 
-### 2. Make the frame log store one thing
+### 2. Make the frame log store one thing — **the table becomes the bridge**
 
 `claude_chat_frames.kind` holds **two different discriminator vocabularies**, because two unrelated
 sinks write to it:
@@ -85,30 +85,39 @@ sinks write to it:
 | `RolloutRecorder._record`, a `FrameSink` on `ClaudeCli` | CLI protocol frames only, by construction | `payload["type"]` — the CLI's vocabulary       |
 | `_progress_reporter.report`, by hand                    | one decoded line of a `SetupOutput`       | `"setup_output"` — the bridge's `kind` literal |
 
-Plus a `partial` row, which is the console's own reconstruction of a streaming answer and wears
-`assistant` while being told apart by a boolean column.
+Plus a `partial` row, the console's own reconstruction of a streaming answer, which wears
+`assistant` and is told apart by a boolean column. That one leaves regardless: it is tombstoned on
+`update_partial_frame`, and stage 1 removed its reason to exist.
 
-The partial row leaves regardless — it is tombstoned on `update_partial_frame` and stage 1 removed
-its reason to exist. What is left is a real choice, and it is the owner's:
+**Decided: the table is the log of the bridge.** `kind` becomes the envelope discriminator
+(`claude`, `setup_output`, `hello`, `start`, `end_input` — `protocol.py` owns the list) and the
+CLI's own `type` gets a column of its own. Two columns, each answering one question, and any
+future runner-originated frame has a home instead of a special case.
 
-**A. The table is the bridge.** `kind` becomes the envelope discriminator (`claude`,
-`setup_output`, `hello`, `start`, `end_input`) and the CLI's own `type` moves to a second column,
-so today's queries stay cheap. Truthful, and it gives any future runner-originated frame an obvious
-home. Costs: two enums instead of one, a second column, and recording envelope kinds nothing asks
-for today — the recorder never sees them, since it hangs off `ClaudeCli` below the envelope.
+**What this costs, stated before starting.** The recorder is a `FrameSink` on `ClaudeCli`, which
+sits _above_ the envelope and structurally cannot see one — so the sink moves down to
+`WebSocketTransport`. The dedup answer moves with it: `received()` returns False for a replay and
+`ClaudeCli._read` uses that to skip routing, so the transport takes over both. It also means
+recording envelope kinds nothing reads today (`hello`, `start`, `end_input`); that is the point of
+the design rather than a cost, but it is new rows.
 
-**B. Two tables, one per sink.** The rollout keeps the CLI's frames and its vocabulary; sandbox
-output gets its own table. Less machinery, and it follows the code that already exists: the two
-rows are written by different sinks and read by different readers. Costs: setup output leaves the
-single ordered sequence. That matters less than it sounds — setup runs before the CLI produces
-anything, so the two are sequential rather than interleaved — but check it against a real session
-rather than assuming it.
+**No dedup win to claim.** `SetupOutput` is queued `replayable=False`, and `prepare_workspace`
+sends it straight to the socket before launch anyway — so it is never replayed and there is no
+duplicate-row bug here for A to fix.
 
-**The hinge is whether a third runner-originated thing will ever be worth persisting.** If yes, A
-pays for itself. If not, B is strictly less to carry. Nothing else about this plan depends on which
-is picked.
+Three releases, because flipping a column's meaning under a rolling deploy is not additive:
 
-**Done when** `kind` answers one question, and the enum over it can be the column's type.
+1. **Add `cli_type`, dual-write, and move every reader onto `coalesce(cli_type, kind)`.** Backfill
+   `cli_type = kind` where `kind <> 'setup_output'`. Additive; old replicas are unaffected.
+2. **Once that roll converges**: writers set `kind` to the envelope discriminator, and the sink
+   moves to the transport. Safe only because step 1 already stopped every reader depending on
+   `kind` — an old replica still filtering `kind = 'assistant'` would otherwise mis-decide a turn's
+   state in `adopt_open_turn`, which is not cosmetic.
+3. **Contract**: drop the coalesce, `kind` NOT NULL. `FrameKind` splits into the closed
+   `BridgeFrameKind` (which _can_ be the column's type, since `protocol.py` owns that vocabulary)
+   and an open CLI type that stays text, because the CLI may send one we have never heard of.
+
+**Done when** `kind` answers one question and `BridgeFrameKind` is the column's type.
 
 ### 3. Turn state onto the turn row
 
