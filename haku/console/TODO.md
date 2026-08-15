@@ -213,6 +213,7 @@ of the bridge, `kind` becomes the envelope discriminator, and the CLI's type get
 along with what that costs (the sink has to move down to `WebSocketTransport`, and it is three
 releases because flipping a column's meaning under a rolling deploy is not additive). **Nothing is
 scheduled**, and no other work depends on it.
+
 ## Which past conversations may an agent read?
 
 `list_conversations`, `read_rollout`, and `list_turns` (<tools/conversations.py>) are unscoped by
