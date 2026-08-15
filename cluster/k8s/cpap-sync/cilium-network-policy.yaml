@@ -35,6 +35,20 @@ spec:
             - port: "18080"
               protocol: TCP
 
+    # cpap-card is backed by a KubeVirt virt-launcher rather than an ordinary
+    # Deployment pod.  On this cluster's Cilium/KubeVirt path, toServices
+    # compiles to the right selector but does not install a usable BPF allow
+    # for the translated backend connection.  Keep the Service rule above for
+    # the facade contract and explicitly authorize the stable VMI identity.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: cpap-sync
+            k8s:kubevirt.io/domain: cpap-gateway
+      toPorts:
+        - ports:
+            - port: "18080"
+              protocol: TCP
+
     # git.allegedly.works resolves to the cluster's Gateway node addresses;
     # cluster covers those node entities as well as in-cluster Forgejo traffic.
     - toEntities:
