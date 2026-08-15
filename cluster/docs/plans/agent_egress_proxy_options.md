@@ -1019,6 +1019,81 @@ What does need solving is that `%>a` is a pod IP, which is ephemeral, while
 stable owner label via the Kubernetes API and send _that_ to the console, so
 decisions survive pod churn.
 
+### Direction: one Squid per _agent_, provisioned by haku-console
+
+Refinement of "one Squid per fence" (operator, 2026-08-10): the console manages a
+Squid **per agent**, so each agent gets its own fence — its own allowlist, its own
+credentials, its own policy.
+
+**Identity stops being a lookup and becomes a constant.** If the proxy instance
+_is_ the agent, the helper does not need `%>a` at all: the agent id is baked into
+that Squid's own config (a helper argument, or `%DATA` on the `acl … external`
+line). Unforgeable for the right reason — the agent cannot edit the config of the
+proxy it is fenced by. This removes the IP → pod → owner-label mapping through the
+Kubernetes API, which was the fiddliest piece of the design, and it downgrades
+verification item 4 below from load-bearing to nice-to-know.
+
+**Credential blast radius shrinks to one agent.** Today
+`haku-openclaw-spike-proxy` holds five secrets on behalf of one spike; per-agent
+proxies mean a compromised proxy exposes exactly the credentials of the agent it
+serves.
+
+**It must be a separate pod, not a sidecar.** Tempting to co-locate it in the
+agent's pod for lifecycle reasons, but Cilium enforces network policy **per
+endpoint, i.e. per pod** — it cannot distinguish the agent container's traffic
+from the sidecar's within one pod. The whole fence today rests on the sandbox pod
+being allowed to reach _only_ the proxy pod, while the proxy pod holds the wider
+egress. Collapsing them into one pod gives the agent container the proxy's egress
+rights directly, and the fence becomes advisory. Sidecar is the one shape that
+silently undoes this.
+
+**The cost is cache fragmentation**, taken to its limit: every agent starts cold.
+That is the same trade already accepted when per-fence `emptyDir` beat a shared
+cache, pushed one step further — worth noting only because caching was
+requirement 1, and per-agent isolation is close to the worst case for it. If hit
+rate ever matters, that is the axis that pays for it.
+
+**Config becomes runtime-generated rather than GitOps'd**, since the console
+writes each agent's allowlist and credential rules at provision time. That is a
+departure from the cluster's declarative norm, but a precedented one — agent
+sandboxes are already provisioned dynamically rather than committed. Worth being
+deliberate about, not accidental. The outage-resilience property survives
+relocation: config is materialised at pod start, so a console outage cannot
+retract a running agent's static allowlist — it only blocks provisioning new
+agents.
+
+#### Provisioned sandboxes must inherit their caller's fence
+
+`haku-sandbox-mcp` lets an agent provision a sandbox. If the new sandbox is
+fenced by anything other than **the calling agent's own proxy**, then
+`provision_sandbox` _is_ the fence escape: the agent never has to defeat its
+proxy, it just asks for a box behind a different one. Per-agent fences make this
+sharp — differing fences is the entire point, so "which fence does a provisioned
+box get" stops being a detail.
+
+Requirement: a sandbox provisioned by agent A egresses only through A's Squid,
+and inherits A's allowlist and credentials.
+
+Three things that has to rest on:
+
+- **Attribution must come from the authenticated caller, never a parameter.** The
+  MCP server has to know _which agent_ called from the credential on the call. If
+  agents share one bearer for `haku-sandbox-mcp`, this is unenforceable — so
+  per-agent MCP credentials are a prerequisite, not a later refinement.
+- **The fence is the NetworkPolicy, not the proxy env var.** `HTTP_PROXY` in a
+  sandbox is a _hint_: the workload can unset it. Only a CNP restricting that
+  pod's egress to its agent's Squid makes it a fence. Setting the env and calling
+  the box proxied would be exactly the advisory-fence mistake.
+- **Fence membership should be a label the workload cannot change.** A per-agent
+  CNP selecting `agent=<id>` and permitting egress only to that agent's Squid
+  makes any correctly-labelled pod fenced by construction. That holds only while
+  sandbox pods lack RBAC to patch their own labels — worth asserting explicitly,
+  since relabelling would be a fence change.
+
+A pleasant consequence: if the agent's Squid is torn down, its sandboxes lose
+egress rather than falling back to open. Lifetime coupling in the fail-closed
+direction.
+
 ### Verify before building: what only running answers
 
 Everything below is a Squid behaviour that reading cannot settle, ordered by how
@@ -1046,8 +1121,10 @@ resolve under the CNP's `**.cluster.local` DNS rule): `allow-origin` → `OK`,
 4. **Is `%>a` the client pod's IP?** The 2026-08-10 run could not show this —
    `X-Spike-Client` read `127.0.0.1` because curl ran inside the Squid pod. Drive
    it from a **second pod** and confirm the source survives without SNAT to a
-   node IP. Agent-scoped policy and the whole unforgeable-identity premise rest
-   on this.
+   node IP. **Downgraded** by the per-agent direction above: if the proxy
+   instance is the agent, identity is a constant in that Squid's config and `%>a`
+   only separates pods _within_ one agent's fence — useful for audit, not for the
+   decision. Still worth knowing, no longer load-bearing.
 5. **Does `message=` reach the agent?** Through a bumped tunnel the error page is
    generated inside the TLS session. If it arrives, deny-now/allow-on-retry
    becomes actionable ("pending operator approval") instead of an opaque 403.
