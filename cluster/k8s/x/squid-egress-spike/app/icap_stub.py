@@ -103,6 +103,53 @@ def rebuild_request(start_line: bytes, pairs: list[tuple[str, str]]) -> bytes:
     return b"\r\n".join(lines) + b"\r\n\r\n"
 
 
+def fingerprint(value: str | None) -> str:
+    """Enough to tell two credentials apart, not enough to redeem either.
+
+    The spike's credentials are fake, but this file is the shape the real
+    service takes, and there the whole question is whether the ICAP service
+    sees a live secret -- answering it must not itself put one in a log or a
+    header bound for the origin.
+    """
+    if value is None:
+        return "absent"
+    return f"{value[:12]}...len={len(value)}"
+
+
+def observations(
+    icap_headers: list[tuple[str, str]],
+    pairs: list[tuple[str, str]],
+    encapsulated: str,
+    preview: str | None,
+    body: bytes,
+    saw_ieof: bool,
+) -> list[tuple[str, str]]:
+    """What the service saw, as headers the echo origin will reflect back.
+
+    The spike has no way to read this pod's log: pods/log is refused in this
+    namespace and squid-egress-spike is not in the loki-read-proxy allowlist.
+    Reflecting through the origin is the same trick echo-origin already exists
+    for, and it keeps the observation on the same request it describes.
+
+    X-Icap-Saw-Spike-Client is the load-bearing one. squid.conf adds
+    X-Spike-Client via request_header_add; if it is already present here then
+    Squid's own header rewriting -- including the credential substitution in
+    credentials.conf -- runs BEFORE adaptation, which means the ICAP service is
+    inside the secret path. Absent means REQMOD runs first and the service
+    never sees the real credential.
+    """
+    return [
+        ("X-Icap-Saw-Authorization", fingerprint(header(pairs, "Authorization"))),
+        ("X-Icap-Saw-Spike-Client", header(pairs, "X-Spike-Client") or "absent"),
+        ("X-Icap-Saw-Via", header(pairs, "Via") or "absent"),
+        ("X-Icap-Saw-Client-Ip", header(icap_headers, "X-Client-IP") or "absent"),
+        ("X-Icap-Saw-Client-Username", header(icap_headers, "X-Client-Username") or "absent"),
+        ("X-Icap-Saw-Encapsulated", encapsulated.replace(",", ";")),
+        ("X-Icap-Saw-Preview", "absent" if preview is None else preview),
+        ("X-Icap-Saw-Body", f"bytes={len(body)} ieof={saw_ieof}"),
+    ]
+
+
 class Handler(socketserver.StreamRequestHandler):
     # Squid keeps ICAP connections open; a per-transaction timeout stops a stuck
     # peer from pinning a thread forever.
@@ -237,9 +284,11 @@ class Handler(socketserver.StreamRequestHandler):
             log(f"  body: {len(body)} bytes total after continue")
 
         had_auth = header(pairs, "Authorization")
+        saw = observations(icap_headers, pairs, encapsulated, preview, body, saw_ieof)
         pairs = [(k, v) for k, v in pairs if k.lower() != "authorization"]
         pairs.append(("Authorization", INJECTED))
         pairs.append(("X-Icap-Stub", "rewrote-authorization"))
+        pairs.extend(saw)
         new_head = rebuild_request(start_line, pairs)
 
         if body:
