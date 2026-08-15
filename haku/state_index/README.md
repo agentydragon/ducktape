@@ -201,17 +201,17 @@ Deliberately absent — it depends on the evaluation above:
   running version serving — so the ordering to verify before merging is that the `Database` CR has
   reconciled first.
 
-- **The sync trigger — the last thing between this and working.** For `chat`, nothing external is
-  needed: the console writes the messages itself, so a post-turn call or a replica-coordinated
-  sweep alongside `oauth_association_maintenance.py` is the natural shape and a cron is the
-  fallback. For `git`, the console may clone haku-state read-only (decided 2026-08-15), which puts
-  both syncs in one process and removes the separate CronJob — but it needs a **read-only Forgejo
-  credential produced by `tf/gitops/haku-state`**, never a hand-minted token, and a mirror
-  directory to fetch into. It also changes a documented property: `haku/console/README.md` says the
-  console holds no haku-state git credential at all, and that sentence has to become "no _write_
-  credential" in the same change that adds the read one.
+- **Sync — done, in the console.** `haku/console/state_index_sync.py` sweeps both corpora from
+  the console process: chat every minute over its own tables, haku-state every five minutes into a
+  bare mirror on the pod's `/tmp`. Each corpus takes its own Postgres advisory lock, so exactly one
+  replica syncs it and a slow fetch never delays the other. The git half needs a credential, and it
+  is **Haku's own Forgejo account** (operator, 2026-08-15) rather than a second read-only one — so
+  the console holds something that could write haku-state even though nothing in it does. That cost
+  is recorded where it is paid: <../console/README.md> and `tf/gitops/haku-state/main.tf`, which
+  reflects the Secret into `haku-console`.
 
-  Until a trigger exists, `index_status` honestly reports a backlog that nothing is draining.
+  Not done: nothing triggers a sweep on a push, so a haku-state commit is searchable within five
+  minutes rather than immediately, and a new message within one.
 
 - **Eviction.** `last_seen_at` is maintained but nothing sweeps it. At 384 dims a chunk's
   vector is ~1.5 KB, so wait until it shows up on a disk graph. When you do add a sweep, it

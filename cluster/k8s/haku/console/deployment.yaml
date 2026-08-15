@@ -1,8 +1,9 @@
 # The Haku console: reviewed FastAPI API code plus a baked nginx static frontend.
 # The console is the trusted outer shell — it serves config + the capability tier
 # (launch-routine) and frames Haku's own UI (haku-ui) as a sandboxed cross-origin
-# iframe. It holds NO haku-state git credential (feedback/trace writes moved into
-# haku-ui). nginx serves the bundled SPA image and proxies API calls to localhost.
+# iframe. It writes nothing to haku-state (feedback/trace writes moved into haku-ui);
+# it holds Haku's Forgejo credential only to fetch the index's read-only mirror.
+# nginx serves the bundled SPA image and proxies API calls to localhost.
 # The app owns its auth: the operator browser logs in via Authentik OIDC
 # (operator_oidc -> signed session cookie, guarded by OperatorSessionMiddleware) and
 # agents authenticate to /mcp via MultiAuth (OIDCProxy DCR + static bearer). The
@@ -154,6 +155,30 @@ spec:
             # model-generic — check this against the tag Ollama actually serves.
             - name: HAKU_CONSOLE_EMBEDDER__QUERY_INSTRUCTION
               value: "Instruct: Given a search query, retrieve relevant passages\nQuery: "
+            # The read side of haku-state, for `haku_index`'s git corpus: the console keeps a bare
+            # mirror on its /tmp emptyDir and re-fetches it every few minutes. Losing that volume
+            # costs a clone, not an embedding — the chunk cache is content-addressed in Postgres.
+            #
+            # This is Haku's own Forgejo account (operator, 2026-08-15), reflected in from
+            # haku-sandbox by tf/gitops/haku-state, and it is a credential that *can* write
+            # haku-state — nothing here does, but the console now holds it. The cheaper-privilege
+            # alternative is the `claude` account, which tf/gitops/haku-state already grants
+            # read-only on this repo: same three keys, different secret.
+            - name: HAKU_CONSOLE_HAKU_STATE_GIT__REPO_URL
+              valueFrom:
+                secretKeyRef:
+                  name: haku-forgejo-git
+                  key: repo_url
+            - name: HAKU_CONSOLE_HAKU_STATE_GIT__USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: haku-forgejo-git
+                  key: username
+            - name: HAKU_CONSOLE_HAKU_STATE_GIT__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-forgejo-git
+                  key: password
             # Free-form UI (Phase 1b): the Authentik-gated origin of Haku's own UI
             # service (haku-sandbox). The console embeds it in a sandboxed cross-origin
             # iframe and sets a CSP frame-src for it; it never renders Haku's UI itself.

@@ -104,23 +104,27 @@ resource "forgejo_collaborator" "claude" {
 #     haku-state-workloads Kustomization reconciles into haku-sandbox under a
 #     constrained SA (cluster/k8s/haku/workloads). Read-only pull — Flux never
 #     pushes; the haku user is just the only principal on the repo.
+#   - haku-console: the console fetches a read-only bare mirror of haku-state for the
+#     `haku_index` git corpus (haku/console/state_index_sync.py). Haku's own credential rather
+#     than a second, read-only one (operator, 2026-08-15): the console is more trusted code than
+#     Haku, and Haku already holds this. It never pushes — but it *could*, which is why
+#     haku/console/README.md says "no write credential" no longer.
 #   - haku-claude-sandbox: the Console-owned Claude runner writes it into ~/.netrc and
 #     checks haku-state out into its workspace, so that session has Haku's manual. Same
 #     credential Haku already holds in haku-sandbox, not a second one: this is the same
 #     agent on a different runtime, and a per-runtime Forgejo account would fragment the
 #     repo's history by which harness happened to be running.
 # The canonical copy serves in-cluster scan runs / the self-hosted worker + the
-# haku-ui backend (operator clicks/feedback → Forgejo writes). The console no
-# longer consumes this: feedback/trace moved into haku-ui.
+# haku-ui backend (operator clicks/feedback → Forgejo writes).
 resource "kubernetes_secret" "haku_forgejo_git" {
   metadata {
     name      = "haku-forgejo-git"
     namespace = "haku-sandbox"
     annotations = {
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-egress-proxy,flux-system,haku-claude-sandbox"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-egress-proxy,flux-system,haku-claude-sandbox,haku-console"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-egress-proxy,flux-system,haku-claude-sandbox"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-egress-proxy,flux-system,haku-claude-sandbox,haku-console"
     }
   }
 

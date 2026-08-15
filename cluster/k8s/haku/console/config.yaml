@@ -368,8 +368,9 @@ mcp:
     # `haku_index` (haku/console/tools/state_index.py): semantic search over haku-state's files
     # and Haku's own past conversations. Listing it here is what builds the searcher, and the
     # console refuses to start unless an embedder is configured too (`HAKU_CONSOLE_EMBEDDER__*`,
-    # Ollama) — search embeds its query. Read-only and credential-free otherwise: the corpus is
-    # the console's own database.
+    # Ollama) — search embeds its query. The same process keeps both corpora current
+    # (haku/console/state_index_sync.py): the conversations corpus from its own tables, and
+    # haku-state through a read-only mirror it fetches with `HAKU_CONSOLE_HAKU_STATE_GIT__*`.
     - id: haku_index
       backend:
         kind: in_process
