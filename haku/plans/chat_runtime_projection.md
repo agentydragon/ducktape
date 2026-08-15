@@ -134,6 +134,17 @@ removes the "exactly one `anext` in flight" dance.
 
 `matrix_pacer`'s deque becomes rows. Delivery gains a retry and loses its guesswork.
 
+The drop audit (<../console/debug/message_drops.md>) turned this from the last stage into the one
+with a live bug behind it, and gave it three constraints it did not have when this was written.
+
+**Why the layer above cannot be made honest without it.** `MatrixSyncService.reply` appends a
+closure to an in-process deque and returns, so `deliver` reports success before any HTTP request
+exists. Whatever the turn loop records at that moment is a statement about a `deque.append`. The
+`spoke` fix that landed makes the turn believe the surface rather than itself, which closes the
+failures the surface can see; every failure the pacer meets afterwards — a 429 past two retries, a
+5xx, a `login` the token closure needed — is still popped and discarded with a log line and no
+retry, ever.
+
 **The generalization to aim at, from <../console/plans/session_channels.md> § 1: a channel is
 reconciled against the session rather than sent to.** The outbox is the push half — deliver
 promptly; a per-attachment cursor on `chat_attachment` is the convergence half — deliver
@@ -151,6 +162,20 @@ needs somewhere durable to hold a message while it decides. An in-process deque 
 The queue is also what makes the check asynchronous with respect to the agent while staying
 strictly before the room, which is the property that made the design worth having; the ordered
 drain is what makes "the first failed message halts" a rule rather than a race.
+
+**Write the row where the reply is produced, not where it is delivered** — in the same transaction
+as `update_assistant`. At delivery time it does not survive a turn that raises between producing
+text and speaking it, which is a real path today (audit E4) and would quietly stay open.
+
+**The transaction id is already there.** `EventTag.transaction_id()` makes redelivery idempotent
+server-side, so a redrive sweep is safe to write on day one rather than needing a dedup design
+first.
+
+**What it does not close, so nobody expects it to.** An abort drain that discards the assistant
+frame before delivery ever sees it (E3); an empty turn that speaks nothing at all (E5); and the
+whole ingress side, where a batch is acknowledged at enqueue rather than at turn completion (I3)
+and an unmappable event is dropped with no log at all (I1). Each is its own fix, and the audit
+lists them with the requirement each one violates.
 
 ## The one thing to keep in view
 
