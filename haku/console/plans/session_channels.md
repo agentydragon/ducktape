@@ -28,12 +28,30 @@ because the supervisor owns provisioning (R3.1, R3.2), and the console does not 
 rooms (R3.6, R3.6c). The goal is that no channel is missing something for **no reason** — which
 is what most of the bold cells above are.
 
-## 1. The model: a channel is reconciled against the session
+## 1. A candidate model: a channel is reconciled against the session
 
-**The session's record is the truth; a channel is driven toward agreement with it.** Not "send
-this event when it happens" but "make this channel show what this session has". The unit is a
-loop per `(channel, session)`, and its state is one cursor: how far this attachment has been
-brought up to date.
+**Not a requirement** (operator, 2026-08-15) — a candidate, and the thing it is a candidate _for_
+is worth stating, because it decides whether it earns its cost. **The session's record is the
+truth; a channel is driven toward agreement with it.** Not "send this event when it happens" but
+"make this channel show what this session has". The unit is a loop per `(channel, session)`, and
+its state is one cursor: how far this attachment has been brought up to date.
+
+**What it is for: plurality on both axes.** Different chat backends (web, Matrix, whatever comes
+next) and different AI backends (an OpenAI-compatible endpoint alongside Claude). Those are the
+two seams <../../plans/chat_runtime_cleanup.md> § stage 7 already names, and this is the frontend
+one done convergently rather than by fan-out. Together they are what makes N backends by M
+channels additive instead of multiplicative — each channel written once against the record, each
+backend written once against the transcript.
+
+**The constraint that makes the pair work, and the one way to get it wrong: the reconciler must
+read only the backend-neutral record.** The transcript and the session events, never the rollout.
+Stage 7 already settles that the rollout is one protocol's wire and cannot be what a second
+backend shares ("transcript primary, rollout per-backend evidence"); a reconciler that reached
+into Claude frames to decide what a room should show would weld the channel layer to the backend,
+which is the exact coupling both seams exist to remove. Two consequences follow, and they are the
+honest price: what a channel can show is the intersection of what every backend reports, so cost
+and usage on a `TurnCompleted` are neutral while thinking blocks and tool-boundary steering are
+not — and a channel wanting the second kind must ask the backend, not the reconciler.
 
 That is a different primitive from a delivery queue, and it buys three things:
 
@@ -47,8 +65,8 @@ That is a different primitive from a delivery queue, and it buys three things:
   console holds. No separate post-on-send path, and no enqueue/post ordering judgment to get
   right (§5).
 - **It subsumes the room outbox rather than competing with it.**
-  <../../plans/chat*runtime_projection.md> § stage 5 turns `matrix_pacer`'s deque into rows; that
-  is the \_push* half, delivering promptly. The reconciler is the _convergence_ half, delivering
+  <../../plans/chat_runtime_projection.md> § stage 5 turns `matrix_pacer`'s deque into rows; that
+  is the push half, delivering promptly. The reconciler is the convergence half, delivering
   eventually and at most once. Build the cursor first and the outbox becomes the fast path that
   advances it.
 
@@ -248,7 +266,68 @@ What remains to get right:
 appservice with a puppet MXID. The first breaks R5.1's single-holder property for a send button;
 the second reverses R1.1's whole design note for one.
 
-## 6. What this corrects in the existing plans
+## 6. Non-message actions in the room, and links between the channels
+
+### Slash commands are how Matrix gets the actions the console has
+
+The parity table's "no" column for Matrix — abort, new session, close — is one missing
+affordance, not three: a way for a room message to mean something other than "talk to Haku".
+Slash commands are the natural form, and they settle the abort question this plan previously left
+open by generalizing it.
+
+**They are ingress interception, not an agent tool.** A command is recognized and consumed by the
+harness before batching, so it never reaches the agent as a prompt. That keeps the split
+matrix_chat_runtime.md's non-goals draw — the harness owns ingress; agent tools are write-side
+extras — and leaves R5.4's read-only tool surface untouched. R2.7 already carves out the room for
+it: control messages flush immediately rather than waiting out the debounce.
+
+Authorization needs nothing new. It is a DM (R3.5), the sender maps to an operator identity
+(R9.3), and an unmapped sender gains no authority (R8.5). What must not follow is approvals: a
+slash command is an operator gesture against the _session_, and R9.5's "a Matrix message is never
+consent for a tool call" holds regardless of the leading character.
+
+**Gotcha, and it is the kind found only after building: Element eats slash commands.**
+`/me`, `/html`, `/plain`, `/join`, `/invite`, `/op` and friends are client-side and never reach
+the room, and an unrecognized `/foo` produces a client-side error rather than a sent message — so
+the operator's command silently never arrives. Verify against the client before choosing a
+namespace, and prefer a prefix Element does not claim (`!haku stop`) over gambling that a given
+verb is free.
+
+### A room-level status pointing at the web session
+
+R7.2 already puts the session ID in the room on startup and rotation. Now that a session has a
+page, **make it a link** — that is the whole of the cheap version, it needs no capability the
+console lacks, and it lands in the message the operator would scroll to anyway.
+
+The richer version, a persistent room-level status, is worth wanting and is not free:
+
+- **`m.room.topic` and `m.room.pinned_events` are state events, gated by power level.** The
+  operator creates the DM (R3.6), so they hold PL 100 and `@haku` joins at the default 0 —
+  meaning the console most likely **cannot** set either today. `matrix_client.py` sends no state
+  events at all, so this is unbuilt capability rather than a switch. The fix is the operator
+  granting Haku PL 50 in Element, which is a manual gesture with no place in R3.6b's
+  adopt-from-traffic path. Check the actual power levels before designing on top of this.
+- **Presence (`m.presence` `status_msg`) is per-user and global**, not per-room, and Synapse
+  deployments commonly disable it. It is also the wrong scope the moment R3.6a's [later] shape
+  arrives — one room per `(operator, agent)` — since one status would have to describe several.
+
+So: link in the notice now; topic as a follow-up gated on a power-level check.
+
+### Interlinking, now that there is a frontend to link to
+
+Worth doing broadly and in both directions — room notice → console session, console session →
+the room (a `matrix.to` permalink, which `matrix_client.py` already builds for read results,
+R11.5), session → its tool calls, tool call → the session that made it. The last of those shares
+its mechanism with console/TODO.md's per-tool-call deep link, which is unbuilt for the same
+reason: nothing yet opens _the exact thing_ a URL names.
+
+**One ordering constraint, and it is not obvious: settle the session route before minting links
+into the room.** A Matrix event is permanent and federated — the console cannot take back a URL
+it posted. §2 merges `/chat` and `/conversations` into one sessions surface, which is exactly the
+change that would strand every link posted under the old route. Do the merge first, or post links
+under a route chosen to survive it.
+
+## 7. What this corrects in the existing plans
 
 Two places state that the SPA needs nothing from the room-facing port. That premise was true of a
 surface whose client only read message rows; it is not true of a channel:
@@ -272,12 +351,15 @@ surface whose client only read message rows; it is not true of a channel:
    it. Wants cleanup stage 7's schema half; everything above is possible without it.
 6. **The Matrix relay** (§5, Matrix half) — one more thing the loop already does, once it exists.
 
-## Open question
+Two items sit outside that spine. **The session link in the R7.2 notice** (§6) is small and can
+land any time after §2 has settled the route — not before, since a posted link is permanent.
+**Slash commands** (§6) depend on nothing here at all; they are ingress work, and abort is the
+one worth having first.
 
-**Should Matrix be able to abort a turn?** It is the one capability the console has and Matrix
-plainly lacks with no stated reason. `_run_turn` already implements interrupt for the console's
-abort button, and an operator watching a runaway turn from a phone currently has no way to stop
-it. It would need an operator-side gesture in the room — a control message, or a reaction — which
-is harness ingress, not an agent tool, so R5.4's read-only surface is untouched. Not decided here
-because it is the first thing that would make a room message mean something other than "talk to
-Haku", and that deserves its own argument.
+## Open questions
+
+- **Which command namespace survives the client?** Element consumes leading-slash verbs it
+  recognizes and errors on ones it does not, so the choice is a compatibility question rather
+  than a taste one (§6).
+- **Can `@haku` set room state at all?** The room-level status in §6 rests on it, and the DM's
+  power levels probably say no. One `kubectl`-free check in Element answers it.

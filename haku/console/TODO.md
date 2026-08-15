@@ -32,6 +32,13 @@ Design, the parity gaps it closes, and the traps in each: <plans/session_channel
    must count a relay as conversation or every rotation re-awakens a session with the operator's
    half missing.
 
+Two more, outside that spine. **Slash commands** give Matrix the non-message actions the console
+has — abort first — as ingress interception rather than an agent tool, so R5.4 is untouched;
+watch out for Element consuming leading-slash verbs before they ever reach the room. And
+**interlink the two channels** now that sessions have a page: a link to the console session in
+the R7.2 notice, a `matrix.to` permalink back, session ↔ tool calls. A posted Matrix event is
+permanent and federated, so settle the session route (item 3) before minting links into a room.
+
 ## Notification text per tool kind
 
 A push notification is titled with the tool's shared action description
@@ -228,19 +235,6 @@ only status mutation on that path that does not. A closing session's runner ther
 Since the channel merge (#3938, #3941) the event kind is an argument rather than a channel name, so
 the fix is one `await notify(db, ChatEventKind.PROMPT, session_id)` alongside the status write. It
 must stay **inside** that transaction: `pg_notify` delivers on commit.
-
-## No `startupProbe` on the console containers
-
-Both containers in <../../cluster/k8s/haku/console/deployment.yaml> carry a `livenessProbe`
-(`initialDelaySeconds: 10`, `periodSeconds: 30`) and no `startupProbe`. The API container applies the
-Alembic baseline at startup before it serves, so slow startup work competes with the liveness budget
-and a start that overruns it is killed and retried — worst exactly when a migration has the most to
-do.
-
-A `startupProbe` on the same endpoint with a generous `failureThreshold` separates "still starting"
-from "wedged" and lets the liveness budget stay tight for steady state. Deliberately not solved by
-loosening `livenessProbe`, which would blunt detection for the whole life of the pod to buy slack
-that is only needed once.
 
 ## `claude_chat_frames` does not map to one concept
 
