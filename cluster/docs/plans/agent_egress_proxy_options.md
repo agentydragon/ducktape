@@ -1065,6 +1065,86 @@ ICAP itself is compiled in but **not yet exercised** — no `icap_service` is
 configured, and nothing has been adapted. That is the next thing to try, not a
 thing that works.
 
+### Direction: ICAP only, with haku-console as the ICAP endpoint
+
+Operator, 2026-08-15: probably **just ICAP**, if it works — and rather than a
+helper process in the Squid pod, **haku-console exposes the ICAP endpoints
+itself**. No `external_acl_type` gate, no separate substitution service. Squid
+points `icap_service` at the console; one REQMOD call decides policy and rewrites
+the credential.
+
+**The win is that no credential lives in the proxy at all.** No `envsubst`, no
+tmpfs render, no per-proxy SOPS secrets, no generated per-agent credential
+config. The secret exists in console, transits Squid per request, and is never at
+rest there. That does not answer "which fence holds which credential" — the
+question this note opens with — it deletes it. It also drains most of the heat
+from per-agent-vs-shared, since the thing being partitioned is no longer in the
+proxy.
+
+**The static allowlist survives without `external_acl`.** It is a plain
+`acl known dstdomain "/etc/squid/allowed-domains.txt"` — config, no helper, no
+round trip. Dropping the ACL helper costs nothing there, and `adaptation_access`
+can keep statically-allowed, uncredentialed traffic away from console entirely.
+
+#### The trade: console moves onto the critical path
+
+This inverts a property decided earlier and should be a decision, not a surprise.
+
+The gate design deliberately degraded gracefully: console down meant agents kept
+reaching everything already sanctioned in git and lost only _new_ domains.
+Downtime cost reach, not operation.
+
+If the credential comes from console, that reverses. The credentialed hosts **are
+the hot path** — LLM API, Forgejo, GitHub — so console down means no LLM access
+at all. `adaptation_access` cannot rescue it: it can skip ICAP for
+allowed-and-uncredentialed hosts, but the credentialed ones are exactly the ones
+that must go through.
+
+Defensible, since fail-closed already made console a hard dependency for
+undecided domains. But it is a strictly stronger coupling than what "console
+downtime degrades reach, not operation" described, and it argues for console HA in
+a way the gate-only design did not.
+
+#### Two practical unknowns
+
+- **REQMOD hands the service the whole request, body included.** For a POST to
+  the LLM API that means every prompt transiting console — volume and sensitivity
+  that may not be wanted. ICAP `Preview` plus `204 No Content` exists for this,
+  and header-only rewriting ought to answer off the preview, but how that
+  interacts with returning a _modified_ message needs verifying rather than
+  assuming.
+- **Console needs a real ICAP server**, not a REST endpoint: encapsulated HTTP
+  messages, the `Encapsulated` header, `OPTIONS`, `204`, chunked bodies.
+  `pyicap` exists. Bounded work, but a niche protocol, and nothing in the
+  existing FastMCP surface helps.
+
+#### Test it in three steps, not one
+
+The tempting move is to wire the console endpoints and drive them with an
+experimental agent. That couples three unknowns at once — whether Squid's REQMOD
+does what we need, whether the console implementation is right, and whether the
+agent path works — so a failure anywhere reads as a failure everywhere.
+
+1. **Stub ICAP service in the spike namespace.** Not console: a small service
+   that logs what it receives and rewrites one header. It answers every
+   Squid-side question below at the cost of no console code, and the contract it
+   establishes transfers unchanged. If REQMOD cannot do what is needed, nothing
+   has been written twice.
+2. **Console's ICAP endpoints**, driven by the same spike Squid and the existing
+   `curl` harness. One new variable.
+3. **An experimental agent**, end to end. One more.
+
+What step 1 has to answer, alongside the fail-closed cases already listed:
+
+- Does REQMOD see the **bumped plaintext** request? Expected — adaptation runs
+  post-decryption — but unobserved.
+- Can it rewrite `Authorization`, and can it **block**?
+- Does `bypass=0` fail closed on service-down _and_ on timeout?
+- What arrives for a POST: full body, or preview?
+- Does `http_access` run before adaptation? Still worth knowing without
+  `external_acl`, because it decides whether the static allowlist can keep denied
+  traffic away from console.
+
 ### Direction: one Squid per _agent_, provisioned by haku-console
 
 Refinement of "one Squid per fence" (operator, 2026-08-10): the console manages a
