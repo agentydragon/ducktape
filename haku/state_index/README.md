@@ -196,7 +196,7 @@ Deliberately absent — it depends on the evaluation above:
   adopting the database `bootstrap.initdb` created, with `databaseReclaimPolicy: retain` so
   deleting the file can never drop the console's database.
 
-  Migration `0036` creates the schema and tables and assumes the extension is there. If it is not,
+  Migration `0037` creates the schema and tables and assumes the extension is there. If it is not,
   the migration fails, the new replica never becomes Ready, and `maxUnavailable: 0` leaves the
   running version serving — so the ordering to verify before merging is that the `Database` CR has
   reconciled first.

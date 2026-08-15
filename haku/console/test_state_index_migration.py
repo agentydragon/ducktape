@@ -1,7 +1,7 @@
 """The index's two schema definitions must not drift.
 
 `haku/state_index/schema.py` is what the code queries and what `store.ensure_schema` builds for
-the CLI and the tests; migration 0036 is what the deployed database gets. Nothing else compares
+the CLI and the tests; migration 0037 is what the deployed database gets. Nothing else compares
 them, and a column added to one and not the other would pass every other test in the repo and
 fail in production at the first query.
 """

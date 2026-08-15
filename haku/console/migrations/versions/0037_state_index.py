@@ -14,8 +14,8 @@ becomes Ready; the Deployment's `maxUnavailable: 0` leaves the running version s
 The tables are declared in `haku/state_index/schema.py`; `test_state_index_migration.py` is what
 holds the two definitions together.
 
-Revision ID: 0036
-Revises: 0035
+Revision ID: 0037
+Revises: 0036
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 
 from haku.state_index.vector_type import Vector
 
-revision: str = "0036"
-down_revision: str | None = "0035"
+revision: str = "0037"
+down_revision: str | None = "0036"
 branch_labels: str | None = None
 depends_on: str | None = None
 

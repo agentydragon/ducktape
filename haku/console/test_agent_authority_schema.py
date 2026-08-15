@@ -28,7 +28,7 @@ from util.testing.postgres_fixtures import start_postgres_container
 
 @pytest.fixture(scope="session")
 def postgres_container() -> Any:
-    """Postgres **with pgvector**: migration 0036 creates `vector` columns, and this file migrates
+    """Postgres **with pgvector**: migration 0037 creates `vector` columns, and this file migrates
     a fresh database to head. The deployed database gets the extension from CNPG's `Database` CR."""
     container = start_postgres_container(PGVECTOR_PG18)
     try:

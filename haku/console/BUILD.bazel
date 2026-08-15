@@ -716,7 +716,7 @@ py_test(
     srcs = ["test_agent_authority_schema.py"],
     requires_docker = True,
     deps = [
-        # For its pgvector `postgres_container`: migration 0036 creates `vector` columns, so a
+        # For its pgvector `postgres_container`: migration 0037 creates `vector` columns, so a
         # stock Postgres cannot hold the console's schema.
         ":conftest",
         ":database_migrate",
