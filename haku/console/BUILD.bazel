@@ -1340,3 +1340,41 @@ build_test(
         ":static_image.digest",
     ],
 )
+
+py_library(
+    name = "icap_protocol",
+    srcs = ["icap_protocol.py"],
+)
+
+py_library(
+    name = "icap_server",
+    srcs = ["icap_server.py"],
+    deps = [":icap_protocol"],
+)
+
+py_test(
+    name = "test_icap_protocol",
+    size = "small",
+    srcs = ["test_icap_protocol.py"],
+    deps = [
+        ":icap_protocol",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # pytest-asyncio auto mode (async test functions)
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_icap_server",
+    size = "small",
+    srcs = ["test_icap_server.py"],
+    deps = [
+        ":icap_protocol",
+        ":icap_server",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # pytest-asyncio auto mode (async test functions)
+        "@pypi//pytest_bazel",
+    ],
+)
