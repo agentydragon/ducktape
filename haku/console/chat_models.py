@@ -48,14 +48,17 @@ class FrameKind(StrEnum):
     `user` frame from the agent carries a tool result, not a user message, and either enum gaining
     a value would silently change what the other selects.
 
-    **Deliberately not the type of `claude_chat_frames.kind` either.** That column is the CLI's own
-    top-level `type` verbatim, and the CLI may send a type this console has never heard of — a
-    record that refuses to store one is worse than a name it cannot match. So the column stays
-    text and this names the subset the console dispatches on, plus the two kinds the console
-    authors itself and which say so.
+    **Not the type of `claude_chat_frames.kind` either**: the CLI may send a type this console has
+    never heard of, and a record that refuses to store one is worse than a name it cannot match.
+    The column stays text; this names the closed subset.
+
+    `SETUP_OUTPUT` is the odd member, and a known defect rather than a design. That table holds
+    three different things — the CLI's frames verbatim, the console's rendering of the runner's
+    `SetupOutput` bytes, and a `partial` reconstruction wearing `assistant` — so `kind` answers a
+    different question for each. <../plans/chat_runtime_projection.md> is where it gets one
+    meaning back.
     """
 
-    # The CLI's own.
     ASSISTANT = "assistant"
     USER = "user"
     RESULT = "result"
@@ -64,8 +67,6 @@ class FrameKind(StrEnum):
     CONTROL_REQUEST = "control_request"
     CONTROL_RESPONSE = "control_response"
     COMMAND_LIFECYCLE = "command_lifecycle"
-    # The console's own: a line the sandbox printed, and its reconstruction of an answer still
-    # streaming. Both are renderings rather than wire frames, which is why they are named here.
     SETUP_OUTPUT = "setup_output"
 
 

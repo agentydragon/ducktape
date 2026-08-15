@@ -75,11 +75,29 @@ before stage 2 commits to it. `read_frames` leaves them out of its default view,
 "would bury the log for a reader" is actually answered. One extra write per delta until stage 2
 removes the `partial` row it replaces, at which point it is a wash.
 
-### 2. Retire the partial row
+### 2. Make the frame log store one thing
 
-Tombstoned on `update_partial_frame`. Stop writing it, drop `clear_partial_frame`, then drop the
-`partial` column and its two indexes — a release apart, because an old replica writing a row a new
-one never clears would leave a stray in the rollout for good.
+`claude_chat_frames` currently holds three provenances under one `kind`, and its own docstring was
+wrong about that until it was corrected: the CLI's frames verbatim; a `setup_output` row, which is
+one decoded line of the runner's `SetupOutput` bytes and so is neither the CLI's frame nor the
+runner's; and a `partial` row, the console's reconstruction of an answer still streaming, which
+wears `assistant` and is told apart by a boolean column instead. "What is this row" has three
+answers and no single field gives them, which is why `FrameKind` cannot be the column's type and
+why a reader asking for "everything" gets a different mixture than it expects.
+
+Both non-CLI kinds leave, and the table becomes what its name says.
+
+- **The partial row** is tombstoned on `update_partial_frame` already, and stage 1 removed its
+  reason to exist. Stop writing it, drop `clear_partial_frame`, then drop the `partial` column and
+  its two indexes — a release apart, because an old replica writing a row a new one never clears
+  would leave a stray in the rollout for good.
+- **Setup output moves to its own table.** It is a log line, not a frame, and calling it one is
+  what put a third meaning in `kind`. The argument for keeping it here was that a session dying
+  before its first CLI frame has its whole account in one ordered log — but setup runs _before_ the
+  CLI produces anything, so the two are sequential rather than interleaved and a reader merging
+  them by time loses nothing. Check that against a real session before committing to it.
+
+**Done when** `kind` is the CLI's `type` and nothing else, and `FrameKind` can say so.
 
 ### 3. Turn state onto the turn row
 

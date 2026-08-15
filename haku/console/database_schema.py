@@ -1049,7 +1049,8 @@ class ClaudeChatTurnPrompt(Base):
 
 
 class ClaudeChatFrame(Base):
-    """One line of the agent's own newline-delimited JSON protocol, as it crossed the wire.
+    """The agent's newline-delimited JSON protocol as it crossed the wire — and two things that
+    are not that, which is a defect.
 
     The rollout — what the agent *did*, tool calls with their results — exists nowhere else.
     `claude_chat_messages` keeps an assistant message's `tool_use` blocks and not the frames
@@ -1058,15 +1059,15 @@ class ClaudeChatFrame(Base):
 
     **The payload is the wire, not our parse of it.** Storing the SDK's dataclasses instead
     would silently inherit whatever the reader unpacks — thinking blocks are on the wire and
-    are dropped by the turn loop's extraction, as is a result's cost and usage — and it would
-    have to be migrated when the console starts reading the CLI's jsonl directly for an adopted
-    turn (cli_protocol_ownership.md, design B).
+    are dropped by the turn loop's extraction, as is a result's cost and usage.
 
-    **Two things here are not the CLI's protocol**, and both say so in their `kind`. A
-    ``setup_output`` frame is a line the sandbox printed — bootstrap narration and the CLI's own
-    stderr — which belongs in this log because a session that died before the CLI produced a
-    frame has its whole account there. And a ``partial`` row is the console's reconstruction of
-    an answer still streaming; see that column.
+    **Three provenances share this table and only two are distinguishable by `kind`.** A
+    ``setup_output`` row is one decoded line of the runner's `SetupOutput` bytes, so it is neither
+    the CLI's frame nor the runner's; a ``partial`` row is the console's reconstruction of an
+    answer still streaming, and it wears ``assistant`` and is told apart by its own column. So
+    "what is this row" has three answers and no single field gives them. Both non-CLI kinds are on
+    their way out — the partial with the tombstone on `update_partial_frame`, the setup output to
+    a table of its own — in <../plans/chat_runtime_projection.md>.
     """
 
     __tablename__ = "claude_chat_frames"
