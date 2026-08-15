@@ -54,11 +54,20 @@ ts_library(
 )
 
 ts_library(
+    name = "conversation_timeline",
+    srcs = ["conversation_timeline.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//haku/console/frontend:client"],
+)
+
+ts_library(
     name = "conversations_page",
     srcs = ["conversations_page.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":chat_scroll",
         ":claude_tool_use",
+        ":conversation_timeline",
         ":markdown",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -75,6 +84,17 @@ ts_library(
     deps = [
         ":chat_scroll",
         "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "conversation_timeline_test",
+    srcs = ["conversation_timeline.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":conversation_timeline",
+        "//:node_modules/vitest",
+        "//haku/console/frontend:client",
     ],
 )
 

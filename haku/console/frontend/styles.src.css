@@ -380,25 +380,20 @@
 .haku-conversation-detail-body {
   min-height: 0;
   flex: 1 1 auto;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem);
+  display: flex;
+  flex-direction: column;
 }
 
 .haku-conversation-transcript-scroll {
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
-.haku-conversation-turns {
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-  border-left: 1px solid var(--haku-border);
-  padding: 1rem;
-  background: var(--haku-panel-bg);
+/* A turn boundary spans the transcript column, unlike the messages it separates. */
+.haku-conversation-turn-boundary {
+  align-self: stretch;
 }
 
 .haku-claude-body {
@@ -493,22 +488,6 @@
 
   .haku-chat-message {
     width: 94%;
-  }
-
-  .haku-conversation-detail-body {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .haku-conversation-transcript-scroll {
-    flex: 1 1 auto;
-  }
-
-  .haku-conversation-turns {
-    flex: 0 0 auto;
-    max-height: 14rem;
-    border-top: 1px solid var(--haku-border);
-    border-left: 0;
   }
 }
 

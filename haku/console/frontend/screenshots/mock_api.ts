@@ -261,8 +261,8 @@ const conversationSummaries = [
     error: null,
     created_at: "2026-08-01T03:00:00Z",
     updated_at: "2026-08-01T03:01:00Z",
-    message_count: 4,
-    last_message_at: "2026-08-01T03:00:13Z",
+    message_count: 6,
+    last_message_at: "2026-08-01T03:00:24Z",
   },
   {
     session_id: "70000000-0000-4000-8000-000000000002",
@@ -287,6 +287,31 @@ const conversationSummaries = [
     last_message_at: "2026-07-30T09:11:00Z",
   },
 ] as const;
+// Two exchanges, so the detail scene shows a turn boundary landing between them rather than a
+// single marker that could sit anywhere and still look right.
+const conversationMessages = [
+  ...claudeBoundaryMessages,
+  {
+    message_id: "61000000-0000-4000-8000-000000000011",
+    role: "user",
+    status: "complete",
+    content: "Now check whether the degraded server recovered.",
+    tool_uses: [],
+    error: null,
+    created_at: "2026-08-01T03:00:20Z",
+    updated_at: "2026-08-01T03:00:20Z",
+  },
+  {
+    message_id: "62000000-0000-4000-8000-000000000013",
+    role: "assistant",
+    status: "complete",
+    content: "The reflection call timed out before I could answer.",
+    tool_uses: [],
+    error: null,
+    created_at: "2026-08-01T03:00:24Z",
+    updated_at: "2026-08-01T03:00:24Z",
+  },
+] as const;
 const conversationDetail = {
   session_id: conversationSessionId,
   surface: "matrix",
@@ -295,11 +320,21 @@ const conversationDetail = {
   error: null,
   created_at: "2026-08-01T03:00:00Z",
   updated_at: "2026-08-01T03:01:00Z",
-  messages: claudeBoundaryMessages,
+  messages: conversationMessages,
+  // Newest first, as the endpoint returns them — the transcript numbers them the other way.
   turns: [
     {
+      turn_id: "71000000-0000-4000-8000-000000000002",
+      started_at: "2026-08-01T03:00:20.4Z",
+      ended_at: "2026-08-01T03:00:24Z",
+      outcome: "failed",
+      cost_usd: 0.0041,
+      duration_ms: 3600,
+      usage: { input_tokens: 1900, output_tokens: 60 },
+    },
+    {
       turn_id: "71000000-0000-4000-8000-000000000001",
-      started_at: "2026-08-01T03:00:10Z",
+      started_at: "2026-08-01T03:00:10.4Z",
       ended_at: "2026-08-01T03:00:13Z",
       outcome: "answered",
       cost_usd: 0.0123,

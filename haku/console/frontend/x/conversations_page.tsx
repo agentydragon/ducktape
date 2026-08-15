@@ -1,5 +1,5 @@
-import { Badge, Box, Button, Group, Loader, Paper, Stack, Text, Title } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { Badge, Box, Button, Divider, Group, Loader, Paper, Stack, Text, Title } from "@mantine/core";
+import { useEffect, useRef, useState } from "react";
 
 import {
   displayableError,
@@ -10,7 +10,9 @@ import {
   type ConversationSessionSummary,
 } from "../client";
 import { CONVERSATIONS_PATH } from "../routing";
+import { isNearChatBottom } from "./chat_scroll";
 import { ClaudeToolUseView } from "./claude_tool_use";
+import { conversationTimeline, type ConversationTurn } from "./conversation_timeline";
 import { Markdown } from "./markdown";
 
 function openConversation(sessionId: string): void {
@@ -38,6 +40,39 @@ function surfaceLabel(summary: { surface: ConversationSessionSummary["surface"];
   if (summary.surface === "matrix") return "Matrix";
   if (summary.surface === "spa") return "Console chat";
   return "Conversation";
+}
+
+/** Where one exchange began, and what it cost, drawn across the transcript.
+ *
+ * No start time: the boundary's own position already says when, and the narrow viewport has no
+ * room for a wall-clock value that would only repeat it.
+ */
+function TurnBoundary({ turn, number }: { turn: ConversationTurn; number: number }) {
+  const facts = [
+    turn.duration_ms == null ? null : `${(turn.duration_ms / 1000).toFixed(1)}s`,
+    turn.cost_usd == null ? null : `$${turn.cost_usd.toFixed(4)}`,
+  ].filter((fact) => fact !== null);
+  return (
+    <Divider
+      className="haku-conversation-turn-boundary"
+      labelPosition="center"
+      label={
+        <Group gap={6} justify="center">
+          <Text fw={600} size="xs">
+            Turn {number}
+          </Text>
+          <Badge size="xs" color={turn.outcome === "failed" ? "red" : "teal"} variant="light">
+            {turn.outcome ?? "running"}
+          </Badge>
+          {facts.length > 0 && (
+            <Text size="xs" c="dimmed">
+              {facts.join(" · ")}
+            </Text>
+          )}
+        </Group>
+      }
+    />
+  );
 }
 
 function MessageView({ message }: { message: ClaudeChatMessage }) {
@@ -178,11 +213,14 @@ function ConversationListPage() {
 function ConversationDetailPage({ sessionId }: { sessionId: string }) {
   const [conversation, setConversation] = useState<ConversationSession | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const transcriptScrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
 
   useEffect(() => {
     let alive = true;
     setConversation(null);
     setError(null);
+    stickToBottomRef.current = true;
     fetchConversation(sessionId)
       .then((item) => {
         if (alive) setConversation(item);
@@ -194,6 +232,18 @@ function ConversationDetailPage({ sessionId }: { sessionId: string }) {
       alive = false;
     };
   }, [sessionId]);
+
+  // A transcript opens on its newest message, the way the live chat surface does — the operator
+  // came to read what just happened, not the first thing said. The layout settles a frame after
+  // the transcript renders, so the scroll waits for it.
+  useEffect(() => {
+    if (!stickToBottomRef.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      const viewport = transcriptScrollRef.current;
+      if (viewport) viewport.scrollTop = viewport.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [conversation]);
 
   if (error) {
     return (
@@ -242,56 +292,29 @@ function ConversationDetailPage({ sessionId }: { sessionId: string }) {
         </div>
       </header>
       <div className="haku-conversation-detail-body">
-        <div className="haku-conversation-transcript-scroll">
+        <div
+          ref={transcriptScrollRef}
+          className="haku-conversation-transcript-scroll"
+          onScroll={(event) => {
+            stickToBottomRef.current = isNearChatBottom(event.currentTarget);
+          }}
+        >
           <div className="haku-page-list haku-chat-messages">
-            {conversation.messages.length === 0 ? (
+            {conversation.messages.length === 0 && conversation.turns.length === 0 ? (
               <Text c="dimmed" size="sm">
                 No transcript messages were recorded.
               </Text>
             ) : (
-              conversation.messages.map((message) => <MessageView key={message.message_id} message={message} />)
+              conversationTimeline(conversation.messages, conversation.turns).map((entry) =>
+                entry.kind === "message" ? (
+                  <MessageView key={entry.message.message_id} message={entry.message} />
+                ) : (
+                  <TurnBoundary key={entry.turn.turn_id} turn={entry.turn} number={entry.number} />
+                )
+              )
             )}
           </div>
         </div>
-        <aside className="haku-conversation-turns" aria-label="Conversation turns">
-          <Text fw={600} size="sm">
-            Turns
-          </Text>
-          <Text c="dimmed" size="xs">
-            Exchange summaries; raw agent frames can be linked later.
-          </Text>
-          {conversation.turns.length === 0 ? (
-            <Text c="dimmed" size="sm">
-              No completed turns recorded.
-            </Text>
-          ) : (
-            conversation.turns.map((turn, index) => (
-              <Paper key={turn.turn_id} withBorder p="sm">
-                <Group justify="space-between" mb={4}>
-                  <Text fw={600} size="sm">
-                    Turn {conversation.turns.length - index}
-                  </Text>
-                  <Badge size="xs" color={turn.outcome === "failed" ? "red" : "teal"} variant="light">
-                    {turn.outcome ?? "running"}
-                  </Badge>
-                </Group>
-                <Text size="xs" c="dimmed">
-                  started {timestamp(turn.started_at)}
-                </Text>
-                {turn.duration_ms != null && (
-                  <Text size="xs" c="dimmed">
-                    duration {(turn.duration_ms / 1000).toFixed(1)}s
-                  </Text>
-                )}
-                {turn.cost_usd != null && (
-                  <Text size="xs" c="dimmed">
-                    cost ${turn.cost_usd.toFixed(4)}
-                  </Text>
-                )}
-              </Paper>
-            ))
-          )}
-        </aside>
       </div>
     </section>
   );

@@ -171,7 +171,8 @@ const SCENES = [
     name: "conversation-detail-mobile",
     viewport: { width: 390, height: 1000 },
     closeApprovals: true,
-    expectVisible: "::-p-text(Next I'll try the read-only query.)",
+    // The newest message, since the transcript opens scrolled to it.
+    expectVisible: "::-p-text(The reflection call timed out before I could answer.)",
     frame: true,
   },
   {

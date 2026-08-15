@@ -1154,6 +1154,7 @@ vitest_bin.vitest_test(
         "//haku/console/frontend/tool_rendering/kubectl:requests_test",
         "//haku/console/frontend/tool_rendering/tana:requests_test",
         "//haku/console/frontend/x:chat_scroll_test",
+        "//haku/console/frontend/x:conversation_timeline_test",
         "//haku/console/frontend/x:markdown_test",
     ],
 )
