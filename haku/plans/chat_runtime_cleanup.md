@@ -48,9 +48,12 @@ assumed, not chosen.
 _Needs stages 1 and 5 (constraint 3)._
 
 An idle room holds a sandbox permanently: the supervisor provisions whenever the room has no live
-session, the warm pool is `replicas: 0` so every claim is a cold start, and the cycle repeats on the
-TTL — twelve cold starts a day for a room nobody speaks in, each announcing itself and narrating its
-bootstrap there, holding ~1 CPU / 2Gi of an 8 CPU / 16Gi quota in between.
+session, and the warm pool is `replicas: 0` so every claim is a cold start. This used to read
+"twelve cold starts a day for a room nobody speaks in", each announcing itself and narrating its
+bootstrap there — the deadline slide (stage 5's preamble) removed the recycling, so what is left is
+the other half of the same waste: **one sandbox held indefinitely** for a room nobody speaks in,
+~1 CPU / 2Gi of an 8 CPU / 16Gi quota with nothing using it. Fewer cold starts, the same standing
+cost, and the argument for allocating on demand is unchanged.
 
 The SPA has a gesture that means "I want a session" and Matrix has none, so the supervisor
 substitutes by assuming demand permanently. The prompt is the honest substitute, and the prompt

@@ -22,10 +22,15 @@ Design, the parity gaps it closes, and the traps in each: <plans/session_channel
 4. **Record lifecycle transitions** as frame-log rows, the way narration already is, so a session
    that never got past `provisioning` has a durable record. **Not** the status line or the typing
    indicator — those are renderings of live state each channel derives for itself.
-5. **Send into a Matrix session** (lower priority) — the console holds only `@haku`'s credential,
+5. **Reconcile a channel against the session** rather than sending to it: a loop per
+   `(channel, session)` over a cursor on cleanup stage 7's `chat_attachment`. A channel that holds
+   its own copy (Matrix) needs it; one that reads the record (the console) converges by refetching.
+6. **Send into a Matrix session** (lower priority) — the console holds only `@haku`'s credential,
    so an operator message reaches the room as a **relay** posted by Haku's account and tagged with
-   its true provenance. The subtle part is `_is_conversational`, which must count a relay as
-   conversation or every rotation re-awakens a session with the operator's half missing.
+   its true provenance. Under the loop the send only enqueues; the room being one message behind
+   is a divergence the reconciler already closes. The subtle part is `_is_conversational`, which
+   must count a relay as conversation or every rotation re-awakens a session with the operator's
+   half missing.
 
 ## Notification text per tool kind
 
@@ -166,13 +171,6 @@ Two traps for whoever picks this up:
   wrong payload shape to `call_mcp_tool` — the exact failure the exposed reflection exists to
   prevent.
 
-## Approvals drawer
-
-- **A withdrawn call vanishes from the drawer with no explanation.** An agent withdrawal removes
-  the card from the queue mid-review; the operator sees a silent drop. Fixing it properly means
-  re-fetching disappeared ids in `applyToolApprovals` (`haku_ui_embed.tsx`) and surfacing the
-  withdrawal the way a decided call surfaces in "Recent".
-
 ## Operator browser auth — parked remainders
 
 From the login audit (<debug/2026_07_24_operator_login_audit.md>), fixed in #3516/#3519 except for:
@@ -186,6 +184,39 @@ From the login audit (<debug/2026_07_24_operator_login_audit.md>), fixed in #351
 - **No sign-out affordance** (audit F6). `/auth/logout` exists and is exact-Origin gated, but
   nothing in the SPA calls it, and it clears only the console session — not Authentik's — so a
   manual logout silently re-logs-in on the next 401. Needs RP-initiated logout to be meaningful.
+
+## The chat runtime's timings are module constants, not configuration
+
+`ClaudeRuntimeConfig` carries the deploy wiring (namespace, warm pool, proxy, MCP URL) and exactly
+one timing — `session_ttl_seconds`. Every other number the runtime's behaviour depends on is a
+module-level constant, so changing one is a code edit, a CI build and a roll. The ones that are
+genuinely operational knobs should move onto the config model:
+
+- `x/claude_chat.py` — `STATUS_AFTER_SECONDS` (8s before a turn says anything, R6.2),
+  `STATUS_EDIT_INTERVAL_SECONDS` (5s edit floor, R6.5), `TYPING_REFRESH_SECONDS`,
+  `LEASE_TTL` / `LEASE_RENEW_INTERVAL`, `PROVISION_LEASE`, `ADOPTION_GRACE`.
+- `x/matrix_pacer.py` — `SENDS_PER_SECOND`, `SEND_BURST`, `MAX_QUEUED_SENDS`, `FLUSH_SECONDS`.
+- `x/matrix_session.py` — `SUPERVISE_INTERVAL`, `LEADER_RETRY`, `PROVISION_BACKOFF`,
+  `RE_AWAKENING_MESSAGES` (the N of R3.3a).
+- `x/matrix_sync.py` — `ERROR_BACKOFF`, `REFUSED_BATCH_BACKOFF`, and `MAX_BACKFILL_PAGES` /
+  `TIMELINE_LIMIT` from `x/matrix_client.py`.
+- `runtime/x/claude_bridge/runner.py` — `MAX_DISCONNECTED_SECONDS`, `REPLAY_WINDOW`,
+  `RECONNECT_{BASE,MAX}_DELAY`. **These live in the runner**, whose image is pinned at claim
+  creation, so they are not console config at all: they reach a running sandbox only through the
+  launch, or not until it is replaced.
+
+**Not everything here is a knob, and the split is the point.** `TYPING_TIMEOUT_MS` and
+`SYNC_TIMEOUT_MS` are the homeserver's own semantics, `MAX_RATE_LIMIT_RETRIES` exists to bound a
+nio behaviour (<docs/chat_runtime_facts.md>), and the `*_FRAME_KIND` strings are wire vocabulary.
+Making those configurable would invite a deploy that contradicts a protocol. Move the timings;
+leave the facts where the code that depends on them can be read beside them.
+
+Two things worth settling in the same change, since they are the same question: the three values
+<../plans/matrix_chat_runtime.md> § Open questions never chose — **batch cap** (R2.6), **debounce
+window** (R2.7) and **age fence** (R2.8) — should arrive as config with a default rather than as
+another constant, because the whole reason they are unchosen is that the right value is an
+operational finding. And a value read per use rather than at startup is what makes tuning a
+ConfigMap edit instead of a roll.
 
 ## `request_close` wakes nobody
 

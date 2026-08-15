@@ -919,17 +919,30 @@ been escaping both handlers on every pod termination.
 That is **reclamation, not survival**: the session is failed and replaced, so the room
 recovers rather than going quiet. It is the floor this phase builds on, not the goal.
 
+Two of the three items that were still open here have since landed:
+
+- **Always-up sandbox** (R3.2) — **done**, #4064. `_renew_lease` slides the SandboxClaim's
+  `shutdownTime` on the same heartbeat that renews the console lease, so console lease and sandbox
+  deadline lapse together and nothing caps a tended session. The planned last step, "drop
+  `session_ttl_seconds`", is **not** what happened and the config value is still there: it was
+  repurposed from a hard session cap into the slide window each renewal grants. R3.2b holds
+  separately — the `creationTimestamp` CleanupPolicy under `cluster/k8s/haku/workspaces/` is
+  namespaced `haku-sandbox`, which is Haku's own workspace and not the chat runtime's
+  `haku-claude-sandbox`, so these sandboxes carry no age fence.
+- **Re-adoption rather than replacement** (R3.4) — **done**, design B. `run()` in
+  <../runtime/x/claude_bridge/runner.py> dials, serves and dials again, holding the CLI process
+  across the gap with a replay window; `handle_runner` calls `adopt_open_turn` and picks the
+  exchange up mid-flight. What made it safe is that an expired lease means unowned rather than
+  dead (#4048), so a dropped session is observable by another replica and adoptable by the
+  returning runner. <cli_protocol_ownership.md> § Session re-adoption is marked built and keeps
+  the design alternatives; this bullet used to point at it as unbuilt work.
+
 Still Phase 3:
 
-- **Always-up sandbox** (R3.2). Ordering unchanged, and decided by which reaper binds:
-  janitor fence (R3.2b) → `patch` on the console's Role → renewal in the supervisor → drop
-  `session_ttl_seconds`. Only the last is a config value.
-- **Re-adoption rather than replacement** (R3.4). `bridge_websocket_to_claude` still kills the
-  CLI when the socket closes, so a console roll ends the conversation even though the sandbox
-  outlives it. <cli_protocol_ownership.md> records the SDK/CLI protocol this needs, what the
-  runner and console each have to change, and the property of this deployment that makes it
-  tractable — no inbound control traffic to strand.
 - `event_id` dedupe (R1.2) and startup reconciliation from the last processed event (R1.7).
+  Unbuilt, and unchanged by the above: `matrix_sync_state` holds `next_batch` and nothing else, so
+  duplicate suppression is still the watermark alone and a crash between processing and persisting
+  it replays the batch.
 
 ### Phase 4 — Make it pleasant
 
@@ -944,12 +957,14 @@ and the rollout the console already sees go past — unscoped for now by R5.3a.
 Ordered so the write side lands first, because a reader over today's tables would show a
 transcript with every tool result missing (R5.5):
 
-1. **`surface` + `room_id` on `claude_chat_sessions`** (R11.3a). Additive, standalone, and the
-   only item here that is losing data every day it is not done.
-2. **The rollout frame store** (R5.5a–c). One write at the transport boundary; nothing reads
-   it yet. Also independent of how the tools end up being hosted, so it can land while that is
-   still being proven.
-3. **`room_read_event` / `room_read_around` / `room_read_history`** — thin over the
+1. **`surface` + `room_id` on `claude_chat_sessions`** (R11.3a) — **done**, migration `0030`,
+   with the two check constraints tying them together. It was the item losing data every day it
+   was not done.
+2. **The rollout frame store** (R5.5a–c) — **done**, same migration. `RolloutRecorder` writes at
+   the transport boundary with **no exclusions**, deltas included, because a log with a hole in it
+   cannot be folded over; `read_frames` leaves deltas out of its default view instead.
+3. **`room_read_event` / `room_read_around` / `room_read_history`** — still open, and now the only
+   unbuilt item in this phase. Thin over the
    `matrix_client.py` calls that already exist, with `room_id` optional and defaulting to the
    calling session's room (R5.3a). Closes R11.3, and retires the system prompt's standing
    TODO: it tells the agent event IDs are citable while the harness can only resolve one it

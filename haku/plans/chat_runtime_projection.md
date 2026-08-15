@@ -134,12 +134,15 @@ removes the "exactly one `anext` in flight" dance.
 
 `matrix_pacer`'s deque becomes rows. Delivery gains a retry and loses its guesswork.
 
-Two more consumers want this, both from <../console/plans/session_channels.md>. Relaying an
-operator's console-sent message into the room is an enqueue and a post that must not diverge —
-one transaction with an outbox, an ordering judgment without one. And once a session's lifecycle
-events are recorded rather than only announced, the outbox generalizes from "the room's queue" to
-"deliver each recorded event to every channel attached to this session", which is the same
-mechanism serving both.
+**The generalization to aim at, from <../console/plans/session_channels.md> § 1: a channel is
+reconciled against the session rather than sent to.** The outbox is the push half — deliver
+promptly; a per-attachment cursor on `chat_attachment` is the convergence half — deliver
+eventually and at most once, with repair as the normal path rather than a retry bolted on. Two
+consumers want the pair. Once lifecycle events are recorded rather than only announced, "the
+room's queue" becomes "bring each attached channel up to this session's record". And relaying an
+operator's console-sent message into the room stops being a feature at all: it is a transcript row
+the room lacks, which is the same divergence as an undelivered reply, so the loop already closes
+it. Build the cursor with the rows.
 
 ## The one thing to keep in view
 

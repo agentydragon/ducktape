@@ -28,7 +28,58 @@ because the supervisor owns provisioning (R3.1, R3.2), and the console does not 
 rooms (R3.6, R3.6c). The goal is that no channel is missing something for **no reason** — which
 is what most of the bold cells above are.
 
-## 1. One sessions surface, not two pages
+## 1. The model: a channel is reconciled against the session
+
+**The session's record is the truth; a channel is driven toward agreement with it.** Not "send
+this event when it happens" but "make this channel show what this session has". The unit is a
+loop per `(channel, session)`, and its state is one cursor: how far this attachment has been
+brought up to date.
+
+That is a different primitive from a delivery queue, and it buys three things:
+
+- **Repair is the normal path rather than the exception.** A send lost to a replica dying between
+  recording and delivering, a 429 that outlasted its retries, a room that was unreachable for a
+  minute — all become "the next pass notices this channel is behind", instead of each needing its
+  own guarantee bolted onto a queue.
+- **Write-back stops being a special case.** An operator message typed into the console is a
+  transcript row the room does not have. That is _the same divergence_ as an undelivered reply, so
+  the reconciler posts it — as a Haku-originated notice, since `@haku` is the only credential the
+  console holds. No separate post-on-send path, and no enqueue/post ordering judgment to get
+  right (§5).
+- **It subsumes the room outbox rather than competing with it.**
+  <../../plans/chat*runtime_projection.md> § stage 5 turns `matrix_pacer`'s deque into rows; that
+  is the \_push* half, delivering promptly. The reconciler is the _convergence_ half, delivering
+  eventually and at most once. Build the cursor first and the outbox becomes the fast path that
+  advances it.
+
+**The distinction that says which channels need a loop at all: does the channel hold its own copy?**
+Matrix does — a room is a separate store with its own history, so it can drift and must be
+reconciled. The console does not: its client reads the record, so it converges by refetching and
+needs only to be told _when_ (§4). One idea at two ends, and worth stating so nobody builds a
+reconciler for the console out of a taste for symmetry.
+
+What it needs, concretely:
+
+- **A per-attachment cursor.** Cleanup stage 7's
+  `chat_attachment(session_id, surface, address, attached_at, detached_at)` gains "delivered
+  through". That is the entire durable state of a channel.
+- **A per-channel projection**, because not every recorded event belongs on every channel — and
+  "nothing to show" is a valid answer that still advances the cursor.
+
+Two gotchas, both about the end that is not a database:
+
+- **A room is append-only and federated, so an over-eager reconciler double-posts permanently.**
+  The existing guard fits, and fits _better_ here than under a queue: `EventTag.transaction_id`
+  derived from the transcript row is stable across processes and retries, so two reconcilers
+  reaching the same conclusion still produce one event. Its limit is Synapse's 30–60 minute dedup
+  window (<../docs/chat_runtime_facts.md>); past that the cursor is the only guard, which is the
+  argument for advancing it in the same transaction that records the send rather than after it.
+- **Convergence is not available at every edge.** Redacting a status message and clearing a typing
+  indicator have no cheap "what does the room currently show" to compare against. Keep them out of
+  the loop entirely — they are live-state rendering driven by the turn (§3), not cursor-driven
+  delivery.
+
+## 2. One sessions surface, not two pages
 
 `/_console/chat` creates and drives one session over SSE; `/_console/conversations` lists every
 session and renders a read-only transcript from one REST fetch. Same object, two routes, two nav
@@ -39,7 +90,7 @@ composer, the abort button and close. `ClaudeChatPage` stops existing; what it k
 becomes actions on a session detail.
 
 **The live-update path is where the merge costs something.** `/chat` streams token-by-token over
-SSE; the merged view updates by refetching on a coalesced notification (§3), which reads as
+SSE; the merged view updates by refetching on a coalesced notification (§4), which reads as
 near-live but is not per-token. Take the regression knowingly:
 
 - It is one live path for the whole console instead of a second one for a single page, and Matrix
@@ -54,7 +105,7 @@ near-live but is not per-token. Take the regression knowingly:
   an interrupted turn's half-written answer survive (R5.5b). Only the SSE transport is in
   question.
 
-## 2. Session-level events belong in the database, not only in the room
+## 3. Session-level events belong in the database, not only in the room
 
 Four things get posted to the room today. They are not one kind of thing, and the difference
 decides which become rows:
@@ -71,7 +122,7 @@ are Matrix _renderings of live state_ — R6.3 already says status is a coarse s
 derives from the frame stream it is consuming anyway. The console channel should derive the same
 state from the same source and render it its own way (an activity line, a spinner), not replay
 Matrix's edited-message trick. Recording the status text would be recording a rendering, and it
-is the one mistake this section exists to prevent.
+is the one mistake this section exists to prevent. It is also why §1's loop does not own them.
 
 **Lifecycle follows the precedent narration already set.** `_setup_output_frame`'s docstring
 makes the general argument: a console-authored session event lives in the frame log rather than a
@@ -79,7 +130,8 @@ table of its own, because the question a reader asks is "what happened in this s
 order" — and for a session that died before the CLI produced anything, the answer is entirely
 there. Lifecycle is the same shape and is the clearest case for it: a session that never got past
 `provisioning` has nothing else to show. So lifecycle events become frame-log rows under their
-own bridge-side `kind`, not a new table, and ordering against everything else is free.
+own bridge-side `kind`, not a new table — which also makes §1's cursor a position in one ordered
+log rather than a join across several.
 
 Two things fall out, both good:
 
@@ -87,8 +139,8 @@ Two things fall out, both good:
   is the cheapest single item in this plan.
 - **Announcement dedup stops being per-process.** `_SessionStatusAnnouncer._last_announced` is a
   local, so a leader handover re-announces the current status — legible in a room, but it also
-  means there is no durable answer to "when did this session become `failed`". A row _is_ the
-  record of having announced it.
+  means there is no durable answer to "when did this session become `failed`". Under §1 the cursor
+  _is_ the record of having announced it, and the per-process local goes.
 
 **Vocabulary consequence.** `RoomEventKind` (`reply`, `status`, `narration`, `lifecycle`,
 `holding`, `room`) is Matrix-side today — what the console meant by an event _it sent to a room_.
@@ -96,7 +148,7 @@ Under this design `lifecycle` and `narration` become channel-neutral session eve
 Matrix tag derives from them; `status`, `holding` and `room` stay Matrix's own, because they
 describe that channel's rendering. Do not promote the whole enum.
 
-## 3. Live updates, over the socket the shell already holds
+## 4. Live updates, over the socket the shell already holds
 
 **Build on `/api/events/ws`, not a second SSE endpoint.** The shell holds exactly one per tab, and
 `frontend/console_events.ts`'s `useConsoleEvents` already provides the whole client half:
@@ -106,8 +158,8 @@ might have changed" contract this wants.
 
 **Send a notification, not a payload.** A `SessionChangedEvent {session_id}` in the `ConsoleEvent`
 union; the page refetches. This is the shape `ToolCallsChangedEvent` already established, and it
-is the one that stays correct when a reconnect means events were missed entirely — a refetch is
-idempotent where a delta stream must be replayed.
+is what §1 means by "the console converges by refetching": a refetch is idempotent where a delta
+stream must be replayed, so a reconnect that missed events entirely still lands correct.
 
 Four things to get right, in increasing order of how easy they are to miss:
 
@@ -132,7 +184,7 @@ Four things to get right, in increasing order of how easy they are to miss:
 **Done when** an open session shows a Matrix turn arriving without a reload, and there is no
 polling timer anywhere in the page.
 
-## 4. Sending from the console
+## 5. Sending from the console
 
 ### Into an SPA session
 
@@ -145,7 +197,7 @@ One honest limitation and one route decision:
   arriving by accident. The composer is **disabled during a turn** and says why; it is not a
   queue. Mid-turn steering (<../../plans/chat_runtime_cleanup.md> § Later) is what relaxes this.
 - **One send route, dispatching on the session's channel** — not the SPA's route for SPA sessions
-  and a second one for Matrix. That entry point is the `ChatFrontend` port §5 corrects.
+  and a second one for Matrix. That entry point is the `ChatFrontend` port §6 corrects.
 
 ### Into a Matrix session — lower priority
 
@@ -162,7 +214,14 @@ tagged in `works.allegedly.haku` like every other console-authored event, and re
 states its true provenance: written by the operator, delivered by Haku's account because theirs is
 not the console's to speak with.
 
-What that costs, in increasing order of subtlety:
+**Under §1 the send does not post anything.** It enqueues the prompt, in one transaction, and
+stops. The room is then behind the transcript by one message, which is a divergence the reconciler
+already exists to close — so it posts the relay on its next pass. This is what the model buys
+here, and it is worth being explicit about what it deletes: there is no "enqueue then post" order
+to choose, no partial failure where one landed and the other did not, and no bespoke retry. A
+console send and a dropped reply are repaired by the same code.
+
+What remains to get right:
 
 - **`_is_conversational` must include the new kind.** It reads `tag is None or kind is REPLY`
   today, encoding "everything the console says _about_ the conversation is not the conversation".
@@ -171,18 +230,13 @@ What that costs, in increasing order of subtlety:
 - **Ingress needs no change at all.** R1.5 excludes Haku's own sender from input, so a relay
   cannot loop back and be answered twice. This is the one place where posting under `@haku` is an
   advantage rather than a compromise.
-- **The room and the transcript must not diverge.** Enqueue and post are two writes and either
-  order has a bad failure. **Enqueue first**: a room missing a message is recoverable and visible,
-  where a turn answering a message the room never showed is neither. Retry the post with
-  `EventTag.transaction_id` derived from the transcript row — already the rule for replies — so a
-  retry cannot double-post inside Synapse's dedup window (<../docs/chat_runtime_facts.md>).
 - **Provenance in the prompt, without inventing an event id.** R2.4 gives each batched message a
   sender, timestamp, `event_id` and thread root. A console-originated one has a _stronger_
   identity than any of them — an authenticated operator session, not the MXID mapping of R9.3 —
-  and **no event id yet**, because the relay may not have posted when the prompt renders. Say it
-  came from the console and carry the transcript message id. R11.4's "IDs are given, not guessed"
-  cuts both ways: an absent id is honest, a fabricated one is not, and the turn must not block on
-  the post to obtain one.
+  and **no event id yet**, because under §1 the relay posts strictly after the prompt is enqueued
+  and may post after the turn has started. Say it came from the console and carry the transcript
+  message id. R11.4's "IDs are given, not guessed" cuts both ways: an absent id is honest, a
+  fabricated one is not, and the turn must never wait on the room to obtain one.
 - **The same 409, with less margin.** Matrix ingress absorbs a refusal by not advancing the sync
   watermark and letting the homeserver redeliver. A console send has no homeserver behind it, so
   a refusal must reach the operator rather than be swallowed.
@@ -194,33 +248,29 @@ What that costs, in increasing order of subtlety:
 appservice with a puppet MXID. The first breaks R5.1's single-holder property for a send button;
 the second reverses R1.1's whole design note for one.
 
-## 5. What this corrects in the existing plans
+## 6. What this corrects in the existing plans
 
 Two places state that the SPA needs nothing from the room-facing port. That premise was true of a
 surface whose client only read message rows; it is not true of a channel:
 
 - **`RoomSurface`'s docstring** — "The SPA needs none of this — its client reads the message rows
-  over SSE, so a finished turn is delivered by being written down." Under §2 the console channel
-  wants lifecycle and narration, and under §3 it wants them pushed.
+  over SSE, so a finished turn is delivered by being written down." Under §3 the console channel
+  wants lifecycle and narration, and under §4 it wants to be told when.
 - **<../../plans/chat_runtime_cleanup.md> § The frontend seam** — "a null implementation for the
   SPA, which needs none of it". The `ChatFrontend` port with no address parameter is exactly
-  right and survives unchanged; **the null implementation does not.** Both channels implement it.
-
-One convergence rather than a conflict, worth naming so it is not rediscovered: that stage's
-`chat_attachment(session_id, surface, address, attached_at, detached_at)` is precisely the
-"which channels does this session have" table this design needs, and
-<../../plans/chat_runtime_projection.md> § stage 5's room outbox generalizes to "record the event
-once, deliver it to each attached channel" — which is §2 and §3 sharing one mechanism.
+  right and survives unchanged; **the null implementation does not.** Both channels implement it,
+  and that step's `chat_attachment` table is where §1's cursor lives.
 
 ## Order
 
 1. **Render narration in the console** — the rows already exist; smallest thing that makes the
    console a channel rather than a viewer.
-2. **Live updates** (§3). Depends on nothing.
-3. **Merge the two pages** (§1) and move sending into the merged detail (§4, SPA half).
-4. **Record lifecycle events** (§2) and render them in both channels.
-5. **The Matrix relay** (§4, Matrix half). Wants the room outbox and mid-turn steering, is blocked
-   by neither, and doing it first means accepting both rough edges knowingly.
+2. **Live updates** (§4). Depends on nothing.
+3. **Merge the two pages** (§2) and move sending into the merged detail (§5, SPA half).
+4. **Record lifecycle events** (§3) and render them in both channels.
+5. **The reconcile loop** (§1) — the cursor on `chat_attachment`, and Matrix delivery moved onto
+   it. Wants cleanup stage 7's schema half; everything above is possible without it.
+6. **The Matrix relay** (§5, Matrix half) — one more thing the loop already does, once it exists.
 
 ## Open question
 
