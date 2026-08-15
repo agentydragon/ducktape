@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - require-gitops.yaml
   - default-revision-history-limit.yaml
+  - default-disable-service-links.yaml
   - default-vpa-requests-only.yaml
   - inject-mitmproxy.yaml
   - inject-haku-egress-proxy.yaml
