@@ -2,6 +2,7 @@ import { Badge, Box, Button, Code, Group, Loader, Paper, Stack, Text, Textarea, 
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { isNearChatBottom } from "./chat_scroll";
+import { ClaudeToolUseView } from "./claude_tool_use";
 import {
   createClaudeChatSession,
   deleteClaudeChatSession,
@@ -17,12 +18,6 @@ function statusColor(status: ClaudeChatSession["status"]): string {
   if (status === "responding" || status === "provisioning") return "blue";
   if (status === "failed") return "red";
   return "gray";
-}
-
-/** A tool result as the wire carried it: a bare string for most tools, content blocks for some. */
-function resultText(content: unknown): string {
-  if (typeof content === "string") return content;
-  return JSON.stringify(content, null, 2);
 }
 
 function readiness(value: boolean | null | undefined, pending: string): { color: string; label: string } {
@@ -343,49 +338,21 @@ export function ClaudeChatPage() {
                   {(message.tool_uses ?? []).length > 0 && (
                     <Stack gap="xs" mb="sm">
                       {(message.tool_uses ?? []).map((toolUse) => (
-                        <Paper key={toolUse.tool_use_id} withBorder p="sm" radius="sm">
-                          <Group gap="xs" mb="xs">
-                            <Badge variant="light" color="gray">
-                              Tool
-                            </Badge>
-                            <Code style={{ overflowWrap: "anywhere" }}>{toolUse.name}</Code>
-                            {toolUse.result?.is_error && (
-                              <Badge variant="light" color="red">
-                                failed
-                              </Badge>
-                            )}
-                          </Group>
-                          <Code block style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                            {JSON.stringify(toolUse.input, null, 2)}
-                          </Code>
-                          {/* The answer, which the transcript never carried before — a call still
-                              running, or one whose turn died before it answered, shows the ask
-                              alone rather than an empty block pretending to be a result. */}
-                          {toolUse.result && (
-                            <>
-                              <Text c="dimmed" size="xs" mt="xs" mb={4}>
-                                Result
-                              </Text>
-                              {/* `c`, not `color`: Mantine's `color` fills the block, and a
-                                  full-bleed red result shouts over everything around it when the
-                                  `FAILED` badge above already says so. */}
-                              <Code
-                                block
-                                c={toolUse.result.is_error ? "red" : undefined}
-                                style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-                              >
-                                {resultText(toolUse.result.content)}
-                              </Code>
-                            </>
-                          )}
-                        </Paper>
+                        <ClaudeToolUseView key={toolUse.tool_use_id} toolUse={toolUse} />
                       ))}
                     </Stack>
                   )}
                   <Markdown
-                    source={message.content || (message.status === "streaming" ? "…" : "")}
+                    source={message.content.trim() || (message.status === "streaming" ? "…" : "")}
                     className="haku-chat-markdown"
                   />
+                  {!message.content.trim() &&
+                    (message.tool_uses ?? []).length === 0 &&
+                    message.status === "complete" && (
+                      <Text c="dimmed" size="xs">
+                        No assistant text was captured.
+                      </Text>
+                    )}
                   {message.error && (
                     <Text c="red" size="xs" mt="xs">
                       {message.error}

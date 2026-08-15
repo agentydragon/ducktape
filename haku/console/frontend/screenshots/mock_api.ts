@@ -64,6 +64,28 @@ const claudeBoundaryMessages = [
           is_error: false,
         },
       },
+      {
+        tool_use_id: "toolu_01EditTranscript",
+        name: "Edit",
+        input: {
+          file_path: "/workspace/src/renderer.ts",
+          old_string: "const transcript = messages.map(renderMessage);\n".repeat(16),
+          new_string: "const transcript = messages.map(renderClaudeMessage);\n".repeat(16),
+        },
+        result: { content: "Updated /workspace/src/renderer.ts", is_error: false },
+      },
+      {
+        tool_use_id: "toolu_02BashTranscript",
+        name: "Bash",
+        input: { command: "git diff --check" },
+        result: {
+          content: Array.from(
+            { length: 14 },
+            (_unused, line) => `checked generated file ${line + 1}: no whitespace errors`
+          ).join("\n"),
+          is_error: false,
+        },
+      },
     ],
     error: null,
     created_at: "2026-08-01T03:00:12Z",
@@ -201,6 +223,28 @@ const claudeSession = scene?.startsWith("claude-provisioning")
                           tool_use_id: "toolu_03StillRunning",
                           name: "Bash",
                           input: { command: "rg --files | wc -l" },
+                        },
+                        {
+                          tool_use_id: "toolu_04Edit",
+                          name: "Edit",
+                          input: {
+                            file_path: "/workspace/src/renderer.ts",
+                            old_string: "const transcript = messages.map(renderMessage);\n".repeat(16),
+                            new_string: "const transcript = messages.map(renderClaudeMessage);\n".repeat(16),
+                          },
+                          result: { content: "Updated /workspace/src/renderer.ts", is_error: false },
+                        },
+                        {
+                          tool_use_id: "toolu_05BashOutput",
+                          name: "Bash",
+                          input: { command: "git diff --check" },
+                          result: {
+                            content: Array.from(
+                              { length: 14 },
+                              (_unused, line) => `checked generated file ${line + 1}: no whitespace errors`
+                            ).join("\n"),
+                            is_error: false,
+                          },
                         },
                       ],
                     }
