@@ -1,0 +1,84 @@
+# Stub ICAP REQMOD service, standing in for haku-console's future ICAP endpoints.
+#
+# A stock python image with the script mounted from the spike's ConfigMap, so
+# this needs no image build, no CI workflow, no registry credential and no Flux
+# image automation. The script is stdlib-only for the same reason the image is
+# stock: the spike's CNP permits egress only within the namespace and to DNS, so
+# nothing can `pip install` at start.
+#
+# Separate pod rather than a sidecar in the Squid pod, matching the shape the
+# real thing will have -- console is remote, and a sidecar would also share the
+# Squid pod's network identity, which is the distinction the fence rests on.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: icap-stub
+  namespace: squid-egress-spike
+  labels:
+    app.kubernetes.io/name: icap-stub
+  annotations:
+    reloader.stakater.com/auto: "true"
+    description: Stub ICAP REQMOD service answering the Squid-side adaptation questions before haku-console grows a real one.
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: icap-stub
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: icap-stub
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: icap
+          image: python:3.13-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a
+          command: ["python3", "-u", "/app/icap_stub.py"]
+          env:
+            # Long enough to outlast Squid's client-side timeouts, so the "slow"
+            # mode actually exercises what happens when the service never
+            # answers in time rather than merely being sluggish.
+            - name: ICAP_SLOW_SECONDS
+              value: "45"
+          ports:
+            - name: icap
+              containerPort: 1344
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: app
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: app
+          configMap:
+            name: squid-spike-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: icap-stub
+  namespace: squid-egress-spike
+spec:
+  selector:
+    app.kubernetes.io/name: icap-stub
+  ports:
+    - name: icap
+      port: 1344
+      targetPort: 1344
