@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import itertools
 
+import pytest
 import pytest_bazel
 
-from haku.state_index.chunking import _MAX_BYTES, _TARGET_BYTES, chunk_text
+from haku.state_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, chunk_text, git_chunker_key
 
 
 def test_offsets_slice_the_embedded_text_back_out() -> None:
@@ -33,13 +34,13 @@ def test_packs_up_to_the_target_without_splitting_lines() -> None:
     chunks = chunk_text("\n".join("x" * 100 for _ in range(100)))
     assert len(chunks) > 1
     # Each chunk may exceed the target by at most the line that tipped it over.
-    assert all(chunk.byte_end - chunk.byte_start <= _TARGET_BYTES + 101 for chunk in chunks)
+    assert all(chunk.byte_end - chunk.byte_start <= DEFAULT_CHUNK_BUDGET.target_bytes + 101 for chunk in chunks)
 
 
 def test_single_oversized_line_is_hard_split() -> None:
-    chunks = chunk_text("y" * (_MAX_BYTES * 3))
+    chunks = chunk_text("y" * (DEFAULT_CHUNK_BUDGET.max_bytes * 3))
     assert len(chunks) == 3
-    assert all(chunk.byte_end - chunk.byte_start <= _MAX_BYTES for chunk in chunks)
+    assert all(chunk.byte_end - chunk.byte_start <= DEFAULT_CHUNK_BUDGET.max_bytes for chunk in chunks)
 
 
 def test_whitespace_only_spans_are_dropped() -> None:
@@ -48,6 +49,25 @@ def test_whitespace_only_spans_are_dropped() -> None:
 
 def test_empty_blob_yields_nothing() -> None:
     assert chunk_text("") == []
+
+
+def test_a_budget_packs_to_its_own_size() -> None:
+    """The size is a parameter, so the same text chunks differently under a different budget."""
+    blob = "".join(f"line {index}\n" for index in range(400))
+    small = chunk_text(blob, ChunkBudget(target_bytes=200, max_bytes=400))
+    large = chunk_text(blob, ChunkBudget(target_bytes=4000, max_bytes=8000))
+    assert len(small) > len(large)
+    assert all(chunk.byte_end - chunk.byte_start <= 400 for chunk in small)
+
+
+def test_the_budget_is_part_of_what_identifies_a_chunk() -> None:
+    """Otherwise re-tuning it would serve vectors computed over spans that no longer exist."""
+    assert git_chunker_key(ChunkBudget(target_bytes=200, max_bytes=400)) != git_chunker_key(DEFAULT_CHUNK_BUDGET)
+
+
+def test_a_budget_that_cannot_be_satisfied_is_refused() -> None:
+    with pytest.raises(ValueError, match="nonsensical"):
+        ChunkBudget(target_bytes=4000, max_bytes=100)
 
 
 if __name__ == "__main__":

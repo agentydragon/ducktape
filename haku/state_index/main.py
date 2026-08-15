@@ -24,9 +24,8 @@ import typer
 from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from haku.state_index.chat_corpus import CHAT_CHUNKER_VERSION
 from haku.state_index.chat_sync import sync_chat
-from haku.state_index.chunking import CHUNKER_VERSION
+from haku.state_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, git_chunker_key
 from haku.state_index.git_tree import fetch_branch, open_mirror
 from haku.state_index.openai_embedder import OpenAIEmbedder
 from haku.state_index.store import chat_index_summary, current_git_state, ensure_schema, search_chat, search_git
@@ -35,6 +34,19 @@ from haku.state_index.sync import AlreadyCurrent, sync
 app = typer.Typer(help=__doc__)
 
 DatabaseUrl = Annotated[str, typer.Option(envvar="HAKU_STATE_INDEX_DATABASE_URL")]
+
+
+def _budget() -> ChunkBudget:
+    """How big a chunk gets, from the environment.
+
+    Read here rather than passed per command because it has to be the same for indexing and for
+    querying: it is part of the cache key, so a query under a different budget searches a regime
+    nothing was written under and finds nothing at all.
+    """
+    return ChunkBudget(
+        target_bytes=int(os.environ.get("HAKU_STATE_INDEX_CHUNK_TARGET_BYTES", DEFAULT_CHUNK_BUDGET.target_bytes)),
+        max_bytes=int(os.environ.get("HAKU_STATE_INDEX_CHUNK_MAX_BYTES", DEFAULT_CHUNK_BUDGET.max_bytes)),
+    )
 
 
 def _embedder() -> OpenAIEmbedder:
@@ -70,6 +82,7 @@ async def _index_git(
                 branch=branch,
                 embedder=embedder,
                 now=datetime.datetime.now(datetime.UTC),
+                budget=_budget(),
             )
             await session.commit()
     finally:
@@ -103,7 +116,9 @@ async def _index_chat(database_url: str) -> None:
     try:
         await ensure_schema(engine)
         async with async_sessionmaker(engine)() as session:
-            report = await sync_chat(session, embedder=embedder, now=datetime.datetime.now(datetime.UTC))
+            report = await sync_chat(
+                session, embedder=embedder, now=datetime.datetime.now(datetime.UTC), budget=_budget()
+            )
             await session.commit()
     finally:
         await engine.dispose()
@@ -131,7 +146,7 @@ async def _query_git(database_url: str, query: str, limit: int, path_prefix: str
             hits = await search_git(
                 session,
                 await embedder.embed_query(query),
-                chunker_version=CHUNKER_VERSION,
+                chunker_key=git_chunker_key(),
                 model_key=embedder.model_key,
                 limit=limit,
                 path_prefix=path_prefix,
@@ -159,7 +174,7 @@ async def _query_chat(database_url: str, query: str, limit: int, session_id: UUI
             hits = await search_chat(
                 session,
                 await embedder.embed_query(query),
-                chunker_version=CHAT_CHUNKER_VERSION,
+                chunker_key=git_chunker_key(),
                 model_key=embedder.model_key,
                 limit=limit,
                 session_id=session_id,
@@ -198,7 +213,7 @@ async def _status(database_url: str) -> None:
     else:
         typer.echo(
             f"git: {git.branch}@{git.commit_sha[:12]} synced {git.synced_at.isoformat()} "
-            f"(chunker v{git.chunker_version}, model {git.model_key})"
+            f"(chunker v{git.chunker_key}, model {git.model_key})"
         )
     if chat.last_indexed_at is None:
         typer.echo("chat: empty — nothing synced yet")

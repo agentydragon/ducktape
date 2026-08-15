@@ -11,7 +11,7 @@ import pytest_bazel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.state_index.chunking import CHUNKER_VERSION
+from haku.state_index.chunking import git_chunker_key
 from haku.state_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
 from haku.state_index.git_tree import list_tip
 from haku.state_index.schema import Chunk
@@ -53,7 +53,7 @@ async def find(session: AsyncSession, embedder: FakeEmbedder, query: str, **kwar
     return await search_git(
         session,
         await embedder.embed_query(query),
-        chunker_version=CHUNKER_VERSION,
+        chunker_key=git_chunker_key(),
         model_key=embedder.model_key,
         limit=5,
         **kwargs,
@@ -87,7 +87,7 @@ async def test_deleted_content_becomes_unreachable(session: AsyncSession, repo: 
     await run_sync(session, repo, commit(repo, {"keep.md": "alpha"}), embedder)
 
     assert [hit.path for hit in await find(session, embedder, "zeta")] == ["keep.md"]
-    assert await read_indexed_text(session, "gone.md", chunker_version=CHUNKER_VERSION, model_key="fake-v1") is None
+    assert await read_indexed_text(session, "gone.md", chunker_key=git_chunker_key(), model_key="fake-v1") is None
 
 
 async def test_deleted_content_keeps_its_cached_embedding(session: AsyncSession, repo: pygit2.Repository) -> None:

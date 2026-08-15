@@ -38,7 +38,7 @@ _GIT_SEARCH_SQL = text("""
         SELECT t.path, t.blob_sha, c.chunk_no, c.byte_start, c.byte_end, c.text, c.embedding
         FROM state_index.git_tip t
         JOIN state_index.chunks c ON c.corpus = :corpus AND c.content_sha = t.blob_sha
-        WHERE c.chunker_version = :chunker_version
+        WHERE c.chunker_key = :chunker_key
           AND c.model_key = :model_key
           AND (CAST(:path_prefix AS text) IS NULL OR starts_with(t.path, CAST(:path_prefix AS text)))
     )
@@ -56,7 +56,7 @@ _CHAT_SEARCH_SQL = text("""
         SELECT w.session_id, w.chunk_no, w.first_message_at, w.last_message_at, c.text, c.embedding
         FROM state_index.chat_chunks w
         JOIN state_index.chunks c ON c.corpus = :corpus AND c.content_sha = w.content_sha
-        WHERE c.chunker_version = :chunker_version
+        WHERE c.chunker_key = :chunker_key
           AND c.model_key = :model_key
           AND (CAST(:session_id AS uuid) IS NULL OR w.session_id = CAST(:session_id AS uuid))
     ), ranked AS (
@@ -134,7 +134,7 @@ class ChunkRow:
     corpus: Corpus
     content_sha: str
     chunk_no: int
-    chunker_version: int
+    chunker_key: str
     model_key: str
     byte_start: int
     byte_end: int
@@ -155,7 +155,7 @@ async def ensure_schema(engine: AsyncEngine) -> None:
 
 
 async def cached_content(
-    session: AsyncSession, corpus: Corpus, content_shas: Sequence[str], *, chunker_version: int, model_key: str
+    session: AsyncSession, corpus: Corpus, content_shas: Sequence[str], *, chunker_key: str, model_key: str
 ) -> set[str]:
     """Which of `content_shas` already have chunks under this (corpus, chunker, model) regime."""
     if not content_shas:
@@ -164,7 +164,7 @@ async def cached_content(
         select(Chunk.content_sha)
         .where(Chunk.corpus == corpus)
         .where(Chunk.content_sha.in_(content_shas))
-        .where(Chunk.chunker_version == chunker_version)
+        .where(Chunk.chunker_key == chunker_key)
         .where(Chunk.model_key == model_key)
         .distinct()
     )
@@ -178,8 +178,7 @@ async def insert_chunks(session: AsyncSession, rows: Sequence[ChunkRow], *, now:
     statement = pg_insert(Chunk).values([{**asdict(row), "last_seen_at": now} for row in rows])
     await session.execute(
         statement.on_conflict_do_update(
-            index_elements=["corpus", "content_sha", "chunk_no", "chunker_version", "model_key"],
-            set_={"last_seen_at": now},
+            index_elements=["corpus", "content_sha", "chunk_no", "chunker_key", "model_key"], set_={"last_seen_at": now}
         )
     )
 
@@ -189,7 +188,7 @@ async def touch_content(
     corpus: Corpus,
     content_shas: Sequence[str],
     *,
-    chunker_version: int,
+    chunker_key: str,
     model_key: str,
     now: datetime.datetime,
 ) -> None:
@@ -200,7 +199,7 @@ async def touch_content(
         update(Chunk)
         .where(Chunk.corpus == corpus)
         .where(Chunk.content_sha.in_(content_shas))
-        .where(Chunk.chunker_version == chunker_version)
+        .where(Chunk.chunker_key == chunker_key)
         .where(Chunk.model_key == model_key)
         .values(last_seen_at=now)
     )
@@ -212,7 +211,7 @@ async def replace_tip(
     *,
     commit_sha: str,
     branch: str,
-    chunker_version: int,
+    chunker_key: str,
     model_key: str,
     now: datetime.datetime,
 ) -> None:
@@ -230,7 +229,7 @@ async def replace_tip(
         "id": 1,
         "commit_sha": commit_sha,
         "branch": branch,
-        "chunker_version": chunker_version,
+        "chunker_key": chunker_key,
         "model_key": model_key,
         "synced_at": now,
     }
@@ -248,7 +247,7 @@ async def search_git(
     session: AsyncSession,
     embedding: Sequence[float],
     *,
-    chunker_version: int,
+    chunker_key: str,
     model_key: str,
     limit: int,
     path_prefix: str | None = None,
@@ -257,7 +256,7 @@ async def search_git(
         _GIT_SEARCH_SQL,
         {
             "corpus": Corpus.GIT,
-            "chunker_version": chunker_version,
+            "chunker_key": chunker_key,
             "model_key": model_key,
             "path_prefix": path_prefix,
             "query": f"[{','.join(map(str, embedding))}]",
@@ -267,7 +266,7 @@ async def search_git(
     return [GitSearchHit(**row) for row in result.mappings()]
 
 
-async def read_indexed_text(session: AsyncSession, path: str, *, chunker_version: int, model_key: str) -> str | None:
+async def read_indexed_text(session: AsyncSession, path: str, *, chunker_key: str, model_key: str) -> str | None:
     """The indexed spans of `path` at the tip, concatenated, or None if it isn't indexed.
 
     Not byte-exact: whitespace-only spans are never chunked, so runs of blank lines between
@@ -279,7 +278,7 @@ async def read_indexed_text(session: AsyncSession, path: str, *, chunker_version
         .join(GitTipEntry, GitTipEntry.blob_sha == Chunk.content_sha)
         .where(Chunk.corpus == Corpus.GIT)
         .where(GitTipEntry.path == path)
-        .where(Chunk.chunker_version == chunker_version)
+        .where(Chunk.chunker_key == chunker_key)
         .where(Chunk.model_key == model_key)
         .order_by(Chunk.chunk_no)
     )
@@ -300,7 +299,7 @@ async def replace_chat_session(
     *,
     message_count: int,
     last_message_at: datetime.datetime,
-    chunker_version: int,
+    chunker_key: str,
     model_key: str,
     now: datetime.datetime,
 ) -> None:
@@ -337,7 +336,7 @@ async def replace_chat_session(
         "session_id": session_id,
         "message_count": message_count,
         "last_message_at": last_message_at,
-        "chunker_version": chunker_version,
+        "chunker_key": chunker_key,
         "model_key": model_key,
         "indexed_at": now,
     }
@@ -363,7 +362,7 @@ async def search_chat(
     session: AsyncSession,
     embedding: Sequence[float],
     *,
-    chunker_version: int,
+    chunker_key: str,
     model_key: str,
     limit: int,
     session_id: UUID | None = None,
@@ -372,7 +371,7 @@ async def search_chat(
         _CHAT_SEARCH_SQL,
         {
             "corpus": Corpus.CHAT,
-            "chunker_version": chunker_version,
+            "chunker_key": chunker_key,
             "model_key": model_key,
             "session_id": session_id,
             "query": f"[{','.join(map(str, embedding))}]",
@@ -382,7 +381,7 @@ async def search_chat(
     return [ChatSearchHit(**row) for row in result.mappings()]
 
 
-async def git_index_summary(session: AsyncSession, *, chunker_version: int, model_key: str) -> GitIndexSummary:
+async def git_index_summary(session: AsyncSession, *, chunker_key: str, model_key: str) -> GitIndexSummary:
     """What the searchable git set holds: the tree's size, and the chunks a search can reach.
 
     `chunks` joins the tip rather than counting the corpus, so it excludes both the cache's
@@ -395,16 +394,16 @@ async def git_index_summary(session: AsyncSession, *, chunker_version: int, mode
             .select_from(GitTipEntry)
             .join(Chunk, Chunk.content_sha == GitTipEntry.blob_sha)
             .where(Chunk.corpus == Corpus.GIT)
-            .where(Chunk.chunker_version == chunker_version)
+            .where(Chunk.chunker_key == chunker_key)
             .where(Chunk.model_key == model_key)
         )
     ).scalar_one()
     return GitIndexSummary(files=files, chunks=chunks)
 
 
-async def chunk_counts(session: AsyncSession, corpus: Corpus, *, chunker_version: int, model_key: str) -> ChunkCounts:
+async def chunk_counts(session: AsyncSession, corpus: Corpus, *, chunker_key: str, model_key: str) -> ChunkCounts:
     """How many of a corpus's chunks are under the live regime, and how many are left behind."""
-    current_regime = (Chunk.chunker_version == chunker_version) & (Chunk.model_key == model_key)
+    current_regime = (Chunk.chunker_key == chunker_key) & (Chunk.model_key == model_key)
     current, superseded = (
         await session.execute(
             select(func.count().filter(current_regime), func.count().filter(~current_regime))

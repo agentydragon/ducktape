@@ -23,17 +23,16 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from haku.console.chat_models import ChatMessageRole
-from haku.state_index.chunking import split_utf8
+from haku.state_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, split_utf8
 
-# Bump on ANY behavioral change to the rendering or packing below. Scoped to this corpus: the
-# git chunker's version moves independently (see `schema.Chunk`).
+# Bump on a change to the rendering or packing below. Scoped to this corpus: the git chunker's
+# version moves independently, and the size budget travels in the key rather than here.
 CHAT_CHUNKER_VERSION = 1
 
-# Same budget as the git chunker, and for the same reason — bge-small truncates at 512 tokens,
-# so a target well under that keeps whole chunks inside the model's window. The max is what a
-# single message has to exceed before it is split rather than kept whole.
-_TARGET_BYTES = 1500
-_MAX_BYTES = 3000
+
+def chat_chunker_key(budget: ChunkBudget = DEFAULT_CHUNK_BUDGET) -> str:
+    """What identifies chunks produced by this chunker, for the cache key."""
+    return f"v{CHAT_CHUNKER_VERSION}/{budget.key}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,24 +79,26 @@ def render_message(message: IndexedMessage) -> str:
     return f"{message.role}: {message.content.strip()}\n"
 
 
-def _pack(rendered: Sequence[_Rendered]) -> Iterator[list[_Rendered]]:
+def _pack(rendered: Sequence[_Rendered], budget: ChunkBudget) -> Iterator[list[_Rendered]]:
     """Group whole messages up to the target size; an oversized message is its own group."""
     group: list[_Rendered] = []
     used = 0
     for item in rendered:
-        if group and (used + item.size > _TARGET_BYTES or item.size > _MAX_BYTES):
+        if group and (used + item.size > budget.target_bytes or item.size > budget.max_bytes):
             yield group
             group, used = [], 0
         group.append(item)
         used += item.size
-        if item.size > _MAX_BYTES:
+        if item.size > budget.max_bytes:
             yield group
             group, used = [], 0
     if group:
         yield group
 
 
-def chunk_messages(messages: Sequence[IndexedMessage]) -> list[MessageChunk]:
+def chunk_messages(
+    messages: Sequence[IndexedMessage], budget: ChunkBudget = DEFAULT_CHUNK_BUDGET
+) -> list[MessageChunk]:
     """Chunk a session's messages into embeddable windows, in conversation order.
 
     Empty messages are dropped: they carry nothing to match on, and an assistant row can be
@@ -109,11 +110,11 @@ def chunk_messages(messages: Sequence[IndexedMessage]) -> list[MessageChunk]:
         if message.content.strip()
     ]
     chunks: list[MessageChunk] = []
-    for group in _pack(rendered):
+    for group in _pack(rendered, budget):
         message_ids = tuple(item.message.message_id for item in group)
         # Only a lone oversized message yields more than one span, so every part of a split
         # still holds exactly the message it was split from.
-        for span in split_utf8("".join(item.text for item in group), _MAX_BYTES):
+        for span in split_utf8("".join(item.text for item in group), budget.max_bytes):
             chunks.append(
                 MessageChunk(
                     chunk_no=len(chunks),

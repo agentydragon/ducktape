@@ -18,8 +18,9 @@ from dataclasses import dataclass
 from more_itertools import batched
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.state_index.chat_corpus import CHAT_CHUNKER_VERSION, MessageChunk, chunk_messages
+from haku.state_index.chat_corpus import MessageChunk, chat_chunker_key, chunk_messages
 from haku.state_index.chat_source import load_messages, session_shapes
+from haku.state_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
 from haku.state_index.embedder import Embedder
 from haku.state_index.schema import Corpus
 from haku.state_index.store import (
@@ -47,8 +48,11 @@ class ChatSyncReport:
     windows_reused: int
 
 
-async def sync_chat(session: AsyncSession, *, embedder: Embedder, now: datetime.datetime) -> ChatSyncReport:
+async def sync_chat(
+    session: AsyncSession, *, embedder: Embedder, now: datetime.datetime, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET
+) -> ChatSyncReport:
     """Index every chat session that has changed since it was last indexed."""
+    regime = chat_chunker_key(budget)
     shapes = await session_shapes(session)
     states = await chat_session_states(session)
 
@@ -65,21 +69,21 @@ async def sync_chat(session: AsyncSession, *, embedder: Embedder, now: datetime.
     windows_reused = 0
     for shape in shapes:
         state = states.get(shape.session_id)
-        if state is not None and (
-            state.message_count,
-            state.last_message_at,
-            state.chunker_version,
-            state.model_key,
-        ) == (shape.message_count, shape.last_message_at, CHAT_CHUNKER_VERSION, embedder.model_key):
+        if state is not None and (state.message_count, state.last_message_at, state.chunker_key, state.model_key) == (
+            shape.message_count,
+            shape.last_message_at,
+            regime,
+            embedder.model_key,
+        ):
             unchanged += 1
             continue
 
-        chunks = chunk_messages(await load_messages(session, shape.session_id))
+        chunks = chunk_messages(await load_messages(session, shape.session_id), budget)
         # Distinct content, not distinct windows: a session that says the same thing twice
         # embeds it once, and so does a session that repeats another session's exchange.
         by_content = {chunk.content_sha: chunk for chunk in chunks}
         cached = await cached_content(
-            session, Corpus.CHAT, sorted(by_content), chunker_version=CHAT_CHUNKER_VERSION, model_key=embedder.model_key
+            session, Corpus.CHAT, sorted(by_content), chunker_key=regime, model_key=embedder.model_key
         )
         pending = [chunk for content_sha, chunk in sorted(by_content.items()) if content_sha not in cached]
 
@@ -87,17 +91,12 @@ async def sync_chat(session: AsyncSession, *, embedder: Embedder, now: datetime.
         for batch in batched(pending, _EMBED_BATCH):
             vectors = await embedder.embed_documents([chunk.text for chunk in batch])
             rows.extend(
-                _chunk_row(chunk, vector, model_key=embedder.model_key)
+                _chunk_row(chunk, vector, chunker_key=regime, model_key=embedder.model_key)
                 for chunk, vector in zip(batch, vectors, strict=True)
             )
         await insert_chunks(session, rows, now=now)
         await touch_content(
-            session,
-            Corpus.CHAT,
-            sorted(cached),
-            chunker_version=CHAT_CHUNKER_VERSION,
-            model_key=embedder.model_key,
-            now=now,
+            session, Corpus.CHAT, sorted(cached), chunker_key=regime, model_key=embedder.model_key, now=now
         )
         await replace_chat_session(
             session,
@@ -105,7 +104,7 @@ async def sync_chat(session: AsyncSession, *, embedder: Embedder, now: datetime.
             chunks,
             message_count=shape.message_count,
             last_message_at=shape.last_message_at,
-            chunker_version=CHAT_CHUNKER_VERSION,
+            chunker_key=regime,
             model_key=embedder.model_key,
             now=now,
         )
@@ -126,13 +125,13 @@ async def sync_chat(session: AsyncSession, *, embedder: Embedder, now: datetime.
     return report
 
 
-def _chunk_row(chunk: MessageChunk, embedding: list[float], *, model_key: str) -> ChunkRow:
+def _chunk_row(chunk: MessageChunk, embedding: list[float], *, chunker_key: str, model_key: str) -> ChunkRow:
     """One embedded window, addressed by its own text — so the span covers all of it."""
     return ChunkRow(
         corpus=Corpus.CHAT,
         content_sha=chunk.content_sha,
         chunk_no=0,
-        chunker_version=CHAT_CHUNKER_VERSION,
+        chunker_key=chunker_key,
         model_key=model_key,
         byte_start=0,
         byte_end=len(chunk.text.encode()),

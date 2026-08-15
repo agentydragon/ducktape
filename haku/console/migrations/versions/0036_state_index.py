@@ -42,7 +42,7 @@ def upgrade() -> None:
         sa.Column("corpus", sa.Text(), nullable=False),
         sa.Column("content_sha", sa.Text(), nullable=False),
         sa.Column("chunk_no", sa.Integer(), nullable=False),
-        sa.Column("chunker_version", sa.Integer(), nullable=False),
+        sa.Column("chunker_key", sa.Text(), nullable=False),
         sa.Column("model_key", sa.Text(), nullable=False),
         sa.Column("byte_start", sa.BigInteger(), nullable=False),
         sa.Column("byte_end", sa.BigInteger(), nullable=False),
@@ -52,7 +52,7 @@ def upgrade() -> None:
         # over a filtered set at this corpus size.
         sa.Column("embedding", Vector(), nullable=False),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.PrimaryKeyConstraint("corpus", "content_sha", "chunk_no", "chunker_version", "model_key"),
+        sa.PrimaryKeyConstraint("corpus", "content_sha", "chunk_no", "chunker_key", "model_key"),
         schema=SCHEMA,
     )
 
@@ -69,7 +69,7 @@ def upgrade() -> None:
         sa.Column("id", sa.SmallInteger(), autoincrement=False, nullable=False),
         sa.Column("commit_sha", sa.Text(), nullable=False),
         sa.Column("branch", sa.Text(), nullable=False),
-        sa.Column("chunker_version", sa.Integer(), nullable=False),
+        sa.Column("chunker_key", sa.Text(), nullable=False),
         sa.Column("model_key", sa.Text(), nullable=False),
         sa.Column("synced_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("id = 1", name="ck_git_sync_state_singleton"),
@@ -109,7 +109,7 @@ def upgrade() -> None:
         sa.Column("session_id", PGUUID(as_uuid=True), nullable=False),
         sa.Column("message_count", sa.Integer(), nullable=False),
         sa.Column("last_message_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("chunker_version", sa.Integer(), nullable=False),
+        sa.Column("chunker_key", sa.Text(), nullable=False),
         sa.Column("model_key", sa.Text(), nullable=False),
         sa.Column("indexed_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("session_id"),

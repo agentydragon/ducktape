@@ -31,9 +31,9 @@ from haku.console.tools.state_index import (
     SearchCorpus,
     SearchHit,
 )
-from haku.state_index.chat_corpus import CHAT_CHUNKER_VERSION
+from haku.state_index.chat_corpus import chat_chunker_key
 from haku.state_index.chat_source import session_shapes
-from haku.state_index.chunking import CHUNKER_VERSION
+from haku.state_index.chunking import git_chunker_key
 from haku.state_index.embedder import Embedder
 from haku.state_index.schema import Corpus
 from haku.state_index.store import (
@@ -79,7 +79,7 @@ class PostgresIndexSearcher:
         found = await search_git(
             session,
             embedding,
-            chunker_version=CHUNKER_VERSION,
+            chunker_key=git_chunker_key(),
             model_key=self._embedder.model_key,
             limit=limit,
             path_prefix=path_prefix,
@@ -107,7 +107,7 @@ class PostgresIndexSearcher:
         found = await search_chat(
             session,
             embedding,
-            chunker_version=CHAT_CHUNKER_VERSION,
+            chunker_key=git_chunker_key(),
             model_key=self._embedder.model_key,
             limit=limit,
             session_id=session_id,
@@ -145,8 +145,8 @@ class PostgresIndexSearcher:
             git_state = await current_git_state(session)
             haku_state: HakuStateStatus | None = None
             if git_state is not None:
-                summary = await git_index_summary(session, chunker_version=CHUNKER_VERSION, model_key=model_key)
-                counts = await chunk_counts(session, Corpus.GIT, chunker_version=CHUNKER_VERSION, model_key=model_key)
+                summary = await git_index_summary(session, chunker_key=git_chunker_key(), model_key=model_key)
+                counts = await chunk_counts(session, Corpus.GIT, chunker_key=git_chunker_key(), model_key=model_key)
                 haku_state = HakuStateStatus(
                     commit_sha=git_state.commit_sha,
                     branch=git_state.branch,
@@ -157,9 +157,7 @@ class PostgresIndexSearcher:
                 )
 
             chat_summary = await chat_index_summary(session)
-            chat_counts = await chunk_counts(
-                session, Corpus.CHAT, chunker_version=CHAT_CHUNKER_VERSION, model_key=model_key
-            )
+            chat_counts = await chunk_counts(session, Corpus.CHAT, chunker_key=git_chunker_key(), model_key=model_key)
             # The same two reads `sync_chat` opens with, diffed the same way — so what this
             # reports as waiting is exactly what a sync run would pick up.
             shapes = await session_shapes(session)
@@ -168,14 +166,14 @@ class PostgresIndexSearcher:
             shape
             for shape in shapes
             if (state := states.get(shape.session_id)) is None
-            or (state.message_count, state.last_message_at, state.chunker_version, state.model_key)
-            != (shape.message_count, shape.last_message_at, CHAT_CHUNKER_VERSION, model_key)
+            or (state.message_count, state.last_message_at, state.chunker_key, state.model_key)
+            != (shape.message_count, shape.last_message_at, chat_chunker_key(), model_key)
         ]
         unindexed = sum(
             shape.message_count - state.message_count
             # A regime change strands every message in the session, not just the new ones.
             if (state := states.get(shape.session_id)) is not None
-            and (state.chunker_version, state.model_key) == (CHAT_CHUNKER_VERSION, model_key)
+            and (state.chunker_key, state.model_key) == (chat_chunker_key(), model_key)
             else shape.message_count
             for shape in stale
         )

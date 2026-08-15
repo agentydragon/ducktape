@@ -30,9 +30,20 @@ One shared table and a per-corpus set around it:
 `chunks` is content-addressed, so it has no notion of where content currently lives and keeps
 embeddings for content that has left the indexed set. That is the cache: a revert, a rebase, a
 force-push, a file moved between paths, a chat session re-windowed as it grows — all re-use
-their vectors. The cache key is `(corpus, content_sha, chunk_no, chunker_version, model_key)`:
-changing the chunker or the embedding model misses the cache rather than silently serving
-vectors computed over different text or by a different model.
+their vectors. The cache key is `(corpus, content_sha, chunk_no, chunker_key, model_key)`: changing the chunker
+or the embedding model misses the cache rather than silently serving vectors computed over
+different text or by a different model.
+
+**Chunk size is configurable, and it lives inside `chunker_key`** (`v1/t1500m3000`) rather than
+beside it. The same blob chunked to a different size is different text, so a re-tune has to
+invalidate exactly like an algorithm change — putting the budget in the key makes that automatic
+instead of something to remember. It is in bytes rather than tokens because chunking must not
+depend on a tokenizer now that the model is behind an HTTP endpoint; English prose runs about four
+bytes to the token, so a budget approximates the model's window on purpose. The default was chosen
+for a 512-token model and is conservative for the one in use; raising it is a retrieval question —
+bigger chunks match more broadly and cite less precisely — which is why it is a knob and not a
+constant. Index and query must use the same budget: a query under a different one searches a
+regime nothing was written under.
 
 **`corpus` is in that key rather than implied.** Each corpus supplies its own kind of content
 address — a git blob sha, the sha256 of a rendered message window — and its own chunker with its

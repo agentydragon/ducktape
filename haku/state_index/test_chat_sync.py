@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSessionStatus
 from haku.console.database_schema import Base as ConsoleBase, ClaudeChatMessage, ClaudeChatSession, Operator
 from haku.console.operator_identity import OperatorStatus
-from haku.state_index.chat_corpus import CHAT_CHUNKER_VERSION
+from haku.state_index.chat_corpus import chat_chunker_key
 from haku.state_index.chat_sync import ChatSyncReport, sync_chat
 from haku.state_index.fake_embedder import FakeEmbedder
 from haku.state_index.schema import ChatChunk, Chunk, Corpus
@@ -110,7 +110,7 @@ async def find(
     return await search_chat(
         session,
         await embedder.embed_query(query),
-        chunker_version=CHAT_CHUNKER_VERSION,
+        chunker_key=chat_chunker_key(),
         model_key=embedder.model_key,
         limit=5,
         session_id=session_id,

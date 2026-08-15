@@ -17,7 +17,7 @@ import pygit2
 from more_itertools import batched
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.state_index.chunking import CHUNKER_VERSION, Chunk, chunk_text
+from haku.state_index.chunking import DEFAULT_CHUNK_BUDGET, Chunk, ChunkBudget, chunk_text, git_chunker_key
 from haku.state_index.embedder import Embedder
 from haku.state_index.git_tree import list_tip, read_blob
 from haku.state_index.schema import Corpus
@@ -71,6 +71,7 @@ async def sync(
     branch: str,
     embedder: Embedder,
     now: datetime.datetime,
+    budget: ChunkBudget = DEFAULT_CHUNK_BUDGET,
 ) -> SyncOutcome:
     """Swap the searchable set to `commit_sha`, or do nothing if it is already there.
 
@@ -79,19 +80,20 @@ async def sync(
     the tree is identical. It exists so a push-triggered sync and a reconciling cron can both
     fire as often as they like — the common case, where nothing moved, costs one SELECT.
     """
+    regime = git_chunker_key(budget)
     if (state := await current_git_state(session)) is not None and (
         state.commit_sha,
         state.branch,
-        state.chunker_version,
+        state.chunker_key,
         state.model_key,
-    ) == (commit_sha, branch, CHUNKER_VERSION, embedder.model_key):
+    ) == (commit_sha, branch, regime, embedder.model_key):
         logger.info("haku-state index already at %s", commit_sha)
         return AlreadyCurrent(commit_sha=commit_sha)
 
     entries = list_tip(repo, commit_sha)
     blob_shas = {entry.blob_sha for entry in entries}
     cached = await cached_content(
-        session, Corpus.GIT, sorted(blob_shas), chunker_version=CHUNKER_VERSION, model_key=embedder.model_key
+        session, Corpus.GIT, sorted(blob_shas), chunker_key=regime, model_key=embedder.model_key
     )
 
     pending: list[tuple[str, Chunk]] = []
@@ -107,7 +109,7 @@ async def sync(
         except UnicodeDecodeError:
             skipped_binary += 1
             continue
-        pending.extend((blob_sha, chunk) for chunk in chunk_text(blob_text))
+        pending.extend((blob_sha, chunk) for chunk in chunk_text(blob_text, budget))
 
     rows: list[ChunkRow] = []
     for batch in batched(pending, _EMBED_BATCH):
@@ -117,7 +119,7 @@ async def sync(
                 corpus=Corpus.GIT,
                 content_sha=blob_sha,
                 chunk_no=chunk.chunk_no,
-                chunker_version=CHUNKER_VERSION,
+                chunker_key=regime,
                 model_key=embedder.model_key,
                 byte_start=chunk.byte_start,
                 byte_end=chunk.byte_end,
@@ -128,15 +130,13 @@ async def sync(
         )
 
     await insert_chunks(session, rows, now=now)
-    await touch_content(
-        session, Corpus.GIT, sorted(cached), chunker_version=CHUNKER_VERSION, model_key=embedder.model_key, now=now
-    )
+    await touch_content(session, Corpus.GIT, sorted(cached), chunker_key=regime, model_key=embedder.model_key, now=now)
     await replace_tip(
         session,
         entries,
         commit_sha=commit_sha,
         branch=branch,
-        chunker_version=CHUNKER_VERSION,
+        chunker_key=regime,
         model_key=embedder.model_key,
         now=now,
     )

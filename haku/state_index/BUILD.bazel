@@ -167,6 +167,7 @@ py_test(
     deps = [
         ":chunking",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

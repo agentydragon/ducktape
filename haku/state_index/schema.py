@@ -18,7 +18,7 @@ Everything else is per-corpus, and each table says which corpus it belongs to:
   retraction there is a step someone has to keep running rather than a property of the query.
 
 `Corpus` is in `chunks`' primary key, which is what keeps the two apart. Each corpus supplies
-its own kind of content address and its own chunker, so `content_sha` and `chunker_version` are
+its own kind of content address and its own chunker, so `content_sha` and `chunker_key` are
 only ever comparable within one corpus.
 """
 
@@ -69,9 +69,9 @@ class Base(DeclarativeBase):
 class Chunk(Base):
     """One embedded span of one piece of content, under one (corpus, chunker, model) regime.
 
-    The primary key carries `chunker_version` and `model_key` so changing the chunker or the
+    The primary key carries `chunker_key` and `model_key` so changing the chunker or the
     embedding model misses the cache instead of silently serving vectors computed over
-    different text or by a different model. `chunker_version` is scoped by `corpus` — the two
+    different text or by a different model. `chunker_key` is scoped by `corpus` — the two
     corpora chunk different things by different rules, and their version numbers move
     independently.
     """
@@ -83,7 +83,7 @@ class Chunk(Base):
     # rendered message window for `chat`. Only ever compared within one corpus.
     content_sha: Mapped[str] = mapped_column(Text, primary_key=True)
     chunk_no: Mapped[int] = mapped_column(Integer, primary_key=True)
-    chunker_version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chunker_key: Mapped[str] = mapped_column(Text, primary_key=True)
     model_key: Mapped[str] = mapped_column(Text, primary_key=True)
     # Byte offsets of this chunk within the content `content_sha` addresses. For `git` that
     # content is the blob, so the span locates the chunk inside a file a caller can read back.
@@ -120,7 +120,7 @@ class GitSyncState(Base):
     id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, autoincrement=False)
     commit_sha: Mapped[str] = mapped_column(Text, nullable=False)
     branch: Mapped[str] = mapped_column(Text, nullable=False)
-    chunker_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    chunker_key: Mapped[str] = mapped_column(Text, nullable=False)
     model_key: Mapped[str] = mapped_column(Text, nullable=False)
     synced_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -180,6 +180,6 @@ class ChatSessionState(Base):
     session_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     message_count: Mapped[int] = mapped_column(Integer, nullable=False)
     last_message_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    chunker_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    chunker_key: Mapped[str] = mapped_column(Text, nullable=False)
     model_key: Mapped[str] = mapped_column(Text, nullable=False)
     indexed_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
