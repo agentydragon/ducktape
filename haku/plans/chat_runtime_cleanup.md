@@ -142,9 +142,6 @@ loop's signatures.
 - **Prune the archaeology.** Roughly 150 of `claude_chat.py`'s lines narrate what the code used to be
   and which bug that caused; STYLE puts those under Remove. Keep the invariant as one imperative
   line ("do not gate on session status: admission asks the turn"), move the story to `debug/`.
-- **`ClaudeChatFrame.kind` is filtered with `ChatMessageRole`** — different domains sharing two
-  spellings, which breaks the moment either gains a value. It wants its own `StrEnum` beside
-  `FrameDirection`.
 - **`bridge_token_fingerprint = b""`** is a cleanup-pending tri-state on a credential column, and the
   zero value STYLE says never to use for absence. It wants to be `claim_cleaned_at`.
 - Smaller: `list_turns`/`read_frames` take `str` session ids and parse them, where the boundary is
