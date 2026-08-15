@@ -312,13 +312,25 @@ Six consequences, in the order they will bite:
   address; add `role`, and a second partial unique index enforcing **at most one attached room per
   agent**. One table, and the invalid state — two transcript homes — is unrepresentable rather
   than checked.
-- **Mention gating comes back, and now it has a home.** matrix_chat_runtime puts mention gating,
-  sender allowlists and multi-bot loop protection out of scope because the one room is a DM
-  (R3.5). Subscriptions are exactly where they return: every message in a busy coordination room
-  must **not** wake a turn, or several agents burn budget answering each other. The attached room
-  keeps today's behaviour — every message wakes — and subscribed rooms wake only when addressed.
-  R1.5's "never treat your own events as input" generalizes at the same time: an agent must
-  ignore its own sends into subscribed rooms, and other agents' unless addressed.
+- **Wake on everything, and cap rather than gate** (operator, 2026-08-15). An earlier draft made
+  mention gating a requirement here, on the grounds that waking for every message in a busy room
+  is how several agents burn budget answering each other. **That conflated two jobs.** Mention
+  gating reduces noise; it does not prevent the loop, because two agents addressing each other by
+  name loop just as happily. What prevents the loop is a **per-room turn and budget cap**, and
+  that is needed whether or not messages are gated. So v0 wakes on every message in a subscribed
+  room — the same rule as the attached room, and one fewer concept — with the cap doing the
+  safety work.
+
+  Two existing mechanisms make this far more viable than it sounds, and both are already built:
+  the debounce (R2.7) coalesces a burst into one turn, and serialized turns (R2.2) hold messages
+  arriving mid-turn for the next prompt. A busy room therefore produces far fewer turns than
+  messages before any gating is considered. Mention gating stays available as a noise
+  optimization if the volume proves annoying, which is a much better reason to add it than
+  safety was.
+
+  R1.5's "never treat your own events as input" still generalizes: an agent must ignore its own
+  sends into subscribed rooms, or it answers itself in every room it can write to.
+
 - **Provenance grows a room.** R2.4 gives each batched message a sender, timestamp, event id and
   thread root. With several rooms in one context the agent cannot address a reply without knowing
   which room each message came from, and which room is its own — so the room joins the batch's
@@ -333,6 +345,38 @@ Six consequences, in the order they will bite:
 - **Both sends still go through the outbox.** Auto-forward for the attached room and the tool for
   a subscribed one converge on the same queue, so the classifier gates them identically and there
   is no second delivery path to secure separately.
+
+### Letting the agent manage its own subscriptions
+
+Operator, 2026-08-15, as the alternative to gating: give the agent a tool and let it say what it
+wants to watch. That is a good idea **provided one distinction holds**, because "subscription"
+covers two things that must not share a tool:
+
+|                | What it decides                                         | Who owns it                         |
+| -------------- | ------------------------------------------------------- | ----------------------------------- |
+| **Membership** | which rooms the agent is _in_ — what it can read at all | console and operator, tier-enforced |
+| **Attention**  | which of its rooms wake it and feed its context         | safe to hand to the agent           |
+
+**Attention is safe to delegate precisely because every option is already permitted.** An agent
+choosing to stop watching a room it is a member of grants itself nothing — it is an
+`unread`/`mute` decision over a set the tier policy already fixed. Membership is the opposite: a
+tool that could cause a **join** would let an agent widen what it can read, which is the one thing
+the room-tier design enforces and why R5.4 excludes join, invite and leave. Keep them apart and
+the tool is nearly free; merge them and it is the whole boundary.
+
+So the tool manages attention over the agent's existing membership, and asking for a room it is
+not in is a request the operator answers, not an action the agent takes.
+
+**One failure mode to design against, and R3.6a already names its mirror image.** That requirement
+rules out silently joining a room nothing services, because "it looks like Haku is listening when
+it is not". An agent muting itself is the same failure from the other side. So a self-mute should
+be **visible in the room** as a notice, and probably bounded — expiring rather than permanent — so
+the default drifts back to listening rather than to silence. The attached room is not mutable at
+all; that one is the transcript home.
+
+This also composes with waking on everything: the reason to skip mention gating is that the volume
+is manageable, and if a particular room proves noisy the agent can say so itself rather than the
+harness guessing a rule.
 
 **What does not change**, and is worth saying because this looks like the thing the plan ruled
 out: the console still holds every Matrix credential, the harness still owns ingress, and no agent

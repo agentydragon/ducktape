@@ -479,7 +479,9 @@ input to a running turn**. Interrupt exists; steer does not.
   nothing with two candidate rooms. This relaxes R5.3's "not expressible rather than merely
   denied" for that one tool, and what replaces the property is the console validating the room
   against that agent's subscription set — server-side, small, and itself bounded by the room's
-  tier. Join, invite, leave and room-state stay out; the console still owns membership. R8.1's
+  tier. A second tool may let the agent manage its **attention** — which of its rooms wake it —
+  which is safe because every option is already permitted; **membership** stays the console's, so
+  join, invite, leave and room-state stay out. R8.1's
   "there is no send step to remember" becomes true of the attached room only, and R8.3's "one
   room; it cannot address another" is what this supersedes.
 
