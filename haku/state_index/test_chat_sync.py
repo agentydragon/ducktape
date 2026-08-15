@@ -117,8 +117,9 @@ async def find(
     )
 
 
-async def test_a_hit_names_the_session_and_the_messages_it_holds(chat_source: AsyncSession, operator_id: UUID) -> None:
-    embedder = FakeEmbedder()
+async def test_a_hit_names_the_session_and_the_messages_it_holds(
+    chat_source: AsyncSession, operator_id: UUID, embedder: FakeEmbedder
+) -> None:
     session_id = await new_session(chat_source, operator_id)
     asked = await say(chat_source, session_id, "what happened with alpha", minute=0)
     answered = await say(chat_source, session_id, "alpha was filed", role=ChatMessageRole.ASSISTANT, minute=1)
@@ -129,8 +130,9 @@ async def test_a_hit_names_the_session_and_the_messages_it_holds(chat_source: As
     assert hit.message_ids == [asked, answered]
 
 
-async def test_only_complete_messages_are_indexed(chat_source: AsyncSession, operator_id: UUID) -> None:
-    embedder = FakeEmbedder()
+async def test_only_complete_messages_are_indexed(
+    chat_source: AsyncSession, operator_id: UUID, embedder: FakeEmbedder
+) -> None:
     session_id = await new_session(chat_source, operator_id)
     await say(chat_source, session_id, "beta is done", minute=0)
     await say(chat_source, session_id, "beta streaming", minute=1, status=ChatMessageStatus.STREAMING)
@@ -140,8 +142,9 @@ async def test_only_complete_messages_are_indexed(chat_source: AsyncSession, ope
     assert "streaming" not in hit.text
 
 
-async def test_an_unchanged_session_is_not_re_indexed(chat_source: AsyncSession, operator_id: UUID) -> None:
-    embedder = FakeEmbedder()
+async def test_an_unchanged_session_is_not_re_indexed(
+    chat_source: AsyncSession, operator_id: UUID, embedder: FakeEmbedder
+) -> None:
     session_id = await new_session(chat_source, operator_id)
     await say(chat_source, session_id, "gamma", minute=0)
     await run_sync(chat_source, embedder)
@@ -150,8 +153,9 @@ async def test_an_unchanged_session_is_not_re_indexed(chat_source: AsyncSession,
     assert (again.sessions_indexed, again.sessions_unchanged, again.windows_embedded) == (0, 1, 0)
 
 
-async def test_a_new_message_re_windows_the_session(chat_source: AsyncSession, operator_id: UUID) -> None:
-    embedder = FakeEmbedder()
+async def test_a_new_message_re_windows_the_session(
+    chat_source: AsyncSession, operator_id: UUID, embedder: FakeEmbedder
+) -> None:
     session_id = await new_session(chat_source, operator_id)
     await say(chat_source, session_id, "delta", minute=0)
     await run_sync(chat_source, embedder)
@@ -169,9 +173,8 @@ async def test_a_new_message_re_windows_the_session(chat_source: AsyncSession, o
 
 
 async def test_the_same_exchange_in_another_session_costs_no_embedding(
-    chat_source: AsyncSession, operator_id: UUID
+    chat_source: AsyncSession, operator_id: UUID, embedder: FakeEmbedder
 ) -> None:
-    embedder = FakeEmbedder()
     first = await new_session(chat_source, operator_id)
     await say(chat_source, first, "zeta filing", minute=0)
     await run_sync(chat_source, embedder)
@@ -184,8 +187,9 @@ async def test_the_same_exchange_in_another_session_costs_no_embedding(
     assert {hit.session_id for hit in await find(chat_source, embedder, "zeta")} == {first, second}
 
 
-async def test_a_session_the_console_dropped_stops_matching(chat_source: AsyncSession, operator_id: UUID) -> None:
-    embedder = FakeEmbedder()
+async def test_a_session_the_console_dropped_stops_matching(
+    chat_source: AsyncSession, operator_id: UUID, embedder: FakeEmbedder
+) -> None:
     session_id = await new_session(chat_source, operator_id)
     await say(chat_source, session_id, "eta", minute=0)
     await run_sync(chat_source, embedder)
@@ -200,8 +204,9 @@ async def test_a_session_the_console_dropped_stops_matching(chat_source: AsyncSe
     assert cached.scalar_one() > 0
 
 
-async def test_the_session_filter_narrows_the_search(chat_source: AsyncSession, operator_id: UUID) -> None:
-    embedder = FakeEmbedder()
+async def test_the_session_filter_narrows_the_search(
+    chat_source: AsyncSession, operator_id: UUID, embedder: FakeEmbedder
+) -> None:
     first = await new_session(chat_source, operator_id)
     await say(chat_source, first, "theta here", minute=0)
     second = await new_session(chat_source, operator_id)

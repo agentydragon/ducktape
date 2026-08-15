@@ -870,12 +870,6 @@ http_file(
     urls = ["https://releases.bazel.build/8.6.0/release/bazel-8.6.0-linux-x86_64"],
 )
 
-# BAAI/bge-small-en-v1.5 in ONNX form — the CPU embedding model for the haku-state index
-# (//haku/state_index). Pinned rather than fetched at runtime: the sync job runs behind a
-# force-proxy egress fence, and search embeds its query, so a model that downloads itself on
-# first use turns an egress hiccup into "search is down". Bump both files together — the
-# tokenizer and the graph are one artifact.
-
 # Firecracker v1.12.1 — microVM VMM binary for Firecracker dev VMs on wyrm2.
 # The tarball contains the firecracker binary + jailer + tools. We extract
 # just the firecracker binary in devinfra/firecracker/BUILD.bazel.

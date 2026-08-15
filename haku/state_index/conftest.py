@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
+from haku.state_index.fake_embedder import FakeEmbedder
 from haku.state_index.store import ensure_schema
 from third_party.containers.rlocations import PGVECTOR_PG18
 from util.testing.postgres_fixtures import start_postgres_container
@@ -41,3 +42,13 @@ async def session(pgvector_container: PostgresContainer) -> AsyncGenerator[Async
             yield opened
     finally:
         await engine.dispose()
+
+
+@pytest.fixture
+def embedder() -> FakeEmbedder:
+    """The default fake embedder, for the tests that only need *an* embedder.
+
+    A test asserting what a regime change does builds its own with a different `model_key`, and
+    `ExplodingEmbedder` is its own class — those are the subject of their tests, not setup.
+    """
+    return FakeEmbedder()

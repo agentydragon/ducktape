@@ -151,6 +151,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":fake_embedder",
         ":store",
         "//third_party/containers:rlocations",
         "//util/testing:postgres_fixtures",

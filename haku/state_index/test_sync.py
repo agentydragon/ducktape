@@ -60,8 +60,9 @@ async def find(session: AsyncSession, embedder: FakeEmbedder, query: str, **kwar
     )
 
 
-async def test_search_returns_the_matching_path(session: AsyncSession, repo: pygit2.Repository) -> None:
-    embedder = FakeEmbedder()
+async def test_search_returns_the_matching_path(
+    session: AsyncSession, repo: pygit2.Repository, embedder: FakeEmbedder
+) -> None:
     head = commit(repo, {"notes/a.md": "all about alpha", "notes/b.md": "beta beta beta", "c.md": "gamma"})
     await run_sync(session, repo, head, embedder)
 
@@ -71,8 +72,9 @@ async def test_search_returns_the_matching_path(session: AsyncSession, repo: pyg
     assert hits[0].score > 0
 
 
-async def test_path_prefix_narrows_the_search(session: AsyncSession, repo: pygit2.Repository) -> None:
-    embedder = FakeEmbedder()
+async def test_path_prefix_narrows_the_search(
+    session: AsyncSession, repo: pygit2.Repository, embedder: FakeEmbedder
+) -> None:
     head = commit(repo, {"notes/a.md": "beta here", "other/b.md": "beta beta beta"})
     await run_sync(session, repo, head, embedder)
 
@@ -81,8 +83,9 @@ async def test_path_prefix_narrows_the_search(session: AsyncSession, repo: pygit
     assert [hit.path for hit in hits] == ["notes/a.md"]
 
 
-async def test_deleted_content_becomes_unreachable(session: AsyncSession, repo: pygit2.Repository) -> None:
-    embedder = FakeEmbedder()
+async def test_deleted_content_becomes_unreachable(
+    session: AsyncSession, repo: pygit2.Repository, embedder: FakeEmbedder
+) -> None:
     await run_sync(session, repo, commit(repo, {"keep.md": "alpha", "gone.md": "zeta zeta"}), embedder)
     await run_sync(session, repo, commit(repo, {"keep.md": "alpha"}), embedder)
 
@@ -90,9 +93,10 @@ async def test_deleted_content_becomes_unreachable(session: AsyncSession, repo: 
     assert await read_indexed_text(session, "gone.md", chunker_key=git_chunker_key(), model_key="fake-v1") is None
 
 
-async def test_deleted_content_keeps_its_cached_embedding(session: AsyncSession, repo: pygit2.Repository) -> None:
+async def test_deleted_content_keeps_its_cached_embedding(
+    session: AsyncSession, repo: pygit2.Repository, embedder: FakeEmbedder
+) -> None:
     """The cache is content-addressed, so leaving the tip must not cost the vector."""
-    embedder = FakeEmbedder()
     first = commit(repo, {"keep.md": "alpha", "gone.md": "zeta zeta"})
     gone_sha = next(entry.blob_sha for entry in list_tip(repo, first) if entry.path == "gone.md")
     await run_sync(session, repo, first, embedder)
@@ -103,8 +107,9 @@ async def test_deleted_content_keeps_its_cached_embedding(session: AsyncSession,
     assert cached.scalar_one() > 0
 
 
-async def test_restoring_deleted_content_costs_no_embedding(session: AsyncSession, repo: pygit2.Repository) -> None:
-    embedder = FakeEmbedder()
+async def test_restoring_deleted_content_costs_no_embedding(
+    session: AsyncSession, repo: pygit2.Repository, embedder: FakeEmbedder
+) -> None:
     await run_sync(session, repo, commit(repo, {"keep.md": "alpha", "gone.md": "zeta zeta"}), embedder)
     await run_sync(session, repo, commit(repo, {"keep.md": "alpha"}), embedder)
     report = as_report(
@@ -115,9 +120,10 @@ async def test_restoring_deleted_content_costs_no_embedding(session: AsyncSessio
     assert next(hit.path for hit in await find(session, embedder, "zeta")) == "back.md"
 
 
-async def test_resync_of_an_unchanged_tip_does_no_work(session: AsyncSession, repo: pygit2.Repository) -> None:
+async def test_resync_of_an_unchanged_tip_does_no_work(
+    session: AsyncSession, repo: pygit2.Repository, embedder: FakeEmbedder
+) -> None:
     """The early-out is what lets a push trigger and a reconciling cron both fire freely."""
-    embedder = FakeEmbedder()
     head = commit(repo, {"a.md": "alpha", "b.md": "beta"})
     first = as_report(await run_sync(session, repo, head, embedder))
     second = await run_sync(session, repo, head, embedder)
@@ -139,8 +145,9 @@ async def test_a_changed_model_resyncs_the_same_commit(session: AsyncSession, re
     assert next(hit.path for hit in await find(session, successor, "beta")) == "b.md"
 
 
-async def test_a_failed_sync_leaves_the_previous_tip_searchable(session: AsyncSession, repo: pygit2.Repository) -> None:
-    embedder = FakeEmbedder()
+async def test_a_failed_sync_leaves_the_previous_tip_searchable(
+    session: AsyncSession, repo: pygit2.Repository, embedder: FakeEmbedder
+) -> None:
     first = commit(repo, {"a.md": "alpha"})
     await run_sync(session, repo, first, embedder)
 
@@ -161,8 +168,9 @@ async def test_a_failed_sync_leaves_the_previous_tip_searchable(session: AsyncSe
     assert [hit.path for hit in await find(session, embedder, "alpha")] == ["a.md"]
 
 
-async def test_binary_and_oversized_blobs_stay_out_of_the_index(session: AsyncSession, repo: pygit2.Repository) -> None:
-    embedder = FakeEmbedder()
+async def test_binary_and_oversized_blobs_stay_out_of_the_index(
+    session: AsyncSession, repo: pygit2.Repository, embedder: FakeEmbedder
+) -> None:
     index = pygit2.Index()
     index.add(pygit2.IndexEntry("a.md", repo.create_blob(b"alpha"), pygit2.enums.FileMode.BLOB))
     index.add(pygit2.IndexEntry("logo.png", repo.create_blob(b"\x89PNG\x00\xff\xfe"), pygit2.enums.FileMode.BLOB))
