@@ -107,8 +107,9 @@ supersedes it. Re-windowing is nearly free — the vectors are cached by content
 
 **No ANN index.** Exact KNN over the joined set, which at this corpus size is a scan of a few
 megabytes. That removes the ANN-plus-filter correctness problem entirely, and it removes
-pgvector's 2000-dimension index limit as a constraint (the limit applies to index builds, not
-to storage or queries). Revisit past ~100k chunks.
+pgvector's 2000-dimension index limit as a constraint — which this corpus is already past, at
+2560 dims, so an ANN index is not merely deferred but unavailable without reducing dimensionality
+(the limit applies to index builds, not to storage or queries). Revisit past ~100k chunks.
 
 **Embeddings come from Ollama**, over its OpenAI-compatible `/v1/embeddings`, so the backend is a
 base URL and a model name rather than an implementation — LiteLLM or anything else speaking that
@@ -226,8 +227,11 @@ Deliberately absent — it depends on the evaluation above:
   Not done: nothing triggers a sweep on a push, so a haku-state commit is searchable within five
   minutes rather than immediately, and a new message within one.
 
-- **Eviction.** `last_seen_at` is maintained but nothing sweeps it. At 384 dims a chunk's
-  vector is ~1.5 KB, so wait until it shows up on a disk graph. When you do add a sweep, it
+- **Eviction.** `last_seen_at` is maintained but nothing sweeps it. `qwen3-embedding:4b` returns
+  2560 dims (verified against the deployed Ollama, 2026-08-15), so a chunk's vector is ~10 KB —
+  100k chunks is about a gigabyte, which is a real number rather than a rounding error. Still
+  wait until it shows up on a disk graph, but it will show up sooner than the earlier 384-dim
+  model implied. When you do add a sweep, it
   must exclude anything still referenced:
 
   ```sql
