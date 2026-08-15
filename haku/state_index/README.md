@@ -105,11 +105,22 @@ supersedes it. Re-windowing is nearly free — the vectors are cached by content
 
 ### Two choices worth knowing
 
-**No ANN index.** Exact KNN over the joined set, which at this corpus size is a scan of a few
-megabytes. That removes the ANN-plus-filter correctness problem entirely, and it removes
-pgvector's 2000-dimension index limit as a constraint — which this corpus is already past, at
-2560 dims, so an ANN index is not merely deferred but unavailable without reducing dimensionality
-(the limit applies to index builds, not to storage or queries). Revisit past ~100k chunks.
+**No ANN index**, and at 2560 dimensions that is no longer only a choice. Exact KNN reads every
+candidate vector, which removes the ANN-plus-filter correctness problem entirely — but pgvector's
+HNSW and IVFFlat cap out at **2000 dimensions** on a `vector` column, so this corpus could not be
+indexed as stored even if it wanted to be. (Storage is capped at 16,000 dimensions, and neither
+cap applies to a sequential scan; the column is also declared without a typmod, which an index
+would need.)
+
+**Size the scan, not the disk.** A `vector` is 4 bytes per dimension plus 8, so a chunk here costs
+~10 KiB — a query at 10k chunks reads ~100 MB, at 100k chunks ~1 GB, from a database whose volume
+is **2Gi in total** and shared with the approval ledger. So the earlier "revisit past ~100k chunks"
+was arithmetic from the 384-dimension model this replaced; the real revisit point is nearer 10–20k,
+and what it buys is not an index but smaller vectors: `halfvec(2560)` halves the bytes and is
+indexable up to 4000 dimensions, and Qwen3-Embedding is Matryoshka-trained, so asking the endpoint
+for fewer dimensions is a genuine option. **If that day comes, the dimension has to enter
+`model_key`** — the model name alone would no longer identify the vector space, and the cache would
+silently mix two of them.
 
 **Embeddings come from Ollama**, over its OpenAI-compatible `/v1/embeddings`, so the backend is a
 base URL and a model name rather than an implementation — LiteLLM or anything else speaking that
@@ -227,11 +238,9 @@ Deliberately absent — it depends on the evaluation above:
   Not done: nothing triggers a sweep on a push, so a haku-state commit is searchable within five
   minutes rather than immediately, and a new message within one.
 
-- **Eviction.** `last_seen_at` is maintained but nothing sweeps it. `qwen3-embedding:4b` returns
-  2560 dims (verified against the deployed Ollama, 2026-08-15), so a chunk's vector is ~10 KB —
-  100k chunks is about a gigabyte, which is a real number rather than a rounding error. Still
-  wait until it shows up on a disk graph, but it will show up sooner than the earlier 384-dim
-  model implied. When you do add a sweep, it
+- **Eviction.** `last_seen_at` is maintained but nothing sweeps it, and the cache keeps every
+  vector ever computed — including for content that has left the tip. At ~10 KiB a chunk on a 2Gi
+  volume (see above) that is a bounded amount of patience, not an indefinite one. When you do add a sweep, it
   must exclude anything still referenced:
 
   ```sql
