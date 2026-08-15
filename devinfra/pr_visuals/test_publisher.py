@@ -18,6 +18,8 @@ from devinfra.pr_visuals.publisher import (
     download_visual_tests,
     error_comment_body,
     find_test_invocations,
+    list_ci_failures,
+    no_visual_comment_body,
     success_comment_body,
     target_slug,
     upload_bundle,
@@ -138,11 +140,92 @@ def test_download_visual_tests_rejects_missing_declared_asset(tmp_path: Path) ->
         download_visual_tests(["invocation"], tmp_path / "tests", run=fake_run)
 
 
+def test_download_visual_tests_deduplicates_equivalent_manifests(tmp_path: Path) -> None:
+    artifacts = [
+        {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "bytestream://manifest-first"},
+        {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "bytestream://manifest-retry"},
+        {"label": "//ui:screenshots", "name": "test.outputs/screen.png", "uri": "bytestream://screen"},
+    ]
+    manifest = {
+        "schema": "ducktape.visual-review.v1",
+        "title": "UI",
+        "assets": [{"path": "screen.png", "label": "screen"}],
+    }
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[2] == "list":
+            return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
+        output = Path(command[-1])
+        if str(command[4]).endswith("visual-review.json"):
+            output.write_text(json.dumps(manifest))
+        else:
+            output.write_bytes(b"png")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    tests = download_visual_tests(["invocation"], tmp_path / "tests", run=fake_run)
+
+    assert len(tests) == 1
+    assert (tests[0].directory / "screen.png").read_bytes() == b"png"
+
+
+def test_download_visual_tests_rejects_conflicting_manifests(tmp_path: Path) -> None:
+    artifacts = [
+        {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "manifest-one"},
+        {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "manifest-two"},
+    ]
+    manifest_number = 0
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        nonlocal manifest_number
+        if command[2] == "list":
+            return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
+        manifest_number += 1
+        Path(command[-1]).write_text(
+            json.dumps(
+                {
+                    "schema": "ducktape.visual-review.v1",
+                    "title": f"UI {manifest_number}",
+                    "assets": [{"path": f"screen-{manifest_number}.png", "label": "screen"}],
+                }
+            )
+        )
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    with pytest.raises(ValueError, match="exposed conflicting visual manifests from 2 results"):
+        download_visual_tests(["invocation"], tmp_path / "tests", run=fake_run)
+
+
 def test_download_visual_tests_treats_null_artifact_list_as_empty(tmp_path: Path) -> None:
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(command, 0, "null", "")
 
     assert download_visual_tests(["invocation"], tmp_path / "tests", run=fake_run) == []
+
+
+def test_list_ci_failures_is_best_effort_and_deduplicates_labels() -> None:
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[2] == "missing":
+            return subprocess.CompletedProcess(command, 1, "", "not found")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            json.dumps(
+                {
+                    "targetGroups": [
+                        {
+                            "targets": [
+                                {"metadata": {"label": "//z:test"}, "status": "FAILED"},
+                                {"metadata": {"label": "//a:test"}, "status": "FAILED"},
+                                {"metadata": {"label": "//ok:test"}, "status": "PASSED"},
+                            ]
+                        }
+                    ]
+                }
+            ),
+            "",
+        )
+
+    assert list_ci_failures(["missing", "invocation", "invocation"], run=fake_run) == ["//a:test", "//z:test"]
 
 
 def test_build_bundle_groups_tests_and_writes_target_pages(tmp_path: Path) -> None:
@@ -214,6 +297,27 @@ def test_comment_bodies_link_commit_targets_and_report_errors() -> None:
     assert "tests/example-visuals-" in success
     assert "Visual review failed" in failure
     assert "missing artifact screen.png" in failure
+
+    warning = success_comment_body(
+        repository="agentydragon/ducktape",
+        commit_sha=sha,
+        url="https://visuals/commits/sha/",
+        review_tests=review_tests,
+        ci_conclusion="failure",
+        ci_failures=["//haku/console:x_test"],
+    )
+    assert "visual artifacts that arrived are shown below" in warning
+    assert "//haku/console:x_test" in warning
+
+    no_visuals = no_visual_comment_body(
+        repository="agentydragon/ducktape",
+        commit_sha=sha,
+        ci_conclusion="failure",
+        ci_failures=["//haku/console:x_test"],
+        details_url="https://github/actions/runs/1",
+    )
+    assert "No visual artifacts were available" in no_visuals
+    assert "https://github/actions/runs/1" in no_visuals
 
 
 def test_upload_publishes_all_indexes_last(tmp_path: Path) -> None:

@@ -217,6 +217,40 @@ def list_ci_artifacts(
     return listed
 
 
+def list_ci_failures(invocations: list[str], *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run) -> list[str]:
+    """Return failed Bazel target labels, best-effort, from linked invocations.
+
+    A failed ``bazel test`` still uploads the artifacts for targets that completed
+    before the failure.  BuildBuddy's target summaries are the durable source for
+    identifying the targets that did not complete successfully; individual linked
+    invocations may disappear before the publisher gets to them, so an unavailable
+    query is intentionally not fatal to visual publication.
+    """
+    failures: set[str] = set()
+    for invocation in invocations:
+        result = run([bbapi, "target", invocation, "--json"], check=False, text=True, capture_output=True)
+        if result.returncode != 0:
+            continue
+        try:
+            payload = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        for group in payload.get("targetGroups") or []:
+            if not isinstance(group, dict):
+                continue
+            for target in group.get("targets") or []:
+                if not isinstance(target, dict):
+                    continue
+                if target.get("status") == "FAILED":
+                    metadata = target.get("metadata")
+                    label = metadata.get("label") if isinstance(metadata, dict) else None
+                    if isinstance(label, str):
+                        failures.add(label)
+    return sorted(failures)
+
+
 def target_slug(label: str) -> str:
     readable = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")
     if not readable:
@@ -247,8 +281,6 @@ def download_visual_tests(
         ]
         if not manifests:
             continue
-        if len(manifests) != 1:
-            raise ValueError(f"{target_label} exposed {len(manifests)} visual manifests; expected exactly one")
 
         slug = target_slug(target_label)
         if previous := used_slugs.get(slug):
@@ -256,10 +288,31 @@ def download_visual_tests(
         used_slugs[slug] = target_label
         test_dir = destination / slug
         manifest_path = test_dir / MANIFEST_NAME
-        _download_artifact(manifests[0], manifest_path, bbapi=bbapi, run=run)
-        manifest = VisualReviewManifest.model_validate_json(manifest_path.read_text())
 
-        available = {artifact.artifact.name: artifact for artifact in target_artifacts}
+        # A bb remote script can expose the same test result through more than
+        # one linked invocation (for example, a retry or a child invocation that
+        # was discovered after the primary one).  Compare the manifests rather
+        # than rejecting the target merely because it has duplicate listings.
+        # Conflicting manifests remain an error: there is no honest way to pick
+        # one candidate without a result-attempt identity.
+        candidate_dir = destination / ".manifests" / slug
+        candidates: list[tuple[ListedArtifact, VisualReviewManifest, Path]] = []
+        for index, listed in enumerate(manifests):
+            candidate_path = candidate_dir / f"{index}.json"
+            _download_artifact(listed, candidate_path, bbapi=bbapi, run=run)
+            candidates.append(
+                (listed, VisualReviewManifest.model_validate_json(candidate_path.read_text()), candidate_path)
+            )
+        signatures = {json.dumps(manifest.model_dump(mode="json"), sort_keys=True) for _, manifest, _ in candidates}
+        if len(signatures) != 1:
+            raise ValueError(f"{target_label} exposed conflicting visual manifests from {len(manifests)} results")
+        selected_listed, manifest, selected_path = candidates[0]
+        test_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(selected_path, manifest_path)
+
+        available: dict[str, ListedArtifact] = {}
+        for artifact in sorted(target_artifacts, key=lambda item: item.invocation_id != selected_listed.invocation_id):
+            available.setdefault(artifact.artifact.name, artifact)
         for asset in manifest.assets:
             artifact_name = f"test.outputs/{asset.path}"
             asset_artifact = available.get(artifact_name)
@@ -543,14 +596,47 @@ def _format_test_counts(counts: ClassificationCounts) -> str:
     return ", ".join(parts) if parts else "unchanged"
 
 
+def _ci_failure_notice(ci_conclusion: str, ci_failures: list[str]) -> list[str]:
+    if ci_conclusion == "success":
+        return []
+    lines = ["> [!WARNING]", f"> Bazel CI concluded `{ci_conclusion}`; visual artifacts that arrived are shown below."]
+    if ci_failures:
+        lines += [">", "> Failed Bazel targets:"]
+        displayed = ci_failures[:20]
+        lines.extend(f"> - `{target}`" for target in displayed)
+        if len(ci_failures) > len(displayed):
+            lines.append(f"> - … and {len(ci_failures) - len(displayed)} more")
+    else:
+        lines.append("> Individual failed target labels were not available from BuildBuddy.")
+    return lines
+
+
+def _ci_failure_summary(ci_conclusion: str, ci_failures: list[str]) -> str:
+    if ci_conclusion == "success":
+        return ""
+    if ci_failures:
+        return f" Bazel CI concluded {ci_conclusion}; {len(ci_failures)} target(s) failed."
+    return f" Bazel CI concluded {ci_conclusion}; failed target details were unavailable."
+
+
 def success_comment_body(
-    *, repository: str, commit_sha: str, url: str, review_tests: list[ReviewTest], base_sha: str | None = None
+    *,
+    repository: str,
+    commit_sha: str,
+    url: str,
+    review_tests: list[ReviewTest],
+    base_sha: str | None = None,
+    ci_conclusion: str = "success",
+    ci_failures: list[str] | None = None,
 ) -> str:
+    ci_failures = ci_failures or []
     commit_url = f"https://github.com/{repository}/commit/{commit_sha}"
     page_url = f"{url}index.html"
     target_count = len(review_tests)
     plural = "" if target_count == 1 else "s"
     lines = [COMMENT_MARKER, f"## Visual review for [`{commit_sha[:8]}`]({commit_url})", ""]
+    if notice := _ci_failure_notice(ci_conclusion, ci_failures):
+        lines += [*notice, ""]
     if base_sha is None:
         lines += [
             f"{target_count} Bazel test target{plural} produced visual artifacts. [Open visual review]({page_url}).",
@@ -582,22 +668,41 @@ def success_comment_body(
     return _with_diff_previews("\n".join(lines), review_tests, url)
 
 
-def error_comment_body(*, repository: str, commit_sha: str, error: Exception) -> str:
+def no_visual_comment_body(
+    *, repository: str, commit_sha: str, ci_conclusion: str, ci_failures: list[str], details_url: str | None
+) -> str:
+    commit_url = f"https://github.com/{repository}/commit/{commit_sha}"
+    lines = [COMMENT_MARKER, f"## Visual review for [`{commit_sha[:8]}`]({commit_url})", ""]
+    if notice := _ci_failure_notice(ci_conclusion, ci_failures):
+        lines += [*notice, ""]
+    lines.append("No visual artifacts were available from the Bazel CI run.")
+    if details_url:
+        lines.append(f"[Open the CI run]({details_url}) for the complete test results.")
+    return "\n".join(lines)
+
+
+def error_comment_body(
+    *,
+    repository: str,
+    commit_sha: str,
+    error: Exception,
+    ci_conclusion: str = "success",
+    ci_failures: list[str] | None = None,
+) -> str:
     commit_url = f"https://github.com/{repository}/commit/{commit_sha}"
     message = str(error).replace("```", "'''")[:2000]
-    return "\n".join(
-        [
-            COMMENT_MARKER,
-            f"## Visual review failed for [`{commit_sha[:8]}`]({commit_url})",
-            "",
-            "> [!CAUTION]",
-            "> Bazel CI produced an invalid or incomplete visual-review artifact set.",
-            "",
-            "```text",
-            message,
-            "```",
-        ]
-    )
+    lines = [COMMENT_MARKER, f"## Visual review failed for [`{commit_sha[:8]}`]({commit_url})", ""]
+    if notice := _ci_failure_notice(ci_conclusion, ci_failures or []):
+        lines += [*notice, ""]
+    lines += [
+        "> [!CAUTION]",
+        "> Bazel CI produced an invalid or incomplete visual-review artifact set.",
+        "",
+        "```text",
+        message,
+        "```",
+    ]
+    return "\n".join(lines)
 
 
 def upsert_pull_request_comment(*, repository: str, pull_request: int, body: str, token: str) -> None:
@@ -657,6 +762,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--public-base-url", required=True)
     result.add_argument("--pull-request", type=int)
     result.add_argument("--check-external-id")
+    result.add_argument("--ci-conclusion", default="success")
+    result.add_argument("--ci-details-url")
     return result
 
 
@@ -670,14 +777,28 @@ def main() -> None:
     conclusion: Literal["success", "failure", "neutral"] = "neutral"
     summary = "No tests executed by Bazel CI exposed visual-review.json."
     comment_body: str | None = None
-    details_url: str | None = workflow_url
+    details_url: str | None = args.ci_details_url or workflow_url
+    ci_failures: list[str] = []
     try:
-        tests = download_visual_tests(find_test_invocations(args.linkage_dir), args.work_dir / "tests")
+        linkage_files = list(args.linkage_dir.glob("*.json"))
+        invocations = find_test_invocations(args.linkage_dir) if linkage_files else []
+        if args.ci_conclusion != "success":
+            ci_failures = list_ci_failures(invocations)
+        tests = download_visual_tests(invocations, args.work_dir / "tests") if invocations else []
         github_output = os.environ.get("GITHUB_OUTPUT")
         if github_output:
             with Path(github_output).open("a") as output:
                 output.write(f"found={'true' if tests else 'false'}\n")
         if not tests:
+            summary += _ci_failure_summary(args.ci_conclusion, ci_failures)
+            if args.ci_conclusion != "success":
+                comment_body = no_visual_comment_body(
+                    repository=args.repository,
+                    commit_sha=args.sha,
+                    ci_conclusion=args.ci_conclusion,
+                    ci_failures=ci_failures,
+                    details_url=args.ci_details_url or workflow_url,
+                )
             print(f"{summary} Skipping publication.")
             return
 
@@ -717,7 +838,10 @@ def main() -> None:
             url=public_url,
             review_tests=review_tests,
             base_sha=base_sha,
+            ci_conclusion=args.ci_conclusion,
+            ci_failures=ci_failures,
         )
+        summary += _ci_failure_summary(args.ci_conclusion, ci_failures)
         conclusion, details_url = "success", f"{public_url}index.html"
         if (diff := diff_check(review_tests)) is not None:
             diff_conclusion, diff_summary = diff
@@ -732,8 +856,15 @@ def main() -> None:
                 name="PR visual diffs",
             )
     except Exception as error:
-        comment_body = error_comment_body(repository=args.repository, commit_sha=args.sha, error=error)
-        summary, conclusion = str(error), "failure"
+        comment_body = error_comment_body(
+            repository=args.repository,
+            commit_sha=args.sha,
+            error=error,
+            ci_conclusion=args.ci_conclusion,
+            ci_failures=ci_failures,
+        )
+        summary = str(error) + _ci_failure_summary(args.ci_conclusion, ci_failures)
+        conclusion = "failure"
         raise
     finally:
         if comment_body is not None and args.pull_request is not None:

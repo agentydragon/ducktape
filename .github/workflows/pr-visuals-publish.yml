@@ -53,11 +53,11 @@ jobs:
   publish:
     if: >-
       github.event.action == 'completed' &&
-      github.event.workflow_run.conclusion == 'success' &&
       (
         (github.event.workflow_run.event == 'pull_request' &&
          github.event.workflow_run.pull_requests[0] != null) ||
         (github.event.workflow_run.event == 'push' &&
+         github.event.workflow_run.conclusion == 'success' &&
          github.event.workflow_run.head_branch == 'devel')
       )
     runs-on: ubuntu-latest
@@ -80,6 +80,7 @@ jobs:
 
       - name: Download BuildBuddy linkage
         uses: actions/download-artifact@v5
+        continue-on-error: true
         with:
           github-token: ${{ github.token }}
           run-id: ${{ github.event.workflow_run.id }}
@@ -99,6 +100,8 @@ jobs:
           # PR run → the base devel commit whose published bundle is the diff baseline.
           BASE_SHA: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].base.sha || '' }}
           PR_NUMBER: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number || '' }}
+          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          CI_RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
           args=(
             --linkage-dir "$PWD/linkage"
@@ -108,6 +111,8 @@ jobs:
             --endpoint https://s3.allegedly.works
             --bucket pr-visuals
             --public-base-url https://s3.allegedly.works/pr-visuals
+            --ci-conclusion "$CI_CONCLUSION"
+            --ci-details-url "$CI_RUN_URL"
           )
           if [ -n "$BASE_SHA" ]; then
             args+=(--base-sha "$BASE_SHA")
@@ -117,40 +122,3 @@ jobs:
             args+=(--check-external-id "pr-visual-review:${{ github.event.workflow_run.id }}")
           fi
           bb run //devinfra/pr_visuals:publisher_bin -- "${args[@]}"
-
-  finalize-ci-failure:
-    if: >-
-      github.event.action == 'completed' &&
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.pull_requests[0] != null &&
-      github.event.workflow_run.conclusion != 'success'
-    runs-on: ubuntu-latest
-    env:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: devel
-
-      - uses: ./.github/actions/setup-nix-devtools
-        with:
-          package: citools
-
-      - uses: ./.github/actions/setup-ci-secrets
-        with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
-
-      - name: Finalize visual review
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.workflow_run.pull_requests[0].head.sha }}
-          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-        run: |
-          bb run //devinfra/pr_visuals:check_run_bin -- \
-            --repository "$GITHUB_REPOSITORY" \
-            --sha "$HEAD_SHA" \
-            --status completed \
-            --conclusion "$CI_CONCLUSION" \
-            --summary "Bazel CI concluded $CI_CONCLUSION; visual publication did not run." \
-            --details-url "${{ github.event.workflow_run.html_url }}" \
-            --external-id "pr-visual-review:${{ github.event.workflow_run.id }}"
