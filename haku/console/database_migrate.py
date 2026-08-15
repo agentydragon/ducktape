@@ -11,6 +11,7 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
 
 from haku.console.database_schema import metadata
+from haku.state_index.schema import Base as StateIndexBase
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -33,8 +34,16 @@ def run_migrations_for_connection(conn: Any, revision: str = "head") -> None:
         # a database has already recorded it, upgrade-to-head is a no-op even though the ORM may now
         # require columns that are absent. Compile and execute a zero-row read for every owned table
         # so that schema-incompatible processes fail during startup instead of serving as Ready.
-        for table in metadata.sorted_tables:
-            conn.execute(select(table).limit(0))
+        #
+        # Both metadatas, because the index declares its own `Base` and its tables are just as much
+        # this database's as the console's own: on 2026-08-15 a rename edited into an already-applied
+        # 0037 shipped exactly this way, and the guard did not see it because it only knew about one
+        # of the two. `.tables` rather than `.sorted_tables`: creation order is meaningless for a
+        # zero-row read, and sorting warns about the mutually dependent foreign keys in the Agent
+        # graph, which are deliberate.
+        for owned in (metadata, StateIndexBase.metadata):
+            for table in owned.tables.values():
+                conn.execute(select(table).limit(0))
 
 
 def sync_database_url(database_url: str) -> str:

@@ -8,10 +8,12 @@ fail in production at the first query.
 
 from __future__ import annotations
 
+import pytest
 import pytest_bazel
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
-from sqlalchemy import create_engine, make_url
+from sqlalchemy import create_engine, make_url, text
+from sqlalchemy.exc import ProgrammingError
 
 from haku.console.database_migrate import apply_migrations
 from haku.state_index.schema import SCHEMA, Base
@@ -37,6 +39,24 @@ def test_the_migration_builds_exactly_what_the_orm_declares(db_url: str) -> None
                 connection, opts={"compare_type": True, "include_schemas": True, "include_name": _only_the_index_schema}
             )
             assert compare_metadata(context, Base.metadata) == []
+    finally:
+        engine.dispose()
+
+
+def test_startup_refuses_a_database_whose_stamped_schema_drifted(db_url: str) -> None:
+    """The guard that should have caught the 2026-08-15 rename, on the schema it did not cover.
+
+    An edited revision is a no-op against a database that already recorded it, so the only thing
+    standing between that and a pod serving queries for absent columns is this read.
+    """
+    apply_migrations(db_url)
+    engine = create_engine(make_url(db_url).set(drivername="postgresql+psycopg").render_as_string(False))
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE state_index.chat_chunks RENAME COLUMN window_no TO chunk_no"))
+
+        with pytest.raises(ProgrammingError):
+            apply_migrations(db_url)
     finally:
         engine.dispose()
 

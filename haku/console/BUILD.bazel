@@ -185,6 +185,7 @@ py_library(
     data = glob(["migrations/**"]),
     deps = [
         ":database_schema",
+        "//haku/state_index:schema",
         "@pypi//alembic",
         "@pypi//sqlalchemy",
     ],
@@ -1395,6 +1396,7 @@ py_test(
         "//haku/state_index:schema",
         "@pypi//alembic",
         "@pypi//psycopg",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
