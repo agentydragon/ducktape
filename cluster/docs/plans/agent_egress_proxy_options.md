@@ -250,7 +250,7 @@ The approval prompt needs to say _who_ is asking. "Something wants
 Identity does not survive the first hop. iron knows the caller — its audit
 records `remote_addr` as the client pod, confirmed in the in-cluster test — but
 it then opens its **own** upstream connection, so the cache sees only the iron
-pod's address. What reaches an `external_acl_type` helper via `%SRC` is
+pod's address. What reaches an `external_acl_type` helper via `%>a` is
 therefore _which fence_, not which workload:
 
 | Fence                                        | Distinguishable at the cache?                                         |
@@ -302,7 +302,7 @@ Four ways to get identity to the gate:
    upstream ask (a generic webhook transform), which would then make the
    cache-side hook unnecessary.
 3. **One iron per agent**, as a sidecar rather than a shared fence proxy. Pod IP
-   becomes the identity, `%SRC` is sufficient, and each iron holds only that
+   becomes the identity, `%>a` is sufficient, and each iron holds only that
    agent's credentials — better scoping than the fence model. Costs a proxy per
    agent pod, per-agent config, and CA plumbing. This is a documented pattern in
    the 2026 agent-egress literature, not an invention.
@@ -790,8 +790,11 @@ acl known dstdomain "/etc/squid/allowed-domains.txt"
 http_access allow known
 
 # 2. Everything else asks haku-console, every time. No Squid-side cache.
+#    ttl=0/negative_ttl=0 is the intent, not a verified spelling -- see the
+#    UNVERIFIED note under "Decided: do not cache the helper's response".
+#    %>a %>rd are logformat codes; the legacy %SRC/%DST spellings are deprecated.
 external_acl_type haku_gate ttl=0 negative_ttl=0 concurrency=64 \
-  %SRC %DST /usr/local/bin/haku_gate.py
+  %>a %>rd /usr/local/bin/haku_gate.py
 acl gated external haku_gate
 http_access allow gated
 
@@ -802,6 +805,43 @@ The helper answers `OK` (match → allowed), `ERR` (no match → falls through t
 `deny all`), or `BH` (helper broken). Every gated request consults the console;
 the console answers already-decided pairs from its own table, so this is an RPC
 per request, not a prompt per request.
+
+#### What the helper actually receives
+
+One line per query on stdin: the `FORMAT` codes from the `external_acl_type`
+line, expanded, space-separated. Three properties to write the parser against:
+
+- **Every value is URL-escaped** — "Request values sent to the helper are URL
+  escaped to protect each value in requests against whitespaces" — so unescape
+  each field. (Not true under `protocol=2.5`, the Squid-2.5 compatibility mode.)
+- **Missing data arrives as `-`**, not as an empty field, so the field count is
+  stable.
+- **`concurrency=n` prefixes a channel tag**, "a number between 0 and
+  concurrency-1", which the response must echo:
+  `[channel-ID] result keyword=value ...`.
+
+Useful codes, all standard `logformat` ones — `>` means client-side, `<`
+server-side:
+
+| Code          | Meaning                              |
+| ------------- | ------------------------------------ |
+| `%>a` / `%>p` | Client source IP / port              |
+| `%>A`         | Client FQDN                          |
+| `%rm`         | Request method                       |
+| `%ru`         | Full request URL, sanitized          |
+| `%>rd`        | Request URL domain from client       |
+| `%>rp`        | Request URL path, excluding hostname |
+| `%>rs`/`%>rP` | Request URL scheme / port            |
+| `%{Header}>h` | Any received request header          |
+
+Plus two specific to this directive: `%ACL` (the ACL name under test) and
+`%DATA` (the arguments from the `acl … external` line; `%#DATA` passes the whole
+string as one token).
+
+Response keywords are `user=`, `password=`, `message=` (surfaced as `%o` on the
+error page), `tag=`, `log=` (reaches access.log as `%ea`), and `clt_conn_tag=`.
+**`ttl=` is not among them** — which is the documentary basis for the claim above
+that a decision's expiry cannot be expressed to Squid.
 
 **The static allowlist short-circuiting first is the load-bearing part.** It
 keeps haku-console out of the path for all normal traffic, so console downtime
@@ -846,7 +886,7 @@ troubling the operator.
 ### Two design decisions to make before building
 
 **~~What goes in the cache key.~~** Settled by the no-cache decision above: there
-is no Squid-side cache to key. `%SRC %DST` are simply what the helper is told
+is no Squid-side cache to key. `%>a %>rd` are simply what the helper is told
 about each request, and scoping — per agent, per host, per time box — is entirely
 the console's to define in its own policy table.
 
@@ -872,6 +912,16 @@ consequences below are what it costs.
 
 `ttl=0 negative_ttl=0`. Squid holds no verdicts; **haku-console is the only
 decision cache**, and it is authoritative.
+
+> **UNVERIFIED — the exact directive that disables the cache.** The intent above
+> is settled; the spelling is not. Squid documents `ttl=n` as "TTL in seconds for
+> cached results (defaults to 3600)", `negative_ttl` as defaulting to the same,
+> and a _separate_ `cache=n` as "the maximum number of entries in the result
+> cache". **Nothing in the documentation says `0` disables caching** for either
+> knob, and `cache=0` may equally mean "unlimited". Confirm by observation before
+> relying on it — issue the same gated request twice and check the helper is
+> called twice. This is the `DONT_VERIFY_PEER` shape: a value that parses without
+> complaint and may not mean what the config assumes.
 
 This removes a constraint rather than adding cost. The helper **cannot** return a
 per-response `ttl=` — the response keywords are `user=`, `password=`, `message=`,
@@ -899,6 +949,10 @@ Consequences to build for:
 - **The helper must be genuinely concurrent.** Request rate now equals helper
   call rate for undecided domains. An asyncio helper with `concurrency=64` is
   fine; fork-per-request would serialise the fence.
+- **Queue overflow stops being theoretical.** `queue-size` defaults to
+  `2*children-max`, and with nothing cached every gated request is a live helper
+  call. Whatever Squid does when that queue fills has to land on the deny side,
+  so it needs establishing rather than assuming — same spike, same run.
 - **The helper must call the console's in-cluster Service, not
   `haku.allegedly.works`.** Every gated request pays this hop, so it should not
   traverse ingress, public DNS or the internet, and a fail-closed gate should not
@@ -955,12 +1009,12 @@ retry later versus give up — instead of guessing.
 
 #### Agent-scoped decisions make the cache-key question go away
 
-An earlier subsection frames `%SRC %DST` keying as a problem because a new
+An earlier subsection frames `%>a %>rd` keying as a problem because a new
 sandbox pod re-prompts. With the console as a durable policy store that is no
 longer true: a cache miss costs an **RPC, not a human interaction**. The console
 answers a known (agent, host) pair instantly from its table.
 
-What does need solving is that `%SRC` is a pod IP, which is ephemeral, while
+What does need solving is that `%>a` is a pod IP, which is ephemeral, while
 "agent-scoped" implies a stable identity. The helper should map IP → pod → a
 stable owner label via the Kubernetes API and send _that_ to the console, so
 decisions survive pod churn.
