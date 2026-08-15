@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from haku.console.chat_models import (
+    LIVE_SESSION_STATUSES,
     ChatMessageRole,
     ChatMessageStatus,
     ChatSessionStatus,
@@ -31,6 +32,7 @@ from haku.console.database_schema import ClaudeChatFrame, ClaudeChatMessage, Cla
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications
 from haku.console.x.claude_chat import (
     ABORTED_NOTICE,
+    ADOPTION_GRACE,
     GOING_AWAY_CODE,
     REPLICA,
     STATUS_AFTER_SECONDS,
@@ -1519,7 +1521,7 @@ async def test_a_session_that_ended_does_not_report_a_turn_it_left_open(
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "work")
     assert await chat_store.next_prompt(view.session_id) is not None
-    await _age_lease(migrated_sessions, view.session_id, seconds_ago=1)
+    await _age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 
     assert await chat_store.expire_stale_leases() == 1
 
@@ -1833,18 +1835,55 @@ async def test_a_live_session_whose_holder_stopped_renewing_is_failed(
     told why. The expired lease is the evidence that makes it reclaimable by anyone.
     """
     view, _ = await chat_store.create(operator_id, SpaSession())
-    await _age_lease(migrated_sessions, view.session_id, seconds_ago=1)
+    await _age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 
     assert await chat_store.expire_stale_leases() == 1
     assert await chat_store.status(view.session_id) == ChatSessionStatus.FAILED
     assert "went away" in (await chat_store.get(operator_id, view.session_id)).error
 
 
+async def test_a_session_is_adoptable_before_it_is_dead(chat_store, migrated_sessions, operator_id) -> None:
+    """The bug a production roll found, in one test. `release_lease` is a finalizer, so SIGKILL and
+    node loss skip it — measured, every roll took this path. Failing the row the moment the lease
+    lapsed beat the runner's redial every time, so the session died while its sandbox sat there
+    retrying. An expired lease has to mean unowned for long enough to be taken."""
+    view, _ = await chat_store.create(operator_id, SpaSession())
+    await chat_store.renew_lease(view.session_id)
+    await _age_lease(migrated_sessions, view.session_id, seconds_ago=1)
+
+    assert await chat_store.expire_stale_leases() == 0, "expired is adoptable, not dead"
+    assert await chat_store.status(view.session_id) in LIVE_SESSION_STATUSES
+
+    await _age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
+
+    assert await chat_store.expire_stale_leases() == 1, "and dead once nobody took it"
+
+
+async def test_a_returning_runner_beats_the_sweep(
+    chat_store, chat_service, recording_claims, operator_id, migrated_sessions
+) -> None:
+    """The point of the window: a runner that redials into it is admitted, and the session that
+    would otherwise have been failed keeps running under its new holder."""
+    session = await chat_service.create(operator_id, SpaSession())
+    session_id = session.session_id
+    token = recording_claims.tokens[session_id]
+    assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    await _age_lease(migrated_sessions, session_id, seconds_ago=1)
+
+    with patch("haku.console.x.claude_chat.REPLICA", "haku-console-b"):
+        assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED, (
+            "a lapsed lease is adoptable by whichever replica the runner reaches"
+        )
+
+    assert await chat_store.expire_stale_leases() == 0
+    assert await chat_store.status(session_id) in LIVE_SESSION_STATUSES
+
+
 async def test_an_unheld_session_says_no_replica_ever_attached(chat_store, migrated_sessions, operator_id) -> None:
     """The creator's provisioning grant has no holder, so a sandbox that never came up must not
     blame a replica for going away."""
     view, _ = await chat_store.create(operator_id, SpaSession())
-    await _age_lease(migrated_sessions, view.session_id, seconds_ago=1)
+    await _age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 
     assert await chat_store.expire_stale_leases() == 1
     assert "never attached" in (await chat_store.get(operator_id, view.session_id)).error
@@ -1855,7 +1894,7 @@ async def test_a_failed_session_names_the_replica_that_held_it(chat_store, migra
     failure, so a room said a session died and nothing could say which process to go read."""
     view, _ = await chat_store.create(operator_id, SpaSession())
     await chat_store.renew_lease(view.session_id)
-    await _age_lease(migrated_sessions, view.session_id, seconds_ago=1)
+    await _age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 
     assert await chat_store.expire_stale_leases() == 1
     assert REPLICA in (await chat_store.get(operator_id, view.session_id)).error
@@ -1889,7 +1928,7 @@ async def test_an_ended_session_is_not_reclassified_by_the_sweep(chat_store, mig
     """Only a *live* status is a lie worth correcting; a terminal one is already the truth."""
     view, _ = await chat_store.create(operator_id, SpaSession())
     await chat_store.fail(view.session_id, "something else went wrong first")
-    await _age_lease(migrated_sessions, view.session_id, seconds_ago=1)
+    await _age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 
     assert await chat_store.expire_stale_leases() == 0
     assert (await chat_store.get(operator_id, view.session_id)).error == "something else went wrong first"
@@ -1905,8 +1944,8 @@ async def test_a_cancelled_runner_hands_the_session_back_without_stranding_it(
     its conversation, because a failed session is terminal and the runner's reconnect is refused.
 
     Handing it back keeps both properties: the session stays adoptable by whichever replica the
-    runner reaches, and the short grant left behind is what the sweep still catches when no
-    runner ever does.
+    runner reaches, and the sweep still catches it once its adoption window passes with no
+    runner back.
     """
     view, token = await chat_store.create(operator_id, SpaSession())
 
@@ -1925,7 +1964,7 @@ async def test_a_cancelled_runner_hands_the_session_back_without_stranding_it(
     with patch("haku.console.x.claude_chat.REPLICA", "haku-console-b"):
         assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
 
-    await _age_lease(migrated_sessions, view.session_id, seconds_ago=1)
+    await _age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
     assert await chat_store.expire_stale_leases() == 1
     assert await chat_store.status(view.session_id) == ChatSessionStatus.FAILED
 

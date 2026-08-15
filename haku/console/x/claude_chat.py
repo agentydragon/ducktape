@@ -341,15 +341,16 @@ class ClaudeChatStore:
         """Hand a live session back for adoption, without declaring it dead.
 
         "This session is over" and "I am no longer holding it" are different, and only the second
-        is true during a roll. The short grant replacing the deadline is what stops
-        `expire_stale_leases` failing the session in the seconds before the runner redials — and
-        what makes it fail the session if none ever does.
+        is true during a roll. Expiring the lease here says the second: the session is unowned as
+        of now, and `expire_stale_leases` gives it the same `ADOPTION_GRACE` to be adopted that it
+        gives a lease nobody released. This is a courtesy, not the mechanism — a SIGKILL runs no
+        finalizer, so the sweep must be correct without it (see `expire_stale_leases`).
         """
         async with self._sessions.begin() as db:
             chat = await db.get(ClaudeChatSession, session_id, with_for_update=True)
             if chat is not None and chat.status in LIVE_SESSION_STATUSES:
                 chat.lease_holder = None
-                chat.lease_expires_at = datetime.now(UTC) + ADOPTION_GRACE
+                chat.lease_expires_at = datetime.now(UTC)
                 chat.updated_at = datetime.now(UTC)
 
     async def adopt_open_turn(self, session_id: UUID) -> TurnResumed | None:
@@ -823,12 +824,24 @@ class ClaudeChatStore:
                 chat.lease_holder = REPLICA
 
     async def expire_stale_leases(self) -> int:
-        """Fail every live session whose holder stopped renewing, and report how many.
+        """Fail every live session nobody came back for, and report how many.
 
         A live status is only ever corrected by the replica that wrote it, so a replica dying
         without its finalizer — SIGKILL, OOM, node loss — leaves a row claiming a turn is in
         flight that `supervise_once` reads as healthy. This is the only observer that is not that
         process.
+
+        **An expired lease means unowned, not dead**, and the threshold below is the whole of that
+        distinction. `authenticate_bridge` already admits any runner once the lease has lapsed —
+        it refuses only while somebody else's is still valid — so an expired session is adoptable
+        without anything having to hand it back. What it is not is *instantly* adopted: the runner
+        redials on a backoff, and failing the row the moment the lease lapses beat that redial
+        every time. Measured 2026-08-15: `release_lease` is a finalizer and did not run on any
+        roll, so every roll took this path and every roll cost the session.
+
+        So a session is dead only once it has been adoptable for a whole `ADOPTION_GRACE` and
+        nobody took it. `release_lease` becomes what it should always have been — the fast path
+        that skips the wait, not the thing correctness rests on, which no finalizer can be.
 
         Set-based and idempotent, like `node_daemons._expire`: any replica may run it, concurrent
         runners converge, and a merely slow owner renews well before the TTL.
@@ -838,7 +851,7 @@ class ClaudeChatStore:
                 await db.scalars(
                     select(ClaudeChatSession.session_id).where(
                         ClaudeChatSession.status.in_(LIVE_SESSION_STATUSES),
-                        ClaudeChatSession.lease_expires_at <= datetime.now(UTC),
+                        ClaudeChatSession.lease_expires_at <= datetime.now(UTC) - ADOPTION_GRACE,
                     )
                 )
             ).all()
@@ -1405,7 +1418,7 @@ class ClaudeChatService:
             except* WebSocketDisconnect:
                 # The runner went away, which is not the session being over: it keeps the CLI
                 # alive across a lost socket and redials. Hand the session back and let the lease
-                # decide — one that never returns lets the grant lapse into the sweep.
+                # decide — a runner that never returns leaves the row to the sweep.
                 logger.info("Claude chat session %s lost its runner; leaving it for adoption", session_id)
                 keep_sandbox = True
                 await self._store.release_lease(session_id)
@@ -1421,8 +1434,8 @@ class ClaudeChatService:
             # the runner's reconnect and the supervisor builds a replacement.
             #
             # Hand it back instead. The sandbox outlives this process, the runner redials, and
-            # whichever replica answers adopts it. Nothing is swallowed: the grant `release_lease`
-            # leaves is short, and the sweep fails the session if no runner returns.
+            # whichever replica answers adopts it. Nothing is swallowed: the sweep fails the
+            # session once its adoption window passes with no runner back.
             keep_sandbox = True
             await self._store.release_lease(session_id)
             raise

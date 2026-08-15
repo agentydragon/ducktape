@@ -317,3 +317,28 @@ already waits out anything 5xx, because that is also what the Gateway says mid-r
 the holder clears immediately and the runner's next retry is admitted. Without it, the lease runs
 its full 90s while the sweep (every 10s) is trying to fail the session and the runner retries every
 ≤20s — a race, in the degraded path only.
+
+## The re-test: "degraded path only" was wrong
+
+2026-08-15, deleting the lease holder's pod with the 503 fix deployed. The console log has the fix
+firing —
+
+> 05:11:03 … session … held by another replica
+
+— and the room still says
+
+> session `315318df-3b67-4140-882c-ff04e925d9b1` ended (failed) — console replica holding this
+> session went away mid-turn (haku-console-c65549fd7-fhfcz); starting a new one
+
+`lease_holder` was again unchanged, so `release_lease` again did not run. **The degraded path is
+every path**, which makes cause 1 correctness, not latency: the sweep failed the row before the
+runner's next retry, and a failed session is terminal, so the redial the 503 was meant to preserve
+had nothing left to reconnect to.
+
+The fix is not to make the finalizer more reliable — a SIGKILL runs none, so no amount of
+`terminationGracePeriodSeconds` makes one load-bearing. It is that **an expired lease means
+unowned, not dead**. `authenticate_bridge` already admits any runner once the lease has lapsed, so
+the row is adoptable the moment it expires; what was missing is that `expire_stale_leases` gave
+adoption no time to happen. It now waits a whole `ADOPTION_GRACE` past expiry before failing the
+session, and `release_lease` is downgraded to what it should always have been — the fast path that
+skips that wait.

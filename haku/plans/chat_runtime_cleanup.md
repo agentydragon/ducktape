@@ -45,9 +45,10 @@ is the real backstop.
   claim creation, so the oldest live runner is exactly as old as the longest-lived session — which is
   exactly how far back the console must still speak the bridge protocol. Pick it deliberately and
   derive the support range from it.
-- **An expired lease should mean unowned, not dead.** `expire_stale_leases` fails the session and
-  provisions a replacement; re-adoption wants adoptable, which could not land before an adopter
-  existed and now can.
+- ~~**An expired lease should mean unowned, not dead.**~~ Landed ahead of the rest of this stage: a
+  production roll showed the sweep beating the runner's redial every time, because `release_lease`
+  is a finalizer and never runs. `expire_stale_leases` now waits an `ADOPTION_GRACE` past expiry
+  (<../console/debug/2026_08_13_sessions_boot_and_die.md> § the re-test).
 
 **Done when** no session dies on a clock, and an idle sandbox is released rather than reaped.
 
