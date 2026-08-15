@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import textwrap
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -45,61 +44,7 @@ from util.testing.asgi import serve_app
 
 RUNNER_BIN = "_main/haku/runtime/x/claude_bridge/runner_bin"
 
-# A `claude` that answers the protocol rather than the question. Three things make it more than an
-# echo. `initialize` is a *correlated* control request the client awaits before anything else, so
-# an echo loop would hang the console at connect. The second prompt is held unanswered until the
-# test releases it, which is what leaves a turn in flight while the console goes away. And every
-# frame carries the id the console recognises a replay by
-# (<../../cli_protocol/frame_identity.py>) — without one, the adopting console would act on the
-# runner's replay a second time and post the answer twice.
-CLAUDE_STUB = textwrap.dedent("""\
-    #!/usr/bin/env python3
-    import json
-    import os
-    import sys
-    import time
-    from pathlib import Path
-
-    state = Path(os.environ["HAKU_STUB_STATE"])
-    # Whatever the CLI writes to stderr is the sandbox's narration, which the runner forwards as
-    # its own frame kind; this is the console's one account of a session that never reached the
-    # model.
-    print("the sandbox says hello", file=sys.stderr, flush=True)
-
-
-    def send(frame):
-        sys.stdout.write(json.dumps(frame) + "\\n")
-        sys.stdout.flush()
-
-
-    answered = 0
-    # The launch argv is deliberately ignored; test_options.py is what pins it.
-    while line := sys.stdin.readline():
-        frame = json.loads(line)
-        if frame["type"] == "control_request":
-            response = {"subtype": "success", "request_id": frame["request_id"], "response": {}}
-            send({"type": "control_response", "response": response})
-            continue
-        if frame["type"] != "user":
-            continue
-        answered += 1
-        text = f"answer {answered}"
-        message = {"id": f"msg_{answered}", "role": "assistant", "content": [{"type": "text", "text": text}]}
-        send({"type": "assistant", "message": message})
-        if answered == 2:
-            (state / "asked").write_text("")
-            while not (state / "release").exists():
-                time.sleep(0.05)
-        send({
-            "type": "result",
-            "subtype": "success",
-            "is_error": False,
-            "result": text,
-            "uuid": f"result_{answered}",
-            "total_cost_usd": 0.01,
-            "duration_ms": 12,
-        })
-""")
+STUB_CLAUDE = "_main/haku/console/x/stub_claude.py"
 
 
 def _console_app(database_url: str, workspace: Path) -> FastAPI:
@@ -132,7 +77,12 @@ def _console_app(database_url: str, workspace: Path) -> FastAPI:
 
 
 def _stub_claude(path: Path) -> Path:
-    path.write_text(CLAUDE_STUB)
+    """Copy the stub out of runfiles and make it executable.
+
+    The runner execs `HAKU_CLAUDE_PATH` directly, and a source file staged in runfiles does not
+    reliably carry its executable bit.
+    """
+    path.write_text(get_required_path(STUB_CLAUDE).read_text())
     path.chmod(0o755)
     return path
 

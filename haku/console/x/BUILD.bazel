@@ -104,6 +104,7 @@ py_test(
     size = "large",  # a Postgres database, a uvicorn console and a runner subprocess per test
     srcs = ["test_claude_bridge_e2e.py"],
     data = [
+        "stub_claude.py",
         "//haku/runtime/x/claude_bridge:runner_bin",
         "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
