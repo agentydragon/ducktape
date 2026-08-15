@@ -20,7 +20,6 @@ spec:
     spec:
       # No Kubernetes API access; don't mount a SA token.
       automountServiceAccountToken: false
-      enableServiceLinks: false
       containers:
         - name: postscanmail-mcp-server
           image: ghcr.io/agentydragon/postscanmail-mcp-server:devel-20260812005423-0e981d8 # {"$imagepolicy": "flux-system:postscanmail-mcp-server"}

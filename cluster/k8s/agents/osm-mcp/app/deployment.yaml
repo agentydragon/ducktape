@@ -20,7 +20,6 @@ spec:
     spec:
       # No Kubernetes API access; don't mount a SA token.
       automountServiceAccountToken: false
-      enableServiceLinks: false
       imagePullSecrets:
         - name: forgejo-images-creds
       containers:

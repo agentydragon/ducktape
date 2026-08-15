@@ -23,7 +23,6 @@ spec:
       # (cluster/k8s/haku/rbac/rolebinding-haku.yaml).
       serviceAccountName: haku-claude
       automountServiceAccountToken: true
-      enableServiceLinks: false
       # Deliberately outside haku-sandbox: Haku's general compute authority must not
       # inherit access to the Claude OAuth-substituting proxy — the CCNP that admits this
       # namespace to it keys on the namespace, so the split is the fence. Still deferred:

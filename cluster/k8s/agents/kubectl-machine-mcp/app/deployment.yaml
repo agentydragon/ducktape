@@ -19,9 +19,6 @@ spec:
         app.kubernetes.io/name: kubectl-machine-mcp
     spec:
       serviceAccountName: kubectl-machine-mcp
-      # Prevent kubernetes-mcp-server from picking up *_SERVICE_* env vars injected
-      # by kube for same-namespace Services — they could confuse config parsing.
-      enableServiceLinks: false
       containers:
         - name: server
           image: ghcr.io/containers/kubernetes-mcp-server:v0.0.63

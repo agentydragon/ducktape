@@ -29,7 +29,6 @@ spec:
         app.kubernetes.io/name: haku-mailbox
     spec:
       automountServiceAccountToken: false
-      enableServiceLinks: false
       nodeSelector:
         # OVH-only resilience: inbound mail must not depend on Proxmox, and the
         # CNPG store is pinned to hil-ovh — co-locate with it (same pin as

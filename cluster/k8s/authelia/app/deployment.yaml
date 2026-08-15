@@ -20,7 +20,6 @@ spec:
         configmap.reloader.stakater.com/reload: authelia-config
         secret.reloader.stakater.com/reload: authelia-secrets
     spec:
-      enableServiceLinks: false
       nodeSelector:
         topology.kubernetes.io/region: hil
       tolerations:

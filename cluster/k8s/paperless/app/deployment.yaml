@@ -19,11 +19,6 @@ spec:
       labels:
         app.kubernetes.io/name: paperless
     spec:
-      # Disable legacy Docker-style service-link env injection: the Service named
-      # `paperless` would otherwise inject PAPERLESS_PORT=tcp://<clusterIP>:8000,
-      # colliding with Paperless-ngx's own PAPERLESS_PORT config (granian then
-      # receives a URL instead of an integer port and crashes).
-      enableServiceLinks: false
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       securityContext:

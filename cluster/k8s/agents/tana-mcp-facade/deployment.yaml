@@ -29,7 +29,6 @@ spec:
       labels:
         app.kubernetes.io/name: tana-mcp-facade
     spec:
-      enableServiceLinks: false
       containers:
         - name: server
           image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260815045227-88846f1 # {"$imagepolicy": "flux-system:mcp-oauth-facade"}

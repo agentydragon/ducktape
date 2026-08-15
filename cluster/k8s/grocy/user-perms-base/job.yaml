@@ -15,7 +15,6 @@ spec:
         app.kubernetes.io/name: grocy-user-perms-provisioner
     spec:
       restartPolicy: OnFailure
-      enableServiceLinks: false
       automountServiceAccountToken: false
       imagePullSecrets:
         - name: forgejo-images-creds

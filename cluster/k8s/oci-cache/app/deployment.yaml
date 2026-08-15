@@ -29,7 +29,6 @@ spec:
         app.kubernetes.io/name: zot
     spec:
       automountServiceAccountToken: false
-      enableServiceLinks: false
       securityContext:
         fsGroup: 65532
         seccompProfile:

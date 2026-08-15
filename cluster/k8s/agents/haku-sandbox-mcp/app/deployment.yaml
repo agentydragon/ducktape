@@ -22,7 +22,6 @@ spec:
       # The server loads its Kubernetes identity from this token (manages claims
       # + pods/exec in haku-sandbox).
       automountServiceAccountToken: true
-      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

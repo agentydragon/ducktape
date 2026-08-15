@@ -58,6 +58,21 @@ py_test(
 )
 
 py_test(
+    name = "test_default_service_links",
+    srcs = ["test_default_service_links.py"],
+    data = [
+        "//cluster/k8s:kyverno_policy_files",
+        "@multitool//tools/kyverno",
+    ] + glob(["testdata/pod_service_links_*.yaml"]),
+    deps = [
+        ":apply",
+        ":paths",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_inject_mitmproxy",
     srcs = ["test_inject_mitmproxy.py"],
     data = [

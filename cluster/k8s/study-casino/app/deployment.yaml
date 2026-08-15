@@ -19,13 +19,8 @@ spec:
       labels:
         app.kubernetes.io/name: study-casino
     spec:
-      # Don't auto-inject `<SERVICE>_PORT=tcp://...` env vars. The same-namespace
-      # `study-casino` Service would inject `STUDY_CASINO_PORT=tcp://...`, which
-      # collides with the `port: int` field on Settings (env_prefix
-      # `STUDY_CASINO_`) and crashes pydantic-settings on startup.
       nodeSelector:
         topology.kubernetes.io/region: hil
-      enableServiceLinks: false
       containers:
         - name: app
           image: ghcr.io/agentydragon/study-casino:devel-20260718201254-c5facbf # {"$imagepolicy": "flux-system:study-casino"}

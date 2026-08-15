@@ -644,7 +644,7 @@ def main() -> None:
     app = create_app(settings, loaded_static_agents=loaded_static_agents)
     # host/port are fixed, not env-driven: under the HAKU_CONSOLE_ prefix a `port`
     # setting would read the kubelet's HAKU_CONSOLE_PORT service-link var (a URL),
-    # not an int. The deployment also disables service links (enableServiceLinks: false).
+    # not an int. The cluster-wide Kyverno default keeps that legacy variable out.
     #
     # `timeout_graceful_shutdown` is load-bearing, not tuning. A Claude runner websocket stays
     # open for the life of a chat session, so with the default (None) uvicorn waits *forever* on

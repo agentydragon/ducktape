@@ -19,7 +19,6 @@ spec:
         app.kubernetes.io/name: plaid-db-mcp
     spec:
       automountServiceAccountToken: false
-      enableServiceLinks: false
       securityContext:
         seccompProfile:
           type: RuntimeDefault

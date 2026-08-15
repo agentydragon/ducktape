@@ -22,7 +22,7 @@ is parameterized over them, so a new injector is covered without editing it.
 
 ## Coverage
 
-Tested: `default-vpa-requests-only`, `inject-mitmproxy`,
+Tested: `default-vpa-requests-only`, `default-disable-service-links`, `inject-mitmproxy`,
 `inject-haku-egress-proxy`, `require-secret-store-conditions`,
 `restrict-agent-gateway-routes`.
 

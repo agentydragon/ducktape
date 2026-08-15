@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ha-mcp-token-provisioner-test
+  namespace: home-assistant
+  labels:
+    app.kubernetes.io/name: ha-mcp-token-provisioner
+spec:
+  enableServiceLinks: true
+  containers:
+    - name: provision-token
+      image: busybox:latest

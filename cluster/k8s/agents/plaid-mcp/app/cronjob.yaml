@@ -20,7 +20,6 @@ spec:
         spec:
           serviceAccountName: plaid-mcp
           restartPolicy: Never
-          enableServiceLinks: false
           securityContext:
             seccompProfile:
               type: RuntimeDefault

@@ -24,7 +24,6 @@ spec:
       serviceAccountName: haku
       # The worker's `bash` tool runs `kubectl` with this SA's in-cluster token.
       automountServiceAccountToken: true
-      enableServiceLinks: false
       # The image is a full-NixOS closure but we do NOT boot it: the pod runs the
       # worker process directly (`/sw/bin/haku-managed-agent-run`, see nixos.nix)
       # as the non-root `haku` uid with all caps dropped. Booting systemd PID 1 in

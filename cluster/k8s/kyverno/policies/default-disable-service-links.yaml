@@ -1,0 +1,46 @@
+# Disable Kubernetes' legacy Service-to-environment-variable injection by default.
+#
+# This is Pod-only and CREATE-only deliberately: mutating controller templates
+# would create Flux/SSA ownership conflicts, while every Pod (including Pods
+# created by custom operators) still passes through admission. The HA-MCP token
+# provisioner is the intentional exception; its existing pod label excludes it
+# and its manifests retain enableServiceLinks: true.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: default-disable-service-links
+  annotations:
+    pod-policies.kyverno.io/autogen-controllers: none
+    policies.kyverno.io/title: Default Service Links off
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Sets enableServiceLinks to false on newly created Pods to prevent legacy
+      Service environment variables from colliding with application settings.
+      The HA-MCP token provisioner is explicitly excluded because it relies on
+      those variables.
+spec:
+  admission: true
+  background: false
+  rules:
+    - name: default-disable-service-links
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              operations:
+                - CREATE
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - home-assistant
+              selector:
+                matchLabels:
+                  app.kubernetes.io/name: ha-mcp-token-provisioner
+      mutate:
+        patchStrategicMerge:
+          spec:
+            enableServiceLinks: false

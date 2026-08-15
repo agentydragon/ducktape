@@ -20,7 +20,6 @@ spec:
     spec:
       # No Kubernetes API access; don't mount a SA token.
       automountServiceAccountToken: false
-      enableServiceLinks: false
       containers:
         - name: manifold-mcp-server
           image: ghcr.io/agentydragon/manifold-mcp-server:devel-20260613094615-b774bb8 # {"$imagepolicy": "flux-system:manifold-mcp-server"}
