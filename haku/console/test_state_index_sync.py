@@ -18,6 +18,7 @@ import pytest_bazel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from haku.console import state_index_sync
 from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSessionStatus
 from haku.console.config import HakuStateGitConfig
 from haku.console.database_schema import ClaudeChatMessage, ClaudeChatSession, Operator
@@ -116,6 +117,24 @@ async def test_a_git_sweep_makes_the_tip_searchable(
         "egress", corpus=SearchCorpus.HAKU_STATE, limit=5, path_prefix=None, session_id=None
     )
     assert [hit.source.path for hit in hits if isinstance(hit.source, HakuStateSource)] == ["notes/alpha.md"]
+
+
+async def test_an_unmoved_remote_is_never_fetched(
+    migrated_engine: AsyncEngine,
+    migrated_sessions: async_sessionmaker[AsyncSession],
+    haku_state: HakuStateGitConfig,
+    embedder: FakeEmbedder,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The point of the `ls-remote` gate: polling often must not mean pulling objects often."""
+    maintenance = StateIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=haku_state)
+    await maintenance.sync_git_once()
+
+    def never(*args: object, **kwargs: object) -> str:
+        raise AssertionError("fetched a remote whose tip had not moved")
+
+    monkeypatch.setattr(state_index_sync, "_fetch", never)
+    await maintenance.sync_git_once()
 
 
 async def test_without_git_configured_the_git_sweep_is_a_no_op(

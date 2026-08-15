@@ -202,9 +202,22 @@ Deliberately absent — it depends on the evaluation above:
   reconciled first.
 
 - **Sync — done, in the console.** `haku/console/state_index_sync.py` sweeps both corpora from
-  the console process: chat every minute over its own tables, haku-state every five minutes into a
-  bare mirror on the pod's `/tmp`. Each corpus takes its own Postgres advisory lock, so exactly one
-  replica syncs it and a slow fetch never delays the other. The git half needs a credential, and it
+  the console process: chat every minute over its own tables, haku-state every thirty seconds
+  against a bare mirror on the pod's `/tmp`. Each corpus takes its own Postgres advisory lock, so
+  exactly one replica syncs it and a slow fetch never delays the other.
+
+  **The git tick is an `ls-remote`, not a fetch.** One round trip returns refs and no objects, so
+  the common case — nothing moved — costs almost nothing and can be asked often. The gate is
+  `sync.is_current`, the same predicate the sync itself early-outs on, because it must compare the
+  whole regime: a new embedding model has to re-index a tip that never moved, and a commit-only
+  comparison would skip it forever.
+
+  **A chat session is left to settle before it is indexed.** A changed session is re-windowed
+  wholesale, so indexing one mid-exchange re-chunks its whole tail and the next turn does it
+  again; `sync_chat` skips a session whose newest message is under `quiet_for` old (30s) and
+  reports it as `sessions_settling`. Nothing records the skip, so the next sweep still sees the
+  session as changed — the only cost is the delay, and `index_status` therefore has a lag floor of
+  the quiet window. The git half needs a credential, and it
   is **Haku's own Forgejo account** (operator, 2026-08-15) rather than a second read-only one — so
   the console holds something that could write haku-state even though nothing in it does. That cost
   is recorded where it is paid: <../console/README.md> and `tf/gitops/haku-state/main.tf`, which

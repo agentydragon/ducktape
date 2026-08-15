@@ -38,10 +38,19 @@ logger = logging.getLogger(__name__)
 _EMBED_BATCH = 32
 
 
+# How long a session must go without a new message before it is worth indexing. A changed
+# session is re-windowed wholesale, so indexing one mid-exchange re-chunks its whole tail and
+# the next turn does it again; waiting for a pause turns a burst into one pass. Shorter than any
+# sane sweep interval, so a finished conversation is still picked up by the following sweep.
+DEFAULT_QUIET_PERIOD = datetime.timedelta(seconds=30)
+
+
 @dataclass(frozen=True, slots=True)
 class ChatSyncReport:
     sessions_indexed: int
     sessions_unchanged: int
+    # Changed, but still being written to — indexed by a later sweep, not skipped.
+    sessions_settling: int
     sessions_forgotten: int
     windows_written: int
     windows_embedded: int
@@ -49,9 +58,14 @@ class ChatSyncReport:
 
 
 async def sync_chat(
-    session: AsyncSession, *, embedder: Embedder, now: datetime.datetime, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET
+    session: AsyncSession,
+    *,
+    embedder: Embedder,
+    now: datetime.datetime,
+    budget: ChunkBudget = DEFAULT_CHUNK_BUDGET,
+    quiet_for: datetime.timedelta = DEFAULT_QUIET_PERIOD,
 ) -> ChatSyncReport:
-    """Index every chat session that has changed since it was last indexed."""
+    """Index every chat session that has changed since it was last indexed and has gone quiet."""
     regime = chat_chunker_key(budget)
     shapes = await session_shapes(session)
     states = await chat_session_states(session)
@@ -64,6 +78,7 @@ async def sync_chat(
 
     indexed = 0
     unchanged = 0
+    settling = 0
     windows_written = 0
     windows_embedded = 0
     windows_reused = 0
@@ -76,6 +91,14 @@ async def sync_chat(
             embedder.model_key,
         ):
             unchanged += 1
+            continue
+
+        # A session someone is still talking in is left alone: its trailing window changes shape
+        # with every turn, and re-windowing it now only means re-windowing it again next sweep.
+        # Nothing is lost — the shape it was skipped at is not recorded, so the next sweep sees
+        # it as changed still.
+        if shape.last_message_at > now - quiet_for:
+            settling += 1
             continue
 
         chunks = chunk_messages(await load_messages(session, shape.session_id), budget)
@@ -116,6 +139,7 @@ async def sync_chat(
     report = ChatSyncReport(
         sessions_indexed=indexed,
         sessions_unchanged=unchanged,
+        sessions_settling=settling,
         sessions_forgotten=len(forgotten),
         windows_written=windows_written,
         windows_embedded=windows_embedded,

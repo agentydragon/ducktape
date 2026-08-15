@@ -8,7 +8,7 @@ import pygit2
 import pytest
 import pytest_bazel
 
-from haku.state_index.git_tree import fetch_branch, list_tip, open_mirror, read_blob
+from haku.state_index.git_tree import fetch_branch, list_tip, open_mirror, read_blob, remote_tip
 
 _AUTHOR = pygit2.Signature("Test", "test@example.com")
 
@@ -67,6 +67,23 @@ def test_fetch_follows_a_rewritten_history(tmp_path: Path, source: pygit2.Reposi
 
     assert fetch_branch(mirror, "main") == rewritten
     assert {entry.path for entry in list_tip(mirror, rewritten)} == {"a.md"}
+
+
+def test_remote_tip_reads_the_branch_without_fetching_it(tmp_path: Path, source: pygit2.Repository) -> None:
+    """The cheap poll: it must answer "has it moved?" without paying for the objects."""
+    _commit(source, {"a.md": "alpha"})
+    mirror = open_mirror(tmp_path / "mirror.git", f"file://{source.path}")
+    second = _commit(source, {"a.md": "alpha", "b.md": "beta"})
+
+    assert remote_tip(mirror, "main") == second
+    assert second not in mirror
+
+
+def test_remote_tip_is_none_for_a_branch_the_remote_does_not_have(tmp_path: Path, source: pygit2.Repository) -> None:
+    _commit(source, {"a.md": "alpha"})
+    mirror = open_mirror(tmp_path / "mirror.git", f"file://{source.path}")
+
+    assert remote_tip(mirror, "trunk") is None
 
 
 if __name__ == "__main__":

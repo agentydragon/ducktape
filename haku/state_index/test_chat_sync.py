@@ -98,8 +98,15 @@ async def operator_id(chat_source: AsyncSession) -> UUID:
     return await new_operator(chat_source)
 
 
-async def run_sync(session: AsyncSession, embedder: FakeEmbedder) -> ChatSyncReport:
-    report = await sync_chat(session, embedder=embedder, now=_NOW)
+# Past every test session's quiet window, so a sync indexes what it finds. The window itself is
+# the subject of its own tests below.
+_SETTLED = _NOW + datetime.timedelta(hours=1)
+
+
+async def run_sync(
+    session: AsyncSession, embedder: FakeEmbedder, *, now: datetime.datetime = _SETTLED
+) -> ChatSyncReport:
+    report = await sync_chat(session, embedder=embedder, now=now)
     await session.commit()
     return report
 
@@ -219,6 +226,33 @@ async def test_a_changed_model_re_embeds_the_same_messages(chat_source: AsyncSes
     report = await run_sync(chat_source, successor)
     assert (report.sessions_indexed, report.windows_embedded) == (1, 1)
     assert len(await find(chat_source, successor, "alpha")) == 1
+
+
+async def test_a_session_still_being_written_to_is_left_to_settle(
+    chat_source: AsyncSession, operator_id: UUID, embedder: FakeEmbedder
+) -> None:
+    """Indexing mid-exchange re-windows the whole tail, and the next turn would do it again."""
+    session_id = await new_session(chat_source, operator_id)
+    await say(chat_source, session_id, "iota", minute=0)
+
+    report = await run_sync(chat_source, embedder, now=_NOW + datetime.timedelta(seconds=5))
+
+    assert (report.sessions_settling, report.sessions_indexed) == (1, 0)
+    assert await find(chat_source, embedder, "iota") == []
+
+
+async def test_a_settled_session_is_indexed_by_the_next_sweep(
+    chat_source: AsyncSession, operator_id: UUID, embedder: FakeEmbedder
+) -> None:
+    """Nothing records that a session was skipped, so waiting costs only the delay."""
+    session_id = await new_session(chat_source, operator_id)
+    await say(chat_source, session_id, "kappa", minute=0)
+    await run_sync(chat_source, embedder, now=_NOW + datetime.timedelta(seconds=5))
+
+    report = await run_sync(chat_source, embedder)
+
+    assert (report.sessions_settling, report.sessions_indexed) == (0, 1)
+    assert [hit.session_id for hit in await find(chat_source, embedder, "kappa")] == [session_id]
 
 
 if __name__ == "__main__":

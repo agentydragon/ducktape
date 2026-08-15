@@ -37,6 +37,19 @@ def open_mirror(path: Path, url: str, *, username: str | None = None, password: 
     return pygit2.clone_repository(url, str(path), bare=True, callbacks=_callbacks(username, password))
 
 
+def remote_tip(
+    repo: pygit2.Repository, branch: str, *, username: str | None = None, password: str | None = None
+) -> str | None:
+    """What commit `branch` points at on the remote, without fetching a single object.
+
+    This is `git ls-remote`: one round trip that returns refs and nothing else, so a caller can
+    ask "has anything moved?" as often as it likes and only pay for objects when the answer is
+    yes. None means the remote has no such branch.
+    """
+    refs = repo.remotes["origin"].ls_remotes(callbacks=_callbacks(username, password))
+    return next((str(ref["oid"]) for ref in refs if ref["name"] == f"refs/heads/{branch}"), None)
+
+
 def fetch_branch(
     repo: pygit2.Repository, branch: str, *, username: str | None = None, password: str | None = None
 ) -> str:

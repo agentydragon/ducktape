@@ -29,15 +29,16 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from haku.console.config import HakuStateGitConfig
 from haku.state_index.chat_sync import sync_chat
 from haku.state_index.embedder import Embedder
-from haku.state_index.git_tree import fetch_branch, open_mirror
-from haku.state_index.sync import AlreadyCurrent, sync
+from haku.state_index.git_tree import fetch_branch, open_mirror, remote_tip
+from haku.state_index.store import current_git_state
+from haku.state_index.sync import AlreadyCurrent, is_current, sync
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_CHAT_INTERVAL = datetime.timedelta(seconds=60)
-# Longer than chat's: it costs a network fetch, and the repository is written by hand rather than
-# by every turn of every conversation.
-DEFAULT_GIT_INTERVAL = datetime.timedelta(minutes=5)
+# As short as chat's, because the common tick is one `ls-remote` — refs only, no objects — and
+# fetching happens only when the tip actually moved.
+DEFAULT_GIT_INTERVAL = datetime.timedelta(seconds=30)
 
 # Public because leader election is a contract a test (and an operator with psql) checks, not an
 # implementation detail of this class.
@@ -45,11 +46,21 @@ CHAT_ADVISORY_LOCK = 0x48414B55494E4443
 GIT_ADVISORY_LOCK = 0x48414B55494E4447
 
 
-def _fetch_tip(git: HakuStateGitConfig) -> tuple[pygit2.Repository, str]:
-    """Clone-or-fetch the mirror and return it at the branch tip. Blocking; called in a thread."""
+def _open_and_peek(git: HakuStateGitConfig) -> tuple[pygit2.Repository, str | None]:
+    """The mirror, plus what the remote's branch points at. Blocking; called in a thread.
+
+    Cloning on the first call is the expensive part and unavoidable; every call after it is one
+    `ls-remote`, which is what lets this poll on a short interval.
+    """
     password = None if git.password is None else git.password.get_secret_value()
     repository = open_mirror(git.mirror_path, git.repo_url, username=git.username, password=password)
-    return repository, fetch_branch(repository, git.branch, username=git.username, password=password)
+    return repository, remote_tip(repository, git.branch, username=git.username, password=password)
+
+
+def _fetch(repository: pygit2.Repository, git: HakuStateGitConfig) -> str:
+    """Bring the mirror up to the remote's branch. Blocking; called in a thread."""
+    password = None if git.password is None else git.password.get_secret_value()
+    return fetch_branch(repository, git.branch, username=git.username, password=password)
 
 
 class StateIndexMaintenance:
@@ -104,10 +115,21 @@ class StateIndexMaintenance:
         async with self._leading(GIT_ADVISORY_LOCK) as leading:
             if not leading:
                 return
-            # libgit2's clone and fetch are blocking, and the first one on a fresh pod clones the
-            # whole repository — off the event loop, which is also serving the operator's console.
-            repository, commit_sha = await asyncio.to_thread(_fetch_tip, git)
+            # libgit2's clone, ls-remote and fetch are all blocking, and the first call on a fresh
+            # pod clones the whole repository — off the event loop, which is also serving the
+            # operator's console.
+            repository, tip = await asyncio.to_thread(_open_and_peek, git)
+            if tip is None:
+                logger.error("haku-state remote has no branch %r", git.branch)
+                return
             async with self._sessions() as session:
+                # The gate is the whole regime, not just the commit: a new embedding model has to
+                # re-index a tip that never moved, and asking `ls-remote` alone would skip it.
+                if is_current(
+                    await current_git_state(session), tip, branch=git.branch, model_key=self._embedder.model_key
+                ):
+                    return
+                commit_sha = await asyncio.to_thread(_fetch, repository, git)
                 outcome = await sync(
                     session,
                     repository,

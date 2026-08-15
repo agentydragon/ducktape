@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from haku.state_index.chunking import DEFAULT_CHUNK_BUDGET, Chunk, ChunkBudget, chunk_text, git_chunker_key
 from haku.state_index.embedder import Embedder
 from haku.state_index.git_tree import list_tip, read_blob
-from haku.state_index.schema import Corpus
+from haku.state_index.schema import Corpus, GitSyncState
 from haku.state_index.store import (
     ChunkRow,
     cached_content,
@@ -63,6 +63,29 @@ class AlreadyCurrent:
 SyncOutcome = SyncReport | AlreadyCurrent
 
 
+def is_current(
+    state: GitSyncState | None,
+    commit_sha: str,
+    *,
+    branch: str,
+    model_key: str,
+    budget: ChunkBudget = DEFAULT_CHUNK_BUDGET,
+) -> bool:
+    """Whether the searchable set already holds this commit under this regime.
+
+    Public because a caller polling the remote needs exactly this question before deciding to
+    fetch, and answering it a second time by hand is how a regime change gets skipped: the tip
+    has not moved, so a commit-only comparison says "nothing to do" while the stored vectors no
+    longer answer for the content.
+    """
+    return state is not None and (state.commit_sha, state.branch, state.chunker_key, state.model_key) == (
+        commit_sha,
+        branch,
+        git_chunker_key(budget),
+        model_key,
+    )
+
+
 async def sync(
     session: AsyncSession,
     repo: pygit2.Repository,
@@ -81,12 +104,9 @@ async def sync(
     fire as often as they like — the common case, where nothing moved, costs one SELECT.
     """
     regime = git_chunker_key(budget)
-    if (state := await current_git_state(session)) is not None and (
-        state.commit_sha,
-        state.branch,
-        state.chunker_key,
-        state.model_key,
-    ) == (commit_sha, branch, regime, embedder.model_key):
+    if is_current(
+        await current_git_state(session), commit_sha, branch=branch, model_key=embedder.model_key, budget=budget
+    ):
         logger.info("haku-state index already at %s", commit_sha)
         return AlreadyCurrent(commit_sha=commit_sha)
 

@@ -394,7 +394,8 @@ MCP servers from `@mcp.tool`-decorated functions:
   tool with nowhere to embed is a tool that can only fail. Credential-free: the corpus is the
   console's own database, and embeddings come from Ollama. **Both corpora are kept current by this
   process** (`state_index_sync.py`): a chat sweep every minute over the console's own tables, and a
-  haku-state fetch every five minutes into a bare mirror on the pod's `/tmp`. Each corpus has its
+  haku-state poll every thirty seconds against a bare mirror on the pod's `/tmp` — an `ls-remote`
+  that pulls objects only when the tip actually moved. Each corpus has its
   own Postgres advisory lock, so one replica syncs it and a long git fetch never delays a chat
   sweep. The git half runs only when `haku_state_git` is configured; without it the console serves
   the conversations corpus alone.
