@@ -83,9 +83,10 @@ diagnostics access without duplicating any permission rules:
   exfiltrate.
 - **Logs/configmaps in explicitly opted-in namespaces**. A GitOps-owned Namespace label,
   `rbac.ducktape.io/haku-logs-configmaps: "true"`, is the source of truth. The
-  `generate-haku-logs-configmaps-reader` Kyverno policy generates one namespaced
+  `generate-haku-diagnostics-readers` Kyverno policy generates one namespaced
   `RoleBinding` containing the Haku group and both ServiceAccounts. These carry controller
-  diagnostics, not user content.
+  diagnostics, not user content. Namespace inventory diagnostics use the separate
+  `rbac.ducktape.io/haku-namespace-diagnostics: "true"` label and the same policy.
 
 The experimental `agent-lab` and `public-coder-agent` debug grants remain OIDC-group-only;
 they are not part of the durable ServiceAccount parity set.

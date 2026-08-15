@@ -15,8 +15,8 @@ service-specific reader Role/ClusterRole such as `ollama-reader`,
 Haku's `logs-configmaps-reader` grants are the exception to the file matrix: a
 GitOps-owned Namespace opts in with
 `rbac.ducktape.io/haku-logs-configmaps: "true"`, and
-`cluster/k8s/kyverno/policies/generate-haku-logs-configmaps-reader.yaml` generates
-the namespaced RoleBinding for the Haku OIDC group and both Haku ServiceAccounts.
+`cluster/k8s/kyverno/policies/generate-haku-diagnostics-readers.yaml` generates
+the namespaced RoleBindings for the Haku OIDC group and both Haku ServiceAccounts.
 The `kubectl-sandbox-users` group remains a separate Claude Code Web identity.
 
 Augur is reconciled from `gaffer-private`, so its agent RBAC lives cross-repo at

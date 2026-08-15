@@ -4,3 +4,4 @@ metadata:
   name: osm-mcp
   labels:
     goldilocks.fairwinds.com/enabled: "false"
+    rbac.ducktape.io/haku-namespace-diagnostics: "true"

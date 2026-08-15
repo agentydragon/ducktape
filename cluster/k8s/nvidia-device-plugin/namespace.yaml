@@ -4,3 +4,4 @@ metadata:
   name: nvidia-device-plugin
   labels:
     pod-security.kubernetes.io/enforce: privileged
+    rbac.ducktape.io/haku-namespace-diagnostics: "true"
