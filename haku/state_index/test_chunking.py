@@ -26,9 +26,8 @@ def test_offsets_are_correct_for_multibyte_content() -> None:
         assert encoded[chunk.byte_start : chunk.byte_end].decode() == chunk.text
 
 
-def test_chunks_are_contiguous_and_numbered_in_order() -> None:
+def test_chunks_are_contiguous_and_in_document_order() -> None:
     chunks = chunk_text("\n".join(f"line {n}" for n in range(500)))
-    assert [chunk.chunk_no for chunk in chunks] == list(range(len(chunks)))
     assert all(a.byte_end == b.byte_start for a, b in itertools.pairwise(chunks))
 
 

@@ -138,7 +138,6 @@ async def sync(
             ChunkRow(
                 corpus=Corpus.GIT,
                 content_sha=blob_sha,
-                chunk_no=chunk.chunk_no,
                 chunker_key=regime,
                 model_key=embedder.model_key,
                 byte_start=chunk.byte_start,

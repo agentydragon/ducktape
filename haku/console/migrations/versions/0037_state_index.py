@@ -41,7 +41,6 @@ def upgrade() -> None:
         "chunks",
         sa.Column("corpus", sa.Text(), nullable=False),
         sa.Column("content_sha", sa.Text(), nullable=False),
-        sa.Column("chunk_no", sa.Integer(), nullable=False),
         sa.Column("chunker_key", sa.Text(), nullable=False),
         sa.Column("model_key", sa.Text(), nullable=False),
         sa.Column("byte_start", sa.BigInteger(), nullable=False),
@@ -53,7 +52,7 @@ def upgrade() -> None:
         # this corpus size. Reasoning for the type: `haku/state_index/vector_type.py`.
         sa.Column("embedding", HalfVector(), nullable=False),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.PrimaryKeyConstraint("corpus", "content_sha", "chunk_no", "chunker_key", "model_key"),
+        sa.PrimaryKeyConstraint("corpus", "content_sha", "byte_start", "chunker_key", "model_key"),
         schema=SCHEMA,
     )
 

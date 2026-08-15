@@ -67,7 +67,6 @@ def git_chunker_key(budget: ChunkBudget = DEFAULT_CHUNK_BUDGET) -> str:
 class Chunk:
     """One embeddable span of a blob, located by byte offsets into that blob."""
 
-    chunk_no: int
     byte_start: int
     byte_end: int
     text: str
@@ -148,7 +147,5 @@ def chunk_text(blob: str, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET) -> list[Ch
         text = "".join(line.text for line in group)
         if not text.strip():
             continue
-        chunks.append(
-            Chunk(chunk_no=len(chunks), byte_start=group[0].byte_start, byte_end=group[-1].byte_end, text=text)
-        )
+        chunks.append(Chunk(byte_start=group[0].byte_start, byte_end=group[-1].byte_end, text=text))
     return chunks

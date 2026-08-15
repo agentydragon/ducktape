@@ -148,7 +148,7 @@ async def _query_git(database_url: str, query: str, limit: int, path_prefix: str
         await engine.dispose()
     for hit in hits:
         preview = " ".join(hit.text.split())[:160]
-        typer.echo(f"{hit.score:.3f} {hit.path}#{hit.chunk_no} [{hit.byte_start}:{hit.byte_end}] {preview}")
+        typer.echo(f"{hit.score:.3f} {hit.path} [{hit.byte_start}:{hit.byte_end}] {preview}")
 
 
 @app.command("query-git")

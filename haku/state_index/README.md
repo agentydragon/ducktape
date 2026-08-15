@@ -30,9 +30,12 @@ One shared table and a per-corpus set around it:
 `chunks` is content-addressed, so it has no notion of where content currently lives and keeps
 embeddings for content that has left the indexed set. That is the cache: a revert, a rebase, a
 force-push, a file moved between paths, a chat session re-windowed as it grows — all re-use
-their vectors. The cache key is `(corpus, content_sha, chunk_no, chunker_key, model_key)`: changing the chunker
+their vectors. The cache key is `(corpus, content_sha, byte_start, chunker_key, model_key)`: changing the chunker
 or the embedding model misses the cache rather than silently serving vectors computed over
-different text or by a different model.
+different text or by a different model. `byte_start` is what tells one chunk of a blob from the
+next — an ordinal beside it would be a second name for the same fact, and the offsets are the ones
+a caller can actually slice with. (The `chunk_no` in `chat_chunks` is a different thing: a
+window's position in its session, which is what `chat_chunk_messages` hangs off.)
 
 **Chunk size is configurable, and it lives inside `chunker_key`** — canonical JSON,
 `{"max_bytes":3000,"target_bytes":1500,"version":1}` — rather than beside it. The same blob chunked to a different size is different text, so a re-tune has to

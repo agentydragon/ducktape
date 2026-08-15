@@ -36,14 +36,14 @@ from haku.state_index.schema import (
 # across dimensions. MATERIALIZED pins that evaluation order rather than trusting the planner.
 _GIT_SEARCH_SQL = text("""
     WITH candidates AS MATERIALIZED (
-        SELECT t.path, t.blob_sha, c.chunk_no, c.byte_start, c.byte_end, c.text, c.embedding
+        SELECT t.path, t.blob_sha, c.byte_start, c.byte_end, c.text, c.embedding
         FROM state_index.git_tip t
         JOIN state_index.chunks c ON c.corpus = :corpus AND c.content_sha = t.blob_sha
         WHERE c.chunker_key = :chunker_key
           AND c.model_key = :model_key
           AND (CAST(:path_prefix AS text) IS NULL OR starts_with(t.path, CAST(:path_prefix AS text)))
     )
-    SELECT path, blob_sha, chunk_no, byte_start, byte_end, text,
+    SELECT path, blob_sha, byte_start, byte_end, text,
            1 - (embedding <=> CAST(:query AS halfvec)) AS score
     FROM candidates
     ORDER BY embedding <=> CAST(:query AS halfvec)
@@ -84,7 +84,6 @@ class GitSearchHit:
     # The content itself, not just where it sat: a caller with a clone can read the exact bytes
     # back with `git cat-file`, and a path alone would have moved by the time they did.
     blob_sha: str
-    chunk_no: int
     byte_start: int
     byte_end: int
     text: str
@@ -134,7 +133,6 @@ class ChunkRow:
 
     corpus: Corpus
     content_sha: str
-    chunk_no: int
     chunker_key: str
     model_key: str
     byte_start: int
@@ -194,7 +192,8 @@ async def insert_chunks(session: AsyncSession, rows: Sequence[ChunkRow], *, now:
     statement = pg_insert(Chunk).values([{**asdict(row), "last_seen_at": now} for row in rows])
     await session.execute(
         statement.on_conflict_do_update(
-            index_elements=["corpus", "content_sha", "chunk_no", "chunker_key", "model_key"], set_={"last_seen_at": now}
+            index_elements=["corpus", "content_sha", "byte_start", "chunker_key", "model_key"],
+            set_={"last_seen_at": now},
         )
     )
 
@@ -298,7 +297,7 @@ async def read_indexed_text(
         .where(GitTipEntry.path == path)
         .where(Chunk.chunker_key == chunker_key_for(Corpus.GIT, budget))
         .where(Chunk.model_key == model_key)
-        .order_by(Chunk.chunk_no)
+        .order_by(Chunk.byte_start)
     )
     chunks = list(result.scalars())
     return "".join(chunks) if chunks else None

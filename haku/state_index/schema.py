@@ -82,13 +82,16 @@ class Chunk(Base):
     # What this corpus addresses content by: the git blob sha for `git`, the sha256 of the
     # rendered message window for `chat`. Only ever compared within one corpus.
     content_sha: Mapped[str] = mapped_column(Text, primary_key=True)
-    chunk_no: Mapped[int] = mapped_column(Integer, primary_key=True)
     chunker_key: Mapped[str] = mapped_column(Text, primary_key=True)
     model_key: Mapped[str] = mapped_column(Text, primary_key=True)
     # Byte offsets of this chunk within the content `content_sha` addresses. For `git` that
     # content is the blob, so the span locates the chunk inside a file a caller can read back.
     # For `chat` the addressed content is the chunk itself, so the span covers all of it.
-    byte_start: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    #
+    # `byte_start` is in the key because it is what distinguishes one chunk of a blob from the
+    # next; an ordinal beside it would be a second name for the same fact, and document order is
+    # this one's to define.
+    byte_start: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     byte_end: Mapped[int] = mapped_column(BigInteger, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     # Unconstrained `halfvec`: dimension is a property of `model_key`, and pinning a typmod here

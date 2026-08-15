@@ -154,7 +154,6 @@ def _chunk_row(chunk: MessageChunk, embedding: list[float], *, chunker_key: str,
     return ChunkRow(
         corpus=Corpus.CHAT,
         content_sha=chunk.content_sha,
-        chunk_no=0,
         chunker_key=chunker_key,
         model_key=model_key,
         byte_start=0,
