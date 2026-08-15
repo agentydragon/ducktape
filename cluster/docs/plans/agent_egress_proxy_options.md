@@ -1293,6 +1293,109 @@ streaming): at that point `icap-rs` in a separate deployment becomes the better
 answer, and the separation is a contained change because the ICAP entry point is
 one module either way.
 
+## Reassessment: Squid+ICAP vs a mitmproxy addon (2026-08-15)
+
+Prompted by one question — does this support HTTP/2? — which turned out to have a
+measured answer and to reopen the choice of proxy.
+
+### The comparison axes
+
+Operator's framing, plus one it does not cover:
+
+1. **Does the proxy have a hook we can call out to?**
+2. **Can the hook do what we need?**
+3. **Does it cache?**
+4. **What can transit the fence at all?** — HTTP/2, HTTP/3, gRPC, WebSockets.
+   Not a hook property and not a caching property: it is the ceiling on what
+   traffic the fence can carry, and no hook capability compensates for it.
+
+### Why ICAP is not the portable answer it looks like
+
+[RFC 3507](https://www.rfc-editor.org/info/rfc3507) is **Informational**, 2003,
+and its IESG note says it "does not specify an Internet standard of any kind" —
+it documents existing practice while OPES was chartered to produce the
+standards-track version. OPES shipped
+[RFC 4037](https://www.rfc-editor.org/rfc/rfc4037.html) and got essentially no
+deployment, so the standards-track replacement is less supported than the
+non-standard it replaced.
+
+ICAP is ubiquitous in commercial secure web gateways doing AV/DLP scanning and
+absent everywhere else. It also **cannot reach HTTP/2 by construction**: the
+`Encapsulated` header is byte offsets into HTTP/1.x _text_, and HTTP/2 has binary
+frames and HPACK — there is no offset to give. Nothing revised it because the
+document was never on a track that revises things. The h2-era proxies each grew
+their own callout instead (Envoy `ext_proc`, HAProxy SPOE, NGINX `auth_request`/
+njs, mitmproxy addons), none interoperating. **There is no standard callout
+protocol for HTTP/2-era proxies**, so the real choice is which proxy's native
+hook to write against.
+
+### Measured
+
+Squid column is from step 1. mitmproxy column is from a probe deployment in
+`haku-sandbox` — an addon mirroring the ICAP stub's modes, an h2-capable nginx
+origin, and `curl` — torn down afterwards.
+
+| question                                      | Squid + ICAP                                                     | mitmproxy addon                                    |
+| --------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------- |
+| hook sees the decrypted request               | yes                                                              | yes                                                |
+| hook can rewrite `Authorization`              | yes                                                              | yes                                                |
+| hook can block without contacting the origin  | yes (encapsulated 403)                                           | yes (`flow.response`, 403)                         |
+| caller identity the client cannot forge       | yes (`X-Client-IP`)                                              | yes (`flow.client_conn.peername`)                  |
+| **decide on headers without taking the body** | **no** — structural; Squid ignored `Preview: 0`                  | **yes** — `requestheaders` + `stream = True`       |
+| **client keeps HTTP/2**                       | **no** — bumped side declines ALPN entirely                      | **yes** — `ALPN: server accepted h2`, end to end   |
+| **fail-closed when the hook fails**           | **yes** — `bypass=0` → `ERR_ICAP_FAILURE`                        | **no** — request forwarded _unmodified_            |
+| bounded wait whose expiry denies              | yes, once `icap_io_timeout` is set; deny at 2×                   | the callout is ours, so an ordinary client timeout |
+| HTTP caching                                  | yes, but `cache deny has_auth` excludes the credentialed traffic | none                                               |
+| static allowlist as config                    | `dstdomain` from a file                                          | write it in the addon                              |
+| data path                                     | C, decades of hardening                                          | Python, every request                              |
+
+Three of those decide the question.
+
+**HTTP/2 works through mitmproxy with substitution intact.** Client offering
+`h2,http/1.1` through the proxy to an h2 origin: `ALPN: server accepted h2`,
+origin reports `proto=HTTP/2.0`, and the addon still replaced `Authorization`
+while seeing only the placeholder. Squid, against the same shape of request,
+answers `ALPN: server did not agree on a protocol`. So HTTP/1.1-only is not a
+constraint of fencing — it is a constraint of _Squid_, and since agents already
+sit behind mitmproxy today, the Squid direction is a **regression**, not a
+limitation to accept. gRPC, which needs h2, is impossible through a bumping Squid
+and fine through mitmproxy.
+
+**mitmproxy can decide on the head without taking the body**, which ICAP
+structurally cannot express. `requestheaders` fires before the body is buffered;
+setting `flow.request.stream = True` there forwards the body without the addon
+ever holding it, and the header rewrite still applies — verified over HTTP/2 with
+a POST body: origin received the substituted credential and the intact 26-byte
+body, while the addon reported `not-buffered`. That **removes one of the three
+costs accepted in "console holds the substituted credentials"**: prompts need not
+transit console at all.
+
+**mitmproxy fails OPEN, and that is the serious finding.** An addon that raises
+does not deny — the request goes through _unmodified_, so the origin received the
+agent's untouched placeholder with HTTP 200, on both HTTP/1.1 and HTTP/2. That is
+precisely the failure mode `bypass=0` exists to prevent. It is fixable in the
+addon — wrap every hook and set a 403 response on any exception — but note the
+difference in kind: Squid's fail-closed is a **proxy-level guarantee**, while
+mitmproxy's is **an addon discipline that can regress silently**. Any move to
+mitmproxy must treat "every hook is total" as an invariant with a test that
+asserts a raising addon denies, not as a code-review habit.
+
+### Where this leaves the ICAP work
+
+Undecided on purpose — this note records measurements, not a reversal. What
+changed is that the two remaining arguments for Squid are narrower than they
+looked: caching does not cover credentialed traffic, and the ACL language is
+config convenience rather than capability. The one genuinely open question is
+data-path robustness and throughput, C versus Python, which nothing here
+measured.
+
+Against that, the mitmproxy direction deletes the ICAP protocol code, the new
+inbound non-HTTP listener on the credential authority, `icap_io_timeout` and its
+2× deny latency, and `icap_service_failure_limit`'s hard-down behaviour —
+replacing all of it with a Python function calling an ordinary console HTTP
+route — and it keeps HTTP/2 and keeps prompt bodies out of console. It adds the
+fail-open hazard above.
+
 ### Direction: one Squid per _agent_, provisioned by haku-console
 
 Refinement of "one Squid per fence" (operator, 2026-08-10): the console manages a
