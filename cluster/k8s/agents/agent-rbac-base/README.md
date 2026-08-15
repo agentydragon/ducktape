@@ -73,8 +73,10 @@ grants stay deliberately secret-free.
 
 The Haku agent authenticates as group `oidc-ksbx-groups:haku` (see Authentication below) and,
 beyond its full-CRUD `haku-sandbox` Role, is **co-subjected** onto the existing reader bindings
-to give it general cluster diagnostics plus safe log reading. No Haku-specific roles exist — it
-reuses the same reader ClusterRoles:
+to give it general cluster diagnostics plus safe log reading. The in-cluster `haku` and
+`haku-claude` ServiceAccounts are co-subjected onto this same durable reader set, so the
+managed worker and Console-owned Claude runners have equivalent diagnostics access without
+duplicating any permission rules:
 
 - **`cluster-diagnostics-reader`, cluster-wide** (added as a subject on the shared-rbac
   ClusterRoleBinding). Secret-free: no `secrets`/`pods/log`/`configmaps`, so it grants Haku no
@@ -83,6 +85,9 @@ reuses the same reader ClusterRoles:
 - **Logs/configmaps in infrastructure namespaces only** (co-subjected on the per-namespace
   bindings). These carry controller diagnostics, not user content. The binding YAMLs listed by
   <permissions.md> are the namespace source of truth.
+
+The experimental `agent-lab` and `public-coder-agent` debug grants remain OIDC-group-only;
+they are not part of the durable ServiceAccount parity set.
 
 This widens the original `haku-sandbox`-only perimeter (<../../../../haku/PLAN.md>) to read-only
 diagnostics; the structural fences (read-only verbs, no secret material, mitmproxy egress) are
