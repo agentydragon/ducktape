@@ -1112,7 +1112,8 @@ a way the gate-only design did not.
   that may not be wanted. ICAP `Preview` plus `204 No Content` exists for this,
   and header-only rewriting ought to answer off the preview, but how that
   interacts with returning a _modified_ message needs verifying rather than
-  assuming.
+  assuming. **Verified 2026-08-15: it does not help — Squid ignored the stub's
+  `Preview: 0` offer and encapsulated the full body. See step 1 results below.**
 - **Console needs a real ICAP server**, not a REST endpoint: encapsulated HTTP
   messages, the `Encapsulated` header, `OPTIONS`, `204`, chunked bodies.
   `pyicap` exists. Bounded work, but a niche protocol, and nothing in the
@@ -1144,6 +1145,76 @@ What step 1 has to answer, alongside the fail-closed cases already listed:
 - Does `http_access` run before adaptation? Still worth knowing without
   `external_acl`, because it decides whether the static allowlist can keep denied
   traffic away from console.
+
+#### Step 1 results (measured 2026-08-15, Squid 7.6)
+
+Stub service in <../../k8s/x/squid-egress-spike/app/icap_stub.py>, driven by
+`curl` through the spike Squid against the header-echoing origin. Every row below
+was observed, not inferred. The stub reflects its own view back as `X-Icap-Saw-*`
+request headers, because the ICAP pod's log is unreadable from an agent sandbox —
+`pods/log` is refused in `squid-egress-spike` and the namespace is not in the
+`loki-read-proxy` allowlist.
+
+| question                                    | answer                                                                                                       |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| REQMOD sees the bumped plaintext            | yes — rewrote `Authorization`, origin received the injected value                                            |
+| REQMOD can block                            | yes — encapsulated `403` reached the client with the service's own body                                      |
+| `204 No Content`                            | yes — request forwarded unmodified                                                                           |
+| POST body                                   | transits in full, intact, `Content-Length` preserved                                                         |
+| ICAP closes mid-transaction, `bypass=0`     | fail-closed: `500`, `X-Squid-Error: ERR_ICAP_FAILURE 0`, origin never contacted                              |
+| ICAP hangs, `bypass=0`, **default timeout** | **not** fail-closed — Squid waited 45s and applied the adaptation                                            |
+| ICAP hangs, `icap_io_timeout 5 seconds`     | fail-closed: same `ERR_ICAP_FAILURE`, at **10.2s** — Squid retries once, so deny latency is _2×_ the timeout |
+| recovery after a failure                    | immediate — the next request succeeded in every case                                                         |
+
+Three findings that change the design rather than confirm it:
+
+**REQMOD runs _before_ Squid's own header rewriting, so the ICAP service is not in
+the secret path.** The decisive observation: with the client sending
+`Bearer spike-bearer-placeholder`, the service saw a 31-character value (the
+placeholder) and never the 34-character substituted secret, and neither
+`X-Spike-Client` nor `Via` — both added by Squid — were present at adaptation
+time. Substitution still fires afterwards: the same placeholder sent in
+`passthrough` mode arrived at the origin as `Bearer fake-real-bearer-do-not-use`.
+
+This is the answer that decides the shape of step 2. **haku-console can be handed
+ICAP endpoints without being handed the credentials** — it sees and rules on the
+agent's placeholder, and `credentials.conf` redeems it downstream, out of
+console's sight. The `option A` objection at the top of this document ("an ICAP
+service that now holds the credentials") does not apply to REQMOD-for-policy; it
+applies only if substitution itself moves into the service. It should not.
+
+**Squid ignored a `Preview: 0` offer and sent the whole body anyway.** The stub
+advertises `Preview: 0` in its `OPTIONS`; Squid encapsulated `req-body` and
+delivered all 26 bytes with no preview and no `100 Continue` round trip. So the
+first practical unknown above resolves the pessimistic way, and for a blunter
+reason than expected: not "preview can't coexist with a modified response" but
+"Squid did not use preview at all". Every LLM prompt would transit console. If
+that volume is unwanted, the lever is `adaptation_access` — scope REQMOD to the
+requests whose policy actually needs deciding — not `Preview`.
+
+**Caller identity arrives out-of-band and trustworthy.** `icap_send_client_ip on`
+puts the real client address in the ICAP `X-Client-IP` header (`10.244.8.246`,
+the probe pod), and it arrives _before_ the `request_header_add "%>a"` trick this
+document proposed for the `external_acl` design. Console reads `X-Client-IP` and
+needs nothing stamped into the HTTP request at all.
+`icap_send_client_username` sends nothing absent proxy auth, as expected.
+
+Two consequences for config, both now in <../../k8s/x/squid-egress-spike/app/squid.conf>:
+
+- **`icap_io_timeout` must be set explicitly.** Its default is `read_timeout`,
+  15 minutes, so an unresponsive console hangs the agent instead of denying it —
+  the opposite of the stated requirement that expiry _is_ a denial. Size it at
+  half the budget, since the observed deny takes two timeout periods.
+- **`icap_service_failure_limit`** (default 10) marks the service down after that
+  many failures and, with `bypass=0`, fails everything until Squid retries. Right
+  direction for a fence; it does mean a flapping console takes egress hard-down
+  rather than degrading, which argues for console HA in the same direction the
+  critical-path section above does.
+
+Still unanswered from the step-1 list: whether `http_access` runs before
+adaptation. The spike is `http_access allow all`, so denied traffic never existed
+to observe; answering it needs a deny rule, and it only matters as an optimisation
+(keeping already-denied traffic away from console), not for correctness.
 
 ### Direction: one Squid per _agent_, provisioned by haku-console
 
