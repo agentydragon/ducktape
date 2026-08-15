@@ -53,6 +53,8 @@ resources:
   - attic-jwt-rotation-image-policy.yaml
   - grocy-mcp-oidc-server-image-repository.yaml
   - grocy-mcp-oidc-server-image-policy.yaml
+  - haku-embedder-image-repository.yaml
+  - haku-embedder-image-policy.yaml
   - haku-console-image-repository.yaml
   - haku-console-image-policy.yaml
   - haku-console-static-image-repository.yaml

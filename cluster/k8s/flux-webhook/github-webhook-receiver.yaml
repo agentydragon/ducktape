@@ -57,6 +57,9 @@ spec:
       name: grocy-mcp-oidc-server
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
+      name: haku-embedder
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
       name: haku-console
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository

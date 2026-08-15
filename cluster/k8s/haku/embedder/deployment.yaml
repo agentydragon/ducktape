@@ -1,0 +1,71 @@
+# The index's embedding backend, behind an OpenAI-compatible `/v1/embeddings`
+# (<../../../../haku/embedder_service/main.py>).
+#
+# It lives here rather than in the console process for two reasons: embedding is the one
+# CPU-heavy thing the index does, and it is the one piece expected to be replaced — when this
+# becomes Ollama, the console's `HAKU_CONSOLE_EMBEDDER__BASE_URL` moves and this Deployment is
+# deleted, with no code change anywhere.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haku-embedder
+  namespace: haku-console
+spec:
+  # One replica: nothing here holds state, and the callers are one console with two replicas.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: haku-embedder
+  template:
+    metadata:
+      labels:
+        app: haku-embedder
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: embedder
+          image: ghcr.io/agentydragon/haku-embedder:devel-20260815020000-0000000 # {"$imagepolicy": "flux-system:haku-embedder"}
+          # `--threads 1` matches the CPU limit below: onnxruntime otherwise starts a thread per
+          # host core and thrashes against the cgroup quota.
+          args: ["serve", "--port", "8080", "--threads", "1"]
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              # The weights are resident from startup, so the request is close to the floor
+              # rather than a fraction of it.
+              cpu: 50m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          # Startup, not liveness, carries the model load: the weights take seconds to read and a
+          # tight liveness budget would kill the pod for doing exactly what it is meant to.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10

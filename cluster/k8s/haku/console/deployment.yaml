@@ -144,6 +144,14 @@ spec:
             # iframe and sets a CSP frame-src for it; it never renders Haku's UI itself.
             # Lights up once the haku-ui workload serves (cluster/k8s/haku/workloads +
             # the haku-ui Authentik route). See haku/console/docs/containment.md.
+            # Where `haku_index` computes embeddings. An OpenAI-compatible endpoint, so moving
+            # to Ollama or LiteLLM later is this URL and the model name below.
+            - name: HAKU_CONSOLE_EMBEDDER__BASE_URL
+              value: "http://haku-embedder.haku-console.svc.cluster.local:8080/v1"
+            # Also the index's `model_key`: it names the model, so the same model behind a
+            # different server re-uses every cached vector.
+            - name: HAKU_CONSOLE_EMBEDDER__MODEL
+              value: "bge-small-en-v1.5"
             - name: HAKU_CONSOLE_HAKU_UI_URL
               value: https://haku-ui.allegedly.works
             - name: HAKU_CONSOLE_AUTH_ORIGIN
@@ -376,6 +384,14 @@ spec:
             # The nginx entrypoint renders /etc/nginx/templates/default.conf.template
             # with these origins at startup, keeping frame-src environment-specific
             # while the console itself remains unframeable via frame-ancestors 'none'.
+            # Where `haku_index` computes embeddings. An OpenAI-compatible endpoint, so moving
+            # to Ollama or LiteLLM later is this URL and the model name below.
+            - name: HAKU_CONSOLE_EMBEDDER__BASE_URL
+              value: "http://haku-embedder.haku-console.svc.cluster.local:8080/v1"
+            # Also the index's `model_key`: it names the model, so the same model behind a
+            # different server re-uses every cached vector.
+            - name: HAKU_CONSOLE_EMBEDDER__MODEL
+              value: "bge-small-en-v1.5"
             - name: HAKU_CONSOLE_HAKU_UI_URL
               value: https://haku-ui.allegedly.works
             - name: HAKU_CONSOLE_AUTH_ORIGIN

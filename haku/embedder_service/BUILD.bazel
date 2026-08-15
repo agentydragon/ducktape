@@ -1,4 +1,7 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_library(
     name = "main_lib",
@@ -35,4 +38,37 @@ py_test(
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
+)
+
+aspect_py_binary(
+    name = "server_bin",
+    main = "main.py",
+    deps = [":main_lib"],
+)
+
+py_image_layer(
+    name = "server_layers",
+    binary = ":server_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_bin"),
+    env = py_image_env(binary_name = "server_bin"),
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
+        "org.opencontainers.image.title": "haku-embedder",
+    },
+    # No cacerts layer: this serves in-cluster over plain HTTP and makes no outbound call —
+    # the weights are baked in precisely so it never fetches anything.
+    tars = [":server_layers"],
+)
+
+oci_load(
+    name = "image_load",
+    image = ":image",
+    repo_tags = ["haku-embedder:latest"],
 )

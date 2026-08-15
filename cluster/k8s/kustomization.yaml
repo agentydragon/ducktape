@@ -234,6 +234,7 @@ resources:
   - haku/console-namespace/flux-kustomization.yaml # the console's own trusted namespace
   - haku/console/db/flux-kustomization.yaml # CNPG approval ledger for console-approved tool calls
   - haku/console/flux-kustomization.yaml
+  - haku/embedder/flux-kustomization.yaml # embeddings for the console's semantic index
   - haku/console/servicemonitor/flux-kustomization.yaml
   - haku/mailbox-namespace/flux-kustomization.yaml # the mailbox's own trusted namespace
   - haku/mailbox/db/flux-kustomization.yaml # CNPG store for the Stalwart mailserver
