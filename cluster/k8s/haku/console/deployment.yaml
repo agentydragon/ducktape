@@ -387,6 +387,17 @@ spec:
               # silently raising it. A Node static-file + API server wanting
               # 1.3Gi resident looks wrong — check for a leak before accepting.
               memory: 3Gi
+          # The API applies its Alembic baseline before it binds the port, so a start with
+          # migrations to do can outrun a liveness budget sized for steady state — worst exactly
+          # when there is most to apply. A startupProbe holds liveness off until the port is up,
+          # separating "still starting" from "wedged" without blunting detection for the rest of
+          # the pod's life. Five minutes (60 x 5s); the static container needs none, since nginx
+          # binds immediately.
+          startupProbe:
+            tcpSocket:
+              port: api
+            failureThreshold: 60
+            periodSeconds: 5
           livenessProbe:
             tcpSocket:
               port: api
