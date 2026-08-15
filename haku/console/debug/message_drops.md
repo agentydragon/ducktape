@@ -6,7 +6,8 @@ plans already carried (the record-versus-deliver gap in `RolloutRecorder.receive
 replay; and a pacer queue lost with its process, which needs a death), so the cause is elsewhere.
 
 Read of `haku/console/x/{claude_chat,matrix_sync,matrix_pacer,matrix_client,matrix_session}.py` at
-`devel`, 2026-08-15.
+`devel`, 2026-08-15. Line numbers are where each thing stood then; the symbol names are what to
+grep for once they have drifted.
 
 ## The one structural fact everything below follows from
 
@@ -60,7 +61,7 @@ lie; E1 is the other.
 
 ### E3. Assistant messages arriving during the abort drain are discarded entirely
 
-`claude_chat.py:1726-1732`. The drain looks only for `RESULT_FRAME_KIND`; an `assistant` frame
+`claude_chat.py`, the abort drain in `_run_turn` (`if remaining.get("type") == RESULT_FRAME_KIND`). It looks only for `RESULT_FRAME_KIND`; an `assistant` frame
 arriving between the interrupt and the result — the normal case, since the CLI finishes the message
 it is mid-way through — is thrown away. No `update_assistant`, no row, no delivery. The text exists
 only in the rollout (the recorder is at the transport layer, so the frame _is_ in
@@ -72,7 +73,7 @@ frame. **An outbox does not close this** — the reply never reaches the deliver
 
 ### E4. A turn that raises after streaming loses what it produced
 
-`claude_chat.py:1791-1794` raises on `is_error` _before_ `final_text` is computed and before any
+`claude_chat.py`'s `if result.get("is_error") and not abort_event.is_set():` raises _before_ `final_text` is computed and before any
 delivery; so do failures in the writes above it. The `except` closes the turn `FAILED` and re-raises,
 `handle_runner` fails the session. Streamed text is in `claude_chat_messages` and the rollout, never
 in the room. The supervisor announces the failure (`matrix_session.py:368-378`), so the operator sees
