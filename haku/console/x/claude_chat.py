@@ -21,7 +21,7 @@ from types import MappingProxyType
 from typing import Annotated, Any, ClassVar, Protocol, cast
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from sqlalchemy import CursorResult, delete, func, select, text, update
@@ -174,6 +174,57 @@ class ClaudeChatSessionView(BaseModel):
     messages: list[ClaudeChatMessageView]
 
 
+class ConversationSessionSummary(BaseModel):
+    """The operator-facing inventory entry for one conversation.
+
+    This deliberately names the resource generically. Claude/Matrix are the only current
+    producer values, but the console's read surface should not make either one part of its
+    navigation or response shape.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: UUID
+    surface: ChatSurface | None
+    room_id: str | None
+    status: ChatSessionStatus
+    error: str | None
+    created_at: datetime
+    updated_at: datetime
+    message_count: int
+    last_message_at: datetime | None
+
+
+class ConversationTurnView(BaseModel):
+    """A turn summary, without exposing the raw frame range yet."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    turn_id: UUID
+    started_at: datetime
+    ended_at: datetime | None
+    outcome: TurnOutcome | None
+    cost_usd: float | None
+    duration_ms: int | None
+    usage: dict[str, Any] | None
+
+
+class ConversationSessionView(BaseModel):
+    """A readable conversation: metadata, transcript, and exchange summaries."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: UUID
+    surface: ChatSurface | None
+    room_id: str | None
+    status: ChatSessionStatus
+    error: str | None
+    created_at: datetime
+    updated_at: datetime
+    messages: list[ClaudeChatMessageView]
+    turns: list[ConversationTurnView]
+
+
 class ClaudeChatPromptRequest(BaseModel):
     """What the SPA posts to send a prompt. Named for the request, since the prompt itself is now
     a row (`database_schema.ClaudeChatPrompt`) rather than a field on the way in."""
@@ -309,6 +360,78 @@ class ClaudeChatStore:
             )
             responding = await _open_turn(db, session_id) is not None
             return _session_view(record, messages, responding=responding, calls=await _rollout_calls(db, session_id))
+
+    async def list_operator_conversations(self, operator_id: UUID, *, limit: int) -> list[ConversationSessionSummary]:
+        """List this Operator's conversations for the Console inventory.
+
+        The MCP reader intentionally remains unscoped, but a browser-facing inventory is an
+        operator-owned surface and must never reveal another Operator's sessions. The aggregate
+        comes from the transcript table so the list stays useful without loading every message.
+        """
+        async with self._sessions() as db:
+            rows = (
+                await db.execute(
+                    select(
+                        ClaudeChatSession,
+                        func.count(ClaudeChatMessage.message_id),
+                        func.max(ClaudeChatMessage.created_at),
+                    )
+                    .outerjoin(ClaudeChatMessage, ClaudeChatMessage.session_id == ClaudeChatSession.session_id)
+                    .where(ClaudeChatSession.operator_id == operator_id)
+                    .group_by(ClaudeChatSession.session_id)
+                    .order_by(ClaudeChatSession.updated_at.desc(), ClaudeChatSession.session_id.desc())
+                    .limit(limit)
+                )
+            ).all()
+        return [
+            ConversationSessionSummary(
+                session_id=session.session_id,
+                surface=session.surface,
+                room_id=session.room_id,
+                status=session.status,
+                error=session.error,
+                created_at=session.created_at,
+                updated_at=session.updated_at,
+                message_count=message_count,
+                last_message_at=last_message_at,
+            )
+            for session, message_count, last_message_at in rows
+        ]
+
+    async def get_operator_conversation(self, operator_id: UUID, session_id: UUID) -> ConversationSessionView:
+        """Read one Operator-owned conversation without the raw frame log."""
+        view = await self.get(operator_id, session_id)
+        async with self._sessions() as db:
+            session = await db.scalar(
+                select(ClaudeChatSession).where(
+                    ClaudeChatSession.session_id == session_id, ClaudeChatSession.operator_id == operator_id
+                )
+            )
+        if session is None:
+            raise KeyError(session_id)
+        turns = await self.list_turns(str(session_id), limit=100)
+        return ConversationSessionView(
+            session_id=view.session_id,
+            surface=session.surface,
+            room_id=session.room_id,
+            status=view.status,
+            error=view.error,
+            created_at=view.created_at,
+            updated_at=view.updated_at,
+            messages=view.messages,
+            turns=[
+                ConversationTurnView(
+                    turn_id=UUID(turn.turn_id),
+                    started_at=turn.started_at,
+                    ended_at=turn.ended_at,
+                    outcome=turn.outcome,
+                    cost_usd=turn.cost_usd,
+                    duration_ms=turn.duration_ms,
+                    usage=turn.usage,
+                )
+                for turn in turns
+            ],
+        )
 
     async def authenticate_bridge(self, session_id: UUID, token: str) -> BridgeAuthentication:
         """Admit a runner to its session — the first time, and every time after.
@@ -2048,6 +2171,23 @@ def _notifications(request: Request) -> ChatNotifications:
 ChatNotificationsDep = Annotated[ChatNotifications, Depends(_notifications)]
 ClaudeChatServiceDep = Annotated[ClaudeChatService, Depends(_service)]
 ClaudeChatStoreDep = Annotated[ClaudeChatStore, Depends(_store)]
+
+
+@router.get("/api/conversations")
+async def list_conversations(
+    actor: OperatorActorDep, store: ClaudeChatStoreDep, limit: Annotated[int, Query(ge=1, le=100)] = 50
+) -> list[ConversationSessionSummary]:
+    return await store.list_operator_conversations(actor.operator_id, limit=limit)
+
+
+@router.get("/api/conversations/{session_id}")
+async def get_conversation(
+    session_id: UUID, actor: OperatorActorDep, store: ClaudeChatStoreDep
+) -> ConversationSessionView:
+    try:
+        return await store.get_operator_conversation(actor.operator_id, session_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Conversation not found") from error
 
 
 @router.post("/api/claude/sessions")

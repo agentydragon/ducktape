@@ -40,6 +40,20 @@ ts_library(
 )
 
 ts_library(
+    name = "conversations_page",
+    srcs = ["conversations_page.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":markdown",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//haku/console/frontend:client",
+        "//haku/console/frontend:routing",
+    ],
+)
+
+ts_library(
     name = "chat_scroll_test",
     srcs = ["chat_scroll.test.ts"],
     tsconfig = TSCONFIG,
@@ -62,5 +76,8 @@ ts_library(
 # Tailwind scans these for utility classes; the parent package concatenates them with its own.
 filegroup(
     name = "tailwind_content_srcs",
-    srcs = ["claude_chat_page.tsx"],
+    srcs = [
+        "claude_chat_page.tsx",
+        "conversations_page.tsx",
+    ],
 )

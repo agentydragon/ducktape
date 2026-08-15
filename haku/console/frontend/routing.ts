@@ -6,12 +6,13 @@ export const CONSOLE_ROOT_PATH = "/_console";
 export const SETTINGS_PATH = `${CONSOLE_ROOT_PATH}/settings`;
 export const TOOL_CALLS_PATH = `${CONSOLE_ROOT_PATH}/tool-calls`;
 export const CLAUDE_CHAT_PATH = `${CONSOLE_ROOT_PATH}/chat`;
+export const CONVERSATIONS_PATH = `${CONSOLE_ROOT_PATH}/conversations`;
 export const OAUTH_RESULT_PATH_PREFIX = `${CONSOLE_ROOT_PATH}/oauth-result`;
 export const AGENT_ENROLLMENT_PATH_PREFIX = `${SETTINGS_PATH}/agents/enroll`;
 export const HOME_PATH = "/";
 const LAST_EMBED_PATH_KEY = "haku-console:last-embed-path";
 
-export type ConsoleNavigationView = "embed" | "settings" | "toolCalls" | "claudeChat";
+export type ConsoleNavigationView = "embed" | "settings" | "toolCalls" | "claudeChat" | "conversations";
 export type ConsoleView = ConsoleNavigationView | "agentEnrollment" | "oauthResult" | "notFound";
 
 // A single call, deep-linked — what a push notification's "Details" opens, and what the MCP
@@ -29,6 +30,10 @@ const AGENT_ENROLLMENT_PATH = new RegExp(
   `^${AGENT_ENROLLMENT_PATH_PREFIX}/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$`,
   "i"
 );
+const CONVERSATION_PATH = new RegExp(
+  `^${CONVERSATIONS_PATH}/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$`,
+  "i"
+);
 
 export function toolCallIdForPathname(pathname: string): string | null {
   return TOOL_CALL_PATH.exec(pathname)?.[1] ?? null;
@@ -42,12 +47,17 @@ export function agentEnrollmentIdForPathname(pathname: string): string | null {
   return AGENT_ENROLLMENT_PATH.exec(pathname)?.[1] ?? null;
 }
 
+export function conversationIdForPathname(pathname: string): string | null {
+  return CONVERSATION_PATH.exec(pathname)?.[1] ?? null;
+}
+
 export function viewForPathname(pathname: string): ConsoleView {
   if (pathname === CONSOLE_ROOT_PATH || pathname === `${CONSOLE_ROOT_PATH}/`) return "embed";
   if (pathname === SETTINGS_PATH) return "settings";
   if (agentEnrollmentIdForPathname(pathname) !== null) return "agentEnrollment";
   if (pathname === TOOL_CALLS_PATH) return "toolCalls";
   if (pathname === CLAUDE_CHAT_PATH) return "claudeChat";
+  if (pathname === CONVERSATIONS_PATH || conversationIdForPathname(pathname) !== null) return "conversations";
   if (toolCallIdForPathname(pathname) !== null) return "embed";
   if (oauthResultIdForPathname(pathname) !== null) return "oauthResult";
   if (pathname.startsWith(`${CONSOLE_ROOT_PATH}/`)) return "notFound";
@@ -85,6 +95,7 @@ function pathForView(view: ConsoleNavigationView): string {
   if (view === "settings") return SETTINGS_PATH;
   if (view === "toolCalls") return TOOL_CALLS_PATH;
   if (view === "claudeChat") return CLAUDE_CHAT_PATH;
+  if (view === "conversations") return CONVERSATIONS_PATH;
   return rememberedEmbedPath();
 }
 
@@ -93,6 +104,7 @@ export function useConsoleView(): {
   agentEnrollmentId: string | null;
   oauthResultId: string | null;
   toolCallId: string | null;
+  conversationId: string | null;
   navigate: (view: ConsoleNavigationView) => void;
 } {
   const [pathname, setPathname] = useState(() => window.location.pathname);
@@ -126,6 +138,7 @@ export function useConsoleView(): {
     agentEnrollmentId: agentEnrollmentIdForPathname(pathname),
     oauthResultId: oauthResultIdForPathname(pathname),
     toolCallId: toolCallIdForPathname(pathname),
+    conversationId: conversationIdForPathname(pathname),
     navigate,
   };
 }

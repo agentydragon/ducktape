@@ -66,6 +66,11 @@ export function ChatIcon(props: TablerIconProps) {
   return <IconMessageCircle size={20} {...props} />;
 }
 
+/** List with detail — opens the operator's conversation inventory. */
+export function ConversationsIcon(props: TablerIconProps) {
+  return <IconListDetails size={20} {...props} />;
+}
+
 /** Map pin — the shell's location-sharing control, and a preview's location field. */
 export function MapPinIcon(props: TablerIconProps) {
   return <IconMapPin size={20} {...props} />;

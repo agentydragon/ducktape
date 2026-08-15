@@ -343,6 +343,64 @@
   box-shadow: none;
 }
 
+.haku-conversation-list-item {
+  width: 100%;
+  border: 1px solid var(--haku-border);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  background: var(--haku-panel-bg);
+  color: var(--mantine-color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.haku-conversation-list-item:hover,
+.haku-conversation-list-item:focus-visible {
+  border-color: var(--mantine-color-teal-5);
+  outline: none;
+  background: var(--haku-shell-active-bg);
+}
+
+.haku-conversation-list-item-main {
+  min-width: 0;
+}
+
+.haku-conversation-open {
+  white-space: nowrap;
+}
+
+.haku-conversation-room {
+  overflow-wrap: anywhere;
+}
+
+.haku-conversation-detail-header {
+  align-items: flex-start;
+}
+
+.haku-conversation-detail-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem);
+}
+
+.haku-conversation-transcript-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.haku-conversation-turns {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  border-left: 1px solid var(--haku-border);
+  padding: 1rem;
+  background: var(--haku-panel-bg);
+}
+
 .haku-claude-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -413,6 +471,21 @@
 }
 
 @media (max-width: 600px) {
+  .haku-conversation-count {
+    display: none;
+  }
+
+  .haku-conversation-detail-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .haku-conversation-detail-header h1 {
+    font-size: clamp(1.75rem, 9vw, 2.5rem);
+    line-height: 1.15;
+  }
+
   .haku-claude-header {
     align-items: flex-start;
     flex-wrap: wrap;
@@ -420,6 +493,22 @@
 
   .haku-chat-message {
     width: 94%;
+  }
+
+  .haku-conversation-detail-body {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .haku-conversation-transcript-scroll {
+    flex: 1 1 auto;
+  }
+
+  .haku-conversation-turns {
+    flex: 0 0 auto;
+    max-height: 14rem;
+    border-top: 1px solid var(--haku-border);
+    border-left: 0;
   }
 }
 

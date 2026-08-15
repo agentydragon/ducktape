@@ -207,6 +207,63 @@ const claudeSession = scene?.startsWith("claude-provisioning")
                   : message
               ),
     } as const);
+const conversationSessionId = "70000000-0000-4000-8000-000000000001";
+const conversationSummaries = [
+  {
+    session_id: conversationSessionId,
+    surface: "matrix",
+    room_id: "!ops:example.org",
+    status: "ready",
+    error: null,
+    created_at: "2026-08-01T03:00:00Z",
+    updated_at: "2026-08-01T03:01:00Z",
+    message_count: 4,
+    last_message_at: "2026-08-01T03:00:13Z",
+  },
+  {
+    session_id: "70000000-0000-4000-8000-000000000002",
+    surface: "matrix",
+    room_id: "!archive:example.org",
+    status: "closed",
+    error: null,
+    created_at: "2026-07-31T18:20:00Z",
+    updated_at: "2026-07-31T18:42:00Z",
+    message_count: 8,
+    last_message_at: "2026-07-31T18:41:00Z",
+  },
+  {
+    session_id: "70000000-0000-4000-8000-000000000003",
+    surface: "spa",
+    room_id: null,
+    status: "failed",
+    error: "Sandbox runner stopped unexpectedly",
+    created_at: "2026-07-30T09:10:00Z",
+    updated_at: "2026-07-30T09:12:00Z",
+    message_count: 2,
+    last_message_at: "2026-07-30T09:11:00Z",
+  },
+] as const;
+const conversationDetail = {
+  session_id: conversationSessionId,
+  surface: "matrix",
+  room_id: "!ops:example.org",
+  status: "ready",
+  error: null,
+  created_at: "2026-08-01T03:00:00Z",
+  updated_at: "2026-08-01T03:01:00Z",
+  messages: claudeBoundaryMessages,
+  turns: [
+    {
+      turn_id: "71000000-0000-4000-8000-000000000001",
+      started_at: "2026-08-01T03:00:10Z",
+      ended_at: "2026-08-01T03:00:13Z",
+      outcome: "answered",
+      cost_usd: 0.0123,
+      duration_ms: 3200,
+      usage: { input_tokens: 1200, output_tokens: 240 },
+    },
+  ],
+} as const;
 const mcpServers =
   scene === "settings-oauth-success"
     ? SAMPLE_MCP_SERVERS.map((server) =>
@@ -293,6 +350,8 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
     });
   }
   if (url.includes("/api/deployment")) return jsonResponse(SAMPLE_DEPLOYMENT);
+  if (url.includes("/api/conversations/")) return jsonResponse(conversationDetail);
+  if (url.includes("/api/conversations")) return jsonResponse(conversationSummaries);
   if (url.includes("/api/claude/sessions")) return jsonResponse(claudeSession);
   // Push is configured on this console, and one *other* device is enrolled — the two facts the
   // Notifications section exists to show. The headless browser has no real subscription, so

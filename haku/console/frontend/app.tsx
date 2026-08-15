@@ -11,12 +11,12 @@ import { useConsoleView } from "./routing";
 // (a sandboxed cross-origin iframe) plus the bridge that brokers the iframe's privileged
 // requests (opening links, launching a run). All product chrome — title bar, the global
 // feedback button, the launch dialog — lives in haku-ui now; only the trusted confirm +
-// capability firing stay here. The one other console-owned surface is the full-page
-// past-tool-calls history at its own route (routing.ts). See README + docs/containment.md.
+// capability firing stay here. Console-owned read surfaces (past tool calls and conversations)
+// live at their own routes (routing.ts). See README + docs/containment.md.
 export default function App() {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { view, agentEnrollmentId, oauthResultId, toolCallId, navigate } = useConsoleView();
+  const { view, agentEnrollmentId, oauthResultId, toolCallId, conversationId, navigate } = useConsoleView();
   useOAuthResultAnnouncement(view);
 
   useEffect(() => {
@@ -60,6 +60,7 @@ export default function App() {
       view={view}
       agentEnrollmentId={agentEnrollmentId}
       toolCallId={toolCallId}
+      conversationId={conversationId}
       onNavigate={navigate}
     />
   );

@@ -992,6 +992,27 @@ async def test_conversations_come_back_newest_first_with_the_room_they_served(ch
     assert conversations[1].room_id is None
 
 
+async def test_operator_conversation_read_surface_keeps_inventory_and_transcript_separate(
+    chat_store, operator_id
+) -> None:
+    """The Console list is light, while detail carries messages and turn summaries."""
+    await chat_store.create(operator_id, SpaSession())
+    matrix, matrix_token = await chat_store.create(operator_id, MatrixSession(room_id="!room:example.org"))
+    assert await chat_store.authenticate_bridge(matrix.session_id, matrix_token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, matrix.session_id, "What is happening?")
+
+    summaries = await chat_store.list_operator_conversations(operator_id, limit=10)
+    detail = await chat_store.get_operator_conversation(operator_id, matrix.session_id)
+
+    assert summaries[0].session_id == matrix.session_id
+    assert summaries[0].surface == ChatSurface.MATRIX
+    assert summaries[0].room_id == "!room:example.org"
+    assert summaries[0].message_count == 1
+    assert detail.surface == ChatSurface.MATRIX
+    assert detail.messages[0].content == "What is happening?"
+    assert detail.turns == []
+
+
 ROOM = "!room:example.org"
 
 _NARRATED_TURN = [

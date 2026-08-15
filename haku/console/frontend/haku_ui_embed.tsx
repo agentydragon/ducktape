@@ -13,6 +13,7 @@ import { type GeolocationOptions, type Outbound } from "@haku/console-bridge/pro
 
 import { isRoutePath, parseInbound, vetOpenLink } from "./bridge";
 import { ClaudeChatPage } from "./x/claude_chat_page";
+import { ConversationsPage } from "./x/conversations_page";
 import { displayableError, fetchPendingApprovals, launchRoutine, type ToolCallRecord } from "./client";
 import { ConfirmDialog, type Escalation } from "./confirm_dialog";
 import { ShellChrome } from "./shell_chrome";
@@ -85,6 +86,7 @@ export function HakuUiEmbed({
   agentEnrollmentId,
   agentEnrollmentInitialChoice,
   toolCallId,
+  conversationId,
   onNavigate,
 }: {
   uiUrl: string;
@@ -93,6 +95,7 @@ export function HakuUiEmbed({
   agentEnrollmentId: string | null;
   agentEnrollmentInitialChoice?: EnrollmentChoice;
   toolCallId?: string | null;
+  conversationId?: string | null;
   onNavigate: (view: ConsoleNavigationView) => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -352,7 +355,9 @@ export function HakuUiEmbed({
           ? "Settings · Haku"
           : view === "toolCalls"
             ? "Past tool calls · Haku"
-            : "Not found · Haku";
+            : view === "conversations"
+              ? "Conversations · Haku"
+              : "Not found · Haku";
   }, [view]);
 
   // The bridge listener stays registered for the tab's whole life. Re-subscribing whenever one
@@ -619,6 +624,7 @@ export function HakuUiEmbed({
         )}
         {view === "toolCalls" && <ToolCallsPage />}
         {view === "claudeChat" && <ClaudeChatPage />}
+        {view === "conversations" && <ConversationsPage sessionId={conversationId ?? null} />}
         {view === "notFound" && (
           <section className="haku-page" aria-label="Not found">
             <div className="haku-page-list">

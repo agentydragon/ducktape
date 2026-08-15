@@ -25,6 +25,7 @@ import {
   ChecklistIcon,
   ClockIcon,
   CloseIcon,
+  ConversationsIcon,
   HistoryIcon,
   HomeIcon,
   MapPinIcon,
@@ -742,6 +743,13 @@ export function ShellChrome(props: ShellChromeProps) {
             onClick={() => props.onNavigate("claudeChat")}
           >
             <ChatIcon />
+          </RailButton>
+          <RailButton
+            open={props.view === "conversations"}
+            label="Conversations"
+            onClick={() => props.onNavigate("conversations")}
+          >
+            <ConversationsIcon />
           </RailButton>
           <RailButton
             open={props.view === "settings" || props.view === "agentEnrollment"}

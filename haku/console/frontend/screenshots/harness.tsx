@@ -20,8 +20,17 @@ const noop = () => {};
 const noopNavigate = (_view: ConsoleNavigationView) => {};
 
 const ENROLLMENT_ID = "10000000-0000-4000-8000-000000000001";
+const CONVERSATION_ID = "70000000-0000-4000-8000-000000000001";
 
-function ConsoleScene({ view, reconnect = false }: { view: ConsoleView; reconnect?: boolean }) {
+function ConsoleScene({
+  view,
+  reconnect = false,
+  conversationId = null,
+}: {
+  view: ConsoleView;
+  reconnect?: boolean;
+  conversationId?: string | null;
+}) {
   return (
     <HakuUiEmbed
       uiUrl="https://haku-ui.test/"
@@ -29,6 +38,7 @@ function ConsoleScene({ view, reconnect = false }: { view: ConsoleView; reconnec
       view={view}
       agentEnrollmentId={view === "agentEnrollment" ? ENROLLMENT_ID : null}
       agentEnrollmentInitialChoice={reconnect ? "reconnect" : undefined}
+      conversationId={conversationId}
       onNavigate={noopNavigate}
     />
   );
@@ -119,6 +129,12 @@ function sceneElement(scene: string) {
     case "claude-provisioning":
     case "claude-provisioning-mobile":
       return <ConsoleScene view="claudeChat" />;
+    case "conversations":
+    case "conversations-mobile":
+      return <ConsoleScene view="conversations" />;
+    case "conversation-detail":
+    case "conversation-detail-mobile":
+      return <ConsoleScene view="conversations" conversationId={CONVERSATION_ID} />;
     case "settings-oauth-success":
       return <OAuthSettingsResultScene status="success" />;
     case "settings-oauth-error":

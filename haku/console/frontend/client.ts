@@ -38,6 +38,8 @@ export type OAuthConnectionResult =
 export type AgentView = components["schemas"]["AgentView"];
 export type ClaudeChatSession = components["schemas"]["ClaudeChatSessionView"];
 export type ClaudeChatMessage = components["schemas"]["ClaudeChatMessageView"];
+export type ConversationSessionSummary = components["schemas"]["ConversationSessionSummary"];
+export type ConversationSession = components["schemas"]["ConversationSessionView"];
 export type AgentListResponse = components["schemas"]["AgentListResponse"];
 export type EnrollmentView = components["schemas"]["EnrollmentView"];
 export type EnrollmentDecisionRequest =
@@ -92,6 +94,20 @@ export async function fetchClaudeChatSession(sessionId: string): Promise<ClaudeC
     params: { path: { session_id: sessionId } },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to load Claude chat session"));
+  return data;
+}
+
+export async function fetchConversations(limit = 50): Promise<ConversationSessionSummary[]> {
+  const { data, error } = await api.GET("/api/conversations", { params: { query: { limit } } });
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load conversations"));
+  return data;
+}
+
+export async function fetchConversation(sessionId: string): Promise<ConversationSession> {
+  const { data, error } = await api.GET("/api/conversations/{session_id}", {
+    params: { path: { session_id: sessionId } },
+  });
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load conversation"));
   return data;
 }
 
