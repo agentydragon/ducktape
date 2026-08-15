@@ -238,6 +238,27 @@ py_test(
 )
 
 py_test(
+    name = "test_vector_type",
+    size = "medium",
+    srcs = ["test_vector_type.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":schema",
+        ":store",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
     name = "test_sync",
     size = "medium",
     srcs = ["test_sync.py"],
