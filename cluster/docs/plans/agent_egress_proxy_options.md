@@ -1251,6 +1251,48 @@ What is accepted along with it, all of it measured rather than assumed:
 spike: they are what the placeholder-redemption half is measured against, and
 step 1 used them to prove the ordering. They do not survive into the real fence.
 
+#### Decided: the ICAP server runs in-process in console (operator, 2026-08-15)
+
+Not a separate ICAP shim in front of console. The alternative considered was a
+standalone deployment speaking ICAP and calling console over HTTP for the
+decision — it would have isolated the protocol code from console's auth process
+and let the two scale and go HA independently. Rejected in favour of the simpler
+topology: one process, one deployment, direct access to the decision state and
+the credentials it already holds.
+
+**Consequence: console needs an inbound non-HTTP listener, which it has never
+had.** `app.py` is a FastAPI app behind uvicorn; its only "listen loop" is
+Postgres `LISTEN/NOTIFY`, which is outbound. ICAP is not HTTP and cannot be a
+FastAPI route, so this is an `asyncio.start_server` on 1344 started from the app
+lifespan, plus a Service port and a NetworkPolicy admitting Squid. Console is the
+credential authority under the decision above, so that surface deserves the same
+scrutiny as `/mcp`.
+
+##### The library survey, since "use a package" is the obvious question
+
+| library                                                   | language | last release       | model                 | adoption            |
+| --------------------------------------------------------- | -------- | ------------------ | --------------------- | ------------------- |
+| [pyicap](https://github.com/netom/pyicap)                 | Python   | April 2017         | threaded SocketServer | 106★                |
+| [icapserver](https://github.com/Peoplecantfly/icapserver) | Python   | no recent activity | threaded              | 31★                 |
+| [python-icap](https://github.com/nhoad/python-icap)       | Python   | abandoned          | asyncio               | 5★, "early stages"  |
+| [icap-rs](https://github.com/Eslrusgag/icap-rs)           | Rust     | 0.3.0, June 2026   | tokio                 | 1★, ~1.5k downloads |
+
+Every Python option is effectively dead, and the two with any adoption are
+threaded `SocketServer` — which fights console's asyncio directly. The only
+actively developed library is Rust, and in-process in console rules Rust out.
+
+So the protocol code is ours. That is a smaller commitment than it sounds,
+because step 1 shrank it: Squid never used preview, so the subset actually on the
+wire is `OPTIONS`, `REQMOD`, chunked bodies, `204`, and `100 Continue`. The stub
+in <../../k8s/x/squid-egress-spike/app/icap_stub.py> already implements exactly
+that and has been verified against the Squid 7.6 this will run behind — it is the
+starting point, ported from `socketserver` to `asyncio.start_server`.
+
+Revisit if the protocol surface grows (RESPMOD, real preview negotiation,
+streaming): at that point `icap-rs` in a separate deployment becomes the better
+answer, and the separation is a contained change because the ICAP entry point is
+one module either way.
+
 ### Direction: one Squid per _agent_, provisioned by haku-console
 
 Refinement of "one Squid per fence" (operator, 2026-08-10): the console manages a
