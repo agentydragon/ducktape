@@ -1335,19 +1335,19 @@ Squid column is from step 1. mitmproxy column is from a probe deployment in
 `haku-sandbox` — an addon mirroring the ICAP stub's modes, an h2-capable nginx
 origin, and `curl` — torn down afterwards.
 
-| question                                      | Squid + ICAP                                                     | mitmproxy addon                                    |
-| --------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------- |
-| hook sees the decrypted request               | yes                                                              | yes                                                |
-| hook can rewrite `Authorization`              | yes                                                              | yes                                                |
-| hook can block without contacting the origin  | yes (encapsulated 403)                                           | yes (`flow.response`, 403)                         |
-| caller identity the client cannot forge       | yes (`X-Client-IP`)                                              | yes (`flow.client_conn.peername`)                  |
-| **decide on headers without taking the body** | **no** — structural; Squid ignored `Preview: 0`                  | **yes** — `requestheaders` + `stream = True`       |
-| **client keeps HTTP/2**                       | **no** — bumped side declines ALPN entirely                      | **yes** — `ALPN: server accepted h2`, end to end   |
-| **fail-closed when the hook fails**           | **yes** — `bypass=0` → `ERR_ICAP_FAILURE`                        | **no** — request forwarded _unmodified_            |
-| bounded wait whose expiry denies              | yes, once `icap_io_timeout` is set; deny at 2×                   | the callout is ours, so an ordinary client timeout |
-| HTTP caching                                  | yes, but `cache deny has_auth` excludes the credentialed traffic | none                                               |
-| static allowlist as config                    | `dstdomain` from a file                                          | write it in the addon                              |
-| data path                                     | C, decades of hardening                                          | Python, every request                              |
+| question                                      | Squid + ICAP                                                     | mitmproxy addon                                       |
+| --------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------- |
+| hook sees the decrypted request               | yes                                                              | yes                                                   |
+| hook can rewrite `Authorization`              | yes                                                              | yes                                                   |
+| hook can block without contacting the origin  | yes (encapsulated 403)                                           | yes (`flow.response`, 403)                            |
+| caller identity the client cannot forge       | yes (`X-Client-IP`)                                              | yes (`flow.client_conn.peername`)                     |
+| **decide on headers without taking the body** | **no** — structural; Squid ignored `Preview: 0`                  | possible, but **mutually exclusive with fail-closed** |
+| **client keeps HTTP/2**                       | **no** — bumped side declines ALPN entirely                      | **yes** — `ALPN: server accepted h2`, end to end      |
+| **fail-closed when the hook fails**           | **yes** — `bypass=0` → `ERR_ICAP_FAILURE`                        | not by default; achievable as an addon structure      |
+| bounded wait whose expiry denies              | yes, once `icap_io_timeout` is set; deny at 2×                   | the callout is ours, so an ordinary client timeout    |
+| HTTP caching                                  | yes, but `cache deny has_auth` excludes the credentialed traffic | none                                                  |
+| static allowlist as config                    | `dstdomain` from a file                                          | write it in the addon                                 |
+| data path                                     | C, decades of hardening                                          | Python, every request                                 |
 
 Three of those decide the question.
 
@@ -1366,19 +1366,65 @@ structurally cannot express. `requestheaders` fires before the body is buffered;
 setting `flow.request.stream = True` there forwards the body without the addon
 ever holding it, and the header rewrite still applies — verified over HTTP/2 with
 a POST body: origin received the substituted credential and the intact 26-byte
-body, while the addon reported `not-buffered`. That **removes one of the three
-costs accepted in "console holds the substituted credentials"**: prompts need not
-transit console at all.
+body, while the addon reported `not-buffered`. **But see the next section: this
+is mutually exclusive with fail-closed, so it is not actually available.**
 
-**mitmproxy fails OPEN, and that is the serious finding.** An addon that raises
-does not deny — the request goes through _unmodified_, so the origin received the
-agent's untouched placeholder with HTTP 200, on both HTTP/1.1 and HTTP/2. That is
-precisely the failure mode `bypass=0` exists to prevent. It is fixable in the
-addon — wrap every hook and set a 403 response on any exception — but note the
-difference in kind: Squid's fail-closed is a **proxy-level guarantee**, while
-mitmproxy's is **an addon discipline that can regress silently**. Any move to
-mitmproxy must treat "every hook is total" as an invariant with a test that
-asserts a raising addon denies, not as a code-review habit.
+**mitmproxy fails OPEN by default.** An addon that raises does not deny — the
+request goes through _unmodified_, so the origin received the agent's untouched
+placeholder with HTTP 200, on both HTTP/1.1 and HTTP/2. That is precisely the
+failure mode `bypass=0` exists to prevent.
+
+### Can mitmproxy be made structurally fail-closed?
+
+Operator, 2026-08-15: **denying on failure is a hard requirement.** So the
+question is whether fail-closed can be a property of the addon _structure_ rather
+than a per-hook `try`/`except` discipline that regresses the first time someone
+forgets one.
+
+The candidate is **deny-by-default with an affirmative mark**: the policy addon
+sets `flow.metadata["fence_allowed"]` only on a clean decision, and a second
+addon, loaded after it, denies anything unmarked. An exception anywhere upstream
+then leaves the flow unmarked, and the failure mode _is_ the safe mode.
+
+Measured with exactly that pair of addons behind a live proxy:
+
+| case                                                   | result    |
+| ------------------------------------------------------ | --------- |
+| gate marks allowed                                     | 200       |
+| gate deliberately leaves unmarked                      | 403 ✓     |
+| gate raises in `requestheaders`, backstop in `request` | **403 ✓** |
+| gate raises in `request`, backstop in `request`        | **200 ✗** |
+| gate sets `stream = True`, leaves unmarked             | **200 ✗** |
+| gate sets `stream = True`, then raises                 | **200 ✗** |
+
+Two rules fall out, and one of them is expensive.
+
+**An exception aborts the rest of _that hook's_ addon chain, but later hooks
+still run.** So the backstop works only if it lives in a _later hook_ than the
+gate: gate in `requestheaders`, enforcement in `request`. With both in `request`,
+a raising gate skips the backstop entirely and the request goes through.
+
+**Streaming silently disables the backstop.** With `flow.request.stream = True`,
+the `request` hook fires only _after_ the body has gone upstream, so nothing there
+can stop it — the origin has already received the request. This needs no exception
+to bite: an orderly, deliberate "deny" decision was ignored and the request
+completed with a 200. A correct-looking optimisation removes enforcement, and
+nothing reports it.
+
+So **header-only decision and structural fail-closed cannot both be had.** Under
+the operator's requirement, the streaming option is off the table, and mitmproxy
+buffers request bodies exactly like ICAP does. The "prompts need not transit
+console" advantage above evaporates.
+
+What survives of mitmproxy's case over Squid+ICAP is therefore **HTTP/2, and
+essentially nothing else** — bought at the price of fail-closed being an
+addon-structure property rather than a proxy-level guarantee. That is achievable
+(row 3 above) but carries two invariants a reviewer cannot see by reading one
+addon, and both need tests:
+
+1. the gate and the backstop live in **different hooks**, gate first;
+2. `flow.request.stream` is **never** set, because it silently removes
+   enforcement.
 
 ### Where this leaves the ICAP work
 
@@ -1393,7 +1439,9 @@ Against that, the mitmproxy direction deletes the ICAP protocol code, the new
 inbound non-HTTP listener on the credential authority, `icap_io_timeout` and its
 2× deny latency, and `icap_service_failure_limit`'s hard-down behaviour —
 replacing all of it with a Python function calling an ordinary console HTTP
-route — and it keeps HTTP/2 and keeps prompt bodies out of console. It adds the
+route — and it keeps HTTP/2. It no longer keeps prompt bodies out of console:
+under the fail-closed requirement that option is gone, and bodies buffer exactly
+as they do under ICAP. It adds the
 fail-open hazard above.
 
 ### Direction: one Squid per _agent_, provisioned by haku-console
