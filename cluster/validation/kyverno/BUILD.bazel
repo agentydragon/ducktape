@@ -28,6 +28,7 @@ py_test(
         "@multitool//tools/kyverno",
     ] + glob([
         "testdata/namespace_haku_*.yaml",
+        "testdata/namespace_kubectl_sandbox_*.yaml",
         "testdata/namespace_without_haku_logs.yaml",
     ]),
     deps = [

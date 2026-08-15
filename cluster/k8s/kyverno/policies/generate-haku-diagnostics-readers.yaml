@@ -1,4 +1,4 @@
-# Grant Haku's diagnostics subjects access in explicitly opted-in namespaces.
+# Grant diagnostics subjects access in explicitly opted-in namespaces.
 # The namespace labels are GitOps-owned; they are access grants, not merely
 # metadata.
 apiVersion: kyverno.io/v1
@@ -6,12 +6,12 @@ kind: ClusterPolicy
 metadata:
   name: generate-haku-diagnostics-readers
   annotations:
-    policies.kyverno.io/title: Generate Haku diagnostics readers
+    policies.kyverno.io/title: Generate agent diagnostics readers
     policies.kyverno.io/category: Access Control
     policies.kyverno.io/severity: high
     policies.kyverno.io/subject: Namespace, RoleBinding
     policies.kyverno.io/description: >-
-      Generates namespaced, read-only diagnostics RoleBindings for Haku when a
+      Generates namespaced, read-only diagnostics RoleBindings when a
       GitOps-managed Namespace opts in with the corresponding RBAC label.
 spec:
   background: true
@@ -86,3 +86,61 @@ spec:
             - kind: ServiceAccount
               name: haku-claude
               namespace: haku-claude-sandbox
+    - name: generate-kubectl-sandbox-logs-configmaps-reader
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+              selector:
+                matchLabels:
+                  rbac.ducktape.io/kubectl-sandbox-logs-configmaps: "true"
+      generate:
+        generateExisting: true
+        synchronize: true
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        name: agent-logs-configmaps-reader
+        namespace: "{{request.object.metadata.name}}"
+        data:
+          metadata:
+            labels:
+              rbac.ducktape.io/managed-by: kyverno
+              rbac.ducktape.io/access: kubectl-sandbox-logs-configmaps
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: logs-configmaps-reader
+          subjects:
+            - kind: Group
+              name: oidc-ksbx-groups:kubectl-sandbox-users
+              apiGroup: rbac.authorization.k8s.io
+    - name: generate-kubectl-sandbox-namespace-diagnostics-reader
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+              selector:
+                matchLabels:
+                  rbac.ducktape.io/kubectl-sandbox-namespace-diagnostics: "true"
+      generate:
+        generateExisting: true
+        synchronize: true
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        name: agent-namespace-diagnostics-reader
+        namespace: "{{request.object.metadata.name}}"
+        data:
+          metadata:
+            labels:
+              rbac.ducktape.io/managed-by: kyverno
+              rbac.ducktape.io/access: kubectl-sandbox-namespace-diagnostics
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: namespace-diagnostics-reader
+          subjects:
+            - kind: Group
+              name: oidc-ksbx-groups:kubectl-sandbox-users
+              apiGroup: rbac.authorization.k8s.io

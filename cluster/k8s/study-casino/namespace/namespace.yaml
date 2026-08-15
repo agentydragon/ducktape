@@ -6,3 +6,4 @@ metadata:
     name: study-casino
     # Single-pod personal app; opt out of Goldilocks/VPA recommendations.
     goldilocks.fairwinds.com/enabled: "false"
+    rbac.ducktape.io/kubectl-sandbox-namespace-diagnostics: "true"

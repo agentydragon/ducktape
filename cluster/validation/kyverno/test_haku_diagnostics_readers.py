@@ -55,6 +55,50 @@ def test_namespace_diagnostics_labeled_namespace_gets_haku_reader(
     ]
 
 
+def test_logs_labeled_namespace_gets_kubectl_sandbox_reader(
+    haku_diagnostics_policy: Path,
+) -> None:
+    result = apply_policy(
+        haku_diagnostics_policy,
+        manifest("namespace_kubectl_sandbox_logs.yaml"),
+    )
+    assert result.ok, result.stdout
+
+    [binding] = [resource for resource in result.mutated_resources if resource.get("kind") == "RoleBinding"]
+    assert binding["metadata"]["name"] == "agent-logs-configmaps-reader"
+    assert binding["metadata"]["namespace"] == "kubectl-sandbox-logs-fixture"
+    assert binding["roleRef"]["name"] == "logs-configmaps-reader"
+    assert binding["subjects"] == [
+        {
+            "kind": "Group",
+            "name": "oidc-ksbx-groups:kubectl-sandbox-users",
+            "apiGroup": "rbac.authorization.k8s.io",
+        },
+    ]
+
+
+def test_namespace_diagnostics_labeled_namespace_gets_kubectl_sandbox_reader(
+    haku_diagnostics_policy: Path,
+) -> None:
+    result = apply_policy(
+        haku_diagnostics_policy,
+        manifest("namespace_kubectl_sandbox_namespace_diagnostics.yaml"),
+    )
+    assert result.ok, result.stdout
+
+    [binding] = [resource for resource in result.mutated_resources if resource.get("kind") == "RoleBinding"]
+    assert binding["metadata"]["name"] == "agent-namespace-diagnostics-reader"
+    assert binding["metadata"]["namespace"] == "kubectl-sandbox-diagnostics-fixture"
+    assert binding["roleRef"]["name"] == "namespace-diagnostics-reader"
+    assert binding["subjects"] == [
+        {
+            "kind": "Group",
+            "name": "oidc-ksbx-groups:kubectl-sandbox-users",
+            "apiGroup": "rbac.authorization.k8s.io",
+        },
+    ]
+
+
 def test_unlabeled_namespace_does_not_get_haku_reader(haku_diagnostics_policy: Path) -> None:
     result = apply_policy(haku_diagnostics_policy, manifest("namespace_without_haku_logs.yaml"))
     assert result.ok, result.stdout

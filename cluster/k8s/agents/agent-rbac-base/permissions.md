@@ -1,5 +1,5 @@
-This file intentionally avoids a hand-maintained namespace matrix. The source of
-truth is the set of `*rolebinding-*.yaml` files under:
+This file intentionally avoids a hand-maintained namespace matrix. Service-specific and
+sensitive grants are sourced from the set of `*rolebinding-*.yaml` files under:
 
 - `cluster/k8s/**/agent-rbac/`
 - `cluster/k8s/**/gateway-agent-rbac/`
@@ -17,7 +17,10 @@ GitOps-owned Namespace opts in with
 `rbac.ducktape.io/haku-logs-configmaps: "true"`, and
 `cluster/k8s/kyverno/policies/generate-haku-diagnostics-readers.yaml` generates
 the namespaced RoleBindings for the Haku OIDC group and both Haku ServiceAccounts.
-The `kubectl-sandbox-users` group remains a separate Claude Code Web identity.
+The same policy generates the `kubectl-sandbox-users` group's common
+`namespace-diagnostics-reader` and `logs-configmaps-reader` bindings from the corresponding
+`rbac.ducktape.io/kubectl-sandbox-*` Namespace labels. The `kubectl-sandbox-users` group
+remains a separate Claude Code Web identity.
 
 Augur is reconciled from `gaffer-private`, so its agent RBAC lives cross-repo at
 `gaffer-private/k8s/augur/agent-rbac/`. That directory also defines an

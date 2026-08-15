@@ -1,7 +1,6 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: plaid-mcp
+  name: kubectl-sandbox-logs-fixture
   labels:
-    goldilocks.fairwinds.com/enabled: "false"
     rbac.ducktape.io/kubectl-sandbox-logs-configmaps: "true"

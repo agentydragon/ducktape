@@ -3,5 +3,3 @@ kind: Kustomization
 resources:
   - role-props-reader.yaml
   - rolebinding-props-reader.yaml
-  - rolebinding-namespace-diagnostics-reader.yaml
-  - rolebinding-logs-configmaps-reader.yaml

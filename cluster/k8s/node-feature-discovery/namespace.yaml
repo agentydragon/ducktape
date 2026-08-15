@@ -5,3 +5,4 @@ metadata:
   labels:
     pod-security.kubernetes.io/enforce: privileged
     rbac.ducktape.io/haku-namespace-diagnostics: "true"
+    rbac.ducktape.io/kubectl-sandbox-namespace-diagnostics: "true"

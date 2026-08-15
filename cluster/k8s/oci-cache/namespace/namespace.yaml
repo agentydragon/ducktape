@@ -7,3 +7,5 @@ metadata:
     goldilocks.fairwinds.com/vpa-update-mode: "auto"
     rbac.ducktape.io/haku-logs-configmaps: "true"
     rbac.ducktape.io/haku-namespace-diagnostics: "true"
+    rbac.ducktape.io/kubectl-sandbox-logs-configmaps: "true"
+    rbac.ducktape.io/kubectl-sandbox-namespace-diagnostics: "true"
