@@ -20,26 +20,18 @@ Two constraints still bind, and everything else is preference:
    does not touch the schema until its last step; the second changes where meaning is extracted.
 2. **Contract halves land when their roll converges**, independently of all of this.
 
-Four are discharged. Version negotiation now precedes the field stage 4 adds; diagnosis came before
-change; a roll is survived before the TTL that was recycling wedged sessions is removed; and a
+Four are discharged: version negotiation preceded the field stage 4 added, diagnosis came before
+change, a roll is survived before the TTL that was recycling wedged sessions is removed, and a
 session survives being asked for before it is allocated on demand — which is why stages 5 and 6 sit
-where they do. The last three rested on stage 1, which has landed, but **stage 1 is verified only by
-tests**: the first deliberate console roll against production is still owed before anything
-downstream trusts it (<../console/debug/2026_08_13_sessions_boot_and_die.md>).
-
-## Stage 4 — survive a roll mid-turn
-
-_One item left. Frame identity, the replay window, the prompt a dead turn never asked, and the
-homeserver's own refusal of a duplicated reply have all landed; what remains is where a resumed
-turn's frames are delivered._
-
-- **Route an adopted turn by turn**, not by session.
-
-**Done when** a roll during a turn loses no answer and posts nothing twice.
+where they do. Both of those rest on stages 1 and 4, which have landed, but **they are verified
+only by tests**: the first deliberate console roll against production is still owed before anything
+downstream trusts them (<../console/debug/2026_08_13_sessions_boot_and_die.md>). Stage 4 raises the
+stakes on that rather than lowering them — a turn is now inherited across a roll instead of being
+closed, so a roll is the only thing that exercises it.
 
 ## Stage 5 — let the console own the lifecycle
 
-_Needs stages 1 and 4 (constraint 2)._
+_Both of its prerequisites, stages 1 and 4, have landed._
 
 `shutdownTime` is set to `now + session_ttl_seconds` at claim creation and **never patched**, so it
 is not an idle timeout: a conversation in full flow dies at exactly two hours, mid-turn, and the room
