@@ -736,6 +736,18 @@ that.
   checklists, so the state becomes `☐`/`☑` text; and **external images** are dropped, since
   `src` must be `mxc://`, so an image becomes its alt text.
 
+- **R11.8 [later] The operator can speak into the room from somewhere other than a Matrix client.**
+  The console's conversation view is a second surface onto the same session, and a message sent
+  from it must appear in the room — otherwise Element shows half a conversation, and R3.3a's
+  re-awakening restores Haku's answers with the questions missing. The console holds only
+  `@haku`'s credential (R5.1), so the operator's message is **relayed**: posted by Haku's account
+  under its own `RoomEventKind`, stating that the operator wrote it and Haku's account delivered
+  it. Ingress needs nothing — R1.5 already excludes Haku's sender, so a relay cannot loop back as
+  input — but `_is_conversational` must count a relay as conversation rather than as console
+  chatter, or a rotation loses the operator's half of every exchange. This is the operator
+  writing, not the agent, so R5.4's read-only tool surface is untouched. Staging, the enqueue/post
+  ordering, and why this wants the room outbox: <../console/plans/conversation_view.md>.
+
 ## Build order
 
 The target of the first two phases is a **minimal vertical slice**: type a message in

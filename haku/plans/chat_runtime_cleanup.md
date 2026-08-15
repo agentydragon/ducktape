@@ -125,7 +125,9 @@ loop's signatures.
   `_sse_stream` wakes → `store.get` → `_rollout_calls` selects every `assistant`/`user` frame and
   re-parses its content blocks. O(session) per token batch, paid only while the SPA is streaming.
   Fix by indexing incrementally on the agent message id, or by scoping the read to the messages
-  asked about.
+  asked about. The console's conversation view multiplies it: a live view refetching the whole
+  transcript per delta pays this once per open tab, which is why that design coalesces per session
+  rather than treating the debounce as polish (<../console/plans/conversation_view.md> § stage A).
 - **Split `claude_chat.py`** further. `KubernetesSandboxClaims` has left; what remains is view
   models, the store, the recorder, the status driver, the service, the turn loop, the port and the
   routes. `ClaudeChatStore`'s twenty-odd methods split along the seams the turn table and the

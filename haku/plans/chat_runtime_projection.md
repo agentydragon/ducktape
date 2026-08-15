@@ -134,6 +134,10 @@ removes the "exactly one `anext` in flight" dance.
 
 `matrix_pacer`'s deque becomes rows. Delivery gains a retry and loses its guesswork.
 
+A second consumer wants this for a different reason: relaying an operator's console-sent message
+into the room (<../console/plans/conversation_view.md> § stage C) is an enqueue and a post that
+must not diverge, which is one transaction with an outbox and an ordering judgment without one.
+
 ## The one thing to keep in view
 
 **The projector must be single-writer per session.** The lease gives that, and it is the reason none
