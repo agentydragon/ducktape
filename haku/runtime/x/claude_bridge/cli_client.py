@@ -203,6 +203,10 @@ class ClaudeCli:
 
     async def _read(self) -> None:
         """Route the stream: control responses to their waiter, everything else to the queue."""
+        # Adoption re-sends the whole rollout for dedup, so a skip is one burst of dozens at
+        # connect, not a per-frame event worth a line each. Count the burst and log it once when
+        # it ends (the next real frame, or the stream doing so).
+        skipped = 0
         try:
             async for frame in self._channel.read_messages():
                 # Before the routing, deliberately: control frames never reach `frames()`, so a
@@ -213,8 +217,11 @@ class ClaudeCli:
                 # the log must not be routed again — a second `assistant` would post the same
                 # answer into the room twice.
                 if self._frames_to is not None and not await self._frames_to.received(frame):
-                    logger.info("Skipping a frame this session already has: %s", frame.get("type"))
+                    skipped += 1
                     continue
+                if skipped:
+                    logger.info("Skipped %d replayed frame(s) already in the rollout", skipped)
+                    skipped = 0
                 match frame.get("type"):
                     case "control_response":
                         self._resolve(frame)
@@ -232,6 +239,8 @@ class ClaudeCli:
             # mid-turn consumer) and `wait_closed` (for an idle one). What broke it is in the log.
             logger.exception("Claude CLI stream failed")
         finally:
+            if skipped:
+                logger.info("Skipped %d replayed frame(s) already in the rollout", skipped)
             # A sentinel rather than closing the queue: a consumer mid-turn has to learn the
             # stream ended, and would otherwise wait for a `result` that cannot arrive.
             self._conversation.put_nowait(None)
@@ -241,7 +250,11 @@ class ClaudeCli:
         response = ControlResponse.model_validate(frame["response"])
         pending = self._pending.get(response.request_id)
         if pending is None or pending.done():
-            logger.warning("Claude CLI answered unknown control request %s", response.request_id)
+            # No local waiter. Routine on an adopted connection: the runner replays control
+            # responses to requests a *previous* console sent, which this one never had pending.
+            # A response we genuinely awaited and lost surfaces as a control-request timeout
+            # instead, so this is not the place that reports a broken control channel.
+            logger.debug("Ignoring a control response with no local waiter: %s", response.request_id)
             return
         if response.subtype is ControlSubtype.ERROR:
             pending.set_exception(ClaudeCliError(response.error or "control request failed"))
