@@ -3,29 +3,20 @@
 The point of these is that the driver and the connection lifecycle are the thing that broke
 before: a listener written against the wrong driver's API passed every test it had, because
 those tests never opened a socket.
-
-**The channel is being renamed, and that sets a trap for this file.** While `CHANNEL` and
-`LEGACY_CHANNEL` are both notified, every event is delivered twice, so a test that calls `notify`
-and watches a waiter wake proves nothing about *which* name woke it — it would pass with either
-path completely broken. The two `_alone` tests below are the ones that do prove it: they drive
-`pg_notify` on exactly one channel, so each name is covered end to end by itself.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import asyncpg
-import pytest
 import pytest_bazel
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.x.session_notifications import (
     CHANNEL,
-    LEGACY_CHANNEL,
     SessionEvent,
     SessionEventKind,
     SessionNotifications,
@@ -40,17 +31,6 @@ async def _woken_within(event: asyncio.Event, seconds: float) -> bool:
         async with asyncio.timeout(seconds):
             await event.wait()
     return event.is_set()
-
-
-async def _notify_one_channel(
-    sessions: async_sessionmaker[AsyncSession], channel: str, kind: SessionEventKind, session_id: UUID
-) -> None:
-    """What `notify` emits, but on a single name — which is what `notify` itself cannot do."""
-    async with sessions.begin() as db:
-        await db.execute(
-            text("SELECT pg_notify(:channel, :payload)"),
-            {"channel": channel, "payload": SessionEvent(kind=kind, session_id=session_id).model_dump_json()},
-        )
 
 
 async def test_a_notify_wakes_the_waiter_for_that_session(notifications, migrated_sessions) -> None:
@@ -82,18 +62,12 @@ async def test_a_notify_of_another_kind_does_not_wake_this_one(notifications, mi
         assert not await _woken_within(woken, 2)
 
 
-@pytest.mark.parametrize("channel", [CHANNEL, LEGACY_CHANNEL])
-async def test_notify_puts_a_readable_event_on_the_channel(channel, migrated_db_url, migrated_sessions) -> None:
-    """The wire format, read off a raw connection — the only test that would notice it drifting.
-
-    Both names, because during the overlap both are load-bearing: the new one is what this release
-    listens on, and the old one is the only thing a replica from the previous image hears.
-    """
+async def test_notify_puts_a_readable_event_on_the_channel(migrated_db_url, migrated_sessions) -> None:
     session_id = uuid4()
     received: asyncio.Queue[str] = asyncio.Queue()
     connection = await asyncpg.connect(libpq_dsn(migrated_db_url))
     try:
-        await connection.add_listener(channel, lambda _conn, _pid, _channel, payload: received.put_nowait(str(payload)))
+        await connection.add_listener(CHANNEL, lambda _conn, _pid, _channel, payload: received.put_nowait(str(payload)))
         async with migrated_sessions.begin() as db:
             await notify(db, SessionEventKind.ABORT, session_id)
         async with asyncio.timeout(30):
@@ -102,21 +76,6 @@ async def test_notify_puts_a_readable_event_on_the_channel(channel, migrated_db_
         await connection.close(timeout=5)
 
     assert SessionEvent.model_validate_json(payload) == SessionEvent(kind=SessionEventKind.ABORT, session_id=session_id)
-
-
-@pytest.mark.parametrize("channel", [CHANNEL, LEGACY_CHANNEL])
-async def test_an_event_on_one_channel_alone_wakes_the_waiter(channel, notifications, migrated_sessions) -> None:
-    """Each name, end to end by itself — `notify` fires both, so it cannot answer this.
-
-    `CHANNEL` alone is the new path proving it works before the old one is deleted. `LEGACY_CHANNEL`
-    alone is a replica from the previous image, which only ever notifies there.
-    """
-    session_id = uuid4()
-
-    async with notifications.subscribe(SessionEventKind.UPDATE, session_id) as woken:
-        await _notify_one_channel(migrated_sessions, channel, SessionEventKind.UPDATE, session_id)
-        async with asyncio.timeout(30):
-            await woken.wait()
 
 
 async def test_an_unreadable_payload_does_not_take_the_listener_down(notifications, migrated_sessions) -> None:

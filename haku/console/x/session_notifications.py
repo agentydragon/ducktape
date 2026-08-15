@@ -23,10 +23,6 @@ un-did.
 than the kind being implicit in one of three channel names — which was untyped, unvalidated,
 and needed another LISTEN per kind. `pg_notify` allows 8000 bytes of payload; this uses about
 seventy.
-
-**Two names, for one release.** `LEGACY_CHANNEL` is the name this carried before the session
-rename, notified and listened on beside `CHANNEL` so neither half of a `maxUnavailable: 0` roll
-goes deaf. See the constant for when it goes.
 """
 
 from __future__ import annotations
@@ -49,16 +45,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger(__name__)
 
 CHANNEL = "session_events"
-
-# The name this channel had before the session rename. Notified *and* listened on beside `CHANNEL`
-# for exactly one release, because both directions of the overlap need it: a new replica must reach
-# an old one that only listens here, and an old replica notifying here must reach a new one.
-#
-# CLEANUP(added 2026-08-15): delete this and every reference to it once the roll that ships
-# `CHANNEL` has **converged** — every pod on an image at or after it. Not once a release has
-# elapsed: `maxUnavailable: 0` means a bad image stalls the roll with the old replica still
-# serving, so "a release shipped" does not imply "the old code is gone".
-LEGACY_CHANNEL = "claude_chat"
 
 
 class SessionEventKind(StrEnum):
@@ -92,15 +78,11 @@ _CLOSE_TIMEOUT_SECONDS = 2
 
 
 async def notify(db: AsyncSession, kind: SessionEventKind, session_id: UUID) -> None:
-    """Emit `pg_notify` inside the caller's transaction, so it fires on commit.
-
-    On both names while `LEGACY_CHANNEL` lives. A waiter in this process is therefore woken twice
-    per event and cannot tell which name did it — which is the whole trap of the overlap, and why
-    the tests that pin each channel drive `pg_notify` directly instead of calling this.
-    """
-    payload = SessionEvent(kind=kind, session_id=session_id).model_dump_json()
-    for channel in (CHANNEL, LEGACY_CHANNEL):
-        await db.execute(text("SELECT pg_notify(:channel, :payload)"), {"channel": channel, "payload": payload})
+    """Emit `pg_notify` inside the caller's transaction, so it fires on commit."""
+    await db.execute(
+        text("SELECT pg_notify(:channel, :payload)"),
+        {"channel": CHANNEL, "payload": SessionEvent(kind=kind, session_id=session_id).model_dump_json()},
+    )
 
 
 def _parse(payload: str) -> SessionEvent | None:
@@ -210,8 +192,7 @@ class SessionNotifications:
                 connection = await asyncpg.connect(self._dsn, timeout=_CONNECT_TIMEOUT_SECONDS)
                 terminated = asyncio.Event()
                 connection.add_termination_listener(_terminator(terminated))
-                for channel in (CHANNEL, LEGACY_CHANNEL):
-                    await connection.add_listener(channel, self._on_notification)
+                await connection.add_listener(CHANNEL, self._on_notification)
                 self._listening.set()
                 self._wake_everyone()
                 await terminated.wait()
