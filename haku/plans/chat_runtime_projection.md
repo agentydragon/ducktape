@@ -77,27 +77,38 @@ removes the `partial` row it replaces, at which point it is a wash.
 
 ### 2. Make the frame log store one thing
 
-`claude_chat_frames` currently holds three provenances under one `kind`, and its own docstring was
-wrong about that until it was corrected: the CLI's frames verbatim; a `setup_output` row, which is
-one decoded line of the runner's `SetupOutput` bytes and so is neither the CLI's frame nor the
-runner's; and a `partial` row, the console's reconstruction of an answer still streaming, which
-wears `assistant` and is told apart by a boolean column instead. "What is this row" has three
-answers and no single field gives them, which is why `FrameKind` cannot be the column's type and
-why a reader asking for "everything" gets a different mixture than it expects.
+`claude_chat_frames.kind` holds **two different discriminator vocabularies**, because two unrelated
+sinks write to it:
 
-Both non-CLI kinds leave, and the table becomes what its name says.
+| Writer                                                  | Sees                                      | Writes into `kind`                             |
+| ------------------------------------------------------- | ----------------------------------------- | ---------------------------------------------- |
+| `RolloutRecorder._record`, a `FrameSink` on `ClaudeCli` | CLI protocol frames only, by construction | `payload["type"]` — the CLI's vocabulary       |
+| `_progress_reporter.report`, by hand                    | one decoded line of a `SetupOutput`       | `"setup_output"` — the bridge's `kind` literal |
 
-- **The partial row** is tombstoned on `update_partial_frame` already, and stage 1 removed its
-  reason to exist. Stop writing it, drop `clear_partial_frame`, then drop the `partial` column and
-  its two indexes — a release apart, because an old replica writing a row a new one never clears
-  would leave a stray in the rollout for good.
-- **Setup output moves to its own table.** It is a log line, not a frame, and calling it one is
-  what put a third meaning in `kind`. The argument for keeping it here was that a session dying
-  before its first CLI frame has its whole account in one ordered log — but setup runs _before_ the
-  CLI produces anything, so the two are sequential rather than interleaved and a reader merging
-  them by time loses nothing. Check that against a real session before committing to it.
+Plus a `partial` row, which is the console's own reconstruction of a streaming answer and wears
+`assistant` while being told apart by a boolean column.
 
-**Done when** `kind` is the CLI's `type` and nothing else, and `FrameKind` can say so.
+The partial row leaves regardless — it is tombstoned on `update_partial_frame` and stage 1 removed
+its reason to exist. What is left is a real choice, and it is the owner's:
+
+**A. The table is the bridge.** `kind` becomes the envelope discriminator (`claude`,
+`setup_output`, `hello`, `start`, `end_input`) and the CLI's own `type` moves to a second column,
+so today's queries stay cheap. Truthful, and it gives any future runner-originated frame an obvious
+home. Costs: two enums instead of one, a second column, and recording envelope kinds nothing asks
+for today — the recorder never sees them, since it hangs off `ClaudeCli` below the envelope.
+
+**B. Two tables, one per sink.** The rollout keeps the CLI's frames and its vocabulary; sandbox
+output gets its own table. Less machinery, and it follows the code that already exists: the two
+rows are written by different sinks and read by different readers. Costs: setup output leaves the
+single ordered sequence. That matters less than it sounds — setup runs before the CLI produces
+anything, so the two are sequential rather than interleaved — but check it against a real session
+rather than assuming it.
+
+**The hinge is whether a third runner-originated thing will ever be worth persisting.** If yes, A
+pays for itself. If not, B is strictly less to carry. Nothing else about this plan depends on which
+is picked.
+
+**Done when** `kind` answers one question, and the enum over it can be the column's type.
 
 ### 3. Turn state onto the turn row
 
