@@ -27,7 +27,6 @@ RUN apt-get update \
       git \
       jq \
       less \
-      openssh-client \
       openssl \
       procps \
       python3 \

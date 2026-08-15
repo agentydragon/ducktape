@@ -529,9 +529,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       <docs/plans/offline_node_daemonset_health.md>.
 - [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `scanner`,
       `proxmox-proxy`, `props`/`props-registry`)
-- [ ] Public coder agent: eliminate the custom `ghcr.io/agentydragon/openclaw` image if the
-      upstream image ever bundles the external OpenShell sandbox plugin and CLI.
-      The old Matrix-specific customization and `openclaw-matrix` image are retired.
 - [ ] Cilium Gateway `Programmed: False` (upstream bug `cilium/cilium#42786`):
       hostNetwork gateways currently report `AddressNotAssigned` even though traffic
       works through the hostNetwork Envoy listeners. Current workaround is Route 53

@@ -1,5 +1,5 @@
 # Build and push the OpenClaw derivative to GHCR.
-# Derives from upstream OpenClaw with OpenShell pre-installed.
+# Derives from upstream OpenClaw with the proxy preload configured.
 name: OpenClaw Image
 
 on:
