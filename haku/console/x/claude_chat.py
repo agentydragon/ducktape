@@ -157,6 +157,10 @@ class ClaudeChatMessageView(BaseModel):
     status: ChatMessageStatus
     content: str
     tool_uses: list[ClaudeChatToolUseView]
+    # True when the recorded assistant frame contained only thinking blocks. The thinking text
+    # itself is intentionally not exposed: this marker tells the UI why a completed assistant
+    # row has no visible prose without treating it as a lost message.
+    thinking_only: bool
     error: str | None
     created_at: datetime
     updated_at: datetime
@@ -1921,6 +1925,7 @@ class _RolloutCalls:
 
     by_message: Mapping[str, list[dict[str, Any]]]
     results: Mapping[str, ClaudeChatToolResultView]
+    thinking_only: Mapping[str, bool]
 
 
 async def _rollout_calls(db: AsyncSession, session_id: UUID) -> _RolloutCalls:
@@ -1940,14 +1945,18 @@ async def _rollout_calls(db: AsyncSession, session_id: UUID) -> _RolloutCalls:
     )
     by_message: dict[str, list[dict[str, Any]]] = {}
     results: dict[str, ClaudeChatToolResultView] = {}
+    thinking_only: dict[str, bool] = {}
     for kind, payload in frames:
         message = payload.get("message")
         if not isinstance(message, dict):
             continue
         agent_id = message.get("id")
-        for block in message.get("content", []):
-            if not isinstance(block, dict):
-                continue
+        blocks = [block for block in message.get("content", []) if isinstance(block, dict)]
+        if kind == ASSISTANT_FRAME_KIND and agent_id:
+            block_types = {block.get("type") for block in blocks}
+            if "thinking" in block_types and not block_types & {"text", "tool_use"}:
+                thinking_only[str(agent_id)] = True
+        for block in blocks:
             match block.get("type"):
                 case "tool_use" if kind == ASSISTANT_FRAME_KIND and agent_id:
                     by_message.setdefault(str(agent_id), []).append(
@@ -1957,12 +1966,14 @@ async def _rollout_calls(db: AsyncSession, session_id: UUID) -> _RolloutCalls:
                     results[str(call_id)] = ClaudeChatToolResultView(
                         content=block.get("content"), is_error=bool(block.get("is_error"))
                     )
-    return _RolloutCalls(by_message=by_message, results=results)
+    return _RolloutCalls(by_message=by_message, results=results, thinking_only=thinking_only)
 
 
 # Passed explicitly rather than defaulted, so a caller says it has no rollout to join against
 # instead of inheriting that silently: exactly one does, and it is the row it just inserted.
-_NO_CALLS = _RolloutCalls(by_message=MappingProxyType({}), results=MappingProxyType({}))
+_NO_CALLS = _RolloutCalls(
+    by_message=MappingProxyType({}), results=MappingProxyType({}), thinking_only=MappingProxyType({})
+)
 
 
 def _message_view(message: ClaudeChatMessage, calls: _RolloutCalls) -> ClaudeChatMessageView:
@@ -1979,6 +1990,7 @@ def _message_view(message: ClaudeChatMessage, calls: _RolloutCalls) -> ClaudeCha
             ClaudeChatToolUseView.model_validate(tool_use | {"result": calls.results.get(tool_use["tool_use_id"])})
             for tool_use in (recorded if recorded is not None else message.tool_uses)
         ],
+        thinking_only=calls.thinking_only.get(message.agent_message_id or "", False),
         error=message.error,
         created_at=message.created_at,
         updated_at=message.updated_at,

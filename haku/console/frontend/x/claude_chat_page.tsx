@@ -350,7 +350,9 @@ export function ClaudeChatPage() {
                     (message.tool_uses ?? []).length === 0 &&
                     message.status === "complete" && (
                       <Text c="dimmed" size="xs">
-                        No assistant text was captured.
+                        {message.thinking_only
+                          ? "Claude was thinking, but no summary was provided."
+                          : "No assistant text was captured."}
                       </Text>
                     )}
                   {message.error && (

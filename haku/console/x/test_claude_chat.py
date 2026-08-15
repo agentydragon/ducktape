@@ -433,6 +433,39 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
     assert await chat_store.status(view.session_id) == ChatSessionStatus.READY, "the turn was not completed"
 
 
+async def test_thinking_only_assistant_message_is_identified_from_the_rollout(
+    chat_store, chat_service, operator_id
+) -> None:
+    """A thinking-only frame is an observed message, not a missing assistant reply.
+
+    The marker is derived from the frame log because the message table intentionally stores only
+    visible text and tool calls. The opaque thinking signature never crosses the view contract.
+    """
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "Think about this")
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
+
+    thinking = {"type": "thinking", "thinking": "", "signature": "opaque"}
+    frame = _assistant(thinking) | {"message": {"role": "assistant", "id": "msg_thinking", "content": [thinking]}}
+    client = _FakeCli([frame, _result()])
+    await chat_service._run_turn(
+        cast(Any, client), client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
+    )
+    # The bridge recorder writes the raw frame before the turn consumer updates the message view.
+    await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, "assistant", frame)
+
+    [message] = [
+        message
+        for message in (await chat_store.get(operator_id, view.session_id)).messages
+        if message.role == ChatMessageRole.ASSISTANT
+    ]
+    assert message.content == ""
+    assert message.tool_uses == []
+    assert message.thinking_only is True
+
+
 class _LifecycleWebSocket:
     def __init__(self):
         self.accepted = False

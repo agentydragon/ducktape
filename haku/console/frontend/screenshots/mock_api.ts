@@ -49,6 +49,17 @@ const claudeBoundaryMessages = [
     updated_at: "2026-08-01T03:00:11Z",
   },
   {
+    message_id: "62000000-0000-4000-8000-000000000013",
+    role: "assistant",
+    status: "complete",
+    content: "",
+    tool_uses: [],
+    thinking_only: true,
+    error: null,
+    created_at: "2026-08-01T03:00:13Z",
+    updated_at: "2026-08-01T03:00:13Z",
+  },
+  {
     message_id: "62000000-0000-4000-8000-000000000011",
     role: "assistant",
     status: "complete",
