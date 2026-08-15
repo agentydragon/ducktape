@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import datetime
 
-import pytest
 import pytest_bazel
-from sqlalchemy import text
-from sqlalchemy.exc import InterfaceError
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.state_index.schema import Corpus
+from haku.state_index.schema import Chunk, Corpus
 from haku.state_index.store import ChunkRow, insert_chunks
 
 _NOW = datetime.datetime(2026, 8, 15, tzinfo=datetime.UTC)
@@ -43,18 +41,19 @@ async def test_a_component_too_small_for_half_precision_rounds_to_zero(session: 
     assert stored == "[0,0.5,-0]"
 
 
-async def test_one_insert_of_a_whole_repositorys_chunks_exceeds_the_driver_limit(session: AsyncSession) -> None:
+async def test_more_chunks_than_one_statement_can_bind(session: AsyncSession) -> None:
     """asyncpg caps a statement at 32767 bind parameters, and a chunk costs nine of them.
 
-    This is what failed every haku-state sync in production on 2026-08-15: the tip produced a few
-    thousand chunks, they went to Postgres as one INSERT, and the driver refused the statement
-    before the database ever saw it. Batching is what avoids it; this pins the cliff so a future
-    "just insert them all" cannot quietly reintroduce it.
+    One `VALUES` list therefore refuses somewhere above ~3600 chunks — smaller than haku-state's
+    tip, which is what failed every sync of it on 2026-08-15: an `InterfaceError` from the driver,
+    every sweep, before the database ever saw the statement. `insert_chunks` executes per row so
+    that no batch size chosen elsewhere, for embedding or anything else, is what keeps writes
+    working.
     """
-    rows = [_row([0.5, 0.5, 0.5], byte_start=index) for index in range(4000)]
+    await insert_chunks(session, [_row([0.5, 0.5, 0.5], byte_start=index) for index in range(4000)], now=_NOW)
+    await session.commit()
 
-    with pytest.raises(InterfaceError):
-        await insert_chunks(session, rows, now=_NOW)
+    assert await session.scalar(select(func.count()).select_from(Chunk)) == 4000
 
 
 if __name__ == "__main__":

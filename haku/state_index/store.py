@@ -186,16 +186,25 @@ async def cached_content(
 
 
 async def insert_chunks(session: AsyncSession, rows: Sequence[ChunkRow], *, now: datetime.datetime) -> None:
-    """Insert freshly embedded chunks, refreshing `last_seen_at` on any that already existed."""
+    """Insert freshly embedded chunks, refreshing `last_seen_at` on any that already existed.
+
+    Executed once per row rather than as one statement holding every row's values, because
+    asyncpg caps a statement at 32767 bind parameters and a chunk costs nine: a single `VALUES`
+    list refuses somewhere above ~3600 chunks, which is smaller than a repository. The driver
+    prepares this once and pipelines the executions, so the caller may hand over as many rows as
+    it likes and no batch size anywhere else is load-bearing for correctness.
+
+    `excluded.last_seen_at` rather than a captured `now` for the same reason: the update has to
+    read the value from the row being inserted, since there is no longer one statement to bind it
+    to.
+    """
     if not rows:
         return
-    statement = pg_insert(Chunk).values([{**asdict(row), "last_seen_at": now} for row in rows])
-    await session.execute(
-        statement.on_conflict_do_update(
-            index_elements=["corpus", "content_sha", "byte_start", "chunker_key", "model_key"],
-            set_={"last_seen_at": now},
-        )
+    statement = pg_insert(Chunk).on_conflict_do_update(
+        index_elements=["corpus", "content_sha", "byte_start", "chunker_key", "model_key"],
+        set_={"last_seen_at": pg_insert(Chunk).excluded.last_seen_at},
     )
+    await session.execute(statement, [{**asdict(row), "last_seen_at": now} for row in rows])
 
 
 async def touch_content(
