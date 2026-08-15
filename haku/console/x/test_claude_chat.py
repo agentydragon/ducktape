@@ -59,6 +59,7 @@ from haku.console.x.matrix_client import InboundMessage
 from haku.console.x.matrix_session import MatrixTurns
 from haku.console.x.sandbox_claims import KubernetesSandboxClaims
 from haku.runtime.x.claude_bridge.cli_client import ClaudeCli
+from haku.runtime.x.claude_bridge.protocol import NOT_ADMITTED_CODE
 
 
 class RecordingCustomObjectsApi:
@@ -382,12 +383,18 @@ class _LifecycleWebSocket:
     def __init__(self):
         self.accepted = False
         self.closed: tuple[int, str] | None = None
+        self.denied: int | None = None
 
     async def accept(self) -> None:
         self.accepted = True
 
     async def close(self, code: int = 1000, reason: str = "") -> None:
         self.closed = (code, reason)
+
+    async def send_denial_response(self, response: Any) -> None:
+        """The ASGI `websocket.http.response` extension, which is how a handshake answers a status
+        other than 403. Recorded rather than sent, since what matters here is *which* status."""
+        self.denied = response.status_code
 
 
 class _LifecycleClaudeClient(_FakeCli):
@@ -537,8 +544,8 @@ async def test_a_returning_runner_is_admitted_and_takes_the_lease(
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
 
     with patch("haku.console.x.claude_chat.REPLICA", "haku-console-b"):
-        assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.REJECTED, (
-            "a replica still renewing its lease keeps the session it is serving"
+        assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.HELD, (
+            "a replica still renewing its lease keeps the session it is serving — but only until it lapses"
         )
         await chat_store.release_lease(session_id)
         assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED, (
@@ -647,6 +654,41 @@ async def test_a_turn_that_asked_its_prompt_keeps_it(chat_store, chat_service, r
     assert await chat_store.adopt_open_turn(session_id) is not None
 
     assert await chat_store.next_prompt(session_id) is None, "the queue has nothing; the turn has it"
+
+
+async def test_a_held_session_tells_the_runner_to_retry_rather_than_refusing_it(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    """The bug a production roll found. A runner redials about a second after its socket drops, so
+    it routinely reaches a new replica while the dying one's lease is still valid. Closing before
+    `accept()` reaches it as 403 whatever code is passed, and 403 is a refusal it correctly gives
+    up on — costing the sandbox. 503 is what it waits out."""
+    session = await chat_service.create(operator_id, SpaSession())
+    session_id = session.session_id
+    token = recording_claims.tokens[session_id]
+    assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    websocket = _LifecycleWebSocket()
+
+    with patch("haku.console.x.claude_chat.REPLICA", "haku-console-b"):
+        await chat_service.handle_runner(cast(Any, websocket), session_id, token)
+
+    assert websocket.denied == 503
+    assert websocket.closed is None, "a close before accept is the 403 this exists to avoid"
+    assert not websocket.accepted
+
+
+async def test_a_bad_credential_is_still_refused_outright(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    """The other side of the distinction: a runner that will never be admitted must not spend its
+    redial budget finding that out."""
+    session = await chat_service.create(operator_id, SpaSession())
+    websocket = _LifecycleWebSocket()
+
+    await chat_service.handle_runner(cast(Any, websocket), session.session_id, "wrong")
+
+    assert websocket.denied is None
+    assert websocket.closed == (NOT_ADMITTED_CODE, "invalid or consumed runner credential")
 
 
 async def test_terminal_runner_retry_deletes_its_stale_claim(

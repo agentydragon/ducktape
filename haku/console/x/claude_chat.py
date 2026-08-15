@@ -21,7 +21,7 @@ from types import MappingProxyType
 from typing import Annotated, Any, ClassVar, Protocol, cast
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from sqlalchemy import CursorResult, delete, func, select, text
@@ -103,10 +103,23 @@ def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
 
 
 class BridgeAuthentication(StrEnum):
+    """What admission has to say to a redialling runner — and there are **three** answers.
+
+    "Not yours" and "not yet" are different, and conflating them is what made a console roll kill
+    the session it was supposed to survive: the runner redials about a second after its socket
+    drops, so it routinely arrives at a new replica while the dying one's lease is still valid,
+    and a refusal it cannot retry costs the sandbox. `handle_runner` gives `HELD` a 5xx handshake
+    response for exactly that reason.
+    """
+
     ACCEPTED = "accepted"
     # The session is already over, so the runner should stop rather than retry.
     TERMINAL = "terminal"
+    # The credential is wrong. Permanent.
     REJECTED = "rejected"
+    # Another replica is still serving this session and saying so. **Transient**: it lasts at most
+    # until that lease expires, and the runner that waits it out is the one adopting the session.
+    HELD = "held"
 
 
 class ClaudeChatToolResultView(BaseModel):
@@ -315,9 +328,10 @@ class ClaudeChatStore:
                 record.bridge_connected_at = now
                 record.status = ChatSessionStatus.READY
             elif record.lease_holder not in (None, REPLICA) and record.lease_expires_at > now:
-                # Somebody else is still serving this session and saying so. Refusing is what
-                # keeps one CLI answering to one console.
-                return BridgeAuthentication.REJECTED
+                # Somebody else is still serving this session and saying so. Turning this runner
+                # away is what keeps one CLI answering to one console — but only until that lease
+                # lapses, which is why it is `HELD` rather than `REJECTED`.
+                return BridgeAuthentication.HELD
             record.lease_holder = REPLICA
             record.lease_expires_at = now + LEASE_TTL
             record.updated_at = now
@@ -1270,6 +1284,19 @@ class ClaudeChatService:
 
     async def handle_runner(self, websocket: WebSocket, session_id: UUID, bearer: str) -> None:
         authentication = await self._store.authenticate_bridge(session_id, bearer)
+        if authentication == BridgeAuthentication.HELD:
+            # **A denial response, not a close.** A websocket closed before `accept()` reaches the
+            # client as HTTP 403 whatever code is passed to it (uvicorn renders every one that
+            # way), so a refusal and a "not yet" were indistinguishable — and the runner gives up
+            # on a 4xx, correctly, because a bad credential is not worth redialling. The ASGI
+            # `websocket.http.response` extension is what lets this answer 503 instead, which the
+            # runner already waits out: `_worth_redialling` retries anything 5xx, since that is
+            # also what the Gateway says mid-roll.
+            logger.info("Claude chat session %s is held by another replica; telling the runner to retry", session_id)
+            await websocket.send_denial_response(
+                Response(status_code=503, content=b"session is held by another replica")
+            )
+            return
         if authentication == BridgeAuthentication.TERMINAL:
             await self._cleanup_terminal_claim(session_id)
             await websocket.close(code=NOT_ADMITTED_CODE, reason="runner session is already terminal")

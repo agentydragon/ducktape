@@ -200,3 +200,42 @@ first would make the symptom harder to see rather than better: if the first caus
 the failure simply moves from "always" to "whenever somebody speaks", which is when it costs a
 person something. Fix the reason-reporting and the crashloop first; allocate lazily once a session
 that is asked for reliably survives being asked for.
+
+## What the first real roll found: the fix had a hole
+
+Run 2026-08-15. The deliberate `rollout restart` **did not roll** — Flux reconciled the
+`kubectl.kubernetes.io/restartedAt` annotation away mid-roll, and with `maxUnavailable: 0` the
+replacement never became Ready, so the original pods were never terminated. `rollout status` still
+reported success. **Roll the session's lease holder with `kubectl delete pod` instead**; it is not a
+spec change, so nothing reverts it.
+
+The genuine roll fifteen minutes earlier is what settled it. Session `425b2586` died with
+
+> console replica holding this session went away mid-turn (haku-console-dc8b85747-lwd7s)
+
+on consoles running `a9e2118` → `a563ee6` and a runner on `086dc8f` — every side carrying the fix.
+
+**Two causes, and the second is the one that mattered.**
+
+1. `expire_stale_leases` writes `chat.lease_holder or "no replica (never attached)"`. It named the
+   pod, so `lease_holder` was still set — `release_lease` never ran on that pod's shutdown. There
+   is no `terminationGracePeriodSeconds` on the deployment, so the whole shutdown has 30s.
+2. **A held lease and a bad credential were the same answer on the wire.** `authenticate_bridge`
+   refused a runner reaching a new replica while the old lease was still valid, and a websocket
+   closed before `accept()` reaches the client as HTTP 403 whatever close code is passed —
+   uvicorn renders every one that way. `_worth_redialling` gives up on a 4xx, correctly, because a
+   bad credential is not worth redialling. So the runner released the sandbox about a second after
+   the roll began.
+
+The second is a race that was open even when `release_lease` worked: the runner redials in about a
+second, and the dying replica commits its release whenever it gets there.
+
+**Fixed by giving the third answer its own signal.** `BridgeAuthentication.HELD` answers the
+handshake **503** through the ASGI `websocket.http.response` extension, which uvicorn advertises and
+Starlette exposes as `send_denial_response`. The runner needed no change — `_worth_redialling`
+already waits out anything 5xx, because that is also what the Gateway says mid-roll.
+
+**Cause 1 is still open**, and it is now latency rather than correctness. With the release working,
+the holder clears immediately and the runner's next retry is admitted. Without it, the lease runs
+its full 90s while the sweep (every 10s) is trying to fail the session and the runner retries every
+≤20s — a race, in the degraded path only.

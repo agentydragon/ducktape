@@ -351,6 +351,12 @@ def _worth_redialling(error: BaseException) -> bool:
     looks like from in here — and an `OSError` is the connection itself failing; both are worth
     waiting out, and neither used to be: `InvalidStatus` is not an `OSError`, so a single 503
     mid-roll escaped the loop and took the sandbox with it.
+
+    **The 5xx arm is load-bearing beyond the Gateway, so do not tighten it to a status list.** A
+    console that is up but whose session is still leased by a replica shutting down answers 503
+    deliberately, through the ASGI denial-response extension, precisely so this returns True — see
+    `BridgeAuthentication.HELD`. Narrowing this to "only the Gateway says 5xx" would restore the
+    bug that made every console roll cost a session.
     """
     if isinstance(error, InvalidStatus):
         return error.response.status_code >= 500
