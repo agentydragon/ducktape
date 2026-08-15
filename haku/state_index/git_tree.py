@@ -7,11 +7,14 @@ whatever `list_tip` returned on the last successful sync.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
 import pygit2
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +37,9 @@ def open_mirror(path: Path, url: str, *, username: str | None = None, password: 
     if (path / "HEAD").exists():
         return pygit2.Repository(str(path))
     path.parent.mkdir(parents=True, exist_ok=True)
+    # Logged because it is the one slow, silent step on a fresh pod: a caller watching for a first
+    # index has no other way to tell a clone in progress from a sweep that never started.
+    logger.info("cloning %s into %s", url, path)
     return pygit2.clone_repository(url, str(path), bare=True, callbacks=_callbacks(username, password))
 
 

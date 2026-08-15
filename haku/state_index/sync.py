@@ -2,9 +2,12 @@
 
 The unit of work is a blob, not a file: the same content at two paths (or moved between
 them) is embedded once, and content already embedded under this (chunker, model) regime is
-never embedded again. Everything the sync writes lands in the caller's transaction, so a
-failed run — an embedder that died halfway, a lost connection — leaves the previous tip
-searchable rather than a half-swapped one.
+never embedded again.
+
+Embeddings are committed as they are computed, and the tip swap is the atomic step. A run that
+dies partway — an embedder that failed a call, a lost connection — leaves the previous tip
+searchable rather than a half-swapped one, and leaves its embeddings behind for the next attempt
+to reuse instead of starting from nothing.
 """
 
 from __future__ import annotations
@@ -96,6 +99,13 @@ async def sync(
 ) -> SyncOutcome:
     """Swap the searchable set to `commit_sha`, or do nothing if it is already there.
 
+    **Embeddings are committed as they are computed; the tip swap is the atomic part.** A first
+    sync of a large repository can take many minutes of embedding, and as one transaction it could
+    only ever finish or lose everything — which, against an endpoint that occasionally fails a
+    call, is a run that starts over forever and never commits. Chunks are content-addressed cache
+    that nothing reaches until `git_tip` names their blob, so committing them early is invisible to
+    searches and makes the work resumable.
+
     The early-out compares the whole regime, not just the commit: a different chunker or
     embedding model means the stored vectors no longer answer for this content even though
     the tree is identical. It exists so a push-triggered sync and a reconciling cron can both
@@ -129,25 +139,46 @@ async def sync(
             continue
         pending.extend((blob_sha, chunk) for chunk in chunk_text(blob_text, budget))
 
-    rows: list[ChunkRow] = []
+    logger.info(
+        "haku-state %s: %d files, %d chunks to embed over %d blobs, %d blobs already cached",
+        commit_sha[:12],
+        len(entries),
+        len(pending),
+        len({blob_sha for blob_sha, _ in pending}),
+        len(cached),
+    )
+
+    chunks_written = 0
     for batch in batched(pending, EMBED_BATCH):
         vectors = await embedder.embed_documents([chunk.text for _, chunk in batch])
-        rows.extend(
-            ChunkRow(
-                corpus=Corpus.GIT,
-                content_sha=blob_sha,
-                chunker_key=regime,
-                model_key=embedder.model_key,
-                byte_start=chunk.byte_start,
-                byte_end=chunk.byte_end,
-                text=chunk.text,
-                embedding=vector,
-            )
-            for (blob_sha, chunk), vector in zip(batch, vectors, strict=True)
+        await insert_chunks(
+            session,
+            [
+                ChunkRow(
+                    corpus=Corpus.GIT,
+                    content_sha=blob_sha,
+                    chunker_key=regime,
+                    model_key=embedder.model_key,
+                    byte_start=chunk.byte_start,
+                    byte_end=chunk.byte_end,
+                    text=chunk.text,
+                    embedding=vector,
+                )
+                for (blob_sha, chunk), vector in zip(batch, vectors, strict=True)
+            ],
+            now=now,
         )
+        # Committed as it goes. A chunk is cache — nothing reaches it until `replace_tip` below
+        # names its blob — so this cannot expose a half-swapped tip, and it is what makes a first
+        # sync of a large repository resumable: a run that dies here leaves its work behind, and
+        # its successor finds those blobs in `cached_content` instead of embedding them again.
+        await session.commit()
+        chunks_written += len(batch)
+        logger.info("haku-state %s: embedded %d/%d chunks", commit_sha[:12], chunks_written, len(pending))
 
-    await insert_chunks(session, rows, now=now)
     await touch_content(session, Corpus.GIT, sorted(cached), chunker_key=regime, model_key=embedder.model_key, now=now)
+    # The swap is still one transaction, and the caller's commit is what publishes it: until it
+    # lands, every search still joins the previous tip.
     await replace_tip(
         session,
         entries,
@@ -162,7 +193,7 @@ async def sync(
         tip_files=len(entries),
         blobs_embedded=len({blob_sha for blob_sha, _ in pending}),
         blobs_reused=len(cached),
-        chunks_written=len(rows),
+        chunks_written=chunks_written,
         skipped_binary=skipped_binary,
         skipped_large=skipped_large,
     )

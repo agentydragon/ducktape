@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+from collections.abc import Sequence
 from pathlib import Path
 
 import pygit2
@@ -11,6 +12,7 @@ import pytest_bazel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from haku.state_index.embedder import EMBED_BATCH
 from haku.state_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
 from haku.state_index.git_tree import list_tip
 from haku.state_index.query import query_git
@@ -173,6 +175,59 @@ async def test_binary_and_oversized_blobs_stay_out_of_the_index(
 
     assert (report.tip_files, report.skipped_binary) == (2, 1)
     assert all(hit.path != "logo.png" for hit in await find(session, embedder, "alpha"))
+
+
+class FailsAfter:
+    """Embeds `calls` batches and then dies — an endpoint that drops a call mid-sync."""
+
+    def __init__(self, inner: FakeEmbedder, *, calls: int) -> None:
+        self._inner = inner
+        self._left = calls
+
+    @property
+    def model_key(self) -> str:
+        return self._inner.model_key
+
+    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        if self._left == 0:
+            raise RuntimeError("embedder died")
+        self._left -= 1
+        return await self._inner.embed_documents(texts)
+
+    async def embed_query(self, text: str) -> list[float]:
+        return await self._inner.embed_query(text)
+
+
+async def test_a_failed_sync_keeps_the_embeddings_it_already_paid_for(
+    session: AsyncSession, repo: pygit2.Repository, embedder: FakeEmbedder
+) -> None:
+    """Otherwise a first sync too big to finish in one go starts over forever."""
+    head = commit(repo, {f"n{index}.md": f"alpha {index}" for index in range(EMBED_BATCH + 8)})
+
+    with pytest.raises(RuntimeError):
+        await sync(session, repo, head, branch="main", embedder=FailsAfter(embedder, calls=1), now=_NOW)
+    await session.rollback()
+
+    kept = await session.execute(select(func.count()).select_from(Chunk))
+    assert kept.scalar_one() == EMBED_BATCH
+
+    report = as_report(await run_sync(session, repo, head, embedder))
+
+    assert (report.blobs_reused, report.blobs_embedded) == (EMBED_BATCH, 8)
+
+
+async def test_a_failed_sync_publishes_no_tip(
+    session: AsyncSession, repo: pygit2.Repository, embedder: FakeEmbedder
+) -> None:
+    """Committing chunks early must not make a half-indexed tree searchable."""
+    head = commit(repo, {f"n{index}.md": f"alpha {index}" for index in range(EMBED_BATCH + 8)})
+
+    with pytest.raises(RuntimeError):
+        await sync(session, repo, head, branch="main", embedder=FailsAfter(embedder, calls=1), now=_NOW)
+    await session.rollback()
+
+    assert await current_git_state(session) is None
+    assert await find(session, embedder, "alpha") == []
 
 
 if __name__ == "__main__":

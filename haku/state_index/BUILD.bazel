@@ -248,6 +248,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        ":embedder",
         ":fake_embedder",
         ":git_tree",
         ":query",

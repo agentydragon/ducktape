@@ -77,6 +77,15 @@ never indexed — only `git ls-tree -r <tip>` is. A sync is one transaction: a r
 halfway — embedder gone, connection lost — leaves the previous tip searchable rather than a
 half-swapped one; `test_sync.py` asserts this.
 
+**Embeddings commit as they are computed; the tip swap is the atomic step.** A first sync of a
+repository this size is minutes of embedding, and as one transaction it could only finish or lose
+everything — against an endpoint that occasionally fails a call, that is a run which starts over
+forever and never commits (observed in production, 2026-08-15: mirror cloned, `git_tip` empty for
+half an hour, no error logged). Chunks are cache that nothing reaches until `git_tip` names their
+blob, so committing them early is invisible to searches and makes a retry resume: the next attempt
+finds them in `cached_content` and pays only for what is left. `test_sync.py` asserts both halves —
+the work survives, and the half-indexed tip is not published.
+
 A sync whose commit and regime already match what `git_sync_state` records returns
 `AlreadyCurrent` without touching git or the tables, so it costs one `SELECT`. That is what lets
 a push-triggered sync and a slow reconciling cron both fire as often as they like — webhooks get
