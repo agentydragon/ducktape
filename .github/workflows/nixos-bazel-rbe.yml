@@ -12,6 +12,7 @@ on:
       - "nix/home/modules/bazel-cache.nix"
       - "nix/nixos/modules/bazel/**"
       - "nix/nixos/hosts/bazel-test/**"
+      - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/nixos-bazel-rbe.yml"
   push:
     branches: [devel]
@@ -25,6 +26,7 @@ on:
       - "nix/home/modules/bazel-cache.nix"
       - "nix/nixos/modules/bazel/**"
       - "nix/nixos/hosts/bazel-test/**"
+      - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/nixos-bazel-rbe.yml"
   workflow_dispatch:
 
@@ -42,34 +44,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Load Attic trusted pubkeys
-        id: attic_keys
-        run: echo "value=$(jq -r 'join(" ")' nix/attic-pubkeys.json)" >>"$GITHUB_OUTPUT"
-
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes fetch-closure
-            netrc-file = /home/runner/.config/nix/netrc
-            extra-trusted-public-keys = ${{ steps.attic_keys.outputs.value }}
-            extra-substituters = https://cache.allegedly.works/main
-            fallback = true
-
-      - uses: ./.github/actions/setup-ci-secrets
+      - uses: ./.github/actions/setup-nix-attic
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
       - uses: ./.github/actions/setup-bazel
         with:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
-
-      - name: Configure Nix cache authentication
-        run: |
-          mkdir -p /home/runner/.config/nix
-          umask 077
-          printf 'machine cache.allegedly.works password %s\n' "$ATTIC_TOKEN" \
-            >/home/runner/.config/nix/netrc
 
       - name: Run FHS Bazel execution-contract test
         env:

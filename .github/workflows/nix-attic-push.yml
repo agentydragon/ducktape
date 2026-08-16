@@ -35,65 +35,17 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v6
 
-      # Attic cache trusted pubkeys live in nix/attic-pubkeys.json (SSOT). Read
-      # them with jq (preinstalled) here, not in extra_nix_config below, because
-      # that field is static and Nix isn't installed yet at this point.
-      - name: Load Attic trusted pubkeys
-        id: attic_keys
-        run: echo "value=$(jq -r 'join(" ")' nix/attic-pubkeys.json)" >> "$GITHUB_OUTPUT"
-
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31
+      - uses: ./.github/actions/setup-nix-attic
         with:
-          nix_path: nixpkgs=channel:nixos-unstable
-          extra_nix_config: |
-            experimental-features = nix-command flakes fetch-closure
-            netrc-file = /home/runner/.config/nix/netrc
-            # Trusted pubkeys from nix/attic-pubkeys.json (SSOT), loaded above —
-            # needed so builtins.fetchClosure of the gaffer closure
-            # (nix/packages/gaffer.nix) passes signature verification.
-            extra-trusted-public-keys = ${{ steps.attic_keys.outputs.value }}
-            # Substitute from the main cache this job pushes to, so paths
-            # cache.nixos.org can't serve — notably the unfree CUDA stack
-            # (cuda-merged/ollama for the wyrm2 GPU host) — are pulled from a
-            # previous run instead of rebuilt locally every time. Auth is the
-            # ATTIC_TOKEN netrc written below (the CI token has main:pull). Attic
-            # advertises priority 41 < cache.nixos.org's 40, so the public cache
-            # still wins for the shared base; attic is only hit for paths it
-            # alone has.
-            extra-substituters = https://cache.allegedly.works/main
-            # Build from source if a substitution fails instead of hard-erroring.
-            # Required now that we pull from cache.allegedly.works/main: earlier
-            # runs were killed mid-upload, leaving dangling narinfos (present
-            # metadata, missing/partial NAR). Without fallback, nix aborts the
-            # whole job on the first such path ("could not be realised"); with
-            # it, nix rebuilds and watch-store re-pushes the good NAR, self-
-            # healing the cache.
-            fallback = true
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
       - name: Install Attic client + nix-fast-build
         # nix-fast-build (+ nix-eval-jobs) drives the parallel eval/build/push in
         # devinfra/ci/nix_attic_build_and_push.sh.
         run: nix profile install nixpkgs#attic-client nixpkgs#nix-fast-build nixpkgs#nix-eval-jobs
 
-      - uses: ./.github/actions/setup-ci-secrets
-        with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
-
       - name: Configure Attic cache
         run: attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
-
-      - name: Write Nix netrc for cache.allegedly.works
-        # builtins.fetchClosure (used by nix/packages/gaffer.nix to substitute
-        # private drivefs/drivectl closures from cache.allegedly.works/gaffer)
-        # uses Nix's own HTTP layer — not attic — so it needs the JWT in a
-        # netrc file that nix.conf points at via netrc-file. The path matches
-        # the value passed to install-nix-action above.
-        run: |
-          mkdir -p /home/runner/.config/nix
-          umask 077
-          printf 'machine cache.allegedly.works password %s\n' "$ATTIC_TOKEN" \
-            > /home/runner/.config/nix/netrc
 
       - name: Build and push all flake outputs
         run: devinfra/ci/nix_attic_build_and_push.sh

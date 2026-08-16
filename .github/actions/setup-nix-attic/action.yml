@@ -1,0 +1,41 @@
+name: Setup Nix + Attic
+description: Install Nix with the repository Attic substituter and authenticate it
+
+inputs:
+  sops_age_key:
+    description: SOPS age private key for CI decryption
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # jq is available on GitHub-hosted runners, but Nix is not installed yet.
+    - name: Load Attic trusted pubkeys
+      id: attic_keys
+      shell: bash
+      run: |
+        keys="$(jq -r 'join(" ")' nix/attic-pubkeys.json)"
+        echo "value=$keys" >> "$GITHUB_OUTPUT"
+
+    - name: Install Nix
+      uses: cachix/install-nix-action@v31
+      with:
+        nix_path: nixpkgs=channel:nixos-unstable
+        extra_nix_config: |
+          experimental-features = nix-command flakes fetch-closure
+          netrc-file = /home/runner/.config/nix/netrc
+          extra-trusted-public-keys = ${{ steps.attic_keys.outputs.value }}
+          extra-substituters = https://cache.allegedly.works/main
+          fallback = true
+
+    - uses: ./.github/actions/setup-ci-secrets
+      with:
+        sops_age_key: ${{ inputs.sops_age_key }}
+
+    - name: Write Nix netrc for cache.allegedly.works
+      shell: bash
+      run: |
+        mkdir -p /home/runner/.config/nix
+        umask 077
+        printf 'machine cache.allegedly.works password %s\n' "$ATTIC_TOKEN" \
+          > /home/runner/.config/nix/netrc

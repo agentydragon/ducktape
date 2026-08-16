@@ -19,6 +19,7 @@ on:
     paths:
       - "cluster/k8s/haku/workspaces/image/**"
       - "flake.lock"
+      - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/haku-sandbox-image-nix.yml"
   # Also on PRs, which the other image workflows deliberately don't do. The cutover
   # checklist needs a *pullable tag* to point a throwaway Pod at, and the image's whole
@@ -31,6 +32,7 @@ on:
     paths:
       - "cluster/k8s/haku/workspaces/image/**"
       - "flake.lock"
+      - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/haku-sandbox-image-nix.yml"
   workflow_dispatch:
 
@@ -51,34 +53,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # Attic trusted pubkeys (SSOT) — read with jq before Nix is installed,
-      # since extra_nix_config below is a static field.
-      - name: Load Attic trusted pubkeys
-        id: attic_keys
-        run: echo "value=$(jq -r 'join(" ")' nix/attic-pubkeys.json)" >> "$GITHUB_OUTPUT"
-
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
-          extra_nix_config: |
-            experimental-features = nix-command flakes fetch-closure
-            netrc-file = /home/runner/.config/nix/netrc
-            extra-trusted-public-keys = ${{ steps.attic_keys.outputs.value }}
-            extra-substituters = https://cache.allegedly.works/main
-            fallback = true
-
-      # Decrypts secrets/ci/* → exports ATTIC_TOKEN + FORGEJO_IMAGES_{USERNAME,PASSWORD}.
-      - uses: ./.github/actions/setup-ci-secrets
+      - uses: ./.github/actions/setup-nix-attic
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
-
-      - name: Write Nix netrc for cache.allegedly.works
-        run: |
-          mkdir -p /home/runner/.config/nix
-          umask 077
-          printf 'machine cache.allegedly.works password %s\n' "$ATTIC_TOKEN" \
-            > /home/runner/.config/nix/netrc
 
       - name: Build image
         run: nix build .#haku-sandbox-image --print-build-logs
