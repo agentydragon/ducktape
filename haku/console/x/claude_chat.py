@@ -22,7 +22,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, SecretStr
-from sqlalchemy import CursorResult, Select, delete, func, literal, or_, select, text, update
+from sqlalchemy import CursorResult, Select, delete, func, literal, or_, select, text, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -49,7 +49,13 @@ from haku.console.database_schema import (
     SessionTurnPrompt,
 )
 from haku.console.operator_auth import OperatorActorDep
-from haku.console.tools.conversations import Conversation, RolloutFrame, TurnRecord
+from haku.console.tools.conversations import (
+    Conversation,
+    ConversationCursor,
+    ConversationPage,
+    RolloutFrame,
+    TurnRecord,
+)
 from haku.console.x.room_status import TurnStatus, ignore_clear, ignore_status
 from haku.console.x.sandbox_claims import ProvisioningStep, SandboxClaims, provisioning_view
 from haku.console.x.session_frames import (
@@ -785,14 +791,28 @@ class SessionStore:
                 raise RuntimeError(f"replayed frame disappeared from the rollout for {uid=}")
         return RecordedFrame(fresh=False, frame_seq=int(existing_seq))
 
-    async def list_conversations(self, *, limit: int) -> list[Conversation]:
-        """Past sessions, newest first, for the `haku_conversations` read tools.
+    async def list_conversations(self, *, after: ConversationCursor | None, limit: int) -> ConversationPage:
+        """One page of past sessions, newest first, for the `haku_conversations` read tools.
+
+        Keyset paging on `(created_at, session_id)`, for the same reason `read_frames` pages on
+        `frame_seq`: an offset counts from the top of the order, and this order grows at the top
+        while a reader walks it, so every session created mid-walk would push a row across a page
+        boundary — skipping it or repeating it. `session_id` is in the key because `created_at`
+        alone is not a total order; a pair created in one instant would straddle the boundary.
 
         Unscoped by R5.3a: every session, whichever room it served.
         """
+        query = select(Session).order_by(Session.created_at.desc(), Session.session_id.desc())
+        if after is not None:
+            query = query.where(
+                tuple_(Session.created_at, Session.session_id)
+                < tuple_(literal(after.created_at), literal(after.session_id))
+            )
         async with self._sessions() as db:
-            rows = (await db.scalars(select(Session).order_by(Session.created_at.desc()).limit(limit))).all()
-        return [
+            # One row past the limit, so a full page that happens to be the last one says so
+            # rather than handing back a cursor onto nothing.
+            rows = (await db.scalars(query.limit(limit + 1))).all()
+        conversations = [
             Conversation(
                 session_id=row.session_id,
                 surface=row.surface,
@@ -801,8 +821,12 @@ class SessionStore:
                 created_at=row.created_at,
                 error=row.error,
             )
-            for row in rows
+            for row in rows[:limit]
         ]
+        return ConversationPage(
+            conversations=conversations,
+            next_cursor=ConversationCursor.of(conversations[-1]) if len(rows) > limit else None,
+        )
 
     async def read_frames(
         self, session_id: UUID, *, after_seq: int | None, limit: int, kinds: Sequence[str] | None

@@ -13,12 +13,15 @@ from haku.console.tools.conversations import (
     HAKU_CONVERSATIONS_SERVER_ID,
     MAX_PAGE_BYTES,
     Conversation,
+    ConversationCursor,
+    ConversationPage,
     RolloutFrame,
     TurnRecord,
     build_mcp,
 )
 
 SESSION = UUID("11111111-1111-1111-1111-111111111111")
+OLDER_SESSION = UUID("33333333-3333-3333-3333-333333333333")
 TURN = UUID("22222222-2222-2222-2222-222222222222")
 NOW = datetime.datetime(2026, 8, 12, 9, 0, tzinfo=datetime.UTC)
 
@@ -26,6 +29,12 @@ NOW = datetime.datetime(2026, 8, 12, 9, 0, tzinfo=datetime.UTC)
 def _big_frame(seq: int) -> RolloutFrame:
     """Two of these overrun one page's budget; one does not."""
     return _frame(seq, kind="user", payload={"type": "user", "content": "x" * (MAX_PAGE_BYTES * 2 // 3)})
+
+
+def _conversation(session_id: UUID, created_at: datetime.datetime) -> Conversation:
+    return Conversation(
+        session_id=session_id, surface="matrix", room_id="!room:example.org", status="closed", created_at=created_at
+    )
 
 
 def _frame(seq: int, kind: str = "assistant", payload: dict | None = None) -> RolloutFrame:
@@ -45,13 +54,25 @@ class _Reader:
     def __init__(self, *frames: RolloutFrame):
         self._frames = list(frames)
         self.queries: list[dict] = []
+        self.conversation_cursors: list[ConversationCursor | None] = []
+        # Newest first, the order the store lists them in.
+        self._conversations = [
+            _conversation(SESSION, NOW),
+            _conversation(OLDER_SESSION, NOW - datetime.timedelta(hours=1)),
+        ]
 
-    async def list_conversations(self, *, limit: int) -> list[Conversation]:
-        return [
-            Conversation(
-                session_id=SESSION, surface="matrix", room_id="!room:example.org", status="closed", created_at=NOW
-            )
-        ][:limit]
+    async def list_conversations(self, *, after: ConversationCursor | None, limit: int) -> ConversationPage:
+        self.conversation_cursors.append(after)
+        selected = [
+            conversation
+            for conversation in self._conversations
+            if after is None
+            or (conversation.created_at, conversation.session_id) < (after.created_at, after.session_id)
+        ]
+        page = selected[:limit]
+        return ConversationPage(
+            conversations=page, next_cursor=ConversationCursor.of(page[-1]) if len(selected) > limit else None
+        )
 
     async def read_frames(
         self, session_id: UUID, *, after_seq: int | None, limit: int, kinds: Sequence[str] | None
@@ -91,7 +112,36 @@ async def test_a_conversation_says_which_room_it_served() -> None:
         result = await client.call_tool("list_conversations", {})
 
     assert not result.is_error
-    assert result.data[0].room_id == "!room:example.org"
+    assert result.data.conversations[0].room_id == "!room:example.org"
+
+
+async def test_a_full_page_of_sessions_names_both_halves_of_the_key_in_its_cursor() -> None:
+    """`created_at` alone does not order the corpus — two sessions can start in one instant — so
+    the cursor has to carry the tiebreak rather than pretend one column suffices."""
+    reader = _Reader()
+
+    async with Client(build_mcp(reader)) as client:
+        result = await client.call_tool("list_conversations", {"limit": 1})
+
+    [newest] = result.data.conversations
+    assert result.data.next_cursor.created_at == newest.created_at
+    assert result.data.next_cursor.session_id == newest.session_id
+
+
+async def test_the_session_cursor_reaches_the_store_and_the_last_page_offers_none() -> None:
+    """Paging belongs in the query: filtering a page here would return fewer rows than asked for
+    and read as the end of the corpus."""
+    reader = _Reader()
+    cursor = ConversationCursor.of(_conversation(SESSION, NOW))
+
+    async with Client(build_mcp(reader)) as client:
+        result = await client.call_tool("list_conversations", {"limit": 1, "after": cursor.model_dump(mode="json")})
+
+    assert reader.conversation_cursors == [cursor]
+    # `str`, because `result.data` is rebuilt from the advertised JSON Schema, where a `UUID` is a
+    # string with `format: uuid`. The reader above was handed the real `UUID`.
+    assert [conversation.session_id for conversation in result.data.conversations] == [str(OLDER_SESSION)]
+    assert result.data.next_cursor is None
 
 
 async def test_a_full_page_carries_the_cursor_for_the_next_one() -> None:

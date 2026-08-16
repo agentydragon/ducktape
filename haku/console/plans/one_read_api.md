@@ -126,8 +126,8 @@ for reflection. Every JSON Schema keyword those models produce is already in the
 allowlist — `anyOf`/`type`/`format` (`uuid`, `date-time`), `additionalProperties` for
 `payload: dict[str, Any] | None` and `usage`, `enum` for the `FrameKind` literal union, `items`,
 `minimum`/`maximum` from the `ge`/`le` fields, `description`, `default`, `title` — and
-`list_conversations`' `-> list[Conversation]` return is exactly the wrapped case
-`_unwrap_fastmcp_result_envelope` already handles. So this should generate without adapter work,
+`list_conversations`' `-> ConversationPage` return is an ordinary object result, like
+`read_rollout`'s `RolloutPage`. So this should generate without adapter work,
 and if it does not, that is a cheap and decisive answer (§7, Stage 1).
 
 ## 3. The gap list, endpoint by endpoint
@@ -138,7 +138,7 @@ and if it does not, that is a cheap and decisive answer (§7, Stage 1).
 | ------- | ----------------------------------------------- | ------------------------------------------------ |
 | scope   | `WHERE Session.operator_id = actor.operator_id` | none — every session, every room, every Operator |
 | order   | `updated_at DESC, session_id DESC`              | newest first                                     |
-| paging  | `limit` 1–100, no cursor                        | `limit` 1–100, no cursor                         |
+| paging  | `limit` 1–100, no cursor                        | `limit` 1–100, keyset on `(created_at, id)`      |
 | payload | `+ updated_at, message_count, last_message_at`  | `+ error`, no aggregates                         |
 
 Two gaps, and only one is closable. The aggregates are a `COUNT`/`MAX` join the agent surface has

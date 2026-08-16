@@ -93,6 +93,33 @@ class Conversation(BaseModel):
     error: str | None = None
 
 
+class ConversationCursor(BaseModel):
+    """A position in the `(created_at, session_id)` order `list_conversations` walks.
+
+    **Both columns, because one does not order the corpus.** Sessions are created in bursts — a
+    Matrix room and the SPA can open one in the same instant, and `created_at` alone leaves that
+    pair unordered. A cursor naming only the timestamp would then either hand back a session the
+    previous page already carried or step over one it never did, depending on which side of the
+    tie the database happened to return first. `session_id` breaks it, and the key is spelled out
+    here rather than hidden behind an opaque string so a reader can see what the page boundary
+    actually is.
+    """
+
+    created_at: datetime.datetime
+    session_id: UUID
+
+    @classmethod
+    def of(cls, conversation: Conversation) -> ConversationCursor:
+        return cls(created_at=conversation.created_at, session_id=conversation.session_id)
+
+
+class ConversationPage(BaseModel):
+    conversations: list[Conversation]
+    next_cursor: ConversationCursor | None = Field(
+        description="Cursor for the following page, or absent when this page is the last."
+    )
+
+
 class RolloutFrame(BaseModel):
     frame_seq: int = Field(description="Pass the last one back as `after_seq` to read the next page.")
     direction: str = Field(description="`to_agent` for what the console sent, `from_agent` for what came back.")
@@ -141,7 +168,7 @@ class RolloutReader(Protocol):
     server registered in the stable catalog should not depend on that package's shape.
     """
 
-    async def list_conversations(self, *, limit: int) -> list[Conversation]: ...
+    async def list_conversations(self, *, after: ConversationCursor | None, limit: int) -> ConversationPage: ...
 
     # `Sequence` rather than `list` so the tool can narrow `kinds` to a Literal union for its
     # generated schema: `list` is invariant, so `list[Literal[...]]` would not satisfy `list[str]`.
@@ -202,9 +229,20 @@ def build_mcp(reader: RolloutReader) -> FastMCP:
     @mcp.tool
     async def list_conversations(
         limit: Annotated[int, Field(default=20, ge=1, le=MAX_PAGE, description="Most recent sessions first.")] = 20,
-    ) -> list[Conversation]:
-        """List Haku's past chat sessions, newest first."""
-        return await reader.list_conversations(limit=limit)
+        after: Annotated[
+            ConversationCursor | None,
+            Field(
+                default=None, description="A `next_cursor` from the previous page; omit to start at the newest session."
+            ),
+        ] = None,
+    ) -> ConversationPage:
+        """List Haku's past chat sessions, newest first, a page at a time.
+
+        Keyset paging like `read_rollout`, not an offset: sessions keep being created at the top
+        of this order while a reader walks it, so a page counted from the start would skip
+        sessions or repeat them as new ones land.
+        """
+        return await reader.list_conversations(after=after, limit=limit)
 
     @mcp.tool
     async def read_rollout(

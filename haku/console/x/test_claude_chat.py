@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 from more_itertools import one
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -792,11 +792,50 @@ async def test_conversations_come_back_newest_first_with_the_room_they_served(ch
     await chat_store.create(operator_id, SpaSession())
     matrix, _ = await chat_store.create(operator_id, MatrixSession(room_id="!room:example.org"))
 
-    conversations = await chat_store.list_conversations(limit=10)
+    page = await chat_store.list_conversations(after=None, limit=10)
 
-    assert conversations[0].session_id == matrix.session_id
-    assert conversations[0].room_id == "!room:example.org"
-    assert conversations[1].room_id is None
+    assert page.conversations[0].session_id == matrix.session_id
+    assert page.conversations[0].room_id == "!room:example.org"
+    assert page.conversations[1].room_id is None
+    assert page.next_cursor is None, "a page shorter than its limit is the last one"
+
+
+async def test_a_session_created_between_two_pages_cannot_shift_what_the_second_one_holds(
+    chat_store, operator_id
+) -> None:
+    """The keyset's whole point: this order grows at the top, and an offset counts from there, so
+    a session created mid-walk would push the first page's last row into the second page again."""
+    older, _ = await chat_store.create(operator_id, SpaSession())
+    newer, _ = await chat_store.create(operator_id, SpaSession())
+
+    first = await chat_store.list_conversations(after=None, limit=1)
+    await chat_store.create(operator_id, SpaSession())
+    second = await chat_store.list_conversations(after=first.next_cursor, limit=1)
+
+    assert [conversation.session_id for conversation in first.conversations] == [newer.session_id]
+    assert [conversation.session_id for conversation in second.conversations] == [older.session_id]
+
+
+async def test_two_sessions_created_in_one_instant_are_paged_exactly_once_each(
+    chat_store, operator_id, migrated_sessions
+) -> None:
+    """`created_at` ties, so it does not order the corpus on its own — a cursor naming only the
+    timestamp would either step over one of the pair or hand it out on both pages."""
+    first, _ = await chat_store.create(operator_id, SpaSession())
+    second, _ = await chat_store.create(operator_id, SpaSession())
+    async with migrated_sessions.begin() as db:
+        await db.execute(
+            update(Session)
+            .where(Session.session_id.in_([first.session_id, second.session_id]))
+            .values(created_at=datetime(2026, 8, 12, 9, 0, tzinfo=UTC))
+        )
+
+    page = await chat_store.list_conversations(after=None, limit=1)
+    rest = await chat_store.list_conversations(after=page.next_cursor, limit=10)
+
+    assert [conversation.session_id for conversation in [*page.conversations, *rest.conversations]] == sorted(
+        [first.session_id, second.session_id], reverse=True
+    )
 
 
 async def test_operator_conversation_read_surface_keeps_inventory_and_transcript_separate(
