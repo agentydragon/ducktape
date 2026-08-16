@@ -96,6 +96,8 @@ When a component has one central plan, put it at `<dir>/PLAN.md` instead of a si
 
 `<dir>/debug/<topic>.md` holds investigation notes, RCAs, and debug logs. The `cluster/` subproject uses `cluster/docs/lessons_learned/` instead.
 
+A note belongs here because it is a multi-step debugging story or an investigation still in progress — not because it is long. Length is a consequence of that content, never a licence: a `debug/` note is held to the same standard as any other prose (<STYLE.md> § Documentation), and padding or after-the-fact justification gets cut here too.
+
 ### `archive/`
 
 `<dir>/archive/` holds inactive historical notes, abandoned approaches, and past blind alleys that are useful to keep but should not be read as current plans. Prefer dated Markdown names like `YYYY_MM_whatever.md` or `YYYY_MM_DD_whatever.md` when adding a new archive note.

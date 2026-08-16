@@ -254,9 +254,14 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
 
 **Remove**: docstrings/comments that restate the name, signature, or next line; Args/
 Returns sections echoing types; trivial class docstrings; obvious docstrings longer than
-one line; historical "used to" comments; `# === Section ===` banners; changelog comments;
-self-referential counts of an adjacent list ("the three steps below") — they drift
-silently as rows are added, so let the list speak or derive the count.
+one line; historical "used to" comments; **prose arguing that the current code is correct** —
+what was here before, why the change was right, what alternative was rejected; `# === Section ===`
+banners; changelog comments; self-referential counts of an adjacent list ("the three steps
+below") — they drift silently as rows are added, so let the list speak or derive the count.
+
+That justifying register belongs in the commit message or the PR, which is where a reviewer
+reads it. It does not survive into the file, because after the change lands nobody is deciding
+whether to accept it.
 
 **Keep**: TODOs/FIXMEs near their context; non-obvious behavior (edge cases, invariants,
 preconditions, contracts); why-comments; system/integration context not visible locally
@@ -264,8 +269,21 @@ preconditions, contracts); why-comments; system/integration context not visible 
 ("container-side path" vs "host-side"); test intent comments naming the edge case under
 test.
 
+**A past state earns a comment only when a future editor has to act on it** — a migration still
+in flight, a compatibility requirement that still binds, a roll-safety constraint that still
+holds. Those are instructions wearing a historical tense. A past state that only explains why
+the present code is right is not: the present code being right is not news.
+
 **Heuristics**: if deleting it loses zero information, delete it. "Why" earns its place;
 "what" rarely does. Public API boundaries tolerate more verbosity than internal code.
+
+**Then say what is left in fewer words.** Deletion is not the only edit: prose that carries real
+information can still take more clauses and more sentence structure than the information needs,
+and that survives the test above because nothing would be lost by keeping it. Prefer the
+parsimonious, to-the-point form over the elaborate one — plain sentences over stacked subordinate
+clauses, one em-dash aside rather than three. When tightening, the information content must be
+unchanged; dropping a caveat to shorten a sentence is a deletion and needs a deletion's
+justification.
 
 ### Deviations, Not Re-explanations
 
