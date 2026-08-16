@@ -78,7 +78,13 @@ from haku.console.x.session_views import (
     session_view,
     setup_narration,
 )
-from haku.runtime.x.claude_bridge.cli_client import ClaudeCli, cli_over_websocket
+from haku.runtime.x.claude_bridge.cli_client import (
+    ClaudeCli,
+    ReceivedFrame,
+    RecordedFrame,
+    SentPrompt,
+    cli_over_websocket,
+)
 from haku.runtime.x.claude_bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch
 from haku.runtime.x.claude_bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, TextWebSocket
 
@@ -217,6 +223,14 @@ class TurnState:
     streamed: str
     said_anything: bool
     queued_reply: bool
+
+
+class TurnClient(Protocol):
+    """The part of the CLI client the turn loop needs after frames are handed to it."""
+
+    async def query(self, text: str) -> SentPrompt: ...
+
+    async def interrupt(self) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -698,12 +712,14 @@ class SessionStore:
 
     async def record_frame(
         self, session_id: UUID, direction: FrameDirection, kind: str, payload: dict[str, Any]
-    ) -> bool:
+    ) -> RecordedFrame:
         """Append one frame to the session's rollout, unless this session already has it.
 
-        **False means a replay** — the same agent-assigned identity already in this log — and the
-        caller must then not act on it again. A frame with no identity is always recorded, since
-        "no identity" is not "the same as the last one" (`frame_identity.frame_uid`).
+        `fresh` says whether the caller should act on the frame; `frame_seq` is the row's sequence
+        either way, which is what a projection built from this frame points back at. **False means
+        a replay** — the same agent-assigned identity already in this log — and the caller must
+        then not act on it again. A frame with no identity is always recorded, since "no identity"
+        is not "the same as the last one" (`frame_identity.frame_uid`).
 
         *kind* is passed rather than read out of the payload: a CLI frame keeps its discriminator
         in `type` and the bridge envelope keeps it in `kind`, and this table holds both.
@@ -711,6 +727,7 @@ class SessionStore:
         Failures are not swallowed — a rollout with quiet holes is the record that looks complete
         while being wrong.
         """
+        uid = frame_uid(kind, payload)
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
             # `ON CONFLICT DO NOTHING` against the partial unique index rather than a read
@@ -724,7 +741,7 @@ class SessionStore:
                     kind=kind,
                     payload=payload,
                     partial=False,
-                    frame_uid=frame_uid(kind, payload),
+                    frame_uid=uid,
                     created_at=now,
                     updated_at=now,
                 )
@@ -736,8 +753,21 @@ class SessionStore:
                     index_elements=["session_id", "frame_uid"], index_where=text("frame_uid IS NOT NULL")
                 )
             )
-            recorded = cast("CursorResult[Any]", await db.execute(insert))
-        return recorded.rowcount == 1
+            inserted = await db.execute(insert.returning(SessionFrame.frame_seq))
+            if (inserted_seq := inserted.scalar_one_or_none()) is not None:
+                return RecordedFrame(fresh=True, frame_seq=int(inserted_seq))
+            # Nothing was inserted, so the partial index found this frame's identity already in
+            # the log — which is the only way `DO NOTHING` fires, since an identity-less frame
+            # does not satisfy the index predicate. Read back the row it collided with, so a
+            # replay still names the frame it duplicates.
+            existing_seq = await db.scalar(
+                select(SessionFrame.frame_seq).where(
+                    SessionFrame.session_id == session_id, SessionFrame.frame_uid == uid
+                )
+            )
+            if existing_seq is None:
+                raise RuntimeError(f"replayed frame disappeared from the rollout for {uid=}")
+        return RecordedFrame(fresh=False, frame_seq=int(existing_seq))
 
     async def list_conversations(self, *, limit: int) -> list[Conversation]:
         """Past sessions, newest first, for the `haku_conversations` read tools.
@@ -829,12 +859,19 @@ class SessionStore:
         async with self._sessions.begin() as db:
             await db.execute(delete(SessionFrame).where(SessionFrame.session_id == session_id, SessionFrame.partial))
 
-    async def begin_assistant(self, session_id: UUID, turn_id: UUID) -> UUID:
+    async def begin_assistant(
+        self, session_id: UUID, turn_id: UUID, *, source_first_frame_seq: int | None = None
+    ) -> UUID:
         """Open the message this turn is about to stream into, and point the turn at it.
 
         One transaction, because the pointer is what makes the message the *turn's*: a replica
         dying with a message row nothing names would leave its replacement to guess which of the
         session's messages it was in the middle of.
+
+        *source_first_frame_seq* is the frame that opened the message, written here rather than on
+        every update: this is the one moment that knows where the message began, and a resumed turn
+        picks its message up from the turn row without passing through here — so leaving `first` to
+        a later write would walk it forward past the frames the earlier process already projected.
         """
         now = datetime.now(UTC)
         message_id = uuid4()
@@ -848,6 +885,7 @@ class SessionStore:
                     content="",
                     tool_uses=[],
                     error=None,
+                    source_first_frame_seq=source_first_frame_seq,
                     created_at=now,
                     updated_at=now,
                 )
@@ -868,6 +906,7 @@ class SessionStore:
         *,
         tool_uses: list[dict[str, Any]] | None = None,
         agent_message_id: str | None = None,
+        source_last_frame_seq: int | None = None,
         complete: bool = False,
     ) -> bool:
         """Write what this assistant message says so far. True once the room owes it.
@@ -895,6 +934,10 @@ class SessionStore:
                 message.tool_uses = tool_uses
             if agent_message_id is not None:
                 message.agent_message_id = agent_message_id
+            # Only the far end moves here. `begin_assistant` set the near end once, and frames
+            # within a message arrive in order, so this only ever widens the range.
+            if source_last_frame_seq is not None:
+                message.source_last_frame_seq = source_last_frame_seq
             message.status = ChatMessageStatus.COMPLETE if complete else ChatMessageStatus.STREAMING
             message.updated_at = now
             # No `chat.status = RESPONDING` here. This runs per stream delta, so it was a
@@ -922,6 +965,24 @@ class SessionStore:
                 )
             )
             return owed
+
+    async def set_message_source_frames(self, session_id: UUID, message_id: UUID, frame_seq: int | None) -> None:
+        """Point an already-written message at the single frame it went out as.
+
+        For the operator's own prompt, whose row exists before the frame does. A client keeping no
+        rollout has no sequence to give, and the row then stays honestly unpointed.
+        """
+        if frame_seq is None:
+            return
+        now = datetime.now(UTC)
+        async with self._sessions.begin() as db:
+            message = await db.get(SessionMessage, message_id)
+            if message is None or message.session_id != session_id:
+                return
+            message.source_first_frame_seq = frame_seq
+            message.source_last_frame_seq = frame_seq
+            message.updated_at = now
+            await notify(db, SessionEventKind.UPDATE, session_id)
 
     async def enqueue_turn_reply(self, session_id: UUID, turn_id: UUID, text: str) -> bool:
         """Queue a turn's last word, the one reply no transcript row holds. True if it is owed.
@@ -1139,18 +1200,18 @@ class RolloutRecorder:
         self._store = store
         self._session_id = session_id
 
-    async def sent(self, payload: dict[str, Any]) -> None:
-        await self._record(FrameDirection.TO_AGENT, payload)
+    async def sent(self, payload: dict[str, Any]) -> int:
+        return (await self._record(FrameDirection.TO_AGENT, payload)).frame_seq
 
-    async def received(self, payload: dict[str, Any]) -> bool:
-        return await self._record(FrameDirection.FROM_AGENT, payload)
-
-    async def _record(self, direction: FrameDirection, payload: dict[str, Any]) -> bool:
-        """Record the frame, answering whether the caller should act on it.
+    async def received(self, payload: dict[str, Any]) -> RecordedFrame:
+        """Record the frame, answering whether the caller should act on it and where it landed.
 
         A delta has no agent-assigned identity, so it is always recorded and always fresh — safe
         because the runner never replays one (`runner.DELTA_TYPE`).
         """
+        return await self._record(FrameDirection.FROM_AGENT, payload)
+
+    async def _record(self, direction: FrameDirection, payload: dict[str, Any]) -> RecordedFrame:
         return await self._store.record_frame(self._session_id, direction, frame_kind(payload), payload)
 
 
@@ -1542,8 +1603,8 @@ class SessionService:
 
     async def _run_turn(
         self,
-        client: ClaudeCli,
-        frames: AsyncIterator[dict[str, Any]],
+        client: TurnClient,
+        frames: AsyncIterator[ReceivedFrame],
         session_id: UUID,
         turn: TurnStart | ResumedTurn,
         *,
@@ -1567,7 +1628,10 @@ class SessionService:
         if isinstance(turn, TurnStart):
             # A resumed turn's question was asked by a process that is gone; only its answer is
             # still coming.
-            await client.query(turn.prompt)
+            prompt = await client.query(turn.prompt)
+            # The prompt's row was written when the operator typed it, before any frame existed to
+            # point at; this is where the question acquires the frame it went out as.
+            await self._store.set_message_source_frames(session_id, turn.message_id, prompt.frame_seq)
         state = await self._store.turn_state(turn_id)
         assistant_id = state.assistant_message_id
         streamed = state.streamed
@@ -1582,6 +1646,7 @@ class SessionService:
         # minting a second message for `result.result` is exactly what conflating them did.
         saw_assistant_message = state.said_anything
         result: dict[str, Any] | None = None
+        result_frame_seq: int | None = None
         status = self._turn_status(room_id)
         status.start()
         aborted = asyncio.ensure_future(abort_event.wait())
@@ -1615,16 +1680,21 @@ class SessionService:
                 #
                 # The stream stays open for the next turn: it is the session's, so an interrupt
                 # ends a turn rather than the conversation.
-                frame = await next_frame
+                received = await next_frame
+                frame, frame_seq = received.payload, received.frame_seq
                 status.note(frame)
                 match frame.get("type"):
                     case "stream_event":
                         if not (delta := text_delta(frame.get("event", {}))):
                             continue
                         if assistant_id is None:
-                            assistant_id = await self._store.begin_assistant(session_id, turn_id)
+                            assistant_id = await self._store.begin_assistant(
+                                session_id, turn_id, source_first_frame_seq=frame_seq
+                            )
                         streamed += delta
-                        await self._store.update_assistant(session_id, assistant_id, streamed)
+                        await self._store.update_assistant(
+                            session_id, assistant_id, streamed, source_last_frame_seq=frame_seq
+                        )
                         # The rollout keeps no deltas, so without this the text an interrupted
                         # turn produced would exist only in the message row and the log would
                         # simply stop mid-answer (R5.5b).
@@ -1632,7 +1702,9 @@ class SessionService:
                     case "assistant":
                         saw_assistant_message = True
                         if assistant_id is None:
-                            assistant_id = await self._store.begin_assistant(session_id, turn_id)
+                            assistant_id = await self._store.begin_assistant(
+                                session_id, turn_id, source_first_frame_seq=frame_seq
+                            )
                         blocks = content_blocks(frame)
                         text = "".join(
                             str(block.get("text", "")) for block in blocks if block.get("type") == "text"
@@ -1657,6 +1729,7 @@ class SessionService:
                                 # The wire's own id for this message, which is what lets a reader
                                 # find its calls in the frame log rather than match by position.
                                 agent_message_id=agent_message_id(frame),
+                                source_last_frame_seq=frame_seq,
                                 complete=True,
                             )
                             or spoke
@@ -1668,6 +1741,7 @@ class SessionService:
                         streamed = ""
                     case "result":
                         result = frame
+                        result_frame_seq = frame_seq
                         break
             if result is None:
                 raise RuntimeError("the Claude stream ended without a result for this turn")
@@ -1684,14 +1758,24 @@ class SessionService:
                 # having stopped mid-answer. `final_text` is not written over it, because the
                 # harness adds `[aborted by operator]` to that and the frame records what the
                 # agent produced, not what the room was told.
+                # No frame range is passed: the deltas that produced this text already recorded
+                # theirs, and the `result` frame closing the turn is not where the words came from.
                 carried_final = await self._store.update_assistant(
                     session_id, assistant_id, final_text, tool_uses=[], complete=True
                 )
                 assistant_id = None
             elif not saw_assistant_message:
-                assistant_id = await self._store.begin_assistant(session_id, turn_id)
+                # This row's only source is the `result` frame — the turn said nothing else.
+                assistant_id = await self._store.begin_assistant(
+                    session_id, turn_id, source_first_frame_seq=result_frame_seq
+                )
                 carried_final = await self._store.update_assistant(
-                    session_id, assistant_id, final_text, tool_uses=[], complete=True
+                    session_id,
+                    assistant_id,
+                    final_text,
+                    tool_uses=[],
+                    source_last_frame_seq=result_frame_seq,
+                    complete=True,
                 )
                 assistant_id = None
             else:

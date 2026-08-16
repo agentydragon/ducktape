@@ -76,8 +76,8 @@ async def test_conversation_frames_are_delivered_verbatim_and_control_is_not() -
     channel.deliver({"type": "result", "is_error": False})
     frames = cli.frames()
 
-    assert await anext(frames) == assistant
-    assert (await anext(frames))["type"] == "result"
+    assert (await anext(frames)).payload == assistant
+    assert (await anext(frames)).payload["type"] == "result"
     await cli.aclose()
 
 
@@ -91,9 +91,11 @@ async def test_a_prompt_carries_the_id_its_lifecycle_will_be_reported_under() ->
     channel.deliver(_answer(channel.written[0]))
     await connecting
 
-    command_uuid = await cli.query("hello")
+    prompt = await cli.query("hello")
 
-    assert channel.written[-1]["uuid"] == command_uuid
+    assert channel.written[-1]["uuid"] == prompt.command_uuid
+    # No sink, so nothing numbered the frame and the prompt says so rather than inventing one.
+    assert prompt.frame_seq is None
     assert channel.written[-1]["message"] == {"role": "user", "content": "hello"}
     await cli.aclose()
 

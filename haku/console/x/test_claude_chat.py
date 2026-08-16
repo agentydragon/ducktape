@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from unittest.mock import patch
@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
+from more_itertools import one
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -46,7 +47,7 @@ from haku.console.x.matrix_client import InboundMessage
 from haku.console.x.matrix_session import MatrixTurns
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.testing.recording_claims import RecordingClaims
-from haku.runtime.x.claude_bridge.cli_client import ClaudeCli
+from haku.runtime.x.claude_bridge.cli_client import ClaudeCli, ReceivedFrame, SentPrompt
 from haku.runtime.x.claude_bridge.protocol import NOT_ADMITTED_CODE
 
 
@@ -126,20 +127,32 @@ class _FakeCli:
     double cannot drift from the wire by being easier to construct than the wire is.
     """
 
-    def __init__(self, script: list[dict[str, Any]] | None = None):
+    def __init__(
+        self,
+        script: list[dict[str, Any]] | None = None,
+        *,
+        frame_seqs: Sequence[int | None] | None = None,
+        prompt_frame_seq: int | None = None,
+    ):
         self.script = list(script or [])
+        # What the rollout numbered each scripted frame, for the tests that assert a projection
+        # points back at one. A test with nothing to say about provenance leaves them unnumbered,
+        # exactly as a client keeping no rollout does.
+        self.frame_seqs = frame_seqs
+        self.prompt_frame_seq = prompt_frame_seq
         self.prompts: list[str] = []
         self.interrupted = False
         self.closed = False
-        self._queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self._queue: asyncio.Queue[ReceivedFrame] = asyncio.Queue()
         self._disconnected = asyncio.Event()
 
     async def connect(self) -> dict[str, Any]:
         return {"subtype": "success"}
 
-    async def query(self, prompt: str) -> None:
+    async def query(self, prompt: str) -> SentPrompt:
         self.prompts.append(prompt)
         self.replay()
+        return SentPrompt(command_uuid="fake-command", frame_seq=self.prompt_frame_seq)
 
     def replay(self) -> None:
         """Deliver the script with nothing having been asked, as the runner's replay window does.
@@ -147,8 +160,12 @@ class _FakeCli:
         A resumed turn asks no question — its question was asked by a process that is gone — so a
         double that only speaks when spoken to could not stand in for one.
         """
-        for frame in self.script:
-            self._queue.put_nowait(frame)
+        frame_seqs: Sequence[int | None] = self.frame_seqs or [None] * len(self.script)
+        for frame_seq, frame in zip(frame_seqs, self.script, strict=True):
+            self.deliver(frame, frame_seq)
+
+    def deliver(self, frame: dict[str, Any], frame_seq: int | None = None) -> None:
+        self._queue.put_nowait(ReceivedFrame(payload=frame, frame_seq=frame_seq))
 
     async def interrupt(self) -> None:
         self.interrupted = True
@@ -192,7 +209,7 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
 
     client = _FakeCli(_TOOL_USE_SCRIPT)
     await chat_service._run_turn(
-        cast(Any, client), client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
+        client, client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
     )
 
     messages = [
@@ -216,6 +233,39 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
         ("The Haku Console catalog is available.", [], ChatMessageStatus.COMPLETE),
     ]
     assert await chat_store.status(view.session_id) == SessionStatus.READY, "the turn was not completed"
+
+
+async def test_projected_assistant_message_points_to_the_frames_that_built_it(
+    chat_store, chat_service, operator_id
+) -> None:
+    """A message row keeps a navigable range into the lossless rollout rather than only a copy."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "say hello")
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
+
+    # Recorded through the real sink, so the numbers the turn is handed are the rollout's own.
+    script = [_text_delta_frame("hello"), _assistant({"type": "text", "text": "hello"}), _result("hello")]
+    recorder = RolloutRecorder(chat_store, view.session_id)
+    prompt_frame_seq = await recorder.sent({"type": "user", "message": {"role": "user", "content": "say hello"}})
+    frame_seqs = [(await recorder.received(frame)).frame_seq for frame in script]
+
+    client = _FakeCli(script, frame_seqs=frame_seqs, prompt_frame_seq=prompt_frame_seq)
+    await chat_service._run_turn(
+        client, client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
+    )
+
+    messages = (await chat_store.get(operator_id, view.session_id)).messages
+    user_message = one(message for message in messages if message.role == ChatMessageRole.USER)
+    assert (user_message.source_first_frame_seq, user_message.source_last_frame_seq) == (
+        prompt_frame_seq,
+        prompt_frame_seq,
+    )
+    # The delta opened the message and the `assistant` frame closed it; the `result` frame after
+    # them ends the turn rather than the message, so it is deliberately outside the range.
+    message = one(message for message in messages if message.role == ChatMessageRole.ASSISTANT)
+    assert (message.source_first_frame_seq, message.source_last_frame_seq) == (frame_seqs[0], frame_seqs[1])
 
 
 class _LifecycleWebSocket:
@@ -613,8 +663,8 @@ async def test_a_replayed_frame_is_recorded_once(chat_store, operator_id) -> Non
     session, _ = await chat_store.create(operator_id, SpaSession())
     frame = {"type": "assistant", "message": {"id": "msg_01abc", "content": []}}
 
-    assert await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "assistant", frame) is True
-    assert await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "assistant", frame) is False
+    assert (await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "assistant", frame)).fresh
+    assert not (await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "assistant", frame)).fresh
 
     frames = await chat_store.read_frames(str(session.session_id), after_seq=None, limit=25, kinds=None)
     assert [frame.kind for frame in frames] == ["assistant"]
@@ -627,8 +677,8 @@ async def test_two_sessions_may_hold_the_same_agent_id(chat_store, operator_id) 
     theirs, _ = await chat_store.create(operator_id, SpaSession())
     frame = {"type": "assistant", "message": {"id": "msg_01abc", "content": []}}
 
-    assert await chat_store.record_frame(mine.session_id, FrameDirection.FROM_AGENT, "assistant", frame) is True
-    assert await chat_store.record_frame(theirs.session_id, FrameDirection.FROM_AGENT, "assistant", frame) is True
+    assert (await chat_store.record_frame(mine.session_id, FrameDirection.FROM_AGENT, "assistant", frame)).fresh
+    assert (await chat_store.record_frame(theirs.session_id, FrameDirection.FROM_AGENT, "assistant", frame)).fresh
 
 
 async def test_frames_with_no_identity_are_never_collapsed(chat_store, operator_id) -> None:
@@ -637,8 +687,8 @@ async def test_frames_with_no_identity_are_never_collapsed(chat_store, operator_
     session, _ = await chat_store.create(operator_id, SpaSession())
     delta = {"type": "stream_event", "event": {"type": "content_block_delta"}}
 
-    assert await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "stream_event", delta) is True
-    assert await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "stream_event", delta) is True
+    assert (await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "stream_event", delta)).fresh
+    assert (await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "stream_event", delta)).fresh
 
     frames = await chat_store.read_frames(str(session.session_id), after_seq=None, limit=25, kinds=["stream_event"])
     assert len(frames) == 2
@@ -764,7 +814,7 @@ class _InterruptedCli(_FakeCli):
 
     async def interrupt(self) -> None:
         await super().interrupt()
-        self._queue.put_nowait(_result("stopped"))
+        self.deliver(_result("stopped"))
 
     async def frames(self):
         source = super().frames()
@@ -790,7 +840,7 @@ class _CliFinishingItsMessage(_InterruptedCli):
     async def interrupt(self) -> None:
         # Queued before `super()` queues the `result`, so the message the CLI was writing arrives
         # ahead of the frame that ends the turn — which is the order that makes it a drained one.
-        self._queue.put_nowait(self._finishing)
+        self.deliver(self._finishing)
         await super().interrupt()
 
 
@@ -817,7 +867,7 @@ async def _turn_into_a_room(
     assert turn is not None
     async with asyncio.timeout(30):
         await service._run_turn(
-            cast(Any, client),
+            client,
             client.frames().__aiter__(),
             view.session_id,
             turn,
@@ -873,12 +923,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     client.replay()
     async with asyncio.timeout(30):
         await service._run_turn(
-            cast(Any, client),
-            client.frames().__aiter__(),
-            session_id,
-            resumed,
-            room_id=ROOM,
-            abort_event=asyncio.Event(),
+            client, client.frames().__aiter__(), session_id, resumed, room_id=ROOM, abort_event=asyncio.Event()
         )
 
     queued = await _queued_for_the_room(migrated_sessions, session_id)
@@ -988,12 +1033,7 @@ async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
     with pytest.raises(RuntimeError):
         async with asyncio.timeout(30):
             await service._run_turn(
-                cast(Any, client),
-                client.frames().__aiter__(),
-                view.session_id,
-                turn,
-                room_id=ROOM,
-                abort_event=asyncio.Event(),
+                client, client.frames().__aiter__(), view.session_id, turn, room_id=ROOM, abort_event=asyncio.Event()
             )
 
     assert await _queued_for_the_room(migrated_sessions, view.session_id) == [
@@ -1127,7 +1167,7 @@ async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(
     )
 
     await chat_service._run_turn(
-        cast(Any, client), client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
+        client, client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
     )
     # Recorded by the real socket wrapper in production; here the turn wrote none of its own, so
     # the upper bound is the frame that predates it and the range is honestly empty.
@@ -1159,7 +1199,7 @@ async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_s
         ]
     )
     await chat_service._run_turn(
-        cast(Any, client), client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
+        client, client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
     )
     # As the CLI sends them: a result is a `user` frame, and one call is left unanswered.
     await chat_store.record_frame(
@@ -1201,7 +1241,7 @@ async def test_the_calls_come_from_the_rollout_when_the_row_points_at_it(
     frame = _assistant(asked) | {"message": {"role": "assistant", "id": "msg_01", "content": [asked]}}
     client = _FakeCli([frame, _result("done")])
     await chat_service._run_turn(
-        cast(Any, client), client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
+        client, client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
     )
     # The frames the recorder would have written, plus the answer, which is a `user` frame.
     await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, frame["type"], frame)
@@ -1740,8 +1780,10 @@ async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas
     channel.deliver(tool_result)
     # Reading is what proves the reader got that far; the recorder runs inside it.
     frames = cli.frames()
-    assert (await anext(frames))["type"] == "stream_event"
-    assert await anext(frames) == tool_result
+    delta_received = await anext(frames)
+    assert delta_received.payload["type"] == "stream_event"
+    result_received = await anext(frames)
+    assert result_received.payload == tool_result
     await cli.aclose()
 
     # Every frame either way and no exceptions left — the delta included, which is what makes
@@ -1757,6 +1799,9 @@ async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas
     # Verbatim: a reader gets the tool result the turn loop never kept.
     assert recorded[4].payload == tool_result
     assert all(frame.partial is False for frame in recorded)
+    # Each frame reaches its consumer carrying the row it was written to, so a projection built
+    # from it can point back at that row and not at whichever frame the reader has since seen.
+    assert [delta_received.frame_seq, result_received.frame_seq] == [recorded[3].frame_seq, recorded[4].frame_seq]
 
 
 def _text_delta_frame(text: str) -> dict[str, Any]:

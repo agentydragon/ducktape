@@ -11,6 +11,8 @@ function message(id: string, createdAt: string): ClaudeChatMessage {
     content: id,
     tool_uses: [],
     error: null,
+    source_first_frame_seq: null,
+    source_last_frame_seq: null,
     created_at: createdAt,
     updated_at: createdAt,
   };

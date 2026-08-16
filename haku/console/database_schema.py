@@ -924,6 +924,14 @@ class SessionMessage(Base):
     # on the `result` frame. Such a row's calls come from `tool_uses`, which is why that column is
     # still written.
     agent_message_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Inclusive range in the session's raw frame log from which this projection was built. These
+    # are deliberately sequence pointers rather than copied payloads: the frame log remains the
+    # authoritative, lossless record, while this row says where its lossy rendering came from.
+    # NULL means the row predates provenance recording or was synthesized without an observed
+    # frame. The two values are session-scoped; frame_seq is globally allocated and is not a
+    # foreign key by itself.
+    source_first_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    source_last_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     tool_uses: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -932,6 +940,11 @@ class SessionMessage(Base):
     __table_args__ = (
         CheckConstraint("role IN ('user','assistant')", name="ck_session_messages_role"),
         CheckConstraint("status IN ('pending','streaming','complete','failed')", name="ck_session_messages_status"),
+        CheckConstraint(
+            "source_first_frame_seq IS NULL OR source_last_frame_seq IS NULL "
+            "OR source_first_frame_seq <= source_last_frame_seq",
+            name="ck_session_messages_source_frames",
+        ),
         Index("idx_session_messages_session_created", "session_id", "created_at"),
     )
 

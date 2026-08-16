@@ -118,6 +118,7 @@ py_test(
         "//haku/console:database_schema",
         "//haku/console/x/testing:recording_claims",
         "//haku/runtime/x/claude_bridge:protocol",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",

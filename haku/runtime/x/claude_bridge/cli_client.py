@@ -35,6 +35,7 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from pydantic import BaseModel
@@ -73,6 +74,19 @@ class FrameChannel(Protocol):
     async def close(self) -> None: ...
 
 
+@dataclass(frozen=True, slots=True)
+class RecordedFrame:
+    """Where a sink put one frame, and whether the caller should act on it.
+
+    *fresh* is False when the sink has seen this exact frame before and the reader must not route
+    it a second time; a sink with no notion of that reports True for everything. *frame_seq* is
+    the sink's own number for the frame either way, since a replay names a row that exists.
+    """
+
+    fresh: bool
+    frame_seq: int
+
+
 class FrameSink(Protocol):
     """Where a session's frames are kept, if anywhere.
 
@@ -84,11 +98,33 @@ class FrameSink(Protocol):
     quiet holes is the one that looks complete while being wrong.
     """
 
-    async def sent(self, payload: dict[str, Any]) -> None: ...
+    async def sent(self, payload: dict[str, Any]) -> int: ...
 
-    # False means the sink has seen this exact frame before, and the reader must not route it a
-    # second time. A sink with no notion of that returns True for everything.
-    async def received(self, payload: dict[str, Any]) -> bool: ...
+    async def received(self, payload: dict[str, Any]) -> RecordedFrame: ...
+
+
+@dataclass(frozen=True, slots=True)
+class SentPrompt:
+    """One written prompt: the id its lifecycle is reported under, and where it was recorded."""
+
+    command_uuid: str
+    # None when this client keeps no rollout, which is every use that passes no `FrameSink`.
+    frame_seq: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class ReceivedFrame:
+    """One conversation frame, with the sink's number for it.
+
+    **The number travels with the frame rather than being read back off the client**, because the
+    reader is a detached task that runs ahead of whoever consumes `frames()`: a cursor on the
+    client answers "the newest frame recorded", not "the frame you are holding", and the two
+    differ for the whole of any burst — which is what a streamed answer is.
+    """
+
+    payload: dict[str, Any]
+    # None when this client keeps no rollout, as above.
+    frame_seq: int | None
 
 
 class ClaudeCliError(Exception):
@@ -109,7 +145,7 @@ class ClaudeCli:
         self._control_timeout = control_timeout
         self._frames_to = frames_to
         self._pending: dict[str, asyncio.Future[dict[str, Any]]] = {}
-        self._conversation: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        self._conversation: asyncio.Queue[ReceivedFrame | None] = asyncio.Queue()
         self._reader: asyncio.Task[None] | None = None
         self._closed = asyncio.Event()
 
@@ -119,7 +155,7 @@ class ClaudeCli:
         self._reader = asyncio.create_task(self._read())
         return await self.control(InitializeRequest())
 
-    async def query(self, text: str) -> str:
+    async def query(self, text: str) -> SentPrompt:
         """Send one user message, returning the id its lifecycle will be reported under.
 
         Deliberately writable at any time, including while a turn is running: the CLI folds a
@@ -134,15 +170,17 @@ class ClaudeCli:
         what makes the prompt reachable by `interrupt`'s `cancel_queued`.
         """
         command_uuid = str(uuid.uuid4())
-        await self._write(
-            {
-                "type": "user",
-                "message": {"role": "user", "content": text},
-                "parent_tool_use_id": None,
-                "uuid": command_uuid,
-            }
+        return SentPrompt(
+            command_uuid=command_uuid,
+            frame_seq=await self._write(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": text},
+                    "parent_tool_use_id": None,
+                    "uuid": command_uuid,
+                }
+            ),
         )
-        return command_uuid
 
     async def interrupt(self) -> None:
         """Abort the running turn **and** anything queued behind it.
@@ -168,14 +206,14 @@ class ClaudeCli:
         finally:
             self._pending.pop(frame.request_id, None)
 
-    async def frames(self) -> AsyncIterator[dict[str, Any]]:
+    async def frames(self) -> AsyncIterator[ReceivedFrame]:
         """Every conversation frame, in order, until the CLI's stream ends.
 
         Session-scoped rather than request-scoped: one `result` ends a turn, not the stream, so
         a turn is a bracket a caller draws over this rather than a call it makes.
         """
-        while (frame := await self._conversation.get()) is not None:
-            yield frame
+        while (received := await self._conversation.get()) is not None:
+            yield received
 
     async def wait_closed(self) -> None:
         """Resolve once the reader has ended — the CLI's stream stopped, cleanly or on a broken
@@ -196,10 +234,11 @@ class ClaudeCli:
         self._pending.clear()
         await self._channel.close()
 
-    async def _write(self, payload: dict[str, Any]) -> None:
+    async def _write(self, payload: dict[str, Any]) -> int | None:
         await self._channel.write(json.dumps(payload) + "\n")
-        if self._frames_to is not None:
-            await self._frames_to.sent(payload)
+        if self._frames_to is None:
+            return None
+        return await self._frames_to.sent(payload)
 
     async def _read(self) -> None:
         """Route the stream: control responses to their waiter, everything else to the queue."""
@@ -216,9 +255,13 @@ class ClaudeCli:
                 # whatever the previous console may not have acknowledged, and a frame already in
                 # the log must not be routed again — a second `assistant` would post the same
                 # answer into the room twice.
-                if self._frames_to is not None and not await self._frames_to.received(frame):
-                    skipped += 1
-                    continue
+                frame_seq: int | None = None
+                if self._frames_to is not None:
+                    recorded = await self._frames_to.received(frame)
+                    if not recorded.fresh:
+                        skipped += 1
+                        continue
+                    frame_seq = recorded.frame_seq
                 if skipped:
                     logger.info("Skipped %d replayed frame(s) already in the rollout", skipped)
                     skipped = 0
@@ -230,7 +273,7 @@ class ClaudeCli:
                     case "control_request":
                         await self._refuse(frame)
                     case _:
-                        self._conversation.put_nowait(frame)
+                        self._conversation.put_nowait(ReceivedFrame(payload=frame, frame_seq=frame_seq))
         except asyncio.CancelledError:
             raise
         except Exception:

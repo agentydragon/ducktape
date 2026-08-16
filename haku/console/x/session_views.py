@@ -61,6 +61,8 @@ class SessionMessageView(BaseModel):
     content: str
     tool_uses: list[SessionToolUseView]
     error: str | None
+    source_first_frame_seq: int | None
+    source_last_frame_seq: int | None
     created_at: datetime
     updated_at: datetime
 
@@ -231,6 +233,8 @@ def message_view(message: SessionMessage, calls: RolloutCalls) -> SessionMessage
             for tool_use in (recorded if recorded is not None else message.tool_uses)
         ],
         error=message.error,
+        source_first_frame_seq=message.source_first_frame_seq,
+        source_last_frame_seq=message.source_last_frame_seq,
         created_at=message.created_at,
         updated_at=message.updated_at,
     )
