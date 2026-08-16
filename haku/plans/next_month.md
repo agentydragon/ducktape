@@ -202,6 +202,18 @@ paths. They merged into one surface that lists **conversations**: `claude_chat_p
 What is left of this item is the `asyncio.wait` abort dance in `_run_turn`, which unmounting the SSE
 route makes removable and which nothing has removed yet.
 
+**Decided, 2026-08-16: build the increment first and merge onto it** — no regression at any point,
+at the cost of designing against a page that is about to be replaced and keeping `/chat` alive
+meanwhile. The two shapes rejected were merging now and taking the regression, and doing neither.
+
+So C is now downstream of the increment, whose design lives in
+[session_channels.md](../console/plans/session_channels.md) § 4 § Streaming the increment. Two
+things that design changes about C: the merge's price becomes half-second whole-message updates
+rather than a whole-transcript refetch, and the increment's own first step is a writer for
+`EventProvenance.AUTHORED` — the operator's prompt, which item 3's argument does not reach.
+
+**If something has to give, give C.** Nothing on this list depends on it.
+
 ## The rule the outbox was a special case of
 
 **Operator, 2026-08-16:** _no events should be written directly into Matrix without going through
@@ -270,8 +282,9 @@ of which want C's route settled first because a posted Matrix event is permanent
 
 ## What is uncertain
 
-- **Whether a coalesced refetch feels as good as the SSE stream.** C's ordering makes this moot if
-  the increment lands first, and nobody has compared them on the real page.
+- **Whether whole-message updates at the coalescing window feel as good as the SSE stream.** The
+  increment removes the refetch's size but not its rate, and nobody has compared either against
+  per-token streaming on the real page.
 - ~~**Whether the neutral turn's usage shape survives a second backend.**~~ Moot: #4278 deleted
   `Usage`, on the ruling that nobody wants the feature. The uncertainty was real — #4169 designed an
   aggregatable shape from one example — and deleting the shape is one way to resolve it.
