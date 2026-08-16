@@ -799,8 +799,8 @@ async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
     """The drop that needed neither a reconnection nor a roll: a turn that raised after producing
     text (<../debug/message_drops.md> E4).
 
-    `result.is_error` raises before any delivery ran, the `except` fails the session, and what the
-    agent said existed only in the transcript — where nobody but the SPA is looking. The row is
+    The failing `result` raises before any delivery ran, the `except` fails the session, and what
+    the agent said existed only in the transcript — where nobody but the SPA is looking. The row is
     now written with the message, in one transaction, so the answer outlives the turn that
     produced it and the drain says it whatever the turn went on to do.
     """
@@ -829,6 +829,29 @@ async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
         "Looking at the logs now.",
         "Found it: a bad config.",
     ]
+
+
+async def test_a_turn_the_cli_ended_badly_fails_even_though_is_error_says_it_did_not(
+    chat_store, chat_service, operator_id
+) -> None:
+    """`is_error` is false on all 129 production `result` frames — including every one of the 27
+    sessions the console recorded as failed — so a loop that read it called every turn fine. The
+    turn's outcome is now the projection's, and that reads `subtype` (<claude_projection.py>).
+    """
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "keep going")
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
+    client = _FakeCli([{"type": "result", "subtype": "error_max_turns", "is_error": False, "result": ""}])
+
+    with pytest.raises(RuntimeError, match="error_max_turns"):
+        await chat_service._run_turn(
+            client, client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
+        )
+
+    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=5)
+    assert record.outcome == TurnOutcome.FAILED
 
 
 async def test_a_turn_whose_answer_arrived_only_on_the_result_is_still_spoken(

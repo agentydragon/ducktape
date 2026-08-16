@@ -6,7 +6,8 @@ rows exactly, drift is detectable by comparing them, and a projection bug is rep
 the fold rather than being baked into a row forever
 (<../../plans/chat_runtime_projection.md> § stage 4).
 
-Nothing calls this yet. The fold that makes `_run_turn` use it is a separate change.
+`claude_chat.py`'s turn loop is the one caller: it projects each frame as it lands and acts on the
+events. Nothing stores them yet — the durable cursor beside them is the other half of stage 4.
 
 **Written against what the wire does, not what it documents.** Every rule below that looks
 defensive is a finding from <../debug/frame_shape_census.md>, which is where the measurements
@@ -26,14 +27,15 @@ in a docstring that will still claim it a year from now.
 
 Two decisions worth knowing before reading the code.
 
-**`TextDelta` comes from completed `text` blocks, not from `stream_event` deltas.** Most sessions
-emit no deltas at all, so a consumer built on them renders nothing for those; where they do occur
-they are mostly `input_json_delta` — tool arguments rather than prose — and they carry no identity,
-which is why `frame_identity.py` refuses to dedupe them. Decisively, a log truncated mid-block would
-re-project to different text than the completed block it precedes, and determinism is the property
-everything else here rests on. So a delta means "the prose that became visible with this frame",
-which for this CLI is one content block; a backend that streams meaningfully can cut them finer
-without any consumer changing.
+**Where a `TextDelta` is cut is the caller's to choose, and it is the only thing the wire and the
+log disagree about** — see `DeltaSource`. Reading a stored log, deltas cannot be the source: most
+sessions emit none at all, so a consumer built on them renders nothing for those; where they do
+occur they multiply the row count and are mostly `input_json_delta` — tool arguments rather than
+prose — and they carry no identity, so `frame_identity.py` deliberately refuses to dedupe them.
+Decisively, a log truncated mid-block would re-project to different text than the completed block
+it precedes. A live consumer has the increments in hand and wants them as they arrive, which is
+what streaming an answer *is*. The prose is the same either way; only its granularity differs, and
+a backend that streams meaningfully can cut it finer without any consumer changing.
 
 **`result.result` is not projected as prose.** It repeats the final message, so minting one from it
 would double every answer. A turn that produced no `MessageCompleted` said nothing, which is a fact
@@ -44,6 +46,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from enum import StrEnum
 from types import MappingProxyType
 from typing import Any
 
@@ -74,21 +77,38 @@ from haku.console.x.conversation_events import (
 # Frame classes that say nothing about the conversation, listed rather than discovered so that a
 # class the CLI adds lands in the default branch instead of here:
 #
-# - `stream_event` — sub-message transport; see the module docstring on `TextDelta`.
 # - `command_lifecycle` — which prompt the CLI is working on. Not a clean triple (no `cancelled`
 #   ever, commands that start without queueing, commands that never complete, and `command_uuid`s
 #   matching no prompt the console sent), and nothing here needs it to be: a turn ends at `result`.
 # - `control_request` / `control_response` — the other channel entirely.
 # - `rate_limit_event` — the account's state, not the conversation's.
-_IGNORED_KINDS = frozenset(
-    {session_frames.DELTA_FRAME_KIND, "command_lifecycle", "control_request", "control_response", "rate_limit_event"}
-)
+#
+# `stream_event` is not here: it is read or skipped by `DeltaSource`, which is a decision and not
+# an omission.
+_IGNORED_KINDS = frozenset({"command_lifecycle", "control_request", "control_response", "rate_limit_event"})
 
 # The bulk of the log by volume, and none of it conversation: `thinking_tokens` is budget
 # accounting and `status` is a heartbeat wearing a discriminator (one distinct value across the
 # whole corpus). `init` is session identity, which is a session event rather than a conversation
 # one.
 _IGNORED_SYSTEM_SUBTYPES = frozenset({"thinking_tokens", "status", "init"})
+
+
+class DeltaSource(StrEnum):
+    """Which frames a projection cuts its `TextDelta`s from.
+
+    Granularity, not content: `MessageCompleted.text` is the same prose whichever is chosen, and
+    the vocabulary already says how finely a backend cuts an increment is the adapter's business.
+
+    `COMPLETED_BLOCKS` is the only honest reading of a *stored* log — `stream_event` frames carry
+    no identity, are not deduplicated, and a log truncated mid-block would re-project to different
+    text than the completed block that follows it, which is the determinism the whole design rests
+    on. `STREAM_EVENTS` is what a consumer holding the live wire drives: it takes the increments as
+    they arrive and skips the completed block's own text, which those increments already delivered.
+    """
+
+    COMPLETED_BLOCKS = "completed_blocks"
+    STREAM_EVENTS = "stream_events"
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,14 +125,15 @@ class RecordedFrame:
     payload: dict[str, Any]
 
 
-def project(frames: Iterable[RecordedFrame]) -> Projection:
-    """Fold a session's frames — all of them, or a suffix from a cursor — into neutral events.
+def project(frames: Iterable[RecordedFrame], *, delta_source: DeltaSource = DeltaSource.COMPLETED_BLOCKS) -> Projection:
+    """Fold a session's frames — all of them, a suffix from a cursor, or the one just received —
+    into neutral events.
 
     Pure and order-dependent: the events are a function of the sequence, not of any one frame.
     Raises `ValueError` on a payload with no `type`, which is a caller handing it a row the CLI
     never sent rather than anything the wire can do.
     """
-    projector = _Projector()
+    projector = _Projector(delta_source=delta_source)
     for frame in frames:
         projector.fold(frame)
     # An open message at the end of the input is one whose turn died mid-answer — three real
@@ -131,12 +152,17 @@ class _OpenMessage:
 
 @dataclass(slots=True)
 class _Projector:
+    delta_source: DeltaSource
     events: list[ConversationEvent] = field(default_factory=list)
     unprojected: dict[str, int] = field(default_factory=dict)
     open_message: _OpenMessage | None = None
 
     def fold(self, frame: RecordedFrame) -> None:
         kind = session_frames.frame_kind(frame.payload)
+        if kind == session_frames.DELTA_FRAME_KIND:
+            if self.delta_source is DeltaSource.STREAM_EVENTS:
+                self._stream_delta(frame)
+            return
         if kind in _IGNORED_KINDS:
             return
         match kind:
@@ -168,6 +194,26 @@ class _Projector:
             )
         )
 
+    def _stream_delta(self, frame: RecordedFrame) -> None:
+        """One increment of an answer still being written, for a consumer holding the live wire.
+
+        **It opens no message.** A delta carries no `message.id`, so there is nothing to group it
+        by; the completed block that follows is what says which message the prose belonged to. Its
+        `MessageKey` is therefore the delta's own frame, which is enough for a consumer tracking
+        one open message at a time — and every live one does, since a CLI writes one answer at a
+        time.
+        """
+        event = frame.payload.get("event")
+        if not isinstance(event, dict) or not (text := session_frames.text_delta(event)):
+            return
+        self.events.append(
+            TextDelta(
+                message=MessageKey(opened_at_frame_seq=frame.frame_seq),
+                text=text,
+                provenance=FrameRange(frame.frame_seq, frame.frame_seq),
+            )
+        )
+
     def _assistant(self, frame: RecordedFrame) -> None:
         message = self._message_for(frame)
         where = FrameRange(frame.frame_seq, frame.frame_seq)
@@ -175,7 +221,10 @@ class _Projector:
             match block.get("type"):
                 case "text" if isinstance(text := block.get("text"), str):
                     message.texts.append(text)
-                    self.events.append(TextDelta(message=message.key, text=text, provenance=where))
+                    # Under `STREAM_EVENTS` the deltas already delivered this prose; emitting it
+                    # again as a whole would have a consumer render the answer twice.
+                    if self.delta_source is DeltaSource.COMPLETED_BLOCKS:
+                        self.events.append(TextDelta(message=message.key, text=text, provenance=where))
                 case "thinking":
                     summary = block.get("thinking")
                     self.events.append(

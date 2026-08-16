@@ -6,6 +6,8 @@ py_library(
     name = "session_runtime",
     srcs = ["session_runtime.py"],
     deps = [
+        ":claude_projection",
+        ":conversation_events",
         ":room_status",
         ":sandbox_claims",
         ":session_frames",

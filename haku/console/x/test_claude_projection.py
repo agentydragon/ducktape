@@ -11,7 +11,7 @@ from typing import Any
 import pytest_bazel
 
 from haku.console.chat_models import TurnOutcome
-from haku.console.x.claude_projection import RecordedFrame, project
+from haku.console.x.claude_projection import DeltaSource, RecordedFrame, project
 from haku.console.x.conversation_events import (
     ActivityCompleted,
     ActivityStarted,
@@ -113,6 +113,16 @@ def prompt(frame_seq: int, text: str) -> RecordedFrame:
             "parent_tool_use_id": None,
             "type": "user",
             "uuid": f"uuid-{frame_seq}",
+        },
+    )
+
+
+def text_delta_frame(frame_seq: int, text: str) -> RecordedFrame:
+    return RecordedFrame(
+        frame_seq,
+        {
+            "type": "stream_event",
+            "event": {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": text}},
         },
     )
 
@@ -399,25 +409,59 @@ def test_text_arrives_as_increments_and_as_a_finished_message():
 def test_deltas_are_not_what_text_is_projected_from():
     """`stream_event` occurs in 4 of 28 sessions and is mostly tool arguments, so a consumer built
     on it would render nothing on the other 24."""
-    projection = project(
-        [
-            RecordedFrame(
-                1,
-                {
-                    "type": "stream_event",
-                    "event": {
-                        "type": "content_block_delta",
-                        "index": 0,
-                        "delta": {"type": "text_delta", "text": "Look"},
-                    },
-                },
-            ),
-            assistant(2, "msg_A", text_block("Looking at the migration.")),
-        ]
-    )
+    projection = project([text_delta_frame(1, "Look"), assistant(2, "msg_A", text_block("Looking at the migration."))])
 
     assert [type(event) for event in projection.events] == [TextDelta, MessageCompleted]
     assert projection.unprojected == {}
+    # The one `TextDelta` is the completed block's, not the delta's.
+    assert projection.events[0] == TextDelta(
+        message=MessageKey(opened_at_frame_seq=2), text="Looking at the migration.", provenance=FrameRange(2, 2)
+    )
+
+
+def test_a_live_consumer_cuts_the_same_prose_where_the_wire_cut_it():
+    """The other `DeltaSource`, which the turn loop drives: an answer becomes visible as it is
+    written, and the completed block does not repeat prose the deltas already delivered."""
+    frames = [
+        text_delta_frame(1, "Looking at "),
+        text_delta_frame(2, "the migration."),
+        assistant(3, "msg_A", text_block("Looking at the migration.")),
+    ]
+
+    live = project(frames, delta_source=DeltaSource.STREAM_EVENTS).events
+
+    assert live == (
+        TextDelta(message=MessageKey(opened_at_frame_seq=1), text="Looking at ", provenance=FrameRange(1, 1)),
+        TextDelta(message=MessageKey(opened_at_frame_seq=2), text="the migration.", provenance=FrameRange(2, 2)),
+        MessageCompleted(
+            message=MessageKey(opened_at_frame_seq=3),
+            text="Looking at the migration.",
+            agent_message_id="msg_A",
+            provenance=FrameRange(3, 3),
+        ),
+    )
+    # Granularity is the only difference: the message a transcript keeps is the same either way.
+    assert [event for event in live if isinstance(event, MessageCompleted)] == [
+        event for event in project(frames).events if isinstance(event, MessageCompleted)
+    ]
+
+
+def test_a_live_consumer_is_not_shown_tool_arguments_as_prose():
+    """87 of 950 production deltas were text; the rest are `input_json_delta`, and a consumer that
+    read them as an answer would render a half-typed JSON blob into the room."""
+    arguments = RecordedFrame(
+        1,
+        {
+            "type": "stream_event",
+            "event": {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "input_json_delta", "partial_json": '{"fi'},
+            },
+        },
+    )
+
+    assert project([arguments], delta_source=DeltaSource.STREAM_EVENTS).events == ()
 
 
 def test_reprojection_reproduces_the_same_events():

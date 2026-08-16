@@ -131,20 +131,35 @@ so linking one message to its frames is a filter over this view, not a second re
 deliberately not guessed at here: the join key the transcript has today (`agent_message_id`) is
 missing on thousands of production rows, which is why that change exists.
 
-## The neutral projection — read-only so far
+## The neutral projection — what reads it
 
 `conversation_events.py` is the provider-neutral vocabulary a conversation is read as — text,
 messages, reasoning, a tool-call lifecycle, harness activity, a completed turn — and
 `claude_projection.py` is the pure function from Claude's frames into it. Together they are the one
 interpreter that <../../plans/chat_runtime_projection.md> § stage 4 replaces four with.
 
-**One reader is on them: `haku_conversations.read_transcript`.** `SessionStore.read_transcript`
-folds a session and `transcript_entries.py` maps the result onto the MCP surface's wire models.
-Nothing _writes_ through them yet — the fold that puts `_run_turn` on the projection is a separate
-change, and until it lands the turn loop, `adopt_open_turn`, `rollout_calls` and `coarse_status`
-still each read frames their own way.
+**Two readers are on them.** `haku_conversations.read_transcript` reads a stored session:
+`SessionStore.read_transcript` folds it and `transcript_entries.py` maps the result onto the MCP
+surface's wire models. And now the live path reads them too.
 
-Three properties to preserve when that fold arrives:
+**`_run_turn` is the first of the four onto it**: it projects each frame as it lands and acts on the
+events, so the live path no longer knows that `assistant`, `stream_event` and `result` exist.
+`adopt_open_turn`, `rollout_calls` and `coarse_status` still read frames their own way; each is its
+own change. Nothing stores the events yet either — `session_messages` and the outbox keep the shapes
+they had, and the durable cursor beside the fold is the other half of stage 4.
+
+Two consequences of that being live:
+
+- **`DeltaSource` is why a live consumer and a stored log see different `TextDelta`s.** A log cannot
+  be read from `stream_event` frames (they carry no identity, are not deduplicated, and a truncated
+  one re-projects to different text), while a consumer holding the wire wants exactly those, because
+  taking the increments as they arrive is what streaming an answer is. The prose is the same; only
+  the cut differs.
+- **The turn loop projects one frame at a time, freshly.** A projector held across the turn would
+  merge the frames sharing one `message.id` into a single row and defer every completion to the
+  frame after it — both improvements, both changes to what is stored, and so neither is here.
+
+Three properties to preserve:
 
 - **`project` is pure and deterministic.** That is what makes drift detectable (re-project a stored
   session and compare), a projection bug repairable (fix the fold and re-project), and it is why the

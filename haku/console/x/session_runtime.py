@@ -31,16 +31,24 @@ from haku.console.chat_models import (
 )
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.operator_auth import OperatorActorDep
+
+# As a module: its `RecordedFrame` is a row of the frame log, and `cli_client`'s is where a sink
+# put one frame. Two different things with one name, so neither gets to drop its surname here.
+from haku.console.x import claude_projection
+from haku.console.x.conversation_events import (
+    ActivityCompleted,
+    ActivityStarted,
+    ConversationEvent,
+    MessageCompleted,
+    Reasoning,
+    TextDelta,
+    ToolCallCompleted,
+    ToolCallStarted,
+    TurnCompleted,
+)
 from haku.console.x.room_status import TurnStatus, ignore_clear, ignore_status
 from haku.console.x.sandbox_claims import ProvisioningStep, SandboxClaims, provisioning_view
-from haku.console.x.session_frames import (
-    SETUP_OUTPUT_KIND,
-    agent_message_id,
-    content_blocks,
-    frame_kind,
-    setup_output_frame,
-    text_delta,
-)
+from haku.console.x.session_frames import SETUP_OUTPUT_KIND, frame_kind, setup_output_frame
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.session_store import (
     LEASE_RENEW_INTERVAL,
@@ -77,6 +85,10 @@ logger = logging.getLogger(__name__)
 # Appended to a turn's stored answer when the operator stopped it, and sent on its own when the
 # room has already heard the turn's prose — so an abort is visible either way.
 ABORTED_NOTICE = "[aborted by operator]"
+
+# Stands in for the rollout sequence of a frame that has none, so it can be projected at all — see
+# `_projected`. It never reaches a row: what the turn loop writes is the sequence it was handed.
+_UNNUMBERED_FRAME = -1
 
 
 def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
@@ -544,7 +556,14 @@ class SessionService:
         room_id: str | None,
         abort_event: asyncio.Event,
     ) -> None:
-        """Ask *turn*'s question if it has not been asked, then consume the stream until its `result`.
+        """Ask *turn*'s question if it has not been asked, then consume the stream until the turn
+        completes.
+
+        **Project, then act.** Every frame goes through `claude_projection` and this loop acts on
+        the neutral events that come back, so what it knows about is prose, messages, tool calls
+        and a completed turn — not `assistant`, `stream_event` and `result`. That is the seam a
+        second backend arrives through: another adapter into the same vocabulary, rather than a
+        second reading of what a message is (<../../plans/chat_runtime_projection.md> § stage 4).
 
         *frames* belongs to the session, not to this call — see `handle_runner`. This call is the
         turn's span, so it closes it on every exit and is the only thing that does. A turn left
@@ -578,6 +597,17 @@ class SessionService:
         # that has completed a message there has `said_anything` and no `queued_reply` — and
         # minting a second message for `result.result` is exactly what conflating them did.
         saw_assistant_message = state.said_anything
+        # The calls of the message being assembled, from the events that start them to the one
+        # that completes it. Not turn state: they are written with their message, and a message
+        # never spans two frames here (see `_projected`).
+        tool_calls: list[RecordedToolCall] = []
+        completed: TurnCompleted | None = None
+        # The frame `completed` was projected from, kept because three things below still read
+        # Claude's own payload out of it — and each is a piece of stage 4 this change leaves for
+        # its successors: the failure's reason (a neutral outcome carries no message), the prose
+        # of a turn that said nothing anywhere else, and the cost, usage and duration `end_turn`
+        # stores verbatim. Appealing an event to the frame behind it is the design's own escape
+        # hatch, so this is the seam working rather than leaking.
         result: dict[str, Any] | None = None
         result_frame_seq: int | None = None
         status = self._turn_status(room_id)
@@ -587,7 +617,7 @@ class SessionService:
         # stops racing the abort event and drains what is left of the turn to its `result`.
         interrupted = False
         try:
-            while True:
+            while completed is None:
                 # Exactly one `anext` in flight, and the drain consumes the one it finds rather
                 # than starting another: an async generator refuses to be advanced twice at once,
                 # and an abort always arrives while this call is parked here.
@@ -607,81 +637,94 @@ class SessionService:
                 #
                 # It therefore counts towards `spoke` and `saw_assistant_message` exactly as it
                 # would have a moment earlier, which is what keeps the tail below honest: the room
-                # is not owed `result.result` as well (it repeats that message), and no second row
-                # is minted for it — leaving `ABORTED_NOTICE` to be said on its own, as the one
-                # `turn_id`-keyed row this turn writes.
+                # is not owed the turn's final text as well (it repeats that message), and no
+                # second row is minted for it — leaving `ABORTED_NOTICE` to be said on its own, as
+                # the one `turn_id`-keyed row this turn writes.
                 #
                 # The stream stays open for the next turn: it is the session's, so an interrupt
                 # ends a turn rather than the conversation.
                 received = await next_frame
-                frame, frame_seq = received.payload, received.frame_seq
-                status.note(frame)
-                match frame.get("type"):
-                    case "stream_event":
-                        if not (delta := text_delta(frame.get("event", {}))):
-                            continue
-                        if assistant_id is None:
-                            assistant_id = await self._store.begin_assistant(
-                                session_id, turn_id, source_first_frame_seq=frame_seq
-                            )
-                        streamed += delta
-                        await self._store.update_assistant(
-                            session_id, assistant_id, streamed, source_last_frame_seq=frame_seq
-                        )
-                        # The rollout keeps no deltas, so without this the text an interrupted
-                        # turn produced would exist only in the message row and the log would
-                        # simply stop mid-answer (R5.5b).
-                        await self._store.update_partial_frame(session_id, streamed)
-                    case "assistant":
-                        saw_assistant_message = True
-                        if assistant_id is None:
-                            assistant_id = await self._store.begin_assistant(
-                                session_id, turn_id, source_first_frame_seq=frame_seq
-                            )
-                        blocks = content_blocks(frame)
-                        text = "".join(
-                            str(block.get("text", "")) for block in blocks if block.get("type") == "text"
-                        ).strip()
-                        tool_calls = [
-                            RecordedToolCall(call_id=block["id"], tool_name=block["name"], arguments=block["input"])
-                            for block in blocks
-                            if block.get("type") == "tool_use"
-                        ]
-                        said = text or streamed.strip()
-                        # Each message is queued for the room as it finishes rather than only the
-                        # final answer (R11.1), so a turn that narrates, works and reports back is
-                        # three messages in the room and not just its conclusion — and the row is
-                        # written here, with the message, rather than after the turn has decided
-                        # it is over.
-                        spoke = (
+                frame_seq = received.frame_seq
+                # Claude's frame, not an event: `room_status` is the fourth of stage 4's four
+                # interpreters and still reads the wire itself. Re-pointing it is its own change,
+                # and until then it is the one thing here that a second backend would go quiet on.
+                status.note(received.payload)
+                for event in _projected(received):
+                    match event:
+                        case TextDelta():
+                            if assistant_id is None:
+                                assistant_id = await self._store.begin_assistant(
+                                    session_id, turn_id, source_first_frame_seq=frame_seq
+                                )
+                            streamed += event.text
                             await self._store.update_assistant(
-                                session_id,
-                                assistant_id,
-                                said,
-                                tool_calls=tool_calls,
-                                # The wire's own id for this message, which is what lets a reader
-                                # find its calls in the frame log rather than match by position.
-                                agent_message_id=agent_message_id(frame),
-                                source_last_frame_seq=frame_seq,
-                                complete=True,
+                                session_id, assistant_id, streamed, source_last_frame_seq=frame_seq
                             )
-                            or spoke
-                        )
-                        # The real frame is already in the log — the recorder wrote it when
-                        # the socket delivered it — so the stand-in has nothing to stand for.
-                        await self._store.clear_partial_frame(session_id)
-                        assistant_id = None
-                        streamed = ""
-                    case "result":
-                        result = frame
-                        result_frame_seq = frame_seq
-                        break
+                            # The rollout keeps no deltas, so without this the text an interrupted
+                            # turn produced would exist only in the message row and the log would
+                            # simply stop mid-answer (R5.5b).
+                            await self._store.update_partial_frame(session_id, streamed)
+                        case ToolCallStarted():
+                            tool_calls.append(
+                                RecordedToolCall(
+                                    call_id=event.call_id, tool_name=event.tool_name, arguments=dict(event.arguments)
+                                )
+                            )
+                        case MessageCompleted():
+                            saw_assistant_message = True
+                            if assistant_id is None:
+                                assistant_id = await self._store.begin_assistant(
+                                    session_id, turn_id, source_first_frame_seq=frame_seq
+                                )
+                            said = (event.text or "").strip() or streamed.strip()
+                            # Each message is queued for the room as it finishes rather than only
+                            # the final answer (R11.1), so a turn that narrates, works and reports
+                            # back is three messages in the room and not just its conclusion — and
+                            # the row is written here, with the message, rather than after the turn
+                            # has decided it is over.
+                            spoke = (
+                                await self._store.update_assistant(
+                                    session_id,
+                                    assistant_id,
+                                    said,
+                                    tool_calls=tool_calls,
+                                    # Provenance, not identity: it is what the frames called this
+                                    # message, and it is what lets a reader find its calls in the
+                                    # log rather than match by position. Absent on thousands of
+                                    # production rows, which is why nothing keys on it.
+                                    agent_message_id=event.agent_message_id,
+                                    source_last_frame_seq=frame_seq,
+                                    complete=True,
+                                )
+                                or spoke
+                            )
+                            # The real frame is already in the log — the recorder wrote it when
+                            # the socket delivered it — so the stand-in has nothing to stand for.
+                            await self._store.clear_partial_frame(session_id)
+                            assistant_id, streamed, tool_calls = None, "", []
+                        case TurnCompleted():
+                            completed = event
+                            result, result_frame_seq = received.payload, frame_seq
+                        case Reasoning() | ToolCallCompleted() | ActivityStarted() | ActivityCompleted():
+                            # Projected and deliberately not stored: what the agent thought, what
+                            # its calls answered and what the harness narrated are richer than any
+                            # surface renders today, and giving them rows is the half of stage 4
+                            # that moves data. Dropping them here changes nothing — the turn loop
+                            # never saw these frames at all.
+                            pass
             if result is None:
                 raise RuntimeError("the Claude stream ended without a result for this turn")
-            if result.get("is_error") and not abort_event.is_set():
+            if completed.outcome is TurnOutcome.FAILED and not abort_event.is_set():
+                # Quoted from the frame rather than the event: *why* a turn failed is
+                # provider-specific by nature, and the neutral vocabulary carries an outcome
+                # rather than a message on purpose.
                 raise RuntimeError(
-                    f"Claude returned {result.get('subtype')}: {result.get('stop_reason') or 'unknown error'}"
+                    f"the agent's turn failed: {result.get('subtype')}: {result.get('stop_reason') or 'unknown error'}"
                 )
+            # `result.result` is deliberately not projected — it repeats the turn's last message on
+            # every result frame, so minting prose from it would double every answer. It is still
+            # the fallback for the one case that is not a repeat: a turn whose text arrived nowhere
+            # else.
             final_text = streamed.strip() or str(result.get("result") or "").strip()
             if abort_event.is_set():
                 final_text += f"\n\n{ABORTED_NOTICE}"
@@ -732,10 +775,12 @@ class SessionService:
                 await self._speak(session_id, room_id, turn_id, final_text)
             elif abort_event.is_set() and not carried_final:
                 await self._speak(session_id, room_id, turn_id, ABORTED_NOTICE)
-            # Closed with what the `result` frame reported, which is the only place a turn's
-            # cost, usage and duration exist.
+            # The outcome is the event's; the payload beside it is still Claude's, because
+            # `session_turns` stores that CLI's cost, usage and duration as it arrived.
+            # `TurnCompleted.usage` is the neutral shape that replaces it, and giving those
+            # columns their own meaning is a schema change this one does not make.
             await self._store.end_turn(
-                turn_id, TurnOutcome.ABORTED if abort_event.is_set() else TurnOutcome.ANSWERED, result
+                turn_id, TurnOutcome.ABORTED if abort_event.is_set() else completed.outcome, result
             )
         except Exception as error:
             await self._store.end_turn(turn_id, TurnOutcome.FAILED)
@@ -776,6 +821,36 @@ class SessionService:
         if released:
             logger.info("Released %d held session lease(s) on shutdown", released)
         await self._claims.aclose()
+
+
+def _projected(received: ReceivedFrame) -> tuple[ConversationEvent, ...]:
+    """What one frame means, in the vocabulary every surface and every backend shares.
+
+    **One frame at a time, and a fresh projection for each**, which is what keeps this a change to
+    how the turn loop decides rather than to what it stores. A projector held across the turn would
+    merge the frames sharing one `message.id` into a single row and defer every completion to the
+    frame after it — real improvements, both, and both changes to the transcript. The fold with a
+    durable cursor beside it is the other half of stage 4.
+
+    `Projection.unprojected` is dropped rather than logged: counting the classes this release has
+    no meaning for is worth doing where the events are *stored*, and per frame in the hot path it
+    would be a log line for every heartbeat.
+
+    A frame the client never numbered — `ClaudeCli` with no rollout sink, which is tests and
+    nothing in the console — still projects to the same events. Only its `FrameRange` has nothing
+    real to point at, so the loop writes the sequence it holds instead of reading one back out;
+    `FrameRange` is two integers on purpose, since "no frames at all" is `Authored` rather than a
+    null range.
+    """
+    return claude_projection.project(
+        [
+            claude_projection.RecordedFrame(
+                frame_seq=received.frame_seq if received.frame_seq is not None else _UNNUMBERED_FRAME,
+                payload=received.payload,
+            )
+        ],
+        delta_source=claude_projection.DeltaSource.STREAM_EVENTS,
+    ).events
 
 
 def _service(request: Request) -> SessionService:
