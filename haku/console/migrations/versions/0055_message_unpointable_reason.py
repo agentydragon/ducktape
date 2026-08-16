@@ -18,8 +18,8 @@ Additive and safe for the length of a roll: a replica on the previous image neit
 writes this column, and both constraints are satisfied by every existing row — `unpointable_reason`
 is NULL on all of them — so nothing an old replica can write is rejected.
 
-Revision ID: 0053
-Revises: 0052
+Revision ID: 0055
+Revises: 0054
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0053"
-down_revision: str | None = "0052"
+revision: str = "0055"
+down_revision: str | None = "0054"
 branch_labels: str | None = None
 depends_on: str | None = None
 
