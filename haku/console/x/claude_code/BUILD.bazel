@@ -62,6 +62,21 @@ py_test(
 )
 
 py_test(
+    name = "test_agents_and_background",
+    srcs = ["test_agents_and_background.py"],
+    data = ["testdata/agents_and_background.jsonl"],
+    deps = [
+        ":projection",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console/x:conversation_events",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_projection",
     srcs = ["test_projection.py"],
     deps = [

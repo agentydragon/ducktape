@@ -471,6 +471,49 @@ that route's window, not absence from the CLI. Redaction elides operator-specifi
 renumbers UUIDs, and rewrites paths to `/workspace`; a record whose payload shrank carries
 `original_bytes` with its true pre-redaction size.
 
+## A capture of agents and background work (2026-08-16)
+
+The capture above holds no subagent and nothing backgrounded, and neither does production: across
+all **35,791** recorded frames on 2026-08-16, `local_agent` occurs **0** times, `parent_tool_use_id`
+**0**, `BashOutput` **0**, and `run_in_background` **0**. The 28 `local_bash` tasks production does
+hold were opened by something other than that parameter. So the shapes a subagent and a backgrounded
+command make had never been recorded anywhere, and everything said about them was read from
+`protocol.md`.
+
+<../x/claude_code/testdata/agents_and_background.jsonl> is a second direct capture that holds them —
+214 records, folded by <../x/claude_code/test_agents_and_background.py>.
+
+**Provenance.** Claude Code **2.1.233**, `claude --version` reporting exactly that, against
+**claude-haiku-4-5-20251001**, run with `--output-format stream-json --verbose
+--include-partial-messages` in a throwaway working directory with an isolated `HOME`, on
+2026-08-16. The prompt asked for three things in order: a `Bash` call with `run_in_background`, a
+poll of that shell, and an `Agent` subagent replying with one word.
+
+**Deviation from the capture above, and it matters:** this ran on the **agent container's** CLI
+build, whose tool surface is not a runner's. `system/init` advertised `Task`, `Monitor`,
+`Workflow`, `DesignSync` and others, and **no `BashOutput`** — so the model polled the background
+shell by `Read`ing its `output_file`, and a second attempt that insisted on `BashOutput` failed with
+"I don't have a `BashOutput` tool available". The **frame envelopes** are the CLI's own and are
+corroborated by production, which carries the same `task_started`/`task_notification` family for its
+`local_bash` tasks. The **tool names are this build's**: treat `Agent`, and the absence of
+`BashOutput`, as observations about this binary rather than about what a runner emits.
+
+What it caught that nothing else had:
+
+- **`task_started` and `task_notification` carry `tool_use_id` beside `task_id`**, so the frame says
+  which call opened which background task. `ActivityStarted` keeps only the task, so the projection
+  discards a link the wire provides.
+- **`background_tasks_changed` and `task_updated` are frame classes the fold has never seen** — 4
+  and 2 occurrences, both landing in `unprojected`.
+- **A backgrounded call is answered before its command ends.** `ToolCallCompleted` fires when the
+  call returned a shell id; the command's end is an `ActivityCompleted` two messages later.
+- **The subagent's own frames carry `parent_tool_use_id`** (records 158–159) and the projection
+  never reads it, so its message folds as the session's own.
+- **Two turns, not one.** A second `system/init` at record 185 re-initialised the CLI mid-capture.
+  Both `result` frames have a null `parent_tool_use_id`, so the subagent's completion closed
+  nothing — worth stating because "the subagent's result ends the parent turn" is the plausible
+  wrong reading of two `TurnCompleted` in one invocation.
+
 **Thinking-block signatures are elided too** — every `signature` value under a `thinking` block or
 a `signature_delta` reads `<elided: thinking signature>`. The _key_ is kept, because a reader that
 has to tolerate the field is the point of the fixture, but the opaque token is not ours to
