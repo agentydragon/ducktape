@@ -126,55 +126,51 @@ def test_unpointed_history_survives_the_constraint(db_url: str, engine: Engine) 
         ).one() == (None, None)
 
 
-def test_a_new_projected_message_must_name_the_frame_it_began_at(db_url: str, engine: Engine) -> None:
-    """The gap `0045` left: ordering was checked, having a range at all was not."""
+def test_a_range_cannot_end_where_it_never_began(db_url: str, engine: Engine) -> None:
+    """The shape `0045` left writable that is nonsense under either arm of the union: a far end
+    with no near end is neither a range nor the absence of one."""
     apply_migrations(db_url)
     with engine.begin() as conn:
         session_id = _session(conn)
 
-    with engine.begin() as conn, pytest.raises(IntegrityError, match="ck_session_messages_projected_source"):
-        _insert_message(conn, session_id, role="assistant")
+    for role in ("assistant", "user"):
+        with engine.begin() as conn, pytest.raises(IntegrityError, match="ck_session_messages_source_anchored"):
+            _insert_message(conn, session_id, role=role, last=4)
 
+
+@pytest.mark.parametrize(
+    ("role", "first", "last"),
+    [
+        # The operator's own prompt at the moment it is typed: written before the frame it goes
+        # out as exists, and never pointed at all if no turn claims it.
+        pytest.param("user", None, None, id="unclaimed-prompt"),
+        # A projection whose frame carried no sequence — a `ClaudeCli` with no rollout sink numbers
+        # nothing, so `ReceivedFrame.frame_seq` is `int | None`. Rejecting this would fail a turn
+        # and lose the room's reply, which is why the near end is *not* required.
+        pytest.param("assistant", None, None, id="unnumbered-frame"),
+        # `begin_assistant` at insert: the near end alone, before any delta has widened it.
+        pytest.param("assistant", 7, None, id="opened"),
+        pytest.param("assistant", 7, 9, id="completed"),
+    ],
+)
+def test_writer_shapes_are_accepted(
+    db_url: str, engine: Engine, role: str, first: int | None, last: int | None
+) -> None:
+    apply_migrations(db_url)
     with engine.begin() as conn:
-        pointed = _insert_message(conn, session_id, role="assistant", first=7, last=9)
+        message_id = _insert_message(conn, _session(conn), role=role, first=first, last=last)
+
     with engine.connect() as conn:
         assert conn.execute(
             text("SELECT source_first_frame_seq, source_last_frame_seq FROM session_messages WHERE message_id = :id"),
-            {"id": pointed},
-        ).one() == (7, 9)
-
-
-def test_an_authored_prompt_needs_no_frames(db_url: str, engine: Engine) -> None:
-    """The operator's own row exists before the frame it goes out as, and a prompt no turn ever
-    claims never acquires one. Requiring a range here would refuse every prompt at the moment it
-    is typed."""
-    apply_migrations(db_url)
-    with engine.begin() as conn:
-        session_id = _session(conn)
-        message_id = _insert_message(conn, session_id, role="user")
-
-    with engine.connect() as conn:
-        assert (
-            conn.execute(
-                text("SELECT source_first_frame_seq FROM session_messages WHERE message_id = :id"), {"id": message_id}
-            ).scalar()
-            is None
-        )
-
-
-def test_a_range_cannot_end_where_it_never_began(db_url: str, engine: Engine) -> None:
-    """A far end alone is a range in neither kind of row, so this holds for the authored one too."""
-    apply_migrations(db_url)
-    with engine.begin() as conn:
-        session_id = _session(conn)
-
-    with engine.begin() as conn, pytest.raises(IntegrityError, match="ck_session_messages_source_anchored"):
-        _insert_message(conn, session_id, role="user", last=4)
+            {"id": message_id},
+        ).one() == (first, last)
 
 
 def test_pointing_an_authored_prompt_at_its_frame_is_still_allowed(db_url: str, engine: Engine) -> None:
     """`set_message_source_frames` writes both ends onto a row that had neither — the update path
-    the constraints have to keep open, since a prompt acquires its frame after it is written."""
+    the constraint has to keep open, since a prompt acquires its frame after it is written. A
+    `NOT VALID` check is enforced on `UPDATE` as well as `INSERT`, so this is not free."""
     apply_migrations(db_url)
     with engine.begin() as conn:
         session_id = _session(conn)

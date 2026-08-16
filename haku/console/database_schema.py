@@ -930,12 +930,14 @@ class SessionMessage(Base):
     # The two values are session-scoped; frame_seq is globally allocated and is not a foreign key
     # by itself.
     #
-    # Nullable because `role` is the provenance discriminator (see the constraints below), not
-    # because an assistant row may decline to answer: an assistant row is projected from frames
-    # and must name its near end, while a user row is authored — the operator's prompt is written
-    # before the frame it goes out as exists, and a prompt no turn ever claims never acquires
-    # one. On history predating #4105 both are NULL for either role, which is what keeps the two
-    # constraints below NOT VALID.
+    # **NULL here means three different things, and this table cannot tell them apart**, which is
+    # why the plan's "new and updated rows must carry a range" is not a constraint that can be
+    # written against these two columns: a row predating #4105; the operator's own prompt, written
+    # before the frame it goes out as exists and never pointed at all if no turn claims it; and a
+    # projection whose frame carried no sequence. The first two are the plan's `authored` arm, the
+    # third is its `frame_range`-but-unrecorded arm, and a `CHECK` sees only NULL. Requiring the
+    # range belongs where the union is a real discriminator — the neutral events of stage 4 — not
+    # here. See <plans/chat_runtime_projection.md> § "The projection is not a one-way door".
     source_first_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     source_last_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     tool_uses: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
@@ -951,12 +953,9 @@ class SessionMessage(Base):
             "OR source_first_frame_seq <= source_last_frame_seq",
             name="ck_session_messages_source_frames",
         ),
-        # Three one-way rules rather than one shape, because they fail for different reasons and a
-        # reader should be told which. Migration `0046` adds the two below NOT VALID: unpointed
-        # history is tolerated, new and updated rows are not.
-        CheckConstraint(
-            "role <> 'assistant' OR source_first_frame_seq IS NOT NULL", name="ck_session_messages_projected_source"
-        ),
+        # A separate rule from the ordering above, because it fails for a different reason and a
+        # reader should be told which: a far end with no near end is neither a range nor the
+        # absence of one. Added `NOT VALID` by `0046`, so unpointed history is tolerated.
         CheckConstraint(
             "source_last_frame_seq IS NULL OR source_first_frame_seq IS NOT NULL",
             name="ck_session_messages_source_anchored",

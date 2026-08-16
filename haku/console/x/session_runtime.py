@@ -920,7 +920,9 @@ class SessionStore:
         async with self._sessions.begin() as db:
             await db.execute(delete(SessionFrame).where(SessionFrame.session_id == session_id, SessionFrame.partial))
 
-    async def begin_assistant(self, session_id: UUID, turn_id: UUID, *, source_first_frame_seq: int) -> UUID:
+    async def begin_assistant(
+        self, session_id: UUID, turn_id: UUID, *, source_first_frame_seq: int | None = None
+    ) -> UUID:
         """Open the message this turn is about to stream into, and point the turn at it.
 
         One transaction, because the pointer is what makes the message the *turn's*: a replica
@@ -931,10 +933,6 @@ class SessionStore:
         every update: this is the one moment that knows where the message began, and a resumed turn
         picks its message up from the turn row without passing through here — so leaving `first` to
         a later write would walk it forward past the frames the earlier process already projected.
-
-        Required, with no default, because `ck_session_messages_projected_source` is what an
-        omission would hit otherwise — a rejected insert mid-turn rather than a type error at the
-        call site.
         """
         now = datetime.now(UTC)
         message_id = uuid4()
@@ -1708,10 +1706,8 @@ class SessionService:
         # that has completed a message there has `said_anything` and no `queued_reply` — and
         # minting a second message for `result.result` is exactly what conflating them did.
         saw_assistant_message = state.said_anything
-        # The closing frame and its sequence together, because the tail below needs both and they
-        # are only ever set at the same moment: one of them alone would be a state that says the
-        # turn ended without saying where.
-        result: tuple[dict[str, Any], int] | None = None
+        result: dict[str, Any] | None = None
+        result_frame_seq: int | None = None
         status = self._turn_status(room_id)
         status.start()
         aborted = asyncio.ensure_future(abort_event.wait())
@@ -1746,13 +1742,7 @@ class SessionService:
                 # The stream stays open for the next turn: it is the session's, so an interrupt
                 # ends a turn rather than the conversation.
                 received = await next_frame
-                frame = received.payload
-                if (frame_seq := received.frame_seq) is None:
-                    # `ReceivedFrame.frame_seq` is optional for a client that keeps no rollout.
-                    # This one is built with a `RolloutRecorder`, so a frame with no number means
-                    # the recorder is gone — and every row this loop writes would then be a
-                    # projection that cannot name its source.
-                    raise RuntimeError("the session's frames are unnumbered: no rollout is being recorded")
+                frame, frame_seq = received.payload, received.frame_seq
                 status.note(frame)
                 match frame.get("type"):
                     case "stream_event":
@@ -1811,17 +1801,16 @@ class SessionService:
                         assistant_id = None
                         streamed = ""
                     case "result":
-                        result = (frame, frame_seq)
+                        result = frame
+                        result_frame_seq = frame_seq
                         break
             if result is None:
                 raise RuntimeError("the Claude stream ended without a result for this turn")
-            result_frame, result_frame_seq = result
-            if result_frame.get("is_error") and not abort_event.is_set():
+            if result.get("is_error") and not abort_event.is_set():
                 raise RuntimeError(
-                    f"Claude returned {result_frame.get('subtype')}: "
-                    f"{result_frame.get('stop_reason') or 'unknown error'}"
+                    f"Claude returned {result.get('subtype')}: {result.get('stop_reason') or 'unknown error'}"
                 )
-            final_text = streamed.strip() or str(result_frame.get("result") or "").strip()
+            final_text = streamed.strip() or str(result.get("result") or "").strip()
             if abort_event.is_set():
                 final_text += f"\n\n{ABORTED_NOTICE}"
             if assistant_id is not None:
@@ -1874,7 +1863,7 @@ class SessionService:
             # Closed with what the `result` frame reported, which is the only place a turn's
             # cost, usage and duration exist.
             await self._store.end_turn(
-                turn_id, TurnOutcome.ABORTED if abort_event.is_set() else TurnOutcome.ANSWERED, result_frame
+                turn_id, TurnOutcome.ABORTED if abort_event.is_set() else TurnOutcome.ANSWERED, result
             )
         except Exception as error:
             await self._store.end_turn(turn_id, TurnOutcome.FAILED)

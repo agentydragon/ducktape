@@ -421,7 +421,7 @@ async def test_adoption_picks_the_answer_up_where_it_stopped(
     started = await chat_store.next_prompt(session_id)
     assert started is not None
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
-    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id, source_first_frame_seq=1)
+    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id)
     await chat_store.update_assistant(session_id, assistant_id, "we were half way through")
 
     resumed = await chat_store.adopt_open_turn(session_id)
@@ -449,7 +449,7 @@ async def test_a_turn_records_the_message_it_finished_rather_than_the_frames_it_
     await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
     started = await chat_store.next_prompt(session_id)
     assert started is not None
-    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id, source_first_frame_seq=1)
+    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id)
 
     assert await chat_store.update_assistant(session_id, assistant_id, "a bad config", complete=True)
 
@@ -474,7 +474,7 @@ async def test_a_turn_that_said_something_the_room_could_not_hear_still_knows_it
     await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
     started = await chat_store.next_prompt(session_id)
     assert started is not None
-    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id, source_first_frame_seq=1)
+    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id)
     assert not await chat_store.update_assistant(session_id, assistant_id, "a bad config", complete=True)
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
 
@@ -1016,7 +1016,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     # What the previous holder got through before its pod went: the prompt written, and half an
     # answer streamed into a message it never closed.
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
-    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id, source_first_frame_seq=1)
+    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id)
     await chat_store.update_assistant(session_id, assistant_id, "because the ")
 
     resumed = await chat_store.adopt_open_turn(session_id)
@@ -1063,7 +1063,7 @@ async def test_a_resumed_turn_does_not_say_again_what_it_had_already_queued(
     started = await chat_store.next_prompt(session_id)
     assert started is not None
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
-    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id, source_first_frame_seq=1)
+    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id)
     assert await chat_store.update_assistant(session_id, assistant_id, "a bad config", complete=True)
 
     resumed = await chat_store.adopt_open_turn(session_id)
@@ -1386,7 +1386,7 @@ async def test_a_message_with_nothing_to_point_at_still_reads_its_calls_from_the
     await chat_store.enqueue_prompt(operator_id, view.session_id, "do a thing")
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
-    message_id = await chat_store.begin_assistant(view.session_id, turn.turn_id, source_first_frame_seq=1)
+    message_id = await chat_store.begin_assistant(view.session_id, turn.turn_id)
     await chat_store.update_assistant(
         view.session_id,
         message_id,
