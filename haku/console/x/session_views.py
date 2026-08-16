@@ -1,13 +1,14 @@
 """What the console's chat API returns for a session, and how stored rows become it.
 
 The read models the SPA and the conversations inventory are typed against, together with the
-projection that assembles one out of the session row, its transcript and its rollout. Nothing
-here decides anything about a live session: it is handed rows and produces the shapes the
+projection that assembles one out of the session row, its transcript and its stored events.
+Nothing here decides anything about a live session: it is handed rows and produces the shapes the
 routes hand back.
 """
 
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -19,40 +20,46 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.chat_models import (
+    TOOL_CALL_EVENT_KINDS,
     ChatMessageRole,
     ChatMessageStatus,
     ChatSurface,
+    ConversationEventKind,
     FrameDirection,
     RecordedToolCall,
     SessionStatus,
     TurnOutcome,
 )
-from haku.console.database_schema import Session, SessionFrame, SessionMessage
+from haku.console.database_schema import Session, SessionEvent, SessionFrame, SessionMessage
+from haku.console.x import session_events
+from haku.console.x.conversation_events import Outcome
 from haku.console.x.conversation_records import TurnUsage
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
-from haku.console.x.session_frames import ASSISTANT_FRAME_KIND, PROMPT_FRAME_KIND, SETUP_OUTPUT_KIND
+from haku.console.x.session_frames import SETUP_OUTPUT_KIND
 
 
 class SessionToolResultView(BaseModel):
-    """What a tool answered, as the wire carried it.
+    """What a tool answered — the renderable half, out of the event that recorded it.
 
-    `content` is passed through, not normalized: the CLI sends a bare string for most tools and a
-    list of content blocks for structured or mixed output, and collapsing the two here would be
-    this layer deciding what a tool's output means.
+    `content` is a string for most tools, the tool names for a result that named tools and carried
+    nothing else, and the payload verbatim for a shape this release has no prose reading for.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     content: Any
+    # `Outcome.UNKNOWN` reads here as "not an error", which is what the frame parser this replaced
+    # also did: a provider routinely reports nothing, and the SPA has one boolean with no third
+    # state to render. Carrying the outcome through is a frontend change rather than this one.
     is_error: bool = False
 
 
 class SessionToolCallView(RecordedToolCall):
-    """A recorded call, plus the answer that is not recorded beside it.
+    """A recorded call, plus the answer stored beside it.
 
-    `call_id`, `tool_name` and `arguments` are the row; `result` is joined on at read time out of
-    the frame log, the only place a result exists — the turn loop keeps the blocks that asked and
-    drops the frames that answered. Inheriting the stored model is what states that split.
+    Inheriting the stored model is the statement of what the two are: `call_id`, `tool_name` and
+    `arguments` are what the transcript row records, and `result` is the `tool_call_completed`
+    event that answered the same `call_id`.
 
     Absent while the call is still running, and on a turn that died before answering: a state worth
     seeing rather than hiding.
@@ -211,53 +218,87 @@ def frame_page(rows: Sequence[SessionFrame], *, limit: int) -> SessionFramePage:
 
 
 @dataclass(frozen=True, slots=True)
-class RolloutCalls:
-    """What one session's frame log says about tool calls.
+class SessionToolCalls:
+    """What one session's stored events say about its tool calls.
 
-    Two indexes over the same frames, because the transcript joins by different keys: a message
-    finds its calls by the agent's message id, a call finds its answer by its own id — unique
-    within a session, so that half needs no per-message association.
+    Two indexes over the same rows, because the transcript joins to them by different keys: a
+    message finds the calls it made through the frames it was built from, and a call finds its
+    answer by its own id — unique within a session, so that half needs no per-message association
+    at all.
     """
 
-    by_message: Mapping[str, list[RecordedToolCall]]
+    asked: Sequence[tuple[int, RecordedToolCall]]
     results: Mapping[str, SessionToolResultView]
 
+    def within(self, first: int | None, last: int | None) -> list[RecordedToolCall]:
+        """The calls a message's own frames made, in the order it made them.
 
-async def rollout_calls(db: AsyncSession, session_id: UUID) -> RolloutCalls:
-    """Read the calls and their results out of the session's rollout.
+        `asked` is ordered by frame, so this is a slice: a message's span and the next one's do not
+        overlap, which is what makes a range lookup exact where matching by position was a guess.
+        """
+        if first is None:
+            return []
+        lo = bisect_left(self.asked, first, key=_frame_of)
+        hi = bisect_right(self.asked, first if last is None else last, key=_frame_of)
+        return [call for _, call in self.asked[lo:hi]]
 
-    Both live only here: `assistant` frames carry the `tool_use` blocks, `user` frames the
-    `tool_result` blocks the turn loop drops, and `session_messages.tool_calls` is the first half
-    without the second.
 
-    A Claude frame parser, and one of the four interpreters the projection work is counting down.
-    What it produces is neutral: the same `RecordedToolCall` the row stores.
+def _frame_of(asked: tuple[int, RecordedToolCall]) -> int:
+    return asked[0]
+
+
+async def tool_calls(db: AsyncSession, session_id: UUID) -> SessionToolCalls:
+    """Read the calls and their answers out of the session's stored events.
+
+    The answer exists nowhere else in a row: `session_messages.tool_calls` records what was asked,
+    and until `session_events` the reply was re-parsed out of the frame log on every request by a
+    Claude frame parser — the last of the four interpreters
+    (<../../plans/chat_runtime_projection.md> § The four interpreters, counted).
     """
-    frames = await db.execute(
-        select(SessionFrame.kind, SessionFrame.payload)
-        .where(SessionFrame.session_id == session_id, SessionFrame.kind.in_([ASSISTANT_FRAME_KIND, PROMPT_FRAME_KIND]))
-        .order_by(SessionFrame.frame_seq)
+    rows = (
+        await db.scalars(
+            select(SessionEvent)
+            .where(SessionEvent.session_id == session_id, SessionEvent.kind.in_(TOOL_CALL_EVENT_KINDS))
+            .order_by(SessionEvent.source_first_frame_seq, SessionEvent.event_seq)
+        )
+    ).all()
+    return SessionToolCalls(
+        asked=[_asked(row) for row in rows if row.kind is ConversationEventKind.TOOL_CALL_STARTED],
+        results=dict(_answered(row) for row in rows if row.kind is ConversationEventKind.TOOL_CALL_COMPLETED),
     )
-    by_message: dict[str, list[RecordedToolCall]] = {}
-    results: dict[str, SessionToolResultView] = {}
-    for kind, payload in frames:
-        message = payload.get("message")
-        if not isinstance(message, dict):
-            continue
-        agent_id = message.get("id")
-        for block in message.get("content", []):
-            if not isinstance(block, dict):
-                continue
-            match block.get("type"):
-                case "tool_use" if kind == ASSISTANT_FRAME_KIND and agent_id:
-                    by_message.setdefault(str(agent_id), []).append(
-                        RecordedToolCall(call_id=block["id"], tool_name=block["name"], arguments=block["input"])
-                    )
-                case "tool_result" if call_id := block.get("tool_use_id"):
-                    results[str(call_id)] = SessionToolResultView(
-                        content=block.get("content"), is_error=bool(block.get("is_error"))
-                    )
-    return RolloutCalls(by_message=by_message, results=results)
+
+
+def _asked(row: SessionEvent) -> tuple[int, RecordedToolCall]:
+    """One call, at the frame that made it.
+
+    Both columns are guaranteed by the table — a `call_id` on exactly the tool kinds, and a frame
+    range on the only arm anything writes — so a row missing either is a bug in the writer rather
+    than a state to render around.
+    """
+    if row.call_id is None or row.source_first_frame_seq is None:
+        raise ValueError(f"a tool call carries no call id or no frame: {row.event_seq=}")
+    body = session_events.ToolCallBody.model_validate(row.body)
+    return row.source_first_frame_seq, RecordedToolCall(
+        call_id=row.call_id, tool_name=body.tool_name, arguments=dict(body.arguments)
+    )
+
+
+def _answered(row: SessionEvent) -> tuple[str, SessionToolResultView]:
+    if row.call_id is None:
+        raise ValueError(f"a tool result carries no call id: {row.event_seq=}")
+    body = session_events.ToolResultBody.model_validate(row.body)
+    return row.call_id, SessionToolResultView(content=_rendered(body.content), is_error=body.outcome is Outcome.FAILED)
+
+
+def _rendered(content: session_events.ResultContentBody) -> Any:
+    """The half of a result a transcript prints, out of the variant the event stored it as."""
+    match content:
+        case session_events.TextResultBody():
+            return content.text
+        case session_events.ToolReferencesResultBody():
+            return content.tool_names
+        case session_events.OpaqueResultBody():
+            return content.payload
 
 
 async def setup_narration(db: AsyncSession, session_id: UUID) -> list[SetupNarrationView]:
@@ -278,11 +319,11 @@ async def setup_narration(db: AsyncSession, session_id: UUID) -> list[SetupNarra
     ]
 
 
-def message_view(message: SessionMessage, calls: RolloutCalls) -> SessionMessageView:
-    # The rollout where the row points into it, the column otherwise. That column is the lossy copy
-    # — the calls without their answers — and is kept only for rows with nothing to point at: ones
-    # that predate the pointer, and ones this console synthesized rather than observed.
-    recorded = calls.by_message.get(message.agent_message_id or "")
+def message_view(message: SessionMessage, calls: SessionToolCalls) -> SessionMessageView:
+    # The events where the message's own frames reach them, the column otherwise. That column is
+    # the lossy copy — the calls without their answers — and is what a message written before the
+    # events had rows still has; a message that made no calls reads the same either way.
+    recorded = calls.within(message.source_first_frame_seq, message.source_last_frame_seq)
     return _view(
         message,
         tool_calls=[
@@ -292,7 +333,7 @@ def message_view(message: SessionMessage, calls: RolloutCalls) -> SessionMessage
                 arguments=call.arguments,
                 result=calls.results.get(call.call_id),
             )
-            for call in (recorded if recorded is not None else message.tool_calls)
+            for call in (recorded or message.tool_calls)
         ],
     )
 
@@ -300,9 +341,10 @@ def message_view(message: SessionMessage, calls: RolloutCalls) -> SessionMessage
 def user_message_view(message: SessionMessage) -> SessionMessageView:
     """The prompt row `enqueue_prompt` has just written, as its caller reads it back.
 
-    Its own constructor rather than `message_view` with an empty `RolloutCalls`, which would read
-    equally as "no calls" and "I did not look": a just-accepted prompt is a user turn nothing has
-    answered, so there are no calls to join and no rollout to join them out of.
+    Its own constructor rather than `message_view` with an empty `SessionToolCalls`, because the
+    empty value was a caller asserting a fact about its message and reads equally as "I did not
+    look": a prompt that has only just been accepted is a user turn nothing has answered, so
+    there are no tool calls to join and no events to join them out of.
     """
     return _view(message, tool_calls=[])
 
@@ -323,7 +365,7 @@ def _view(message: SessionMessage, *, tool_calls: list[SessionToolCallView]) -> 
 
 
 def session_view(
-    record: Session, messages: list[SessionMessage], *, responding: bool, calls: RolloutCalls
+    record: Session, messages: list[SessionMessage], *, responding: bool, calls: SessionToolCalls
 ) -> SessionView:
     """The session as the SPA reads it, with `responding` derived from an open turn.
 

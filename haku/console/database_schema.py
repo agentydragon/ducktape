@@ -969,9 +969,9 @@ class SessionMessage(Base):
     source_first_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     source_last_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # What this message asked its tools to do, in the conversation vocabulary rather than in one
-    # backend's. Still the calls without their answers: the pairing is reconstructed at read time
-    # from the frame log, because that is where a result exists at all
-    # (`x/session_views.rollout_calls`).
+    # backend's, and the calls without their answers. `session_events` is where a call and its
+    # answer are both rows; this column is what a message written before them still has, and it is
+    # read only for such a row (`x/session_views.message_view`).
     tool_calls: Mapped[list[RecordedToolCall]] = mapped_column(
         PydanticListColumn(RecordedToolCall), nullable=False, server_default=text("'[]'::jsonb")
     )
@@ -1319,9 +1319,10 @@ class SessionFrame(Base):
     __table_args__ = (
         CheckConstraint("direction IN ('to_agent','from_agent')", name="ck_session_frames_direction"),
         Index("idx_session_frames_session", "session_id", "frame_seq"),
-        # Reading a session by kind used to be a filter over its whole log, which was affordable
-        # only while the log held no deltas. It holds them now, and `rollout_calls` runs once per
-        # delta, so the filter it replaces grew with the length of the answer being streamed.
+        # Reading a session by kind is otherwise a filter over its whole log, which is affordable
+        # only while the log holds no deltas. It holds them now, and the readers that select by
+        # kind — the frame inspector, the narration read, the MCP transcript fold — would each
+        # scan past them.
         Index("idx_session_frames_kind", "session_id", "kind", "frame_seq"),
         # What makes a replayed frame a no-op rather than a second line in the rollout. Partial
         # because most rows have no identity; a plain unique index would be almost all nulls.

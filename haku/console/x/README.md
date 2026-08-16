@@ -212,19 +212,20 @@ it answers. It is not restated here; what follows is who reads it and what is no
 `SessionStore.read_transcript` calls `project_log` and `transcript_entries.py` maps the result
 onto the read models in `conversation_records.py`. And the live path reads them too.
 
-**`_run_turn` is the first of the four onto it**: it projects each frame as it lands and acts on the
-events, so the live path no longer knows that `assistant`, `stream_event` and `result` exist. The
-status line is the second — `coarse_status` reads a run of events rather than a frame, which is what
-stops the driver being one of the interpreters it is supposed to sit above. `rollout_calls` still
-reads frames its own way; that is its own change.
+**All four interpreters are gone.** `_run_turn` projects each frame as it lands and acts on the
+events, so the live path no longer knows that `assistant`, `stream_event` and `result` exist;
+`coarse_status` reads a run of events rather than a frame, which is what stops the status driver
+being one of the interpreters it is supposed to sit above; adoption replays from the cursor rather
+than reconstructing; and the read path's own parser — `rollout_calls`, which re-derived every tool
+call and every result on every request — is deleted, because the events are rows.
 
 ### The events, stored — `session_events`
 
 `session_events.py` maps a `ConversationEvent` onto a row and `apply_frame` writes it inside the
 transaction that moves the cursor, so a row exists exactly when the cursor says its frame was
 projected. What the table holds that nothing else does is a **tool call's answer**:
-`session_messages.tool_calls` records what was asked, and until now the reply existed only as
-frames that `rollout_calls` re-parsed on every read.
+`session_messages.tool_calls` records what was asked, and the reply used to exist only as frames
+that `session_views.rollout_calls` re-parsed on every read.
 
 - **A message is found by frame range**, not by the agent's id for it — `session_messages` records
   the span it was built from and an event's own span falls inside it, so the join needs nothing the

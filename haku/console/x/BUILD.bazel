@@ -94,8 +94,10 @@ py_library(
     name = "session_views",
     srcs = ["session_views.py"],
     deps = [
+        ":conversation_events",
         ":conversation_records",
         ":sandbox_claims",
+        ":session_events",
         ":session_frames",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
