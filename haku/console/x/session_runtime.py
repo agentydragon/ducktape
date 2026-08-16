@@ -819,10 +819,31 @@ class SessionService:
 def _projected(received: ReceivedFrame) -> tuple[ConversationEvent, ...]:
     """What one frame means, in the vocabulary every surface and every backend shares.
 
-    **One frame at a time, and a fresh projection for each.** A projector held across the turn
-    would merge the frames sharing one `message.id` into a single row and defer every completion to
-    the frame after it — real improvements, both, and both changes to the transcript. The fold with
-    a durable cursor beside it is the other half of stage 4.
+    **One frame at a time, seeded empty and declared over**, which is what keeps this a change to
+    how the turn loop decides rather than to what it stores. `project_log` is exactly that: a fresh
+    `ProjectionState` and a `finish` at the end of the one frame handed in.
+
+    **Threading one state across the turn is now a two-line change here, and it is deliberately not
+    made — it was tried, and two things break.** Both are in the loop rather than in the fold, which
+    is why the reducer landing without them is the right order:
+
+    - **The loop writes the frame it is holding, and with a state held it is no longer the
+      message's.** A message then completes on the frame that *closed* it — a different
+      `message.id`, or the `result` — so `source_last_frame_seq` records that one instead of the
+      last frame that built the message. `test_projected_assistant_message_points_to_the_frames_that_built_it`
+      catches it. The fix is to read `event.provenance` back, and that first needs `frame_seq` to
+      stop being `int | None`: `_UNNUMBERED_FRAME` would otherwise reach the column
+      (<../../plans/chat_runtime_projection.md> § The projection is not a one-way door names that
+      seam as its own prerequisite).
+    - **`streamed` is one accumulator, and under `STREAM_EVENTS` a `TextDelta` is keyed by the
+      delta's own frame rather than the message's** (`_stream_delta` has no id to group by). With a
+      state held, two adjacent text messages share it: the second's deltas arrive before the first
+      completes and are discarded when it resets. No test covers this; it is read off the code.
+
+    Threading also merges the frames sharing one `message.id` into a single row and gives the room
+    one reply per message instead of per frame. Both are improvements the plan asks for, and both
+    change what is stored and what is sent — so they belong with the durable cursor, which is the
+    other half of stage 4.
 
     `Projection.unprojected` is dropped rather than logged: counting the classes this release has
     no meaning for is worth doing where the events are *stored*, and per frame in the hot path it
@@ -834,7 +855,7 @@ def _projected(received: ReceivedFrame) -> tuple[ConversationEvent, ...]:
     `FrameRange` is two integers on purpose, since "no frames at all" is `Authored` rather than a
     null range.
     """
-    return projection.project(
+    return projection.project_log(
         [
             projection.RecordedFrame(
                 frame_seq=received.frame_seq if received.frame_seq is not None else _UNNUMBERED_FRAME,

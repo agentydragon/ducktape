@@ -24,6 +24,12 @@ reporting green.
 **Nothing here models approvals.** They travel over MCP to the console's approval queue and never
 appear on this channel.
 
+**The fold's own state is here too.** `ProjectionState` is what an adapter carries from one batch
+of frames to the next, and it is stated in this vocabulary rather than in any provider's — a
+second backend adapter has to be able to produce one. That is what makes "project each frame as
+it lands" and "project from the stored cursor, which happens to be behind" the same code path
+(<../../plans/chat_runtime_projection.md> § The shape).
+
 `Outcome.UNKNOWN` is the other load-bearing choice, and it is a measured one: `is_error` is
 *absent* rather than false on most real tool results, so "did this go wrong" has three answers and
 a two-valued type would have to guess one of them. That and every other shape claim below was read
@@ -34,9 +40,11 @@ a share of production frames keeps its date.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from types import MappingProxyType
 
 from haku.console.chat_models import TurnOutcome
 
@@ -277,3 +285,51 @@ class Projection:
 
     events: tuple[ConversationEvent, ...]
     unprojected: Mapping[str, int]
+
+    def then(self, later: Projection) -> Projection:
+        """This stretch of frames followed by the next one, as a single projection.
+
+        The anti-drift invariant written as an operation: a projection of frames read in one
+        batch and the same frames read in any split of batches, combined this way, are equal.
+        Events concatenate because the stream is ordered; counts sum because `unprojected` is a
+        tally over the frames read, not a set of what exists.
+        """
+        return Projection(
+            events=self.events + later.events,
+            unprojected=MappingProxyType(dict(Counter(self.unprojected) + Counter(later.unprojected))),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class OpenMessage:
+    """An agent message the fold has seen the start of and not the end of.
+
+    Every field is this vocabulary's own — the key the events already carry, the far end of the
+    range they will be given, the agent's optional id, and the prose so far — so an adapter for a
+    second backend produces one without borrowing anything Claude-shaped.
+
+    `texts` is the message's deltas in order rather than the joined prose: the vocabulary's
+    contract is that they concatenate to exactly the `text` its `MessageCompleted` carries, and
+    keeping them apart is what lets the join happen once, where that event is minted.
+    """
+
+    key: MessageKey
+    agent_message_id: str | None
+    last_frame_seq: int
+    texts: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectionState:
+    """What a fold carries from one batch of frames to the next.
+
+    A value, not a session: it says only what is mid-flight when a batch ends, which is why the
+    same state is what a live consumer holds between frames and what a cursor-driven one would
+    reload. The default is a stream nothing has been read from yet.
+
+    Only an open message is in flight. Everything else the fold decides — a tool call's identity,
+    an activity's pairing, a turn's outcome — is settled by the frame that produced it, so it is
+    an effect and never a carry.
+    """
+
+    open_message: OpenMessage | None = None

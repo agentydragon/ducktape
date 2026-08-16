@@ -6,19 +6,25 @@ rather than from what `protocol.md` says the wire looks like. Where the two disa
 is what the code has to survive, and each test below is named for the hazard it pins.
 """
 
+from collections.abc import Iterable, Iterator, Sequence
+from functools import reduce
+from itertools import product
 from typing import Any
 
 import pytest_bazel
 
 from haku.console.chat_models import TurnOutcome
-from haku.console.x.claude_code.projection import DeltaSource, RecordedFrame, project
+from haku.console.x.claude_code.projection import DeltaSource, RecordedFrame, finish, project, project_log
 from haku.console.x.conversation_events import (
     ActivityCompleted,
     ActivityStarted,
     FrameRange,
     MessageCompleted,
     MessageKey,
+    OpenMessage,
     Outcome,
+    Projection,
+    ProjectionState,
     Reasoning,
     TextContent,
     TextDelta,
@@ -188,7 +194,7 @@ BASH_RESULT = {"interrupted": False, "isImage": False, "noOutputExpected": False
 
 def test_a_message_is_a_run_of_frames_not_a_frame():
     """Two frames, one `message.id`, no `stop_reason` — 47% of real messages look like this."""
-    events = project(
+    events = project_log(
         [
             assistant(1, "msg_A", thinking_block("The census says the fold is wrong here.")),
             assistant(2, "msg_A", tool_use_block("toolu_1", "Bash", {"command": "ls"})),
@@ -229,7 +235,7 @@ def test_the_frames_of_one_message_are_not_always_contiguous():
     Closing the message on the first non-`assistant` frame would make two messages out of one and
     attribute `toolu_2` to a message that does not exist.
     """
-    events = project(
+    events = project_log(
         [
             assistant(1, "msg_A", tool_use_block("toolu_1", "Read", {"file_path": "/a"})),
             tool_result(2, "toolu_1", "1\tcontents\n", {"file": {"filePath": "/a"}, "type": "text"}),
@@ -250,7 +256,7 @@ def test_the_frames_of_one_message_are_not_always_contiguous():
 def test_the_tool_result_you_can_render_is_not_the_tool_result():
     """`content` is prose or names; the exit code, the patch and the MCP payload are elsewhere."""
     deferred_search = {"matches": [{"name": "Bash"}], "query": "shell", "total_deferred_tools": 112}
-    events = project(
+    events = project_log(
         [
             assistant(1, "msg_A", tool_use_block("toolu_1", "Bash", {"command": "ls | wc -l"})),
             tool_result(2, "toolu_1", "3\n", BASH_RESULT),
@@ -278,7 +284,7 @@ def test_the_tool_result_you_can_render_is_not_the_tool_result():
 
 def test_every_did_this_go_wrong_field_is_uninformative():
     """Absent `is_error` is not `is_error: false`, and a turn's outcome is not read off one at all."""
-    events = project(
+    events = project_log(
         [
             assistant(1, "msg_A", tool_use_block("toolu_1", "Bash", {"command": "true"})),
             tool_result(2, "toolu_1", "ok", BASH_RESULT),
@@ -300,7 +306,7 @@ def test_every_did_this_go_wrong_field_is_uninformative():
 
 def test_most_of_the_wire_is_system_and_projects_to_nothing():
     """73% of frames are `system` and 15% of those carry one constant. They cost a set lookup."""
-    projection = project(
+    projection = project_log(
         [heartbeat(seq) for seq in range(1, 40)]
         + [system(seq, "status", status="working") for seq in range(40, 80)]
         + [assistant(80, "msg_A", text_block("done")), result(81)]
@@ -313,7 +319,7 @@ def test_most_of_the_wire_is_system_and_projects_to_nothing():
 
 def test_the_default_branch_is_counted_rather_than_dropped_or_fatal():
     """Three frame classes and five `system` subtypes are undocumented, and the branch is routine."""
-    projection = project(
+    projection = project_log(
         [
             RecordedFrame(1, {"type": "tool_progress", "tool_use_id": "toolu_1", "elapsed_time_seconds": 31}),
             RecordedFrame(2, {"type": "tool_progress", "tool_use_id": "toolu_1", "elapsed_time_seconds": 62}),
@@ -354,14 +360,14 @@ def test_command_lifecycle_is_not_a_clean_triple():
         command_lifecycle(7, "cmd_never_sent", "queued"),  # and one that never completes
     ]
 
-    with_lifecycle = project(sorted(conversation + lifecycle, key=lambda frame: frame.frame_seq))
-    assert with_lifecycle.events == project(conversation).events
+    with_lifecycle = project_log(sorted(conversation + lifecycle, key=lambda frame: frame.frame_seq))
+    assert with_lifecycle.events == project_log(conversation).events
     assert with_lifecycle.unprojected == {}
 
 
 def test_activity_is_the_step_with_no_tool_name():
     """`task_started` and its terminal report pair by `task_id` and by nothing else."""
-    events = project(
+    events = project_log(
         [
             system(
                 1, "task_started", task_id="task_9", task_type="local_bash", description="npm run build 2>&1 | tail -40"
@@ -386,7 +392,7 @@ def test_activity_is_the_step_with_no_tool_name():
 
 
 def test_text_arrives_as_increments_and_as_a_finished_message():
-    events = project(
+    events = project_log(
         [
             assistant(1, "msg_A", text_block("Looking at ")),
             assistant(2, "msg_A", text_block("the migration.")),
@@ -409,7 +415,9 @@ def test_text_arrives_as_increments_and_as_a_finished_message():
 def test_deltas_are_not_what_text_is_projected_from():
     """`stream_event` occurs in 4 of 28 sessions and is mostly tool arguments, so a consumer built
     on it would render nothing on the other 24."""
-    projection = project([text_delta_frame(1, "Look"), assistant(2, "msg_A", text_block("Looking at the migration."))])
+    projection = project_log(
+        [text_delta_frame(1, "Look"), assistant(2, "msg_A", text_block("Looking at the migration."))]
+    )
 
     assert [type(event) for event in projection.events] == [TextDelta, MessageCompleted]
     assert projection.unprojected == {}
@@ -428,7 +436,7 @@ def test_a_live_consumer_cuts_the_same_prose_where_the_wire_cut_it():
         assistant(3, "msg_A", text_block("Looking at the migration.")),
     ]
 
-    live = project(frames, delta_source=DeltaSource.STREAM_EVENTS).events
+    live = project_log(frames, delta_source=DeltaSource.STREAM_EVENTS).events
 
     assert live == (
         TextDelta(message=MessageKey(opened_at_frame_seq=1), text="Looking at ", provenance=FrameRange(1, 1)),
@@ -442,7 +450,7 @@ def test_a_live_consumer_cuts_the_same_prose_where_the_wire_cut_it():
     )
     # Granularity is the only difference: the message a transcript keeps is the same either way.
     assert [event for event in live if isinstance(event, MessageCompleted)] == [
-        event for event in project(frames).events if isinstance(event, MessageCompleted)
+        event for event in project_log(frames).events if isinstance(event, MessageCompleted)
     ]
 
 
@@ -461,13 +469,13 @@ def test_a_live_consumer_is_not_shown_tool_arguments_as_prose():
         },
     )
 
-    assert project([arguments], delta_source=DeltaSource.STREAM_EVENTS).events == ()
+    assert project_log([arguments], delta_source=DeltaSource.STREAM_EVENTS).events == ()
 
 
-def test_reprojection_reproduces_the_same_events():
-    """The anti-drift property: stored frames re-project to what was stored, or the comparison
-    that detects drift is itself the thing drifting."""
-    session = [
+def census_session() -> list[RecordedFrame]:
+    """A whole exchange with every hazard in it: an interrupted message, an unreadable frame,
+    ignored classes, a second message, and a turn that ends."""
+    return [
         prompt(1, "split the migration"),
         command_lifecycle(2, "cmd_1", "queued"),
         heartbeat(3),
@@ -477,14 +485,85 @@ def test_reprojection_reproduces_the_same_events():
         assistant(7, "msg_A", tool_use_block("toolu_2", "Bash", {"command": "ls migrations"})),
         tool_result(8, "toolu_2", "0043.py\n", BASH_RESULT, is_error=False),
         system(9, "vcs_state_changed", cwd="/w", kind="commit"),
-        assistant(10, "msg_B", text_block("Split, and the second one now runs.")),
-        result(11),
+        assistant(10, "msg_B", text_block("Split, ")),
+        assistant(11, "msg_B", text_block("and the second one now runs.")),
+        result(12),
     ]
 
-    first, second = project(session), project(session)
+
+def test_reprojection_reproduces_the_same_events():
+    """The anti-drift property: stored frames re-project to what was stored, or the comparison
+    that detects drift is itself the thing drifting."""
+    session = census_session()
+
+    first, second = project_log(session), project_log(session)
     assert first == second
     # And a projection of the same frames read again, not the same objects folded twice.
-    assert project([RecordedFrame(frame.frame_seq, dict(frame.payload)) for frame in session]) == first
+    assert project_log([RecordedFrame(frame.frame_seq, dict(frame.payload)) for frame in session]) == first
+
+
+def test_a_batch_running_out_is_not_a_message_ending():
+    """The difference between a reducer and a fold over a whole log: the next batch may continue
+    the message, so only a caller saying the stream is over may close it."""
+    state, first = project(ProjectionState(), [assistant(1, "msg_A", text_block("Looking at "))])
+
+    assert [type(event) for event in first.events] == [TextDelta]
+    # The message is in the state rather than in the events, and it is stated in the neutral
+    # vocabulary — no `assistant`, no `msg_…` as identity, nothing a second backend could not
+    # produce.
+    assert state == ProjectionState(
+        open_message=OpenMessage(
+            key=MessageKey(opened_at_frame_seq=1), agent_message_id="msg_A", last_frame_seq=1, texts=("Looking at ",)
+        )
+    )
+
+    state, second = project(state, [assistant(2, "msg_A", text_block("the migration."))])
+
+    assert [type(event) for event in second.events] == [TextDelta]
+    assert finish(state).events == (
+        MessageCompleted(
+            message=MessageKey(opened_at_frame_seq=1),
+            text="Looking at the migration.",
+            agent_message_id="msg_A",
+            provenance=FrameRange(1, 2),
+        ),
+    )
+
+
+def _in_batches(batches: Iterable[Sequence[RecordedFrame]]) -> Projection:
+    state = ProjectionState()
+    projected = []
+    for batch in batches:
+        state, batch_projection = project(state, batch)
+        projected.append(batch_projection)
+    projected.append(finish(state))
+    return reduce(Projection.then, projected)
+
+
+def _splits(frames: Sequence[RecordedFrame]) -> Iterator[list[Sequence[RecordedFrame]]]:
+    """Every way of cutting the sequence into consecutive batches — one batch of everything, one
+    batch per frame, and each of the 2**(n-1) arrangements between."""
+    for cuts in product([False, True], repeat=len(frames) - 1):
+        batches: list[Sequence[RecordedFrame]] = [[frames[0]]]
+        for cut, frame in zip(cuts, frames[1:], strict=True):
+            if cut:
+                batches.append([frame])
+            else:
+                batches[-1] = [*batches[-1], frame]
+        yield batches
+
+
+def test_one_batch_and_any_split_of_batches_project_alike():
+    """What makes "project each frame as it lands" and "project from the stored cursor, which
+    happens to be behind" the same code path — checked over every split rather than a chosen one,
+    since a live consumer's batches are whatever the socket handed it."""
+    session = census_session()
+    whole = project_log(session)
+
+    assert all(_in_batches(batches) == whole for batches in _splits(session))
+    # And the extreme the property exists for: one frame at a time, which is what a live
+    # consumer does.
+    assert _in_batches([[frame] for frame in session]) == whole
 
 
 if __name__ == "__main__":

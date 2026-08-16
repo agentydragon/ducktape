@@ -48,12 +48,15 @@ which happens to be behind". There is no second implementation left to disagree 
 It costs no latency either — the fold runs inline in the happy path. Two loops logically, one call
 stack in practice.
 
-**This paragraph is the specification, and the first implementation of it diverged.**
-`x/claude_code/projection.py` landed with #4145 as `project(frames) -> Projection` — stateless over a
-whole frame sequence, with the cross-frame state private to the call and discarded when it
-returns. That shape can be re-run over a session but it cannot be _resumed_ from a cursor, which is
-the property the paragraph above exists for: without it, live and recovery are once again two ways
-of getting to the same answer. Still the shape on `devel`; being fixed on #4149. The plan is right and the code is what moves.
+**This paragraph is the specification, the first implementation of it diverged, and the code has
+since moved back.** `claude_code/projection.py` shipped as `project(frames) -> Projection` — stateless
+over a whole frame sequence, with the cross-frame state private to the call and discarded when it
+returned. That shape can be re-run over a session but cannot be _resumed_ from a cursor, which is
+the property this paragraph exists for. It is now `project(state, frames) -> (state, Projection)`
+over a neutral `ProjectionState`, with the end of the stream an explicit `finish(state)` rather
+than a batch running out, and one batch equal to any split of batches asserted as a test. **What
+is still owed is the cursor itself** — the durable per-session position advancing in the same
+transaction as its effects. The shape no longer stands in its way.
 
 What that deletes: `TurnResumed`, `adopt_open_turn`'s three-way case analysis, `_recorded_result`,
 `_said_anything`, `_streaming_assistant`, `_prompt_left`, `saw_assistant_message`. `spoke` stops

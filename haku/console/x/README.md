@@ -154,7 +154,7 @@ missing on thousands of production rows, which is why that change exists.
 
 `conversation_events.py` is the provider-neutral vocabulary a conversation is read as — text,
 messages, reasoning, a tool-call lifecycle, harness activity, a completed turn — and
-`claude_code/projection.py` is the pure function from Claude's frames into it. Together they are the
+`claude_code/projection.py` is the reducer from Claude's frames into it. Together they are the
 one interpreter that <../../plans/chat_runtime_projection.md> § stage 4 replaces four with.
 
 **The two halves sit on different levels, which is the placement rule doing its job.** The
@@ -163,9 +163,19 @@ adapter cannot be written without knowing what `assistant`, `stream_event` and `
 are, so it lives under the harness directory. A second backend adds a sibling adapter and touches
 neither the vocabulary nor its readers.
 
+**It is a reducer**, `project(state, frames) -> (state, Projection)`: an existing neutral
+transcript plus new frames gives the updates to that transcript. The state is neutral
+(`ProjectionState`, in `conversation_events.py`, so a second backend adapter can produce one) and
+holds exactly what is mid-flight — an open message and nothing else. The frames stay the
+provider's. `finish(state)` is a caller saying no more are coming, which is what completes a
+message the frames ended in the middle of; `project_log(frames)` is the two composed, for a
+reader holding a whole log. A batch boundary is deliberately not an ending, so a live consumer
+taking frames one at a time and a reader taking them all at once are the same fold — asserted
+over every split of a session in `claude_code/test_projection.py`.
+
 **Two readers are on them.** `haku_conversations.read_transcript` reads a stored session:
-`SessionStore.read_transcript` folds it and `transcript_entries.py` maps the result onto the read
-models in `conversation_records.py`. And now the live path reads them too.
+`SessionStore.read_transcript` calls `project_log` and `transcript_entries.py` maps the result
+onto the read models in `conversation_records.py`. And the live path reads them too.
 
 **`_run_turn` is the first of the four onto it**: it projects each frame as it lands and acts on the
 events, so the live path no longer knows that `assistant`, `stream_event` and `result` exist.
@@ -180,15 +190,27 @@ Two consequences of that being live:
   one re-projects to different text), while a consumer holding the wire wants exactly those, because
   taking the increments as they arrive is what streaming an answer is. The prose is the same; only
   the cut differs.
-- **The turn loop projects one frame at a time, freshly.** A projector held across the turn would
-  merge the frames sharing one `message.id` into a single row and defer every completion to the
-  frame after it — both improvements, both changes to what is stored, and so neither is here.
+- **The turn loop hands each frame to the reducer but seeds a fresh state per frame** (`_projected`
+  calls `project_log`), so a message still ends at its own frame there. Holding one state across the
+  turn is a two-line change now — and it was tried, and breaks two things in the _loop_, both
+  written up in `_projected`'s docstring: the loop writes the frame it is holding rather than the
+  message's own range (which needs `frame_seq` to stop being `int | None` first), and `streamed` is
+  a single accumulator while a `STREAM_EVENTS` `TextDelta` is keyed by the delta's own frame. Those
+  plus the stored-shape change — one row and one room reply per message rather than per frame —
+  are why it belongs with the durable cursor rather than here.
 
-Three properties to preserve:
+**No cursor is stored.** `read_transcript` re-reads the session and seeds an empty state per page,
+which is why it folds from the first frame every time. The durable per-session cursor that advances
+in the same transaction as its effects — the thing that makes them exactly-once — is stage 4's own
+change; this shape is what makes it expressible.
+
+Properties to preserve:
 
 - **`project` is pure and deterministic.** That is what makes drift detectable (re-project a stored
   session and compare), a projection bug repairable (fix the fold and re-project), and it is why the
   function mints nothing random — a message's identity is the `frame_seq` it opened at.
+- **One batch and any split of batches project alike.** Live and recovery are the same code path
+  only for as long as this holds; a fold that closed anything at a batch boundary would break it.
 - **Every event carries provenance, and it is a union.** A frame-derived event has a `FrameRange` an
   operator can click through to raw JSON; a console-authored one (narration, an ownership change)
   has no frames at all. A rebuild that treated authored events as re-derivable would delete them.

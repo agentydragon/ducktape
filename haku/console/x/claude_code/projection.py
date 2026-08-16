@@ -1,13 +1,25 @@
 """Claude CLI frames into neutral conversation events.
 
-One pure function, `project`. Determinism is the property the whole design rests on: the same
-frames always project to the same events, so re-projecting a stored session reproduces its stored
-rows exactly, drift is detectable by comparing them, and a projection bug is repairable by fixing
-the fold rather than being baked into a row forever
-(<../../../plans/chat_runtime_projection.md> § stage 4).
+A **reducer**: `project(state, frames)` returns the state after those frames and what they
+produced, so an existing neutral transcript plus new frames yields the updates to that transcript
+and nothing else. The state is neutral (`ProjectionState`, in <../conversation_events.py>) and the
+frames are Claude's — this adapter is generic over its state, not over its wire
+(<../../../plans/chat_runtime_projection.md> § The shape).
 
-`claude_chat.py`'s turn loop is the one caller: it projects each frame as it lands and acts on the
-events. Nothing stores them yet — the durable cursor beside them is the other half of stage 4.
+That shape is what makes live and recovery one code path. Steady state is "project each frame as
+it lands"; adoption is "project from the stored cursor, which happens to be behind"; and the two
+agree because reducing a sequence in one batch and reducing it in any split of batches produce
+the same projection. `test_projection.py` asserts that over every split of a session.
+
+Determinism is the property the whole design rests on: the same frames always project to the same
+events, so re-projecting a stored session reproduces its stored rows exactly, drift is detectable
+by comparing them, and a projection bug is repairable by fixing the fold rather than being baked
+into a row forever.
+
+**Ending the stream is the caller's statement, not the fold's guess.** A batch running out is not
+a message ending — the next batch may continue it — so a message left open stays in the state.
+`finish` is how a caller that knows there is no more says so, and `project_log` is the two
+composed for the whole-log readers.
 
 **Written against what the wire does, not what it documents.** Every rule below that looks
 defensive is a finding from <../../debug/frame_shape_census.md>, which is where the measurements
@@ -16,7 +28,7 @@ in a docstring that will still claim it a year from now.
 
 | What the wire does                                              | What this does with it                                                                                                                    |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| One block per `assistant` frame, so a message spans several      | A message is the run of frames sharing `message.id`, closed by a *different* id, a `result`, or the end of the sequence — never by a clock |
+| One block per `assistant` frame, so a message spans several      | A message is the run of frames sharing `message.id`, closed by a *different* id, a `result`, or the caller saying the stream ended — never by a clock or a batch boundary |
 | `stop_reason` is never set                                       | Nothing reads it; there is no "the provider said it was done" branch to be wrong                                                           |
 | A `user` frame can land between two frames of one message        | A `user` frame never closes a message. Its `FrameRange` spans the interruption, which is what a range means                                |
 | `content` is usually prose, sometimes tool names and no payload  | `content` is a variant, and the real output rides beside it as `structured` (`tool_use_result`, many per-tool shapes)                      |
@@ -45,7 +57,7 @@ worth being able to see.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Any
@@ -61,8 +73,10 @@ from haku.console.x.conversation_events import (
     MessageCompleted,
     MessageKey,
     OpaqueContent,
+    OpenMessage,
     Outcome,
     Projection,
+    ProjectionState,
     Reasoning,
     TextContent,
     TextDelta,
@@ -125,37 +139,65 @@ class RecordedFrame:
     payload: dict[str, Any]
 
 
-def project(frames: Iterable[RecordedFrame], *, delta_source: DeltaSource = DeltaSource.COMPLETED_BLOCKS) -> Projection:
-    """Fold a session's frames — all of them, a suffix from a cursor, or the one just received —
-    into neutral events.
+def project(
+    state: ProjectionState, frames: Iterable[RecordedFrame], *, delta_source: DeltaSource = DeltaSource.COMPLETED_BLOCKS
+) -> tuple[ProjectionState, Projection]:
+    """Fold frames into the state: the state after them, and what they produced.
 
-    Pure and order-dependent: the events are a function of the sequence, not of any one frame.
-    Raises `ValueError` on a payload with no `type`, which is a caller handing it a row the CLI
-    never sent rather than anything the wire can do.
+    Pure and order-dependent — the events are a function of the sequence, not of any one frame —
+    and the state is the whole of what that order-dependence needs, which is why a batch boundary
+    is not an event. Raises `ValueError` on a payload with no `type`, which is a caller handing it
+    a row the CLI never sent rather than anything the wire can do.
     """
-    projector = _Projector(delta_source=delta_source)
+    projector = _Projector(delta_source=delta_source, open_message=state.open_message)
     for frame in frames:
         projector.fold(frame)
-    # An open message at the end of the input is one whose turn died mid-answer — three real
-    # commands ended that way. It completes with what it had; the alternative is losing it.
-    projector.close_message()
-    return Projection(events=tuple(projector.events), unprojected=MappingProxyType(dict(projector.unprojected)))
+    return ProjectionState(open_message=projector.open_message), projector.projected()
 
 
-@dataclass(slots=True)
-class _OpenMessage:
-    key: MessageKey
-    agent_message_id: str | None
-    last_frame_seq: int
-    texts: list[str]
+def finish(state: ProjectionState) -> Projection:
+    """What ending the stream produces: an open message completed, or nothing at all.
+
+    A message still open when the frames run out is one whose turn died mid-answer, which real
+    sessions do (<../../debug/frame_shape_census.md>). It completes with what it had; the
+    alternative is losing it. Only a caller that knows no more frames are coming may say this —
+    for one reading a live wire, the next frame is the continuation.
+
+    No `DeltaSource` here, and that is the shape saying something true: ending a stream reads no
+    frame, so how finely one would have been cut cannot arise.
+    """
+    if (open_message := state.open_message) is None:
+        return Projection(events=(), unprojected=MappingProxyType({}))
+    return Projection(events=(_completed(open_message),), unprojected=MappingProxyType({}))
+
+
+def _completed(open_message: OpenMessage) -> MessageCompleted:
+    return MessageCompleted(
+        message=open_message.key,
+        # Joined bare, because the deltas are increments of one answer rather than paragraphs of it.
+        text="".join(open_message.texts) or None,
+        agent_message_id=open_message.agent_message_id,
+        provenance=FrameRange(open_message.key.opened_at_frame_seq, open_message.last_frame_seq),
+    )
+
+
+def project_log(
+    frames: Iterable[RecordedFrame], *, delta_source: DeltaSource = DeltaSource.COMPLETED_BLOCKS
+) -> Projection:
+    """A whole session's frames, with nothing after them — the reader's shape of the reducer."""
+    state, projected = project(ProjectionState(), frames, delta_source=delta_source)
+    return projected.then(finish(state))
 
 
 @dataclass(slots=True)
 class _Projector:
     delta_source: DeltaSource
+    open_message: OpenMessage | None
     events: list[ConversationEvent] = field(default_factory=list)
     unprojected: dict[str, int] = field(default_factory=dict)
-    open_message: _OpenMessage | None = None
+
+    def projected(self) -> Projection:
+        return Projection(events=tuple(self.events), unprojected=MappingProxyType(dict(self.unprojected)))
 
     def fold(self, frame: RecordedFrame) -> None:
         kind = session_frames.frame_kind(frame.payload)
@@ -179,20 +221,13 @@ class _Projector:
 
     def close_message(self) -> None:
         """End the open message, if there is one. Called where the census says a message ends —
-        a different `message.id`, a `result`, the end of the input — and nowhere else."""
+        a different `message.id`, a `result`, a caller declaring the stream over — and nowhere
+        else. Running out of frames is not one of those: `project` leaves the message in the
+        state for the next batch."""
         if (open_message := self.open_message) is None:
             return
         self.open_message = None
-        self.events.append(
-            MessageCompleted(
-                message=open_message.key,
-                # Joined bare, because the deltas above are increments of one answer rather than
-                # paragraphs of it.
-                text="".join(open_message.texts) or None,
-                agent_message_id=open_message.agent_message_id,
-                provenance=FrameRange(open_message.key.opened_at_frame_seq, open_message.last_frame_seq),
-            )
-        )
+        self.events.append(_completed(open_message))
 
     def _stream_delta(self, frame: RecordedFrame) -> None:
         """One increment of an answer still being written, for a consumer holding the live wire.
@@ -220,7 +255,8 @@ class _Projector:
         for block in session_frames.content_blocks(frame.payload):
             match block.get("type"):
                 case "text" if isinstance(text := block.get("text"), str):
-                    message.texts.append(text)
+                    message = replace(message, texts=(*message.texts, text))
+                    self.open_message = message
                     # Under `STREAM_EVENTS` the deltas already delivered this prose; emitting it
                     # again as a whole would have a consumer render the answer twice.
                     if self.delta_source is DeltaSource.COMPLETED_BLOCKS:
@@ -245,7 +281,7 @@ class _Projector:
                 case block_type:
                     self._unprojected(f"{session_frames.ASSISTANT_FRAME_KIND}/{block_type}")
 
-    def _message_for(self, frame: RecordedFrame) -> _OpenMessage:
+    def _message_for(self, frame: RecordedFrame) -> OpenMessage:
         """The message this frame continues, or a new one.
 
         The run is defined by `message.id` and closed by a different one — not by the next
@@ -260,16 +296,18 @@ class _Projector:
             and agent_message_id is not None
             and open_message.agent_message_id == agent_message_id
         ):
-            open_message.last_frame_seq = frame.frame_seq
-            return open_message
+            continued = replace(open_message, last_frame_seq=frame.frame_seq)
+            self.open_message = continued
+            return continued
         self.close_message()
-        self.open_message = _OpenMessage(
+        started = OpenMessage(
             key=MessageKey(opened_at_frame_seq=frame.frame_seq),
             agent_message_id=agent_message_id,
             last_frame_seq=frame.frame_seq,
-            texts=[],
+            texts=(),
         )
-        return self.open_message
+        self.open_message = started
+        return started
 
     def _user(self, frame: RecordedFrame) -> None:
         """A tool result coming back, or the console's own prompt going out.

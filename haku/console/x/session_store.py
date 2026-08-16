@@ -815,18 +815,20 @@ class SessionStore:
     ) -> TranscriptSlice:
         """A window of the session's projected transcript, for the `haku_conversations` reader.
 
-        **The fold always runs from the session's first frame**, whatever the cursor says. The
-        projection is order-dependent — a message is the run of frames sharing one id, closed by a
-        different one — so folding a window instead would let a page boundary close a message the
+        **The fold always runs from the session's first frame**, whatever the cursor says — which
+        is what `project_log` is: the reducer seeded empty and told the stream ends here. A window
+        would need the state the frames before it left behind, and this reader has nowhere to keep
+        one; seeding empty from a suffix instead would let a page boundary close a message the
         whole session does not end there, and the same entry would read differently depending on
         which page it landed on. Determinism is the property the projection exists for
-        (<claude_code/projection.py>), and it is not a property of a suffix.
+        (<claude_code/projection.py>), and it is not a property of a suffix read cold. A stored
+        cursor is what turns this into a window, and it is deliberately not part of this change.
 
         That costs one read of the session's projectable frames per page, the same order of cost
         as `session_views.rollout_calls`, which the SPA's detail view already pays per request.
 
         Two kinds are excluded in SQL rather than by the fold. `setup_output` is the console's own
-        envelope and carries no protocol `type` at all, so `project` would refuse it; deltas are
+        envelope and carries no protocol `type` at all, so the fold would refuse it; deltas are
         hundreds per turn of prose that arrives again whole. Everything else is passed through, so
         a frame class the CLI adds still lands in `Projection.unprojected` and is reported.
         """
@@ -841,7 +843,7 @@ class SessionStore:
                     .order_by(SessionFrame.frame_seq)
                 )
             ).all()
-        projected = projection.project(
+        projected = projection.project_log(
             projection.RecordedFrame(frame_seq=row.frame_seq, payload=row.payload) for row in rows
         )
         entries = transcript_entries.entries(projected)
