@@ -25,8 +25,9 @@ DELTA_FRAME_KIND = "stream_event"
 # sends `user` frames too, carrying tool results.
 PROMPT_FRAME_KIND = "user"
 
-# The frame that ends a turn, and the one that completes an assistant message. Both are read back
-# out of the log by `adopt_open_turn` to work out what a departed holder had got to.
+# The frame that ends a turn, and the one that completes an assistant message. The first is read
+# back out of the log by `adopt_open_turn`, which is how an exchange that finished with nobody
+# left to close it is told from one still running.
 RESULT_FRAME_KIND = "result"
 ASSISTANT_FRAME_KIND = "assistant"
 

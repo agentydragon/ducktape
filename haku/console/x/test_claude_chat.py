@@ -359,21 +359,92 @@ async def test_adoption_picks_the_answer_up_where_it_stopped(
 ) -> None:
     """The runner replays what a console may not have recorded but never the deltas, so a resumed
     turn that started from an empty string would write the tail of the answer as a second message.
+
+    Adoption itself no longer reconstructs any of that: it says which turn, and the turn's own row
+    says how far it got — which is what this reads back.
     """
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
-    assert await chat_store.next_prompt(session_id) is not None
+    started = await chat_store.next_prompt(session_id)
+    assert started is not None
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
-    assistant_id = await chat_store.begin_assistant(session_id)
+    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id)
     await chat_store.update_assistant(session_id, assistant_id, "we were half way through")
 
     resumed = await chat_store.adopt_open_turn(session_id)
 
     assert resumed is not None
-    assert (resumed.assistant_id, resumed.streamed) == (assistant_id, "we were half way through")
-    assert not resumed.spoke, "nothing completed, so the room has heard nothing to repeat"
+    state = await chat_store.turn_state(resumed.turn_id)
+    assert (state.assistant_message_id, state.streamed) == (assistant_id, "we were half way through")
+    assert not state.said_anything, "the message is still open, so nothing has completed"
+    assert not state.queued_reply, "nothing completed, so the room has heard nothing to repeat"
+
+
+async def test_a_turn_records_the_message_it_finished_rather_than_the_frames_it_left(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """What `_said_anything` was the only cover for, now asked of the turn instead of the log.
+
+    A completed message clears the pointer, records that this turn has spoken, and — for a session
+    serving a room — records that the room's outbox holds it, in the transaction that puts it
+    there. Reading that off the `assistant` frames could only ever answer "one was recorded",
+    which is a different question from either.
+    """
+    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    session_id = view.session_id
+    assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
+    started = await chat_store.next_prompt(session_id)
+    assert started is not None
+    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id)
+
+    assert await chat_store.update_assistant(session_id, assistant_id, "a bad config", complete=True)
+
+    state = await chat_store.turn_state(started.turn_id)
+    assert state.assistant_message_id is None, "a completed message leaves no half-written answer behind"
+    assert (state.streamed, state.said_anything, state.queued_reply) == ("", True, True)
+    assert await _queued_for_the_room(migrated_sessions, session_id) == ["a bad config"]
+
+
+async def test_a_turn_that_said_something_the_room_could_not_hear_still_knows_it_spoke(
+    chat_store, chat_service, operator_id
+) -> None:
+    """The two facts come apart on the SPA, and conflating them minted a second message.
+
+    A session with no room queues nothing, so `queued_reply` is false while `said_anything` is
+    true — and the resumed turn must read the second, or `result.result` (which repeats the
+    message that already completed) becomes a message of its own.
+    """
+    view, token = await chat_store.create(operator_id, SpaSession())
+    session_id = view.session_id
+    assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
+    started = await chat_store.next_prompt(session_id)
+    assert started is not None
+    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id)
+    assert not await chat_store.update_assistant(session_id, assistant_id, "a bad config", complete=True)
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+
+    resumed = await chat_store.adopt_open_turn(session_id)
+    assert resumed is not None
+    assert (await chat_store.turn_state(resumed.turn_id)).said_anything
+
+    client = _FakeCli([_result("a bad config")])
+    client.replay()
+    async with asyncio.timeout(30):
+        await chat_service._run_turn(
+            cast(Any, client),
+            client.frames().__aiter__(),
+            session_id,
+            resumed,
+            room_id=None,
+            abort_event=asyncio.Event(),
+        )
+
+    assistants = [m for m in (await chat_store.get(operator_id, session_id)).messages if m.role == "assistant"]
+    assert [m.message_id for m in assistants] == [assistant_id], "the result frame repeated a message, not made one"
 
 
 async def test_adoption_closes_a_turn_whose_result_nobody_wrote_down(
@@ -790,13 +861,13 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     # What the previous holder got through before its pod went: the prompt written, and half an
     # answer streamed into a message it never closed.
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
-    assistant_id = await chat_store.begin_assistant(session_id)
+    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id)
     await chat_store.update_assistant(session_id, assistant_id, "because the ")
 
     resumed = await chat_store.adopt_open_turn(session_id)
     assert resumed is not None
     # Only what the runner replays: the deltas already seen are not re-sent, so everything
-    # before "disk was full" reaches this process solely through the resumed state.
+    # before "disk was full" reaches this process solely through the turn's own row.
     client = _FakeCli([_assistant({"type": "text", "text": "because the disk was full"}), _result("done")])
     client.replay()
     async with asyncio.timeout(30):
@@ -815,6 +886,51 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     assert [m.message_id for m in assistants] == [assistant_id], "continued, rather than forked into a second"
     [turn] = await chat_store.list_turns(str(session_id), limit=5)
     assert (turn.turn_id, turn.outcome) == (str(started.turn_id), TurnOutcome.ANSWERED)
+
+
+async def test_a_resumed_turn_does_not_say_again_what_it_had_already_queued(
+    chat_store, migrated_sessions, recording_claims, notifications, operator_id
+) -> None:
+    """The other half of adoption, and the one the old `spoke` could only guess at.
+
+    The departed holder finished a message and the room's outbox holds it. All the replacement
+    sees is the `result` frame — which repeats that same text — so it has to know the room is
+    already owed it. `queued_reply` is that, written by the transaction that inserted the row
+    rather than inferred from an `assistant` frame having been recorded.
+    """
+    service = SessionService(
+        runtime_config(),
+        chat_store,
+        recording_claims,
+        notifications,
+        mcp_token=MCP_TOKEN,
+        room_surface=_RecordingRoomSurface(),
+    )
+    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    session_id = view.session_id
+    assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
+    started = await chat_store.next_prompt(session_id)
+    assert started is not None
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id)
+    assert await chat_store.update_assistant(session_id, assistant_id, "a bad config", complete=True)
+
+    resumed = await chat_store.adopt_open_turn(session_id)
+    assert resumed is not None
+    client = _FakeCli([_result("a bad config")])
+    client.replay()
+    async with asyncio.timeout(30):
+        await service._run_turn(
+            cast(Any, client),
+            client.frames().__aiter__(),
+            session_id,
+            resumed,
+            room_id=ROOM,
+            abort_event=asyncio.Event(),
+        )
+
+    assert await _queued_for_the_room(migrated_sessions, session_id) == ["a bad config"], "the answer, once"
 
 
 async def test_the_room_is_owed_each_assistant_message_as_it_finishes(
@@ -1120,8 +1236,12 @@ async def test_a_message_with_nothing_to_point_at_still_reads_its_calls_from_the
     """A row written before the pointer existed, or one the console synthesized rather than
     observed — a turn whose text arrived only on the `result` frame — has no agent message id, and
     the column is all it has. That is why the column is still written."""
-    view, _ = await chat_store.create(operator_id, SpaSession())
-    message_id = await chat_store.begin_assistant(view.session_id)
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "do a thing")
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
+    message_id = await chat_store.begin_assistant(view.session_id, turn.turn_id)
     await chat_store.update_assistant(
         view.session_id,
         message_id,

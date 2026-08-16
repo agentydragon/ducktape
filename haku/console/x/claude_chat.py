@@ -22,7 +22,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, SecretStr
-from sqlalchemy import CursorResult, delete, func, select, text, update
+from sqlalchemy import CursorResult, delete, func, literal, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -187,25 +187,35 @@ class TurnStart:
 
 
 @dataclass(frozen=True, slots=True)
-class TurnResumed:
-    """A turn a departed holder opened and asked, and how far its answer had got.
+class ResumedTurn:
+    """A turn a departed holder opened and asked, handed to whoever adopted the session.
 
-    The state fields are required, not decorative: the runner never replays the stream deltas, so
-    a resumed turn starting from nothing would write the tail of an answer as a second message
-    beside the first.
+    It carries nothing but the turn's name. What the departed holder got through is on the turn's
+    own row (`TurnState`), so adoption reads it rather than rebuilding it out of the frame log —
+    which is what stopped the live path and the recovery path being two accounts of one exchange.
     """
 
     turn_id: UUID
-    # The assistant message left streaming, and the text already in it. None where the previous
-    # holder had opened no message: either it died before the first delta, or the last one it
-    # saw completed and closed the message it was building.
-    assistant_id: UUID | None
+
+
+@dataclass(frozen=True, slots=True)
+class TurnState:
+    """How far a turn has got, as `session_turns` records it.
+
+    Every field is written in the same transaction as the effect it describes, so this is the
+    turn's state rather than a reading of its side effects — and it says the same thing to the
+    process that opened the turn and to the one that inherits it.
+    """
+
+    # The assistant message being streamed into, and the text already in it. None between
+    # messages: either nothing has been said yet, or the last one completed and closed.
+    assistant_message_id: UUID | None
+    # The empty prefix of an answer, not an absent one — `assistant_message_id` is what says
+    # whether a message is open at all. It is the message row's own content, which the stream
+    # writes on every delta, rather than a second copy of it kept on the turn.
     streamed: str
-    # Whether the room has already heard something from this turn, so the end-of-turn fallback
-    # does not repeat it. Read from the log rather than remembered, which is why it cannot tell
-    # a message recorded and delivered from one recorded and then lost with the process. It
-    # answers "recorded", and prefers the silence to the double post.
-    spoke: bool
+    said_anything: bool
+    queued_reply: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -413,7 +423,7 @@ class SessionStore:
             )
             return result.rowcount
 
-    async def adopt_open_turn(self, session_id: UUID) -> TurnResumed | None:
+    async def adopt_open_turn(self, session_id: UUID) -> ResumedTurn | None:
         """Say what the previous holder's open turn was, and hand back the one worth finishing.
 
         The sandbox outlives the replica, so an adopting console inherits the exchange too. "A
@@ -423,6 +433,10 @@ class SessionStore:
         2. **Finished, unrecorded** — the `result` is logged but `end_turn` never ran. Closed from
            the record; waiting would be forever, since the replay of a recorded frame is refused.
         3. **Still running** — returned for `_run_turn` to finish.
+
+        Only *which of the three* is asked of the frames. How far the answer had got is no longer
+        reconstructed here at all: it is on the turn's row, and `_run_turn` reads it the same way
+        whether it opened the turn or inherited it.
 
         Leaving a turn open is safe only because `uq_session_turns_open` permits exactly one,
         which is what stops `next_prompt` opening a second beside the inherited one.
@@ -441,14 +455,7 @@ class SessionStore:
                 await _requeue(db, turn_id)
                 await notify(db, SessionEventKind.PROMPT, session_id)
             elif (closing := await _recorded_result(db, session_id, first_frame_seq)) is None:
-                streaming = await _streaming_assistant(db, session_id)
-                assistant_id, streamed = streaming if streaming is not None else (None, "")
-                return TurnResumed(
-                    turn_id=turn_id,
-                    assistant_id=assistant_id,
-                    streamed=streamed,
-                    spoke=await _said_anything(db, session_id, first_frame_seq),
-                )
+                return ResumedTurn(turn_id=turn_id)
         # Cases 1 and 2. A turn that never asked has no result to close with and no outcome but
         # failure; one that finished carries its own, which `end_turn` also mines for the cost
         # and usage the previous holder never got to write.
@@ -566,6 +573,31 @@ class SessionStore:
             db.add(SessionTurnPrompt(turn_id=turn_id, message_id=message.message_id))
             await notify(db, SessionEventKind.UPDATE, session_id)
             return TurnStart(turn_id=turn_id, message_id=message.message_id, prompt=message.content)
+
+    async def turn_state(self, turn_id: UUID) -> TurnState:
+        """How far *turn_id* has got, read off its row.
+
+        The one place `_run_turn` learns what has already happened, so a turn this process opened
+        a moment ago and one a departed replica left half answered are the same question with the
+        same answer — an empty state being what a turn that has done nothing yet honestly has.
+        """
+        async with self._sessions() as db:
+            row = (
+                await db.execute(
+                    select(SessionTurn, SessionMessage.content)
+                    .outerjoin(SessionMessage, SessionMessage.message_id == SessionTurn.assistant_message_id)
+                    .where(SessionTurn.turn_id == turn_id)
+                )
+            ).first()
+            if row is None:
+                raise KeyError(turn_id)
+            turn, streamed = row
+            return TurnState(
+                assistant_message_id=turn.assistant_message_id,
+                streamed=streamed or "",
+                said_anything=turn.said_anything,
+                queued_reply=turn.queued_reply,
+            )
 
     async def end_turn(self, turn_id: UUID, outcome: TurnOutcome, result: dict[str, Any] | None = None) -> None:
         """Close *turn_id*, taking the bracket's upper bound and what the `result` frame reported.
@@ -763,7 +795,13 @@ class SessionStore:
         async with self._sessions.begin() as db:
             await db.execute(delete(SessionFrame).where(SessionFrame.session_id == session_id, SessionFrame.partial))
 
-    async def begin_assistant(self, session_id: UUID) -> UUID:
+    async def begin_assistant(self, session_id: UUID, turn_id: UUID) -> UUID:
+        """Open the message this turn is about to stream into, and point the turn at it.
+
+        One transaction, because the pointer is what makes the message the *turn's*: a replica
+        dying with a message row nothing names would leave its replacement to guess which of the
+        session's messages it was in the middle of.
+        """
         now = datetime.now(UTC)
         message_id = uuid4()
         async with self._sessions.begin() as db:
@@ -780,6 +818,12 @@ class SessionStore:
                     updated_at=now,
                 )
             )
+            # Flushed before the turn names it: the pointer is a foreign key, so the message has
+            # to exist by the time the update lands.
+            await db.flush()
+            if (turn := await db.get(SessionTurn, turn_id)) is None:
+                raise KeyError(turn_id)
+            turn.assistant_message_id = message_id
         return message_id
 
     async def update_assistant(
@@ -800,6 +844,11 @@ class SessionStore:
         room was never told, and nothing afterwards knew there had been anything to say. Here the
         two facts commit together or not at all, and `session_outbox` is what says the room is
         still owed one.
+
+        **And it closes the turn's state in that same transaction** — the turn that this message
+        belongs to is the one pointing at it, so no caller has to name it and the three writes
+        cannot come apart. Which is the property `spoke` needs: `queued_reply` is set by the
+        statement that inserts the outbox row, never by one that merely tried.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -820,7 +869,7 @@ class SessionStore:
             await notify(db, SessionEventKind.UPDATE, session_id)
             if not complete:
                 return False
-            return await _enqueue_reply(
+            owed = await _enqueue_reply(
                 db,
                 chat,
                 content,
@@ -829,6 +878,16 @@ class SessionStore:
                 turn_id=None,
                 now=now,
             )
+            await db.execute(
+                update(SessionTurn)
+                .where(SessionTurn.assistant_message_id == message_id)
+                .values(
+                    assistant_message_id=None,
+                    said_anything=True,
+                    queued_reply=or_(SessionTurn.queued_reply, literal(owed)),
+                )
+            )
+            return owed
 
     async def enqueue_turn_reply(self, session_id: UUID, turn_id: UUID, text: str) -> bool:
         """Queue a turn's last word, the one reply no transcript row holds. True if it is owed.
@@ -845,9 +904,12 @@ class SessionStore:
         async with self._sessions.begin() as db:
             if (chat := await db.get(Session, session_id)) is None:
                 return False
-            return await _enqueue_reply(
+            owed = await _enqueue_reply(
                 db, chat, text, message_id=None, agent_message_id=None, turn_id=turn_id, now=now
             )
+            if owed:
+                await db.execute(update(SessionTurn).where(SessionTurn.turn_id == turn_id).values(queued_reply=True))
+            return owed
 
     async def fail(self, session_id: UUID, error: str, message_id: UUID | None = None) -> None:
         # Logged as well as persisted. The column is the operator-facing record, but it is not
@@ -1322,7 +1384,7 @@ class SessionService:
                             # frames are already on their way, so opening a second turn to take
                             # them would deliver one exchange's answer into another's bracket —
                             # which is what routing by session rather than by turn meant.
-                            turn: TurnStart | TurnResumed | None = resumed
+                            turn: TurnStart | ResumedTurn | None = resumed
                             resumed = None
                             if turn is None:
                                 turn = await self._store.next_prompt(session_id)
@@ -1449,7 +1511,7 @@ class SessionService:
         client: ClaudeCli,
         frames: AsyncIterator[dict[str, Any]],
         session_id: UUID,
-        turn: TurnStart | TurnResumed,
+        turn: TurnStart | ResumedTurn,
         *,
         room_id: str | None,
         abort_event: asyncio.Event,
@@ -1460,26 +1522,31 @@ class SessionService:
         turn's span, so it closes it on every exit and is the only thing that does. A turn left
         open is therefore not a bookkeeping leak — it means no code got to close it, which is
         what a replica losing its pod mid-exchange looks like from outside, and what the
-        `TurnResumed` variant exists to pick back up.
+        `ResumedTurn` variant exists to pick back up.
+
+        **The state below is the row's, held here only between two writes of it.** Every branch
+        that changes one of these writes it back before the next frame is taken, so a process
+        dying anywhere in this loop leaves `session_turns` saying what had happened — which is
+        what makes adoption a read (<../../plans/chat_runtime_projection.md> § stage 3).
         """
         turn_id = turn.turn_id
-        assistant_id: UUID | None = None
-        streamed = ""
+        if isinstance(turn, TurnStart):
+            # A resumed turn's question was asked by a process that is gone; only its answer is
+            # still coming.
+            await client.query(turn.prompt)
+        state = await self._store.turn_state(turn_id)
+        assistant_id = state.assistant_message_id
+        streamed = state.streamed
         # Whether this turn has already queued the room a reply, so the turn's final text is not
         # posted a second time: `result.result` normally repeats the last assistant message. It is
-        # the outbox row's existence and no longer a report from the delivery layer — which used
-        # to be a statement about a `deque.append`, true whether or not the room ever heard it.
-        spoke = False
-        match turn:
-            case TurnStart():
-                await client.query(turn.prompt)
-            case TurnResumed():
-                # The question was asked by a process that is gone; what is left is the answer,
-                # picked up wherever that process had got to (`adopt_open_turn`).
-                assistant_id, streamed, spoke = turn.assistant_id, turn.streamed, turn.spoke
-        # A resumed turn that has already completed a message must not have a second minted for
-        # it at the end, so this starts where `spoke` does rather than at False.
-        saw_assistant_message = spoke
+        # the outbox row's existence — recorded on the turn by the transaction that inserts the
+        # row — and neither a report from the delivery layer, which used to be a statement about a
+        # `deque.append`, nor `sent_at`, which is the drain's business and comes later.
+        spoke = state.queued_reply
+        # Its own fact rather than `spoke` again: a session with no room queues nothing, so a turn
+        # that has completed a message there has `said_anything` and no `queued_reply` — and
+        # minting a second message for `result.result` is exactly what conflating them did.
+        saw_assistant_message = state.said_anything
         result: dict[str, Any] | None = None
         status = self._turn_status(room_id)
         status.start()
@@ -1521,7 +1588,7 @@ class SessionService:
                         if not (delta := text_delta(frame.get("event", {}))):
                             continue
                         if assistant_id is None:
-                            assistant_id = await self._store.begin_assistant(session_id)
+                            assistant_id = await self._store.begin_assistant(session_id, turn_id)
                         streamed += delta
                         await self._store.update_assistant(session_id, assistant_id, streamed)
                         # The rollout keeps no deltas, so without this the text an interrupted
@@ -1531,7 +1598,7 @@ class SessionService:
                     case "assistant":
                         saw_assistant_message = True
                         if assistant_id is None:
-                            assistant_id = await self._store.begin_assistant(session_id)
+                            assistant_id = await self._store.begin_assistant(session_id, turn_id)
                         blocks = content_blocks(frame)
                         text = "".join(
                             str(block.get("text", "")) for block in blocks if block.get("type") == "text"
@@ -1588,7 +1655,7 @@ class SessionService:
                 )
                 assistant_id = None
             elif not saw_assistant_message:
-                assistant_id = await self._store.begin_assistant(session_id)
+                assistant_id = await self._store.begin_assistant(session_id, turn_id)
                 carried_final = await self._store.update_assistant(
                     session_id, assistant_id, final_text, tool_uses=[], complete=True
                 )
@@ -1797,40 +1864,6 @@ async def _recorded_result(db: AsyncSession, session_id: UUID, first_frame_seq: 
         .limit(1)
     )
     return payload
-
-
-async def _said_anything(db: AsyncSession, session_id: UUID, first_frame_seq: int) -> bool:
-    """Whether this turn has already completed an assistant message.
-
-    `partial` rows are excluded: one is the console's own reconstruction of an answer still
-    streaming, so counting it would read "the room has heard this" off text nothing has sent.
-    """
-    said = await db.scalar(
-        select(SessionFrame.frame_seq)
-        .where(
-            SessionFrame.session_id == session_id,
-            SessionFrame.frame_seq >= first_frame_seq,
-            SessionFrame.direction == FrameDirection.FROM_AGENT,
-            SessionFrame.kind == ASSISTANT_FRAME_KIND,
-            ~SessionFrame.partial,
-        )
-        .limit(1)
-    )
-    return said is not None
-
-
-async def _streaming_assistant(db: AsyncSession, session_id: UUID) -> tuple[UUID, str] | None:
-    """The assistant message still being written, with the text already in it."""
-    message = await db.scalar(
-        select(SessionMessage)
-        .where(
-            SessionMessage.session_id == session_id,
-            SessionMessage.role == ChatMessageRole.ASSISTANT,
-            SessionMessage.status == ChatMessageStatus.STREAMING,
-        )
-        .order_by(SessionMessage.created_at.desc())
-    )
-    return None if message is None else (message.message_id, message.content)
 
 
 async def _requeue(db: AsyncSession, turn_id: UUID) -> None:

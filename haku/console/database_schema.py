@@ -984,6 +984,14 @@ class SessionTurn(Base):
     the running one, so a single `result` can answer two prompts (measured,
     <../cli_protocol/probes/steering.py>). Keeping the bracket here means re-bracketing later is
     an update to this table rather than a rewrite of the record.
+
+    **And the state of the exchange, not only its extent.** The three columns after `duration_ms`
+    are what `_run_turn` used to hold in locals and a second body of code used to reconstruct out
+    of the frames when the process holding them died. They are written in the same transaction as
+    the effect each one describes, so a turn adopted by another replica is *read* rather than
+    guessed at (<../plans/chat_runtime_projection.md> § stage 3). Together with `first_frame_seq`
+    the row is now both halves of what the fold needs — where the turn's frames start, and what
+    projecting them has produced so far.
     """
 
     __tablename__ = "session_turns"
@@ -1008,6 +1016,23 @@ class SessionTurn(Base):
     cost_usd: Mapped[decimal.Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
     usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # The assistant message this turn is streaming into, set when the message is opened and
+    # cleared when it completes — so on an open turn it is non-NULL exactly while an answer is
+    # half written, and NULL both before the first delta and between two completed messages.
+    # Whoever adopts the turn continues that message instead of forking a second one beside it.
+    # On a closed turn it is left as it was, which names the message a failed turn stopped in.
+    assistant_message_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("session_messages.message_id", ondelete="SET NULL"), nullable=True
+    )
+    # Whether an assistant message of this turn has completed. What the end of the turn asks
+    # before minting a message for text that arrived only on the `result` frame: with one already
+    # written, that text is a repeat of it rather than the turn's only words.
+    said_anything: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Whether this turn has put a row in the room's outbox. Written in the same transaction as
+    # that row, so it cannot claim a reply the outbox does not hold. It is **not** delivery —
+    # `session_outbox.sent_at` is the only thing that says the room heard it — and deliberately
+    # not "a send was attempted" either, which is what made a turn believe a `deque.append`.
+    queued_reply: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         CheckConstraint(

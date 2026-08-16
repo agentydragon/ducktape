@@ -26,6 +26,19 @@ SPA is shown `responding` — which the session view now derives rather than rea
 So an open turn on a session nothing is renewing is not a leak; it is the record of an exchange
 whose replica went away before anything could close it.
 
+**And the row carries the turn's state, not only its extent.** `assistant_message_id` is the
+message being streamed into, `said_anything` whether one has completed, `queued_reply` whether the
+room's outbox holds a reply from this turn — each written in the same transaction as the effect it
+describes, so none of them can claim something that did not commit. `_run_turn` reads them at the
+top of every turn (`turn_state`), which is why adopting a half-finished exchange is a read rather
+than a reconstruction: `adopt_open_turn` says _which_ turn, and the row says how far it got. Before
+this the state lived in that call's locals and a second body of code rebuilt it from the frames,
+which is one state machine written twice
+(<../../plans/chat_runtime_projection.md> § stage 3). **Gotcha:** `queued_reply` is the outbox row
+existing, deliberately not `sent_at` — an unsent row still means the room is owed that text, so a
+turn that re-queued it would post the answer twice — and `said_anything` is a separate column
+rather than the same one read twice, because a session with no room queues nothing.
+
 **The rollout is recorded by `RolloutRecorder`, a `FrameSink` the protocol client calls.** Every
 frame either way, both channels, verbatim — the control channel included, since an interrupt that
 did not take is diagnosable from nothing else. **Deltas included** — a log with a hole in it cannot

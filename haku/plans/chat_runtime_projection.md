@@ -22,6 +22,10 @@ twice, and every corner case the runtime has needed is at the seam where the two
 | `spoke` cannot tell delivered from merely recorded | Recovery cannot rebuild a local that was never durable                                |
 | `TurnResumed.streamed`                             | Recovery re-seeding a local by hand                                                   |
 
+The last two are closed: stage 3 below made that state durable, so `_said_anything`,
+`_streaming_assistant` and `TurnResumed`'s state fields are gone. The first two are still asked of
+the frames, and stage 4 is what retires them.
+
 Roughly fifty comment sites in `claude_chat.py` reason about "already / twice / replay /
 duplicate". That is the tax.
 
@@ -45,7 +49,9 @@ stack in practice.
 
 What that deletes: `TurnResumed`, `adopt_open_turn`'s three-way case analysis, `_recorded_result`,
 `_said_anything`, `_streaming_assistant`, `_prompt_left`, `saw_assistant_message`. `spoke` stops
-being a guess and becomes "the cursor passed this frame".
+being a guess and becomes "the cursor passed this frame". Stage 3 has since taken the first, the
+third, the fourth and the last of those, and made `spoke` a durable fact ahead of the cursor; what
+is left on the list is what stage 4 removes.
 
 Room delivery becomes an outbox drained by `matrix_pacer`, which is already a queue and needs only
 to become durable. Then `spoke` is "the outbox row is marked sent", `EventTag.transaction_id` is
@@ -117,11 +123,28 @@ Three releases, because flipping a column's meaning under a rolling deploy is no
 
 **Done when** `kind` answers one question and `BridgeFrameKind` is the column's type.
 
-### 3. Turn state onto the turn row
+### 3. Turn state onto the turn row — **done**
 
-The cheapest step with most of the benefit, and the one to do next. One additive migration; the
-loop keeps its current structure and reads and writes its state instead of holding it. This alone
-kills `TurnResumed`, `_said_anything`, `_streaming_assistant` and the `spoke` guess.
+`session_turns` carries `assistant_message_id`, `said_anything` and `queued_reply` (migration
+`0043`), each written in the same transaction as the effect it describes: the message pointer with
+`begin_assistant`, the other two with the `update_assistant` that completes a message and inserts
+the room's outbox row. `_run_turn` reads them through `SessionStore.turn_state` at the top of every
+turn, so a turn this process opened and one it adopted enter the loop the same way. `TurnResumed`
+became `ResumedTurn`, which carries only a `turn_id`; `_said_anything` and `_streaming_assistant`
+are gone.
+
+`spoke` is now `queued_reply`: **an outbox row exists for this turn**, recorded by the statement
+that inserts it. Not `sent_at`, which is the drain's answer to a different question — an unsent row
+still means the room is owed the text and must not be queued a second time — and not the "we
+attempted" a delivery call used to report. `said_anything` is its own field rather than `spoke`
+reused, because a session with no room queues nothing: conflating them was what let a resumed SPA
+turn mint a second message for `result.result`.
+
+What is left for stage 4: `adopt_open_turn` still asks the frames _which_ of its three cases a turn
+is, and the loop still holds each value between two writes of it rather than folding a frame into
+state. The row is now both halves of what the fold needs — `first_frame_seq` says where the turn's
+frames begin, the three columns say what projecting them has produced — so what stage 4 adds is the
+cursor between them.
 
 ### 4. The fold
 
