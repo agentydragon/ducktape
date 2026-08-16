@@ -14,8 +14,8 @@ import pytest_bazel
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.http11 import Request, Response
 
-from haku.runtime.x.claude_bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch, claude_backend
-from haku.runtime.x.claude_bridge.protocol import (
+from haku.runtime.x.bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch, claude_backend
+from haku.runtime.x.bridge.protocol import (
     FINE_GRAINED_TOOL_STREAMING_ENV,
     RUNNER_TO_CONSOLE,
     ClaudeLaunch,
@@ -23,7 +23,7 @@ from haku.runtime.x.claude_bridge.protocol import (
     EndInput,
     SetupOutput,
 )
-from haku.runtime.x.claude_bridge.runner import (
+from haku.runtime.x.bridge.runner import (
     REPLAY_WINDOW,
     Outbound,
     _serve_console,

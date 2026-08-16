@@ -34,10 +34,10 @@ out makes a test pass for the wrong reason:
 `HAKU_STUB_GREETING`, when set, is written to stderr before anything else. Whatever the CLI writes
 to stderr is the sandbox's narration, which the runner forwards as its own frame kind; it is the
 console's one account of a session that never reached the model, so a test about that path
-(`../test_claude_bridge_e2e.py`) needs a line printed before any turn.
+(`../../test_bridge_e2e.py`) needs a line printed before any turn.
 
 The launch argv is **not acted on**: what the console passes is pinned by
-`haku/runtime/x/claude_bridge/test_options.py`, and duplicating it here would be a second copy to
+`haku/runtime/x/bridge/test_options.py`, and duplicating it here would be a second copy to
 keep in step. One value is copied out of it rather than obeyed — `--append-system-prompt`, appended
 to `system-prompts.jsonl` in `HAKU_STUB_STATE`, one line per CLI this run launched. It is the only
 way a test can see what a session was woken with, and what a *replacement* session is woken with is

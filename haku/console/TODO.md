@@ -201,7 +201,7 @@ genuinely operational knobs should move onto the config model:
   `RE_AWAKENING_MESSAGES` (the N of R3.3a).
 - `x/channels/matrix/sync.py` — `ERROR_BACKOFF`, `REFUSED_BATCH_BACKOFF`, and `MAX_BACKFILL_PAGES` /
   `TIMELINE_LIMIT` from `x/channels/matrix/client.py`.
-- `runtime/x/claude_bridge/runner.py` — `MAX_DISCONNECTED_SECONDS`, `REPLAY_WINDOW`,
+- `runtime/x/bridge/runner.py` — `MAX_DISCONNECTED_SECONDS`, `REPLAY_WINDOW`,
   `RECONNECT_{BASE,MAX}_DELAY`. **These live in the runner**, whose image is pinned at claim
   creation, so they are not console config at all: they reach a running sandbox only through the
   launch, or not until it is replaced.

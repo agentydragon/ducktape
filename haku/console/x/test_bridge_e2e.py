@@ -3,7 +3,7 @@
 Everything else covering this path calls `handle_runner` with a websocket stub and replaces
 `cli_over_websocket` with a scripted double, so the runner-facing route, the ASGI handshake, the
 version negotiation and the envelope protocol were only ever exercised as halves that never met.
-Here the runner is `//haku/runtime/x/claude_bridge:runner_bin` as a subprocess, the console is
+Here the runner is `//haku/runtime/x/bridge:runner_bin` as a subprocess, the console is
 uvicorn on a real port, and the only stand-in is the `claude` binary — a script that speaks the
 CLI's newline-delimited JSON and nothing else.
 
@@ -39,7 +39,7 @@ from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from util.testing.asgi import serve_app
 
-RUNNER_BIN = "_main/haku/runtime/x/claude_bridge/runner_bin"
+RUNNER_BIN = "_main/haku/runtime/x/bridge/runner_bin"
 
 STUB_CLAUDE = "_main/haku/console/x/claude_code/testing/stub_claude_bin"
 

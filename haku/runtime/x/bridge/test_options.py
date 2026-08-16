@@ -13,14 +13,8 @@ from pathlib import Path
 
 import pytest_bazel
 
-from haku.runtime.x.claude_bridge.options import (
-    ENTRYPOINT,
-    ClaudeSession,
-    HttpMcpServer,
-    build_claude_launch,
-    claude_backend,
-)
-from haku.runtime.x.claude_bridge.protocol import FINE_GRAINED_TOOL_STREAMING_ENV
+from haku.runtime.x.bridge.options import ENTRYPOINT, ClaudeSession, HttpMcpServer, build_claude_launch, claude_backend
+from haku.runtime.x.bridge.protocol import FINE_GRAINED_TOOL_STREAMING_ENV
 
 CONSOLE_SESSION = ClaudeSession(
     append_system_prompt="you are Haku",

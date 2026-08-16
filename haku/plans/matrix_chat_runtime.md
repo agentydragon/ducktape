@@ -228,7 +228,7 @@ The three candidate workarounds, now only needed for turns with no boundary to a
 stdin and blocks up to 60s for a correlated `control_response`. There is a whole control
 channel beside the message stream — `initialize`, `mcp_status`, `get_context_usage`,
 `set_permission_mode`, `set_model`, `rewind_files`, `mcp_reconnect`, `mcp_toggle`,
-`stop_task`, `interrupt` — and because `claude_bridge` tunnels SDK stdio over the
+`stop_task`, `interrupt` — and because `bridge` tunnels SDK stdio over the
 bridge WebSocket, every one of them already reaches the CLI in the sandbox. So the gap is
 specific and worth stating precisely: the channel is rich, and **none of its subtypes adds
 input to a running turn**. Interrupt exists; steer does not.
@@ -1014,7 +1014,7 @@ Two of the three items that were still open here have since landed:
   namespaced `haku-sandbox`, which is Haku's own workspace and not the chat runtime's
   `haku-claude-sandbox`, so these sandboxes carry no age fence.
 - **Re-adoption rather than replacement** (R3.4) — **done**, design B. `run()` in
-  <../runtime/x/claude_bridge/runner.py> dials, serves and dials again, holding the CLI process
+  <../runtime/x/bridge/runner.py> dials, serves and dials again, holding the CLI process
   across the gap with a replay window; `handle_runner` calls `adopt_open_turn` and picks the
   exchange up mid-flight. What made it safe is that an expired lease means unowned rather than
   dead (#4048), so a dropped session is observable by another replica and adoptable by the

@@ -113,7 +113,7 @@ environment.
 message routing over an abstract `Transport`. Haku will keep `ClaudeSDKClient` and `Query` in the
 trusted console process and tunnel that existing JSON protocol over a WebSocket to a thin sandbox
 bridge around Claude Code's stdin/stdout. The executable bridge is
-`//haku/runtime/x/claude_bridge:runner_bin`; it imports no Agent SDK code and starts the pinned
+`//haku/runtime/x/bridge:runner_bin`; it imports no Agent SDK code and starts the pinned
 Claude Code executable supplied by the sandbox image. The trusted process derives a versioned launch
 frame from `ClaudeAgentOptions`, preserving dynamic CLI arguments, working directory, and explicit
 environment without putting SDK orchestration in the sandbox. A compatibility test checks the launch

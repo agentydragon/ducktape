@@ -366,7 +366,7 @@ reprojection is the other half of that bargain and wants writing at the same tim
 #### Pressure-tested against the two things that would break it
 
 Neither is implemented; both are read from documentation rather than measured, in the same spirit as
-<../runtime/x/claude_bridge/docs/second_backend.md>.
+<../runtime/x/bridge/docs/second_backend.md>.
 
 **A Codex backend.** Forces the four points above: identity cannot be borrowed; reasoning is a state
 both harnesses have; `TurnCompleted` needs its own usage shape; and the status line has to derive

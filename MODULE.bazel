@@ -412,8 +412,8 @@ apt.install(
 # check out haku-state into /workspace before it launches Claude Code.
 apt.install(
     name = "trixie_haku_claude_runner",
-    lock = "//haku/runtime/x/claude_bridge:trixie_haku_claude_runner.lock.json",
-    manifest = "//haku/runtime/x/claude_bridge:trixie_haku_claude_runner.yaml",
+    lock = "//haku/runtime/x/bridge:trixie_haku_claude_runner.lock.json",
+    manifest = "//haku/runtime/x/bridge:trixie_haku_claude_runner.yaml",
 )
 use_repo(apt, "gnome_shell_test", "trixie_attic_rotation", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_haku_claude_runner", "trixie_wayback_cache")
 

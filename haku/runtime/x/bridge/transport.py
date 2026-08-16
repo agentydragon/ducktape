@@ -14,7 +14,7 @@ from typing import Any
 
 import anyio
 
-from haku.runtime.x.claude_bridge.protocol import (
+from haku.runtime.x.bridge.protocol import (
     PROTOCOL_VERSION,
     RUNNER_TO_CONSOLE,
     SUPPORTED_VERSIONS,

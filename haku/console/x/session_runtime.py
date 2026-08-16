@@ -68,15 +68,9 @@ from haku.console.x.session_views import (
     SessionMessageView,
     SessionView,
 )
-from haku.runtime.x.claude_bridge.cli_client import (
-    ClaudeCli,
-    ReceivedFrame,
-    RecordedFrame,
-    SentPrompt,
-    cli_over_websocket,
-)
-from haku.runtime.x.claude_bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch
-from haku.runtime.x.claude_bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, TextWebSocket
+from haku.runtime.x.bridge.cli_client import ClaudeCli, ReceivedFrame, RecordedFrame, SentPrompt, cli_over_websocket
+from haku.runtime.x.bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch
+from haku.runtime.x.bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, TextWebSocket
 
 router = APIRouter(tags=["sessions"])
 internal_router = APIRouter(tags=["claude-chat-internal"])

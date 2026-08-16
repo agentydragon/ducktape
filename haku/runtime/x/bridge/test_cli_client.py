@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from haku.runtime.x.claude_bridge.cli_client import ClaudeCli, ClaudeCliError
+from haku.runtime.x.bridge.cli_client import ClaudeCli, ClaudeCliError
 
 
 class ScriptedChannel:

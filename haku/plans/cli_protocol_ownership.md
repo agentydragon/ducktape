@@ -2,7 +2,7 @@
 
 **Status: built** (decided 2026-08-12). The console drives Claude Code's newline-delimited JSON
 protocol itself: <../cli_protocol/frames.py> types the control channel, `ClaudeCli`
-(<../runtime/x/claude_bridge/cli_client.py>) reads both channels and owns `initialize` and
+(<../runtime/x/bridge/cli_client.py>) reads both channels and owns `initialize` and
 `interrupt`, and `options.py` builds the launch argv. No Python imports the Agent SDK. Why each of
 those is ours rather than the SDK's is written where it is now maintained — those modules'
 docstrings — and the wire itself is <../cli_protocol/protocol.md>.
@@ -85,7 +85,7 @@ the console — so a reconnect lands on whichever replica the Service picks, wit
 problem to solve.
 
 What dies is the CLI process. `bridge_websocket_to_claude`
-(<../runtime/x/claude_bridge/runner.py>) terminates it in its `finally` when the socket
+(<../runtime/x/bridge/runner.py>) terminates it in its `finally` when the socket
 closes. That single line is the difference between the two designs below.
 
 ### Two designs

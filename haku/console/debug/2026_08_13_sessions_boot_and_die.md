@@ -48,7 +48,7 @@ refusal, every time, by design.
 Three places the reason could be, and is not:
 
 - **The CLI's stderr is discarded.** `bridge_websocket_to_claude` opens the process with
-  `stderr=subprocess.DEVNULL` (<../../runtime/x/claude_bridge/runner.py>). If `claude` fails to
+  `stderr=subprocess.DEVNULL` (<../../runtime/x/bridge/runner.py>). If `claude` fails to
   start — a rejected credential, a bad flag, a missing binary — the console learns only
   `Claude Code exited with status N`, and the sentence that said why was thrown away in the sandbox.
 - **Bootstrap output is not durable.** `prepare_workspace` streams to the pod's stdout and to the

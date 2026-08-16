@@ -1,4 +1,4 @@
-# claude_bridge — the console's Claude CLI, at the far end of a WebSocket
+# bridge — the console's Claude CLI, at the far end of a WebSocket
 
 The sandbox side of the Claude chat experiment, and the console-side client that talks to it. The
 console owns the CLI's own newline-delimited JSON protocol (`cli_client.py`, described in

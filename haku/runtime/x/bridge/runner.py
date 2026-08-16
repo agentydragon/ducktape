@@ -23,9 +23,9 @@ from tenacity import AsyncRetrying, before_sleep_log, retry_if_exception, stop_a
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
-from haku.runtime.x.claude_bridge.backend import BRIDGE_CREDENTIAL_VARIABLE, CliBackend
-from haku.runtime.x.claude_bridge.options import ClaudeBackend, claude_backend
-from haku.runtime.x.claude_bridge.protocol import (
+from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE, CliBackend
+from haku.runtime.x.bridge.options import ClaudeBackend, claude_backend
+from haku.runtime.x.bridge.protocol import (
     CONSOLE_TO_RUNNER,
     ClaudeLaunch,
     ClaudeMessage,

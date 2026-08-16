@@ -10,7 +10,7 @@
 #
 # TWO IMAGES RUN THIS, and a change here lands in both:
 #   - the haku-sandbox exec target (this directory's Dockerfile), via the MCP bootstrap;
-#   - the Console-owned Claude runner (//haku/runtime/x/claude_bridge:runner_image),
+#   - the Console-owned Claude runner (//haku/runtime/x/bridge:runner_image),
 #     which runs it itself before launching Claude Code, so that session comes up with
 #     Haku's manual and its git credential rather than an empty /workspace.
 # The steps a given box does not want are switched off by env, below — never by a second

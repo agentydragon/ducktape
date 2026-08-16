@@ -74,9 +74,9 @@ jobs:
             }
           - { image: "//finance/scraper:image", image_name: augur-evidence, test_target: "//finance/scraper/..." }
           - {
-              image: "//haku/runtime/x/claude_bridge:runner_image",
+              image: "//haku/runtime/x/bridge:runner_image",
               image_name: haku-claude-runner,
-              test_target: "//haku/runtime/x/claude_bridge/...",
+              test_target: "//haku/runtime/x/bridge/...",
             }
           - { image: "//haku/sandbox_mcp:image", image_name: haku-sandbox-mcp, test_target: "//haku/sandbox_mcp/..." }
           - {

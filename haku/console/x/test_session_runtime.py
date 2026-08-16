@@ -39,8 +39,8 @@ from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import ABORTED_NOTICE, GOING_AWAY_CODE, RolloutRecorder, SessionService
 from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, MatrixSession, SessionStore, SpaSession
 from haku.console.x.testing.recording_claims import RecordingClaims
-from haku.runtime.x.claude_bridge.cli_client import ClaudeCli, ReceivedFrame, SentPrompt
-from haku.runtime.x.claude_bridge.protocol import NOT_ADMITTED_CODE
+from haku.runtime.x.bridge.cli_client import ClaudeCli, ReceivedFrame, SentPrompt
+from haku.runtime.x.bridge.protocol import NOT_ADMITTED_CODE
 
 
 def test_runtime_deployment_wiring_has_no_application_defaults() -> None:

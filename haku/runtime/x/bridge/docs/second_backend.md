@@ -83,7 +83,7 @@ exactly one place, the `runner_image` `env` in <../BUILD.bazel>, and read in exa
 backend. The SandboxTemplate at
 <../../../../../cluster/k8s/haku/workspaces/app/sandboxtemplate-haku-claude.yaml> does **not**
 set it, so a rename would never have been the cross-image flag day it looked like — but it would
-still have broken `haku/console/x/test_claude_bridge_e2e.py`, which sets it, and bought nothing.
+still have broken `haku/console/x/test_bridge_e2e.py`, which sets it, and bought nothing.
 
 `HAKU_CLAUDE_SETUP` is the one genuine misnomer left: the bootstrap it points at checks
 haku-state out and knows nothing about which CLI follows it, so it is backend-neutral and its

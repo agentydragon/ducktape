@@ -30,8 +30,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
 
-from haku.runtime.x.claude_bridge.backend import ProcessLaunch, child_environment
-from haku.runtime.x.claude_bridge.protocol import FINE_GRAINED_TOOL_STREAMING_ENV, ClaudeLaunch
+from haku.runtime.x.bridge.backend import ProcessLaunch, child_environment
+from haku.runtime.x.bridge.protocol import FINE_GRAINED_TOOL_STREAMING_ENV, ClaudeLaunch
 
 # What the CLI reports itself as. The SDK sent `sdk-py`; the console is not the SDK, and the CLI
 # treats this as a label rather than switching behaviour on it.

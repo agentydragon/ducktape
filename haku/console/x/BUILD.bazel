@@ -17,9 +17,9 @@ py_library(
         "//haku/console:config",
         "//haku/console:operator_auth",
         "//haku/console/x/claude_code:projection",
-        "//haku/runtime/x/claude_bridge:cli_client",
-        "//haku/runtime/x/claude_bridge:options",
-        "//haku/runtime/x/claude_bridge:protocol",
+        "//haku/runtime/x/bridge:cli_client",
+        "//haku/runtime/x/bridge:options",
+        "//haku/runtime/x/bridge:protocol",
         "@pypi//fastapi",
         "@pypi//pydantic",
     ],
@@ -38,7 +38,7 @@ py_library(
         "//haku/console:database_schema",
         "//haku/console/tools:conversations",
         "//haku/console/x/claude_code:projection",
-        "//haku/runtime/x/claude_bridge:cli_client",
+        "//haku/runtime/x/bridge:cli_client",
         "@pypi//sqlalchemy",
     ],
 )
@@ -190,7 +190,7 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console/x/testing:recording_claims",
-        "//haku/runtime/x/claude_bridge:protocol",
+        "//haku/runtime/x/bridge:protocol",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
@@ -284,12 +284,12 @@ py_test(
 )
 
 py_test(
-    name = "test_claude_bridge_e2e",
+    name = "test_bridge_e2e",
     size = "large",  # a Postgres database, a uvicorn console and a runner subprocess per test
-    srcs = ["test_claude_bridge_e2e.py"],
+    srcs = ["test_bridge_e2e.py"],
     data = [
         "//haku/console/x/claude_code/testing:stub_claude_bin",
-        "//haku/runtime/x/claude_bridge:runner_bin",
+        "//haku/runtime/x/bridge:runner_bin",
         "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],

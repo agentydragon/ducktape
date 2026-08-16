@@ -84,7 +84,7 @@ from haku.console.x.session_views import (
     session_view,
     setup_narration,
 )
-from haku.runtime.x.claude_bridge.cli_client import RecordedFrame
+from haku.runtime.x.bridge.cli_client import RecordedFrame
 
 logger = logging.getLogger(__name__)
 

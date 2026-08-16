@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from haku.runtime.x.claude_bridge.protocol import ClaudeLaunch
+from haku.runtime.x.bridge.protocol import ClaudeLaunch
 
 # The credential the runner dials the console with. A property of the bridge rather than of any
 # CLI, which is why stripping it is here and not in a backend: it is ours whichever child runs.
