@@ -181,7 +181,7 @@ Under this design `lifecycle` and `narration` become channel-neutral session eve
 Matrix tag derives from them; `status`, `holding` and `room` stay Matrix's own, because they
 describe that channel's rendering. Do not promote the whole enum.
 
-## 4. Live updates, over the socket the shell already holds — done
+## 4. Live updates, over the socket the shell already holds — built; the increment is next
 
 **Build on `/api/events/ws`, not a second SSE endpoint.** The shell holds exactly one per tab, and
 `frontend/console_events.ts`'s `useConsoleEvents` already provides the whole client half:
@@ -224,17 +224,152 @@ window per session, an owner lookup resolved once per session and cached, and th
 list on the same event as the detail. The SPA chat page's SSE stream is untouched — §2 retires it,
 not this.
 
-**Later, and deliberately not now: the backend streams the increment.** The operator wants the
-server to push what changed rather than have the page re-read a whole conversation on every
-invalidation (2026-08-16). Invalidate-then-refetch was the right first move — it is idempotent, so
-a reconnect that missed events still lands correct, which is the property §1 turns on — but it
-leaves the O(session)-per-update read <../../plans/chat_runtime_cleanup.md> § Anytime describes,
-now paid per open tab as well as per delta. Two things have to exist before an increment is
-sendable at all, and both are on the way: an ordered neutral event stream to name the increment in
-(<../../plans/chat_runtime_projection.md> § stage 4), and a per-consumer position in it — which is
-§1's cursor with a socket at the far end instead of a room. So this is a **consequence of the
-neutral layer, not an optimization to schedule against it**, and until it exists the refetch is the
-honest implementation. Recorded here rather than built.
+### Streaming the increment — scheduled, and designed here
+
+**The operator chose to build this before §2's merge** (2026-08-16, <../../plans/next_month.md>
+§ C): the increment first, the merge onto it, so the surviving surface never reads worse than
+`/chat` does today. This subsection is that design.
+
+What the refetch costs is the whole conversation per invalidation, per open tab
+(<../../plans/chat_runtime_cleanup.md> § Anytime). What an increment removes is the **history** —
+the part that grows without bound. It does not remove the notification rate, and it does not
+restore per-token streaming; both are priced below.
+
+#### The position is the page's, not a row
+
+Both plans tie "per-consumer position" to `chat_attachment` (§1, and
+<../../plans/chat_runtime_cleanup.md> § Stage 7 step 2).
+**For a browser that is the wrong shape**, and the difference is not scale but what the cursor
+means. `chat_attachment`'s cursor is a **delivery obligation**: the room holds its own copy, so a
+position behind the record is work the console still owes and must remember across a crash — that
+is the entire reason §1 exists. A tab holds no copy that outlives it. Its position is a **read
+cursor**, the same kind of thing as the `next_cursor` on `GET /api/tool-calls`: an argument to the
+next read, meaningful only to the caller holding it.
+
+Persisting it breaks in three separate ways, and none is a detail:
+
+- **There is no address to key it by.** `chat_attachment` is `(surface, address)` with a partial
+  unique index on the attached rows. A tab has no address; minting one (a client-generated id in
+  storage) invents durable identity for something that has none, and the unique index then either
+  forbids a second tab on one session — a normal thing to do — or means nothing.
+- **Nothing closes the row.** A browser does not reliably announce that it is gone, so every
+  abandoned tab leaves a cursor claiming rows are still owed to it, and the reconciler §1
+  describes would be repairing consumers that no longer exist.
+- **It makes the read path a write path.** A durable cursor is worth nothing unless it advances in
+  the transaction that delivers, so each event to each tab becomes an `UPDATE` — on the session's
+  own tables, contending with the turn loop's writes. The refetch it replaces costs zero writes.
+
+So the position is a **query parameter and nothing else**. The server holds no per-consumer state
+at all — not even the in-memory `last_event_seq` this was first sketched as, because
+`/api/events/ws` is one socket per _tab_ carrying every session, not one per session, so there is
+nothing for a per-session position to live on. §1's own criterion — does the channel hold its own
+copy? — already gives this answer: the console converges by reading the record, so it needs to be
+told _when_, not delivered _to_. Reading a suffix of the record instead of all of it does not move
+it across that line.
+
+#### The address does not cover the transcript, and that is the real precondition
+
+<../../plans/next_month.md> § Not now calls the preconditions half met — the ordered stream and its
+address exist, the position does not. Reading the code, the stream itself is the part that is
+short: **two things a transcript shows are not in `session_events`.**
+
+- **The operator's own prompt.** `enqueue_prompt` writes a `session_messages` row and no event;
+  `x/session_events.py`'s `row()` maps only agent-side events. So `event_seq` is not a cursor over
+  the messages a transcript renders, and an increment addressed by it would silently drop the
+  operator's own question.
+- **The message currently streaming.** A `TextDelta` is deliberately not a row — the completed
+  message carries the prose whole — so an open message is invisible in the log until
+  `message_completed`, while `session_messages.content` is mutated in place per delta.
+
+Two consequences, and the first is a dependency worth naming:
+
+- **The `authored` arm gets its first writer, and it is uncontroversial.** An operator prompt is
+  conversation, not lifecycle, so recording it as a `session_events` row settles nothing about the
+  argument <../../plans/next*month.md> § 3 is blocked on — §3's claim is about lifecycle. It is
+  `authored` because at enqueue time it has no frame; `set_message_source_frames` later points the
+  \_message* at the frame it went out as, and the event stays authored.
+- **The open message is read whole, every time.** One row, bounded by one message rather than by
+  the transcript, found by the existing `uq_session_turns_open` index. It is the one thing the
+  cursor cannot address, and sending it whole is already the increment.
+
+#### What is sent is changed messages, not events
+
+The obvious shape — ship the `session_events` rows after N and let the page apply them — is the
+wrong one. `x/session_views.message_view` is where events become a message today; a second fold in
+TypeScript would be one meaning maintained in two languages, kept in step across a roll where the
+browser is a release behind the server. Worse, applying events demands exactly-once and in-order
+delivery, while **replacing whole message rows demands neither**: a merge keyed on `message_id` is
+idempotent, so a duplicate costs nothing and a re-read from an older position is always correct.
+That is what makes every recovery path below trivial instead of a protocol.
+
+`event_seq` stays the **address** — what identifies a position — while a changed message is the
+**payload**. Those are different jobs and this is the design's one substantive choice.
+
+#### The read surface
+
+A new route beside the existing read, not a parameter on it: `GET
+/api/conversations/{id}/changes?after={event_seq}` returning `{watermark, messages, turns,
+status}`. `messages` there means "the ones that moved", which is a different field from the detail
+view's "all of them" — overloading one name with both is how a client ends up rendering an
+increment as a transcript.
+
+- **`watermark`** is the session's highest `event_seq` at read time, and the page's next `after`.
+  The detail read gains the same field, so a freshly opened transcript is self-addressing.
+- **Reconnect needs nothing new.** `useConsoleEvents` already re-fires its callback on reconnect
+  and on a bounded timer; the page reads changes from the position it still holds. There is no
+  subscribe step to redo and no server state to re-establish.
+- **A gap cannot be detected and must not be relied on.** `session_events.event_seq` is a global
+  `Identity` sequence, so consecutive rows of one session are not contiguous and holes are normal.
+  Correctness comes from every read being "everything after N", never "the next one after N".
+- **A position older than the log is `410 Gone`**, and the page falls back to the full read.
+  Nothing prunes `session_events` today — rows leave only with their session (`ON DELETE CASCADE`)
+  or by <../../plans/legacy_purge.md> — but "no rows after N" and "N is before this log begins" are
+  different answers and only one of them is safe to render.
+- **The whole-conversation read stays**, in three roles: the opening snapshot, the recovery path
+  above, and the inventory the list page reads (which is a different query and stays a refetch —
+  it is bounded by session count, not by transcript length).
+
+**One premise to re-check later: a single writer per session.** A row committed with a lower
+`event_seq` after a higher one was already read would be skipped permanently. The session lease
+makes that impossible today — one replica runs the turn loop and writes in frame order. Console-origin
+events written by a replica that does _not_ hold the lease (§3's lifecycle, a lease changing hands)
+break it, and would want a lag-bounded watermark rather than the newest row.
+
+#### `session_changed` carries nothing new
+
+Not an `event_seq`, not a range. A tab showing the session must read anyway whenever a turn is open,
+since the streaming message advances no event; a tab showing another session already routes on
+`session_id`; and the page holds the only position that matters. Putting a position on the wire
+would state it in a second place and invite a client to treat the socket as authoritative about it,
+which is exactly the line `SessionChangedEvent` holds today. It also keeps this change free of the
+expand/contract cost §4's fourth bullet prices for widening a cross-replica payload.
+
+#### Coalescing survives; its justification changes
+
+The **rate is unchanged** — `SessionEventKind.UPDATE` still fires per delta, hundreds per turn, and
+the fan-out still absorbs them. What falls is the cost of a flush: from one whole transcript per tab
+to one open message plus whatever completed inside the window. So `COALESCE_WINDOW` stops being the
+safety valve its comment describes and becomes a **latency knob** — its floor is now a round trip
+rather than an O(session) read, and shortening it to make prose read more live becomes a defensible
+change rather than a dangerous one. Do not shorten it in the same PR: the reason to keep 500 ms is
+that nothing has measured the alternative.
+
+#### What this does not solve
+
+- **Not per-token streaming.** Prose still arrives one whole message at a time, at the coalescing
+  window's rate. Per-delta increments do exist durably — `stream_event` frames in `session_frames`,
+  addressed by `frame_seq` — but folding them client-side is one backend's wire interpreted in the
+  browser, which is what the neutral layer exists to prevent. If per-token ever matters more than
+  that, it is a separate argument, not this design extended.
+- **Nothing for Matrix.** A channel holding its own copy still needs §1's durable cursor; this
+  deliberately does not unify the two, and the section above is why.
+- **`/api/sessions/{id}/stream` and `claude_chat_page.tsx` are untouched.** They keep working
+  unchanged until §2 deletes them; retrofitting the increment onto a route scheduled for removal
+  would be building a second consumer for it. What this changes is §2's price: at the merge the
+  surviving surface already streams increments, so the regression §2 was framed as accepting is
+  half-second whole-message updates rather than a whole-transcript refetch.
+- **The list page still refetches**, and the second event category (§3, and
+  <../../plans/next_month.md> § 3) is not built by this.
 
 ## 5. Sending from the console
 
@@ -377,13 +512,16 @@ surface whose client only read message rows; it is not true of a channel:
 rather than a viewer, from rows that already existed. What remains:
 
 1. ~~**Live updates** (§4)~~ — done.
-2. **Merge the two pages** (§2) and move sending into the merged detail (§5, SPA half).
-3. **Record lifecycle events** (§3) and render them in both channels. The `authored` arm has its
+2. **Stream the increment** (§4). Ahead of the merge by the operator's choice, so the surviving
+   surface never reads worse than `/chat` does. Its own first step is the `authored` writer for the
+   operator's prompt, without which the cursor does not cover the transcript.
+3. **Merge the two pages** (§2) and move sending into the merged detail (§5, SPA half).
+4. **Record lifecycle events** (§3) and render them in both channels. The `authored` arm has its
    first two writers — a lease taken over and a lease lapsing; `_SessionStatusAnnouncer`'s
    transitions are what remain.
-4. **The reconcile loop** (§1) — the cursor on `chat_attachment`, and Matrix delivery moved onto
+5. **The reconcile loop** (§1) — the cursor on `chat_attachment`, and Matrix delivery moved onto
    it. Wants cleanup stage 7's schema half; everything above is possible without it.
-5. **The Matrix relay** (§5, Matrix half) — one more thing the loop already does, once it exists.
+6. **The Matrix relay** (§5, Matrix half) — one more thing the loop already does, once it exists.
 
 Two items sit outside that spine. **The session link in the R7.2 notice** (§6) is small and can
 land any time after §2 has settled the route — not before, since a posted link is permanent.
