@@ -214,9 +214,6 @@ py_test(
     srcs = ["test_matrix_fullstack_e2e.py"],
     data = [
         "//cluster/k8s:haku_console_system_prompt",
-        "//haku/console/x/testing:matrix_console_replica_bin",
-        "//haku/console/x/testing:stub_claude_bin",
-        "//haku/runtime/x/claude_bridge:runner_bin",
         "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
         "//third_party/containers:synapse",
@@ -226,13 +223,10 @@ py_test(
         ":claude_chat",
         ":conftest",
         "//:conftest",
-        "//haku/console:chat_models",
         "//haku/console:conftest",
-        "//haku/console:database_schema",
+        "//haku/console/x/testing:console_deployment",
+        "//haku/console/x/testing:operator_room",
         "//haku/console/x/testing:synapse_container",
-        "//util:net",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
@@ -293,6 +287,7 @@ py_test(
     deps = [
         ":matrix_client",
         "//:conftest",
+        "//haku/console/x/testing:operator_room",
         "//haku/console/x/testing:synapse_container",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import

@@ -48,6 +48,44 @@ py_library(
 )
 
 py_library(
+    name = "waiting",
+    srcs = ["waiting.py"],
+)
+
+py_library(
+    name = "operator_room",
+    srcs = ["operator_room.py"],
+    deps = [
+        ":synapse_container",
+        ":waiting",
+    ],
+)
+
+py_library(
+    name = "console_deployment",
+    srcs = ["console_deployment.py"],
+    # Reaches every target that runs a console replica through `deps`, so a new one needs no
+    # `data` of its own.
+    data = [
+        ":matrix_console_replica_bin",
+        ":stub_claude_bin",
+        "//haku/runtime/x/claude_bridge:runner_bin",
+    ],
+    deps = [
+        ":waiting",
+        "//haku/console:chat_models",
+        "//haku/console:database_schema",
+        "//haku/console/x:claude_chat",
+        "//haku/console/x:session_frames",
+        "//util:net",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "matrix_console_replica",
     srcs = ["matrix_console_replica.py"],
     deps = [
