@@ -11,7 +11,7 @@ from fastmcp import Client
 
 from haku.console.tools.conversations import (
     HAKU_CONVERSATIONS_SERVER_ID,
-    MAX_FRAME_BYTES,
+    MAX_PAGE_BYTES,
     Conversation,
     RolloutFrame,
     TurnRecord,
@@ -21,6 +21,11 @@ from haku.console.tools.conversations import (
 SESSION = UUID("11111111-1111-1111-1111-111111111111")
 TURN = UUID("22222222-2222-2222-2222-222222222222")
 NOW = datetime.datetime(2026, 8, 12, 9, 0, tzinfo=datetime.UTC)
+
+
+def _big_frame(seq: int) -> RolloutFrame:
+    """Two of these overrun one page's budget; one does not."""
+    return _frame(seq, kind="user", payload={"type": "user", "content": "x" * (MAX_PAGE_BYTES * 2 // 3)})
 
 
 def _frame(seq: int, kind: str = "assistant", payload: dict | None = None) -> RolloutFrame:
@@ -117,27 +122,40 @@ async def test_the_cursor_reaches_the_store_rather_than_being_filtered_here() ->
     async with Client(build_mcp(reader)) as client:
         await client.call_tool("read_rollout", {"session_id": str(SESSION), "after_seq": 1, "kinds": ["assistant"]})
 
-    assert reader.queries == [{"session_id": SESSION, "after_seq": 1, "limit": 25, "kinds": ["assistant"]}]
+    # 26 rather than 25: the extra row is how the page tells "exactly full" from "more to come".
+    assert reader.queries == [{"session_id": SESSION, "after_seq": 1, "limit": 26, "kinds": ["assistant"]}]
 
 
-async def test_an_oversized_frame_is_clipped_and_says_so() -> None:
-    """A row limit alone does not bound a response: one tool result can be a whole file."""
-    big = _frame(1, payload={"type": "user", "content": "x" * (MAX_FRAME_BYTES * 2)})
-    reader = _Reader(big, _frame(2))
+async def test_a_page_stops_on_its_byte_budget_and_says_where() -> None:
+    """A row limit alone does not bound a response: one tool result can be a whole file. The
+    frame that would overrun starts the next page rather than being dropped from this one."""
+    reader = _Reader(_big_frame(1), _big_frame(2), _frame(3))
 
     async with Client(build_mcp(reader)) as client:
-        result = await client.call_tool("read_rollout", {"session_id": str(SESSION)})
+        result = await client.call_tool("read_rollout", {"session_id": str(SESSION), "limit": 25})
 
-    clipped, kept = result.data.frames
-    assert clipped.payload is None
-    assert clipped.clipped_bytes > MAX_FRAME_BYTES
-    assert kept.payload == {"type": "assistant"}
+    assert [frame.frame_seq for frame in result.data.frames] == [1]
+    assert result.data.next_after_seq == 1, "the overrunning frame is where the reader resumes"
+    assert result.data.frames[0].clipped_bytes is None, "a frame that fits is never clipped"
+
+
+async def test_a_frame_larger_than_a_whole_page_is_clipped_rather_than_wedging_the_cursor() -> None:
+    """Skipping it would leave the cursor unable to advance past it, and a reader looping on the
+    same page forever. It goes out with its size instead, for `read_frame` to fetch."""
+    reader = _Reader(_frame(1, payload={"type": "user", "content": "x" * (MAX_PAGE_BYTES * 2)}), _frame(2))
+
+    async with Client(build_mcp(reader)) as client:
+        result = await client.call_tool("read_rollout", {"session_id": str(SESSION), "limit": 25})
+
+    [only] = result.data.frames
+    assert only.payload is None
+    assert only.clipped_bytes > MAX_PAGE_BYTES
+    assert result.data.next_after_seq == 1
 
 
 async def test_one_named_frame_comes_back_whole_however_large() -> None:
-    """The escape hatch from clipping: a page cannot bound a response full of whole files, but a
-    single named frame already is one."""
-    big = _frame(1, payload={"type": "user", "content": "x" * (MAX_FRAME_BYTES * 2)})
+    """The escape hatch: a page has a budget to spend, and a single named frame is the response."""
+    big = _frame(1, payload={"type": "user", "content": "x" * (MAX_PAGE_BYTES * 2)})
     reader = _Reader(big, _frame(2))
 
     async with Client(build_mcp(reader)) as client:

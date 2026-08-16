@@ -6,12 +6,15 @@ Phase 5). The corpus is `session_frames`, the console's verbatim record of the a
 protocol, so a tool call and the result it got are both there — which no other table has.
 
 **A drilldown, not a dump.** `list_conversations` finds the session, `read_rollout` pages its
-frames, and a `kinds` filter is how you skim before reading. Context is the scarce resource, so
-both the page size and each frame's payload are capped, and a clipped frame says so rather than
-silently returning less than the record holds. `read_frame` is the bottom of the drilldown: one
-frame, whole, however large — because a cap that cannot be escaped is a record that cannot be
-read. The census of production frames was blind to every `control_response` in the corpus for
-exactly that reason.
+frames, and a `kinds` filter is how you skim before reading. Context is the scarce resource, so a
+page is bounded in rows *and* in bytes — it stops when either runs out and its cursor says where.
+`read_frame` is the bottom of the drilldown: one frame, whole, however large.
+
+**Every frame is recorded whole**, so a page's byte budget protects nothing but the reader's
+context — which is why it is a budget on the page rather than a cap on each frame. The earlier
+per-frame cap got that wrong in both directions: it dropped frames a page had ample room for, and
+still allowed a page of many just under the line. The census of production frames was blind to
+every `control_response` in the corpus for exactly that reason.
 
 **Reading is a cursor over the log; turns are an index into it.** `frame_seq` already totally
 orders a session, so `read_rollout` needs no notion of a turn — and a turn is the console's
@@ -44,10 +47,22 @@ HAKU_CONVERSATIONS_SERVER_ID = "haku_conversations"
 MAX_PAGE = 100
 DEFAULT_PAGE = 25
 
-# Bytes of one frame's JSON before it is clipped by `read_rollout`. A row limit alone does not
-# bound a response, because one `tool_result` can be an entire file. `read_frame` does not apply
-# it: one frame is already a bounded response.
-MAX_FRAME_BYTES = 8_000
+# Bytes of payload one `read_rollout` page will hand back before it stops and points its cursor
+# at where it stopped. A row limit alone does not bound a response, because one `tool_result` can
+# be an entire file.
+#
+# **The budget is on the page, not on the frame.** Every frame is recorded whole, so there is
+# nothing to protect but the reader's context — and a reader's context is spent by the response,
+# not by any one row in it. A per-frame cap gets that wrong in both directions at once: it dropped
+# a 9 KB frame that a page had ample room for (21% of production `user` frames, every
+# `control_response`, effectively every `system/init` — see `../debug/frame_shape_census.md`),
+# while still permitting a page of 25 frames just under the line. Stopping the page instead means
+# a large frame costs the rest of its page rather than its own contents, and the cursor already
+# says where to resume.
+#
+# 200 KB because that was the old regime's worst case (25 × 8 KB), so the ceiling on a response
+# does not move — only what a reader can spend it on.
+MAX_PAGE_BYTES = 200_000
 
 # What a session's `kind` column actually holds, so a caller can filter for any of it. Every
 # entry was observed in production; four of them are absent from the CLI's `protocol.md`, and
@@ -137,18 +152,42 @@ class RolloutReader(Protocol):
     async def list_turns(self, session_id: UUID, *, limit: int) -> list[TurnRecord]: ...
 
 
+def payload_bytes(frame: RolloutFrame) -> int:
+    return 0 if frame.payload is None else len(json.dumps(frame.payload))
+
+
 def clip(frame: RolloutFrame) -> RolloutFrame:
-    """Drop an oversized payload, recording what was there.
+    """Drop a payload, recording what was there.
 
     Clipping rather than truncating the JSON: half an object is not parseable and reads as
-    corruption, where a stated size and a missing payload is a fact the caller can act on.
+    corruption, where a stated size and a missing payload is a fact the caller can act on —
+    `read_frame` reads it whole.
+
+    Reached only for a frame that alone exceeds a whole page's budget, and only as the first
+    frame of its page. Any other oversized frame simply starts the next page.
     """
-    if frame.payload is None:
-        return frame
-    size = len(json.dumps(frame.payload))
-    if size <= MAX_FRAME_BYTES:
-        return frame
-    return frame.model_copy(update={"payload": None, "clipped_bytes": size})
+    return frame.model_copy(update={"payload": None, "clipped_bytes": payload_bytes(frame)})
+
+
+def take_page(frames: Sequence[RolloutFrame], *, limit: int) -> tuple[list[RolloutFrame], bool]:
+    """As many frames as fit in `MAX_PAGE_BYTES`, and whether anything was left behind.
+
+    `frames` is one row longer than `limit` when more exist, which is how a page knows to hand
+    back a cursor without a second count query.
+    """
+    page: list[RolloutFrame] = []
+    spent = 0
+    for frame in frames[:limit]:
+        size = payload_bytes(frame)
+        if not page and size > MAX_PAGE_BYTES:
+            # One frame larger than the entire budget. It has to go out clipped: skipping it
+            # would leave the cursor unable to advance past it, and a reader looping forever.
+            return [clip(frame)], True
+        if spent + size > MAX_PAGE_BYTES:
+            return page, True
+        page.append(frame)
+        spent += size
+    return page, len(frames) > limit
 
 
 def build_mcp(reader: RolloutReader) -> FastMCP:
@@ -187,26 +226,26 @@ def build_mcp(reader: RolloutReader) -> FastMCP:
         ] = None,
     ) -> RolloutPage:
         """Read one session's protocol frames in order, a page at a time."""
-        frames = [
-            clip(frame) for frame in await reader.read_frames(session_id, after_seq=after_seq, limit=limit, kinds=kinds)
-        ]
-        # A short page is the last one. Cheaper than a second count query, and the caller only
-        # needs to know whether to ask again.
-        return RolloutPage(frames=frames, next_after_seq=frames[-1].frame_seq if len(frames) == limit else None)
+        # One row past the limit, so a full page that happens to be the last one says so rather
+        # than handing back a cursor onto nothing.
+        frames, more = take_page(
+            await reader.read_frames(session_id, after_seq=after_seq, limit=limit + 1, kinds=kinds), limit=limit
+        )
+        return RolloutPage(frames=frames, next_after_seq=frames[-1].frame_seq if more and frames else None)
 
     @mcp.tool
     async def read_frame(
         session_id: Annotated[UUID, Field(description="From `list_conversations`.")],
         frame_seq: Annotated[int, Field(description="The `frame_seq` of the frame to read, from `read_rollout`.")],
     ) -> RolloutFrame:
-        """One frame in full, however large — the way to read what `read_rollout` clipped.
+        """One frame in full, however large — including one too big for any page.
 
-        A page clips an oversized payload because a page of them is unbounded; naming one frame
-        bounds the response by that frame alone. This is the only route to the frames a page can
-        never show: a `control_response`, a `system` init, a tool result of tens of kilobytes.
+        A page spends a byte budget and stops, so a frame larger than the whole budget is the one
+        thing it cannot hand over; naming a single frame bounds the response by that frame alone.
+        Use it when a page returned `clipped_bytes` instead of a payload.
 
         Deltas (`stream_event`) are readable here too, but never need to be — one is a few
-        characters of an answer, and nothing clips them.
+        characters of an answer.
         """
         # `after_seq` is exclusive, so the frame asked for is the first row after its predecessor.
         # `kinds=None` would drop deltas from the query, and a caller naming a `frame_seq` has

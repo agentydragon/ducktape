@@ -394,7 +394,7 @@ and they are the only place a tool call and the result it got both appear. Two r
 messages first and the frames later, both of which should be re-checked against a real index
 rather than argued:
 
-- **A frame's payload is unbounded.** `read_rollout` already clips at 8 KB because one
+- **A frame's payload is unbounded.** `read_rollout` already bounds a page in bytes because one
   `tool_result` can be an entire file (`haku/console/tools/conversations.py`). Embedding those
   verbatim means vectors over file dumps, a corpus that grows with tool volume rather than with
   conversation, and retrieval that returns the file rather than the reasoning about it.
