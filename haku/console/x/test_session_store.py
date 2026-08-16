@@ -655,11 +655,9 @@ async def test_one_prompt_in_flight_is_a_schema_property(chat_store, migrated_se
             await db.flush()
 
 
-async def test_a_prompt_from_a_replica_that_wrote_no_queue_row_is_still_answered(
-    chat_store, migrated_sessions, operator_id
-) -> None:
-    """During the roll that adds the queue, a prompt an old replica accepted exists only as a
-    `pending` message row. Dropping that scan now would leave it accepted and never answered."""
+async def test_a_pending_row_with_no_queue_row_is_not_a_prompt(chat_store, migrated_sessions, operator_id) -> None:
+    """The queue is the only admission record. A `pending` transcript row on its own is the
+    residue of a session that was already stuck, not a prompt waiting to run."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     async with migrated_sessions.begin() as db:
@@ -669,34 +667,19 @@ async def test_a_prompt_from_a_replica_that_wrote_no_queue_row_is_still_answered
                 session_id=view.session_id,
                 role=ChatMessageRole.USER,
                 status=ChatMessageStatus.PENDING,
-                content="enqueued by the previous image",
+                content="orphaned transcript row",
                 error=None,
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
             )
         )
 
+    assert await chat_store.next_prompt(view.session_id) is None
+    # And it does not block a real one.
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "mine")
     turn = await chat_store.next_prompt(view.session_id)
-
     assert turn is not None
-    assert turn.prompt == "enqueued by the previous image"
-    # And admission still refuses while it waits, so the two paths cannot both accept.
-    async with migrated_sessions.begin() as db:
-        db.add(
-            SessionMessage(
-                message_id=uuid4(),
-                session_id=view.session_id,
-                role=ChatMessageRole.USER,
-                status=ChatMessageStatus.PENDING,
-                content="another legacy one",
-                error=None,
-                created_at=datetime.now(UTC),
-                updated_at=datetime.now(UTC),
-            )
-        )
-    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
-    with pytest.raises(RuntimeError, match="already queued"):
-        await chat_store.enqueue_prompt(operator_id, view.session_id, "mine")
+    assert turn.prompt == "mine"
 
 
 @pytest.fixture
