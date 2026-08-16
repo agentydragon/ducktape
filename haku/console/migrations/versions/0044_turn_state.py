@@ -13,8 +13,8 @@ after this point and adopted by a new one resumes with the defaults, and the cos
 one it always was — the turn's last word is queued a second time, which the room sees as the final
 answer repeated rather than as a message lost.
 
-Revision ID: 0043
-Revises: 0042
+Revision ID: 0044
+Revises: 0043
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0043"
-down_revision: str | None = "0042"
+revision: str = "0044"
+down_revision: str | None = "0043"
 branch_labels: str | None = None
 depends_on: str | None = None
 
