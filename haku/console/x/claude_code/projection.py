@@ -1,23 +1,21 @@
 """Claude CLI frames into neutral conversation events.
 
 A **reducer**: `project(state, frames)` returns the state after those frames and what they
-produced. The state is neutral (`ProjectionState`, in <../conversation_events.py>) and the frames
-are Claude's — this adapter is generic over its state, not over its wire
+produced. The state is neutral (`ProjectionState`, in <../conversation_events.py>), the frames are
+Claude's — generic over its state, not over its wire
 (<../../../plans/chat_runtime_projection.md> § The shape).
 
-That shape is what makes live and recovery one code path: steady state projects each frame as it
-lands, adoption projects from a cursor that happens to be behind, and the two agree because
-reducing a sequence in one batch and in any split of batches produce the same projection.
-`test_projection.py` asserts that over every split of a session.
+That is what makes live and recovery one code path: steady state projects each frame as it lands,
+adoption projects from a cursor that is behind, and the two agree because one batch and any split
+of batches produce the same projection. `test_projection.py` asserts it over every split.
 
-Determinism is the property the whole design rests on: the same frames always project to the same
-events, so re-projecting a stored session reproduces its stored rows exactly, drift is detectable
-by comparing them, and a projection bug is repairable by fixing the fold rather than being baked
-into a row forever.
+Determinism is what the design rests on: re-projecting a stored session reproduces its rows
+exactly, so drift is detectable by comparison and a projection bug is repairable by fixing the fold
+rather than baked into a row forever.
 
 **Written against what the wire does, not what it documents.** Every rule below that looks
-defensive is a finding from <../../debug/frame_shape_census.md>, which is where the measurements
-live — a share of production frames is a dated observation and belongs in a dated document.
+defensive is a finding from <../../debug/frame_shape_census.md>, where the measurements live — a
+share of production frames is a dated observation and belongs in a dated document.
 
 | What the wire does                                              | What this does with it                                                                                                                    |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -115,10 +113,9 @@ class DeltaSource(StrEnum):
 class RecordedFrame:
     """One row of the frame log: a CLI protocol frame and where it sits in the session.
 
-    `payload` is the wire verbatim, so it is read with `.get` and type guards throughout — a
-    frame this release has never seen is a new CLI feature, not a bug in us. A row the CLI did
-    not author (the bridge's `setup_output`, the console's own `partial`) does not belong here
-    and `payload["type"]` is what says so.
+    `payload` is the wire verbatim, hence `.get` and type guards throughout — an unseen frame is a
+    new CLI feature, not a bug here. A row the CLI did not author (the bridge's `setup_output`, the
+    console's own `partial`) does not belong here, and `payload["type"]` is what says so.
     """
 
     frame_seq: int
@@ -131,9 +128,9 @@ def project(
     """Fold frames into the state: the state after them, and what they produced.
 
     Pure and order-dependent — the events are a function of the sequence, not of any one frame —
-    and the state is the whole of what that order-dependence needs, which is why a batch boundary
-    is not an event. Raises `ValueError` on a payload with no `type`, which is a caller handing it
-    a row the CLI never sent rather than anything the wire can do.
+    and the state holds everything that order-dependence needs, which is why a batch boundary is
+    not an event. Raises `ValueError` on a payload with no `type`: that is a caller handing it a
+    row the CLI never sent, not anything the wire can do.
     """
     projector = _Projector(delta_source=delta_source, open_message=state.open_message)
     for frame in frames:
@@ -145,12 +142,12 @@ def finish(state: ProjectionState) -> Projection:
     """What ending the stream produces: an open message completed, or nothing at all.
 
     A message still open when the frames run out is one whose turn died mid-answer, which real
-    sessions do (<../../debug/frame_shape_census.md>). It completes with what it had; the
-    alternative is losing it. Only a caller that knows no more frames are coming may say this —
-    for one reading a live wire, the next frame is the continuation.
+    sessions do (<../../debug/frame_shape_census.md>); it completes with what it had rather than
+    being lost. Only a caller that knows no more frames are coming may say this — for one reading a
+    live wire, the next frame is the continuation.
 
-    No `DeltaSource` here, and that is the shape saying something true: ending a stream reads no
-    frame, so how finely one would have been cut cannot arise.
+    No `DeltaSource`, and that is the shape saying something true: ending a stream reads no frame,
+    so how finely one would be cut cannot arise.
     """
     if (open_message := state.open_message) is None:
         return Projection(events=(), unprojected=MappingProxyType({}))
@@ -206,10 +203,9 @@ class _Projector:
                 self._unprojected(kind)
 
     def close_message(self) -> None:
-        """End the open message, if there is one. Called where the census says a message ends —
-        a different `message.id`, a `result`, a caller declaring the stream over — and nowhere
-        else. Running out of frames is not one of those: `project` leaves the message in the
-        state for the next batch."""
+        """End the open message, if there is one. Called where the census says a message ends — a
+        different `message.id`, a `result`, a caller declaring the stream over — and nowhere else.
+        Running out of frames is not one of those: `project` leaves it in the state."""
         if (open_message := self.open_message) is None:
             return
         self.open_message = None
@@ -218,11 +214,10 @@ class _Projector:
     def _stream_delta(self, frame: RecordedFrame) -> None:
         """One increment of an answer still being written, for a consumer holding the live wire.
 
-        **It opens no message.** A delta carries no `message.id`, so there is nothing to group it
-        by; the completed block that follows is what says which message the prose belonged to. Its
-        `MessageKey` is therefore the delta's own frame, which is enough for a consumer tracking
-        one open message at a time — and every live one does, since a CLI writes one answer at a
-        time.
+        **It opens no message.** A delta carries no `message.id` to group by; the completed block
+        that follows says which message the prose belonged to. Its `MessageKey` is therefore the
+        delta's own frame — enough for a consumer tracking one open message at a time, which every
+        live one does, since a CLI writes one answer at a time.
         """
         event = frame.payload.get("event")
         if not isinstance(event, dict) or not (text := session_frames.text_delta(event)):
@@ -271,10 +266,10 @@ class _Projector:
         """The message this frame continues, or a new one.
 
         The run is defined by `message.id` and closed by a different one — not by the next
-        non-`assistant` frame, which would split a real message that has a tool result inside it
-        and attribute its second call to a message that does not exist. A frame with no id cannot
-        be grouped, so it is its own message; the wire supplies one essentially always, and the
-        exceptions are the console's own reconstructions.
+        non-`assistant` frame, which would split a real message containing a tool result and
+        attribute its second call to a message that does not exist. A frame with no id cannot be
+        grouped, so it is its own message; the wire supplies one essentially always, the exceptions
+        being the console's own reconstructions.
         """
         agent_message_id = session_frames.agent_message_id(frame.payload)
         if (
@@ -298,9 +293,9 @@ class _Projector:
     def _user(self, frame: RecordedFrame) -> None:
         """A tool result coming back, or the console's own prompt going out.
 
-        Direction is what the content type says, without exception in the corpus: an outbound
-        prompt carries a string, an inbound frame carries a list. An outbound prompt projects to
-        nothing here — it is the console's own text, which the console already holds.
+        The content type gives the direction, without exception in the corpus: an outbound prompt
+        carries a string, an inbound frame a list. An outbound prompt projects to nothing — it is
+        the console's own text, which the console already holds.
         """
         message = frame.payload.get("message")
         content = message.get("content") if isinstance(message, dict) else None
@@ -375,8 +370,8 @@ def _result_content(content: Any) -> ToolResultContent:
     """The renderable half of a tool result.
 
     Usually a bare string; the rest is a list, and every list in the corpus is `tool_reference`
-    blocks that name a tool and carry nothing else — which is why a renderer reading `content`
-    alone shows them as empty.
+    blocks naming a tool and carrying nothing else — hence a renderer reading `content` alone shows
+    them as empty.
     """
     if isinstance(content, str):
         return TextContent(text=content)

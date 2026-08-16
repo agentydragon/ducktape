@@ -3,26 +3,24 @@
 Logs in as the bot, long-polls `/sync`, binds the one room Haku services (R3.6a), and
 hands what the operator types to the session behind that room.
 
-A batch the session cannot take yet is not held here: the watermark simply is not
-advanced, so the homeserver re-delivers it next pass. Queue-until-turn-end (R2.2) and
-"nothing is silently dropped" (R1.6) then need no local queue at all. A batch the session
-*took* is not acknowledged here either, until the turn answering it has ended (R2.5) — the same
-mechanism, extended over the one gap it did not cover, where a session that dies between the
-enqueue and the turn leaves the prompt keyed to itself and the operator's message answered by
-nobody (<../../../debug/message_drops.md> I3).
+A batch the session cannot take yet is not held here: the watermark is not advanced, so the
+homeserver re-delivers it next pass. Queue-until-turn-end (R2.2) and "nothing is silently dropped"
+(R1.6) then need no local queue. A batch the session *took* is not acknowledged either until the
+turn answering it has ended (R2.5), covering the gap where a session dying between the enqueue and
+the turn leaves the prompt keyed to itself and the operator's message answered by nobody
+(<../../../debug/message_drops.md> I3).
 
-The one thing that mechanism cannot cover is an event Haku has no way to read — a screenshot,
-a voice memo — because re-offering it would never converge on an answer. Those are announced in
-the room and then acknowledged (`_report_unreadable`), which is the other half of R1.6.
+That mechanism cannot cover an event Haku has no way to read — a screenshot, a voice memo — since
+re-offering it would never converge. Those are announced in the room and then acknowledged
+(`_report_unreadable`), the other half of R1.6.
 
-It is also the only holder of a Matrix credential, so the session supervisor's lifecycle
-notices go out through `announce` rather than through a second login — and so an answer, which
-lives as a row until it has been said, is drained into the room from here (`outbox`).
+It is also the only holder of a Matrix credential, so the supervisor's lifecycle notices go out
+through `announce` rather than a second login, and an answer — a row until it has been said — is
+drained into the room from here (`outbox`).
 
 The one thing it is asked *for* rather than told is this room's recent conversation
-(`recent_history`), and that one is answered out of the console's own transcript. It is still
-this object's to answer because it is the object that knows which room is bound; the credential
-has nothing to do with it any more.
+(`recent_history`), answered out of the console's own transcript. Still this object's to answer
+because it knows which room is bound; the credential has nothing to do with it.
 """
 
 from __future__ import annotations

@@ -25,10 +25,10 @@ second channel must be able to reuse everything at the runtime level unchanged, 
 cannot compile without `matrix-nio` belongs under `channels/matrix/`. `room_status.py` is the case
 worth knowing: it reads as Matrix and is not — a status line is a channel affordance the console
 surface wants too, and the driver is handed two coroutines and never learns which room it speaks
-to. **Being at the right level is not the same as being neutral, and this module is where that bit:**
-it sat here while still matching on Claude's own frame `type`, its `system` subtypes and its content
-blocks, so a second harness got no status line from the module the rule had already placed above
-harnesses. It reads `conversation_events.py` now. `sandbox_claims.py` is the mirror case: `claude-`-prefixed claim names, but it is Kubernetes
+to. **Being at the right level is not the same as being neutral**, which is the trap this module
+fell into: it reads `conversation_events.py`, and a version of it matching on Claude's own frame
+`type` would be at the runtime level while still giving a second harness no status line.
+`sandbox_claims.py` is the mirror case: `claude-`-prefixed claim names, but it is Kubernetes
 provisioning and would serve any harness. `session_frames.py` is the one that is genuinely both and
 is deliberately left whole: four of its constants are the CLI's own top-level `type` values, while
 `SETUP_OUTPUT_KIND` and `setup_output_frame` are the bridge's envelope and the console's own
@@ -50,10 +50,8 @@ plumbing, the sandbox lifecycle, the `RoomSurface` port and the SPA's own routes
 inherits the store unchanged, which is why it stays at the runtime level and imports nothing under
 `channels/`.
 
-**The tables are `sessions` and `session_*`.** They were `claude_chat_*` — six backend-neutral
-concepts named after the one CLI that fills them, while the design requires a second backend to be
-representable. Migrations `0040` and `0041` are the expand and contract of that rename, and this
-module's own name was the last of it: it is the session runtime, not Claude's.
+**The tables are `sessions` and `session_*`.** Migrations `0040` and `0041` are the expand and
+contract of the rename off `claude_chat_*`, which is why the lineage has two revisions for it.
 
 **A turn is a row, and it is a range over the frame log.** `next_prompt` dequeues a prompt and
 opens `session_turns` in one transaction; `_run_turn` is that turn's span and closes it on
@@ -69,9 +67,7 @@ message being streamed into, `said_anything` whether one has completed, `queued_
 room's outbox holds a reply from this turn — each written in the same transaction as the effect it
 describes, so none of them can claim something that did not commit. `_run_turn` reads them at the
 top of every turn (`turn_state`), which is why adopting a half-finished exchange is a read rather
-than a reconstruction: `adopt_open_turn` says _which_ turn, and the row says how far it got. Before
-this the state lived in that call's locals and a second body of code rebuilt it from the frames,
-which is one state machine written twice
+than a reconstruction: `adopt_open_turn` says _which_ turn, and the row says how far it got
 (<../../plans/chat_runtime_projection.md> § stage 3). **Gotcha:** `queued_reply` is the outbox row
 existing, deliberately not `sent_at` — an unsent row still means the room is owed that text, so a
 turn that re-queued it would post the answer twice — and `said_anything` is a separate column

@@ -89,9 +89,8 @@ class PendingReply:
     def tag(self) -> EventTag:
         """What the room event states about itself.
 
-        Rebuilt from the row rather than stored as a payload beside it: a reply's tag is exactly
-        these columns, so keeping a JSON copy would be the same facts twice with two ways to
-        disagree.
+        Rebuilt from the row rather than stored beside it: a reply's tag is exactly these columns,
+        so a JSON copy would be the same facts twice with two ways to disagree.
         """
         return EventTag(
             kind=RoomEventKind.REPLY,
@@ -103,12 +102,12 @@ class PendingReply:
     def transaction_id(self) -> str:
         """What this reply is sent under, on every attempt.
 
-        **The row's own id, not `EventTag.transaction_id`'s.** That method derives from the
-        transcript row where there is one and *mints a fresh uuid4 otherwise* — which is correct
-        for a status edit or a lifecycle notice, and would make a redrive of the two replies that
-        name no transcript row (a turn's abort notice, and text that arrived only on a `result`
-        frame) post a second message rather than being refused. The row id is stable for as long
-        as the row is, which is precisely as long as redelivery can happen.
+        **The row's own id, not `EventTag.transaction_id`'s.** That derives from the transcript row
+        where there is one and *mints a fresh uuid4 otherwise* — correct for a status edit or a
+        lifecycle notice, but it would make a redrive of the two replies naming no transcript row
+        (a turn's abort notice, and text that arrived only on a `result` frame) post a second
+        message instead of being refused. The row id is stable for exactly as long as redelivery
+        can happen.
         """
         return self.outbox_id.hex
 
@@ -139,22 +138,21 @@ class RoomOutbox:
     async def claim_next(self, room_id: str) -> PendingReply | None:
         """Take this room's oldest live reply if it is due, counting the attempt as spent.
 
-        **A failed reply halts the queue rather than being overtaken.** The row that is asked for
-        is the oldest one, not the oldest one that happens to be due, so a reply waiting out its
-        backoff holds up the reply behind it. That is the rule and not an accident: the room is
-        read top to bottom, and two answers arriving in the wrong order describe a conversation
-        that did not happen. It is also what the classifier this queue is meant to grow into needs
-        (<../../../../plans/information_trust_tiers.md>).
+        **A failed reply halts the queue rather than being overtaken.** The row asked for is the
+        oldest, not the oldest that happens to be due, so a reply waiting out its backoff holds up
+        the one behind it. Deliberate: the room is read top to bottom, and two answers arriving in
+        the wrong order describe a conversation that did not happen. It is also what the classifier
+        this queue is meant to grow into needs (<../../../../plans/information_trust_tiers.md>).
 
-        The one row that is skipped is one out of attempts, because it is never going to be sent
-        and leaving it at the head would wedge every reply behind it forever.
+        The one row skipped is one out of attempts, which will never be sent and would otherwise
+        wedge every reply behind it forever.
 
-        The attempt is charged here rather than after the send, so a replica that disappears
-        mid-request costs the row one attempt instead of leaving it claimable forever by
-        processes that keep dying on it. `sent_at` is still the only record of success.
+        The attempt is charged here rather than after the send, so a replica disappearing
+        mid-request costs the row one attempt instead of leaving it claimable forever by processes
+        that keep dying on it. `sent_at` is still the only record of success.
 
-        Only ever called under the drain's advisory lock, so there is no second claimant to race:
-        the `FOR UPDATE` is against a concurrent enqueue, not against another drain.
+        Only ever called under the drain's advisory lock, so there is no second claimant: the
+        `FOR UPDATE` is against a concurrent enqueue, not another drain.
         """
         now = datetime.datetime.now(datetime.UTC)
         async with self._sessions() as db, db.begin():

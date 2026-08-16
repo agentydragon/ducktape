@@ -4,23 +4,21 @@ The vocabulary every surface renders and every backend adapter produces. Nothing
 Claude-shaped: no `assistant`, no content block, no `msg_…`, no `tool_use_result`. The Claude
 adapter is <claude_code/projection.py> (<../../plans/chat_runtime_projection.md> § stage 4).
 
-**Tool calls are conversation, not debug**, and they are a lifecycle (`ToolCallStarted` →
-`ToolCallCompleted`) rather than finished records stapled to a completed message: the room renders
-a call while it is still running, before the message it belongs to has finished.
+**Tool calls are conversation, not debug**, and a lifecycle rather than records stapled to a
+finished message — the room renders a call while it is still running.
 
 **Every event says which frames it came from**, so an operator can appeal a normalization to the
-raw JSON behind it. `Provenance` is a union rather than a nullable range: a console-authored event
-— bootstrap narration, the replica owning a session changing hands — has no frames and never will,
-and a nullable range would let a rebuild delete them while reporting green.
+raw JSON. `Provenance` is a union, not a nullable range: a console-authored event (narration, an
+ownership change) has no frames and never will, and a nullable range would let a rebuild delete
+them while reporting green.
 
-**Nothing here models approvals.** They travel over MCP to the console's approval queue and never
-appear on this channel.
+**Approvals are not modelled here.** They travel over MCP to the approval queue.
 
 **`ProjectionState` is here rather than beside the adapter**: a second backend adapter has to be
 able to produce one.
 
-Every shape claim below was read off production frames; the measurements live in
-<../debug/frame_shape_census.md> § What will break a naive fold, which is a dated document.
+Every shape claim below was read off production frames; the measurements are in
+<../debug/frame_shape_census.md> § What will break a naive fold.
 """
 
 from __future__ import annotations
@@ -42,9 +40,7 @@ type Json = None | bool | int | float | str | list[Json] | dict[str, Json]
 class FrameRange:
     """The inclusive span of provider frames one event was projected from.
 
-    Inclusive of everything between the ends, which is not the same as "these frames and no
-    others": a message whose frames are interrupted by a tool result spans the interruption too,
-    and that is the honest reading of a range rather than a defect in it.
+    A span, not a set: a message interrupted by a tool result spans the interruption too.
     """
 
     first_frame_seq: int
@@ -55,8 +51,8 @@ class FrameRange:
 class Authored:
     """The console said this itself, so there is no frame to appeal to.
 
-    Distinct in kind from a frame-derived event whose range happens to be unknown: an ownership
-    change crossed no wire and never will, so re-projecting frames can only preserve it.
+    Distinct from a frame-derived event whose range is merely unknown: an ownership change crossed
+    no wire and never will, so re-projecting frames can only preserve it.
     """
 
 
@@ -67,9 +63,9 @@ type Provenance = FrameRange | Authored
 class MessageKey:
     """Which agent message an event belongs to, within one session's projection.
 
-    The `frame_seq` the message opened at — ours, deterministic, and a pointer back into the log.
-    Deliberately not the agent's own message id, which a great many production rows do not have;
-    that id rides on `MessageCompleted` as provenance, where its absence costs nothing.
+    The `frame_seq` it opened at — ours, deterministic, a pointer back into the log. Not the
+    agent's own message id, which many production rows lack; that rides on `MessageCompleted` as
+    provenance, where its absence costs nothing.
     """
 
     opened_at_frame_seq: int
@@ -79,8 +75,8 @@ class MessageKey:
 class TextDelta:
     """Prose that became visible, as an increment rather than as a whole.
 
-    A channel renders these as they arrive; `MessageCompleted.text` is the same prose joined, for
-    the durable transcript row. How finely a backend cuts them is the adapter's business.
+    A channel renders these as they arrive; `MessageCompleted.text` is the same prose joined. How
+    finely a backend cuts them is the adapter's business.
     """
 
     message: MessageKey
@@ -106,8 +102,8 @@ class MessageCompleted:
 class Reasoning:
     """The agent thought, with a summary where it gave one.
 
-    A state rather than empty prose: a substantial share of real messages are thinking with
-    nothing else in them, and a transcript that models only text renders them blank.
+    A state rather than empty prose: many real messages are thinking and nothing else, and a
+    transcript modelling only text renders them blank.
     """
 
     message: MessageKey
@@ -128,8 +124,7 @@ class Outcome(StrEnum):
     """How a step ended, where "cannot tell" is a first-class answer rather than a default.
 
     `UNKNOWN` is the common case, not the corner: the field a provider would report failure in is
-    routinely absent, and collapsing that into `SUCCEEDED` reports every unanswerable case as
-    fine.
+    routinely absent, and collapsing that into `SUCCEEDED` reports every unanswerable case as fine.
     """
 
     SUCCEEDED = "succeeded"
@@ -146,9 +141,8 @@ class TextContent:
 class ToolReferences:
     """The result named tools and carried no output of its own.
 
-    A real shape rather than a defensive one: production tool results take it routinely, and a
-    renderer that reads them as prose renders them empty. What the call actually produced is in
-    `ToolCallCompleted.structured`.
+    A real shape, not a defensive one: production results take it routinely, and a renderer that
+    reads them as prose renders them empty. The output itself is in `ToolCallCompleted.structured`.
     """
 
     tool_names: tuple[str, ...]
@@ -173,11 +167,10 @@ class ToolCallCompleted:
     """What a call answered: the part a channel can show, and the part it cannot.
 
     **The renderable content is not the result.** `content` is what a transcript prints;
-    `structured` is the exit code, the patch, the MCP `structuredContent` — an open set of
-    per-tool shapes that a `str | list[Block]` model drops in silence. Both are carried because
-    neither is derivable from the other.
+    `structured` is the exit code, the patch, the MCP `structuredContent` — an open set of per-tool
+    shapes a `str | list[Block]` model drops in silence. Neither is derivable from the other.
 
-    `structured` is None when the provider carried no structured result at all.
+    `structured` is None when the provider carried no structured result.
     """
 
     call_id: str
@@ -191,8 +184,8 @@ class ToolCallCompleted:
 class ActivityStarted:
     """The harness's own prose for a step in flight — the case with no tool name at all.
 
-    `description` is whatever the harness wrote and is not a label: real ones run past 500
-    characters and span lines, so a status line needs its own truncation.
+    `description` is not a label: real ones run past 500 characters and span lines, so a status
+    line needs its own truncation.
     """
 
     activity_id: str
@@ -215,23 +208,20 @@ class ActivityCompleted:
 class Usage:
     """What one exchange cost, in terms that mean the same thing on every backend.
 
-    **Aggregatable**, because a neutral turn may one day span several provider invocations — and
-    the three quantities aggregate differently, which is the part worth stating rather than
-    assuming:
+    **Aggregatable**, because a neutral turn may one day span several provider invocations, and the
+    three quantities aggregate differently:
 
-    - **Counters sum.** Tokens spent by two invocations of one exchange are tokens spent by the
-      exchange. A counter the backend did not report is 0, so it contributes nothing to a sum;
-      that is why they are `int` rather than `int | None`.
-    - **Cost sums, and unknown propagates.** Money adds like the counters do, but None is *not*
-      zero here: a backend reporting no cost leaves the exchange's cost unknown rather than free,
-      so an aggregate containing one is unknown rather than a total missing a term.
-    - **Duration does not sum.** It is what the backend says *one invocation* took, and two
-      invocations may overlap or be separated by waiting on this side, so adding them reports a
-      duration nothing lasted. An exchange's own elapsed time is the console's bracket around it
+    - **Counters sum.** An unreported counter is 0 and contributes nothing to a sum, which is why
+      they are `int` rather than `int | None`.
+    - **Cost sums, and unknown propagates.** None is *not* zero here: a backend reporting no cost
+      leaves the exchange's cost unknown rather than free.
+    - **Duration does not sum.** It is what the backend says *one invocation* took, and two may
+      overlap or be separated by waiting on this side, so adding them reports a duration nothing
+      lasted. An exchange's own elapsed time is the console's bracket around it
       (`session_turns.started_at`/`ended_at`), which needs no backend cooperation at all.
 
-    These are the terms `session_turns` stores, one column each, so the aggregate a reader wants
-    is a `SUM` over rows rather than a fold over a provider's JSON.
+    These are the terms `session_turns` stores, one column each, so the aggregate a reader wants is
+    a `SUM` over rows rather than a fold over a provider's JSON.
     """
 
     input_tokens: int
@@ -283,10 +273,9 @@ class Projection:
     def then(self, later: Projection) -> Projection:
         """This stretch of frames followed by the next one, as a single projection.
 
-        The anti-drift invariant written as an operation: a projection of frames read in one
-        batch and the same frames read in any split of batches, combined this way, are equal.
-        Events concatenate because the stream is ordered; counts sum because `unprojected` is a
-        tally over the frames read, not a set of what exists.
+        The anti-drift invariant as an operation: frames read in one batch and the same frames read
+        in any split, combined this way, are equal. Events concatenate because the stream is
+        ordered; counts sum because `unprojected` tallies frames read, not a set of what exists.
         """
         return Projection(
             events=self.events + later.events,
@@ -313,13 +302,12 @@ class OpenMessage:
 class ProjectionState:
     """What a fold carries from one batch of frames to the next.
 
-    A value, not a session: it says only what is mid-flight when a batch ends, which is why the
-    same state is what a live consumer holds between frames and what a cursor-driven one would
-    reload. The default is a stream nothing has been read from yet.
+    A value, not a session: it says only what is mid-flight when a batch ends, which is why one
+    state serves both a live consumer between frames and a cursor-driven one reloading. The default
+    is a stream nothing has been read from yet.
 
     Only an open message is in flight. Everything else the fold decides — a tool call's identity,
-    an activity's pairing, a turn's outcome — is settled by the frame that produced it, so it is
-    an effect and never a carry.
+    an activity's pairing, a turn's outcome — is settled by the frame that produced it.
     """
 
     open_message: OpenMessage | None = None

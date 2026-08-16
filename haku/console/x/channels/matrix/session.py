@@ -1,16 +1,15 @@
 """Keeps one live chat session bound to the one room Haku services.
 
-The console's chat machinery is driven by an operator browser gesture: a `POST` creates a
-session, mints a bridge token, and provisions a SandboxClaim; the sandbox then dials back
-and `handle_runner` lives for the life of that WebSocket. Matrix has no gesture, so
-something has to own *"there is one session and it has a live sandbox"* — that is this.
+The console's chat machinery is driven by an operator browser gesture: a `POST` creates a session,
+mints a bridge token, and provisions a SandboxClaim; the sandbox dials back and `handle_runner`
+lives for that WebSocket. Matrix has no gesture, so something has to own *"there is one session and
+it has a live sandbox"* — this.
 
-Runs as a sibling task to the sync loop, under an advisory lock of its own. Being locked
-is what keeps exactly one replica provisioning; being a separate task from `/sync` keeps a
-slow or stalled claim from wedging ingress, which must keep accepting messages while no
-sandbox is up (R1.4). Its own lock rather than the sync loop's, because the two only need
-single-execution, not co-location — and a shared lock would mean a supervisor stall could
-only be resolved by giving up ingress leadership too.
+A sibling task to the sync loop, under an advisory lock of its own. The lock keeps exactly one
+replica provisioning; being a separate task from `/sync` keeps a slow or stalled claim from wedging
+ingress, which must keep accepting messages while no sandbox is up (R1.4). Its own lock rather than
+the sync loop's, because the two need single-execution but not co-location — sharing one would mean
+a supervisor stall could only be resolved by giving up ingress leadership too.
 """
 
 from __future__ import annotations

@@ -4,10 +4,10 @@ A day of parallel landings (#4104 through #4137) moved the runtime faster than t
 describing it. This is the audit: every substantive claim the chat-runtime plans make about how the
 code is **shaped**, checked against `devel` at `fc1f28afc`, with a verdict on which side was wrong.
 
-The discrimination that matters is the verdict column. A plan is a specification, so where the code
-diverged from a decision the plan had already argued through, the **code** is the thing that moves —
-rewriting the plan to describe whatever was built destroys the only record of what was intended.
-Where the plan simply described the world and the world changed, the plan is burned down.
+The verdict column is the point. A plan is a specification: where the code diverged from a decision
+the plan had argued through, the **code** moves, since rewriting the plan to describe whatever was
+built destroys the only record of what was intended. Where the plan merely described the world and
+the world changed, the plan is burned down.
 
 ## The table
 
@@ -57,7 +57,7 @@ landed against it, so a reader knows which rows are spent without having to re-c
 | 13      | four `haku_conversations` tools, not two       | Five, with `read_transcript`. The plan says five                                                                                              |
 | 18 / 19 | the `x/` layout reorg was racing this audit    | Landed (#4139): `channels/matrix/` exists and `claude_code/` holds the CLI stub. The prose's `claude_code/` won, as row 19 argued             |
 
-**Row 1 has not closed.** `project(frames) -> Projection` is still the shape on `devel`, and the
-plan still says so. Rows 3 and 14 have not closed either; row 3 grew an answer instead, recorded on
-the plan itself (#4143): the requirement is not expressible against `session_messages` and moves to
-the neutral events.
+**Row 1 has closed** (#4149): the shape on `devel` is now `project(state, frames) -> (state,
+Projection)`. The durable per-session cursor it exists for is still owed. Rows 3 and 14 have not
+closed; row 3 grew an answer instead, recorded on the plan itself (#4143): the requirement is not
+expressible against `session_messages` and moves to the neutral events.

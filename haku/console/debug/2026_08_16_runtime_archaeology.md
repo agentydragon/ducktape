@@ -1,14 +1,12 @@
 # What each of the session runtime's invariants cost to learn
 
-`x/session_runtime.py` and `x/session_store.py` carried roughly 150 lines that narrated what the
-code used to be and which bug that caused. STYLE § Documentation puts historical "used to"
-comments and changelog comments under **Remove**, so each of those is now one imperative line in
-the code and the story it was carrying is here.
+`x/session_runtime.py` and `x/session_store.py` carried narration of what the code used to be and
+which bug that caused. STYLE § Documentation puts historical "used to" comments under **Remove**, so
+each is now one imperative line in the code and its story is here.
 
-**Nothing below is a statement about how the code behaves today.** Read it to find out _why_ a
-line in those two files says what it says; read the code for what it does. Several of these
-incidents already had a note of their own, and those rows point at it rather than retelling it —
-one incident, one write-up.
+**Nothing below states how the code behaves today.** Read it for _why_ a line in those two files
+says what it says; read the code for what it does. Incidents that already had a note of their own
+are pointed at rather than retold — one incident, one write-up.
 
 ## Index — the invariant, and where its story is
 
@@ -34,27 +32,25 @@ one incident, one write-up.
 
 ## A queued prompt that claimed to be a turn
 
-`enqueue_prompt` used to write `status = responding` on the session row as it accepted a prompt.
-It reads as bookkeeping — the operator has spoken, the session is about to answer — and it is
-wrong by one event: a prompt sitting in `session_prompts` is queued, not running. Nothing had
-been sent to the agent and no turn existed.
+`enqueue_prompt` used to write `status = responding` as it accepted a prompt. It reads as
+bookkeeping and is wrong by one event: a prompt in `session_prompts` is queued, not running —
+nothing had been sent to the agent and no turn existed.
 
-Everything that asked the session row "is this answering?" therefore got a yes it could not act
-on. `request_abort` was the one that mattered: it accepted the operator's abort, published the
-`ABORT` notify, and there was no turn loop anywhere to receive it — the interrupt reached a turn
-that had not been opened. The operator saw an accepted abort and an answer that arrived anyway.
+Everything asking the row "is this answering?" therefore got a yes it could not act on.
+`request_abort` was the one that mattered: it accepted the operator's abort and published the
+`ABORT` notify with no turn loop anywhere to receive it. The operator saw an accepted abort and an
+answer that arrived anyway.
 
 The fix is the shape the whole file now has: **the open turn is the single fact, and `responding`
-is derived from it** rather than stored beside it. `_open_turn` is the one query, and it answers
-all three questions that used to read the status column — whether a prompt may be admitted
-(`enqueue_prompt`), whether there is anything to abort (`request_abort`), and what the SPA is
-shown (`session_view`). `uq_session_turns_open` makes "at most one" a schema property, so the
-lookup needs no rule attached to it.
+is derived from it.** `_open_turn` is the one query, answering all three questions that used to
+read the status column — whether a prompt may be admitted (`enqueue_prompt`), whether there is
+anything to abort (`request_abort`), and what the SPA is shown (`session_view`).
+`uq_session_turns_open` makes "at most one" a schema property.
 
-The same reasoning is what `enqueue_prompt`'s admission check is about, and that one is stated in
-the code rather than here, because it is a rule a future editor could plausibly undo: gating
-admission on `READY` alone would accept a prompt mid-turn, which is mid-turn steering arriving by
-accident with no fold path wired (R2.2 holds a batch until the turn ends).
+`enqueue_prompt`'s admission check follows the same reasoning and is stated in the code rather than
+here, because a future editor could plausibly undo it: gating on `READY` alone would accept a prompt
+mid-turn, which is mid-turn steering arriving by accident with no fold path wired (R2.2 holds a
+batch until the turn ends).
 
 ## A roll that deleted the sandbox it was leaving behind
 
@@ -62,11 +58,10 @@ accident with no fold path wired (R2.2 holds a batch until the turn ends).
 of them: close the socket, close the CLI client, delete the SandboxClaim, mark the session
 `closed`. That is correct for exactly one of the reasons `handle_runner` returns.
 
-A console roll cancels `handle_runner` on the replica holding the bridge. The session is not
-over — the sandbox outlives the console process, the runner redials within about a second, and
-whichever replica answers adopts it. Deleting the claim in that path destroyed the pod that the
-adoption was going to reconnect to, so the mechanism built to survive a roll was undone by its own
-cleanup. Every roll cost a sandbox and, with it, the conversation's context.
+A console roll cancels `handle_runner` on the replica holding the bridge. The session is not over —
+the sandbox outlives the console process, the runner redials within about a second, and whichever
+replica answers adopts it. Deleting the claim in that path destroyed the pod the adoption was going
+to reconnect to, so every roll cost a sandbox and with it the conversation's context.
 
 Hence `keep_sandbox`, which is the one bit of state the whole finalizer branches on: false for an
 ending session (closed, or failed in a way the CLI cannot be asked to continue past), true when it
@@ -79,11 +74,10 @@ Related but separate: what makes the runner _retry_ after that hand-back is
 
 ## The finalizer that stopped at its first await
 
-The `finally` in `handle_runner` is several `await`s in a row, and it commonly runs on a task that
-is already cancelled — a rolling replica, an evicted pod. On a cancelled task the first `await`
-re-raises `CancelledError` immediately, so the statements after it never ran at all: the socket
-was closed, and `client.aclose()`, the claim cleanup and `closed()` were silently skipped. The
-session stayed looking alive in the row until the sweep reached it.
+The `finally` in `handle_runner` is several `await`s in a row and commonly runs on an
+already-cancelled task — a rolling replica, an evicted pod. There the first `await` re-raises
+`CancelledError` immediately, so the socket was closed and `client.aclose()`, the claim cleanup and
+`closed()` were silently skipped. The session stayed looking alive until the sweep reached it.
 
 `asyncio.shield` around one coroutine that does the whole sequence is what makes the rest of it
 reachable. The 10-second `wait_for` bounds it, because a shielded block on the way down is still
@@ -96,17 +90,14 @@ that the finalizer cannot be the thing correctness rests on.
 
 ## The sandbox deadline that did not move
 
-A SandboxClaim carries a `shutdownTime`, and it was first set once at creation, to
-`now + session_ttl_seconds`. That makes the sandbox's lifetime a hard timer started when the
-session was provisioned rather than a statement about whether anyone is using it — so a
-conversation in full flow was killed mid-answer at its deadline, having been in constant use for
-the whole window.
+A SandboxClaim's `shutdownTime` was set once at creation to `now + session_ttl_seconds`, making
+the sandbox's lifetime a hard timer from provisioning rather than a statement about whether anyone
+is using it. A conversation in full flow was killed mid-answer at its deadline.
 
 `_renew_lease` now slides both deadlines on the same heartbeat: the Console lease in Postgres and
-the claim's `shutdownTime` through `sandbox_claims.renew`. The property this buys is the one worth
-preserving — Console lease and sandbox deadline lapse **together**, the moment a replica stops
-tending the session, so there is no state where one of the two believes the session is alive and
-the other does not.
+the claim's `shutdownTime` through `sandbox_claims.renew`. The property worth preserving is that
+the two lapse **together** the moment a replica stops tending the session, so neither can believe
+the session is alive while the other does not.
 
 ## Two facts under one flag
 
@@ -115,15 +106,14 @@ the other does not.
 (`saw_assistant_message`, now `said_anything`). They were the same variable.
 
 They come apart on a session with no room. The SPA reads the message rows directly, so nothing is
-queued for it, so `spoke` stayed false for a turn that had in fact said everything it had to
-say — and the tail of `_run_turn`, seeing `not spoke`, minted a second message row out of
-`result.result`, which is a verbatim repeat of the last assistant message. Every SPA answer was
-stored twice.
+queued and `spoke` stayed false for a turn that had said everything it had to say — and the tail of
+`_run_turn`, seeing `not spoke`, minted a second row out of `result.result`, a verbatim repeat of
+the last assistant message. Every SPA answer was stored twice.
 
-So they are two columns on `session_turns` and two locals here, and the reason each exists is the
-other one's blind spot: `queued_reply` is about a debt to a channel, `said_anything` is about the
-transcript. The one remaining consumer of the difference is the abort notice, which rides on
-`final_text` and therefore on no message row.
+Hence two columns on `session_turns` and two locals: `queued_reply` is a debt to a channel,
+`said_anything` is about the transcript, and each covers the other's blind spot. The one remaining
+consumer of the difference is the abort notice, which rides on `final_text` and so on no message
+row.
 
 ## Small ones
 
