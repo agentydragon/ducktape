@@ -1418,6 +1418,7 @@ py_test(
         ":database_migrate",
         "//:conftest",
         "@pypi//psycopg",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

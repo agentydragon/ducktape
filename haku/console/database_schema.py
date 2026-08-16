@@ -927,9 +927,15 @@ class SessionMessage(Base):
     # Inclusive range in the session's raw frame log from which this projection was built. These
     # are deliberately sequence pointers rather than copied payloads: the frame log remains the
     # authoritative, lossless record, while this row says where its lossy rendering came from.
-    # NULL means the row predates provenance recording or was synthesized without an observed
-    # frame. The two values are session-scoped; frame_seq is globally allocated and is not a
-    # foreign key by itself.
+    # The two values are session-scoped; frame_seq is globally allocated and is not a foreign key
+    # by itself.
+    #
+    # Nullable because `role` is the provenance discriminator (see the constraints below), not
+    # because an assistant row may decline to answer: an assistant row is projected from frames
+    # and must name its near end, while a user row is authored — the operator's prompt is written
+    # before the frame it goes out as exists, and a prompt no turn ever claims never acquires
+    # one. On history predating #4105 both are NULL for either role, which is what keeps the two
+    # constraints below NOT VALID.
     source_first_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     source_last_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     tool_uses: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
@@ -944,6 +950,16 @@ class SessionMessage(Base):
             "source_first_frame_seq IS NULL OR source_last_frame_seq IS NULL "
             "OR source_first_frame_seq <= source_last_frame_seq",
             name="ck_session_messages_source_frames",
+        ),
+        # Three one-way rules rather than one shape, because they fail for different reasons and a
+        # reader should be told which. Migration `0046` adds the two below NOT VALID: unpointed
+        # history is tolerated, new and updated rows are not.
+        CheckConstraint(
+            "role <> 'assistant' OR source_first_frame_seq IS NOT NULL", name="ck_session_messages_projected_source"
+        ),
+        CheckConstraint(
+            "source_last_frame_seq IS NULL OR source_first_frame_seq IS NOT NULL",
+            name="ck_session_messages_source_anchored",
         ),
         Index("idx_session_messages_session_created", "session_id", "created_at"),
     )

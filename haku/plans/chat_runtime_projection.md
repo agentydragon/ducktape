@@ -278,6 +278,17 @@ so a `CHECK` can require the range (2026-08-16). Neither, yet — take the middl
 - **`ADD CONSTRAINT … CHECK (…) NOT VALID`** when provenance lands. New and updated rows must carry a
   range; existing rows are tolerated and unchecked. That stops the problem growing, which is the part
   that matters, and `VALIDATE CONSTRAINT` promotes it later without rewriting the table.
+  **Landed as migration `0046`, with the requirement narrowed to the rows it can hold for.** #4105
+  shipped only the ordering half, so a row with no range at all stayed writable. `0046` closes that,
+  but "every row carries a range" is not the rule the union above permits, and it is not satisfiable
+  either: the operator's prompt row is written before the frame it goes out as exists, and a prompt no
+  turn ever claims never acquires one. So the rule is **every _projected_ row names the frame it began
+  at** — `role` is the `frame_range | authored` discriminator, because `session_messages` has exactly
+  two writers and they are exactly those two kinds. A far end with no near end is refused for either.
+  Roll-safe because the serving image already satisfies both. Still owed: `VALIDATE CONSTRAINT`, which
+  waits on the backfill below, and the far end, which a streaming row legitimately lacks until it
+  completes. When authored **messages** exist — as opposed to authored session events — `role` stops
+  carrying the discriminator and a column has to.
 - **Backfill falls out of the reprojection tool** rather than being its own archaeology: project a
   session's frames, align the derived sequence against the stored rows, and write the range where the
   alignment is unambiguous. Where it is not, that is a finding about the projection rather than a gap

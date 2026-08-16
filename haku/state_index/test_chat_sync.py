@@ -85,6 +85,10 @@ async def say(
             status=status,
             content=content,
             tool_uses=[],
+            # An assistant row is a projection of frames and must say which
+            # (`ck_session_messages_projected_source`); an operator's prompt is authored and does
+            # not. The corpus reads neither, so the value only has to be honest about the kind.
+            source_first_frame_seq=1 if role is ChatMessageRole.ASSISTANT else None,
             created_at=at,
             updated_at=at,
         )
