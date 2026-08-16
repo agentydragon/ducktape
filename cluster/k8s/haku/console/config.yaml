@@ -153,6 +153,7 @@ auto_approval_policies:
       haku_conversations:
         - list_conversations
         - read_rollout
+        - read_frame
         - list_turns
       haku_index:
         - search

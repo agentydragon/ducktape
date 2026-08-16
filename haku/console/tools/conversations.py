@@ -8,7 +8,10 @@ protocol, so a tool call and the result it got are both there — which no other
 **A drilldown, not a dump.** `list_conversations` finds the session, `read_rollout` pages its
 frames, and a `kinds` filter is how you skim before reading. Context is the scarce resource, so
 both the page size and each frame's payload are capped, and a clipped frame says so rather than
-silently returning less than the record holds.
+silently returning less than the record holds. `read_frame` is the bottom of the drilldown: one
+frame, whole, however large — because a cap that cannot be escaped is a record that cannot be
+read. The census of production frames was blind to every `control_response` in the corpus for
+exactly that reason.
 
 **Reading is a cursor over the log; turns are an index into it.** `frame_seq` already totally
 orders a session, so `read_rollout` needs no notion of a turn — and a turn is the console's
@@ -27,7 +30,7 @@ from __future__ import annotations
 import datetime
 import json
 from collections.abc import Sequence
-from typing import Annotated, Any, Literal, Protocol
+from typing import Annotated, Any, Literal, Protocol, get_args
 from uuid import UUID
 
 from fastmcp import FastMCP
@@ -41,9 +44,29 @@ HAKU_CONVERSATIONS_SERVER_ID = "haku_conversations"
 MAX_PAGE = 100
 DEFAULT_PAGE = 25
 
-# Bytes of one frame's JSON before it is clipped. A row limit alone does not bound a response,
-# because one `tool_result` can be an entire file.
+# Bytes of one frame's JSON before it is clipped by `read_rollout`. A row limit alone does not
+# bound a response, because one `tool_result` can be an entire file. `read_frame` does not apply
+# it: one frame is already a bounded response.
 MAX_FRAME_BYTES = 8_000
+
+# What a session's `kind` column actually holds, so a caller can filter for any of it. Every
+# entry was observed in production; four of them are absent from the CLI's `protocol.md`, and
+# `setup_output` is the console's own (`haku/console/x/session_frames.py`). Spelled here rather
+# than imported because this server is in the stable catalog and the vocabulary lives in the
+# experimental chat runtime — the same reason `RolloutReader` is a port.
+FrameKind = Literal[
+    "assistant",
+    "user",
+    "result",
+    "system",
+    "command_lifecycle",
+    "control_request",
+    "control_response",
+    "rate_limit_event",
+    "setup_output",
+    "stream_event",
+    "tool_progress",
+]
 
 
 class Conversation(BaseModel):
@@ -132,8 +155,9 @@ def build_mcp(reader: RolloutReader) -> FastMCP:
     mcp: FastMCP = FastMCP(
         name=HAKU_CONVERSATIONS_SERVER_ID,
         instructions="Read Haku's own past sessions: `list_conversations` to find one, `read_rollout` to page "
-        "its protocol frames. The rollout holds tool calls together with their results, which the "
-        "room transcript does not. Read-only.",
+        "its protocol frames, `read_frame` for one of them in full when the page clipped it. The "
+        "rollout holds tool calls together with their results, which the room transcript does not. "
+        "Read-only.",
     )
 
     @mcp.tool
@@ -152,7 +176,7 @@ def build_mcp(reader: RolloutReader) -> FastMCP:
         ] = None,
         limit: Annotated[int, Field(default=DEFAULT_PAGE, ge=1, le=MAX_PAGE)] = DEFAULT_PAGE,
         kinds: Annotated[
-            list[Literal["assistant", "user", "result", "system", "command_lifecycle", "stream_event"]] | None,
+            list[FrameKind] | None,
             Field(
                 default=None,
                 description="Only these frame types. `assistant` and `user` together are the conversation "
@@ -170,6 +194,30 @@ def build_mcp(reader: RolloutReader) -> FastMCP:
         # A short page is the last one. Cheaper than a second count query, and the caller only
         # needs to know whether to ask again.
         return RolloutPage(frames=frames, next_after_seq=frames[-1].frame_seq if len(frames) == limit else None)
+
+    @mcp.tool
+    async def read_frame(
+        session_id: Annotated[str, Field(description="From `list_conversations`.")],
+        frame_seq: Annotated[int, Field(description="The `frame_seq` of the frame to read, from `read_rollout`.")],
+    ) -> RolloutFrame:
+        """One frame in full, however large — the way to read what `read_rollout` clipped.
+
+        A page clips an oversized payload because a page of them is unbounded; naming one frame
+        bounds the response by that frame alone. This is the only route to the frames a page can
+        never show: a `control_response`, a `system` init, a tool result of tens of kilobytes.
+
+        Deltas (`stream_event`) are readable here too, but never need to be — one is a few
+        characters of an answer, and nothing clips them.
+        """
+        # `after_seq` is exclusive, so the frame asked for is the first row after its predecessor.
+        # `kinds=None` would drop deltas from the query, and a caller naming a `frame_seq` has
+        # already chosen its row.
+        frames = await reader.read_frames(
+            UUID(session_id), after_seq=frame_seq - 1, limit=1, kinds=list(get_args(FrameKind))
+        )
+        if not frames or frames[0].frame_seq != frame_seq:
+            raise ValueError(f"no such frame: {session_id=} {frame_seq=}")
+        return frames[0]
 
     @mcp.tool
     async def list_turns(

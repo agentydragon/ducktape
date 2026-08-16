@@ -80,7 +80,7 @@ async def test_tool_surface() -> None:
     async with Client(build_mcp(_Reader())) as client:
         tools = {tool.name for tool in await client.list_tools()}
 
-    assert tools == {"list_conversations", "read_rollout", "list_turns"}
+    assert tools == {"list_conversations", "read_rollout", "read_frame", "list_turns"}
     assert HAKU_CONVERSATIONS_SERVER_ID == "haku_conversations"
 
 
@@ -135,6 +135,43 @@ async def test_an_oversized_frame_is_clipped_and_says_so() -> None:
     assert clipped.payload is None
     assert clipped.clipped_bytes > MAX_FRAME_BYTES
     assert kept.payload == {"type": "assistant"}
+
+
+async def test_one_named_frame_comes_back_whole_however_large() -> None:
+    """The escape hatch from clipping: a page cannot bound a response full of whole files, but a
+    single named frame already is one."""
+    big = _frame(1, payload={"type": "user", "content": "x" * (MAX_FRAME_BYTES * 2)})
+    reader = _Reader(big, _frame(2))
+
+    async with Client(build_mcp(reader)) as client:
+        result = await client.call_tool("read_frame", {"session_id": str(SESSION), "frame_seq": 1})
+
+    assert result.data.payload == big.payload
+    assert result.data.clipped_bytes is None
+
+
+async def test_a_named_frame_is_read_including_the_kinds_a_page_leaves_out() -> None:
+    """`read_rollout`'s default view drops deltas, and a caller that named a `frame_seq` has
+    already chosen its row — so the filter must not decide for it."""
+    reader = _Reader(_frame(7, kind="stream_event"))
+
+    async with Client(build_mcp(reader)) as client:
+        result = await client.call_tool("read_frame", {"session_id": str(SESSION), "frame_seq": 7})
+
+    assert result.data.kind == "stream_event"
+
+
+async def test_a_frame_seq_that_does_not_exist_is_an_error_not_the_next_frame() -> None:
+    """The cursor is exclusive, so a naive read of "after 4" answers a request for frame 5 with
+    frame 6 — the wrong frame, indistinguishable from the right one."""
+    reader = _Reader(_frame(4), _frame(6))
+
+    async with Client(build_mcp(reader)) as client:
+        result = await client.call_tool(
+            "read_frame", {"session_id": str(SESSION), "frame_seq": 5}, raise_on_error=False
+        )
+
+    assert result.is_error
 
 
 async def test_a_turn_carries_the_range_to_read_and_what_it_cost() -> None:
