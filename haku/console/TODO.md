@@ -267,6 +267,23 @@ is what makes catch-up on reconnect "send me everything after N". Same stage bec
 cause and the same fix — the sink sits above the envelope and has to move onto the socket — so doing
 the two apart would move it twice. § 2b of that plan holds the schedule.
 
+**Retiring identity numbering entirely is R5 of that schedule**, and its cross-cutting half is here
+because the removal is a schema change whose consequences land in the MCP transcript tools and the
+state index. Three things to hold onto when it is picked up:
+
+- **The gate is two-part and both halves are checkable**: every `haku-console` pod running an image
+  at or after R3 (the `$imagepolicy`-marked tag in <../../cluster/k8s/haku/console/deployment.yaml>,
+  _and_ every running pod actually on it — `maxUnavailable: 0` makes those different facts), and
+  `count(*) = 0` over sessions that are `frame_numbering = 'identity'` **and not yet terminal**. The
+  whole-table count never reaches zero and is not the gate.
+- **Historical identity-numbered rows stay, and cost nothing**: no read path branches on the
+  numbering scheme, because none of them needs more from `frame_seq` than a per-session total order.
+  Renumbering them would repoint published `read_frame` addresses at frames that still resolve;
+  retiring them would delete transcripts the chat corpus still returns search hits into.
+- **What R5 owes instead of a branch removal is an invariant**: nothing in the read path may assume
+  `frame_seq` is dense, 1-based, or comparable across sessions. Today that holds by accident of how
+  the readers were written, and it wants a test over a deliberately sparse session.
+
 ## Give `system/compact_boundary` a real branch in the projection
 
 Both are now captured — `haku/cli_protocol/probes/compaction.py` drove a session with hooks, an

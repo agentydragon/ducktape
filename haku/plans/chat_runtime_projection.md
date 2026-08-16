@@ -310,12 +310,132 @@ documents for the channel rename).
 | **R2**  | The sink moves to `WebSocketTransport`; `kind` becomes the envelope discriminator. Schema made _capable_ of client-supplied numbers: `frame_ord`, the composite primary key, `Identity` demoted to a plain sequence default, `sessions.frame_numbering` added and written as `identity`.                                                                                                                                                              | Schema yes, behaviour no — the `kind` flip is safe **only** because R1 stopped every reader depending on it. An old replica still filtering `kind = 'assistant'` would mis-decide a turn in `adopt_open_turn`. |
 | **R3**  | New sessions are marked `frame_numbering = 'runner'` and their rows take `frame_seq` from the envelope. Gap detection reports. `kind` contracted to NOT NULL with `BridgeFrameKind` as its type; the coalesce dropped.                                                                                                                                                                                                                                | **No**, and it must not start before R2 has converged: an old replica adopting a runner-numbered session would insert a sequence value into it and mix the two schemes inside one session.                     |
 | **R4**  | Contract: `runner_seq` dropped (for a runner-numbered session it is `frame_seq`), the `partial` row and its two indexes retired, dedup keyed on position rather than `frame_uid`, `REPLAY_WINDOW` re-sized.                                                                                                                                                                                                                                           | Removals, so gated on R3 converging.                                                                                                                                                                           |
+| **R5**  | Identity numbering removed from the write path: `frame_seq`'s sequence default and the sequence behind it dropped, so an insert that does not supply a number fails instead of inventing one; `sessions.frame_numbering` dropped with its last reader. Historical identity-numbered rows are kept, and read by exactly the code that reads every other row.                                                                                           | Removals, and the gate is two-part rather than "R4 converged" — below.                                                                                                                                         |
 
 R1's two halves are independent and want separate PRs: the `cli_type` half touches only the console,
 the numbering half touches only the bridge, and neither blocks the other.
 
-**Done when** `kind` answers one question, `BridgeFrameKind` is its type, and `frame_seq` is the
-number the frame crossed the wire under.
+**Done when** `kind` answers one question, `BridgeFrameKind` is its type, `frame_seq` is the
+number the frame crossed the wire under, and — after R5 — that is the only number it can have.
+
+##### R5 — removing the other numbering, and what happens to the rows that used it
+
+**The request** (operator, 2026-08-16): _"I'd like to eventually remove all support for frames that
+aren't numbered by the runner. I'll want that stacked as work provided conditions that unblock it."_
+R4 stops short of it. R4 drops `runner_seq` and re-keys dedup, but `frame_seq` still carries the
+plain sequence default R2 demoted `Identity` to — deliberately, because that default is the whole
+trick that made dropping `Identity` roll-safe — so a replica inserting without naming the column
+still gets a number from Postgres. R5 is the step that makes that impossible, and it is a
+`DROP DEFAULT` plus a `DROP SEQUENCE` plus the discriminator. It writes no rows and rewrites none.
+
+**The gate is two observable halves, and it needs both.** They are different facts and the second
+does not follow from the first.
+
+- **Every replica is running an image at or after R3.** The desired tag is in
+  <../../cluster/k8s/haku/console/deployment.yaml> in two places, both rewritten by Flux's
+  `ImageUpdateAutomation`: the `server` container's `image:`
+  (`{"$imagepolicy": "flux-system:haku-console"}`) and the `HAKU_CONSOLE_IMAGE_TAG` value (the
+  `:tag` variant of the same policy). The tag is `devel-<UTC build stamp>-<short sha>`, so "at or
+  after R3" is `git merge-base --is-ancestor <R3's merge commit> <that short sha>` — mechanical,
+  with no judgment in it.
+
+  That is the _desired_ state, and `maxUnavailable: 0` is what makes desired and running two
+  facts rather than one: a replacement that never becomes Ready leaves the previous replica
+  serving indefinitely, which is precisely the case where "the tag has moved" is the wrong gate.
+  So the running half is its own check — every pod's `server` image equal to that tag:
+
+  ```bash
+  kubectl -n haku-console get pods -l app.kubernetes.io/name=haku-console \
+    -o jsonpath='{range .items[*]}{.spec.containers[?(@.name=="server")].image}{"\n"}{end}' | sort -u
+  ```
+
+  One line, equal to the manifest's `image:`. Two lines means the roll has not converged and R5 is
+  not eligible, whatever the manifest says.
+
+- **No session that can still acquire a frame is identity-numbered.**
+
+  ```sql
+  SELECT count(*) FROM sessions
+  WHERE frame_numbering = 'identity' AND status NOT IN ('closed', 'failed');
+  ```
+
+  must be `0`. **The population matters and the obvious one is wrong.** `SELECT count(*) … WHERE
+frame_numbering = 'identity'` over the whole table never reaches zero and never will:
+  `session_frames` is a permanent log, so a session that closed under identity numbering keeps that
+  value forever. What R5 removes is a _write_ path, so what has to be empty is the set of sessions
+  that can still be written to. A terminal session cannot, which is why `closed`/`failed` are
+  excluded; `closing` is deliberately inside the population rather than outside, because teardown
+  still runs a prompt through the runner and a `closing` session can still record frames.
+
+  This clears itself rather than being something to wait on: `session_ttl_seconds` is `7200` in
+  <../../cluster/k8s/haku/console/config.yaml>, so the count reaches zero within two hours of R3
+  converging and stays there. If it does not, that is one stuck session to go and read
+  (`lease_holder` names the pod), not a gate to keep waiting on.
+
+**Why `sessions.frame_numbering` goes in the same step.** It is a last-reader argument, not tidying.
+The column has exactly two readers and both are about a _live_ session: the insert path, deciding
+whether to supply a number, and the `resume_from` computation, which must not hand a runner a cursor
+in the millions. Once the second half of the gate holds, both readers see `runner` unconditionally
+and the branch under them is dead. Dropping the discriminator is therefore the same removal as
+dropping the default, and keeping it would leave a column whose only content is a fact about
+historical rows that nothing consults.
+
+##### R5's real question: `session_frames` is permanent, so what happens to the old rows
+
+"Remove all support for frames not numbered by the runner" cannot mean only "stop writing them" —
+sessions numbered before the cutover keep those rows forever. Three candidates, costed against the
+three consumers that would notice: the durable cursor (stage 4), the `haku_conversations` transcript
+tools, and the state index.
+
+**Renumbering them is the one that can do damage, so take it first.** The reprojection tool
+(§ stage 4, _Backfill falls out of the reprojection tool_) is the natural instrument, and it is
+still the wrong one here. `frame_seq` is not an internal detail: it is a **published address**.
+`read_frame(session_id, frame_seq)` takes one, `read_rollout` takes one as its cursor, every
+transcript entry's `provenance` hands one out, and an agent that quoted one into a haku-state note
+or a Matrix event has put it somewhere permanent and federated. Renumbering silently repoints all of
+them — and repoints them at a frame that _resolves_, which is worse than a link that breaks. It
+would also have to rewrite every pointer in the same transaction: `session_turns.{first,last}_frame_seq`,
+`session_messages.source_{first,last}_frame_seq`, and stage 4's cursor. Against all that it buys
+nothing, because nothing reads density on a closed session — and it cannot even be honest if it did.
+`Identity` is sparse, so a gap in an old session is not evidence of anything; renumbering densely
+would _manufacture_ the claim that no frame was ever lost, inventing exactly the evidence that dense
+numbering exists to make trustworthy.
+
+**Retiring them costs the most and does not accomplish the removal anyway.** Bounding how far back
+the log is read lands hardest on `haku_conversations`, because `read_transcript` is _computed from
+frames per read_ — there is no stored neutral row until stage 4's table — so a retention window
+deletes the transcript of a retired session, not merely its raw protocol. `list_turns` survives, its
+rows being in `session_turns`, but its `frame_seq` ranges then point at nothing. The state index
+takes the worst of it in a way that is easy to miss: `chat_source.py` embeds `session_messages`, not
+frames, so `search` keeps returning hits into retired sessions and the drilldown those pointers exist
+for dead-ends — a result that cannot be opened is worse than one that was never indexed. And
+`haku_conversations` is the only place a tool call and the result it got are both recorded, so this
+is a permanent loss of the corpus's most distinctive content. The durable cursor is the one consumer
+that would not care; it only ever advances. Retention may still be worth doing one day — the same
+way § stage 4 records dropping `session_messages` — but as a deliberate decision with that cost
+named, not as a side effect of wanting a numbering scheme gone. It is also not a removal: a window
+is a policy, and identity-numbered rows stay inside it until it passes R3.
+
+**So: keep reading them — and the reason is that there is no residual support to remove.** This is
+not a concession, and it is worth stating precisely, because the phrase "keep supporting the old
+rows" makes it sound like one. Every line of dual-numbering machinery is on the write path — the
+sequence default, the `identity | runner` branch, `runner_seq`, `frame_uid` dedup — and all of it is
+gone by the end of R5 without a single historical row being involved. The read path has no
+numbering branch to remove, because it never had one: `FrameCursor`, `read_frames`,
+`read_operator_frames`, `session_turns`, `session_messages.source_*`, the MCP tools and the frames
+page all use `frame_seq` as **a per-session total order and nothing more**, which identity values
+satisfy exactly as well as runner values — uniqueness and ordering are per session, so the two never
+have to be comparable (§ _The primary-key question_). The only two consumers of _density_ are live
+contiguity checking and `resume_from` catch-up, and both need a runner attached to the socket, which
+no identity-numbered session has once the gate's second half holds.
+
+What that leaves is one invariant rather than one code path, and R5's job is to state and pin it:
+**nothing in the read path may assume `frame_seq` is dense, or 1-based, or comparable across
+sessions.** It is true today by accident of how the readers were written; a test over a session with
+deliberately sparse, high-valued frames makes it true on purpose, and the historical rows are the
+live proof that it has to be. `session_turns.first_frame_seq` is already the documented example of
+getting this right — `max(frame_seq) + 1` is a **bound**, not a pointer, which is exactly why it
+survives both numbering schemes unchanged.
 
 ### 3. Turn state onto the turn row — **done**
 
