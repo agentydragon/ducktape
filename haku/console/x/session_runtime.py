@@ -591,10 +591,12 @@ class SessionService:
         tool_calls: list[RecordedToolCall] = []
         completed: TurnCompleted | None = None
         # The frame `completed` was projected from, kept because the code below still reads
-        # Claude's own payload out of it: the failure's reason (a neutral outcome carries no
-        # message), the prose of a turn that said nothing anywhere else, and the cost, usage and
-        # duration `end_turn` stores verbatim. Appealing an event to the frame behind it is the
-        # design's own escape hatch, so this is the seam working rather than leaking.
+        # Claude's own payload out of it for two things the neutral event does not carry: the
+        # failure's reason (an outcome is not a message) and the prose of a turn that said nothing
+        # anywhere else. What it no longer reads out of it is the turn's cost — that is
+        # `completed.usage`, and it lands in columns that mean the same thing whichever backend
+        # filled them. Appealing an event to the frame behind it is the design's own escape hatch,
+        # so this is the seam working rather than leaking.
         result: dict[str, Any] | None = None
         result_frame_seq: int | None = None
         status = self._turn_status(room_id)
@@ -759,12 +761,11 @@ class SessionService:
                 await self._speak(session_id, room_id, turn_id, final_text)
             elif abort_event.is_set() and not carried_final:
                 await self._speak(session_id, room_id, turn_id, ABORTED_NOTICE)
-            # The outcome is the event's; the payload beside it is still Claude's, because
-            # `session_turns` stores that CLI's cost, usage and duration as it arrived.
-            # `TurnCompleted.usage` is the neutral shape that replaces it, and giving those
-            # columns their own meaning is a schema change of its own.
+            # Both halves are the event's: the outcome, and the usage the backend's adapter read
+            # out of its own payload. Nothing about a turn's cost passes through here as a CLI's
+            # frame any more.
             await self._store.end_turn(
-                turn_id, TurnOutcome.ABORTED if abort_event.is_set() else completed.outcome, result
+                turn_id, TurnOutcome.ABORTED if abort_event.is_set() else completed.outcome, completed.usage
             )
         except Exception as error:
             await self._store.end_turn(turn_id, TurnOutcome.FAILED)

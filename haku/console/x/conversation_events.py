@@ -230,9 +230,23 @@ class ActivityCompleted:
 class Usage:
     """What one exchange cost, in terms that mean the same thing on every backend.
 
-    **Aggregatable**, because a neutral turn may one day span several provider invocations:
-    counters sum. A counter the backend did not report is 0 and contributes nothing to a sum;
-    cost and duration are None where it reported neither, since those cannot be invented.
+    **Aggregatable**, because a neutral turn may one day span several provider invocations — and
+    the three quantities aggregate differently, which is the part worth stating rather than
+    assuming:
+
+    - **Counters sum.** Tokens spent by two invocations of one exchange are tokens spent by the
+      exchange. A counter the backend did not report is 0, so it contributes nothing to a sum;
+      that is why they are `int` rather than `int | None`.
+    - **Cost sums, and unknown propagates.** Money adds like the counters do, but None is *not*
+      zero here: a backend reporting no cost leaves the exchange's cost unknown rather than free,
+      so an aggregate containing one is unknown rather than a total missing a term.
+    - **Duration does not sum.** It is what the backend says *one invocation* took, and two
+      invocations may overlap or be separated by waiting on this side, so adding them reports a
+      duration nothing lasted. An exchange's own elapsed time is the console's bracket around it
+      (`session_turns.started_at`/`ended_at`), which needs no backend cooperation at all.
+
+    These are the terms `session_turns` stores, one column each, so the aggregate a reader wants
+    is a `SUM` over rows rather than a fold over a provider's JSON.
     """
 
     input_tokens: int

@@ -25,6 +25,7 @@ from enum import StrEnum
 from typing import Any, ClassVar, cast
 from uuid import UUID, uuid4
 
+from more_itertools import one
 from sqlalchemy import CursorResult, Select, delete, func, literal, or_, select, text, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -53,6 +54,7 @@ from haku.console.database_schema import (
 )
 from haku.console.x import transcript_entries
 from haku.console.x.claude_code import projection
+from haku.console.x.conversation_events import TurnCompleted, Usage
 from haku.console.x.conversation_records import (
     Conversation,
     ConversationCursor,
@@ -62,6 +64,7 @@ from haku.console.x.conversation_records import (
     TranscriptSlice,
     TurnCursor,
     TurnRecord,
+    TurnUsage,
 )
 from haku.console.x.session_frames import (
     ASSISTANT_FRAME_KIND,
@@ -341,8 +344,6 @@ class SessionStore:
                     started_at=turn.started_at,
                     ended_at=turn.ended_at,
                     outcome=turn.outcome,
-                    cost_usd=turn.cost_usd,
-                    duration_ms=turn.duration_ms,
                     usage=turn.usage,
                 )
                 for turn in turns
@@ -441,20 +442,20 @@ class SessionStore:
             if turn is None:
                 return None
             turn_id, first_frame_seq = turn.turn_id, turn.first_frame_seq
-            closing: dict[str, Any] | None = None
+            closing: TurnCompleted | None = None
             if not await _prompt_left(db, session_id, first_frame_seq):
                 await _requeue(db, turn_id)
                 await notify(db, SessionEventKind.PROMPT, session_id)
-            elif (closing := await _recorded_result(db, session_id, first_frame_seq)) is None:
+            elif (closing := await _recorded_completion(db, session_id, first_frame_seq)) is None:
                 return ResumedTurn(turn_id=turn_id)
-        # Cases 1 and 2. A turn that never asked has no result to close with and no outcome but
-        # failure; one that finished carries its own, which `end_turn` also mines for the cost
-        # and usage the previous holder never got to write.
-        await self.end_turn(
-            turn_id,
-            TurnOutcome.ANSWERED if closing is not None and not closing.get("is_error") else TurnOutcome.FAILED,
-            closing,
-        )
+        # Cases 1 and 2. A turn that never asked has no completion to close with and no outcome
+        # but failure; one that finished carries its own outcome and the cost the previous holder
+        # never got to write — both read through the backend's adapter rather than out of its
+        # payload here, so this path says nothing about which CLI produced the frame.
+        if closing is None:
+            await self.end_turn(turn_id, TurnOutcome.FAILED)
+        else:
+            await self.end_turn(turn_id, closing.outcome, closing.usage)
         return None
 
     async def claim_cleanup_candidates(self) -> list[UUID]:
@@ -629,8 +630,15 @@ class SessionStore:
                 queued_reply=turn.queued_reply,
             )
 
-    async def end_turn(self, turn_id: UUID, outcome: TurnOutcome, result: dict[str, Any] | None = None) -> None:
-        """Close *turn_id*, taking the bracket's upper bound and what the `result` frame reported.
+    async def end_turn(self, turn_id: UUID, outcome: TurnOutcome, usage: Usage | None = None) -> None:
+        """Close *turn_id*, taking the bracket's upper bound and what the exchange cost.
+
+        **The cost is the neutral one**: a backend's adapter has already read its own payload into
+        `Usage`, so this method knows no CLI's field names and a second backend fills the same
+        columns by producing the same event. The payload those numbers were read from stays in
+        `session_frames`, which is the evidence they can be appealed to
+        (<../../plans/chat_runtime_projection.md> § Does a turn live over frames or over neutral
+        events).
 
         Idempotent on an already-closed turn: a second close must not overwrite the first
         outcome, because the first one is the one that happened.
@@ -645,16 +653,15 @@ class SessionStore:
             )
             turn.ended_at = now
             turn.outcome = outcome
-            if result is not None:
-                # `total_cost_usd` is a float on the wire; through `Decimal(str(...))` rather than
-                # `Decimal(float)`, which would carry the binary representation's noise into a
-                # column that is exact on purpose.
-                if isinstance(cost := result.get("total_cost_usd"), int | float):
-                    turn.cost_usd = decimal.Decimal(str(cost))
-                if isinstance(usage := result.get("usage"), dict):
-                    turn.usage = usage
-                if isinstance(duration := result.get("duration_ms"), int):
-                    turn.duration_ms = duration
+            if usage is not None:
+                turn.input_tokens = usage.input_tokens
+                turn.output_tokens = usage.output_tokens
+                turn.cached_input_tokens = usage.cached_input_tokens
+                # A float in the neutral shape, because that is what every backend puts on the
+                # wire; through `Decimal(str(...))` rather than `Decimal(float)`, which would
+                # carry the binary representation's noise into a column that is exact on purpose.
+                turn.cost_usd = None if usage.cost_usd is None else decimal.Decimal(str(usage.cost_usd))
+                turn.duration_ms = usage.duration_ms
             chat = await db.get(Session, turn.session_id)
             if chat is not None:
                 # `responding` is derived from this turn being open, so closing it is what
@@ -692,9 +699,7 @@ class SessionStore:
                 started_at=row.started_at,
                 ended_at=row.ended_at,
                 outcome=row.outcome,
-                cost_usd=float(row.cost_usd) if row.cost_usd is not None else None,
-                duration_ms=row.duration_ms,
-                usage=row.usage,
+                usage=_turn_usage(row),
             )
             for row in rows
         ]
@@ -1310,6 +1315,24 @@ async def _enqueue_reply(
     return True
 
 
+def _turn_usage(turn: SessionTurn) -> TurnUsage | None:
+    """What a closed turn cost, or None where its backend reported nothing at all.
+
+    A counter that is NULL beside a cost or a duration reads as 0 rather than as "no usage": that
+    is already what `Usage` says an unreported counter means, and it is the state a turn closed by
+    a replica on the image before these columns existed leaves behind for the length of a roll.
+    """
+    if turn.input_tokens is None and turn.cost_usd is None and turn.duration_ms is None:
+        return None
+    return TurnUsage(
+        input_tokens=turn.input_tokens or 0,
+        output_tokens=turn.output_tokens or 0,
+        cached_input_tokens=turn.cached_input_tokens or 0,
+        cost_usd=None if turn.cost_usd is None else float(turn.cost_usd),
+        duration_ms=turn.duration_ms,
+    )
+
+
 async def _open_turn(db: AsyncSession, session_id: UUID) -> UUID | None:
     """The turn *session_id* is in the middle of, if it is in the middle of one.
 
@@ -1350,24 +1373,35 @@ async def _prompt_left(db: AsyncSession, session_id: UUID, first_frame_seq: int)
     return written is not None
 
 
-async def _recorded_result(db: AsyncSession, session_id: UUID, first_frame_seq: int) -> dict[str, Any] | None:
-    """This turn's `result` frame, if its holder recorded one and then died before closing it.
+async def _recorded_completion(db: AsyncSession, session_id: UUID, first_frame_seq: int) -> TurnCompleted | None:
+    """How this turn ended, if its holder recorded that and then died before closing the row.
 
-    Its presence means the exchange is over and nothing more is coming: the runner will replay
-    the frame, and `record_frame` will refuse it as one this session already has, so a resumed
+    The frame's presence means the exchange is over and nothing more is coming: the runner will
+    replay it, and `record_frame` will refuse it as one this session already has, so a resumed
     turn would wait for an end that cannot arrive twice.
+
+    **Projected rather than parsed**, so the one reading of a backend's terminal frame is the
+    adapter's: the outcome here used to be `not payload["is_error"]`, and `is_error` is false on
+    every production result including those from sessions the console recorded as failed
+    (<../debug/frame_shape_census.md>), so recovery reported every finished turn as answered.
     """
-    payload: dict[str, Any] | None = await db.scalar(
-        select(SessionFrame.payload)
-        .where(
-            SessionFrame.session_id == session_id,
-            SessionFrame.frame_seq >= first_frame_seq,
-            SessionFrame.direction == FrameDirection.FROM_AGENT,
-            SessionFrame.kind == RESULT_FRAME_KIND,
+    row = (
+        await db.execute(
+            select(SessionFrame.frame_seq, SessionFrame.payload)
+            .where(
+                SessionFrame.session_id == session_id,
+                SessionFrame.frame_seq >= first_frame_seq,
+                SessionFrame.direction == FrameDirection.FROM_AGENT,
+                SessionFrame.kind == RESULT_FRAME_KIND,
+            )
+            .limit(1)
         )
-        .limit(1)
-    )
-    return payload
+    ).first()
+    if row is None:
+        return None
+    frame_seq, payload = row
+    projected = projection.project_log([projection.RecordedFrame(frame_seq=frame_seq, payload=payload)])
+    return one(event for event in projected.events if isinstance(event, TurnCompleted))
 
 
 async def _requeue(db: AsyncSession, turn_id: UUID) -> None:

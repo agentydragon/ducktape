@@ -24,8 +24,6 @@ function turn(id: string, startedAt: string): ConversationTurn {
     started_at: startedAt,
     ended_at: null,
     outcome: "answered",
-    cost_usd: null,
-    duration_ms: null,
     usage: null,
   };
 }

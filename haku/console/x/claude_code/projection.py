@@ -426,10 +426,19 @@ def _activity_outcome(status: Any) -> Outcome:
 
 
 def _usage(payload: Mapping[str, Any]) -> Usage | None:
-    if not isinstance(usage := payload.get("usage"), dict):
-        return None
+    """What the turn cost, or None where the frame accounted for nothing.
+
+    None means *no accounting at all*, which is why the three sources are tested together: cost
+    and duration are top-level fields of the result and do not live inside `usage`, so keying the
+    whole shape on that object's presence would let one field's absence delete another's value.
+    A counter it did not carry is 0, as the neutral shape defines an unreported counter.
+    """
+    reported = payload.get("usage")
+    usage: Mapping[str, Any] = reported if isinstance(reported, dict) else {}
     cost = payload.get("total_cost_usd")
     duration = payload.get("duration_ms")
+    if not usage and not isinstance(cost, int | float) and not isinstance(duration, int):
+        return None
     return Usage(
         input_tokens=_counter(usage.get("input_tokens")),
         output_tokens=_counter(usage.get("output_tokens")),

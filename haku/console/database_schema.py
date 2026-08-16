@@ -1038,7 +1038,7 @@ class SessionTurn(Base):
     <../cli_protocol/probes/steering.py>). Keeping the bracket here means re-bracketing later is
     an update to this table rather than a rewrite of the record.
 
-    **And the state of the exchange, not only its extent.** The three columns after `duration_ms`
+    **And the state of the exchange, not only its extent.** The last three columns
     are what `_run_turn` used to hold in locals and a second body of code used to reconstruct out
     of the frames when the process holding them died. They are written in the same transaction as
     the effect each one describes, so a turn adopted by another replica is *read* rather than
@@ -1064,11 +1064,40 @@ class SessionTurn(Base):
     started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     outcome: Mapped[TurnOutcome | None] = mapped_column(TextBackedStrEnumColumn(TurnOutcome), nullable=True)
-    # From the turn's `result` frame, which is the only place they exist: the CLI reports them
-    # once per turn and the console used to read `is_error` off that frame and discard the rest.
+    # What the exchange cost, in the neutral terms of `x/conversation_events.Usage`: a backend's
+    # adapter produces one and `end_turn` lands it here, so filling these columns takes no
+    # knowledge of any CLI's field names. The store used to mine them out of Claude's `result`
+    # payload itself, which made "this turn cost X" mean "whatever that one CLI reported"
+    # (<../plans/chat_runtime_projection.md> § Does a turn live over frames or over neutral
+    # events). That payload stays in `session_frames`, whole and verbatim, which is where an
+    # operator appeals any of these numbers to what actually crossed the wire.
+    #
+    # **The counters sum**, which is the property the neutral shape was required to have: a turn
+    # is one invocation today and may be several later, so a session's or a day's token total is
+    # `SUM` over these columns. They are one fact and move together — NULL is "the backend
+    # reported no usage", 0 is "it reported this counter as nothing"
+    # (`ck_session_turns_usage_counters`).
+    input_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    cached_input_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Money sums the same way, and NULL propagates rather than reading as zero: a backend that
+    # reports no cost leaves an exchange's cost unknown, not free. Exact rather than binary
+    # floating point, which is why `end_turn` goes through `Decimal(str(...))`.
     cost_usd: Mapped[decimal.Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
-    usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # **The one figure that does not sum**: wall clock. This is what the backend says one
+    # invocation took, and two invocations of one exchange may overlap or be separated by
+    # console-side waiting, so adding them would report a duration nothing lasted. The exchange's
+    # own elapsed time is `ended_at - started_at`, which the console measures and no backend has
+    # to supply.
     duration_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # CLEANUP(added 2026-08-16): drop this column once the roll to the release that added
+    #   `input_tokens` has converged — every pod on an image at or after it, which
+    #   `kubectl get pods -n haku-console -o jsonpath='{.items[*].spec.containers[0].image}'`
+    #   answers. It is Claude's own `usage` sub-object; as of this commit nothing writes it and
+    #   nothing reads it, because the numbers are the columns above and the payload it copied is
+    #   in `session_frames` whole. It stays only because a replica on the previous image still
+    #   selects it.
+    usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     # The assistant message this turn is streaming into, set when the message is opened and
     # cleared when it completes — so on an open turn it is non-NULL exactly while an answer is
     # half written, and NULL both before the first delta and between two completed messages.
@@ -1093,6 +1122,14 @@ class SessionTurn(Base):
         ),
         # Open and un-outcomed are the same state, so neither can be reached without the other.
         CheckConstraint("(ended_at IS NULL) = (outcome IS NULL)", name="ck_session_turns_ended_has_outcome"),
+        # The three counters are one fact — a backend either reported usage or it did not — so a
+        # row saying it counted input tokens and not output ones is unrepresentable rather than
+        # something every reader has to decide what to do with.
+        CheckConstraint(
+            "(input_tokens IS NULL) = (output_tokens IS NULL) "
+            "AND (input_tokens IS NULL) = (cached_input_tokens IS NULL)",
+            name="ck_session_turns_usage_counters",
+        ),
         Index("idx_session_turns_session", "session_id", "started_at"),
         # One open turn per session, as a schema property rather than a rule the turn loop has to
         # keep. It is also what `responding` is derived from, and what makes "an abort names a

@@ -57,7 +57,7 @@ module's own name was the last of it: it is the session runtime, not Claude's.
 
 **A turn is a row, and it is a range over the frame log.** `next_prompt` dequeues a prompt and
 opens `session_turns` in one transaction; `_run_turn` is that turn's span and closes it on
-every exit, keeping what the `result` frame reported about cost, usage and duration. At most one
+every exit, keeping what the exchange cost. At most one
 turn per session is open (a partial unique index), and that is the single question behind three
 answers: whether a prompt may be admitted, whether there is anything to abort, and whether the
 SPA is shown `responding` — which the session view now derives rather than reading off a column.
@@ -76,6 +76,27 @@ which is one state machine written twice
 existing, deliberately not `sent_at` — an unsent row still means the room is owed that text, so a
 turn that re-queued it would post the answer twice — and `said_anything` is a separate column
 rather than the same one read twice, because a session with no room queues nothing.
+
+**And what the exchange cost is neutral, in columns rather than in one CLI's payload.**
+`end_turn` takes a `Usage` — the backend adapter's own reading of its own frames — and writes
+`input_tokens`, `output_tokens`, `cached_input_tokens`, `cost_usd` and `duration_ms`. It used to
+take Claude's `result` payload and mine it by key, which made "this turn cost X" mean "whatever
+that one CLI reported" and left a second backend nothing to fill
+(<../../plans/chat_runtime_projection.md> § Does a turn live over frames or over neutral events).
+Two consequences worth knowing before changing it:
+
+- **The counters and the cost sum; the duration does not.** A turn is one invocation today and may
+  be several later, so what a session or a day spent is a `SUM` over these columns — which is the
+  whole reason they are columns. Wall clock is not additive: two invocations of one exchange may
+  overlap or be separated by console-side waiting, so `duration_ms` stays what the backend says one
+  invocation took and an exchange's own span is `ended_at - started_at`. A NULL cost is unknown,
+  never zero; a 0 counter is a counter the backend reported as nothing, and a NULL one is a backend
+  that reported no usage at all.
+- **The payload is evidence, and it is in `session_frames`.** The whole `result` frame is in the
+  log verbatim and the turn's range points at it, so any of these numbers can be appealed to what
+  crossed the wire. `session_turns.usage` — a JSONB copy of Claude's own `usage` object — is dead
+  and tombstoned in <../database_schema.py>; it survives this release only because a replica on the
+  previous image still selects it.
 
 **The rollout is recorded by `RolloutRecorder`, a `FrameSink` the protocol client calls.** Every
 frame either way, both channels, verbatim — the control channel included, since an interrupt that

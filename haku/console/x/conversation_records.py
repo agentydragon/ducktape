@@ -89,6 +89,22 @@ class FrameCursor(BaseModel):
         return cls(frame_seq=frame.frame_seq)
 
 
+class TurnUsage(BaseModel):
+    """What one exchange cost, in terms that mean the same thing on every backend.
+
+    **Aggregatable, and not all in the same way**: the counters sum, `cost_usd` sums with an
+    absent term making the total unknown rather than smaller, and `duration_ms` does not sum at
+    all — it is one invocation's wall clock, while an exchange's own elapsed time is the span
+    between the turn's `started_at` and `ended_at`.
+    """
+
+    input_tokens: int
+    output_tokens: int
+    cached_input_tokens: int
+    cost_usd: float | None = Field(description="Absent where the backend reported no cost, which is not the same as 0.")
+    duration_ms: int | None = Field(description="What the backend says the invocation took; not the exchange's span.")
+
+
 class TurnRecord(BaseModel):
     """One exchange of a session, as a range over that session's frames."""
 
@@ -101,9 +117,9 @@ class TurnRecord(BaseModel):
     started_at: datetime.datetime
     ended_at: datetime.datetime | None = Field(description="Absent while the exchange is still running.")
     outcome: str | None = Field(description="`answered`, `aborted` or `failed`; absent while it is still running.")
-    cost_usd: float | None = None
-    duration_ms: int | None = None
-    usage: dict[str, Any] | None = Field(default=None, description="The model's own token accounting for the exchange.")
+    usage: TurnUsage | None = Field(
+        default=None, description="What the exchange cost; absent while it runs and where the backend reported none."
+    )
 
 
 class TurnCursor(BaseModel):
@@ -287,20 +303,6 @@ class ActivityFinishedEntry(_EntryBase):
     activity_id: str
     summary: str | None
     outcome: Outcome
-
-
-class TurnUsage(BaseModel):
-    """What one exchange cost, in terms that mean the same thing on every backend.
-
-    **Aggregatable**: counters sum, and a counter the backend did not report is 0. Cost and
-    duration are absent where it reported neither, since those cannot be invented.
-    """
-
-    input_tokens: int
-    output_tokens: int
-    cached_input_tokens: int
-    cost_usd: float | None
-    duration_ms: int | None
 
 
 class TurnEndEntry(_EntryBase):

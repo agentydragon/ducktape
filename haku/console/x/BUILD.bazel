@@ -29,6 +29,7 @@ py_library(
     name = "session_store",
     srcs = ["session_store.py"],
     deps = [
+        ":conversation_events",
         ":conversation_records",
         ":session_frames",
         ":session_notifications",
@@ -39,6 +40,7 @@ py_library(
         "//haku/console:database_schema",
         "//haku/console/x/claude_code:projection",
         "//haku/runtime/x/bridge:cli_client",
+        "@pypi//more_itertools",
         "@pypi//sqlalchemy",
     ],
 )
@@ -79,6 +81,7 @@ py_library(
     name = "session_views",
     srcs = ["session_views.py"],
     deps = [
+        ":conversation_records",
         ":sandbox_claims",
         ":session_frames",
         "//haku/console:chat_models",
@@ -187,6 +190,7 @@ py_test(
     srcs = ["test_session_runtime.py"],
     deps = [
         ":conftest",
+        ":conversation_records",
         ":session_notifications",
         ":session_runtime",
         ":session_store",
@@ -211,6 +215,8 @@ py_test(
     srcs = ["test_session_store.py"],
     deps = [
         ":conftest",
+        ":conversation_events",
+        ":conversation_records",
         ":session_notifications",
         ":session_store",
         "//:conftest",

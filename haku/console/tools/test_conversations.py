@@ -34,6 +34,7 @@ from haku.console.x.conversation_records import (
     TranscriptSlice,
     TurnCursor,
     TurnRecord,
+    TurnUsage,
 )
 
 SESSION = UUID("11111111-1111-1111-1111-111111111111")
@@ -145,9 +146,9 @@ class _Reader:
                 started_at=NOW,
                 ended_at=NOW,
                 outcome="answered",
-                cost_usd=0.0125,
-                duration_ms=4200,
-                usage={"output_tokens": 91},
+                usage=TurnUsage(
+                    input_tokens=12, output_tokens=91, cached_input_tokens=640, cost_usd=0.0125, duration_ms=4200
+                ),
             )
         ][:limit]
 
@@ -337,7 +338,7 @@ async def test_a_turn_carries_the_range_to_read_and_what_it_cost() -> None:
     [turn] = result.data.items
     assert (turn.first_frame_seq, turn.last_frame_seq) == (1, 4)
     assert turn.outcome == "answered"
-    assert turn.cost_usd == 0.0125
+    assert turn.usage.cost_usd == 0.0125
 
 
 async def test_a_transcript_entry_reads_as_the_conversation_rather_than_the_protocol() -> None:

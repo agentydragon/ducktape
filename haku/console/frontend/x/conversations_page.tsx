@@ -50,8 +50,8 @@ function surfaceLabel(summary: { surface: ConversationSessionSummary["surface"];
  */
 function TurnBoundary({ turn, number }: { turn: ConversationTurn; number: number }) {
   const facts = [
-    turn.duration_ms == null ? null : `${(turn.duration_ms / 1000).toFixed(1)}s`,
-    turn.cost_usd == null ? null : `$${turn.cost_usd.toFixed(4)}`,
+    turn.usage?.duration_ms == null ? null : `${(turn.usage.duration_ms / 1000).toFixed(1)}s`,
+    turn.usage?.cost_usd == null ? null : `$${turn.usage.cost_usd.toFixed(4)}`,
   ].filter((fact) => fact !== null);
   return (
     <Divider

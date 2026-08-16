@@ -511,6 +511,16 @@ exchange may sum several invocations; and `end_turn` storing the raw `result` st
 turn cost" and becomes evidence, with the cost living in columns that mean the same thing on every
 backend.
 
+**Both have landed** (migration `0049`). `end_turn` takes the adapter's `Usage` and writes
+`input_tokens`, `output_tokens`, `cached_input_tokens`, `cost_usd` and `duration_ms`; the raw
+`result` payload is evidence in `session_frames` and nothing reads it as the answer any more —
+`adopt_open_turn` included, which used to close a recovered turn on `is_error` and so reported
+every finished turn as answered. Aggregation is not uniform, which is the part the requirement
+hid: the counters and the cost sum (a NULL cost makes a total unknown rather than smaller), while
+`duration_ms` does not — wall clock of invocations that may overlap is not their sum, so an
+exchange's own span stays `ended_at - started_at`, which the console measures and no backend
+supplies.
+
 #### Two decisions this leaves open
 
 - **The SPA renders messages by default and must let an operator inspect the tool calls underneath**
