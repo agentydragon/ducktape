@@ -10,7 +10,7 @@ privileges to `run_as`. The daemon's standing routing bearer cannot authorize a 
 Built as a real `FastMCP` server attached via an in-memory transport (the gmail/google_calendar
 pattern), so the application service's approval/audit lifecycle runs unchanged. Registered as MCP
 server id `hostexec` with an `in_process` backend and `operator_login_identity` credential in
-`cluster/k8s/haku/console/config.yaml`. See `haku/docs/security.md` and `haku/hostexec/PLAN.md`.
+`cluster/k8s/haku/console/config.yaml`. See `haku/docs/security.md` and `haku/hostexec/README.md`.
 """
 
 from __future__ import annotations

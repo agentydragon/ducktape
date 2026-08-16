@@ -1,14 +1,16 @@
 # Matrix as Haku's chat surface — requirements
 
-Status: **Phases 0 and 1 are live, and the wake path under them is now hardened.** The
-homeserver, the `@haku` bot, the sync loop, the room binding and the session supervisor all
-run in production: a message typed in Element drives a real Agent SDK turn and the answer
-comes back into the room. What followed Phase 1 was a run of reliability work in the
-session substrate rather than in the Matrix ends (Build order → Phase 1). Phase 2 gives
-that session an identity. This is a requirements document, not a design: it fixes what the
-system must do so the design can be argued about separately. Requirements marked **[v1]**
-are the first cut; **[later]** marks something deliberately deferred with its shape
-recorded so it is not redesigned from scratch.
+Status: **Phases 0–2 are live, Phase 3 has one item left, Phase 4 landed the status half only,
+and Phase 5 has one tool left.** The homeserver, the `@haku` bot, the sync loop, the room binding
+and the session supervisor all run in production: a message typed in Element drives a real turn as
+Haku and the answer comes back into the room, formatted, with a typing indicator and a status line
+while it works. What is still owed is `event_id` dedupe with startup reconciliation (Phase 3),
+ingress debounce and full batch provenance (Phase 4 — the rendered prompt carries event IDs and
+nothing else), and the three room read tools (Phase 5 item 3). This is a requirements document,
+not a design: it fixes what the system must do so the design can be argued about separately.
+Requirements marked **[v1]** are the first cut; **[built]** marks one that has landed; **[later]**
+marks something deliberately deferred with its shape recorded so it is not redesigned from
+scratch.
 
 Companion to <agent_sdk_sandbox_runtime.md>, which owns the Agent SDK runtime this
 plugs into. That runtime is not re-specified here.
@@ -562,13 +564,15 @@ input to a running turn**. Interrupt exists; steer does not.
   Recorded because it comes back: when read policy is wanted, the console surface is where a
   decision function can live, and membership on a substituted token is not.
 
-- **R5.5 [v1] The rollout is readable, not just the conversation.** The agent can read what a
+- **R5.5 [built] The rollout is readable, not just the conversation.** The agent can read what a
   past session _did_ — tool calls with their results, in order — and not only what it said.
   The room cannot answer this and neither can `session_messages`: the turn loop stores an
-  assistant message's `ToolUseBlock`s (id, name, input) and drops the `UserMessage` frames
-  carrying the results, so today's tables record every question and no answer. Reading them as
-  a transcript would produce something plausible with every observation missing, which is
-  worse than having nothing. **So the store comes before the tool.**
+  assistant message's tool calls (`RecordedToolCall`: call id, name, arguments — #4140) and drops
+  the frames carrying the results, so **that table** still records every question and no answer.
+  Reading it as a transcript would produce something plausible with every observation missing,
+  which is worse than having nothing. **So the store came before the tool**, and what answers this
+  requirement is the frame log plus the tools over it (Phase 5) — `read_rollout` for the wire and
+  `read_transcript` for the calls paired with their results.
 
 - **R5.5a Persist the wire, not our parse of it.** Rollout rows are the CLI's own
   newline-delimited JSON frames, captured at the transport boundary where they already cross
@@ -1030,10 +1034,17 @@ Still Phase 3:
   nothing before it, but a crash between `enqueue_prompt` committing and the held row being written
   still replays a batch the session already has.
 
-### Phase 4 — Make it pleasant
+### Phase 4 — Make it pleasant — the status half only
 
-Debounce and batch rendering with provenance (R2.1, R2.4, R2.7); typing indicator (R6.1);
-`m.notice` lifecycle messages carrying the session ID (R7).
+**Built:** the typing indicator (R6.1), the status line and its rate limiting (R6.2–R6.5),
+`m.notice` lifecycle messages carrying the session ID (R7), and coalescing into one turn (R2.1).
+
+**Not built, and this is where the phase actually stands.** `_as_prompt` renders a batch as
+`[event_id] body` per line, so R2.4's sender, timestamp and thread root do not reach the agent —
+which is why the batch's provenance is thinner than R8.2 assumes. And there is no ingress debounce
+(R2.7): three messages typed in a row start one turn only because the first is still running,
+which is R2.2 doing R2.7's job and breaks the moment the session is idle. The age fence (R2.8) is
+unbuilt with it.
 
 ### Phase 5 — Reads
 
@@ -1055,13 +1066,20 @@ transcript with every tool result missing (R5.5):
    calling session's room (R5.3a). Closes R11.3, and retires the system prompt's standing
    TODO: it tells the agent event IDs are citable while the harness can only resolve one it
    was already shown.
-4. **The `haku_conversations` read tools** (R11.3a) — **built**, and now four rather than the two
-   this specified: `list_conversations`, `read_rollout`, `list_turns`, and `read_frame` (#4116),
-   which is the bottom of the drilldown — one frame whole, however large. It exists because the
-   page budget moved from a per-frame cap to a per-page one: a frame bigger than a whole page can
-   then only be reached by naming it. A **drilldown, not a dump** — find the
-   conversation, skim it, read the part that matters — so no tool can return a whole session's
-   rollout and each call's payload stays bounded. Context is the scarce resource here, not rows.
+4. **The `haku_conversations` read tools** (R11.3a) — **built**, and now five rather than the two
+   this specified: `list_conversations`, `read_rollout`, `list_turns`, `read_frame` (#4116) and
+   `read_transcript` (#4145). `read_frame` is the bottom of the drilldown — one frame whole,
+   however large. It exists because the page budget moved from a per-frame cap to a per-page one: a
+   frame bigger than a whole page can then only be reached by naming it. A **drilldown, not a
+   dump** — find the conversation, skim it, read the part that matters — so no tool can return a
+   whole session's rollout and each call's payload stays bounded. Context is the scarce resource
+   here, not rows.
+
+   **`read_transcript` is what this section did not anticipate**: the four tools above read one
+   provider's wire, so an agent recalling its own past session had to re-derive what a message was
+   from `assistant` frames and content blocks. It reads the neutral conversation instead
+   (<chat_runtime_projection.md> § stage 4), and it is why every tool now pages one way — `items`
+   plus `next_cursor`, each cursor typed on its own order.
 
    **Shaped as a cursor over the frame log, not as turns.** `read_rollout(session_id, cursor,
 limit, kinds)` pages `session_frames` by its `frame_seq`, and skimming is a `kinds`
@@ -1081,7 +1099,8 @@ limit, kinds)` pages `session_frames` by its `frame_seq`, and skimming is a `kin
    auto-approval set (`haku_recall_reads`) so a read is a pass-through rather than an approval
    prompt. `sdkMcpServers` would have
    worked and was the other candidate; `/mcp` reuses the audit ledger and the policy that
-   already governs every other read tool.
+   already governs every other read tool. Where the line between this surface and the console's
+   REST twin falls, and why it is not moving: <../console/plans/one_read_api.md>.
 
 **Search is deliberately not in this phase.** When it comes back it is embeddings over the
 same frame rows, which is why the frames are the granularity to store.

@@ -394,7 +394,7 @@ mcp:
     # (jwt-bearer) for a short-lived, single-use, per-host token that hostexecd verifies
     # against Authentik's JWKS. This catalog entry only selects the auth mode; the in-scope
     # hosts + their exec URLs / audiences are the top-level `hostexec:` block below. Every
-    # call is manual-approval (no auto-approve policy). See haku/hostexec/PLAN.md.
+    # call is manual-approval (no auto-approve policy). See haku/hostexec/README.md.
     - id: hostexec
       backend:
         kind: in_process

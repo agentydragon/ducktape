@@ -1,5 +1,10 @@
 # Dispatch via SandboxClaim instead of Job — archived design probe
 
+**Moved out of `plans/` on 2026-08-16, unchanged.** It called itself an archived probe from the
+first line while sitting where pending work lives. The dispatch plane it would have changed is
+retired (<../plans/multi_agent.md>), so nothing here is scheduled; the per-job-secret problem in
+§ The blocker is the part worth re-reading if warm-pool dispatch is ever wanted again.
+
 This is a historical probe. The original Haku dispatch plane is archived and
 not deployed; this document does not describe a currently supported launcher.
 

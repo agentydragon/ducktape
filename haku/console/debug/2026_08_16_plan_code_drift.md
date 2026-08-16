@@ -44,3 +44,20 @@ branch for no gain.
 recording the divergence and where it is being fixed. Editing it to describe
 `project(frames) -> Projection` would have deleted the argument for the cursor, which is the whole
 reason the stage exists.
+
+## What has closed since, read against `devel` at `52bacec04`
+
+The table above is a snapshot at `fc1f28afc` and is left as one. This is what the following day
+landed against it, so a reader knows which rows are spent without having to re-check each:
+
+| Row     | Then                                           | Now                                                                                                                                           |
+| ------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 7       | stage 4 in flight on two branches              | #4127's half landed inside #4145 — the neutral vocabulary, the Claude adapter, and a `read_transcript` surface over them. #4134 is still open |
+| 12      | `list_conversations` has no cursor; #4137 open | Landed (#4137), and #4145 gave every paged tool the same `items` + `next_cursor` shape                                                        |
+| 13      | four `haku_conversations` tools, not two       | Five, with `read_transcript`. The plan says five                                                                                              |
+| 18 / 19 | the `x/` layout reorg was racing this audit    | Landed (#4139): `channels/matrix/` exists and `claude_code/` holds the CLI stub. The prose's `claude_code/` won, as row 19 argued             |
+
+**Row 1 has not closed.** `project(frames) -> Projection` is still the shape on `devel`, and the
+plan still says so. Rows 3 and 14 have not closed either; row 3 grew an answer instead, recorded on
+the plan itself (#4143): the requirement is not expressible against `session_messages` and moves to
+the neutral events.

@@ -110,12 +110,16 @@ started, and opaque per-execution lease tokens bind renewal/result submission to
 - The daemon uses exponential reconnect backoff and continues heartbeating while a command
   runs.
 
-## Deployment order
+## Bringing up a node
 
-1. Apply Alembic revision `0015` and deploy console configuration/secrets.
-2. Roll the console so the machine API and durable broker are available.
-3. Rebuild `wyrm2` and `rugged`; their daemons begin outbound heartbeats.
-4. Confirm both nodes are `connected` in Settings before approving a hostexec call.
+1. Add the daemon id, display name, allowed backends and routing to
+   `cluster/k8s/haku/console/config.yaml`, and its routing bearer as a
+   `node-daemon-*.sops.yaml` beside it.
+2. Add the per-host Authentik provider and execution-authority groups in
+   `tf/gitops/agent-machine-access/hostexec.tf`.
+3. Rebuild the host; `hostexecd` (via `nix/nixos/modules/hostexecd.nix`) begins outbound
+   heartbeats.
+4. Confirm the node is `connected` in Settings before approving a hostexec call.
 
-The console may safely deploy before the daemons: configured nodes appear offline and calls
-fail closed until a valid heartbeat arrives.
+Order between console and daemon does not matter: a configured node with no daemon appears
+offline and its calls fail closed until a valid heartbeat arrives.

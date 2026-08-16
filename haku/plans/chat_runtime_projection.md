@@ -26,8 +26,9 @@ The last two are closed: stage 3 below made that state durable, so `_said_anythi
 `_streaming_assistant` and `TurnResumed`'s state fields are gone. The first two are still asked of
 the frames, and stage 4 is what retires them.
 
-Roughly fifty comment sites in `session_runtime.py` reason about "already / twice / replay /
-duplicate". That is the tax.
+Roughly fifty comment sites across `session_runtime.py` and `session_store.py` reason about
+"already / twice / replay / duplicate". That is the tax, and the store split (#4146) moved it
+rather than paying it.
 
 ## The shape
 
@@ -47,13 +48,12 @@ which happens to be behind". There is no second implementation left to disagree 
 It costs no latency either — the fold runs inline in the happy path. Two loops logically, one call
 stack in practice.
 
-**This paragraph is the specification, and the first implementation of it diverged.** The
-`claude_code/projection.py` arriving with stage 4 (#4134) is `project(frames) -> Projection` — stateless
-over a whole frame sequence, with the cross-frame state private to the call and discarded when it
+**This paragraph is the specification, and the first implementation of it diverged.**
+`x/claude_code/projection.py` landed with #4145 as `project(frames) -> Projection` — stateless over a
+whole frame sequence, with the cross-frame state private to the call and discarded when it
 returns. That shape can be re-run over a session but it cannot be _resumed_ from a cursor, which is
 the property the paragraph above exists for: without it, live and recovery are once again two ways
-of getting to the same answer. Being fixed on `claude/haku-projection-reducer`, stacked on #4134;
-the plan is right and the code is what moves.
+of getting to the same answer. Still the shape on `devel`; being fixed on #4149. The plan is right and the code is what moves.
 
 What that deletes: `TurnResumed`, `adopt_open_turn`'s three-way case analysis, `_recorded_result`,
 `_said_anything`, `_streaming_assistant`, `_prompt_left`, `saw_assistant_message`. `spoke` stops
@@ -157,11 +157,15 @@ state. The row is now both halves of what the fold needs — `first_frame_seq` s
 frames begin, the three columns say what projecting them has produced — so what stage 4 adds is the
 cursor between them.
 
-### 4. The fold, and what it projects **into** — in flight
+### 4. The fold, and what it projects **into** — half landed
 
-Two branches are building it: #4127 (the neutral vocabulary and the Claude adapter into it) and
-#4134 (the turn loop reading the projection rather than Claude's frames). Everything below is still
-the target; all four interpreters counted here are still present on `devel`.
+**What it projects into is built; the fold itself is not.** #4145 landed the neutral vocabulary
+(`x/conversation_events.py`), the Claude adapter into it (`x/claude_projection.py`) and a read
+surface over the result (`read_transcript`). What is still open is the turn loop reading the
+projection instead of Claude's frames (#4134) — so `claude_projection.py`'s own docstring still
+says "nothing calls this yet", and **all four interpreters counted below are still present on
+`devel`**. Everything else in this section is still the target; the paragraphs that have landed say
+so where they are.
 
 `_run_turn`'s frame `match` becomes `project`, with the cursor advanced beside its effects. The
 abort path collapses here too: an abort becomes an intent the transport writes, and the CLI's
@@ -190,7 +194,14 @@ prefers its own answer wherever the row can point into the log. The fourth means
 frames are spelled differently makes the room go silent while the agent works, and it is why the SPA
 has no in-progress display at all.
 
-#### A message is provider-neutral, and tool calls are in it
+#### A message is provider-neutral, and tool calls are in it — **built**
+
+The vocabulary below is `x/conversation_events.py` (#4145), event for event, and
+`x/claude_projection.py` produces it. Two shapes the argument did not anticipate and the wire
+forced: a tool result's content is a variant (`TextContent | ToolReferences | OpaqueContent`)
+rather than a string, and `Outcome.UNKNOWN` exists because `is_error` is _absent_ rather than false
+on most real results. Both are findings from <../console/debug/frame_shape_census.md>. The
+reasoning below is kept because it is what the vocabulary answers to.
 
 The alternative — messages as prose only, tool activity left in frames — was considered and
 rejected, on an argument from what the channels already do (operator, 2026-08-16). **Matrix shows
@@ -219,7 +230,13 @@ results and say nothing about it. The neutral message owns `message_id`; the age
 provenance. This is the lesson `EventTag.transaction_id()` taught in stage 5: identity derived from
 the wire fails exactly when the wire does not carry it.
 
-#### Two categories, one ordered stream
+#### Two categories, one ordered stream — the second category is unbuilt
+
+`ConversationEvent` is the first category and nothing else: `x/conversation_events.py` carries what
+participants said and did, and carries no session event at all. So the split below is still owed,
+and with it `RoomEventKind`'s move out of `channels/matrix/client.py`. What did land ahead of it is
+the discriminator the split turns on — `Provenance` is `FrameRange | Authored`, so a console-origin
+event already has a home in the type when there is one to put in it.
 
 Bootstrap narration is the case that shows the vocabulary above is incomplete (operator's question,
 2026-08-16). Sandbox setup output is **not the model talking** — it is the bridge: the haku-state
@@ -285,8 +302,14 @@ So every projected thing carries its provenance: the frames it came from, addres
 `session_messages.source_first_frame_seq`/`source_last_frame_seq` (migration `0045`), surfaced on
 `SessionMessageView`. This plan makes it a **product requirement** rather than the diagnostic
 convenience it was proposed as — and it should extend to tool calls and activity, not stop at
-messages, since those are exactly the elements whose neutral form loses the most detail. That
-extension is still owed, and it is the half stage 4 has to build.
+messages, since those are exactly the elements whose neutral form loses the most detail.
+
+**The extension landed for what is read, not for what is stored** (#4145). Every
+`ConversationEvent` carries a `Provenance`, and `read_transcript` hands it out on every entry —
+tool calls and activity included — so an operator can appeal any of them to the frame behind it.
+But the projection is computed per read and no neutral row exists yet, so this is provenance the
+fold _derives_ rather than provenance the database _holds_. The stored half arrives with the table
+stage 4 has still to build, which is also where the `CHECK` below belongs.
 
 **Making the range required, without dropping history.** A nullable range that sometimes means
 "unknown" is the weak version of this, and the operator asked whether to recover history or drop it
@@ -439,15 +462,17 @@ backend.
   which surface shows what, and whether in-progress calls appear in the SPA the way they do in the
   room, is unbuilt.
 - **Reasoning and tool activity are not rendered in the channels or the SPA conversation view for
-  now** (operator, 2026-08-16). They are projected and stored; showing them is a later decision. Note
+  now** (operator, 2026-08-16). They are projected and readable; showing them is a later decision. Note
   what that implies: the neutral layer carries strictly more than any surface currently displays,
   which is the right direction — a projection that only holds what today's UI renders would have to
   be re-derived the moment a surface grows.
-- **Durable tool inputs and results widen the read surface.** Commands, file contents and diffs
-  become neutral rows reachable through the `haku_conversations` tools.
-  <information*trust_tiers.md> reasons about who may read past \_conversations*; it will have to
-  reason about who may read past _tool activity_. The index should keep embedding prose only —
-  tool JSON would pollute the vectors — but that is a selection choice, not a boundary.
+- **Durable tool inputs and results widen the read surface.** `read_transcript` already hands an
+  agent a tool call's arguments and its result (#4145), derived per read; making them rows only
+  widens what is durable, not what is reachable, so the policy question below is live now rather
+  than when the table lands.
+  <information_trust_tiers.md> reasons about who may read past conversations; it will have to reason
+  about who may read past tool activity. The index should keep embedding prose only — tool JSON
+  would pollute the vectors — but that is a selection choice, not a boundary.
 
 ### 5. The room outbox — **done**
 

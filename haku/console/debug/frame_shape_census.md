@@ -14,8 +14,10 @@ Read through the console's own `haku_conversations` MCP tools (`list_conversatio
 `read_rollout` paged to exhaustion) as the Haku Agent, on 2026-08-16, with the operator's explicit
 authorisation to read production transcripts for this purpose.
 
-`list_conversations` caps at 100 and has no cursor, so **the newest 100 sessions is the whole
-reachable population** — 2026-08-10 06:51Z through 2026-08-15 07:12Z. Of those:
+`list_conversations` capped at 100 and had no cursor on the day, so **the newest 100 sessions was
+the whole reachable population** — 2026-08-10 06:51Z through 2026-08-15 07:12Z. (It has a keyset
+cursor since #4137, so a repeat census can page past that ceiling; the numbers below are still the
+ones this population gave.) Of those:
 
 | Sessions | Frames each | What they are                                        |
 | -------- | ----------- | ---------------------------------------------------- |

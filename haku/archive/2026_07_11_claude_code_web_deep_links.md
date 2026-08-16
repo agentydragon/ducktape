@@ -1,6 +1,11 @@
-# Plan: Claude Code web deep links as a second coding-delegation path
+# Claude Code web deep links as a second coding-delegation path
 
-Status: **built** (haku-state `ui/frontend/src/affordances.tsx`, `<code-session>` widget).
+**Built and shipped; moved out of `plans/` on 2026-08-16, unchanged.** The `<code-session>` widget
+lives in haku-state (`ui/frontend/src/affordances.tsx`), and the operational "when to use this"
+guidance is haku-state's `memory/delegation.md`. Kept because two things below are durable and
+easy to re-derive wrongly: the `claude.ai/code` query parameters (and the branch one that does not
+exist), and why a link from inside the haku-ui iframe has to go through the `openLink` bridge
+rather than a plain `target="_blank"`.
 
 ## Why
 

@@ -1,5 +1,12 @@
 # PR #3339 audit — deferred findings
 
+**Archived 2026-08-16, unchanged.** Every item below was a judgment call the audit **declined**,
+not work it scheduled — so it sat in `plans/` reading as a backlog it never was. Each was still
+factually true when this moved (`_now()`/`timeout=10.0` are still inlined in
+`mcp_operator_oauth.py`; `OperatorConnectionChangedEvent` and `McpOperatorAuthChangedEvent` are
+still separate models), which is the point: they were declined on value, not on staleness. Kept so
+the reasoning is findable if any of them is proposed again.
+
 Full-content STYLE + duplication audit of the airlock→per-Operator-Google-connections change.
 The **must-fix** and **worth-doing** findings have been applied — the pre-existing-code ones in
 PR #3351 (merged: operator-OAuth test relocation, the migration-ledger change-detector, the

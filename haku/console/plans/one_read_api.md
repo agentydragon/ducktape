@@ -116,7 +116,7 @@ whole result catalog eagerly at module load.
 **A session reader would _not_ get this for free today — but nearly.** `build_schema_servers()`
 constructs `InProcessServerDependencies(routine_launcher=…, hostexec=…)` and leaves `rollout` and
 `index` unset, and <../in_process_servers.py> registers `haku_conversations` only
-`if dependencies.rollout is not None`. So the four conversation tools are absent from both
+`if dependencies.rollout is not None`. So the five conversation tools are absent from both
 catalogs.
 
 The fix is one argument. `conversations_tools.build_mcp(reader)` only closes over the reader; no
@@ -147,14 +147,22 @@ no use for; adding them is a React page shaping an LLM-facing tool. The scope ga
 is a real one: "newest" means last touched on the REST side and first created on the MCP side, and
 a session that is still running sorts differently under each.
 
-### `GET /api/conversations/{id}` vs — nothing
+### `GET /api/conversations/{id}` vs `read_transcript`
 
-There is no MCP twin. `get_operator_conversation` returns the **interpreted** view: the transcript
-(`SessionMessageView`, with `tool_calls` joined to their results out of the rollout and, since
-#4105, `source_first_frame_seq`/`source_last_frame_seq`), the setup narration, and the turn
-summaries — assembled in one call. <../../plans/chat_runtime_projection.md> names this a lossy
-projection of the frame log; it is the console's own interpretation, product-shaped and
-product-owned. Nothing to collapse, and nothing that should be pushed at an agent.
+**A twin arrived after this was written (#4145), and it is not the same answer.**
+`get_operator_conversation` returns the **interpreted** view: the transcript (`SessionMessageView`,
+with `tool_calls` joined to their results out of the rollout and, since #4105,
+`source_first_frame_seq`/`source_last_frame_seq`), the setup narration, and the turn summaries —
+assembled in one call, from `session_messages`. `read_transcript` pages the **projection**: the
+frame log folded through `claude_projection.py` into neutral entries, computed per read and stored
+nowhere.
+
+So they read different sources and answer different questions, and the duplication is not the kind
+§7 could delete. The REST view is the console's own product-shaped interpretation of rows;
+`read_transcript` is what the frame log means, which is the surface an agent should get and a
+browser page should not depend on while the fold is still landing
+(<../../plans/chat_runtime_projection.md> § stage 4). The two converge when the projection has rows
+of its own — at which point this section is worth re-reading rather than re-deriving.
 
 ### `GET /api/conversations/{id}/frames` vs `read_rollout` + `read_frame`
 
@@ -238,7 +246,7 @@ Beyond scoping and cost, three costs a plan should state rather than discover.
 
 **The browser's argument shape is downstream of an agent policy file.** `_is_passthrough` asks
 `AutoApprovalPolicyRegistry.tool_mode`, and for an `OperatorActor` that is the `max` over _every_
-assigned policy root. The four `haku_conversations` tools present pass-through to the console only
+assigned policy root. The five `haku_conversations` tools present pass-through to the console only
 because `haku_recall_reads` in <../../../cluster/k8s/haku/console/config.yaml> lists them as
 `exact_tools` for **Haku**. Drop `read_rollout` from that policy — a change about what an agent may
 do unsupervised — and the console page silently starts needing `{input, rationale}`, which is
