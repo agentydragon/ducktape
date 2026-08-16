@@ -248,7 +248,7 @@ streaming, which wears `assistant` and is told apart by a boolean column rather 
 - There is deliberately **no enum over `kind`**. One would give a name to a concept the schema does
   not have, and an enum over the union of two vocabularies is what made the first attempt confusing
   enough to back out.
-- The loose `*_FRAME_KIND` constants in `x/session_frames.py` stay loose, with a pointer to
+- The loose `*_FRAME_KIND` constants in `x/claude_code/frames.py` stay loose, with a pointer to
   `SessionFrame` and to the projection plan's stage 2.
 - The table's own docstring says the same thing, since that is where a reader meets it first.
 

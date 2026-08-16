@@ -12,7 +12,7 @@ py_library(
     srcs = ["stub_claude.py"],
     deps = [
         "//haku/cli_protocol:frame_identity",
-        "//haku/console/x:session_frames",
+        "//haku/console/x/claude_code:frames",
     ],
 )
 

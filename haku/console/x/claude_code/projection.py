@@ -45,7 +45,7 @@ from types import MappingProxyType
 from typing import Any
 
 from haku.console.chat_models import TurnOutcome
-from haku.console.x import session_frames
+from haku.console.x.claude_code import frames
 from haku.console.x.conversation_events import (
     ActivityCompleted,
     ActivityStarted,
@@ -183,19 +183,19 @@ class _Projector:
         return Projection(events=tuple(self.events), unprojected=MappingProxyType(dict(self.unprojected)))
 
     def fold(self, frame: RecordedFrame) -> None:
-        kind = session_frames.frame_kind(frame.payload)
-        if kind == session_frames.DELTA_FRAME_KIND:
+        kind = frames.frame_kind(frame.payload)
+        if kind == frames.DELTA_FRAME_KIND:
             if self.delta_source is DeltaSource.STREAM_EVENTS:
                 self._stream_delta(frame)
             return
         if kind in _IGNORED_KINDS:
             return
         match kind:
-            case session_frames.ASSISTANT_FRAME_KIND:
+            case frames.ASSISTANT_FRAME_KIND:
                 self._assistant(frame)
-            case session_frames.PROMPT_FRAME_KIND:
+            case frames.PROMPT_FRAME_KIND:
                 self._user(frame)
-            case session_frames.RESULT_FRAME_KIND:
+            case frames.RESULT_FRAME_KIND:
                 self._result(frame)
             case "system":
                 self._system(frame)
@@ -220,7 +220,7 @@ class _Projector:
         live one does, since a CLI writes one answer at a time.
         """
         event = frame.payload.get("event")
-        if not isinstance(event, dict) or not (text := session_frames.text_delta(event)):
+        if not isinstance(event, dict) or not (text := frames.text_delta(event)):
             return
         self.events.append(
             TextDelta(
@@ -233,7 +233,7 @@ class _Projector:
     def _assistant(self, frame: RecordedFrame) -> None:
         message = self._message_for(frame)
         where = FrameRange(frame.frame_seq, frame.frame_seq)
-        for block in session_frames.content_blocks(frame.payload):
+        for block in frames.content_blocks(frame.payload):
             match block.get("type"):
                 case "text" if isinstance(text := block.get("text"), str):
                     message = replace(message, texts=(*message.texts, text))
@@ -260,7 +260,7 @@ class _Projector:
                         )
                     )
                 case block_type:
-                    self._unprojected(f"{session_frames.ASSISTANT_FRAME_KIND}/{block_type}")
+                    self._unprojected(f"{frames.ASSISTANT_FRAME_KIND}/{block_type}")
 
     def _message_for(self, frame: RecordedFrame) -> OpenMessage:
         """The message this frame continues, or a new one.
@@ -271,7 +271,7 @@ class _Projector:
         grouped, so it is its own message; the wire supplies one essentially always, the exceptions
         being the console's own reconstructions.
         """
-        agent_message_id = session_frames.agent_message_id(frame.payload)
+        agent_message_id = frames.agent_message_id(frame.payload)
         if (
             (open_message := self.open_message) is not None
             and agent_message_id is not None
@@ -302,7 +302,7 @@ class _Projector:
         if isinstance(content, str):
             return
         if not isinstance(content, list):
-            self._unprojected(session_frames.PROMPT_FRAME_KIND)
+            self._unprojected(frames.PROMPT_FRAME_KIND)
             return
         # Top-level and undocumented, and the channel the tool's real output arrives on. One per
         # frame — as is the `tool_result` block it belongs to, in every production result seen.
@@ -321,7 +321,7 @@ class _Projector:
                         )
                     )
                 case block_type:
-                    self._unprojected(f"{session_frames.PROMPT_FRAME_KIND}/{block_type}")
+                    self._unprojected(f"{frames.PROMPT_FRAME_KIND}/{block_type}")
 
     def _result(self, frame: RecordedFrame) -> None:
         self.close_message()

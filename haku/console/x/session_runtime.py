@@ -32,10 +32,10 @@ from haku.console.operator_auth import OperatorActorDep
 # As a module: its `RecordedFrame` is a row of the frame log, and `cli_client`'s is where a sink
 # put one frame. Two different things with one name, so neither gets to drop its surname here.
 from haku.console.x.claude_code import projection
+from haku.console.x.claude_code.frames import frame_kind
 from haku.console.x.conversation_events import ConversationEvent, TurnCompleted
 from haku.console.x.room_status import TurnStatus, ignore_clear, ignore_status
 from haku.console.x.sandbox_claims import ProvisioningStep, SandboxClaims, provisioning_view
-from haku.console.x.session_frames import SETUP_OUTPUT_KIND, frame_kind, setup_output_frame
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.session_store import (
     LEASE_RENEW_INTERVAL,
@@ -55,6 +55,7 @@ from haku.console.x.session_views import (
     SessionMessageView,
     SessionView,
 )
+from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 from haku.runtime.x.bridge.cli_client import ClaudeCli, ReceivedFrame, RecordedFrame, SentPrompt, cli_over_websocket
 from haku.runtime.x.bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch
 from haku.runtime.x.bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, TextWebSocket

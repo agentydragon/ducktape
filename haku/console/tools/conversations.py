@@ -106,7 +106,7 @@ MAX_PAGE_BYTES = 200_000
 
 # What a session's `kind` column actually holds, so a caller can filter for any of it. Every
 # entry was observed in production; four of them are absent from the CLI's `protocol.md`, and
-# `setup_output` is the console's own (`haku/console/x/session_frames.py`). Spelled here because
+# `setup_output` is the console's own (`haku/console/x/setup_output.py`). Spelled here because
 # it is this tool's argument vocabulary — an enum in the generated schema — rather than anything
 # the store constrains: `read_frames` takes whatever strings it is handed.
 FrameKind = Literal[

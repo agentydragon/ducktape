@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from haku.console.x.session_frames import text_delta
+from haku.console.x.claude_code.frames import text_delta
 
 
 def test_text_delta_ignores_non_text_stream_events() -> None:

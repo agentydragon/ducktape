@@ -35,7 +35,7 @@ from haku.console.x import session_events
 from haku.console.x.conversation_events import Outcome
 from haku.console.x.conversation_records import TurnUsage
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
-from haku.console.x.session_frames import SETUP_OUTPUT_KIND
+from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 
 
 class SessionToolResultView(BaseModel):

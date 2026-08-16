@@ -48,8 +48,8 @@ py_library(
     deps = [
         "//haku/console:chat_models",
         "//haku/console:database_schema",
-        "//haku/console/x:session_frames",
         "//haku/console/x:session_store",
+        "//haku/console/x/claude_code:frames",
         "//haku/console/x/testing:waiting",
         "//util:net",
         "//util/bazel:runfiles",
