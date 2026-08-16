@@ -70,7 +70,7 @@ FrameKind = Literal[
 
 
 class Conversation(BaseModel):
-    session_id: str
+    session_id: UUID
     surface: str | None = Field(description="`matrix` or `spa`; absent on sessions that predate the column.")
     room_id: str | None = Field(description="The Matrix room this session served, if it served one.")
     status: str
@@ -105,7 +105,7 @@ class RolloutPage(BaseModel):
 class TurnRecord(BaseModel):
     """One exchange of a session, as a range over that session's frames."""
 
-    turn_id: str
+    turn_id: UUID
     first_frame_seq: int = Field(description="Pass as `after_seq` minus one to `read_rollout` to read this exchange.")
     last_frame_seq: int | None = Field(
         description="Inclusive end of the range. Absent while the exchange is still running, "
@@ -169,7 +169,7 @@ def build_mcp(reader: RolloutReader) -> FastMCP:
 
     @mcp.tool
     async def read_rollout(
-        session_id: Annotated[str, Field(description="From `list_conversations`.")],
+        session_id: Annotated[UUID, Field(description="From `list_conversations`.")],
         after_seq: Annotated[
             int | None,
             Field(default=None, description="Read frames after this `frame_seq`; omit to start at the beginning."),
@@ -188,8 +188,7 @@ def build_mcp(reader: RolloutReader) -> FastMCP:
     ) -> RolloutPage:
         """Read one session's protocol frames in order, a page at a time."""
         frames = [
-            clip(frame)
-            for frame in await reader.read_frames(UUID(session_id), after_seq=after_seq, limit=limit, kinds=kinds)
+            clip(frame) for frame in await reader.read_frames(session_id, after_seq=after_seq, limit=limit, kinds=kinds)
         ]
         # A short page is the last one. Cheaper than a second count query, and the caller only
         # needs to know whether to ask again.
@@ -197,7 +196,7 @@ def build_mcp(reader: RolloutReader) -> FastMCP:
 
     @mcp.tool
     async def read_frame(
-        session_id: Annotated[str, Field(description="From `list_conversations`.")],
+        session_id: Annotated[UUID, Field(description="From `list_conversations`.")],
         frame_seq: Annotated[int, Field(description="The `frame_seq` of the frame to read, from `read_rollout`.")],
     ) -> RolloutFrame:
         """One frame in full, however large — the way to read what `read_rollout` clipped.
@@ -212,16 +211,14 @@ def build_mcp(reader: RolloutReader) -> FastMCP:
         # `after_seq` is exclusive, so the frame asked for is the first row after its predecessor.
         # `kinds=None` would drop deltas from the query, and a caller naming a `frame_seq` has
         # already chosen its row.
-        frames = await reader.read_frames(
-            UUID(session_id), after_seq=frame_seq - 1, limit=1, kinds=list(get_args(FrameKind))
-        )
+        frames = await reader.read_frames(session_id, after_seq=frame_seq - 1, limit=1, kinds=list(get_args(FrameKind)))
         if not frames or frames[0].frame_seq != frame_seq:
             raise ValueError(f"no such frame: {session_id=} {frame_seq=}")
         return frames[0]
 
     @mcp.tool
     async def list_turns(
-        session_id: Annotated[str, Field(description="From `list_conversations`.")],
+        session_id: Annotated[UUID, Field(description="From `list_conversations`.")],
         limit: Annotated[int, Field(default=DEFAULT_PAGE, ge=1, le=MAX_PAGE, description="Newest exchange first.")] = (
             DEFAULT_PAGE
         ),
@@ -231,6 +228,6 @@ def build_mcp(reader: RolloutReader) -> FastMCP:
         Each carries the frame range it produced, so this is the cheap way to find the exchange
         worth reading before paging its frames.
         """
-        return await reader.list_turns(UUID(session_id), limit=limit)
+        return await reader.list_turns(session_id, limit=limit)
 
     return mcp

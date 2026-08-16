@@ -19,6 +19,7 @@ from haku.console.tools.conversations import (
 )
 
 SESSION = UUID("11111111-1111-1111-1111-111111111111")
+TURN = UUID("22222222-2222-2222-2222-222222222222")
 NOW = datetime.datetime(2026, 8, 12, 9, 0, tzinfo=datetime.UTC)
 
 
@@ -43,11 +44,7 @@ class _Reader:
     async def list_conversations(self, *, limit: int) -> list[Conversation]:
         return [
             Conversation(
-                session_id="11111111-1111-1111-1111-111111111111",
-                surface="matrix",
-                room_id="!room:example.org",
-                status="closed",
-                created_at=NOW,
+                session_id=SESSION, surface="matrix", room_id="!room:example.org", status="closed", created_at=NOW
             )
         ][:limit]
 
@@ -63,7 +60,7 @@ class _Reader:
     async def list_turns(self, session_id: UUID, *, limit: int) -> list[TurnRecord]:
         return [
             TurnRecord(
-                turn_id="22222222-2222-2222-2222-222222222222",
+                turn_id=TURN,
                 first_frame_seq=1,
                 last_frame_seq=4,
                 started_at=NOW,
@@ -197,7 +194,8 @@ async def test_a_page_size_above_the_cap_is_refused() -> None:
 
 
 async def test_a_session_id_that_is_not_an_id_is_refused_here() -> None:
-    """Parsed at the boundary, so the store is never handed something it has to validate."""
+    """The parameter is a `UUID`, so the schema refuses this before any code runs and the store
+    is never handed something it would have to validate."""
     reader = _Reader()
     async with Client(build_mcp(reader)) as client:
         result = await client.call_tool("read_rollout", {"session_id": "not-an-id"}, raise_on_error=False)

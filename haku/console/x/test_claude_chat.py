@@ -607,7 +607,7 @@ async def test_conversations_come_back_newest_first_with_the_room_they_served(ch
 
     conversations = await chat_store.list_conversations(limit=10)
 
-    assert conversations[0].session_id == str(matrix.session_id)
+    assert conversations[0].session_id == matrix.session_id
     assert conversations[0].room_id == "!room:example.org"
     assert conversations[1].room_id is None
 
@@ -814,7 +814,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     assistants = [m for m in (await chat_store.get(operator_id, session_id)).messages if m.role == "assistant"]
     assert [m.message_id for m in assistants] == [assistant_id], "continued, rather than forked into a second"
     [turn] = await chat_store.list_turns(str(session_id), limit=5)
-    assert (turn.turn_id, turn.outcome) == (str(started.turn_id), TurnOutcome.ANSWERED)
+    assert (turn.turn_id, turn.outcome) == (started.turn_id, TurnOutcome.ANSWERED)
 
 
 async def test_the_room_is_owed_each_assistant_message_as_it_finishes(
