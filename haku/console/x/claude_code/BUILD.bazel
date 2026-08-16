@@ -15,6 +15,23 @@ py_library(
 )
 
 py_test(
+    name = "test_diverse_session",
+    srcs = ["test_diverse_session.py"],
+    data = ["testdata/diverse_session.jsonl"],
+    deps = [
+        ":projection",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console/tools:conversations",
+        "//haku/console/x:conversation_events",
+        "//util/bazel:runfiles",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_projection",
     srcs = ["test_projection.py"],
     deps = [

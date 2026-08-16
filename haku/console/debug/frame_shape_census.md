@@ -81,7 +81,8 @@ Clipped sizes: 542 frames in the 8–16 KB band, 83 in 16–32 KB, 47 in 32–64
 | `rate_limit_event`  | 40     | 14       | yes               |
 | `stream_event`      | 9,606  | 4        | yes               |
 
-Never observed at all: `active_goal`.
+Never observed at all in this corpus: `active_goal` — but see § A direct capture of one session,
+which caught one.
 
 **`system` is 73% of the log and carries almost no information.** 8,512 `thinking_tokens` frames
 (56% of everything) and 2,275 `status` frames (15%). Every `status` frame in the corpus carries the
@@ -117,7 +118,9 @@ frames) as replicas reattached.
 | `init`                     | 1      | 1        | yes               |
 | `task_updated`             | 1      | 1        | yes               |
 
-Never observed: `commands_changed`, `task_progress`, `post_turn_summary`, `compact_boundary`.
+Never observed in this corpus: `commands_changed`, `task_progress`, `post_turn_summary`,
+`compact_boundary`. The direct capture below caught `commands_changed` and `post_turn_summary`,
+plus a `task_summary` subtype absent from both this table and `protocol.md`.
 
 **`init`'s count of 1 is an artefact of clipping, not of the CLI.** Reading each session's first
 sixteen frames shows the same prefix everywhere: `control_request`, the clipped `initialize`
@@ -441,3 +444,98 @@ In rough order of how much damage each does.
 - `error` results of any kind: `subtype: success` was universal, so the whole error surface of
   `result` is unobserved.
 - Anything older than 2026-08-10, since `list_conversations` has no cursor.
+
+## A direct capture of one session (2026-08-16)
+
+Everything above was read back out of production through `haku_conversations`, so it inherits that
+route's blind spots. This section is a second, unrelated route: one session captured straight off
+the CLI's stdout, redacted, and checked in as
+<../x/claude_code/testdata/diverse_session.jsonl> — 139 records, the fixture
+<../x/claude_code/test_diverse_session.py> folds.
+
+**Provenance.** Claude Code **2.1.233** against **claude-haiku-4-5-20251001**, run with
+`--output-format stream-json --verbose --include-partial-messages` in a throwaway working
+directory on 2026-08-16. The prompt deliberately spanned a wide surface — write a file, read it
+back, count its lines with bash, run a command that fails, summarise — so the capture holds text,
+extended thinking, four tool calls (two of them parallel), four tool results including one error,
+and a completed turn.
+
+**It is one session from one CLI version, so it bounds nothing.** Every count here is an existence
+proof that a shape occurs, never a share of anything. Where this contradicts a "never observed"
+line above, the contradiction is the finding: absence in the production corpus was absence from
+that route's window, not absence from the CLI. Redaction elides operator-specific fields
+(`skills`, `agents`, `mcp_servers`, `slash_commands`, `plugins`, `commands`, `apiKeySource`),
+renumbers UUIDs, and rewrites paths to `/workspace`; a record whose payload shrank carries
+`original_bytes` with its true pre-redaction size.
+
+### Five frame classes the adapter has never seen
+
+None is in `projection.py`'s `_IGNORED_KINDS` or `_IGNORED_SYSTEM_SUBTYPES`, so each reaches the
+default branch and lands in `Projection.unprojected` today.
+
+| Frame                      | n   | In `protocol.md`? | What it carries                                                                            |
+| -------------------------- | --- | ----------------- | ------------------------------------------------------------------------------------------ |
+| `active_goal`              | 1   | yes               | `value`, `null` throughout — the class the census above never saw                          |
+| `autocompact_state`        | 1   | **no**            | `{enabled, effective_window, threshold, enforced, source}`                                 |
+| `system/commands_changed`  | 1   | yes               | the slash-command/skill catalog, once at startup                                           |
+| `system/task_summary`      | 2   | **no**            | `detail` — a live status line, `null` again when the turn ends                             |
+| `system/post_turn_summary` | 1   | yes               | `status_category`, `status_detail`, `needs_action`, plus an undocumented `summarizes_uuid` |
+
+`system/task_summary` and `system/post_turn_summary` are the two worth a second look for the room
+status line: the first is the CLI's own "what am I doing right now" (`"Writing notes.txt"` here),
+cleared rather than left stale, and the second is its verdict on the turn (`review_ready` here),
+whose `summarizes_uuid` names the exact assistant frame it summarises.
+
+### Two hazards
+
+**The stdout stream is not all JSON.** This capture's first record is the literal line
+
+```text
+Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.
+```
+
+written to stdout beside the frames. A reader that assumes every stdout line parses raises on it
+before any frame class is consulted, so this belongs to whatever splits the stream, not to the
+fold. The fixture keeps it as a `raw_stdout_line` record: a capture with the unparseable line
+removed is a capture that denies this happens.
+
+**One frame was 35,488 bytes** — `system/commands_changed`, an order of magnitude past this
+session's next largest (`system/init`, 5,319). That is comfortably inside `conversations.py`'s
+`MAX_PAGE_BYTES` (200,000), and since that budget is spent per **page** rather than per row, the
+frame is returned whole and costs the rest of its page; nothing needs changing there. It is worth
+recording only because it is the shape that killed the previous per-frame regime: the retired
+8 KB cap would have clipped the one frame that says which commands a session has.
+
+### Observed census
+
+Frame kind, count, and largest pre-redaction size in this one session:
+
+```text
+stream_event/content_block_delta   n=49  max=1030
+system/thinking_tokens             n=24  max=216
+stream_event/content_block_start   n=12  max=344
+stream_event/content_block_stop    n=12  max=217
+assistant[text]                    n=4   max=1018
+assistant[thinking]                n=4   max=1878
+assistant[tool_use]                n=4   max=954
+stream_event/message_delta         n=4   max=703
+stream_event/message_start         n=4   max=680
+stream_event/message_stop          n=4   max=201
+system/status                      n=4   max=177
+user[tool_result]                  n=4   max=602
+system/task_summary                n=2   max=190
+<non-json stdout line>             n=1   max=186
+active_goal                        n=1   max=154
+autocompact_state                  n=1   max=249
+rate_limit_event                   n=1   max=313
+result                             n=1   max=1767
+system/commands_changed            n=1   max=35488
+system/init                        n=1   max=5319
+system/post_turn_summary           n=1   max=377
+```
+
+Two smaller confirmations from the same capture, both already asserted by the fixture's test: the
+two parallel `Bash` calls were answered in the reverse of the order they were asked in, so a fold
+pairing results to calls by position would put this turn's error on the call that succeeded; and
+`result` reported `subtype: success` for a turn containing a deliberately failing command, which
+is the census's point 3 reproduced on a session whose failure was intentional.
