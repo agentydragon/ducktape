@@ -101,11 +101,13 @@ console became the interpreter.
 
 Two corrections this forces on items that would otherwise look like cleanups:
 
-- **The stored calls must end in a `tool_call` table**, written by the adapter — not in a parse of
-  Claude frames, which only sessions on that backend have. It answers the lossy-copy objection by
-  holding the result, and it is where the rollout join lands anyway. Migration 0047 did the
-  vocabulary half early (`session_messages.tool_calls` stores `{call_id, tool_name, arguments}`);
-  what is left is the table, which is the half that moves data.
+- **The stored calls must end in a table**, written by the adapter — not in a parse of Claude
+  frames, which only sessions on that backend have. It answers the lossy-copy objection by holding
+  the result, and it is where the rollout join lands anyway. **Done, and not as a `tool_call`
+  table**: a call is a lifecycle in `session_events`, because a table of finished records cannot
+  express one in progress and Matrix already shows calls in flight
+  (<chat_runtime_projection.md> § stage 4). Migration 0047 did the vocabulary half early
+  (`session_messages.tool_calls` stores `{call_id, tool_name, arguments}`).
 - **"Projection or primary" is settled against the projection.** The rollout is one protocol's wire
   and cannot be the record a second backend shares. Transcript primary, rollout per-backend evidence
   — so what to remove from the duplication is the double write and `agent_message_id`.
@@ -116,12 +118,11 @@ loop's signatures.
 ## Anytime — independent of the stages
 
 - **Every stream delta re-reads the whole session.** `update_assistant` NOTIFYs per delta →
-  `_sse_stream` wakes → `store.get` → `_rollout_calls` selects every `assistant`/`user` frame and
-  re-parses its content blocks. O(session) per token batch, paid only while the SPA is streaming.
-  Fix by indexing incrementally on the agent message id, or by scoping the read to the messages
-  asked about. **Still open, and now paid on a second path**: live session updates landed (#4132)
-  as invalidate-then-refetch, so an open tab reads the whole conversation again on every
-  invalidation. Coalescing (500 ms per session) is what makes that affordable rather than what
+  `_sse_stream` wakes → `store.get`, which used to re-parse every `assistant`/`user` frame of the
+  session. That half is gone — the calls and their results are `session_events` rows, read by
+  `session_id` — so what is left is the read of the message rows themselves. **Still open, and paid
+  on a second path**: live session updates landed (#4132) as invalidate-then-refetch, so an open
+  tab reads the whole conversation again on every invalidation. Coalescing (500 ms per session) is what makes that affordable rather than what
   makes it cheap — the operator's eventual direction is for the backend to stream the increment
   instead, recorded in <../console/plans/session_channels.md> § 4.
 - **Split `session_runtime.py`** further. `KubernetesSandboxClaims`, the view models and their

@@ -90,9 +90,9 @@ from haku.console.x.session_views import (
     SessionMessageView,
     SessionView,
     frame_page,
-    rollout_calls,
     session_view,
     setup_narration,
+    tool_calls,
     user_message_view,
 )
 from haku.runtime.x.bridge.cli_client import ReceivedFrame, RecordedFrame
@@ -292,7 +292,7 @@ class SessionStore:
                 ).all()
             )
             responding = await _open_turn(db, session_id) is not None
-            return session_view(record, messages, responding=responding, calls=await rollout_calls(db, session_id))
+            return session_view(record, messages, responding=responding, calls=await tool_calls(db, session_id))
 
     async def list_operator_conversations(self, operator_id: UUID, *, limit: int) -> list[ConversationSessionSummary]:
         """List this Operator's conversations for the Console inventory.
@@ -920,8 +920,9 @@ class SessionStore:
         (<claude_code/projection.py>), and it is not a property of a suffix read cold. A stored
         cursor is what turns this into a window, and it is deliberately not part of this change.
 
-        That costs one read of the session's projectable frames per page, the same order of cost
-        as `session_views.rollout_calls`, which the SPA's detail view already pays per request.
+        That costs one read of the session's projectable frames per page — the last O(session)
+        read on any path, now that the SPA's detail view reads stored events instead of re-parsing
+        the log (`session_views.tool_calls`).
 
         Two kinds are excluded in SQL rather than by the fold. `setup_output` is the console's own
         envelope and carries no protocol `type` at all, so the fold would refuse it; deltas are

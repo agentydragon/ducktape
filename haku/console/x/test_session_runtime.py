@@ -79,6 +79,14 @@ def _result(text: str = "", **fields: Any) -> dict[str, Any]:
     return {"type": "result", "subtype": "success", "is_error": False, "result": text, **fields}
 
 
+def _tool_result(call_id: str, content: str) -> dict[str, Any]:
+    """What a tool answered, as the CLI sends it: a `user` frame carrying a `tool_result` block."""
+    return {
+        "type": "user",
+        "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": call_id, "content": content}]},
+    }
+
+
 # The gap this double leaves between one frame's number and the next. Deliberately not 1:
 # `session_frames.frame_seq` is a Postgres `Identity` column, so the real sequence is an order with
 # gaps in it and nothing may read a gap as a frame that went missing.
@@ -1159,10 +1167,12 @@ async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(
 
 
 async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_service, operator_id) -> None:
-    """`session_messages.tool_calls` keeps the calls that were asked and nothing that
-    answered — the turn loop drops the `user` frames carrying results. The frames beside it hold
-    both, so the view joins them by `call_id`, which is exact where matching the Nth message to
-    the Nth frame would be a guess."""
+    """The call and its answer are both `session_events` rows, paired by `call_id`.
+
+    `session_messages.tool_calls` keeps only what was asked, so this is the half that used to exist
+    nowhere but the frame log — and the pairing is exact where matching the Nth message to the Nth
+    frame would be a guess.
+    """
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "count the files")
@@ -1172,24 +1182,13 @@ async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_s
         [
             _assistant({"type": "tool_use", "id": "toolu_ok", "name": "Bash", "input": {"command": "true"}}),
             _assistant({"type": "tool_use", "id": "toolu_running", "name": "Bash", "input": {"command": "sleep 1"}}),
+            # As the CLI sends it: an answer is a `user` frame, and one call is left unanswered.
+            _tool_result("toolu_ok", "42"),
             _result("done"),
         ]
     )
     await chat_service._run_turn(
         client, client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
-    )
-    # As the CLI sends them: a result is a `user` frame, and one call is left unanswered.
-    await chat_store.record_frame(
-        view.session_id,
-        FrameDirection.FROM_AGENT,
-        "user",
-        {
-            "type": "user",
-            "message": {
-                "role": "user",
-                "content": [{"type": "tool_result", "tool_use_id": "toolu_ok", "content": "42", "is_error": False}],
-            },
-        },
     )
 
     calls = {
@@ -1203,47 +1202,39 @@ async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_s
     assert calls["toolu_running"].result is None, "a call still running must not read as an empty answer"
 
 
-async def test_the_calls_come_from_the_rollout_when_the_row_points_at_it(
+async def test_the_calls_come_from_the_events_and_need_no_id_from_the_agent(
     chat_store, chat_service, migrated_sessions, operator_id
 ) -> None:
-    """The transcript row records the agent's own message id, which is the pointer the message
-    rows never had — so a message finds exactly the calls it made instead of the view matching by
-    position. `tool_calls` is then a copy nothing reads for such a row."""
+    """A message finds its calls through the frames it was built from, and nothing else.
+
+    The join used to run over `agent_message_id`, which 1,417 production assistant rows do not
+    have — and this frame carries none either, so the range is the whole of what pairs them.
+    """
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "count the files")
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
-    asked = {"type": "tool_use", "id": "toolu_ok", "name": "Bash", "input": {"command": "true"}}
-    frame = _assistant(asked) | {"message": {"role": "assistant", "id": "msg_01", "content": [asked]}}
-    client = _FakeCli([frame, _result("done")])
+    client = _FakeCli(
+        [
+            _assistant({"type": "tool_use", "id": "toolu_ok", "name": "Bash", "input": {"command": "true"}}),
+            _tool_result("toolu_ok", "7"),
+            _result("done"),
+        ]
+    )
     await chat_service._run_turn(
         client, client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
     )
-    # The frames the recorder would have written, plus the answer, which is a `user` frame.
-    await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, frame["type"], frame)
-    await chat_store.record_frame(
-        view.session_id,
-        FrameDirection.FROM_AGENT,
-        "user",
-        {
-            "type": "user",
-            "message": {
-                "role": "user",
-                "content": [{"type": "tool_result", "tool_use_id": "toolu_ok", "content": "7"}],
-            },
-        },
-    )
     # Whatever the column says is now beside the point, so make it say something wrong.
     async with migrated_sessions.begin() as db:
-        for message in await db.scalars(select(SessionMessage).where(SessionMessage.agent_message_id == "msg_01")):
+        for message in await db.scalars(select(SessionMessage).where(SessionMessage.role == ChatMessageRole.ASSISTANT)):
             message.tool_calls = [RecordedToolCall(call_id="toolu_stale", tool_name="Stale", arguments={})]
 
     [call] = [
         call for message in (await chat_store.get(operator_id, view.session_id)).messages for call in message.tool_calls
     ]
 
-    assert (call.call_id, call.tool_name) == ("toolu_ok", "Bash"), "the rollout wins over the column"
+    assert (call.call_id, call.tool_name) == ("toolu_ok", "Bash"), "the events win over the column"
     assert call.result is not None
     assert call.result.content == "7"
 

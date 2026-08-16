@@ -645,15 +645,16 @@ state. The row is now both halves of what the fold needs — `first_frame_seq` s
 frames begin, the three columns say what projecting them has produced — so what stage 4 adds is the
 cursor between them.
 
-### 4. The fold, and what it projects **into** — half landed
+### 4. The fold, and what it projects **into** — conversation landed, session events open
 
-**What it projects into is built; the fold and its cursor are wired.** #4145 landed the neutral
-vocabulary (`x/conversation_events.py`), the Claude adapter into it (`x/claude_code/projection.py`)
-and a read surface over the result (`read_transcript`); #4149 made the adapter a reducer; the turn
-loop and the room's status line both read it; and the durable cursor is
-`sessions.projected_frame_seq` (§ The shape). **One of the four interpreters counted below is still
-present on `devel`.** What is still open is storing the events themselves; the paragraphs that have
-landed say so where they are.
+**What it projects into is built, the fold and its cursor are wired, and the conversation events
+are rows.** #4145 landed the neutral vocabulary (`x/conversation_events.py`), the Claude adapter
+into it (`x/claude_code/projection.py`) and a read surface over the result (`read_transcript`);
+#4149 made the adapter a reducer; the turn loop and the room's status line both read it; the
+durable cursor is `sessions.projected_frame_seq` (§ The shape); and `session_events` stores what
+the fold produces, written inside the cursor's own transaction. **All four interpreters counted
+below are gone.** What is still open is the _second_ category — session events, which cross no wire
+— and the reprojection tool; the paragraphs that have landed say so where they are.
 
 `_run_turn`'s frame `match` became `project`, with the cursor advanced beside its effects. The
 abort path is still to collapse here: an abort becomes an intent the transport writes, and the
@@ -683,10 +684,11 @@ prefers its own answer wherever the row can point into the log. The fourth means
 frames are spelled differently makes the room go silent while the agent works, and it is why the SPA
 has no in-progress display at all.
 
-**Three of the four are gone.** `_run_turn` acts on events, `coarse_status` reads a run of them
-rather than a frame, and `adopt_open_turn` no longer reconstructs anything — a resumed turn's
-remaining frames go through the live loop from the cursor. What remains is the read-path
-re-derivation in `rollout_calls`. The status line cost one branch on the way:
+**All four are gone.** `_run_turn` acts on events, `coarse_status` reads a run of them rather than
+a frame, `adopt_open_turn` no longer reconstructs anything — a resumed turn's remaining frames go
+through the live loop from the cursor — and `rollout_calls` is deleted, because the calls and their
+results are rows that the read path looks up rather than derives. The status line cost one branch
+on the way:
 `system/task_progress` had a case there and has none in the adapter, which is a frame class the
 census has never seen (<../console/x/README.md> § The neutral projection).
 
@@ -720,9 +722,9 @@ duplicates a shape while a projection **replaces** one — the harness's content
 thinking signatures, stream-event mechanics and `msg_…` id formats stay in frames as evidence, and
 none of them appear in a message.
 
-**Identity is ours.** `rollout_calls` joins on `agent_message_id`, the agent's own id — and a
-production count found 1,417 assistant rows that have none, which render their tool calls with no
-results and say nothing about it. The neutral message owns `message_id`; the agent's id is optional
+**Identity is ours.** `rollout_calls` joined on `agent_message_id`, the agent's own id — and a
+production count found 1,417 assistant rows that have none, which rendered their tool calls with no
+results and said nothing about it. The neutral message owns `message_id`; the agent's id is optional
 provenance. This is the lesson `EventTag.transaction_id()` taught in stage 5: identity derived from
 the wire fails exactly when the wire does not carry it.
 
@@ -873,10 +875,10 @@ so a `CHECK` can require the range (2026-08-16). Neither, yet — take the middl
 may still be worth doing one day, but as a deliberate decision rather than a side effect of wanting a
 `NOT NULL`.
 
-Two things fall out of the same pointer. The transcript's join to tool activity becomes a range
-lookup rather than a scan-and-match on `agent_message_id`, which is what lets `rollout_calls` retire.
-And the reprojection check below has a per-row subject: not just "do the rows match" but "does _this_
-row match what _those_ frames project to".
+Two things fall out of the same pointer, and the first has happened: the transcript's join to tool
+activity is a range lookup rather than a scan-and-match on `agent_message_id`, which is what let
+`rollout_calls` retire. And the reprojection check below has a per-row subject: not just "do the
+rows match" but "does _this_ row match what _those_ frames project to".
 
 #### What makes it safe: the projection is a pure function, and that is testable
 
