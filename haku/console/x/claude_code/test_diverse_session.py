@@ -30,7 +30,7 @@ from more_itertools import one
 
 from haku.console.chat_models import TurnOutcome
 from haku.console.tools.conversations import MAX_PAGE_BYTES
-from haku.console.x.claude_code.projection import RecordedFrame, project
+from haku.console.x.claude_code.projection import RecordedFrame, project_log
 from haku.console.x.conversation_events import (
     FrameRange,
     MessageCompleted,
@@ -62,7 +62,7 @@ _FRAMES = [
 def projection() -> Projection:
     """The whole capture folded once. Folding at all is the first thing under test: a frame class
     the adapter has never seen must land in `unprojected`, never raise."""
-    return project(_FRAMES)
+    return project_log(_FRAMES)
 
 
 def test_the_capture_folds_to_the_session_it_recorded(projection: Projection):
