@@ -54,7 +54,14 @@ from haku.console.database_schema import (
 )
 from haku.console.x import transcript_entries
 from haku.console.x.claude_code import projection
-from haku.console.x.conversation_events import TurnCompleted, Usage
+from haku.console.x.conversation_events import (
+    ConversationEvent,
+    MessageCompleted,
+    TextDelta,
+    ToolCallStarted,
+    TurnCompleted,
+    Usage,
+)
 from haku.console.x.conversation_records import (
     Conversation,
     ConversationCursor,
@@ -88,7 +95,7 @@ from haku.console.x.session_views import (
     setup_narration,
     user_message_view,
 )
-from haku.runtime.x.bridge.cli_client import RecordedFrame
+from haku.runtime.x.bridge.cli_client import ReceivedFrame, RecordedFrame
 
 logger = logging.getLogger(__name__)
 
@@ -184,12 +191,19 @@ class TurnStart:
 class ResumedTurn:
     """A turn a departed holder opened and asked, handed to whoever adopted the session.
 
-    It carries nothing but the turn's name. What the departed holder got through is on the turn's
-    own row (`TurnState`), so adoption reads it rather than rebuilding it out of the frame log:
-    the live path and the recovery path are one account of one exchange.
+    What the departed holder got through is on the turn's own row (`TurnState`), so adoption reads
+    it rather than rebuilding it out of the frame log: the live path and the recovery path are one
+    account of one exchange.
+
+    `replay` is the rest of that account — the frames recorded past the session's projection cursor,
+    whose effects therefore did not commit. Feeding them to the turn loop ahead of the live stream
+    is what makes adoption the same call as steady state with a cursor that happens to be behind
+    (<../../plans/chat_runtime_projection.md> § The shape). Empty for a session with no cursor,
+    where adoption falls back to reading the frames itself.
     """
 
     turn_id: UUID
+    replay: tuple[ReceivedFrame, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -418,17 +432,20 @@ class SessionStore:
     async def adopt_open_turn(self, session_id: UUID) -> ResumedTurn | None:
         """Say what the previous holder's open turn was, and hand back the one worth finishing.
 
-        The sandbox outlives the replica, so an adopting console inherits the exchange too. "A
-        turn was open" is three situations and only one of them is a closure:
+        The sandbox outlives the replica, so an adopting console inherits the exchange too. Two
+        questions remain here, and they are different in kind:
 
-        1. **Never asked** — no prompt frame was written. The prompt goes back on the queue.
-        2. **Finished, unrecorded** — the `result` is logged but `end_turn` never ran. Closed from
-           the record; waiting would be forever, since the replay of a recorded frame is refused.
-        3. **Still running** — returned for `session_runtime._run_turn` to finish.
+        1. **Was the prompt ever asked?** No prompt frame means the previous holder claimed the
+           prompt and died before writing it, so it goes back on the queue. A projection cursor
+           cannot answer this — the console's own outbound write is the evidence, and the fold
+           projects an outbound prompt to nothing on purpose (`claude_code.projection._user`).
+        2. **Everything else is the fold's.** Whether the exchange finished is not asked of the
+           frames any more: the turn resumes with the frames past its cursor, and if one of them
+           is the turn's ending then projecting it is what closes the turn — the same events, in
+           the same loop, as if the frame had just arrived on the socket.
 
-        Only *which of the three* is asked of the frames. How far the answer got is not
-        reconstructed here: it is on the turn's row, and `_run_turn` reads it the same way whether
-        it opened the turn or inherited it.
+        How far the answer got is not reconstructed here either: it is on the turn's row, and
+        `_run_turn` reads it the same way whether it opened the turn or inherited it.
 
         Leaving a turn open is safe only because `uq_session_turns_open` permits exactly one,
         which is what stops `next_prompt` opening a second beside the inherited one.
@@ -446,12 +463,31 @@ class SessionStore:
             if not await _prompt_left(db, session_id, first_frame_seq):
                 await _requeue(db, turn_id)
                 await notify(db, SessionEventKind.PROMPT, session_id)
-            elif (closing := await _recorded_completion(db, session_id, first_frame_seq)) is None:
-                return ResumedTurn(turn_id=turn_id)
-        # Cases 1 and 2. A turn that never asked has no completion to close with and no outcome
-        # but failure; one that finished carries its own outcome and the cost the previous holder
-        # never got to write — both read through the backend's adapter rather than out of its
-        # payload here, so this path says nothing about which CLI produced the frame.
+            else:
+                cursor = await db.scalar(select(Session.projected_frame_seq).where(Session.session_id == session_id))
+                # A cursor inside this turn is a position this turn's own writes put there.
+                # One from before the turn opened is stale — a replica that projects without
+                # advancing it left it behind — and re-projecting from a stale position would
+                # redo effects that did commit, which is a duplicated message and a duplicated
+                # room reply rather than a lost one. `next_prompt` anchors it at the frame before
+                # the turn, so the normal case satisfies this by construction.
+                if cursor is not None and cursor >= first_frame_seq - 1:
+                    return ResumedTurn(turn_id=turn_id, replay=await _unprojected_frames(db, session_id, cursor))
+                # CLEANUP(added 2026-08-16): delete this branch, `_recorded_completion` and
+                #   `RESULT_FRAME_KIND`'s use here once no session that can still acquire a frame
+                #   has a NULL or pre-turn `projected_frame_seq` — which `session_ttl_seconds`
+                #   (7200) clears within two hours of the release carrying migration 0051
+                #   converging:
+                #     SELECT count(*) FROM sessions s JOIN session_turns t USING (session_id)
+                #      WHERE t.ended_at IS NULL
+                #        AND (s.projected_frame_seq IS NULL OR s.projected_frame_seq < t.first_frame_seq - 1)
+                #        AND s.status NOT IN ('closed', 'failed');
+                if (closing := await _recorded_completion(db, session_id, first_frame_seq)) is None:
+                    return ResumedTurn(turn_id=turn_id, replay=())
+        # A turn that never asked has no completion to close with and no outcome but failure; one
+        # that finished carries its own outcome and the cost the previous holder never got to
+        # write — both read through the backend's adapter rather than out of its payload here, so
+        # this path says nothing about which CLI produced the frame.
         if closing is None:
             await self.end_turn(turn_id, TurnOutcome.FAILED)
         else:
@@ -569,6 +605,11 @@ class SessionStore:
         handing the agent a prompt — and splitting them would leave a window in which the prompt
         is claimed with no turn to name it, which is exactly what admission and abort now ask
         about.
+
+        **Opening the turn anchors the projection cursor**, in that same transaction: everything
+        recorded so far has been projected, because the previous turn's own frames were and the
+        handshake frames between turns project to nothing. So the turn begins with a cursor it
+        can be resumed from rather than with one inherited from whatever last wrote it.
         """
         async with self._sessions.begin() as db:
             chat = await db.get(Session, session_id, with_for_update=True)
@@ -597,6 +638,7 @@ class SessionStore:
             highest = await db.scalar(
                 select(func.max(SessionFrame.frame_seq)).where(SessionFrame.session_id == session_id)
             )
+            chat.projected_frame_seq = highest or 0
             turn_id = uuid4()
             db.add(
                 SessionTurn(turn_id=turn_id, session_id=session_id, first_frame_seq=(highest or 0) + 1, started_at=now)
@@ -630,7 +672,9 @@ class SessionStore:
                 queued_reply=turn.queued_reply,
             )
 
-    async def end_turn(self, turn_id: UUID, outcome: TurnOutcome, usage: Usage | None = None) -> None:
+    async def end_turn(
+        self, turn_id: UUID, outcome: TurnOutcome, usage: Usage | None = None, *, projected_frame_seq: int | None = None
+    ) -> None:
         """Close *turn_id*, taking the bracket's upper bound and what the exchange cost.
 
         **The cost is the neutral one**: a backend's adapter has already read its own payload into
@@ -639,6 +683,12 @@ class SessionStore:
         `session_frames`, which is the evidence they can be appealed to
         (<../../plans/chat_runtime_projection.md> § Does a turn live over frames or over neutral
         events).
+
+        *projected_frame_seq* is the frame that ended the turn, and this is the transaction that
+        takes the cursor past it — the turn's last word is written before the close, so advancing
+        in `apply_frame` when that frame was projected would move the cursor ahead of writes still
+        to come. A turn ending any other way passes none and leaves the cursor where it is; the
+        next `next_prompt` re-anchors it.
 
         Idempotent on an already-closed turn: a second close must not overwrite the first
         outcome, because the first one is the one that happened.
@@ -670,6 +720,7 @@ class SessionStore:
                 # previous image is what would have put there.
                 if chat.status == SessionStatus.RESPONDING:
                     chat.status = SessionStatus.READY
+                _advance_cursor(chat, projected_frame_seq)
                 chat.updated_at = now
                 await notify(db, SessionEventKind.UPDATE, turn.session_id)
 
@@ -926,43 +977,106 @@ class SessionStore:
             rows = (await db.scalars(query.order_by(SessionFrame.frame_seq.desc()).limit(limit))).all()
         return frame_page(list(reversed(rows)), limit=limit)
 
-    async def update_partial_frame(self, session_id: UUID, text: str) -> None:
-        """Record the assistant message streaming right now, replacing any earlier state of it.
+    async def apply_frame(
+        self, session_id: UUID, turn_id: UUID, frame_seq: int, events: Sequence[ConversationEvent]
+    ) -> TurnState:
+        """Write what one frame's events imply, and move the cursor past that frame, together.
 
-        Takes its `frame_seq` when the stream opens, so it sits where it belongs in the log
-        even though it is rewritten afterwards.
+        **One transaction, and the cursor is inside it.** The message row, the room's outbox row,
+        the turn's state and `sessions.projected_frame_seq` commit or do not commit as one, which
+        is the whole of what makes those effects exactly-once: a process that dies anywhere leaves
+        the cursor naming the last frame whose effects are durable, so whoever adopts the session
+        re-projects from there and redoes exactly the frames whose effects did not commit
+        (<../../plans/chat_runtime_projection.md> § The shape).
 
-        CLEANUP(added 2026-08-15): Superseded by the deltas themselves, which this row existed to
-        stand in for. Stop writing it — with `clear_partial_frame`, the `partial` column and its
-        two indexes — once every replica runs an image that records them, one roll after this
-        ships. Not in this release: an old replica writing a row a new one never clears would
-        leave a stray partial in the rollout for good.
+        **A frame that ends the turn does not come here.** Closing the turn is `end_turn`'s
+        transaction and the turn's last word is written before it, so advancing the cursor here for
+        that frame would put it ahead of writes still to come; `end_turn` takes it instead. Under
+        per-frame projection the ending frame produces exactly that one event and nothing else.
+
+        The returned state is the turn's after these writes, so the caller holds no message
+        identity or accumulated prose of its own between frames.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
-            partial = await db.scalar(
-                select(SessionFrame).where(SessionFrame.session_id == session_id, SessionFrame.partial)
+            turn = await db.get(SessionTurn, turn_id, with_for_update=True)
+            if turn is None:
+                raise KeyError(turn_id)
+            chat = await db.get(Session, session_id)
+            if chat is None:
+                raise KeyError(session_id)
+            message = (
+                None if turn.assistant_message_id is None else await db.get(SessionMessage, turn.assistant_message_id)
             )
-            if partial is None:
-                db.add(
-                    SessionFrame(
-                        session_id=session_id,
-                        direction=FrameDirection.FROM_AGENT,
-                        kind=ASSISTANT_FRAME_KIND,
-                        payload=assistant_frame(text),
-                        partial=True,
-                        created_at=now,
-                        updated_at=now,
-                    )
-                )
-                return
-            partial.payload = assistant_frame(text)
-            partial.updated_at = now
-
-    async def clear_partial_frame(self, session_id: UUID) -> None:
-        """Drop the reconstruction, now that the frame it stood in for has arrived."""
-        async with self._sessions.begin() as db:
-            await db.execute(delete(SessionFrame).where(SessionFrame.session_id == session_id, SessionFrame.partial))
+            # The calls of the message being assembled. Per frame rather than per turn, because a
+            # message never spans two frames here (`session_runtime._projected`) and they are
+            # written with the message that made them.
+            tool_calls: list[RecordedToolCall] = []
+            for event in events:
+                match event:
+                    case TextDelta():
+                        message = message or await _open_assistant(db, session_id, turn, frame_seq, now)
+                        message.content += event.text
+                        message.source_last_frame_seq = frame_seq
+                        message.status = ChatMessageStatus.STREAMING
+                        message.updated_at = now
+                        # The rollout keeps no deltas, so without this the text an interrupted turn
+                        # produced would exist only in the message row and the log would simply
+                        # stop mid-answer (R5.5b).
+                        await _write_partial_frame(db, session_id, message.content, now)
+                    case ToolCallStarted():
+                        tool_calls.append(
+                            RecordedToolCall(
+                                call_id=event.call_id, tool_name=event.tool_name, arguments=dict(event.arguments)
+                            )
+                        )
+                    case MessageCompleted():
+                        message = message or await _open_assistant(db, session_id, turn, frame_seq, now)
+                        message.content = (event.text or "").strip() or message.content.strip()
+                        message.tool_calls = tool_calls
+                        # Provenance, not identity: it is what the frames called this message, and
+                        # it is what lets a reader find its calls in the log rather than match by
+                        # position. Absent on thousands of production rows, which is why nothing
+                        # keys on it.
+                        if event.agent_message_id is not None:
+                            message.agent_message_id = event.agent_message_id
+                        message.source_last_frame_seq = frame_seq
+                        message.status = ChatMessageStatus.COMPLETE
+                        message.updated_at = now
+                        # Each message is queued for the room as it finishes rather than only the
+                        # final answer (R11.1), so a turn that narrates, works and reports back is
+                        # three messages in the room and not just its conclusion.
+                        owed = await _enqueue_reply(
+                            db,
+                            chat,
+                            message.content,
+                            message_id=message.message_id,
+                            agent_message_id=message.agent_message_id,
+                            turn_id=None,
+                            now=now,
+                        )
+                        turn.assistant_message_id = None
+                        turn.said_anything = True
+                        turn.queued_reply = turn.queued_reply or owed
+                        # The real frame is already in the log — the recorder wrote it when the
+                        # socket delivered it — so the stand-in has nothing to stand for.
+                        await _clear_partial_frame(db, session_id)
+                        message, tool_calls = None, []
+                    case _:
+                        # Projected and deliberately not stored: what the agent thought, what its
+                        # calls answered and what the harness narrated are richer than any surface
+                        # renders today, and giving them rows is the half of stage 4 that moves
+                        # data.
+                        pass
+            _advance_cursor(chat, frame_seq)
+            chat.updated_at = now
+            await notify(db, SessionEventKind.UPDATE, session_id)
+            return TurnState(
+                assistant_message_id=turn.assistant_message_id,
+                streamed="" if message is None else message.content,
+                said_anything=turn.said_anything,
+                queued_reply=turn.queued_reply,
+            )
 
     async def begin_assistant(
         self, session_id: UUID, turn_id: UUID, *, source_first_frame_seq: int | None = None
@@ -979,28 +1093,11 @@ class SessionStore:
         a later write would walk it forward past the frames the earlier process already projected.
         """
         now = datetime.now(UTC)
-        message_id = uuid4()
         async with self._sessions.begin() as db:
-            db.add(
-                SessionMessage(
-                    message_id=message_id,
-                    session_id=session_id,
-                    role=ChatMessageRole.ASSISTANT,
-                    status=ChatMessageStatus.STREAMING,
-                    content="",
-                    error=None,
-                    source_first_frame_seq=source_first_frame_seq,
-                    created_at=now,
-                    updated_at=now,
-                )
-            )
-            # Flushed before the turn names it: the pointer is a foreign key, so the message has
-            # to exist by the time the update lands.
-            await db.flush()
             if (turn := await db.get(SessionTurn, turn_id)) is None:
                 raise KeyError(turn_id)
-            turn.assistant_message_id = message_id
-        return message_id
+            message = await _open_assistant(db, session_id, turn, source_first_frame_seq, now)
+            return message.message_id
 
     async def update_assistant(
         self,
@@ -1266,6 +1363,103 @@ class SessionStore:
                 return False
             await notify(db, SessionEventKind.ABORT, session_id)
             return True
+
+
+def _advance_cursor(chat: Session, frame_seq: int | None) -> None:
+    """Move the session's projection cursor to *frame_seq*, never backwards.
+
+    Monotone because two writers can reach it out of order: `end_turn` carries the frame that
+    ended the turn while the turn's last word — written a moment earlier and through
+    `update_assistant` — carries none, and a retried adoption re-projects frames the cursor has
+    already passed.
+    """
+    if frame_seq is not None and (chat.projected_frame_seq is None or chat.projected_frame_seq < frame_seq):
+        chat.projected_frame_seq = frame_seq
+
+
+async def _unprojected_frames(db: AsyncSession, session_id: UUID, cursor: int) -> tuple[ReceivedFrame, ...]:
+    """The recorded frames past *cursor* — the ones whose effects did not commit.
+
+    Deltas are in it, because their effects are message content and the cursor is what says
+    whether that content landed. What is left out is the two rows the console authored rather than
+    received: `setup_output` carries no protocol `type` for the fold to read, and a `partial` row
+    is this console's own reconstruction of an answer in flight, which projecting would turn into
+    a message the agent never sent.
+    """
+    rows = await db.scalars(
+        select(SessionFrame)
+        .where(
+            SessionFrame.session_id == session_id,
+            SessionFrame.frame_seq > cursor,
+            SessionFrame.partial.is_(False),
+            SessionFrame.kind != SETUP_OUTPUT_KIND,
+        )
+        .order_by(SessionFrame.frame_seq)
+    )
+    return tuple(ReceivedFrame(payload=row.payload, frame_seq=row.frame_seq) for row in rows)
+
+
+async def _open_assistant(
+    db: AsyncSession, session_id: UUID, turn: SessionTurn, source_first_frame_seq: int | None, now: datetime
+) -> SessionMessage:
+    """Open an assistant message and point *turn* at it, inside the caller's transaction.
+
+    The pointer is what makes the message the turn's: a replica dying with a message row nothing
+    names would leave its replacement to guess which of the session's messages it was in the
+    middle of.
+    """
+    message = SessionMessage(
+        message_id=uuid4(),
+        session_id=session_id,
+        role=ChatMessageRole.ASSISTANT,
+        status=ChatMessageStatus.STREAMING,
+        content="",
+        error=None,
+        source_first_frame_seq=source_first_frame_seq,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(message)
+    # Flushed before the turn names it: the pointer is a foreign key, so the message has to exist
+    # by the time the update lands.
+    await db.flush()
+    turn.assistant_message_id = message.message_id
+    return message
+
+
+async def _write_partial_frame(db: AsyncSession, session_id: UUID, text: str, now: datetime) -> None:
+    """Record the assistant message streaming right now, replacing any earlier state of it.
+
+    Takes its `frame_seq` when the stream opens, so it sits where it belongs in the log even
+    though it is rewritten afterwards.
+
+    CLEANUP(added 2026-08-15): Superseded by the deltas themselves, which this row existed to
+    stand in for. Stop writing it — with `_clear_partial_frame`, the `partial` column and its two
+    indexes — once every replica runs an image that records them, one roll after that shipped. Not
+    yet: an old replica writing a row a new one never clears would leave a stray partial in the
+    rollout for good.
+    """
+    partial = await db.scalar(select(SessionFrame).where(SessionFrame.session_id == session_id, SessionFrame.partial))
+    if partial is None:
+        db.add(
+            SessionFrame(
+                session_id=session_id,
+                direction=FrameDirection.FROM_AGENT,
+                kind=ASSISTANT_FRAME_KIND,
+                payload=assistant_frame(text),
+                partial=True,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        return
+    partial.payload = assistant_frame(text)
+    partial.updated_at = now
+
+
+async def _clear_partial_frame(db: AsyncSession, session_id: UUID) -> None:
+    """Drop the reconstruction, now that the frame it stood in for has arrived."""
+    await db.execute(delete(SessionFrame).where(SessionFrame.session_id == session_id, SessionFrame.partial))
 
 
 async def _queued_prompt(db: AsyncSession, session_id: UUID, *, lock: bool = False) -> SessionPrompt | None:

@@ -14,7 +14,7 @@ import collections.abc
 import contextlib
 import json
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Protocol, cast
@@ -22,32 +22,17 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
+from more_itertools import first
 from pydantic import BaseModel, Field, SecretStr
 
-from haku.console.chat_models import (
-    ENDED_SESSION_STATUSES,
-    FrameDirection,
-    RecordedToolCall,
-    SessionStatus,
-    TurnOutcome,
-)
+from haku.console.chat_models import ENDED_SESSION_STATUSES, FrameDirection, SessionStatus, TurnOutcome
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.operator_auth import OperatorActorDep
 
 # As a module: its `RecordedFrame` is a row of the frame log, and `cli_client`'s is where a sink
 # put one frame. Two different things with one name, so neither gets to drop its surname here.
 from haku.console.x.claude_code import projection
-from haku.console.x.conversation_events import (
-    ActivityCompleted,
-    ActivityStarted,
-    ConversationEvent,
-    MessageCompleted,
-    Reasoning,
-    TextDelta,
-    ToolCallCompleted,
-    ToolCallStarted,
-    TurnCompleted,
-)
+from haku.console.x.conversation_events import ConversationEvent, TurnCompleted
 from haku.console.x.room_status import TurnStatus, ignore_clear, ignore_status
 from haku.console.x.sandbox_claims import ProvisioningStep, SandboxClaims, provisioning_view
 from haku.console.x.session_frames import SETUP_OUTPUT_KIND, frame_kind, setup_output_frame
@@ -346,11 +331,21 @@ class SessionService:
             await websocket.close(code=NOT_ADMITTED_CODE, reason="invalid or consumed runner credential")
             return
         # Whatever the previous holder was in the middle of *is* ours to finish: the sandbox
-        # outlived it, so the rest of that exchange is about to arrive on this socket. What is
-        # left to decide is which of three things its open turn was — `adopt_open_turn`.
+        # outlived it, so the rest of that exchange is about to arrive on this socket. What that
+        # holder recorded and did not get to project comes back with the turn, to be fed to the
+        # loop ahead of the live stream.
+        #
+        # **Read before the socket is accepted**, which is what stops a frame being both replayed
+        # here and delivered fresh: `RolloutRecorder.received` records a frame at the moment
+        # `ClaudeCli._read` routes it, and nothing is being read on this connection yet.
         resumed = await self._store.adopt_open_turn(session_id)
         if resumed is not None:
-            logger.warning("session %s adopted with turn %s still running", session_id, resumed.turn_id)
+            logger.warning(
+                "session %s adopted with turn %s still running; re-projecting %d recorded frame(s)",
+                session_id,
+                resumed.turn_id,
+                len(resumed.replay),
+            )
         # Rendered before the socket is accepted, alongside the other admission failures, so a
         # broken prompt ends the session where the supervisor can see it (and say so in the
         # room) instead of raising past the cleanup below and leaving the claim stranded.
@@ -417,7 +412,7 @@ class SessionService:
                         # process that is gone. So a turn is a bracket over this stream rather
                         # than a request/response pair
                         # (<../../plans/cli_protocol_ownership.md>).
-                        frames = client.frames().__aiter__()
+                        frames = _replaying(() if resumed is None else resumed.replay, client.frames().__aiter__())
                         while True:
                             status = await self._store.status(session_id)
                             if status is None or status in ENDED_SESSION_STATUSES:
@@ -570,10 +565,12 @@ class SessionService:
         what a replica losing its pod mid-exchange looks like from outside, and what the
         `ResumedTurn` variant exists to pick back up.
 
-        **The state below is the row's, held here only between two writes of it.** Every branch
-        that changes one of these writes it back before the next frame is taken, so a process
-        dying anywhere in this loop leaves `session_turns` saying what had happened — which is
-        what makes adoption a read (<../../plans/chat_runtime_projection.md> § stage 3).
+        **No turn state is held here.** `state` is the row's, re-read from every write of it, and
+        each frame's effects are written with the projection cursor in one transaction
+        (`SessionStore.apply_frame`) — so a process dying anywhere in this loop leaves
+        `session_turns` saying what had happened and the session saying which frame it had got
+        through, which is what makes adoption a read and its effects exactly-once
+        (<../../plans/chat_runtime_projection.md> § The shape).
         """
         turn_id = turn.turn_id
         if isinstance(turn, TurnStart):
@@ -583,22 +580,13 @@ class SessionService:
             # The prompt's row was written when the operator typed it, before any frame existed to
             # point at; this is where the question acquires the frame it went out as.
             await self._store.set_message_source_frames(session_id, turn.message_id, prompt.frame_seq)
+        # How far the turn has got: the message it is streaming into and what is in it,
+        # `said_anything`, and `queued_reply` — the outbox row's existence, recorded on the turn by
+        # the transaction that inserts it, never a report from the delivery layer and never
+        # `sent_at`, which is the drain's business and comes later. The two booleans are separate
+        # facts because a session with no room queues nothing.
         state = await self._store.turn_state(turn_id)
         assistant_id = state.assistant_message_id
-        streamed = state.streamed
-        # Whether this turn has already queued the room a reply, so the turn's final text is not
-        # posted a second time: `result.result` normally repeats the last assistant message. It is
-        # the outbox row's existence — recorded on the turn by the transaction that inserts the
-        # row — never a report from the delivery layer, and never `sent_at`, which is the drain's
-        # business and comes later.
-        spoke = state.queued_reply
-        # Its own fact rather than `spoke` again: a session with no room queues nothing, so a turn
-        # that has completed a message there has `said_anything` and no `queued_reply`.
-        saw_assistant_message = state.said_anything
-        # The calls of the message being assembled, from the events that start them to the one
-        # that completes it. Not turn state: they are written with their message, and a message
-        # never spans two frames here (see `_projected`).
-        tool_calls: list[RecordedToolCall] = []
         completed: TurnCompleted | None = None
         # The frame `completed` was projected from, kept because the code below still reads
         # Claude's own payload out of it for two things the neutral event does not carry: the
@@ -628,15 +616,14 @@ class SessionService:
                             await client.interrupt()
                 # **The drain is this loop, not a second one beside it.** The CLI finishes the
                 # message it is mid-way through, so an `assistant` frame between the interrupt and
-                # the `result` is the normal case, and the same `match` below folds it in — a
-                # message the agent finished before it stopped is a message
-                # (<../debug/message_drops.md> E3).
+                # the `result` is the normal case, and it is applied like any other — a message the
+                # agent finished before it stopped is a message (<../debug/message_drops.md> E3).
                 #
-                # It therefore counts towards `spoke` and `saw_assistant_message` exactly as it
-                # would have a moment earlier, which is what keeps the tail below honest: the room
-                # is not owed the turn's final text as well (it repeats that message), and no
-                # second row is minted for it — leaving `ABORTED_NOTICE` to be said on its own, as
-                # the one `turn_id`-keyed row this turn writes.
+                # It therefore moves `said_anything` and `queued_reply` exactly as it would have a
+                # moment earlier, which is what keeps the tail below honest: the room is not owed
+                # the turn's final text as well (it repeats that message), and no second row is
+                # minted for it — leaving `ABORTED_NOTICE` to be said on its own, as the one
+                # `turn_id`-keyed row this turn writes.
                 #
                 # The stream stays open for the next turn: it is the session's, so an interrupt
                 # ends a turn rather than the conversation.
@@ -646,68 +633,16 @@ class SessionService:
                 # One frame's worth at a time, which is the granularity `coarse_status` reads a run
                 # of events at: a tool call starting and its message completing arrive together.
                 status.note(events)
-                for event in events:
-                    match event:
-                        case TextDelta():
-                            if assistant_id is None:
-                                assistant_id = await self._store.begin_assistant(
-                                    session_id, turn_id, source_first_frame_seq=frame_seq
-                                )
-                            streamed += event.text
-                            await self._store.update_assistant(
-                                session_id, assistant_id, streamed, source_last_frame_seq=frame_seq
-                            )
-                            # The rollout keeps no deltas, so without this the text an interrupted
-                            # turn produced would exist only in the message row and the log would
-                            # simply stop mid-answer (R5.5b).
-                            await self._store.update_partial_frame(session_id, streamed)
-                        case ToolCallStarted():
-                            tool_calls.append(
-                                RecordedToolCall(
-                                    call_id=event.call_id, tool_name=event.tool_name, arguments=dict(event.arguments)
-                                )
-                            )
-                        case MessageCompleted():
-                            saw_assistant_message = True
-                            if assistant_id is None:
-                                assistant_id = await self._store.begin_assistant(
-                                    session_id, turn_id, source_first_frame_seq=frame_seq
-                                )
-                            said = (event.text or "").strip() or streamed.strip()
-                            # Each message is queued for the room as it finishes rather than only
-                            # the final answer (R11.1), so a turn that narrates, works and reports
-                            # back is three messages in the room and not just its conclusion — and
-                            # the row is written here, with the message, rather than after the turn
-                            # has decided it is over.
-                            spoke = (
-                                await self._store.update_assistant(
-                                    session_id,
-                                    assistant_id,
-                                    said,
-                                    tool_calls=tool_calls,
-                                    # Provenance, not identity: it is what the frames called this
-                                    # message, and it is what lets a reader find its calls in the
-                                    # log rather than match by position. Absent on thousands of
-                                    # production rows, which is why nothing keys on it.
-                                    agent_message_id=event.agent_message_id,
-                                    source_last_frame_seq=frame_seq,
-                                    complete=True,
-                                )
-                                or spoke
-                            )
-                            # The real frame is already in the log — the recorder wrote it when
-                            # the socket delivered it — so the stand-in has nothing to stand for.
-                            await self._store.clear_partial_frame(session_id)
-                            assistant_id, streamed, tool_calls = None, "", []
-                        case TurnCompleted():
-                            completed = event
-                            result, result_frame_seq = received.payload, frame_seq
-                        case Reasoning() | ToolCallCompleted() | ActivityStarted() | ActivityCompleted():
-                            # Projected and deliberately not stored: what the agent thought, what
-                            # its calls answered and what the harness narrated are richer than any
-                            # surface renders today, and giving them rows is the half of stage 4
-                            # that moves data.
-                            pass
+                # The frame that ends the turn goes no further: what is left of the exchange is
+                # written below and `end_turn` is the transaction that closes it and carries the
+                # cursor past this frame, so projecting it into `apply_frame` would advance the
+                # cursor ahead of the turn's own last word.
+                finished = first((event for event in events if isinstance(event, TurnCompleted)), None)
+                if finished is not None:
+                    completed, result, result_frame_seq = finished, received.payload, frame_seq
+                else:
+                    state = await self._store.apply_frame(session_id, turn_id, frame_seq, events)
+                    assistant_id = state.assistant_message_id
             if result is None:
                 raise RuntimeError("the Claude stream ended without a result for this turn")
             if completed.outcome is TurnOutcome.FAILED and not abort_event.is_set():
@@ -721,7 +656,7 @@ class SessionService:
             # every result frame, so minting prose from it would double every answer. It is still
             # the fallback for the one case that is not a repeat: a turn whose text arrived nowhere
             # else.
-            final_text = streamed.strip() or str(result.get("result") or "").strip()
+            final_text = state.streamed.strip() or str(result.get("result") or "").strip()
             if abort_event.is_set():
                 final_text += f"\n\n{ABORTED_NOTICE}"
             if assistant_id is not None:
@@ -736,7 +671,7 @@ class SessionService:
                     session_id, assistant_id, final_text, tool_calls=[], complete=True
                 )
                 assistant_id = None
-            elif not saw_assistant_message:
+            elif not state.said_anything:
                 # This row's only source is the `result` frame — the turn said nothing else.
                 assistant_id = await self._store.begin_assistant(
                     session_id, turn_id, source_first_frame_seq=result_frame_seq
@@ -755,7 +690,7 @@ class SessionService:
                 # `final_text` — which is `result.result` repeating the last of them — belongs to
                 # no row of its own.
                 carried_final = False
-            spoke = carried_final or spoke
+            spoke = carried_final or state.queued_reply
             # Only what the room is not already owed. Each assistant message queued its own row as
             # it finished, and `result.result` normally repeats the last of them — so queueing
             # `final_text` unconditionally would post the answer twice. Two cases still need it: a
@@ -775,7 +710,10 @@ class SessionService:
             # out of its own payload. Nothing about a turn's cost passes through here as a CLI's
             # frame any more.
             await self._store.end_turn(
-                turn_id, TurnOutcome.ABORTED if abort_event.is_set() else completed.outcome, completed.usage
+                turn_id,
+                TurnOutcome.ABORTED if abort_event.is_set() else completed.outcome,
+                completed.usage,
+                projected_frame_seq=result_frame_seq,
             )
         except Exception as error:
             await self._store.end_turn(turn_id, TurnOutcome.FAILED)
@@ -840,7 +778,13 @@ def _projected(received: ReceivedFrame) -> tuple[ConversationEvent, ...]:
 
     Threading also merges the frames sharing one `message.id` into a single row and gives the room
     one reply per message instead of per frame — both change what is stored and what is sent, so
-    they belong with the durable cursor (<../../plans/chat_runtime_projection.md> § stage 4).
+    they are their own change rather than the cursor's.
+
+    **What the cursor rests on while that is still true**: seeding empty per frame means the fold
+    carries nothing across a frame boundary, so the state at any cursor position is the empty one
+    and resuming needs no state beside the position. Threading changes that, and the answer it
+    needs is already on the row — `session_turns.first_frame_seq` bounds a re-projection to one
+    turn (<../../plans/chat_runtime_projection.md> § stage 4).
 
     `Projection.unprojected` is dropped rather than logged: per frame in the hot path it would be a
     log line for every heartbeat, and the count is worth taking where the events are *stored*.
@@ -849,6 +793,24 @@ def _projected(received: ReceivedFrame) -> tuple[ConversationEvent, ...]:
         [projection.RecordedFrame(frame_seq=received.frame_seq, payload=received.payload)],
         delta_source=projection.DeltaSource.STREAM_EVENTS,
     ).events
+
+
+async def _replaying(
+    recorded: Sequence[ReceivedFrame], live: AsyncIterator[ReceivedFrame]
+) -> AsyncIterator[ReceivedFrame]:
+    """The frames past the session's cursor, then the ones still to arrive.
+
+    **This is what makes adoption and steady state one call.** The turn loop consumes one iterator
+    and cannot tell which half a frame came from, so "project each frame as it lands" and "project
+    from the stored cursor, which happens to be behind" are the same code with a different starting
+    cursor (<../../plans/chat_runtime_projection.md> § The shape). A turn whose ending is among the
+    recorded frames therefore closes without the socket being consulted, which is what used to be a
+    separate question asked of the log.
+    """
+    for frame in recorded:
+        yield frame
+    async for frame in live:
+        yield frame
 
 
 def _service(request: Request) -> SessionService:

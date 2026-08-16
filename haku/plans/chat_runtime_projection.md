@@ -54,15 +54,24 @@ over a whole frame sequence, with the cross-frame state private to the call and 
 returned. That shape can be re-run over a session but cannot be _resumed_ from a cursor, which is
 the property this paragraph exists for. It is now `project(state, frames) -> (state, Projection)`
 over a neutral `ProjectionState`, with the end of the stream an explicit `finish(state)` rather
-than a batch running out, and one batch equal to any split of batches asserted as a test. **What
-is still owed is the cursor itself** — the durable per-session position advancing in the same
-transaction as its effects. The shape no longer stands in its way.
+than a batch running out, and one batch equal to any split of batches asserted as a test.
+
+**The cursor is `sessions.projected_frame_seq` (migration `0050`)**, advanced by
+`SessionStore.apply_frame` in the same transaction as the frame's effects, and adoption hands the
+turn loop the frames past it rather than asking the log a second time what they meant. The
+question the shape left open — a reducer's cursor is only resumable if the state at that cursor is
+recoverable — is answered by the loop's own granularity: it seeds a fresh state per frame, so the
+state at every cursor position is the empty one. The moment that changes, `first_frame_seq` bounds
+the re-projection to one turn, which is measured to cost about a millisecond per thousand frames
+(the heaviest session in <../console/debug/frame_shape_census.md> is 14k frames, deltas included).
 
 What that deletes: `TurnResumed`, `adopt_open_turn`'s three-way case analysis, `_recorded_result`,
 `_said_anything`, `_streaming_assistant`, `_prompt_left`, `saw_assistant_message`. `spoke` stops
-being a guess and becomes "the cursor passed this frame". Stage 3 has since taken the first, the
-third, the fourth and the last of those, and made `spoke` a durable fact ahead of the cursor; what
-is left on the list is what stage 4 removes.
+being a guess and becomes "the cursor passed this frame". Stage 3 took the first, the third, the
+fourth and the last of those; the cursor took the case analysis and left `_recorded_result` behind
+a tombstone for sessions that predate it. `_prompt_left` stays and is not the cursor's to take: it
+asks whether the console's own outbound write happened, and an outbound prompt projects to nothing
+by design.
 
 Room delivery becomes an outbox drained by `channels/matrix/pacer.py`, which is already a queue and needs only
 to become durable. Then `spoke` is "the outbox row is marked sent", `EventTag.transaction_id` is
@@ -486,16 +495,18 @@ cursor between them.
 
 ### 4. The fold, and what it projects **into** — half landed
 
-**What it projects into is built; the fold itself is half wired.** #4145 landed the neutral
+**What it projects into is built; the fold and its cursor are wired.** #4145 landed the neutral
 vocabulary (`x/conversation_events.py`), the Claude adapter into it (`x/claude_code/projection.py`)
 and a read surface over the result (`read_transcript`); #4149 made the adapter a reducer; the turn
-loop and the room's status line both read it now. What is still open is the durable cursor, and
-**two of the four interpreters counted below are still present on `devel`**. Everything else in
-this section is still the target; the paragraphs that have landed say so where they are.
+loop and the room's status line both read it; and the durable cursor is
+`sessions.projected_frame_seq` (§ The shape). **One of the four interpreters counted below is still
+present on `devel`.** What is still open is storing the events themselves; the paragraphs that have
+landed say so where they are.
 
-`_run_turn`'s frame `match` becomes `project`, with the cursor advanced beside its effects. The
-abort path collapses here too: an abort becomes an intent the transport writes, and the CLI's
-answer comes back as frames — which is what removes the "exactly one `anext` in flight" dance.
+`_run_turn`'s frame `match` became `project`, with the cursor advanced beside its effects. The
+abort path is still to collapse here: an abort becomes an intent the transport writes, and the
+CLI's answer comes back as frames — which is what removes the "exactly one `anext` in flight"
+dance.
 
 An earlier draft called this "mostly moving code once stage 3 has made the state durable". That
 undersold it. The fold is not a relocation of the `match`; it is where the system decides **what a
@@ -520,9 +531,10 @@ prefers its own answer wherever the row can point into the log. The fourth means
 frames are spelled differently makes the room go silent while the agent works, and it is why the SPA
 has no in-progress display at all.
 
-**The first and the fourth are gone.** `_run_turn` acts on events, and `coarse_status` reads a run
-of them rather than a frame — the two that remain are the reconstruction in `adopt_open_turn` and
-the read-path re-derivation in `rollout_calls`. The status line cost one branch on the way:
+**Three of the four are gone.** `_run_turn` acts on events, `coarse_status` reads a run of them
+rather than a frame, and `adopt_open_turn` no longer reconstructs anything — a resumed turn's
+remaining frames go through the live loop from the cursor. What remains is the read-path
+re-derivation in `rollout_calls`. The status line cost one branch on the way:
 `system/task_progress` had a case there and has none in the adapter, which is a frame class the
 census has never seen (<../console/x/README.md> § The neutral projection).
 

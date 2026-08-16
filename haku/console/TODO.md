@@ -252,7 +252,7 @@ streaming, which wears `assistant` and is told apart by a boolean column rather 
   `SessionFrame` and to the projection plan's stage 2.
 - The table's own docstring says the same thing, since that is where a reader meets it first.
 
-The `partial` row leaves on its own: it is tombstoned on `update_partial_frame`, and recording the
+The `partial` row leaves on its own: it is tombstoned on `_write_partial_frame`, and recording the
 stream deltas removed its reason to exist. What is left after that is the two-vocabulary problem.
 
 `../plans/chat_runtime_projection.md` § stage 2 holds the intended shape — the table becomes the log

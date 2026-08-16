@@ -37,7 +37,14 @@ from haku.console.database_schema import SessionFrame, SessionMessage
 from haku.console.x.conftest import MCP_TOKEN, age_lease, lease_of, queued_for_the_room, runtime_config
 from haku.console.x.conversation_records import TurnUsage
 from haku.console.x.session_notifications import SessionNotifications
-from haku.console.x.session_runtime import ABORTED_NOTICE, GOING_AWAY_CODE, RolloutRecorder, SessionService
+from haku.console.x.session_runtime import (
+    ABORTED_NOTICE,
+    GOING_AWAY_CODE,
+    RolloutRecorder,
+    SessionService,
+    _projected,
+    _replaying,
+)
 from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, MatrixSession, SessionStore, SpaSession
 from haku.console.x.testing.recording_claims import RecordingClaims
 from haku.runtime.x.bridge.cli_client import ClaudeCli, ReceivedFrame, SentPrompt
@@ -438,11 +445,15 @@ async def test_a_turn_that_said_something_the_room_could_not_hear_still_knows_it
     assert [m.message_id for m in assistants] == [assistant_id], "the result frame repeated a message, not made one"
 
 
-async def test_adoption_closes_a_turn_whose_result_nobody_wrote_down(
+async def test_adoption_closes_a_turn_whose_result_nobody_projected(
     chat_store, chat_service, recording_claims, operator_id
 ) -> None:
-    """The exchange is over and its `result` is in the log. Waiting for it would wait forever: the
-    runner replays that frame and `record_frame` refuses it as one this session already has.
+    """The exchange is over and its `result` sits past the session's cursor, so nothing acted on it.
+
+    Waiting for it on the socket would wait forever — the runner replays that frame and
+    `record_frame` refuses it as one this session already has — so adoption hands it back as a
+    frame to project, and projecting it closes the turn through the very loop a live frame goes
+    through. Recovery asks the log no question of its own here.
     """
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
@@ -464,12 +475,24 @@ async def test_adoption_closes_a_turn_whose_result_nobody_wrote_down(
         },
     )
 
-    assert await chat_store.adopt_open_turn(session_id) is None
+    resumed = await chat_store.adopt_open_turn(session_id)
+    assert resumed is not None
+    assert [frame.payload["type"] for frame in resumed.replay] == ["user", "result"]
+    client = _FakeCli()
+    async with asyncio.timeout(30):
+        await chat_service._run_turn(
+            cast(Any, client),
+            _replaying(resumed.replay, client.frames().__aiter__()),
+            session_id,
+            resumed,
+            room_id=None,
+            abort_event=asyncio.Event(),
+        )
 
     [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
     assert turn.outcome == TurnOutcome.ANSWERED
-    # Recovery closes the row through the same adapter the live path uses, so what a turn nobody
-    # closed cost is the same shape — and the same numbers — as one that closed itself.
+    # Closed through the same adapter the live path uses, so what a turn nobody closed cost is the
+    # same shape — and the same numbers — as one that closed itself.
     assert turn.usage == TurnUsage(
         input_tokens=7, output_tokens=13, cached_input_tokens=2, cost_usd=0.5, duration_ms=1200
     )
@@ -480,8 +503,12 @@ async def test_adoption_reads_a_failed_result_as_a_failed_turn(
 ) -> None:
     """Recovery used to close from `is_error`, which is `false` on every production result —
     including all 27 sessions the console recorded as failed (<../debug/frame_shape_census.md>) —
-    so a turn that ended badly was adopted as answered. The outcome is the adapter's now, and the
-    adapter reads `subtype`."""
+    so a turn that ended badly was adopted as answered.
+
+    It is now the projection of that frame that closes the turn, so recovery fails in exactly the
+    way the live path fails on the same frame: the turn is `failed` and the error propagates to
+    `handle_runner`, which ends the session.
+    """
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
@@ -495,7 +522,19 @@ async def test_adoption_reads_a_failed_result_as_a_failed_turn(
         {"type": "result", "uuid": "res-1", "subtype": "error_during_execution", "is_error": False},
     )
 
-    assert await chat_store.adopt_open_turn(session_id) is None
+    resumed = await chat_store.adopt_open_turn(session_id)
+    assert resumed is not None
+    client = _FakeCli()
+    with pytest.raises(RuntimeError, match="error_during_execution"):
+        async with asyncio.timeout(30):
+            await chat_service._run_turn(
+                cast(Any, client),
+                _replaying(resumed.replay, client.frames().__aiter__()),
+                session_id,
+                resumed,
+                room_id=None,
+                abort_event=asyncio.Event(),
+            )
 
     [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
     assert turn.outcome == TurnOutcome.FAILED
@@ -747,27 +786,34 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     started = await chat_store.next_prompt(session_id)
     assert started is not None
     # What the previous holder got through before its pod went: the prompt written, and half an
-    # answer streamed into a message it never closed.
+    # answer streamed into a message it never closed — applied as the loop applies any frame, so
+    # the message row, the turn's pointer at it and the session's cursor all landed together.
+    delta = _text_delta_frame("because the ")
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
-    opened_at = await chat_store.record_frame(
-        session_id, FrameDirection.FROM_AGENT, "stream_event", _text_delta_frame("because the ")
+    opened_at = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "stream_event", delta)
+    state = await chat_store.apply_frame(
+        session_id,
+        started.turn_id,
+        opened_at.frame_seq,
+        _projected(ReceivedFrame(payload=delta, frame_seq=opened_at.frame_seq)),
     )
-    # Anchored at the frame it streamed from, as `_run_turn` opens every message: an inherited row
-    # with no near end is one `update_assistant` cannot widen (`ck_session_messages_source_anchored`).
-    assistant_id = await chat_store.begin_assistant(
-        session_id, started.turn_id, source_first_frame_seq=opened_at.frame_seq
-    )
-    await chat_store.update_assistant(session_id, assistant_id, "because the ")
+    assistant_id = state.assistant_message_id
 
     resumed = await chat_store.adopt_open_turn(session_id)
     assert resumed is not None
+    assert resumed.replay == (), "the cursor passed every recorded frame, so none of them is redone"
     # Only what the runner replays: the deltas already seen are not re-sent, so everything
     # before "disk was full" reaches this process solely through the turn's own row.
     client = _FakeCli([_assistant({"type": "text", "text": "because the disk was full"}), _result("done")])
     client.replay()
     async with asyncio.timeout(30):
         await service._run_turn(
-            client, client.frames().__aiter__(), session_id, resumed, room_id=ROOM, abort_event=asyncio.Event()
+            client,
+            _replaying(resumed.replay, client.frames().__aiter__()),
+            session_id,
+            resumed,
+            room_id=ROOM,
+            abort_event=asyncio.Event(),
         )
 
     queued = await queued_for_the_room(migrated_sessions, session_id)
@@ -776,6 +822,60 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     assert [m.message_id for m in assistants] == [assistant_id], "continued, rather than forked into a second"
     [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
     assert (turn.turn_id, turn.outcome) == (started.turn_id, TurnOutcome.ANSWERED)
+
+
+async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
+    chat_store, migrated_sessions, recording_claims, notifications, operator_id
+) -> None:
+    """Two frames are in the log and the departed holder projected one of them.
+
+    The cursor is the whole of what tells them apart, and both errors it prevents are visible from
+    the room: redoing the projected delta would append its prose to the message a second time,
+    while not redoing the unprojected answer would lose it outright — the runner will not offer a
+    frame this session already recorded, so nothing else is coming to write it down.
+    """
+    room = _RecordingRoomSurface()
+    service = SessionService(
+        runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, room_surface=room
+    )
+    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    session_id = view.session_id
+    assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
+    started = await chat_store.next_prompt(session_id)
+    assert started is not None
+    delta = _text_delta_frame("because the ")
+    answer = _assistant({"type": "text", "text": "because the disk was full"})
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+    projected = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "stream_event", delta)
+    await chat_store.apply_frame(
+        session_id,
+        started.turn_id,
+        projected.frame_seq,
+        _projected(ReceivedFrame(payload=delta, frame_seq=projected.frame_seq)),
+    )
+    # Recorded and then nothing: the pod went between the sink writing the row and the loop acting
+    # on what it meant.
+    unprojected = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "assistant", answer)
+
+    resumed = await chat_store.adopt_open_turn(session_id)
+    assert resumed is not None
+    assert [frame.frame_seq for frame in resumed.replay] == [unprojected.frame_seq]
+    client = _FakeCli([_result("because the disk was full")])
+    client.replay()
+    async with asyncio.timeout(30):
+        await service._run_turn(
+            client,
+            _replaying(resumed.replay, client.frames().__aiter__()),
+            session_id,
+            resumed,
+            room_id=ROOM,
+            abort_event=asyncio.Event(),
+        )
+
+    assert await queued_for_the_room(migrated_sessions, session_id) == ["because the disk was full"]
+    assistants = [m for m in (await chat_store.get(operator_id, session_id)).messages if m.role == "assistant"]
+    assert [m.content for m in assistants] == ["because the disk was full"]
 
 
 async def test_a_resumed_turn_does_not_say_again_what_it_had_already_queued(

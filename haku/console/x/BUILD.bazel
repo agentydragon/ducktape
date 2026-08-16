@@ -21,6 +21,7 @@ py_library(
         "//haku/runtime/x/bridge:options",
         "//haku/runtime/x/bridge:protocol",
         "@pypi//fastapi",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
     ],
 )

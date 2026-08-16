@@ -219,10 +219,10 @@ onto the read models in `conversation_records.py`. And the live path reads them 
 **`_run_turn` is the first of the four onto it**: it projects each frame as it lands and acts on the
 events, so the live path no longer knows that `assistant`, `stream_event` and `result` exist. The
 status line is the second — `coarse_status` reads a run of events rather than a frame, which is what
-stops the driver being one of the interpreters it is supposed to sit above. `adopt_open_turn` and
-`rollout_calls` still read frames their own way; each is its own change. Nothing stores the events
-yet either — `session_messages` and the outbox keep the shapes they had, and the durable cursor
-beside the fold is the other half of stage 4.
+stops the driver being one of the interpreters it is supposed to sit above. `rollout_calls` still
+reads frames its own way; that is its own change. Nothing stores the events yet either —
+`session_messages` and the outbox keep the shapes they had, which is what makes the cursor below
+one column rather than a table.
 
 **One status source did not survive that, and it is worth knowing before it is missed.**
 `coarse_status` used to answer for `system/task_progress` as well as `task_started`; the adapter
@@ -232,16 +232,43 @@ says nothing to the room. It has never been observed — zero of 10,903 `system`
 `description` shapes are unverified, and minting a second `ActivityStarted` for one activity would
 give every transcript reader a duplicate row on a guess. The branch is gone rather than approximated.
 
-Two things are deliberately still off it, and both are stage 4's:
+### The cursor — where the fold resumes, and what makes its effects exactly-once
 
-- **The turn loop seeds a fresh state per frame** (`_projected` calls `project_log`), so a message
-  still ends at its own frame there. Threading one state across the turn is a two-line change, was
-  tried, and breaks two things in the _loop_ — both written up in `_projected`'s docstring, which
-  is where to read before attempting it again.
-- **No cursor is stored.** `read_transcript` re-reads the session and seeds an empty state per
-  page, so it folds from the first frame every time. The durable per-session cursor that advances
-  in the same transaction as its effects — the thing that makes them exactly-once — is stage 4's
-  own change; this shape is what makes it expressible.
+`sessions.projected_frame_seq` is the `frame_seq` of the last frame whose projected effects are
+committed, and `SessionStore.apply_frame` is the one transaction that writes both: the message row,
+the room's outbox row, the turn's state and the cursor land together or not at all. So a replica
+that dies leaves the session naming the last frame that took, and its replacement redoes exactly
+the frames whose effects did not.
+
+**The payoff is that adoption stops being a second reading of the log.** `adopt_open_turn` hands
+back the recorded frames past the cursor and `handle_runner` feeds them to the turn loop ahead of
+the live stream (`_replaying`), so a turn's remaining frames go through the same call whether they
+have just arrived or arrived at a replica that is gone. A turn whose ending is among them closes
+without the socket being consulted, which is what "the `result` is logged but `end_turn` never ran"
+used to be a separate question about.
+
+Four things to know before changing it:
+
+- **The turn loop still seeds a fresh state per frame** (`_projected` calls `project_log`), which
+  is also what the cursor currently rests on: the fold carries nothing across a frame boundary, so
+  the state at any cursor position is the empty one and a position is the whole of what resuming
+  needs. Threading one state across the turn — a two-line change that was tried and breaks two
+  things in the _loop_, both written up in `_projected`'s docstring — is what would make that
+  false, and `session_turns.first_frame_seq` is the answer waiting for it: re-project one turn.
+- **`next_prompt` anchors the cursor** at the frame before the turn it opens, in that same
+  transaction. That is what lets adoption tell a position inside this turn from one left behind by
+  a writer that does not advance it — a replica on the previous image, for the length of a roll —
+  and refuse the second (`projected_frame_seq < first_frame_seq - 1`).
+- **`end_turn` carries the cursor past the frame that ended the turn**, not `apply_frame`. The
+  turn's last word is written between the two, so advancing when that frame was projected would
+  put the cursor ahead of writes still to come.
+- **NULL means no cursor**, which is every session predating migration `0051`. Those take the
+  pre-cursor path, tombstoned on `adopt_open_turn`, and the population empties within
+  `session_ttl_seconds` of the release converging.
+
+**`read_transcript` has no cursor and is not this one.** It re-reads the session and seeds an empty
+state per page, so it folds from the first frame every time; that is a read path with nowhere to
+keep a position, not the durable one.
 
 Four properties hold the design up, each stated where it is kept — break one and the rest stop
 meaning anything:

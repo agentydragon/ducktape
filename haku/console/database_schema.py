@@ -876,6 +876,20 @@ class Session(Base):
     # out. Only ever stamped on a session whose status is already ended, so a non-NULL value reads
     # as "terminal, and its sandbox is gone" rather than as a second opinion about liveness.
     claim_cleaned_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # How far the fold has got: the `frame_seq` of the last frame whose projected effects are
+    # committed. It is written in the same transaction as those effects, which is the whole of what
+    # makes them exactly-once — a replica that dies leaves this naming the last frame that landed,
+    # and whoever adopts the session re-projects from here, redoing exactly the frames whose
+    # effects did not commit (<plans/chat_runtime_projection.md> § The shape).
+    #
+    # A bound like `session_turns.first_frame_seq`, not a pointer: `Identity` leaves gaps, and
+    # `next_prompt` anchors it at the frame before the turn it opens, which is a value no row has.
+    #
+    # **NULL means nothing here has ever projected for this session**, which is every row written
+    # before this column and every session a replica on the previous image is serving for the
+    # length of a roll. `adopt_open_turn` reads the frames itself in that case, exactly as it did
+    # before the cursor existed.
+    projected_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Renewed by whichever replica currently holds this session's runner websocket. A live
     # status is otherwise only ever corrected in-process, so a replica that dies mid-turn
