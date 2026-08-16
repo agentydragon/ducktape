@@ -59,6 +59,7 @@ from haku.console.x.conversation_events import (
     MessageKey,
     OpaqueContent,
     Outcome,
+    Projection,
     Reasoning,
     TextContent,
     TextDelta,
@@ -102,20 +103,6 @@ class RecordedFrame:
 
     frame_seq: int
     payload: dict[str, Any]
-
-
-@dataclass(frozen=True, slots=True)
-class Projection:
-    """What a frame sequence means, plus what it contained that this release has no meaning for.
-
-    `unprojected` counts by frame class — `tool_progress`, `system/vcs_state_changed`,
-    `user/text` — and is how the default branch stays observable without costing an event per
-    frame. Deliberately ignored classes are not in it: the actionable signal is "the CLI is
-    sending something we do not map", not "the heartbeat beat again".
-    """
-
-    events: tuple[ConversationEvent, ...]
-    unprojected: Mapping[str, int]
 
 
 def project(frames: Iterable[RecordedFrame]) -> Projection:
