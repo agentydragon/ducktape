@@ -7,7 +7,7 @@ to supply, what it would get for free, and where the seam is **not** enough.
 
 Nothing here is implemented. There is no Codex credential in this cluster yet, so none of it has
 been run; treat the Codex specifics as read-from-documentation rather than measured, which is the
-opposite of how <../../../cli_protocol/protocol.md> was established.
+opposite of how <../../../../cli_protocol/protocol.md> was established.
 
 ## What the seam asks for
 

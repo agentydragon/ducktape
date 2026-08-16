@@ -229,10 +229,11 @@ per-Operator server instance, plus a decision about what that means for an Agent
 machinery R5.3a said not to build.
 
 And the premise that makes an unscoped read harmless today is **already retired on paper**.
-<../../plans/matrix*chat_runtime.md> R5.3a ("one operator, one Haku and one room, so the fence would
-separate Haku from its own history and nothing else") carries a note dated 2026-08-15: \_superseded,
-on exactly the condition this recorded* — reads become **tier-scoped**, with "a decision function
-at one console call site, not scoping smeared through the transport". <../../state_index/README.md>
+[R5.3a in the Matrix plan](../../plans/matrix_chat_runtime.md) ("one operator, one Haku and one
+room, so the fence would separate Haku from its own history and nothing else") carries a note dated
+2026-08-15 — "superseded, on exactly the condition this recorded" — so reads become
+**tier-scoped**, with "a decision function at one console call site, not scoping smeared through
+the transport". <../../state_index/README.md>
 § Read scoping says the same thing about the index: "the moment a second operator or a room Haku
 should not see exists, ranked retrieval is where that leaks first".
 

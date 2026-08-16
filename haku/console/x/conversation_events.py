@@ -1,41 +1,26 @@
 """What a conversation is, once a provider's frames have been read.
 
 The vocabulary every surface renders and every backend adapter produces. Nothing in it is
-Claude-shaped: no `assistant`, no content block, no `msg_…`, no `tool_use_result`. A Claude
-adapter (<claude_code/projection.py>) is the only producer today, and the point of the layer is that a
-second backend is a second adapter rather than a second interpretation of what a message is
-(<../../plans/chat_runtime_projection.md> § stage 4, which counts the four interpreters this
-replaces).
+Claude-shaped: no `assistant`, no content block, no `msg_…`, no `tool_use_result`. The Claude
+adapter is <claude_code/projection.py> (<../../plans/chat_runtime_projection.md> § stage 4).
 
-Three things this vocabulary is deliberate about.
-
-**Tool calls are conversation, not debug.** The room already renders calls in progress, so a
-neutral source has to carry them — and as a lifecycle (`ToolCallStarted` → `ToolCallCompleted`)
-rather than as finished records stapled to a completed message, because the display exists while
-the call is still running and the message it belongs to is not finished yet.
+**Tool calls are conversation, not debug**, and they are a lifecycle (`ToolCallStarted` →
+`ToolCallCompleted`) rather than finished records stapled to a completed message: the room renders
+a call while it is still running, before the message it belongs to has finished.
 
 **Every event says which frames it came from**, so an operator can appeal a normalization to the
-raw JSON behind it. `Provenance` is a union rather than a nullable range: a frame-derived event
-has a `FrameRange`, and a console-authored one — bootstrap narration, the replica owning a
-session changing hands — has no frames and never will. Re-projecting a session must *preserve*
-those rather than re-derive them, and a nullable range would let a rebuild delete them while
-reporting green.
+raw JSON behind it. `Provenance` is a union rather than a nullable range: a console-authored event
+— bootstrap narration, the replica owning a session changing hands — has no frames and never will,
+and a nullable range would let a rebuild delete them while reporting green.
 
 **Nothing here models approvals.** They travel over MCP to the console's approval queue and never
 appear on this channel.
 
-**The fold's own state is here too.** `ProjectionState` is what an adapter carries from one batch
-of frames to the next, and it is stated in this vocabulary rather than in any provider's — a
-second backend adapter has to be able to produce one. That is what makes "project each frame as
-it lands" and "project from the stored cursor, which happens to be behind" the same code path
-(<../../plans/chat_runtime_projection.md> § The shape).
+**`ProjectionState` is here rather than beside the adapter**: a second backend adapter has to be
+able to produce one.
 
-`Outcome.UNKNOWN` is the other load-bearing choice, and it is a measured one: `is_error` is
-*absent* rather than false on most real tool results, so "did this go wrong" has three answers and
-a two-valued type would have to guess one of them. That and every other shape claim below was read
-off production frames; the measurements themselves live in
-<../debug/frame_shape_census.md> § What will break a naive fold, which is a dated document, where
-a share of production frames keeps its date.
+Every shape claim below was read off production frames; the measurements live in
+<../debug/frame_shape_census.md> § What will break a naive fold, which is a dated document.
 """
 
 from __future__ import annotations
@@ -271,11 +256,6 @@ type ConversationEvent = (
 class Projection:
     """What a stretch of a backend's frames meant, plus what it held that this release cannot read.
 
-    Here rather than beside the Claude adapter because neither half mentions a backend: the events
-    are this vocabulary, and an unreadable frame is a fact about the reader. A second adapter
-    returns this same type, which is what lets a surface consume one without knowing which produced
-    it.
-
     `unprojected` counts by whatever the adapter calls a frame class — for the Claude adapter,
     `tool_progress`, `system/vcs_state_changed`, `user/text`. It is how the default branch stays
     observable without costing an event per frame. An adapter's *deliberately* ignored classes are
@@ -303,10 +283,6 @@ class Projection:
 @dataclass(frozen=True, slots=True)
 class OpenMessage:
     """An agent message the fold has seen the start of and not the end of.
-
-    Every field is this vocabulary's own — the key the events already carry, the far end of the
-    range they will be given, the agent's optional id, and the prose so far — so an adapter for a
-    second backend produces one without borrowing anything Claude-shaped.
 
     `texts` is the message's deltas in order rather than the joined prose: the vocabulary's
     contract is that they concatenate to exactly the `text` its `MessageCompleted` carries, and

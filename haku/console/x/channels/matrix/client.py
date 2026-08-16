@@ -79,7 +79,7 @@ _AUTH_ERRCODES = frozenset({"M_UNKNOWN_TOKEN", "M_MISSING_TOKEN"})
 # How many times nio may absorb a 429 inside one request before the error reaches us.
 #
 # **Gotcha: nio's default is unlimited, not off** — a rate-limited send never returned an error,
-# it stopped returning (<../docs/chat_runtime_facts.md>). Two retries keep a single
+# it stopped returning (<../../../docs/chat_runtime_facts.md>). Two retries keep a single
 # burst invisible while letting a sustained one reach `pacer`, which is the only place the
 # room's real budget can be learned.
 MAX_RATE_LIMIT_RETRIES = 2
@@ -145,7 +145,7 @@ class EventTag(BaseModel):
 
         Second line of defence, not first — `frame_uid` drops a replayed frame before any send —
         and it rests on how Synapse keys and expires its transaction cache
-        (<../docs/chat_runtime_facts.md>). Impure, and called once per send.
+        (<../../../docs/chat_runtime_facts.md>). Impure, and called once per send.
         """
         return self.message_id.hex if self.message_id is not None else uuid4().hex
 

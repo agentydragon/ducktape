@@ -309,7 +309,7 @@ class MatrixSurface:
     History is read here rather than carried forward from the previous session, because by
     the time a replacement session starts, the one that held the context is gone. **Our own
     transcript is the source, not the homeserver's copy of the room** (R3.3a, as amended by the
-    invariant in <../debug/channel_write_audit.md>, #4130): Matrix is one channel among several, and a
+    invariant in <../../../debug/channel_write_audit.md>, #4130): Matrix is one channel among several, and a
     session re-awakened from the channel's record is a session whose memory a second channel
     could not reproduce.
 

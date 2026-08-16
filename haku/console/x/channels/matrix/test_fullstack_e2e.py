@@ -246,7 +246,7 @@ async def test_a_message_accepted_by_a_dying_session_is_answered_by_its_replacem
     sandbox gone, `expire_stale_leases` failing the row, the supervisor minting a *new*
     `session_id` — left the message acknowledged on the homeserver and queued where nothing would
     ever look: the replacement's `next_prompt` reads its own session, and the room heard only
-    "session … ended … starting a new one" (<../debug/message_drops.md> I3, R2.5).
+    "session … ended … starting a new one" (<../../../debug/message_drops.md> I3, R2.5).
 
     The window needs no timing: a killed sandbox leaves the session `ready` for a whole
     `ADOPTION_GRACE`, which is why `wait_until_queued` can assert the message really was accepted

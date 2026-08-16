@@ -125,7 +125,7 @@ async def test_replies_are_said_in_the_order_they_were_produced(
 async def test_a_refused_send_leaves_the_row_for_the_next_attempt(
     chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id
 ) -> None:
-    """The drop this table exists for (<../debug/message_drops.md> E1).
+    """The drop this table exists for (<../../../debug/message_drops.md> E1).
 
     A queued send that raised used to be popped and discarded with a log line, and the turn had
     already recorded the room as having heard it. Here the failure is the row's: unsent, one

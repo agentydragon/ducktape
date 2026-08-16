@@ -96,7 +96,7 @@ machinery goes with it.
 
 ### What has been lifted out of it
 
-Three leaves, each a module nothing in `session_runtime.py` reaches into — so the store, the service and
+Each is a module nothing in `session_runtime.py` reaches into — so the store, the service and
 the turn loop kept their shape while the file lost the parts that never needed to be beside them
 (<../../plans/chat_runtime_cleanup.md> § Anytime). `session_store.py` is not one of them: the
 service calls it on every path, so that split is a seam and not a leaf.
@@ -131,7 +131,7 @@ projection nobody can debug. So a conversation in the console carries a **Raw fr
 order, each frame's payload whole. Frontend: `frontend/x/session_frames_page.tsx`, at its own route
 (`/_console/conversations/<id>/frames`) so a frame is something an operator can link to.
 
-Three decisions worth knowing before changing it:
+Decisions worth knowing before changing it:
 
 - **The first page is the tail, and the cursor walks backwards.** `read_operator_frames` is the
   reverse keyset of `read_frames`, which the MCP reader uses forwards. The frames an operator opens
@@ -166,15 +166,9 @@ adapter cannot be written without knowing what `assistant`, `stream_event` and `
 are, so it lives under the harness directory. A second backend adds a sibling adapter and touches
 neither the vocabulary nor its readers.
 
-**It is a reducer**, `project(state, frames) -> (state, Projection)`: an existing neutral
-transcript plus new frames gives the updates to that transcript. The state is neutral
-(`ProjectionState`, in `conversation_events.py`, so a second backend adapter can produce one) and
-holds exactly what is mid-flight — an open message and nothing else. The frames stay the
-provider's. `finish(state)` is a caller saying no more are coming, which is what completes a
-message the frames ended in the middle of; `project_log(frames)` is the two composed, for a
-reader holding a whole log. A batch boundary is deliberately not an ending, so a live consumer
-taking frames one at a time and a reader taking them all at once are the same fold — asserted
-over every split of a session in `claude_code/test_projection.py`.
+**The reducer's own contract is in `claude_code/projection.py`** — what `project`, `finish` and
+`project_log` each mean, why a batch boundary is not an ending, and the wire facts every rule in
+it answers. It is not restated here; what follows is who reads it and what is not yet on it.
 
 **Two readers are on them.** `haku_conversations.read_transcript` reads a stored session:
 `SessionStore.read_transcript` calls `project_log` and `transcript_entries.py` maps the result
@@ -196,45 +190,28 @@ says nothing to the room. It has never been observed — zero of 10,903 `system`
 `description` shapes are unverified, and minting a second `ActivityStarted` for one activity would
 give every transcript reader a duplicate row on a guess. The branch is gone rather than approximated.
 
-Two consequences of that being live:
+Two things are deliberately still off it, and both are stage 4's:
 
-- **`DeltaSource` is why a live consumer and a stored log see different `TextDelta`s.** A log cannot
-  be read from `stream_event` frames (they carry no identity, are not deduplicated, and a truncated
-  one re-projects to different text), while a consumer holding the wire wants exactly those, because
-  taking the increments as they arrive is what streaming an answer is. The prose is the same; only
-  the cut differs.
-- **The turn loop hands each frame to the reducer but seeds a fresh state per frame** (`_projected`
-  calls `project_log`), so a message still ends at its own frame there. Holding one state across the
-  turn is a two-line change now — and it was tried, and breaks two things in the _loop_, both
-  written up in `_projected`'s docstring: the loop writes the frame it is holding rather than the
-  message's own range (whose prerequisite — `frame_seq` being `int` — is now met), and `streamed` is
-  a single accumulator while a `STREAM_EVENTS` `TextDelta` is keyed by the delta's own frame. Those
-  plus the stored-shape change — one row and one room reply per message rather than per frame —
-  are why it belongs with the durable cursor rather than here.
+- **The turn loop seeds a fresh state per frame** (`_projected` calls `project_log`), so a message
+  still ends at its own frame there. Threading one state across the turn is a two-line change, was
+  tried, and breaks two things in the _loop_ — both written up in `_projected`'s docstring, which
+  is where to read before attempting it again.
+- **No cursor is stored.** `read_transcript` re-reads the session and seeds an empty state per
+  page, so it folds from the first frame every time. The durable per-session cursor that advances
+  in the same transaction as its effects — the thing that makes them exactly-once — is stage 4's
+  own change; this shape is what makes it expressible.
 
-**No cursor is stored.** `read_transcript` re-reads the session and seeds an empty state per page,
-which is why it folds from the first frame every time. The durable per-session cursor that advances
-in the same transaction as its effects — the thing that makes them exactly-once — is stage 4's own
-change; this shape is what makes it expressible.
+Four properties hold the design up, each stated where it is kept — break one and the rest stop
+meaning anything:
 
-Properties to preserve:
+- `project` is pure and deterministic (`projection.py`).
+- One batch and any split of batches project alike (`Projection.then`).
+- Every event carries provenance, and it is a union, so a rebuild cannot delete an authored event
+  (`conversation_events.Authored`).
+- The default branch is counted, not dropped (`Projection.unprojected`).
 
-- **`project` is pure and deterministic.** That is what makes drift detectable (re-project a stored
-  session and compare), a projection bug repairable (fix the fold and re-project), and it is why the
-  function mints nothing random — a message's identity is the `frame_seq` it opened at.
-- **One batch and any split of batches project alike.** Live and recovery are the same code path
-  only for as long as this holds; a fold that closed anything at a batch boundary would break it.
-- **Every event carries provenance, and it is a union.** A frame-derived event has a `FrameRange` an
-  operator can click through to raw JSON; a console-authored one (narration, an ownership change)
-  has no frames at all. A rebuild that treated authored events as re-derivable would delete them.
-- **The default branch is counted, not dropped.** `Projection.unprojected` tallies frame classes
-  this release has no meaning for, because three frame classes and five `system` subtypes in
-  production are already undocumented and the CLI keeps adding them.
-
-Every rule in the adapter is a measured fact from <../debug/frame_shape_census.md> rather than a
-reading of `protocol.md` — a message is a whole run of frames that a tool result can interrupt, the
-renderable `content` of a tool result is not its result, and every "did this go wrong" field is
-uninformative. Read the census before changing what looks like belt and braces.
+Before changing the adapter, read <../debug/frame_shape_census.md>: every rule in it is a measured
+fact rather than a reading of `protocol.md`, so what looks like belt and braces mostly is not.
 
 ## Matrix chat surface — `channels/matrix/`
 
@@ -257,14 +234,13 @@ cannot exist without a homeserver. That split is the shape every outbound channe
 take — recorded first, sent from the record — so a second channel inherits the record and writes
 only its own drain.
 
-Three behaviours worth knowing before reading the code:
+Behaviours worth knowing before reading the code:
 
 - **A produced reply is a row, not a call.** A turn writes it in the same transaction as the
   assistant message it copies, and `RoomOutboxDrain` — one replica, under the `MXOB` advisory
   lock — claims the oldest, queues it into the pacer, and marks it `sent_at` only once
-  `room_send` has returned. Before this, `deliver` was a `deque.append` that returned before any
-  request existed, so a refused send was discarded with a log line and a queue holding an answer
-  died with its replica (<../debug/message_drops.md>). Everything else the console says — the
+  `room_send` has returned (the drops this closes:
+  <../debug/message_drops.md>). Everything else the console says — the
   status line, lifecycle and holding notices, bootstrap narration — stays on the pacer's
   in-process queue, because a notice describing a moment is not worth redelivering ten minutes
   later. Two rules the drain is deliberate about: a failed reply **halts** the queue for its
@@ -460,7 +436,7 @@ moved. **An invalidation, not a payload** — the transcript stays a REST read, 
 events lands correct by refetching and no consumer has to decide whether the socket or the API is
 the truth.
 
-Three things it is deliberate about:
+What it is deliberate about:
 
 - **Nothing publishes anything new.** Every write that changes a session already notifies `UPDATE`
   inside its own transaction, so the announcement belongs to the commit rather than to a sweep.
@@ -512,6 +488,7 @@ The code keeps the invariant; the evidence behind it is linked rather than resta
   like belt and braces.
 - <../../plans/chat_runtime_cleanup.md> and <../../plans/chat_runtime_projection.md> — what is
   still wrong and the order to fix it.
-- <../debug/2026*08_16_runtime_archaeology.md> — which bug each invariant in
-  `session*{runtime,store}.py` was written against, indexed by the line in the code that keeps it.
+- [The runtime archaeology note](../debug/2026_08_16_runtime_archaeology.md) — which bug each
+  invariant in `session_runtime.py` and `session_store.py` was written against, indexed by the line
+  in the code that keeps it.
 - `debug/` otherwise holds dated findings from one incident and is not maintained.

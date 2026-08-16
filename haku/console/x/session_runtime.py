@@ -161,9 +161,8 @@ class RoomSurface(Protocol):
     session to every listener and letting each one re-derive whether it is its own.
 
     **Replies are not here.** They are rows in `session_outbox`, written where they are produced
-    and drained into the room by whoever holds the outbox lock, which is what a surface reporting
-    success at enqueue could never be (<../debug/message_drops.md>). What is left here is what
-    genuinely describes a moment and is worthless afterwards.
+    and drained into the room by whoever holds the outbox lock (<../debug/message_drops.md>). What
+    is left here is what describes a moment and is worthless afterwards.
     """
 
     async def system_prompt(self, session_id: UUID, room_id: str) -> str: ...
@@ -550,9 +549,8 @@ class SessionService:
 
         **Project, then act.** Every frame goes through `claude_code.projection` and this loop acts on
         the neutral events that come back, so what it knows about is prose, messages, tool calls
-        and a completed turn — not `assistant`, `stream_event` and `result`. That is the seam a
-        second backend arrives through: another adapter into the same vocabulary, rather than a
-        second reading of what a message is (<../../plans/chat_runtime_projection.md> § stage 4).
+        and a completed turn — not `assistant`, `stream_event` and `result`
+        (<../../plans/chat_runtime_projection.md> § stage 4).
 
         *frames* belongs to the session, not to this call — see `handle_runner`. This call is the
         turn's span, so it closes it on every exit and is the only thing that does. A turn left
@@ -810,35 +808,29 @@ class SessionService:
 def _projected(received: ReceivedFrame) -> tuple[ConversationEvent, ...]:
     """What one frame means, in the vocabulary every surface and every backend shares.
 
-    **One frame at a time, seeded empty and declared over**, which is what keeps this a change to
-    how the turn loop decides rather than to what it stores. `project_log` is exactly that: a fresh
-    `ProjectionState` and a `finish` at the end of the one frame handed in.
+    **One frame at a time, seeded empty and declared over** — `project_log` over the single frame
+    handed in, so a message always ends at its own frame here.
 
-    **Threading one state across the turn is now a two-line change here, and it is deliberately not
-    made — it was tried, and two things break.** Both are in the loop rather than in the fold, which
-    is why the reducer landing without them is the right order:
+    **Threading one state across the turn is a two-line change and is deliberately not made.** It
+    was tried; two things in the loop (not in the fold) break:
 
-    - **The loop writes the frame it is holding, and with a state held it is no longer the
+    - **The loop writes the frame it is holding, which with a state held is no longer the
       message's.** A message then completes on the frame that *closed* it — a different
       `message.id`, or the `result` — so `source_last_frame_seq` records that one instead of the
-      last frame that built the message. `test_projected_assistant_message_points_to_the_frames_that_built_it`
-      catches it. The fix is to read `event.provenance` back, which is now open: `frame_seq` is
-      `int` at this boundary, so a `FrameRange` read off an event names frames that exist
-      (<../../plans/chat_runtime_projection.md> § The projection is not a one-way door named that
-      as the prerequisite; it is discharged).
-    - **`streamed` is one accumulator, and under `STREAM_EVENTS` a `TextDelta` is keyed by the
+      last frame that built the message.
+      `test_projected_assistant_message_points_to_the_frames_that_built_it` catches it. The fix is
+      to read `event.provenance` back, which `frame_seq` being `int` at this boundary now allows.
+    - **`streamed` is one accumulator, while under `STREAM_EVENTS` a `TextDelta` is keyed by the
       delta's own frame rather than the message's** (`_stream_delta` has no id to group by). With a
       state held, two adjacent text messages share it: the second's deltas arrive before the first
       completes and are discarded when it resets. No test covers this; it is read off the code.
 
     Threading also merges the frames sharing one `message.id` into a single row and gives the room
-    one reply per message instead of per frame. Both are improvements the plan asks for, and both
-    change what is stored and what is sent — so they belong with the durable cursor, which is the
-    other half of stage 4.
+    one reply per message instead of per frame — both change what is stored and what is sent, so
+    they belong with the durable cursor (<../../plans/chat_runtime_projection.md> § stage 4).
 
-    `Projection.unprojected` is dropped rather than logged: counting the classes this release has
-    no meaning for is worth doing where the events are *stored*, and per frame in the hot path it
-    would be a log line for every heartbeat.
+    `Projection.unprojected` is dropped rather than logged: per frame in the hot path it would be a
+    log line for every heartbeat, and the count is worth taking where the events are *stored*.
     """
     return projection.project_log(
         [projection.RecordedFrame(frame_seq=received.frame_seq, payload=received.payload)],

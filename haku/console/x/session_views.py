@@ -140,8 +140,6 @@ class ConversationTurnView(BaseModel):
 
 
 class ConversationSessionView(BaseModel):
-    """A readable conversation: metadata, transcript, and exchange summaries."""
-
     model_config = ConfigDict(extra="forbid")
 
     session_id: UUID

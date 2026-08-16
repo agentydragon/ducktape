@@ -2,7 +2,7 @@
 
 Haku writes Markdown because that is what models write well; Element shows `body` verbatim,
 so without this a reply arrives with its asterisks and backticks intact. The conversion lives
-here rather than in the prompt for the reason recorded in <../../plans/matrix_chat_runtime.md>
+here rather than in the prompt for the reason recorded in <../../../../plans/matrix_chat_runtime.md>
 R11.7: formatting is a property of the surface, not a choice the agent makes.
 
 Everything not on the spec's allowlist is dropped, and the dropping is the point — a tag

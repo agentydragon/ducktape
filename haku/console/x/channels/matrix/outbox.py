@@ -1,22 +1,16 @@
 """The room's outbox: replies as rows, and the one task that says them.
 
-**What this replaces.** `MatrixSyncService.reply` used to build a closure and call `pacer.send`
-— a synchronous `deque.append` — and return. `MatrixSurface.deliver` returned, `_deliver_reply`
-returned, and `_run_turn` recorded the turn answered, all before any HTTP request existed. So a
-send that raised was popped and discarded with a log line and no retry ever, and a queue still
-holding an answer died with its replica (<../debug/message_drops.md> E1, E6, E7). Nothing that
-happened to the send afterwards could reach the turn loop, because the turn was already over.
+A turn writes the row in the same transaction as the assistant message it copies — which is also
+what covers a turn raising between producing text and speaking it — and this drains it. `sent_at`
+is written only once `room_send` has returned, so every other outcome, the replica disappearing
+mid-send included, leaves the row claimable by whoever comes next. The drops this closes are
+written up in <../../../debug/message_drops.md> (E1, E4, E6, E7).
 
-Now the turn writes a row — in the same transaction as the assistant message, which is what also
-closes the turn that raises between producing text and speaking it (E4) — and this drains it.
-`sent_at` is written only once `room_send` has returned, so every other outcome, including the
-replica disappearing mid-send, leaves the row claimable by whoever comes next.
-
-**`pacer` is unchanged and still owns when.** The drain does not send; it queues one
-reply into the pacer and waits for that closure to settle before claiming the next. So replies
-keep the room's rate budget, keep their order among themselves, and keep interleaving with the
-status line and the lifecycle notices — which stay in-process on purpose, since a notice
-describing a moment is not worth redelivering ten minutes later.
+**`pacer` owns when.** The drain does not send; it queues one reply into the pacer and waits for
+that closure to settle before claiming the next. So replies keep the room's rate budget, keep
+their order among themselves, and keep interleaving with the status line and the lifecycle notices
+— which stay in-process on purpose, since a notice describing a moment is not worth redelivering
+ten minutes later.
 
 **One drainer.** The pacer runs on every replica (the turn loop speaks from whichever holds the
 session's lease), but two drains would reorder replies against each other, so this contends for
@@ -55,7 +49,7 @@ MAX_SEND_ATTEMPTS = 8
 
 # The first wait after a failed attempt, doubling to `MAX_RETRY_BACKOFF`. The whole budget —
 # roughly ten minutes across `MAX_SEND_ATTEMPTS` — is sized to stay inside the 30-to-60 minutes
-# Synapse keeps a transaction id for (<../docs/chat_runtime_facts.md>), because past that window
+# Synapse keeps a transaction id for (<../../../docs/chat_runtime_facts.md>), because past that window
 # a redrive stops being deduplicated and starts being a second message.
 FIRST_RETRY_BACKOFF = datetime.timedelta(seconds=5)
 MAX_RETRY_BACKOFF = datetime.timedelta(seconds=300)
@@ -150,7 +144,7 @@ class RoomOutbox:
         backoff holds up the reply behind it. That is the rule and not an accident: the room is
         read top to bottom, and two answers arriving in the wrong order describe a conversation
         that did not happen. It is also what the classifier this queue is meant to grow into needs
-        (<../../plans/information_trust_tiers.md>).
+        (<../../../../plans/information_trust_tiers.md>).
 
         The one row that is skipped is one out of attempts, because it is never going to be sent
         and leaving it at the head would wedge every reply behind it forever.

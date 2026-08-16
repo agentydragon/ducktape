@@ -6,8 +6,6 @@ discriminators and descriptions that <../tools/conversations.py> serialises. Thi
 the two are the same conversation, so a change to either shows up here rather than as a surface
 quietly drifting from the vocabulary it claims to expose.
 
-Two things happen on the way across.
-
 **Deltas do not cross.** `TextDelta` is sub-message transport, and by the vocabulary's own
 contract a message's deltas concatenate to exactly the `text` its `MessageCompleted` carries — so
 on a conversation being read back they are the same prose twice. A reader that wants the typing

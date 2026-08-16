@@ -9,7 +9,7 @@ advanced, so the homeserver re-delivers it next pass. Queue-until-turn-end (R2.2
 *took* is not acknowledged here either, until the turn answering it has ended (R2.5) — the same
 mechanism, extended over the one gap it did not cover, where a session that dies between the
 enqueue and the turn leaves the prompt keyed to itself and the operator's message answered by
-nobody (<../debug/message_drops.md> I3).
+nobody (<../../../debug/message_drops.md> I3).
 
 The one thing that mechanism cannot cover is an event Haku has no way to read — a screenshot,
 a voice memo — because re-offering it would never converge on an answer. Those are announced in
@@ -350,7 +350,7 @@ class MatrixSyncService:
         the record every channel writes into; reading it back out of `/messages` made the channel
         the source of truth for its own conversation, and a second channel — Telegram's bot API
         cannot page a chat's history — could not have reproduced that memory
-        (<../debug/channel_write_audit.md> § "What a second channel would need", #4130).
+        (<../../../debug/channel_write_audit.md> § "What a second channel would need", #4130).
 
         **The read still runs past the sync watermark, which is the property that had to survive.**
         The `/messages` read paginated back from the furthest position the loop had reached rather

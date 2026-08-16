@@ -9,7 +9,7 @@ code did:
   (R1.7 — the requirement this whole module exists for);
 - a `/sync` watermark really is accepted as a `/messages` pagination token, at both ends;
 - a repeated transaction id really is refused as a second event
-  (<../docs/chat_runtime_facts.md>);
+  (<../../../docs/chat_runtime_facts.md>);
 - `works.allegedly.haku` really does survive a round trip through the homeserver, including
   the copy that rides inside `m.new_content`.
 
@@ -223,7 +223,7 @@ async def test_a_tag_and_its_rendering_survive_the_homeserver(bot: Bot, joined_r
 
 
 async def test_the_same_transcript_row_cannot_post_twice(bot: Bot, joined_room: OperatorRoom) -> None:
-    """<../docs/chat_runtime_facts.md> — Synapse deduplicates a transaction per device.
+    """<../../../docs/chat_runtime_facts.md> — Synapse deduplicates a transaction per device.
 
     `EventTag.transaction_id` derives a reply's transaction from the transcript row it is, so a
     replacement replica re-sending the same answer is refused rather than posting it twice. The

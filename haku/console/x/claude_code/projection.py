@@ -1,30 +1,23 @@
 """Claude CLI frames into neutral conversation events.
 
 A **reducer**: `project(state, frames)` returns the state after those frames and what they
-produced, so an existing neutral transcript plus new frames yields the updates to that transcript
-and nothing else. The state is neutral (`ProjectionState`, in <../conversation_events.py>) and the
-frames are Claude's — this adapter is generic over its state, not over its wire
+produced. The state is neutral (`ProjectionState`, in <../conversation_events.py>) and the frames
+are Claude's — this adapter is generic over its state, not over its wire
 (<../../../plans/chat_runtime_projection.md> § The shape).
 
-That shape is what makes live and recovery one code path. Steady state is "project each frame as
-it lands"; adoption is "project from the stored cursor, which happens to be behind"; and the two
-agree because reducing a sequence in one batch and reducing it in any split of batches produce
-the same projection. `test_projection.py` asserts that over every split of a session.
+That shape is what makes live and recovery one code path: steady state projects each frame as it
+lands, adoption projects from a cursor that happens to be behind, and the two agree because
+reducing a sequence in one batch and in any split of batches produce the same projection.
+`test_projection.py` asserts that over every split of a session.
 
 Determinism is the property the whole design rests on: the same frames always project to the same
 events, so re-projecting a stored session reproduces its stored rows exactly, drift is detectable
 by comparing them, and a projection bug is repairable by fixing the fold rather than being baked
 into a row forever.
 
-**Ending the stream is the caller's statement, not the fold's guess.** A batch running out is not
-a message ending — the next batch may continue it — so a message left open stays in the state.
-`finish` is how a caller that knows there is no more says so, and `project_log` is the two
-composed for the whole-log readers.
-
 **Written against what the wire does, not what it documents.** Every rule below that looks
 defensive is a finding from <../../debug/frame_shape_census.md>, which is where the measurements
-live — a share of production frames is a dated observation and belongs in a dated document, not
-in a docstring that will still claim it a year from now.
+live — a share of production frames is a dated observation and belongs in a dated document.
 
 | What the wire does                                              | What this does with it                                                                                                                    |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -37,17 +30,8 @@ in a docstring that will still claim it a year from now.
 | Frame classes and `system` subtypes exist that `protocol.md` omits | The default branch counts into `Projection.unprojected` — neither a crash nor a silent drop                                                |
 | `command_lifecycle` is not a clean triple                        | It is not read at all: turn boundaries come from `result`, so no sequence assumption exists to be violated                                 |
 
-Two decisions worth knowing before reading the code.
-
-**Where a `TextDelta` is cut is the caller's to choose, and it is the only thing the wire and the
-log disagree about** — see `DeltaSource`. Reading a stored log, deltas cannot be the source: most
-sessions emit none at all, so a consumer built on them renders nothing for those; where they do
-occur they multiply the row count and are mostly `input_json_delta` — tool arguments rather than
-prose — and they carry no identity, so `frame_identity.py` deliberately refuses to dedupe them.
-Decisively, a log truncated mid-block would re-project to different text than the completed block
-it precedes. A live consumer has the increments in hand and wants them as they arrive, which is
-what streaming an answer *is*. The prose is the same either way; only its granularity differs, and
-a backend that streams meaningfully can cut it finer without any consumer changing.
+Where a `TextDelta` is cut is the only thing the wire and the stored log disagree about — see
+`DeltaSource`.
 
 **`result.result` is not projected as prose.** It repeats the final message, so minting one from it
 would double every answer. A turn that produced no `MessageCompleted` said nothing, which is a fact
@@ -114,11 +98,13 @@ class DeltaSource(StrEnum):
     Granularity, not content: `MessageCompleted.text` is the same prose whichever is chosen, and
     the vocabulary already says how finely a backend cuts an increment is the adapter's business.
 
-    `COMPLETED_BLOCKS` is the only honest reading of a *stored* log — `stream_event` frames carry
-    no identity, are not deduplicated, and a log truncated mid-block would re-project to different
-    text than the completed block that follows it, which is the determinism the whole design rests
-    on. `STREAM_EVENTS` is what a consumer holding the live wire drives: it takes the increments as
-    they arrive and skips the completed block's own text, which those increments already delivered.
+    `COMPLETED_BLOCKS` is the only honest reading of a *stored* log: most sessions emit no
+    `stream_event` at all, those that do are mostly `input_json_delta` (tool arguments, not prose),
+    they carry no identity so `haku/cli_protocol/frame_identity.py` refuses to dedupe them, and a
+    log truncated mid-block would re-project to different text than the completed block that
+    follows it — which is the determinism the whole design rests on. `STREAM_EVENTS` is what a
+    consumer holding the live wire drives: it takes the increments as they arrive and skips the
+    completed block's own text, which those increments already delivered.
     """
 
     COMPLETED_BLOCKS = "completed_blocks"
