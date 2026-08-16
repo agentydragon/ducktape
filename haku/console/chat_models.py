@@ -18,9 +18,8 @@ class SessionStatus(StrEnum):
     #   (<README.md> § Perimeter / deploy). Write the first `idle` row only once every pod runs an
     #   image at or after the release carrying migration 0054 — one tag out of
     #   `kubectl get pods -n haku-console -o jsonpath='{.items[*].spec.containers[0].image}'`,
-    #   whose commit suffix is at or after this commit. Delete this comment with that writer, which
-    #   also owes the split `LIVE_SESSION_STATUSES` below still hides: until then the derivation
-    #   under it reads `idle` as ended.
+    #   whose commit suffix is at or after this commit. Delete this comment with that writer; the
+    #   sets below already classify `idle` as open and unleased, so nothing else waits on it.
     IDLE = "idle"
     PROVISIONING = "provisioning"
     READY = "ready"
@@ -176,7 +175,16 @@ class MessageUnpointable(StrEnum):
     OUT_OF_ORDER = "out_of_order"
 
 
-LIVE_SESSION_STATUSES = frozenset({SessionStatus.PROVISIONING, SessionStatus.READY, SessionStatus.RESPONDING})
+# Whether the session is worth keeping: nothing has ended it, so a supervisor must not replace it
+# and the claim sweep must not clean up after it.
+OPEN_SESSION_STATUSES = frozenset(
+    {SessionStatus.IDLE, SessionStatus.PROVISIONING, SessionStatus.READY, SessionStatus.RESPONDING}
+)
 # Derived rather than spelled out: the two sets partition the enum, and a status added to one
 # without the other is the bug this shape makes unrepresentable.
-ENDED_SESSION_STATUSES = frozenset(SessionStatus) - LIVE_SESSION_STATUSES
+ENDED_SESSION_STATUSES = frozenset(SessionStatus) - OPEN_SESSION_STATUSES
+# Whether something holds this session and is renewing its lease. A lapsed lease is evidence its
+# holder died only for these: an `idle` session is open with nothing holding it, so a sweep keyed
+# on `OPEN_SESSION_STATUSES` would fail a session nothing is wrong with. Spelled out rather than
+# derived from it, so a status added there with no holder is not swept by default.
+LEASED_SESSION_STATUSES = frozenset({SessionStatus.PROVISIONING, SessionStatus.READY, SessionStatus.RESPONDING})

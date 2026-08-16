@@ -18,10 +18,10 @@ import pytest_bazel
 from more_itertools import one
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from haku.console.chat_models import (
-    LIVE_SESSION_STATUSES,
+    OPEN_SESSION_STATUSES,
     ChatMessageRole,
     ChatMessageStatus,
     ChatSurface,
@@ -953,11 +953,50 @@ async def test_a_session_is_adoptable_before_it_is_dead(chat_store, migrated_ses
     await age_lease(migrated_sessions, view.session_id, seconds_ago=1)
 
     assert await chat_store.expire_stale_leases() == 0, "expired is adoptable, not dead"
-    assert await chat_store.status(view.session_id) in LIVE_SESSION_STATUSES
+    assert await chat_store.status(view.session_id) in OPEN_SESSION_STATUSES
 
     await age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 
     assert await chat_store.expire_stale_leases() == 1, "and dead once nobody took it"
+
+
+async def _set_idle(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> None:
+    """Put the session in the status no production path writes yet (`SessionStatus.IDLE`)."""
+    async with sessions.begin() as db:
+        chat = await db.get(Session, session_id)
+        assert chat is not None
+        chat.status = SessionStatus.IDLE
+
+
+async def test_an_idle_session_holds_no_lease_to_lose(chat_store, migrated_sessions, operator_id) -> None:
+    """A session holding no sandbox has no holder, so its lapsed lease is evidence of nothing.
+
+    The sweep and the renewal key on the statuses something is actually holding, not on every
+    status worth keeping: one set answering both questions is what would reap this row after
+    `ADOPTION_GRACE` for a holder it never had.
+    """
+    view, _ = await chat_store.create(operator_id, SpaSession())
+    await _set_idle(migrated_sessions, view.session_id)
+    await age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
+
+    assert await chat_store.expire_stale_leases() == 0
+    assert await chat_store.status(view.session_id) == SessionStatus.IDLE
+
+    await chat_store.renew_lease(view.session_id)
+
+    holder, expires_at = await lease_of(migrated_sessions, view.session_id)
+    assert holder is None, "nothing holds it"
+    assert expires_at < datetime.now(UTC), "so nothing renews its lease either"
+
+
+async def test_an_idle_session_is_kept_rather_than_cleaned_up(chat_store, migrated_sessions, operator_id) -> None:
+    """Holding no sandbox is not an ending: the session is still the room's, so the claim sweep
+    leaves it alone and a runner dialling in is not told it is terminal."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    await _set_idle(migrated_sessions, view.session_id)
+
+    assert view.session_id not in await chat_store.claim_cleanup_candidates()
+    assert await chat_store.authenticate_bridge(view.session_id, token) is not BridgeAuthentication.TERMINAL
 
 
 async def test_shutdown_hands_back_every_lease_this_replica_holds(chat_store, migrated_sessions, operator_id) -> None:
@@ -973,7 +1012,7 @@ async def test_shutdown_hands_back_every_lease_this_replica_holds(chat_store, mi
         holder, expires_at = await lease_of(migrated_sessions, view.session_id)
         assert holder is None
         assert expires_at <= datetime.now(UTC), "the lease is expired, so any runner may adopt it"
-        assert await chat_store.status(view.session_id) in LIVE_SESSION_STATUSES, "adoptable, not failed"
+        assert await chat_store.status(view.session_id) in OPEN_SESSION_STATUSES, "adoptable, not failed"
     assert await chat_store.expire_stale_leases() == 0, "within the grace, so no sweep fails it yet"
 
 

@@ -33,7 +33,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.cli_protocol.frame_identity import frame_uid
 from haku.console.chat_models import (
     ENDED_SESSION_STATUSES,
-    LIVE_SESSION_STATUSES,
+    LEASED_SESSION_STATUSES,
+    OPEN_SESSION_STATUSES,
     ChatMessageRole,
     ChatMessageStatus,
     ChatSurface,
@@ -403,7 +404,7 @@ class SessionStore:
         """
         async with self._sessions.begin() as db:
             chat = await db.get(Session, session_id, with_for_update=True)
-            if chat is not None and chat.status in LIVE_SESSION_STATUSES:
+            if chat is not None and chat.status in LEASED_SESSION_STATUSES:
                 chat.lease_holder = None
                 chat.lease_expires_at = datetime.now(UTC)
                 chat.updated_at = datetime.now(UTC)
@@ -424,7 +425,7 @@ class SessionStore:
                 "CursorResult[Any]",
                 await db.execute(
                     update(Session)
-                    .where(Session.status.in_(LIVE_SESSION_STATUSES), Session.lease_holder == REPLICA)
+                    .where(Session.status.in_(LEASED_SESSION_STATUSES), Session.lease_holder == REPLICA)
                     .values(lease_holder=None, lease_expires_at=datetime.now(UTC), updated_at=datetime.now(UTC))
                 ),
             )
@@ -595,7 +596,7 @@ class SessionStore:
         ended_at, status = row
         if ended_at is not None:
             return PromptFate.COMPLETED
-        return PromptFate.IN_FLIGHT if status in LIVE_SESSION_STATUSES else PromptFate.LOST
+        return PromptFate.IN_FLIGHT if status in OPEN_SESSION_STATUSES else PromptFate.LOST
 
     async def next_prompt(self, session_id: UUID) -> TurnStart | None:
         """Take the queued prompt and open the turn that will answer it, or None if there is none.
@@ -1297,14 +1298,14 @@ class SessionStore:
         """
         async with self._sessions.begin() as db:
             chat = await db.get(Session, session_id)
-            if chat is not None and chat.status in LIVE_SESSION_STATUSES:
+            if chat is not None and chat.status in LEASED_SESSION_STATUSES:
                 chat.lease_expires_at = datetime.now(UTC) + LEASE_TTL
                 chat.lease_holder = REPLICA
 
     async def expire_stale_leases(self) -> int:
-        """Fail every live session nobody came back for, and report how many.
+        """Fail every leased session nobody came back for, and report how many.
 
-        A live status is only ever corrected by the replica that wrote it, so a replica dying
+        A held status is only ever corrected by the replica that wrote it, so a replica dying
         without its finalizer — SIGKILL, OOM, node loss — leaves a row claiming a turn is in
         flight that `supervise_once` reads as healthy. This is the only observer that is not that
         process.
@@ -1327,7 +1328,7 @@ class SessionStore:
             expired = (
                 await db.scalars(
                     select(Session.session_id).where(
-                        Session.status.in_(LIVE_SESSION_STATUSES),
+                        Session.status.in_(LEASED_SESSION_STATUSES),
                         Session.lease_expires_at <= datetime.now(UTC) - ADOPTION_GRACE,
                     )
                 )
@@ -1336,7 +1337,7 @@ class SessionStore:
                 # Row-at-a-time rather than one UPDATE: `notify` is per session, and a room that
                 # is not told its session died simply goes quiet.
                 chat = await db.get(Session, session_id, with_for_update=True)
-                if chat is None or chat.status not in LIVE_SESSION_STATUSES:
+                if chat is None or chat.status not in LEASED_SESSION_STATUSES:
                     continue
                 # Say which of the three ended it. `lease_holder` set means a replica died without
                 # handing it back; cleared but `bridge_connected_at` set means a runner was here

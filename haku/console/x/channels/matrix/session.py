@@ -29,7 +29,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import (
-    LIVE_SESSION_STATUSES,
+    OPEN_SESSION_STATUSES,
     ChatMessageRole,
     ChatMessageStatus,
     PromptFate,
@@ -449,7 +449,7 @@ class MatrixSessionSupervisor:
             await self._chat_store.outcome(conversation.session_id) if conversation.session_id is not None else None
         )
         status = outcome.status if outcome is not None else None
-        if status in LIVE_SESSION_STATUSES:
+        if status in OPEN_SESSION_STATUSES:
             await self._report(str(status), f"session {conversation.session_id} is {status}")
             return
 

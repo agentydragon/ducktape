@@ -47,9 +47,10 @@ queue already made it cheap: accepted and running were separated when `session_p
   becomes "an unclaimed prompt and no sandbox", waking on `SessionEventKind.PROMPT`.
 - `MatrixTurns.offer` stops refusing an unallocated session, so the batch enters the durable queue
   rather than being left on the homeserver.
-- **`LIVE_SESSION_STATUSES` currently means both "worth keeping" and "has a lease to renew".** An
-  idle session is the first that is worth keeping with no holder to lose; split the set rather than
-  giving it a fake far-future lease.
+- **The two questions the one status set used to answer are already split** into
+  `OPEN_SESSION_STATUSES` ("worth keeping") and `LEASED_SESSION_STATUSES` ("something holds it and
+  renews its lease"), with `idle` in the first and not the second. Nothing here needs a fake
+  far-future lease.
 - **Adding an enum value is two releases here**, not additive: `TextBackedStrEnumColumn` parses the
   column, so a replica on the previous image reading `idle` fails rather than degrading. Widen the
   member and the CHECK first; write it next release.

@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import (
-    LIVE_SESSION_STATUSES,
+    OPEN_SESSION_STATUSES,
     ChatMessageRole,
     ChatMessageStatus,
     FrameDirection,
@@ -1467,7 +1467,7 @@ async def test_an_idle_session_hands_back_the_instant_its_socket_drops(
         _DisconnectingClaudeClient.instance.disconnect()
         await asyncio.wait_for(runner, timeout=5)
 
-    assert await chat_store.status(view.session_id) in LIVE_SESSION_STATUSES, "handed back, not failed"
+    assert await chat_store.status(view.session_id) in OPEN_SESSION_STATUSES, "handed back, not failed"
     holder, expires_at = await lease_of(migrated_sessions, view.session_id)
     assert holder is None
     assert expires_at <= datetime.now(UTC)
@@ -1531,7 +1531,7 @@ async def test_a_returning_runner_beats_the_sweep(
         )
 
     assert await chat_store.expire_stale_leases() == 0
-    assert await chat_store.status(session_id) in LIVE_SESSION_STATUSES
+    assert await chat_store.status(session_id) in OPEN_SESSION_STATUSES
 
 
 async def test_the_lease_heartbeat_also_slides_the_sandbox_deadline(

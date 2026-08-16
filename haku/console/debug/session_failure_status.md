@@ -329,7 +329,7 @@ serialised.
 
 - `haku/console/chat_models.py` — `SessionStatus` gains a fourth terminal member (`EXPIRED`, or
   `ENDED`) meaning "nothing is holding this session any more, and nothing went wrong". No change to
-  `LIVE_SESSION_STATUSES` is needed: `ENDED_SESSION_STATUSES` is derived as the complement
+  `OPEN_SESSION_STATUSES` is needed: `ENDED_SESSION_STATUSES` is derived as the complement
   (`chat_models.py:92-95`), so the new member is picked up by every reader for free — which is the
   property that shape was built for.
 - `haku/console/x/claude_chat.py` — `expire_stale_leases` (`:1046-1079`) writes the new status for

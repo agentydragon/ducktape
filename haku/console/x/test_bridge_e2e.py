@@ -29,7 +29,7 @@ from fastapi import FastAPI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from haku.console.chat_models import LIVE_SESSION_STATUSES, ChatMessageRole, SessionStatus, TurnOutcome
+from haku.console.chat_models import OPEN_SESSION_STATUSES, ChatMessageRole, SessionStatus, TurnOutcome
 from haku.console.database_schema import SessionFrame
 from haku.console.x.conftest import MCP_TOKEN, runtime_config
 from haku.console.x.session_notifications import SessionNotifications
@@ -174,7 +174,7 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
 
         # The console is gone with the exchange unfinished. The sandbox is not: its CLI is still
         # holding an answer, which is the whole reason the runner outlives a connection.
-        assert await chat_store.status(session_id) in LIVE_SESSION_STATUSES, "a roll is not a session ending"
+        assert await chat_store.status(session_id) in OPEN_SESSION_STATUSES, "a roll is not a session ending"
         [in_flight] = [
             turn for turn in await chat_store.list_turns(session_id, cursor=None, limit=10) if turn.ended_at is None
         ]
