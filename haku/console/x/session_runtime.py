@@ -704,10 +704,15 @@ class SessionService:
                 turn_id,
                 TurnOutcome.ABORTED if abort_event.is_set() else completed.outcome,
                 completed.usage,
+                # One frame, said twice because it means two things here: where this turn's frames
+                # end, and that this transaction is the one taking the cursor past it.
+                last_frame_seq=result_frame_seq,
                 projected_frame_seq=result_frame_seq,
             )
         except Exception as error:
-            await self._store.end_turn(turn_id, TurnOutcome.FAILED)
+            # Set only where the failure was diagnosed from the `result` frame; otherwise this turn
+            # ended on no frame of its own and `end_turn` bounds it by what it recorded.
+            await self._store.end_turn(turn_id, TurnOutcome.FAILED, last_frame_seq=result_frame_seq)
             if assistant_id is not None:
                 await self._store.fail(session_id, str(error), assistant_id)
             raise

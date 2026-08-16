@@ -63,6 +63,7 @@ from haku.console.x.claude_code.frames import (
 )
 from haku.console.x.conversation_events import (
     ConversationEvent,
+    FrameRange,
     MessageCompleted,
     TextDelta,
     ToolCallStarted,
@@ -491,7 +492,7 @@ class SessionStore:
         if closing is None:
             await self.end_turn(turn_id, TurnOutcome.FAILED)
         else:
-            await self.end_turn(turn_id, closing.outcome, closing.usage)
+            await self.end_turn(turn_id, closing.outcome, closing.usage, last_frame_seq=_ended_at_frame(closing))
         return None
 
     async def claim_cleanup_candidates(self) -> list[UUID]:
@@ -673,9 +674,15 @@ class SessionStore:
             )
 
     async def end_turn(
-        self, turn_id: UUID, outcome: TurnOutcome, usage: Usage | None = None, *, projected_frame_seq: int | None = None
+        self,
+        turn_id: UUID,
+        outcome: TurnOutcome,
+        usage: Usage | None = None,
+        *,
+        last_frame_seq: int | None = None,
+        projected_frame_seq: int | None = None,
     ) -> None:
-        """Close *turn_id*, taking the bracket's upper bound and what the exchange cost.
+        """Close *turn_id* at the frame it ended on, with what the exchange cost.
 
         **The cost is the neutral one**: a backend's adapter has already read its own payload into
         `Usage`, so this method knows no CLI's field names and a second backend fills the same
@@ -683,6 +690,15 @@ class SessionStore:
         `session_frames`, which is the evidence they can be appealed to
         (<../../plans/chat_runtime_projection.md> § Does a turn live over frames or over neutral
         events).
+
+        *last_frame_seq* is the turn's own last frame, and only the caller knows which that is: the
+        CLI emits a `command_lifecycle` frame just after the `result` one, so a bound re-derived
+        here from the head of the log lands on a frame the turn did not produce. A turn that ended
+        on no frame at all — a failure, or an abort whose result never arrived — passes none, and
+        the bound is then the last frame recorded since the turn opened: an overshoot of the same
+        kind, but the most this transaction can honestly say, and one `uq_session_turns_open` keeps
+        inside this turn because no second turn can have opened. NULL stays what it always meant, a
+        turn that recorded nothing.
 
         *projected_frame_seq* is the frame that ended the turn, and this is the transaction that
         takes the cursor past it — the turn's last word is written before the close, so advancing
@@ -698,8 +714,14 @@ class SessionStore:
             turn = await db.get(SessionTurn, turn_id, with_for_update=True)
             if turn is None or turn.ended_at is not None:
                 return
-            turn.last_frame_seq = await db.scalar(
-                select(func.max(SessionFrame.frame_seq)).where(SessionFrame.session_id == turn.session_id)
+            turn.last_frame_seq = (
+                last_frame_seq
+                if last_frame_seq is not None
+                else await db.scalar(
+                    select(func.max(SessionFrame.frame_seq)).where(
+                        SessionFrame.session_id == turn.session_id, SessionFrame.frame_seq >= turn.first_frame_seq
+                    )
+                )
             )
             turn.ended_at = now
             turn.outcome = outcome
@@ -1638,6 +1660,11 @@ async def _recorded_completion(db: AsyncSession, session_id: UUID, first_frame_s
     frame_seq, payload = row
     projected = projection.project_log([projection.RecordedFrame(frame_seq=frame_seq, payload=payload)])
     return one(event for event in projected.events if isinstance(event, TurnCompleted))
+
+
+def _ended_at_frame(completed: TurnCompleted) -> int | None:
+    """The frame this ending was projected from, where the fold read it off one."""
+    return completed.provenance.last_frame_seq if isinstance(completed.provenance, FrameRange) else None
 
 
 async def _requeue(db: AsyncSession, turn_id: UUID) -> None:

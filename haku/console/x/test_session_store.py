@@ -469,6 +469,54 @@ async def test_a_turn_whose_backend_reported_nothing_says_so(chat_store, operato
     assert record.usage is None
 
 
+async def test_a_turn_ends_at_the_frame_it_names_rather_than_at_the_head_of_the_log(chat_store, operator_id) -> None:
+    """The CLI emits a `command_lifecycle` frame just after the `result` one, and the recorder
+    writes it while the turn is still being closed — so a bound taken from the log here swallows a
+    frame the turn did not produce."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
+    ending = await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, "result", result(uuid="r1"))
+    await chat_store.record_frame(
+        view.session_id, FrameDirection.FROM_AGENT, "command_lifecycle", {"type": "command_lifecycle"}
+    )
+
+    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED, last_frame_seq=ending.frame_seq)
+
+    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=5)
+    assert record.last_frame_seq == ending.frame_seq
+
+
+async def test_a_turn_that_ended_on_no_frame_is_bounded_by_the_ones_it_recorded(chat_store, operator_id) -> None:
+    """A failure has no ending frame to name, and the session's log is not a bound either: what
+    came before the turn opened belongs to no turn of its own, and reporting it would hand a reader
+    a range that ends before it starts."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, "system", {"type": "system"})
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "first")
+    silent = await chat_store.next_prompt(view.session_id)
+    assert silent is not None
+    await chat_store.end_turn(silent.turn_id, TurnOutcome.FAILED)
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "second")
+    spoke = await chat_store.next_prompt(view.session_id)
+    assert spoke is not None
+    answer = await chat_store.record_frame(
+        view.session_id, FrameDirection.FROM_AGENT, "assistant", assistant(text_block("half an answer"))
+    )
+
+    await chat_store.end_turn(spoke.turn_id, TurnOutcome.FAILED)
+
+    brackets = {
+        record.turn_id: (record.first_frame_seq, record.last_frame_seq)
+        for record in await chat_store.list_turns(view.session_id, cursor=None, limit=5)
+    }
+    assert brackets[silent.turn_id][1] is None, "it recorded nothing, and the frame before it is not its own"
+    assert brackets[spoke.turn_id] == (answer.frame_seq, answer.frame_seq)
+
+
 async def test_the_transcript_reads_the_conversation_rather_than_the_protocol(chat_store, operator_id) -> None:
     """The neutral half of the read surface: what a session meant, with a way back to the frames
     it was read off."""

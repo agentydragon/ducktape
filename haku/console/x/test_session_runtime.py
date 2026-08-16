@@ -1128,37 +1128,59 @@ async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
-    client = _FakeCli(
-        [
-            assistant(text_block("a bad config")),
-            result(
-                text="a bad config",
-                accounting=Accounting(
-                    input_tokens=12,
-                    output_tokens=91,
-                    cache_read_input_tokens=640,
-                    total_cost_usd=0.0125,
-                    duration_ms=4200,
-                ),
-            ),
-        ]
+    answer = assistant(text_block("a bad config"))
+    ending = result(
+        text="a bad config",
+        accounting=Accounting(
+            input_tokens=12, output_tokens=91, cache_read_input_tokens=640, total_cost_usd=0.0125, duration_ms=4200
+        ),
     )
+    # Written by the real socket wrapper in production, where the recorder and the turn loop see
+    # the same frames; here the double is handed the numbers the log gave them.
+    recorded_answer = await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, "assistant", answer)
+    recorded_ending = await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, "result", ending)
+    client = _FakeCli([answer, ending], frame_seqs=[recorded_answer.frame_seq, recorded_ending.frame_seq])
 
     await chat_service._run_turn(
         client, client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
     )
-    # Recorded by the real socket wrapper in production; here the turn wrote none of its own, so
-    # the upper bound is the frame that predates it and the range is honestly empty.
-    [record] = await chat_store.list_turns(str(view.session_id), cursor=None, limit=10)
 
+    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=10)
     assert record.outcome == TurnOutcome.ANSWERED
     # Claude spells the cached counter `cache_read_input_tokens`; what the row keeps is the
     # neutral name, so a reader summing a day's exchanges never learns which CLI produced them.
     assert record.usage == TurnUsage(
         input_tokens=12, output_tokens=91, cached_input_tokens=640, cost_usd=0.0125, duration_ms=4200
     )
-    assert record.first_frame_seq > record.last_frame_seq if record.last_frame_seq else True
+    assert (record.first_frame_seq, record.last_frame_seq) == (recorded_answer.frame_seq, recorded_ending.frame_seq)
     assert record.ended_at is not None
+
+
+async def test_a_turn_ends_at_its_own_result_rather_than_at_what_the_cli_logs_after_it(
+    chat_store, chat_service, operator_id
+) -> None:
+    """The CLI emits a `command_lifecycle` frame just after the `result` one, so it is already in
+    the log by the time the turn loop closes the turn — and a bound taken from the log's head then
+    reports it as the turn's last frame. It was, on 80 of 99 production turns (2026-08-16)."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
+    ending = result(text="a bad config")
+    recorded = await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, "result", ending)
+    await chat_store.record_frame(
+        view.session_id, FrameDirection.FROM_AGENT, "command_lifecycle", {"type": "command_lifecycle"}
+    )
+
+    client = _FakeCli([ending], frame_seqs=[recorded.frame_seq])
+
+    await chat_service._run_turn(
+        client, client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
+    )
+
+    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=10)
+    assert record.last_frame_seq == recorded.frame_seq
 
 
 async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_service, operator_id) -> None:
