@@ -284,8 +284,8 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
     assert websocket.closed is None
     assert recording_claims.deleted == [session_id]
     assert await chat_store.status(session_id) == SessionStatus.CLOSED
-    # Cleanup is recorded by clearing the hashed rendezvous credential, which is what takes the
-    # session back out of the reconciler's candidate set.
+    # Cleanup is recorded by stamping `claim_cleaned_at`, which is what takes the session back out
+    # of the reconciler's candidate set.
     assert await chat_store.claim_cleanup_candidates() == []
     # Asserted on the launch the runner is handed rather than on SDK options, since that is
     # what now crosses the wire — and it is where a bearer would leak if one ever did.

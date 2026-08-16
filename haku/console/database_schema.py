@@ -864,8 +864,18 @@ class Session(Base):
     # creation and never updated.
     room_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[SessionStatus] = mapped_column(TextBackedStrEnumColumn(SessionStatus), nullable=False)
+    # The verifier for this session's rendezvous credential — SHA-256 of a bearer minted once at
+    # creation and never stored — and it keeps that one meaning for the whole life of the row. It
+    # answers only "does this redialling runner hold this session's token"; whether the session is
+    # still admissible is the status's business, and whether its sandbox claim is gone is
+    # `claim_cleaned_at`'s.
     bridge_token_fingerprint: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     bridge_connected_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # When this session's Agent Sandbox claim was deleted, and NULL until it has been — which is
+    # what puts an ended session in `SessionStore.claim_cleanup_candidates` and what takes it back
+    # out. Only ever stamped on a session whose status is already ended, so a non-NULL value reads
+    # as "terminal, and its sandbox is gone" rather than as a second opinion about liveness.
+    claim_cleaned_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Renewed by whichever replica currently holds this session's runner websocket. A live
     # status is otherwise only ever corrected in-process, so a replica that dies mid-turn

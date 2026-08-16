@@ -458,24 +458,32 @@ class SessionStore:
         return None
 
     async def claim_cleanup_candidates(self) -> list[UUID]:
-        """Return terminal sessions whose hashed rendezvous credential still marks cleanup pending."""
+        """Terminal sessions whose sandbox claim has not been recorded as deleted."""
         async with self._sessions() as db:
             result = await db.scalars(
                 select(Session.session_id).where(
-                    Session.status.in_(ENDED_SESSION_STATUSES), Session.bridge_token_fingerprint != b""
+                    Session.status.in_(ENDED_SESSION_STATUSES), Session.claim_cleaned_at.is_(None)
                 )
             )
             return list(result.all())
 
     async def complete_claim_cleanup(self, session_id: UUID) -> None:
+        """Record that this session's claim is gone, which is what takes it out of the sweep.
+
+        The rendezvous fingerprint is deliberately left alone. It is a verifier for a bearer that
+        was never stored, and a cleaned-up session cannot be admitted anyway — `authenticate_bridge`
+        answers `TERMINAL` for any ended status — so blanking it bought nothing and cost the
+        redialling runner a truthful answer.
+        """
+        now = datetime.now(UTC)
         async with self._sessions.begin() as db:
             chat = await db.get(Session, session_id, with_for_update=True)
             if chat is None:
                 return
-            chat.bridge_token_fingerprint = b""
+            chat.claim_cleaned_at = now
             if chat.status == SessionStatus.CLOSING:
                 chat.status = SessionStatus.CLOSED
-            chat.updated_at = datetime.now(UTC)
+            chat.updated_at = now
 
     async def enqueue_prompt(self, operator_id: UUID, session_id: UUID, prompt_text: str) -> SessionMessageView:
         now = datetime.now(UTC)

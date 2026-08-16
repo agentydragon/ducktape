@@ -57,8 +57,8 @@ async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
         assert record is not None
         assert record.status == SessionStatus.READY
         assert record.bridge_connected_at is not None
-        # Retain only the hash until claim deletion completes. It lets terminal retries prove that
-        # they belong to the stale claim without retaining or recovering the bearer itself.
+        # Only the hash is ever kept: it lets a retrying runner prove which session it belongs to
+        # without the bearer being retained or recoverable.
         assert record.bridge_token_fingerprint == SessionStore._fingerprint(token)
 
     await chat_store.fail(session_id, "runner failed")
@@ -69,7 +69,7 @@ async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
 async def test_deliberate_close_is_not_reclassified_as_runner_failure(
     chat_store, operator_id, migrated_sessions
 ) -> None:
-    view, _token = await chat_store.create(operator_id, SpaSession())
+    view, token = await chat_store.create(operator_id, SpaSession())
 
     await chat_store.request_close(operator_id, view.session_id)
     await chat_store.fail(view.session_id, "sandbox runner disconnected")
@@ -83,7 +83,44 @@ async def test_deliberate_close_is_not_reclassified_as_runner_failure(
     async with migrated_sessions() as db:
         record = await db.get(Session, view.session_id)
         assert record is not None
-        assert record.bridge_token_fingerprint == b""
+        assert record.claim_cleaned_at is not None
+        # The credential column is untouched by cleanup: it verifies, it does not also record
+        # that the sandbox is gone.
+        assert record.bridge_token_fingerprint == SessionStore._fingerprint(token)
+
+
+async def test_the_cleanup_sweep_offers_ended_sessions_until_their_claim_is_recorded_gone(
+    chat_store, operator_id
+) -> None:
+    """Two facts, two columns: liveness gates the candidate set, `claim_cleaned_at` empties it.
+
+    A live session is never a candidate however its credential reads, and an ended one stays a
+    candidate until cleanup stamps it — which is what makes an interrupted teardown retryable and a
+    completed one final.
+    """
+    live, _ = await chat_store.create(operator_id, SpaSession())
+    swept, _ = await chat_store.create(operator_id, SpaSession())
+    cleaned, _ = await chat_store.create(operator_id, SpaSession())
+    for session in (swept, cleaned):
+        await chat_store.fail(session.session_id, "runner failed")
+
+    assert sorted(await chat_store.claim_cleanup_candidates()) == sorted([swept.session_id, cleaned.session_id])
+
+    await chat_store.complete_claim_cleanup(cleaned.session_id)
+    assert await chat_store.claim_cleanup_candidates() == [swept.session_id]
+    assert live.session_id not in await chat_store.claim_cleanup_candidates()
+
+
+async def test_a_cleaned_up_session_admits_nobody_and_says_which_of_the_two_reasons(chat_store, operator_id) -> None:
+    """The credential survives cleanup, so refusal is the status's doing — and it can now tell a
+    runner holding the right token to stop (`TERMINAL`) apart from one holding the wrong one
+    (`REJECTED`), which blanking the fingerprint collapsed into the latter."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    await chat_store.request_close(operator_id, view.session_id)
+    await chat_store.complete_claim_cleanup(view.session_id)
+
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.TERMINAL
+    assert await chat_store.authenticate_bridge(view.session_id, "wrong") == BridgeAuthentication.REJECTED
 
 
 async def test_a_turn_records_the_message_it_finished_rather_than_the_frames_it_left(

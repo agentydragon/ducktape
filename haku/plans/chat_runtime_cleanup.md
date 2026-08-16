@@ -134,8 +134,6 @@ loop's signatures.
   connection's lifecycle and `_run_turn` is a frame reducer, and those are two files' worth of
   concern in one class. Each split lands with the change that creates it, never as a standalone
   reshuffle with no acceptance criterion.
-- **`bridge_token_fingerprint = b""`** is a cleanup-pending tri-state on a credential column, and the
-  zero value STYLE says never to use for absence. It wants to be `claim_cleaned_at`.
 - Smaller: "surface" names five things and "turn" three.
 
 ## When their rolls converge

@@ -223,7 +223,8 @@ class SessionService:
         except Exception as error:
             await self._store.fail(view.session_id, f"sandbox provisioning failed: {error}")
             # If claim creation reached Kubernetes before its response failed, remove the partial
-            # resource now. A failed delete leaves the rendezvous hash as a durable retry marker.
+            # resource now. A failed delete leaves `claim_cleaned_at` NULL, which is the durable
+            # retry marker.
             await self._cleanup_terminal_claim(view.session_id)
             raise
         return await self._with_provisioning(view)
@@ -259,8 +260,8 @@ class SessionService:
         try:
             await self._claims.delete(session_id=session_id)
         except Exception as error:
-            # Keep the credential fingerprint as a durable cleanup-pending marker so another
-            # replica or a later restart retries. Kubernetes deletion is idempotent.
+            # Leave `claim_cleaned_at` NULL so another replica or a later restart retries.
+            # Kubernetes deletion is idempotent, so a redundant retry costs a 404.
             logger.warning("Claude claim cleanup failed for session %s: %s", session_id, error)
             return False
         await self._store.complete_claim_cleanup(session_id)
