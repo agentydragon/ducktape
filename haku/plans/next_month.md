@@ -18,11 +18,11 @@ that outlived their month: the outbox rule below, and the directory hazards in i
 
 ## The thesis
 
-**The projection exists and nothing is stored through it.** `claude_projection.py` is the one
-interpreter that four bodies of code were supposed to collapse into, `conversation_events.py` is
-the vocabulary, the turn loop drives its live path off both (#4134), and the MCP transcript reads
-through them (#4145) — but every row the system keeps is still written by the code that was there
-before, and every recovery path still reconstructs state from Claude's frames.
+**The projection exists and nothing is stored through it.** `x/claude_code/projection.py` is the
+one interpreter that four bodies of code were supposed to collapse into, `conversation_events.py`
+is the vocabulary, the turn loop drives its live path off both (#4134), and the MCP transcript
+reads through them (#4145) — but every row the system keeps is still written by the code that was
+there before, and every recovery path still reconstructs state from Claude's frames.
 
 So the month is about closing that gap, in the one order that works: **make the projection
 resumable, then give it a durable position, then let it own the rows.** Everything else is either
@@ -46,7 +46,11 @@ In flight, and treated as in-flight rather than as new work:
 | The status line reads events, not Claude frames | #4162 | **Landed.** Parallel item A, with the observable status text unchanged                                                            |
 | `claude_bridge/` → `bridge/`                    | #4141 | **Landed.** The runtime half of the directory finish                                                                              |
 | Block style where Flux rewrites, plus the guard | #4147 | **Landed.** Not chat-runtime work, and it matters anyway: it is what stopped unrelated PRs going red on a file they never touched |
-| The runner numbers the frames it sends          | #4166 | In flight. R1 of the numbering the durable cursor reads; § 2b of <chat_runtime_projection.md> holds the schedule                  |
+| The runner numbers the frames it sends          | #4166 | **Landed.** R1's wire-and-runner half; § 2b of <chat_runtime_projection.md> holds the schedule                                    |
+| Retiring identity numbering scheduled as R5     | #4167 | **Landed.** The gate is two observable halves — Flux convergence and no live identity-numbered session                            |
+| A turn's cost is columns, not a CLI payload     | #4169 | **Landed.** Parallel item B                                                                                                       |
+| The console records the runner's number         | #4172 | In flight. R1's console half: `runner_seq` recorded, `resume_from` computed from it                                               |
+| R5 renumbers historical frames                  | #4170 | In flight. Revises R5's disposition of the rows that predate the cutover                                                          |
 
 Everything the previous month planned and landed is in `git log` and in the PRs; this document
 does not re-list it. What it does assume, and what a reader should check before trusting the
@@ -56,11 +60,11 @@ a `RecordedToolCall` rather than a Claude content block, and `x/` is split into 
 `channels/matrix/` and `claude_code/`.
 
 **The drift audit is discharged into this document.**
-<../console/debug/2026*08_16_plan_code_drift.md> read every chat-runtime plan against the code and
-found nineteen divergences. Its § Discharged maps each one: most closed on `devel`, and the rest
-are items here rather than a separate list — row 3's provenance `CHECK` and row 4's backfill are
-both inside item 4, row 9 is item C, row 16 is in \_Not this month* with the reason, and row 17 is
-superseded by the splits that have since landed. **That audit is now a dated snapshot, not a
+[The drift audit](../console/debug/2026_08_16_plan_code_drift.md) read every chat-runtime plan
+against the code and found nineteen divergences. Its § Discharged maps each one: most closed on
+`devel`, and the rest are items here rather than a separate list — row 3's provenance `CHECK` and
+row 4's backfill are both inside item 4, row 9 is item C, row 16 is in "Not this month" with the
+reason, and row 17 is superseded by the splits that have since landed. **That audit is now a dated snapshot, not a
 worklist**; a fresh one is worth running when plan and code have drifted again, but re-deriving
 those rows would only produce a second table saying what this one says.
 
@@ -92,7 +96,7 @@ re-projection. **This is the one thing to measure before writing item 3**, not t
 Ordered because each one is what makes the next expressible. Each says how you would know it is
 done.
 
-### 1. The projection becomes a reducer — in flight
+### 1. The projection becomes a reducer — **landed** (#4149)
 
 `project(frames) -> Projection` is stateless over a whole sequence: re-runnable, not resumable.
 `project(state, frames) -> (state, Projection)` with an explicit `finish(state)` is the shape
@@ -107,7 +111,7 @@ are one code path.
 which is what makes it reviewable by reading it — the same cut #4134 made and for the same
 reason.
 
-### 2. A frame at the console's boundary carries a number
+### 2. A frame at the console's boundary carries a number — **landed** (#4164, #4166, #4172)
 
 `ReceivedFrame.frame_seq` is `int | None`, so #4134 fabricates `_UNNUMBERED_FRAME = -1` to project
 at all, and holds "it never reaches a row" as a convention in a docstring rather than as a type.
@@ -124,7 +128,7 @@ whose sequence is `None`.
 **Why here:** item 4 cannot express its `CHECK` without it, and item 3 would otherwise carry the
 placeholder into a durable position.
 
-### 3. The durable cursor
+### 3. The durable cursor — in flight
 
 A per-session position that advances in the same transaction as the effects the reducer produced.
 This is the item the whole month is arranged around, and it is what deletes code rather than
