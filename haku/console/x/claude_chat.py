@@ -336,7 +336,7 @@ class SessionStore:
             messages=view.messages,
             turns=[
                 ConversationTurnView(
-                    turn_id=UUID(turn.turn_id),
+                    turn_id=turn.turn_id,
                     started_at=turn.started_at,
                     ended_at=turn.ended_at,
                     outcome=turn.outcome,
