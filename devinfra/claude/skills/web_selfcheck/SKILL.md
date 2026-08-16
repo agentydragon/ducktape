@@ -155,18 +155,12 @@ trap 'git checkout -q "$START_BRANCH"; git branch -D "$TEST_BRANCH" 2>/dev/null;
 git checkout -q -b "$TEST_BRANCH"
 printf 'selfcheck %s\n' "$(date -Iseconds)" > "$TEST_FILE"
 git add "$TEST_FILE"
-# The commit-msg hook requires a Bazel-Test-Invocations trailer whenever
-# DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1 (both profiles export this). A bare
-# commit is *correctly* rejected; use the none: form for a no-code change.
-git commit -m "test: selfcheck — delete me
-
-Bazel-Test-Invocations: none: selfcheck throwaway, no code/tests affected" 2>&1 | tail -40
+git commit -m "test: selfcheck — delete me" 2>&1 | tail -40
 echo "exit: ${PIPESTATUS[0]}"
 ```
 
-Pass: exit 0 with every hook Passed/Skipped (incl. `ducktape-commit-msg`). A
-bare commit _without_ the tag failing at `ducktape-commit-msg` is correct
-policy behavior, not a broken session.
+Pass: exit 0 with every hook Passed/Skipped. No commit-msg trailer is required
+— a bare commit message is expected to go through.
 
 **C7 — hook daemon logs present, no unhandled exceptions.**
 
@@ -256,7 +250,7 @@ git stash list 2>&1 | grep -c '\[git-shim\] BLOCKED'  # must be 0
 ```bash
 # Expect a representative env var (e.g. one set only by .envrc) to appear
 # after cd into a subproject that has one.
-cd /home/user/ducktape && env | grep -c '^DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG='
+cd /home/user/ducktape && env | grep -c '^DUCKTAPE_CLAUDE_HOOKS_PROFILE='
 ```
 
 Pass: `1` (or whatever var your `.envrc` exports).

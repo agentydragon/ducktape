@@ -4,7 +4,6 @@ Installed as separate console scripts via the claude-hooks wheel:
 - ducktape-precommit: file validations (filenames, frozen-specimens)
 - ducktape-pytest-main-check: verify test files have pytest_bazel.main() entry points
 - ducktape-prepare-commit-msg: block amending already-pushed commits
-- ducktape-commit-msg: enforce Bazel-Test-Invocations trailer
 - ducktape-enforce-bazel-tests: verify affected Bazel tests are cached/passing
 """
 
@@ -22,7 +21,6 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.trace import StatusCode
 
-from devinfra.precommit.commit_tag import TestTagError, check_commit_message
 from devinfra.precommit.enforce_bazel_tests.enforce_bazel_tests import run as enforce_bazel_tests_run
 from devinfra.precommit.filename_conventions import check_filename_conventions
 from devinfra.precommit.frozen_specimens import check_specimen_code_changes
@@ -158,27 +156,6 @@ def _run_prepare_commit_msg(argv: list[str]) -> int:
     return 0
 
 
-# commit-msg stage: enforce Bazel-Test-Invocations trailer
-_TEST_TAG_ENV_VAR = "DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG"
-
-
-def _run_commit_msg(argv: list[str]) -> int:
-    if os.environ.get(_TEST_TAG_ENV_VAR) not in ("1", "true"):
-        return 0
-
-    if not argv:
-        print("ERROR: commit message file path required as argument", file=sys.stderr)
-        return 1
-
-    message = Path(argv[0]).read_text()
-    try:
-        check_commit_message(message)
-    except TestTagError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        return 1
-    return 0
-
-
 def main_pre_commit() -> int:
     return asyncio.run(_run_pre_commit())
 
@@ -217,7 +194,3 @@ def main_enforce_bazel_tests() -> None:
 
 def main_prepare_commit_msg() -> int:
     return _run_prepare_commit_msg(sys.argv[1:])
-
-
-def main_commit_msg() -> int:
-    return _run_commit_msg(sys.argv[1:])

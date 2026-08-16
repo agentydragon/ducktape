@@ -30,8 +30,9 @@ idle_watchdog: false
 # NOTE: DUCKTAPE_OTEL_BEARER_TOKEN is still exported by web_env.sh, independent
 # of the removed `otel:` key.
 env_exports: |
+  # Explicitly off: agent sessions let CI run the tests (AGENTS.md § Before
+  # Hand-off), so an ambient enable can't turn the local gate back on.
   export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0
-  export DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1
   # Pull the full home-manager session environment into the agent's Bash tool
   # env — PATH (nix-profile bin, placed ahead of /opt/node22 so the nix devtools
   # win), NIX_PROFILES, XDG_DATA_DIRS, LOCALE_ARCHIVE_2_27, XCURSOR_PATH — not

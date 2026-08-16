@@ -152,16 +152,22 @@ keep it local to the investigation and remove it before review.
 
 ## Before Hand-off
 
-Run focused Bazel build and test targets that cover the change. If the change
-will land through a pull request, the repository's required CI checks are
-sufficient for repository-wide validation; do not duplicate them locally with
-`bbr build //...` or `bbr test //...` unless investigating a failure or the user
-explicitly asks for a full-tree run.
+**Default: open the PR and let CI run the tests.** The required checks already
+run the affected Bazel targets on the PR, so a pre-push `bbr test` of the same
+targets is the same run done twice — and the second one only delays review.
+Push, watch the checks, fix what they report. Local `bbr` is for iterating on a
+failure CI already found, for a change too uncertain to hand to CI as-is, and
+for anything CI does not cover — it is not a gate you must clear first.
 
-**Gotcha: `bbr test` on a test target does not lint the libraries it depends on.**
-The mypy/ruff aspects only produce their output groups for the targets named on
-the command line, so `bbr test //pkg:test_foo` passes while `mypy //pkg:foo`
-fails in CI. Name the changed `py_library` targets too:
+For changes that will **not** pass through the required PR checks (anything
+landing without a PR), run the relevant validation before hand-off.
+
+**Gotcha: `bbr test` on a test target does not lint the libraries it depends
+on.** The mypy/ruff aspects only produce their output groups for the targets
+_named on the command line_. On #4116 all 54 tests passed locally and CI still
+failed — on `mypy //haku/console/x:claude_chat`, a library the local
+`bbr build` had never named. So when you do run Bazel locally, name the changed
+`py_library` targets too:
 
 ```bash
 bbr test //pkg:test_foo
@@ -172,10 +178,18 @@ Changing a file's imports also changes its `deps`, which no local check covers
 if `bb run //devinfra:gazelle` is unavailable — build the affected library to
 catch a missing `@pypi//...` before CI does.
 
-For changes that will not pass through the required PR checks, run the relevant
-repository-wide validation before hand-off.
-
 If you touched `ansible/`, also follow <ansible/AGENTS.md>.
+
+### Watching CI on a PR
+
+- `pull_request_read` with `method: get_check_runs` lists the check runs on the
+  PR's head commit. **Trap:** the listing paginates and `Pre-commit checks`
+  lands on a later page — a green first page is not a green PR. Page through
+  (`page: 2`, …) before calling it clean.
+- For a failure, `get_job_logs` with `run_id` + `failed_only: true` +
+  `return_content: true` returns every failing job's log tail in one call.
+- `Bazel CI` failures point at a BuildBuddy invocation; log-retrieval and
+  target-history recipes are in the `buildbuddy_api` skill.
 
 ## SOPS
 
@@ -205,31 +219,16 @@ If you need to run sops outside the repo, derive the key manually (see `.envrc`)
 
 **NEVER use `git reset --soft` to squash onto a base branch that has moved on the remote.** `git reset --soft origin/devel` collapses _all_ differences between HEAD and `origin/devel` into the staging area — including commits other people landed on devel since your branch diverged. The resulting "squashed" commit silently re-applies every upstream change as if it were yours. Use `git rebase origin/devel` first to rebase, then squash with `git reset --soft $(git merge-base HEAD origin/devel)` so only your branch's changes are staged.
 
-### Committing: the `Bazel-Test-Invocations` trailer
+### Committing
 
-Every commit needs a `Bazel-Test-Invocations` trailer — a **standard git trailer**
-(a value line, not an environment variable), so write it in the `-m` text after a
-blank line or pass `--trailer`. The hook prints the accepted forms when it rejects
-you; <devinfra/precommit/commit_tag.py> is the source of truth. What it doesn't
-tell you:
+Commit messages carry no test-invocation trailer: nothing parses one and no
+`commit-msg` hook asks for one. `git log` is full of older commits ending in
+`Bazel-Test-Invocations:` — don't copy the pattern. To point a reviewer at a
+BuildBuddy run, link it in the PR body, where a human will click it.
 
-```bash
-git commit --trailer 'Bazel-Test-Invocations: none: docs-only change'
-```
-
-- A `bbr`/`bb remote` run executes on BuildBuddy — cite it as `buildbuddy:<id>`,
-  not `local:`. The hook resolves the `remote test` wrapper to its child test
-  invocation automatically; reserve `local:<uuid>` for a run the API key can't see.
-- `none: <why>` is for changes no Bazel target covers (docs, Nix/home-manager).
-- `Merge `/`fixup! `/`squash! ` messages are exempt.
-
-Two more commit gotchas:
-
-- **Committing on `devel`** (the default branch) trips the `no-commit-to-branch`
-  hook. When intentionally committing there, skip only that hook:
-  `SKIP=no-commit-to-branch git commit …`.
-- **`ALL_PROXY=socks5h…` crashes the hook** (its httpx verification has no
-  socks support). Prefix with `env -u ALL_PROXY -u all_proxy git commit …`.
+One commit gotcha: **committing on `devel`** (the default branch) trips the
+`no-commit-to-branch` hook. When intentionally committing there, skip only that
+hook: `SKIP=no-commit-to-branch git commit …`.
 
 ## Conventions
 

@@ -35,9 +35,7 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Install pre-commit git hooks
-        run: |
-          pre-commit install
-          pre-commit install --hook-type commit-msg
+        run: pre-commit install
 
       - name: Verify environment
         run: |

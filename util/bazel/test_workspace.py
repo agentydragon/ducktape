@@ -162,7 +162,7 @@ def test_query_filters_bbr_log_lines(tmp_path: Path) -> None:
         " * branch            abc123 -> FETCH_HEAD\n"
         "\x1b[32mLoading: \x1b[m12 packages loaded\n"
         "//\n"
-        "//devinfra/precommit:test_commit_tag.py\n"
+        "//devinfra/precommit:test_filename_conventions.py\n"
         "//util/bazel:test_workspace.py\n"
         "@pypi//pytest:pkg\n"
         "\x1b[32mINFO: \x1b[mStreaming build results to: https://app.buildbuddy.io/invocation/0b50b97b\n"
@@ -173,7 +173,7 @@ def test_query_filters_bbr_log_lines(tmp_path: Path) -> None:
     with patch("util.bazel.workspace.subprocess.run", return_value=mock_result):
         result = workspace.query("//...")
     assert result == [
-        BazelLabel(repo="", package=Path("devinfra/precommit"), name="test_commit_tag.py"),
+        BazelLabel(repo="", package=Path("devinfra/precommit"), name="test_filename_conventions.py"),
         BazelLabel(repo="", package=Path("util/bazel"), name="test_workspace.py"),
         BazelLabel(repo="pypi", package=Path("pytest"), name="pkg"),
     ]

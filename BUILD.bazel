@@ -204,26 +204,8 @@ py_package(
         "devinfra",
         "devinfra.precommit",
         "devinfra.precommit.enforce_bazel_tests",
-        # Generated proto packages.
-        # google.api + proto: reachable via //devinfra/precommit:git_hook (commit_tag deps).
-        # google.devtools.build.v1: imported transitively by BuildBuddy
-        # invocation protos used by the commit tag verifier.
-        # google.rpc + google.longrunning: imported by proto/cache_pb2.py and
-        #   proto/remote_execution_pb2.py respectively; must be bundled, not external deps.
-        "google.api",
-        "google.devtools.build.v1",
-        "google.longrunning",
-        "google.rpc",
-        "proto",
     ],
-    deps = [
-        "//devinfra/precommit:git_hook",
-        # Provides google.devtools.build.v1 (not reachable via precommit alone).
-        "//third_party/googleapis:build_v1_py_proto",
-        # Provides google.rpc and google.longrunning (imported by bundled proto files).
-        "//third_party/googleapis:rpc_status_py_proto",
-        "//third_party/googleapis:longrunning_operations_py_proto",
-    ],
+    deps = ["//devinfra/precommit:git_hook"],
 )
 
 py_wheel(
@@ -234,7 +216,6 @@ py_wheel(
             "ducktape-precommit = devinfra.precommit.git_hook:main_pre_commit",
             "ducktape-pytest-main-check = devinfra.precommit.git_hook:main_pytest_main_check",
             "ducktape-prepare-commit-msg = devinfra.precommit.git_hook:main_prepare_commit_msg",
-            "ducktape-commit-msg = devinfra.precommit.git_hook:main_commit_msg",
             "ducktape-enforce-bazel-tests = devinfra.precommit.git_hook:main_enforce_bazel_tests",
         ],
     },
@@ -242,11 +223,9 @@ py_wheel(
     # SYNC: This list must match propagatedBuildInputs in nix/packages/default.nix
     # (ducktape-git-hooks). When adding a dependency, update BOTH places.
     requires = [
-        "httpx",
         "networkx",
         "opentelemetry-api",
         "opentelemetry-sdk",
-        "protobuf>=6.33",
         "pygit2>=1.14",
         "pydantic>=2.0",
         "pyyaml",
