@@ -1011,7 +1011,7 @@ class SessionStore:
                 None if turn.assistant_message_id is None else await db.get(SessionMessage, turn.assistant_message_id)
             )
             # The calls of the message being assembled. Per frame rather than per turn, because a
-            # message never spans two frames here (`session_runtime._projected`) and they are
+            # message never spans two frames here (`frame_projection.projected`) and they are
             # written with the message that made them.
             tool_calls: list[RecordedToolCall] = []
             for event in events:

@@ -36,15 +36,9 @@ from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import SessionFrame, SessionMessage
 from haku.console.x.conftest import MCP_TOKEN, age_lease, lease_of, queued_for_the_room, runtime_config
 from haku.console.x.conversation_records import TurnUsage
+from haku.console.x.frame_projection import projected
 from haku.console.x.session_notifications import SessionNotifications
-from haku.console.x.session_runtime import (
-    ABORTED_NOTICE,
-    GOING_AWAY_CODE,
-    RolloutRecorder,
-    SessionService,
-    _projected,
-    _replaying,
-)
+from haku.console.x.session_runtime import ABORTED_NOTICE, GOING_AWAY_CODE, RolloutRecorder, SessionService, _replaying
 from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, MatrixSession, SessionStore, SpaSession
 from haku.console.x.testing.recording_claims import RecordingClaims
 from haku.runtime.x.bridge.cli_client import ClaudeCli, ReceivedFrame, SentPrompt
@@ -800,10 +794,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
     opened_at = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "stream_event", delta)
     state = await chat_store.apply_frame(
-        session_id,
-        started.turn_id,
-        opened_at.frame_seq,
-        _projected(ReceivedFrame(payload=delta, frame_seq=opened_at.frame_seq)),
+        session_id, started.turn_id, opened_at.frame_seq, projected(frame_seq=opened_at.frame_seq, payload=delta)
     )
     assistant_id = state.assistant_message_id
 
@@ -855,12 +846,9 @@ async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
     delta = _text_delta_frame("because the ")
     answer = _assistant({"type": "text", "text": "because the disk was full"})
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
-    projected = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "stream_event", delta)
+    recorded = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "stream_event", delta)
     await chat_store.apply_frame(
-        session_id,
-        started.turn_id,
-        projected.frame_seq,
-        _projected(ReceivedFrame(payload=delta, frame_seq=projected.frame_seq)),
+        session_id, started.turn_id, recorded.frame_seq, projected(frame_seq=recorded.frame_seq, payload=delta)
     )
     # Recorded and then nothing: the pod went between the sink writing the row and the loop acting
     # on what it meant.

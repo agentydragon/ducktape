@@ -270,12 +270,13 @@ used to be a separate question about.
 
 Four things to know before changing it:
 
-- **The turn loop still seeds a fresh state per frame** (`_projected` calls `project_log`), which
-  is also what the cursor currently rests on: the fold carries nothing across a frame boundary, so
-  the state at any cursor position is the empty one and a position is the whole of what resuming
-  needs. Threading one state across the turn — a two-line change that was tried and breaks two
-  things in the _loop_, both written up in `_projected`'s docstring — is what would make that
-  false, and `session_turns.first_frame_seq` is the answer waiting for it: re-project one turn.
+- **The turn loop still seeds a fresh state per frame** (`frame_projection.projected` calls
+  `project_log`), which is also what the cursor currently rests on: the fold carries nothing across
+  a frame boundary, so the state at any cursor position is the empty one and a position is the
+  whole of what resuming needs. Threading one state across the turn — a two-line change that was
+  tried and breaks two things in the _loop_, both written up in `projected`'s docstring — is what
+  would make that false, and `session_turns.first_frame_seq` is the answer waiting for it:
+  re-project one turn.
 - **`next_prompt` anchors the cursor** at the frame before the turn it opens, in that same
   transaction. That is what lets adoption tell a position inside this turn from one left behind by
   a writer that does not advance it — a replica on the previous image, for the length of a roll —

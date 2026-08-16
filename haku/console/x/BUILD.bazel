@@ -3,10 +3,20 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
+    name = "frame_projection",
+    srcs = ["frame_projection.py"],
+    deps = [
+        ":conversation_events",
+        "//haku/console/x/claude_code:projection",
+    ],
+)
+
+py_library(
     name = "session_runtime",
     srcs = ["session_runtime.py"],
     deps = [
         ":conversation_events",
+        ":frame_projection",
         ":room_status",
         ":sandbox_claims",
         ":session_notifications",
@@ -17,7 +27,6 @@ py_library(
         "//haku/console:config",
         "//haku/console:operator_auth",
         "//haku/console/x/claude_code:frames",
-        "//haku/console/x/claude_code:projection",
         "//haku/runtime/x/bridge:cli_client",
         "//haku/runtime/x/bridge:options",
         "//haku/runtime/x/bridge:protocol",
@@ -208,6 +217,7 @@ py_test(
     deps = [
         ":conftest",
         ":conversation_records",
+        ":frame_projection",
         ":session_notifications",
         ":session_runtime",
         ":session_store",

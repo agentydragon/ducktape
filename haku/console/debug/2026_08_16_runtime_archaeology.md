@@ -128,7 +128,8 @@ row.
 - **`update_assistant` and the per-delta session write.** It set `status = RESPONDING` on every
   stream delta, which is one session-row write per token batch to hold true a flag the open turn
   already stated.
-- **`_projected`'s freshness.** One frame at a time, a new projection each time, because a
+- **The per-frame fold's freshness** (`frame_projection.projected`). One frame at a time, a new
+  projection each time, because a
   projector held across the turn would merge the frames sharing a `message.id` into a single row
   and defer every completion by one frame. Both are improvements; both change what is stored, so
   neither belongs to a change that stores nothing new (<../../plans/chat_runtime_projection.md>

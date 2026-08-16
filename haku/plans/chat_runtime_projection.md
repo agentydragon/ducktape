@@ -845,7 +845,8 @@ so a `CHECK` can require the range (2026-08-16). Neither, yet — take the middl
   to tolerate it. `ClaudeCli` now takes its `FrameSink` as a required argument, so
   `SentPrompt.frame_seq` and `ReceivedFrame.frame_seq` are `int` and the placeholder is deleted.
   A numbered frame at the console's boundary is what makes the requirement expressible at all, and
-  it is the prerequisite `_projected`'s docstring named for threading a `ProjectionState` through
+  it is the prerequisite `frame_projection.projected`'s docstring named for threading a
+  `ProjectionState` through
   the turn loop.
 
   **Who assigns the number is settled, and it is the runner** (operator, 2026-08-16). § 2b holds
