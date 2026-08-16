@@ -167,7 +167,7 @@ Under this design `lifecycle` and `narration` become channel-neutral session eve
 Matrix tag derives from them; `status`, `holding` and `room` stay Matrix's own, because they
 describe that channel's rendering. Do not promote the whole enum.
 
-## 4. Live updates, over the socket the shell already holds
+## 4. Live updates, over the socket the shell already holds — done
 
 **Build on `/api/events/ws`, not a second SSE endpoint.** The shell holds exactly one per tab, and
 `frontend/console_events.ts`'s `useConsoleEvents` already provides the whole client half:
@@ -202,6 +202,13 @@ Four things to get right, in increasing order of how easy they are to miss:
 
 **Done when** an open session shows a Matrix turn arriving without a reload, and there is no
 polling timer anywhere in the page.
+
+**Built as** `x/session_live_updates.py` plus `SessionChangedEvent`, with all four of the above
+kept: no second channel (`SessionNotifications.watch` hands the fan-out what this replica already
+hears, and `ConsoleEventHub.deliver_locally` sends without republishing), a 500ms coalescing
+window per session, an owner lookup resolved once per session and cached, and the conversations
+list on the same event as the detail. The SPA chat page's SSE stream is untouched — §2 retires it,
+not this.
 
 ## 5. Sending from the console
 
@@ -343,7 +350,7 @@ surface whose client only read message rows; it is not true of a channel:
 **Done: render narration in the console** — the smallest thing that made the console a channel
 rather than a viewer, from rows that already existed. What remains:
 
-1. **Live updates** (§4). Depends on nothing.
+1. ~~**Live updates** (§4)~~ — done.
 2. **Merge the two pages** (§2) and move sending into the merged detail (§5, SPA half).
 3. **Record lifecycle events** (§3) and render them in both channels.
 4. **The reconcile loop** (§1) — the cursor on `chat_attachment`, and Matrix delivery moved onto

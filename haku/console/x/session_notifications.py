@@ -107,11 +107,16 @@ def libpq_dsn(database_url: str) -> str:
 
 
 class SessionNotifications:
-    """One LISTEN connection over the session channel, fanned out to per-session waiters."""
+    """One LISTEN connection over the session channel, fanned out to waiters and watchers.
+
+    A waiter (`wait`, `subscribe`) is woken about the one session it named; a watcher (`watch`)
+    is handed every event of a kind, for a consumer that cannot name its sessions in advance.
+    """
 
     def __init__(self, database_url: str):
         self._dsn = libpq_dsn(database_url)
         self._waiters: dict[tuple[SessionEventKind, UUID], set[asyncio.Event]] = {}
+        self._watchers: dict[SessionEventKind, set[Callable[[UUID], None]]] = {}
         self._task: asyncio.Task[None] | None = None
         self._listening = asyncio.Event()
 
@@ -166,6 +171,32 @@ class SessionNotifications:
         with self._registered(kind, session_id) as event:
             yield event
 
+    @contextmanager
+    def watch(self, kind: SessionEventKind, on_session: Callable[[UUID], None]) -> Iterator[None]:
+        """Hand *on_session* every *kind* event this replica receives, whatever session it names.
+
+        For a consumer with no session in mind — the console-socket fan-out has to hear about
+        sessions nobody has told it to expect, and `subscribe` cannot serve that: a waiter is
+        registered per `(kind, session_id)`, and the session ids are precisely what is unknown.
+        A callback rather than an `asyncio.Event` for the same reason — the id *is* the payload.
+
+        It runs on asyncpg's reader task, like `_on_notification` itself, so it must neither block
+        nor await: record the id and do the work elsewhere.
+
+        **Gotcha:** a reconnect cannot be replayed to a watcher. `_wake_everyone` tells each
+        waiter to re-read the session it already knows about, and there is no equivalent here —
+        the ids notified during the gap are simply gone. A watcher must therefore be something a
+        missed event only delays, never something a missed event loses.
+        """
+        watchers = self._watchers.setdefault(kind, set())
+        watchers.add(on_session)
+        try:
+            yield
+        finally:
+            watchers.discard(on_session)
+            if not watchers:
+                self._watchers.pop(kind, None)
+
     def _wake_everyone(self) -> None:
         """Notifications committed while reconnecting are gone; make every waiter re-check."""
         for events in self._waiters.values():
@@ -184,6 +215,8 @@ class SessionNotifications:
             return
         for waiter in self._waiters.get((event.kind, event.session_id), ()):
             waiter.set()
+        for watcher in self._watchers.get(event.kind, ()):
+            watcher(event.session_id)
 
     async def _listen_loop(self) -> None:
         while True:

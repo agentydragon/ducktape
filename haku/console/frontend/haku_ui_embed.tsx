@@ -36,7 +36,7 @@ import { SettingsPanel } from "./settings_panel";
 import { AgentEnrollmentPanel, type EnrollmentChoice } from "./agent_enrollment_panel";
 import { toastError, toastSuccess } from "./toast";
 import { useToolCallDecision } from "./tool_call_decision";
-import { useConsoleEvents } from "./console_events";
+import { changedSessionId, useConsoleEvents } from "./console_events";
 import { redirectToOperatorLogin } from "./operator_login";
 import { useOperatorSessionDeadline, useSessionExpiringSoon } from "./operator_session";
 import { ToolCallsPage } from "./tool_calls_page";
@@ -338,8 +338,12 @@ export function HakuUiEmbed({
 
   // Live tool-call signal: initial fetch on mount plus a refetch on every server WS event
   // (which the server also broadcasts to every other tab, so they refresh too). Its status
-  // drives the shell's live-channel warning when the socket is down.
-  const liveStatus = useConsoleEvents(refreshToolApprovals);
+  // drives the shell's live-channel warning when the socket is down. Session invalidations are
+  // skipped: they say nothing about the approval queue, and a streaming turn emits one of them
+  // every coalescing window.
+  const liveStatus = useConsoleEvents((event) => {
+    if (changedSessionId(event) === null) refreshToolApprovals();
+  });
 
   // The session's absolute deadline, surfaced in the rail once it is near. Expiry is otherwise
   // invisible until a background request 401s and navigates the tab away mid-task.

@@ -10,20 +10,16 @@ onto one session, each able to do broadly what the other can. Today the console 
 two pages that are the same object, cannot show a session's lifecycle at all, and cannot speak.
 Design, the parity gaps it closes, and the traps in each: <plans/session_channels.md>.
 
-1. **Live updates over the existing `/api/events/ws`**, as a `SessionChangedEvent {session_id}`
-   the page refetches on — not a second SSE stream, and not a poll. **Coalesce per session**:
-   `SessionEventKind.UPDATE` fires per stream delta, and a full-transcript refetch per delta per open
-   tab is the O(session) cost <../plans/chat_runtime_cleanup.md> § Anytime flags on the SSE path.
-2. **Merge `/chat` into `/conversations`** as one sessions surface — list plus detail, with new /
+1. **Merge `/chat` into `/conversations`** as one sessions surface — list plus detail, with new /
    compose / abort / close as actions on a session. Costs the per-token SSE stream; take it
    knowingly.
-3. **Record lifecycle transitions** as frame-log rows, the way narration already is, so a session
+2. **Record lifecycle transitions** as frame-log rows, the way narration already is, so a session
    that never got past `provisioning` has a durable record. **Not** the status line or the typing
    indicator — those are renderings of live state each channel derives for itself.
-4. **Reconcile a channel against the session** rather than sending to it: a loop per
+3. **Reconcile a channel against the session** rather than sending to it: a loop per
    `(channel, session)` over a cursor on cleanup stage 7's `chat_attachment`. A channel that holds
    its own copy (Matrix) needs it; one that reads the record (the console) converges by refetching.
-5. **Send into a Matrix session** (lower priority) — the console holds only `@haku`'s credential,
+4. **Send into a Matrix session** (lower priority) — the console holds only `@haku`'s credential,
    so an operator message reaches the room as a **relay** posted by Haku's account and tagged with
    its true provenance. Under the loop the send only enqueues; the room being one message behind
    is a divergence the reconciler already closes. The subtle part is `_is_conversational`, which
@@ -35,7 +31,7 @@ has — abort first — as ingress interception rather than an agent tool, so R5
 watch out for Element consuming leading-slash verbs before they ever reach the room. And
 **interlink the two channels** now that sessions have a page: a link to the console session in
 the R7.2 notice, a `matrix.to` permalink back, session ↔ tool calls. A posted Matrix event is
-permanent and federated, so settle the session route (item 2) before minting links into a room.
+permanent and federated, so settle the session route (item 1) before minting links into a room.
 
 ## Notification text per tool kind
 

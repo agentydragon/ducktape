@@ -198,6 +198,16 @@ ts_library(
 )
 
 ts_library(
+    name = "coalesced_refresh",
+    srcs = ["coalesced_refresh.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "console_events",
     srcs = ["console_events.ts"],
     tsconfig = TSCONFIG,
@@ -540,6 +550,7 @@ ts_library(
     deps = [
         ":approval_state",
         ":client",
+        ":coalesced_refresh",
         ":console_events",
         ":pending_tool_call_actions",
         ":toast",
@@ -1005,6 +1016,16 @@ ts_library(
 )
 
 ts_library(
+    name = "console_events_test",
+    srcs = ["console_events.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":console_events",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "operator_login_test",
     srcs = ["operator_login.test.ts"],
     tsconfig = TSCONFIG,
@@ -1119,6 +1140,7 @@ vitest_bin.vitest_test(
         ":bridge_test_lib",
         ":calendar_client_test",
         ":code_block_test",
+        ":console_events_test",
         ":geolocation_test",
         ":gmail_client_test",
         ":haku_ui_embed_test",

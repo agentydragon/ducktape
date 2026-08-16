@@ -74,6 +74,7 @@ from haku.console.state_index_sync import StateIndexMaintenance
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 from haku.console.tools.state_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import claude_chat, matrix_outbox, matrix_session, matrix_sync, sandbox_claims
+from haku.console.x.session_live_updates import SessionLiveUpdates
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.state_index.openai_embedder import OpenAIEmbedder
@@ -176,6 +177,10 @@ def create_app(
     claude_runtime = console_config.claude_runtime
     session_store = claude_chat.SessionStore(db_sessions)
     session_notifications = SessionNotifications(database_url)
+    # Session changes reach open tabs over the console socket the shell already holds, coalesced
+    # per session. Constructed unconditionally: it listens on the session channel and sends on the
+    # console one, neither of which depends on this replica running a Claude runtime.
+    session_live_updates = SessionLiveUpdates(session_notifications, console_event_hub, db_sessions)
     session_service: claude_chat.SessionService | None = None
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
@@ -489,7 +494,7 @@ def create_app(
                 # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
                 if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
                     await mcp_auth.storage.setup()
-                async with mcp_asgi.lifespan(app):
+                async with session_live_updates.run(), mcp_asgi.lifespan(app):
                     yield
             finally:
                 # Cancel in-flight approved-call executions (each marks its row cancelled) before the

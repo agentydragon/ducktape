@@ -931,6 +931,7 @@ py_library(
         "//haku/console/x:matrix_outbox",
         "//haku/console/x:matrix_session",
         "//haku/console/x:matrix_sync",
+        "//haku/console/x:session_live_updates",
         "//haku/state_index:openai_embedder",
         "//mcp_infra/authentik_auth:config",
         "@pypi//fastapi",

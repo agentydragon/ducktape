@@ -16,6 +16,21 @@ export type LiveStatus = "connecting" | "live" | "offline";
 
 export type ConsoleEvent = { event_type: string };
 
+/** The session a `session_changed` event invalidates, or null for every other event.
+ *
+ * Mirrors `SessionChangedEvent` in ../console_events.py, which carries no more than this: the
+ * socket says a session changed and REST stays the source of what it changed to.
+ *
+ * Consumers of this channel see *every* event, so a page that refetches unconditionally starts
+ * paying for session traffic the moment this exists — a streaming turn emits one of these per
+ * coalescing window. Anything not about sessions should skip an event this returns an id for.
+ */
+export function changedSessionId(event: ConsoleEvent): string | null {
+  if (event.event_type !== "session_changed") return null;
+  const { session_id: sessionId } = event as ConsoleEvent & { session_id?: unknown };
+  return typeof sessionId === "string" ? sessionId : null;
+}
+
 // The authoritative server-pushed event signal shared by console surfaces. `/api/events/ws`
 // carries tool-call and operator-link changes across replicas via Postgres LISTEN/NOTIFY.
 // `onEvent` fires once on mount (initial read), on every event, and again on reconnect (to

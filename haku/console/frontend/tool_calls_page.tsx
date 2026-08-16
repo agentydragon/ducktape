@@ -3,10 +3,11 @@ import { useCallback, useRef, useState } from "react";
 
 import { approvalDisplayFields, statusColor, terminalStatusLabel } from "./approval_state";
 import { displayableError, fetchToolCalls, type ToolCallPage, type ToolCallRecord } from "./client";
+import { useCoalescedRefresh } from "./coalesced_refresh";
 import { PendingToolCallActions } from "./pending_tool_call_actions";
 import { ToolCallCard } from "./tool_call_card";
 import { useToolCallDecision } from "./tool_call_decision";
-import { useConsoleEvents } from "./console_events";
+import { changedSessionId, useConsoleEvents } from "./console_events";
 import { useVariant } from "./variant_control";
 
 // One screenful and change, not the ledger's `le=500` cap. Every record carries its whole
@@ -83,7 +84,6 @@ function ToolCallRow({
 export function ToolCallsPage() {
   const [loaded, setLoaded] = useState<ToolCallPage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   // Auto-approved calls are Haku's routine background traffic; hiding them by default keeps the
   // ledger scannable for the calls an operator actually had to weigh in on. The server does the
@@ -96,44 +96,31 @@ export function ToolCallsPage() {
   // once (so it would close over a stale filter), and the checkbox handler needs the fetch to use
   // its new value before that state has committed.
   const filterRef = useRef(showAutoApproved);
-  // Events arrive in bursts — an agent's call is submitted, approved and finished within a second,
-  // and each of those wakes every open tab. Overlapping refetches would queue a page of full
-  // records each, for a view that only ever shows the newest state, so at most one refresh is in
-  // flight and a burst underneath it collapses into a single catch-up.
-  const refreshingRef = useRef(false);
-  const catchUpRef = useRef(false);
   // Whether the next fetched page replaces what is loaded instead of merging over it. A ref, not
   // an argument, because a replacing request made while a refresh is in flight has to survive
   // into the catch-up: a filter change asked for a different slice of the ledger, and merging
   // that page over the previous filter's rows would show the two spliced together.
   const replaceRef = useRef(false);
 
-  const refresh = useCallback(async (replace = false) => {
-    if (replace) replaceRef.current = true;
-    if (refreshingRef.current) {
-      catchUpRef.current = true;
-      return;
-    }
-    refreshingRef.current = true;
-    setRefreshing(true);
+  // At most one refetch in flight, a burst of live events collapsing into one catch-up: every
+  // record carries its whole arguments and result, so overlapping fetches of the newest page cost
+  // real bandwidth for answers each of which the next one discards.
+  const { refresh, busy: refreshing } = useCoalescedRefresh(async () => {
+    const replaceLoaded = replaceRef.current;
+    replaceRef.current = false;
     try {
-      for (;;) {
-        const replaceLoaded = replaceRef.current;
-        replaceRef.current = false;
-        const page = await fetchToolCalls(HISTORY_PAGE_SIZE, filterRef.current);
-        setLoaded((previous) => (replaceLoaded ? page : mergeNewestPage(page, previous)));
-        setError(null);
-        if (!catchUpRef.current) break;
-        catchUpRef.current = false;
-      }
+      const page = await fetchToolCalls(HISTORY_PAGE_SIZE, filterRef.current);
+      setLoaded((previous) => (replaceLoaded ? page : mergeNewestPage(page, previous)));
+      setError(null);
     } catch (e: unknown) {
       setError(displayableError(e));
-      catchUpRef.current = false;
-    } finally {
-      refreshingRef.current = false;
-      setRefreshing(false);
     }
-  }, []);
+  });
+
+  const refreshReplacing = useCallback(() => {
+    replaceRef.current = true;
+    refresh();
+  }, [refresh]);
 
   const loadMore = useCallback(async () => {
     const cursor = loaded?.nextCursor;
@@ -153,9 +140,14 @@ export function ToolCallsPage() {
   // Live: initial load on mount plus a refetch of the first page whenever a tool call is
   // submitted, approved, denied, or finishes anywhere — the same WS signal the approvals panel
   // uses. Pages already scrolled back through survive it (see `mergeNewestPage`).
-  useConsoleEvents(() => void refresh());
+  // A session invalidation says nothing about the approval ledger, and a streaming turn emits one
+  // every coalescing window — refetching a page of full records on it would cost far more than the
+  // tool-call traffic this page exists for.
+  useConsoleEvents((event) => {
+    if (changedSessionId(event) === null) refresh();
+  });
 
-  const decisions = useToolCallDecision({ onSettled: () => void refresh() });
+  const decisions = useToolCallDecision({ onSettled: refresh });
 
   const records = loaded?.records;
   const hasMore = loaded?.nextCursor != null;
@@ -184,10 +176,10 @@ export function ToolCallsPage() {
                 filterRef.current = checked;
                 // A different filter is a different ledger slice, so its pages replace rather than
                 // merge with the ones already loaded.
-                void refresh(true);
+                refreshReplacing();
               }}
             />
-            <Button size="xs" variant="light" loading={refreshing} onClick={() => void refresh(true)}>
+            <Button size="xs" variant="light" loading={refreshing} onClick={refreshReplacing}>
               Refresh
             </Button>
           </Group>

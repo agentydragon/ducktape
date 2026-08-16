@@ -242,6 +242,14 @@ another `LISTEN`. Waiters register on `(kind, session_id)`, so the fan-out is un
 subsystem with a different payload and its own lifecycle, and the only thing the two share
 is the mechanism.
 
+**Waiters name a session; watchers cannot.** `wait`/`subscribe` register on `(kind, session_id)`,
+which is what the turn loop and the supervisor want. `watch` is the other shape — every event of a
+kind, whatever session it names — and exists for `session_live_updates.py`, which has to hear about
+sessions nothing has told it to expect. Its gotcha is the mirror of the waiters' one: a reconnect
+can be replayed to a waiter (`_wake_everyone` tells it to re-read the session it already knows
+about) and cannot be replayed to a watcher, so a watcher must be something a missed event only
+delays.
+
 `test_notify_puts_a_readable_event_on_the_channel` is the one that pins the wire format —
 channel name and envelope, read off a raw connection. Nothing else would notice if either
 drifted, because every other test has the same code on both ends.
@@ -266,6 +274,33 @@ which name woke it. Tests and production alike will look healthy with the new pa
 broken, right up until the old one is deleted. Cover the new path end to end on its own
 before contracting — for the session rename that meant a test driving `pg_notify` on exactly
 one channel, since `notify` was firing both and so could not answer the question.
+
+## `session_live_updates.py` — telling open tabs, over the socket they already hold
+
+The console's own live channel (<../console_events.py>) reaches every tab the operator has open,
+and this is what puts session changes on it: a `SessionChangedEvent` naming the session whose rows
+moved. **An invalidation, not a payload** — the transcript stays a REST read, so a tab that missed
+events lands correct by refetching and no consumer has to decide whether the socket or the API is
+the truth.
+
+Three things it is deliberate about:
+
+- **Nothing publishes anything new.** Every write that changes a session already notifies `UPDATE`
+  inside its own transaction, so the announcement belongs to the commit rather than to a sweep.
+- **No second `NOTIFY`.** `LISTEN` is broadcast, so each replica already hears every session
+  event and turns what it hears into sends on the console sockets **it** holds
+  (`ConsoleEventHub.deliver_locally`). Relaying through `broadcast` would notify twice for one
+  change and deliver it to every tab twice.
+- **Coalescing is the point, not tidiness.** `UPDATE` fires per stream delta, and each event costs
+  every open tab a whole transcript — far more than the notification that triggered it. One event
+  per session per `COALESCE_WINDOW` (500ms) is what keeps the invalidation cheaper than the refetch.
+
+Routing costs a lookup: `SessionEvent` carries no operator and the hub delivers per operator, so
+the session's owner is resolved once per session and kept (a session's owner never changes).
+
+The SPA chat page's SSE stream is untouched and stays until a coalesced refetch is proven in
+practice (<../plans/session_channels.md> § 2) — a worse-feeling result should cost a revert of the
+surfaces, not of the transport.
 
 ## Cross-replica state, and the trap it sets
 

@@ -37,11 +37,19 @@ bundles the emitted `.js`, and vitest runs the emitted `.test.js`.
   per-server widget (`tool_rendering/<server>/responses.tsx`) over the unwrapped
   `CallToolResult` payload, else the raw-JSON `Result` field (detailed only).
 - `console_events.ts` — `useConsoleEvents(onEvent)`: the shared live signal (the
-  `/api/events/ws` WebSocket) that carries tool-call and operator-link changes. The server
-  broadcasts typed invalidations to every connected tab, so panels and the history view stay live without
+  `/api/events/ws` WebSocket) that carries tool-call, operator-link and chat-session changes. The server
+  broadcasts typed invalidations to every connected tab, so panels, the history view and open
+  transcripts stay live without
   a reload — no client-side cross-tab plumbing needed. It
   auto-reconnects with backoff and returns a `LiveStatus` (`connecting`/`live`/`offline`) the
   shell uses to warn when the channel is down (and refetches on reconnect to catch up).
+  Every consumer sees every event, so one that refetches unconditionally pays for traffic it does
+  not care about: `changedSessionId(event)` is how the tool-call surfaces skip session
+  invalidations, which a streaming turn emits every coalescing window.
+- `coalesced_refresh.ts` — `useCoalescedRefresh(read)`: at most one refetch in flight, with a burst
+  of live events collapsing into a single catch-up afterwards. Live events arrive in bursts while a
+  view only ever shows the newest state, so overlapping fetches buy answers each of which the next
+  one discards. Used by the history page and both conversation surfaces.
 - `client.ts` — typed `openapi-fetch` client; the types come from the backend's
   OpenAPI schema (the `:schema` target runs `//haku/console:export_schema_bin`), so
   the Pydantic models are the single source of truth for the wire contract. Includes the

@@ -62,6 +62,17 @@ py_library(
 )
 
 py_library(
+    name = "session_live_updates",
+    srcs = ["session_live_updates.py"],
+    deps = [
+        ":session_notifications",
+        "//haku/console:console_events",
+        "//haku/console:database_schema",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "session_notifications",
     srcs = ["session_notifications.py"],
     deps = [
@@ -84,6 +95,27 @@ py_library(
         "//haku/console/x/testing:recording_claims",
         "@pypi//pydantic",
         "@pypi//pytest",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_session_live_updates",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_session_live_updates.py"],
+    deps = [
+        ":claude_chat",
+        ":conftest",
+        ":session_live_updates",
+        ":session_notifications",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:console_events",
+        "//haku/console:operator_identity_store",
+        "@pypi//fastapi",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

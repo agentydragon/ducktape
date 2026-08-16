@@ -1,5 +1,5 @@
 import { Badge, Box, Button, Code, Divider, Group, Loader, Paper, Stack, Text, Title } from "@mantine/core";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   displayableError,
@@ -9,6 +9,8 @@ import {
   type ConversationSession,
   type ConversationSessionSummary,
 } from "../client";
+import { useCoalescedRefresh } from "../coalesced_refresh";
+import { changedSessionId, useConsoleEvents } from "../console_events";
 import { conversationPath, CONVERSATIONS_PATH, navigateToConsolePath, sessionFramesPath } from "../routing";
 import { bootstrapNarration, type BootstrapNarration } from "./bootstrap_narration";
 import { isNearChatBottom } from "./chat_scroll";
@@ -152,26 +154,26 @@ function MessageView({ message }: { message: ClaudeChatMessage }) {
 }
 
 function ConversationListPage() {
-  const [conversations, setConversations] = useState<ConversationSessionSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Null until the first read lands: an empty inventory and an unread one look the same
+  // otherwise, and the two want different things on screen.
+  const [conversations, setConversations] = useState<ConversationSessionSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let alive = true;
-    fetchConversations()
-      .then((items) => {
-        if (alive) setConversations(items);
-      })
-      .catch((reason: unknown) => {
-        if (alive) setError(displayableError(reason));
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const { refresh } = useCoalescedRefresh(async () => {
+    try {
+      setConversations(await fetchConversations());
+      setError(null);
+    } catch (reason: unknown) {
+      setError(displayableError(reason));
+    }
+  });
+
+  // The initial read, a re-read when any session changes, and one more on every reconnect. The
+  // inventory shows `message_count` and `updated_at`, so it goes stale for exactly the reason a
+  // transcript does — and it is not told which of its rows moved, only that one did.
+  useConsoleEvents((event) => {
+    if (event.event_type === "sync" || changedSessionId(event) !== null) refresh();
+  });
 
   return (
     <section className="haku-page" aria-label="Conversations">
@@ -184,7 +186,7 @@ function ConversationListPage() {
             </Text>
           </div>
           <Badge variant="light" className="haku-conversation-count">
-            {conversations.length} sessions
+            {conversations?.length ?? 0} sessions
           </Badge>
         </div>
       </header>
@@ -197,7 +199,7 @@ function ConversationListPage() {
               </Text>
             </Paper>
           )}
-          {conversations.length === 0 && loading ? (
+          {conversations === null ? (
             <Paper withBorder p="xl">
               <Stack align="center" gap="xs">
                 <Loader size="sm" />
@@ -253,23 +255,41 @@ function ConversationDetailPage({ sessionId }: { sessionId: string }) {
   const [error, setError] = useState<string | null>(null);
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
+  // Which conversation is on screen, for the two readers that must not close over a stale one:
+  // the live-event callback, registered once, and a response landing after the operator moved on.
+  const shownRef = useRef(sessionId);
+
+  const read = useCallback(async () => {
+    const requested = shownRef.current;
+    try {
+      const item = await fetchConversation(requested);
+      if (shownRef.current === requested) {
+        setConversation(item);
+        setError(null);
+      }
+    } catch (reason: unknown) {
+      if (shownRef.current === requested) setError(displayableError(reason));
+    }
+  }, []);
+  const { refresh } = useCoalescedRefresh(read);
 
   useEffect(() => {
-    let alive = true;
+    // On mount the ref already holds this id and the live-event hook's own initial read covers
+    // it; this effect exists for the operator opening a *different* transcript in place.
+    if (shownRef.current === sessionId) return;
+    shownRef.current = sessionId;
     setConversation(null);
     setError(null);
     stickToBottomRef.current = true;
-    fetchConversation(sessionId)
-      .then((item) => {
-        if (alive) setConversation(item);
-      })
-      .catch((reason: unknown) => {
-        if (alive) setError(displayableError(reason));
-      });
-    return () => {
-      alive = false;
-    };
-  }, [sessionId]);
+    refresh();
+  }, [sessionId, refresh]);
+
+  // Live: the initial read, this session's own invalidations, and a catch-up on every reconnect.
+  // A refetch rather than a delta stream is what makes a missed event cost nothing — the page
+  // lands on the current transcript whether it heard one event or none.
+  useConsoleEvents((event) => {
+    if (event.event_type === "sync" || changedSessionId(event) === shownRef.current) refresh();
+  });
 
   // A transcript opens on its newest message, the way the live chat surface does — the operator
   // came to read what just happened, not the first thing said. The layout settles a frame after

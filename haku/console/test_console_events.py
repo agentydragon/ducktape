@@ -132,7 +132,7 @@ async def test_tool_call_subscription_is_scoped_and_does_not_require_a_websocket
         hub.subscribe(OPERATOR_A, "tc_other") as other_call,
         hub.subscribe(OPERATOR_B, "tc_target") as other_operator,
     ):
-        await hub._deliver_locally(OPERATOR_A, event)
+        await hub.deliver_locally(OPERATOR_A, event)
         assert target.is_set()
         assert not other_call.is_set()
         assert not other_operator.is_set()
@@ -216,7 +216,7 @@ async def test_stuck_websocket_does_not_block_other_operator_tabs(monkeypatch: p
     await hub.connect(cast(WebSocket, stuck), OPERATOR_A)
     await hub.connect(cast(WebSocket, healthy), OPERATOR_A)
 
-    await hub._deliver_locally(OPERATOR_A, McpOperatorAuthChangedEvent(server_id="grocy-sf", status="connected"))
+    await hub.deliver_locally(OPERATOR_A, McpOperatorAuthChangedEvent(server_id="grocy-sf", status="connected"))
 
     assert healthy.messages == [
         {"event_type": "mcp_operator_auth_changed", "server_id": "grocy-sf", "status": "connected"}
@@ -234,7 +234,7 @@ async def test_disabled_operator_socket_is_closed_before_event_delivery() -> Non
     websocket = RecordingWebSocket()
     await hub.connect(cast(WebSocket, websocket), OPERATOR_A)
 
-    await hub._deliver_locally(OPERATOR_A, McpOperatorAuthChangedEvent(server_id="grocy-sf", status="connected"))
+    await hub.deliver_locally(OPERATOR_A, McpOperatorAuthChangedEvent(server_id="grocy-sf", status="connected"))
 
     assert websocket.messages == []
     assert websocket.closed

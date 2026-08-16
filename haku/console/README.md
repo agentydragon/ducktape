@@ -113,7 +113,10 @@ Core HTTP mutation/audit endpoints and MCP reflection tools:
   backend-page consolidation.
 - `GET /api/approvals/pending` and `WebSocket /api/events/ws` — canonical-Operator-routed
   frontend state plus lossy invalidations. REST remains the source of truth; the WebSocket only
-  wakes the shell to refresh.
+  wakes the shell to refresh. It carries chat sessions too: a `session_changed` names the session
+  whose rows moved and nothing else, coalesced to at most one per session per half-second, so a
+  streaming turn's per-delta writes cost an open transcript two refetches a second rather than
+  hundreds (`x/session_live_updates.py`).
 - `POST /api/tool-calls/{tool_call_id}/decision` — exact-Origin-gated trusted-frontend approval/denial.
 - `GET /api/tool-calls` / `GET /api/tool-calls/{tool_call_id}` — operator-only audit/result reads.
   The list endpoint accepts repeated `status` filters, a datetime `since` filter on `updated_at`,
@@ -553,7 +556,7 @@ Two operational notes:
 | `mcp_agent_auth.py`                | Agent-facing auth composition: one Haku OAuth adapter plus static-bearer verification, both resolving through the shared `PostgresAgentAuthority`.                                                                                                                           |
 | `agents/`                          | Canonical Agent domain: naming, enrollment contracts/routes/APIs, and the transactional Postgres authority for interactions, grants, bindings, static credentials, activation, revocation, and expiry.                                                                       |
 | `mcp_auth/`                        | Haku-owned FastMCP composition adapter and exact-version contract tests; contains the single accepted private `_code_store` seam.                                                                                                                                            |
-| `console_events.py`                | Pydantic console-event shapes plus operator-scoped cross-replica WebSocket fan-out through Postgres LISTEN/NOTIFY.                                                                                                                                                           |
+| `console_events.py`                | Pydantic console-event shapes plus operator-scoped cross-replica WebSocket fan-out through Postgres LISTEN/NOTIFY. `deliver_locally` is the entry point for a producer already broadcast by another channel.                                                                 |
 | `web_push.py`                      | Web Push delivery of pending-approval notifications: the VAPID identity, the per-Operator subscription store, and the notifier that shows and retracts one call's notification.                                                                                              |
 | `push_routes.py`                   | Operator-browser `/api/push/*` surface: the public VAPID key the SPA subscribes with, plus subscription registration, listing, and removal.                                                                                                                                  |
 | `mcp_config.py`                    | Connected-MCP-server catalog plus in-process/remote transport and static bearer resolution, shared by the application service, `McpServerDispatcher`, and operator OAuth linkage.                                                                                            |

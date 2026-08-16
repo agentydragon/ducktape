@@ -56,7 +56,23 @@ class ToolCallsChangedEvent(BaseModel):
     tool_call_id: str
 
 
-type ConsoleEvent = ToolCallsChangedEvent | McpOperatorAuthChangedEvent | OperatorConnectionChangedEvent
+class SessionChangedEvent(BaseModel):
+    """A chat session's rows changed; a surface showing it should re-read them.
+
+    An invalidation, not a payload: the transcript stays a REST read, so a tab that missed events
+    entirely still lands correct by refetching, and no consumer has to decide whether the socket
+    or the API is the truth. Carrying the message itself would make this a second source of one.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_type: Literal["session_changed"] = "session_changed"
+    session_id: UUID
+
+
+type ConsoleEvent = (
+    ToolCallsChangedEvent | SessionChangedEvent | McpOperatorAuthChangedEvent | OperatorConnectionChangedEvent
+)
 
 
 class _RoutedConsoleEvent(BaseModel):
@@ -200,7 +216,14 @@ class ConsoleEventHub:
     async def tool_call_changed(self, operator_id: UUID, tool_call_id: str) -> None:
         await self.broadcast(operator_id, [ToolCallsChangedEvent(tool_call_id=tool_call_id)])
 
-    async def _deliver_locally(self, event_operator_id: UUID, event: ConsoleEvent) -> None:
+    async def deliver_locally(self, event_operator_id: UUID, event: ConsoleEvent) -> None:
+        """Send *event* to the sockets **this replica** holds, without publishing it.
+
+        For a producer whose source is already broadcast: the session runtime's own
+        `LISTEN`/`NOTIFY` channel reaches every replica, so each one can turn what it hears into
+        sends on its own sockets. Routing that through `broadcast` would `NOTIFY` a second time
+        for one change and deliver it to every tab twice.
+        """
         if isinstance(event, ToolCallsChangedEvent):
             for waiter in self._tool_call_waiters.get((event_operator_id, event.tool_call_id), ()):
                 waiter.set()
@@ -270,7 +293,7 @@ class ConsoleEventHub:
                 logger.exception("failed to parse console event notification payload")
                 continue
             try:
-                await self._deliver_locally(envelope.operator_id, envelope.event)
+                await self.deliver_locally(envelope.operator_id, envelope.event)
             except Exception:
                 # One bad delivery must not stop the consumer; the socket layer already
                 # drops connections it cannot write to.
