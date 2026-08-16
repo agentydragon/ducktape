@@ -109,6 +109,10 @@ class ActivityStartedBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     activity_id: str
+    # In the body rather than the row's `call_id` column: `ck_session_events_call_id` states that
+    # the column is set on exactly the two tool-call kinds, so an activity writing it would need
+    # that constraint widened and `session_views.tool_calls`' kind filter re-audited.
+    call_id: str = Field(description="The tool call that opened this step.")
     description: str
 
 
@@ -162,7 +166,9 @@ def _stored(event: ConversationEvent) -> tuple[ConversationEventKind, BaseModel,
             )
             return ConversationEventKind.TOOL_CALL_COMPLETED, result, event.call_id
         case ActivityStarted():
-            started = ActivityStartedBody(activity_id=event.activity_id, description=event.description)
+            started = ActivityStartedBody(
+                activity_id=event.activity_id, call_id=event.call_id, description=event.description
+            )
             return ConversationEventKind.ACTIVITY_STARTED, started, None
         case ActivityCompleted():
             completed = ActivityCompletedBody(

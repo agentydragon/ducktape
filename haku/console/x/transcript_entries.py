@@ -71,7 +71,11 @@ def _entry(event: conversation_events.ConversationEvent, index: int) -> conversa
             )
         case conversation_events.ActivityStarted():
             return conversation_records.ActivityStartedEntry(
-                index=index, provenance=provenance, activity_id=event.activity_id, description=event.description
+                index=index,
+                provenance=provenance,
+                activity_id=event.activity_id,
+                call_id=event.call_id,
+                description=event.description,
             )
         case conversation_events.ActivityCompleted():
             return conversation_records.ActivityFinishedEntry(

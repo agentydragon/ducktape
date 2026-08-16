@@ -292,6 +292,9 @@ class ActivityStartedEntry(_EntryBase):
 
     kind: Literal["activity_started"] = "activity_started"
     activity_id: str
+    call_id: str = Field(
+        description="The `tool_call` entry this step was opened by; the step's own end names only `activity_id`."
+    )
     description: str
 
 

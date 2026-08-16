@@ -165,7 +165,14 @@ def _background_bash_frames() -> list[RecordedFrame]:
         ),
         recorded(2, tool_result("toolu_bg", "Running in background with ID bash_1", structured=BACKGROUND_SHELL)),
         recorded(
-            3, system("task_started", task_id="task_1", task_type="local_bash", description="sleep 60 && echo done")
+            3,
+            system(
+                "task_started",
+                task_id="task_1",
+                tool_use_id="toolu_bg",
+                task_type="local_bash",
+                description="sleep 60 && echo done",
+            ),
         ),
         recorded(4, assistant(text_block("started it"), message_id="msg_B")),
         recorded(
@@ -198,13 +205,14 @@ def test_a_backgrounded_call_completes_while_its_command_is_still_running():
     assert completed.structured == BACKGROUND_SHELL
 
 
-def test_nothing_joins_a_background_task_to_the_call_that_started_it():
-    """`activity_id` and `call_id` are different identifier spaces, and no event carries both.
+def test_the_background_task_names_the_call_that_started_it():
+    """`activity_id` and `call_id` are different identifier spaces, and `ActivityStarted` carries
+    both — so the event that says the command finished leads back to the call that asked for it.
 
-    The activity is the only statement that the command finished, and the only thing it can be
-    paired with is its own `task_started`. Which tool call spawned it is knowable only by reading
-    `ActivityStarted.description` — which the census measured as the command itself, past 500
-    characters and sometimes spanning lines, rather than a label.
+    The join runs through the *opening* event: `task_notification` names the call too, but an end
+    is paired to its start by `activity_id`, so reading it twice would buy nothing. Without it the
+    only lead is `description`, which the census measured as the command itself — past 500
+    characters and sometimes spanning lines — rather than as a label.
     """
     events = project_log(_background_bash_frames()).events
 
@@ -214,8 +222,9 @@ def test_nothing_joins_a_background_task_to_the_call_that_started_it():
 
     assert started.activity_id == finished.activity_id == "task_1"
     assert finished.outcome is Outcome.SUCCEEDED
-    assert started.description == call.arguments["command"]
+    assert started.call_id == call.call_id == "toolu_bg"
     assert started.activity_id != call.call_id
+    assert started.description == call.arguments["command"]
 
 
 def _monitor_frames(polls: int) -> list[RecordedFrame]:
@@ -295,7 +304,16 @@ def test_a_background_activity_lands_inside_whichever_message_was_open():
                 message_id="msg_A",
             ),
         ),
-        recorded(2, system("task_started", task_id="task_1", task_type="local_bash", description="make test")),
+        recorded(
+            2,
+            system(
+                "task_started",
+                task_id="task_1",
+                tool_use_id="toolu_bg",
+                task_type="local_bash",
+                description="make test",
+            ),
+        ),
         recorded(3, tool_result("toolu_bg", "Running in background with ID bash_1", structured=BACKGROUND_SHELL)),
         recorded(4, assistant(text_block("meanwhile"), message_id="msg_A")),
         recorded(5, system("task_notification", task_id="task_1", status="completed", summary="ok")),
@@ -327,7 +345,16 @@ def test_the_write_path_splits_that_message_in_two_and_keeps_one_id_on_both():
                 message_id="msg_A",
             ),
         ),
-        recorded(2, system("task_started", task_id="task_1", task_type="local_bash", description="make test")),
+        recorded(
+            2,
+            system(
+                "task_started",
+                task_id="task_1",
+                tool_use_id="toolu_bg",
+                task_type="local_bash",
+                description="make test",
+            ),
+        ),
         recorded(3, assistant(text_block("meanwhile"), message_id="msg_A")),
     ]
     events = _write_path(frames)

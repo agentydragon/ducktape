@@ -343,10 +343,16 @@ class _Projector:
             return
         where = FrameRange(frame.frame_seq, frame.frame_seq)
         match subtype:
-            case "task_started" if isinstance(task_id := frame.payload.get("task_id"), str) and isinstance(
-                description := frame.payload.get("description"), str
+            # `tool_use_id` is the call that opened the task, and only this frame carries it: the
+            # terminal report is paired to here by `task_id`, so a link dropped here is gone.
+            case "task_started" if (
+                isinstance(task_id := frame.payload.get("task_id"), str)
+                and isinstance(call_id := frame.payload.get("tool_use_id"), str)
+                and isinstance(description := frame.payload.get("description"), str)
             ):
-                self.events.append(ActivityStarted(activity_id=task_id, description=description, provenance=where))
+                self.events.append(
+                    ActivityStarted(activity_id=task_id, call_id=call_id, description=description, provenance=where)
+                )
             case "task_notification" if isinstance(task_id := frame.payload.get("task_id"), str):
                 summary = frame.payload.get("summary")
                 self.events.append(

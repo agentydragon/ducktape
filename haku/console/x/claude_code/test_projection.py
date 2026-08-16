@@ -241,7 +241,8 @@ def test_command_lifecycle_is_not_a_clean_triple():
 
 
 def test_activity_is_the_step_with_no_tool_name():
-    """`task_started` and its terminal report pair by `task_id` and by nothing else."""
+    """`task_started` and its terminal report pair by `task_id` and by nothing else — the call that
+    opened the step is on the opening frame only."""
     events = project_log(
         [
             recorded(
@@ -249,6 +250,7 @@ def test_activity_is_the_step_with_no_tool_name():
                 system(
                     "task_started",
                     task_id="task_9",
+                    tool_use_id="toolu_9",
                     task_type="local_bash",
                     description="npm run build 2>&1 | tail -40",
                 ),
@@ -267,11 +269,31 @@ def test_activity_is_the_step_with_no_tool_name():
     ).events
 
     assert events == (
-        ActivityStarted(activity_id="task_9", description="npm run build 2>&1 | tail -40", provenance=FrameRange(1, 1)),
+        ActivityStarted(
+            activity_id="task_9",
+            call_id="toolu_9",
+            description="npm run build 2>&1 | tail -40",
+            provenance=FrameRange(1, 1),
+        ),
         ActivityCompleted(
             activity_id="task_9", summary="Build finished", outcome=Outcome.SUCCEEDED, provenance=FrameRange(2, 2)
         ),
     )
+
+
+def test_a_task_that_names_no_call_is_counted_rather_than_started_without_one():
+    """Both captured `task_started` frames carry `tool_use_id`, so a release that stops sending it
+    is a shape this fold cannot read — not an activity with the link left blank."""
+    projection = project_log(
+        [
+            RecordedFrame(
+                1, {"type": "system", "subtype": "task_started", "task_id": "task_9", "description": "npm run build"}
+            )
+        ]
+    )
+
+    assert projection.events == ()
+    assert projection.unprojected == {"system/task_started": 1}
 
 
 def test_text_arrives_as_increments_and_as_a_finished_message():

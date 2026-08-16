@@ -9,9 +9,9 @@ naming the call that spawned it (`testdata/agents_and_background.jsonl`, redacte
 Those shapes had never been recorded anywhere. Against the whole production frame log — 35,791
 frames on 2026-08-16 — `local_agent` occurs **zero** times and so does `parent_tool_use_id`, so
 until this capture the only evidence about a subagent's wire shape was `protocol.md`. That is why
-this file asserts current behaviour rather than desired behaviour: three of the assertions below
-pin things that look wrong, and each says so. Changing the fold is a separate change with this
-fixture already in place to measure it.
+this file asserts current behaviour rather than desired behaviour: the assertions below that pin
+something looking wrong say so, and changing the fold is a separate change with this fixture
+already in place to measure it.
 """
 
 import json
@@ -110,22 +110,25 @@ def test_a_backgrounded_call_completes_while_its_command_still_runs(projection: 
     assert [e.tool_name for e in started] == ["Bash"]
 
 
-def test_the_activity_drops_the_call_the_frame_named(projection: Projection):
-    """**The link exists on the wire and the projection discards it.**
+def test_the_activity_carries_the_call_the_frame_named(projection: Projection):
+    """**The link on the wire survives the fold.**
 
     `task_started` carries both `task_id` and `tool_use_id`, so the frame says exactly which call
-    opened which background task. `ActivityStarted` keeps only `activity_id` — the task — so in the
-    neutral stream an activity and its tool call cannot be paired at all. Asserting the frame half
-    too, because that is what makes this cheap to fix rather than a redesign."""
-    frame = next(
-        record["frame"]
+    opened which background task, and `ActivityStarted` now keeps both — which is what lets a
+    reader pair the activity that reports the command's end with the `Bash` call that started it.
+    Asserting the frame half too, and for both task types the capture holds — the backgrounded
+    shell and the subagent — because those two frames are the whole of the evidence that
+    `tool_use_id` is always there, which is what makes `call_id` a required field rather than a
+    nullable one."""
+    frames = {
+        record["frame"]["task_id"]: record["frame"]["tool_use_id"]
         for record in _RECORDS
-        if record.get("frame", {}).get("subtype") == "task_started" and record["frame"]["task_id"] == _BASH_TASK
-    )
-    assert frame["tool_use_id"] == _BASH_CALL
+        if record.get("frame", {}).get("subtype") == "task_started"
+    }
+    assert frames == {_BASH_TASK: _BASH_CALL, _AGENT_TASK: _AGENT_CALL}
 
-    activity = next(e for e in projection.events if isinstance(e, ActivityStarted) and e.activity_id == _BASH_TASK)
-    assert not [name for name in dir(activity) if "call" in name and not name.startswith("_")]
+    activities = {e.activity_id: e.call_id for e in projection.events if isinstance(e, ActivityStarted)}
+    assert activities == frames
 
 
 def test_the_subagent_is_a_tool_named_agent_whose_work_is_attributed_to_the_session(projection: Projection):

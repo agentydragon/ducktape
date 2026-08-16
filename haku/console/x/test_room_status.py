@@ -66,7 +66,9 @@ def test_a_message_completing_beside_its_tool_call_does_not_bury_the_tool() -> N
 
 
 def test_an_activity_reuses_the_description_the_harness_already_wrote() -> None:
-    activity = ActivityStarted(activity_id="task-1", description="Running the test suite", provenance=_WHERE)
+    activity = ActivityStarted(
+        activity_id="task-1", call_id="toolu_1", description="Running the test suite", provenance=_WHERE
+    )
 
     assert coarse_status([activity]) == "Running the test suite"
 
@@ -106,7 +108,7 @@ def test_a_claude_turn_still_reads_the_way_it_did_off_the_frames() -> None:
         (assistant(thinking_block("hm"), message_id="msg_A"), "writing"),
         (assistant(text_block("Looking."), message_id="msg_A"), "writing"),
         (assistant(tool_use_block("toolu_1", "Bash", {"command": "ls"}), message_id="msg_A"), "running Bash"),
-        (system("task_started", task_id="task_9", description="npm run build"), "npm run build"),
+        (system("task_started", task_id="task_9", tool_use_id="toolu_1", description="npm run build"), "npm run build"),
         (tool_result("toolu_1", "ok"), None),
         (text_delta("A"), "writing"),
         (result(), None),

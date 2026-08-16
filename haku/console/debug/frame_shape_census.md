@@ -501,8 +501,8 @@ corroborated by production, which carries the same `task_started`/`task_notifica
 What it caught that nothing else had:
 
 - **`task_started` and `task_notification` carry `tool_use_id` beside `task_id`**, so the frame says
-  which call opened which background task. `ActivityStarted` keeps only the task, so the projection
-  discards a link the wire provides.
+  which call opened which background task. `ActivityStarted` kept only the task and discarded that
+  link; it now carries the call too, off the `task_started` frame.
 - **`background_tasks_changed` and `task_updated` are frame classes the fold has never seen** — 4
   and 2 occurrences, both landing in `unprojected`.
 - **A backgrounded call is answered before its command ends.** `ToolCallCompleted` fires when the
