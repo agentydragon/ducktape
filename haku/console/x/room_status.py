@@ -1,8 +1,15 @@
 """What a room is shown while one turn runs: the typing indicator and the status line.
 
-The driver alone — it is handed two coroutines and told about frames, and never learns which
-room it is speaking to or how a line is created and edited. `channels/matrix/session.py` owns that half,
-and a session with no room gets the same driver with the no-op sinks below.
+The driver alone — it is handed two coroutines and told what the conversation did, and never
+learns which room it is speaking to, how a line is created and edited, or which backend the events
+came off. `channels/matrix/session.py` owns the middle one, and a session with no room gets the
+same driver with the no-op sinks below.
+
+**It reads <conversation_events.py>, not a provider's wire.** It used to match on Claude's own
+top-level `type`, its `system` subtypes and its content blocks, which made the module that is
+supposed to be the channel-neutral driver the fourth of the frame interpreters stage 4 of
+<../../plans/chat_runtime_projection.md> exists to replace — and meant a second backend's room went
+silent while its agent worked.
 """
 
 from __future__ import annotations
@@ -10,10 +17,16 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
-from collections.abc import Awaitable, Callable
-from typing import Any
+from collections.abc import Awaitable, Callable, Sequence
 
-from haku.console.x.session_frames import content_blocks
+from haku.console.x.conversation_events import (
+    ActivityStarted,
+    ConversationEvent,
+    MessageCompleted,
+    Reasoning,
+    TextDelta,
+    ToolCallStarted,
+)
 
 # How long a turn runs before the room is told anything about it (R6.2). Below this the
 # answer itself is the status, and a status/answer pair for a five-second exchange is
@@ -35,25 +48,32 @@ TYPING_REFRESH_SECONDS = 10.0
 STATUS_EDIT_INTERVAL_SECONDS = 5.0
 
 
-def coarse_status(frame: dict[str, Any]) -> str | None:
-    """What the room should be told this frame means, or None if it means nothing to it.
+def coarse_status(events: Sequence[ConversationEvent]) -> str | None:
+    """What the room should be told just happened, or None if none of it means anything to it.
 
-    Coarse by rule, not by taste (R6.3): where a tool is named, the CLI's own identifier is
-    passed through verbatim, and where the CLI wrote a human-readable description of a task
-    it is used as-is. There is deliberately no per-tool copy and no mapping table, because
-    both would need maintaining every time the tool surface grows.
+    Over a *run* of events rather than one, because a single moment produces several: a tool call
+    starting and the message carrying it completing arrive together, and only the more specific of
+    them is worth saying. The caller decides what a run is; the turn loop hands it one frame's
+    worth, which is what makes this the same decision the per-frame version made.
+
+    Coarse by rule, not by taste (R6.3): where a tool is named, the backend's own identifier is
+    passed through verbatim, and where the harness wrote its own prose for a step it is used
+    as-is. There is deliberately no per-tool copy and no mapping table, because both would need
+    maintaining every time the tool surface grows.
     """
-    match frame.get("type"):
-        case "assistant":
-            names = [block["name"] for block in content_blocks(frame) if block.get("type") == "tool_use"]
-            return f"running {', '.join(names)}" if names else "writing"
-        case "system":
-            match frame.get("subtype"):
-                # `description` here is the CLI's own prose for the step in flight, e.g.
-                # "Running Count regular files in the directory" — better than anything the
-                # console could reconstruct from a tool name and its arguments.
-                case "task_started" | "task_progress":
-                    return str(frame.get("description") or "working")
+    if names := [event.tool_name for event in events if isinstance(event, ToolCallStarted)]:
+        return f"running {', '.join(names)}"
+    # `description` is the harness's own prose for the step in flight, e.g. "Running Count regular
+    # files in the directory" — better than anything the console could reconstruct from a tool name
+    # and its arguments. It is not a label and runs long (<../debug/frame_shape_census.md>), which
+    # is the renderer's problem rather than this one's.
+    if activity := next((event for event in events if isinstance(event, ActivityStarted)), None):
+        return activity.description or "working"
+    # Prose, thinking, or a message that ended: all of it is the agent writing rather than acting,
+    # and the room is told no more than that. `MessageCompleted` is in here because a session that
+    # streams no deltas produces no `TextDelta` at all, and its answers would otherwise say nothing.
+    if any(isinstance(event, TextDelta | Reasoning | MessageCompleted) for event in events):
+        return "writing"
     return None
 
 
@@ -72,9 +92,9 @@ async def ignore_typing(active: bool) -> None:
 class TurnStatus:
     """Drives what the room shows while one turn runs: the typing indicator and the status line.
 
-    A polled driver rather than a write on every frame, because everything that decides whether
+    A polled driver rather than a write on every event, because everything that decides whether
     to speak is about elapsed time — the typing notice's expiry, the status line's lazy-creation
-    threshold, its edit floor — and a turn can go a long while between frames. Frames set the
+    threshold, its edit floor — and a turn can go a long while producing nothing. Events set the
     state; the loop decides when the room hears about it.
 
     The two differ in when they start. Typing goes on immediately, because "Haku is working on
@@ -101,8 +121,8 @@ class TurnStatus:
         self._typed_at = 0.0
         self._task: asyncio.Task[None] | None = None
 
-    def note(self, frame: dict[str, Any]) -> None:
-        if (state := coarse_status(frame)) is not None:
+    def note(self, events: Sequence[ConversationEvent]) -> None:
+        if (state := coarse_status(events)) is not None:
             self._state = state
 
     def start(self) -> None:

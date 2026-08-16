@@ -633,11 +633,11 @@ class SessionService:
                 # ends a turn rather than the conversation.
                 received = await next_frame
                 frame_seq = received.frame_seq
-                # Claude's frame, not an event: `room_status` is the fourth of stage 4's four
-                # interpreters and still reads the wire itself. Re-pointing it is its own change,
-                # and until then it is the one thing here that a second backend would go quiet on.
-                status.note(received.payload)
-                for event in _projected(received):
+                events = _projected(received)
+                # One frame's worth at a time, which is the granularity `coarse_status` reads a run
+                # of events at: a tool call starting and its message completing arrive together.
+                status.note(events)
+                for event in events:
                     match event:
                         case TextDelta():
                             if assistant_id is None:

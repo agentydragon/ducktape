@@ -8,6 +8,22 @@ from typing import Any
 
 import pytest_bazel
 
+from haku.console.chat_models import TurnOutcome
+from haku.console.x.claude_code.projection import DeltaSource, RecordedFrame, project_log
+from haku.console.x.conversation_events import (
+    ActivityCompleted,
+    ActivityStarted,
+    ConversationEvent,
+    FrameRange,
+    MessageCompleted,
+    MessageKey,
+    Outcome,
+    Reasoning,
+    TextDelta,
+    ToolCallStarted,
+    TurnCompleted,
+    Usage,
+)
 from haku.console.x.room_status import (
     STATUS_AFTER_SECONDS,
     STATUS_EDIT_INTERVAL_SECONDS,
@@ -16,27 +32,112 @@ from haku.console.x.room_status import (
     coarse_status,
 )
 
+_WHERE = FrameRange(1, 1)
+_MESSAGE = MessageKey(opened_at_frame_seq=1)
 
-def _assistant(*blocks: dict[str, Any]) -> dict[str, Any]:
-    return {"type": "assistant", "message": {"role": "assistant", "content": list(blocks)}}
+
+def _tool_call(name: str) -> ToolCallStarted:
+    return ToolCallStarted(message=_MESSAGE, call_id=f"call-{name}", tool_name=name, arguments={}, provenance=_WHERE)
+
+
+def _message_completed() -> MessageCompleted:
+    return MessageCompleted(message=_MESSAGE, text="hello", agent_message_id="msg-1", provenance=_WHERE)
 
 
 def test_a_tool_call_becomes_a_status_naming_the_tool_verbatim() -> None:
-    """R6.3: the CLI's own identifier, with no per-tool copy to maintain."""
-    frame = _assistant({"type": "tool_use", "id": "t1", "name": "Bash", "input": {}})
-
-    assert coarse_status(frame) == "running Bash"
+    """R6.3: the backend's own identifier, with no per-tool copy to maintain."""
+    assert coarse_status([_tool_call("Bash")]) == "running Bash"
 
 
-def test_a_task_frame_reuses_the_description_the_cli_already_wrote() -> None:
-    frame = {"type": "system", "subtype": "task_progress", "description": "Running the test suite"}
+def test_a_message_completing_beside_its_tool_call_does_not_bury_the_tool() -> None:
+    """One frame's events, and the more specific of them wins — otherwise the room reads "writing"
+    for the whole of a turn that is running tools."""
+    assert coarse_status([_tool_call("Bash"), _message_completed()]) == "running Bash"
 
-    assert coarse_status(frame) == "Running the test suite"
+
+def test_an_activity_reuses_the_description_the_harness_already_wrote() -> None:
+    activity = ActivityStarted(activity_id="task-1", description="Running the test suite", provenance=_WHERE)
+
+    assert coarse_status([activity]) == "Running the test suite"
 
 
-def test_frames_the_room_has_no_use_for_produce_no_status() -> None:
-    assert coarse_status({"type": "result", "subtype": "success"}) is None
-    assert coarse_status({"type": "system", "subtype": "commands_changed"}) is None
+def test_prose_and_thinking_are_both_just_writing() -> None:
+    """A session that streams no deltas produces only the completed message, and one that streams
+    produces the deltas — the room is told the same thing either way."""
+    assert coarse_status([TextDelta(message=_MESSAGE, text="hel", provenance=_WHERE)]) == "writing"
+    assert coarse_status([Reasoning(message=_MESSAGE, summary=None, provenance=_WHERE)]) == "writing"
+    assert coarse_status([_message_completed()]) == "writing"
+
+
+def test_events_the_room_has_no_use_for_produce_no_status() -> None:
+    finished: list[ConversationEvent] = [
+        TurnCompleted(
+            outcome=TurnOutcome.ANSWERED,
+            usage=Usage(input_tokens=1, output_tokens=1, cached_input_tokens=0, cost_usd=None, duration_ms=None),
+            provenance=_WHERE,
+        ),
+        ActivityCompleted(activity_id="task-1", summary=None, outcome=Outcome.SUCCEEDED, provenance=_WHERE),
+    ]
+
+    assert coarse_status(finished) is None
+    assert coarse_status([]) is None
+
+
+def test_a_claude_turn_still_reads_the_way_it_did_off_the_frames() -> None:
+    """The one test here that names a backend, and the only place the claim can be made.
+
+    `room_status.py` used to match on Claude's own `type`, `subtype`s and content blocks; this is
+    what it read then, projected through the adapter and read as events now. The frames are the
+    census's shapes (<../debug/frame_shape_census.md>: one content block per `assistant` frame), and
+    the cut is `_run_turn`'s — one frame, `STREAM_EVENTS`, fresh state — so what this asserts is
+    exactly the sequence a room sees.
+    """
+    frames: list[tuple[dict[str, Any], str | None]] = [
+        (
+            {"type": "assistant", "message": {"id": "msg_A", "content": [{"type": "thinking", "thinking": "hm"}]}},
+            "writing",
+        ),
+        (
+            {"type": "assistant", "message": {"id": "msg_A", "content": [{"type": "text", "text": "Looking."}]}},
+            "writing",
+        ),
+        (
+            {
+                "type": "assistant",
+                "message": {
+                    "id": "msg_A",
+                    "content": [{"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": "ls"}}],
+                },
+            },
+            "running Bash",
+        ),
+        (
+            {"type": "system", "subtype": "task_started", "task_id": "task_9", "description": "npm run build"},
+            "npm run build",
+        ),
+        (
+            {
+                "type": "user",
+                "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "ok"}]},
+            },
+            None,
+        ),
+        (
+            {
+                "type": "stream_event",
+                "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "A"}},
+            },
+            "writing",
+        ),
+        ({"type": "result", "subtype": "success"}, None),
+    ]
+
+    assert [
+        coarse_status(
+            project_log([RecordedFrame(frame_seq=seq, payload=payload)], delta_source=DeltaSource.STREAM_EVENTS).events
+        )
+        for seq, (payload, _) in enumerate(frames)
+    ] == [expected for _, expected in frames]
 
 
 async def test_a_short_turn_leaves_no_status_behind() -> None:
@@ -44,7 +145,7 @@ async def test_a_short_turn_leaves_no_status_behind() -> None:
     shown: list[str] = []
     status = TurnStatus(_appender(shown), _noop)
     status.start()
-    status.note(_assistant({"type": "tool_use", "id": "t1", "name": "Bash", "input": {}}))
+    status.note([_tool_call("Bash")])
     await asyncio.sleep(1.2)
     await status.finish()
 
@@ -61,7 +162,7 @@ async def test_a_slow_turn_says_what_it_is_doing_and_then_retires_the_line() -> 
     status = TurnStatus(_appender(shown), clear)
     status._started -= STATUS_AFTER_SECONDS  # the turn has already been running a while
     status.start()
-    status.note(_assistant({"type": "tool_use", "id": "t1", "name": "Bash", "input": {}}))
+    status.note([_tool_call("Bash")])
     await asyncio.sleep(1.2)
     await status.finish()
 
@@ -82,9 +183,9 @@ async def test_a_state_that_changes_inside_the_floor_is_deferred_rather_than_los
     status = TurnStatus(_appender(shown), _noop)
     status._started -= STATUS_AFTER_SECONDS  # the turn has already been running a while
     status.start()
-    status.note(_assistant({"type": "tool_use", "id": "t1", "name": "Read", "input": {}}))
+    status.note([_tool_call("Read")])
     await asyncio.sleep(1.2)
-    status.note(_assistant({"type": "tool_use", "id": "t2", "name": "Bash", "input": {}}))
+    status.note([_tool_call("Bash")])
     await asyncio.sleep(1.2)
 
     assert shown == ["running Read"], "the second change lands inside the floor"

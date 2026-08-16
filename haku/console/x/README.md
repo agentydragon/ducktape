@@ -25,7 +25,10 @@ second channel must be able to reuse everything at the runtime level unchanged, 
 cannot compile without `matrix-nio` belongs under `channels/matrix/`. `room_status.py` is the case
 worth knowing: it reads as Matrix and is not — a status line is a channel affordance the console
 surface wants too, and the driver is handed two coroutines and never learns which room it speaks
-to. `sandbox_claims.py` is the mirror case: `claude-`-prefixed claim names, but it is Kubernetes
+to. **Being at the right level is not the same as being neutral, and this module is where that bit:**
+it sat here while still matching on Claude's own frame `type`, its `system` subtypes and its content
+blocks, so a second harness got no status line from the module the rule had already placed above
+harnesses. It reads `conversation_events.py` now. `sandbox_claims.py` is the mirror case: `claude-`-prefixed claim names, but it is Kubernetes
 provisioning and would serve any harness. `session_frames.py` is the one that is genuinely both and
 is deliberately left whole: four of its constants are the CLI's own top-level `type` values, while
 `SETUP_OUTPUT_KIND` and `setup_output_frame` are the bridge's envelope and the console's own
@@ -178,10 +181,20 @@ over every split of a session in `claude_code/test_projection.py`.
 onto the read models in `conversation_records.py`. And the live path reads them too.
 
 **`_run_turn` is the first of the four onto it**: it projects each frame as it lands and acts on the
-events, so the live path no longer knows that `assistant`, `stream_event` and `result` exist.
-`adopt_open_turn`, `rollout_calls` and `coarse_status` still read frames their own way; each is its
-own change. Nothing stores the events yet either — `session_messages` and the outbox keep the shapes
-they had, and the durable cursor beside the fold is the other half of stage 4.
+events, so the live path no longer knows that `assistant`, `stream_event` and `result` exist. The
+status line is the second — `coarse_status` reads a run of events rather than a frame, which is what
+stops the driver being one of the interpreters it is supposed to sit above. `adopt_open_turn` and
+`rollout_calls` still read frames their own way; each is its own change. Nothing stores the events
+yet either — `session_messages` and the outbox keep the shapes they had, and the durable cursor
+beside the fold is the other half of stage 4.
+
+**One status source did not survive that, and it is worth knowing before it is missed.**
+`coarse_status` used to answer for `system/task_progress` as well as `task_started`; the adapter
+projects only `task_started`, so a `task_progress` frame now lands in `Projection.unprojected` and
+says nothing to the room. It has never been observed — zero of 10,903 `system` frames in
+<../debug/frame_shape_census.md>, and absent from the direct capture too — so its `task_id` and
+`description` shapes are unverified, and minting a second `ActivityStarted` for one activity would
+give every transcript reader a duplicate row on a guess. The branch is gone rather than approximated.
 
 Two consequences of that being live:
 

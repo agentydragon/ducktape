@@ -162,13 +162,12 @@ cursor between them.
 
 ### 4. The fold, and what it projects **into** — half landed
 
-**What it projects into is built; the fold itself is not.** #4145 landed the neutral vocabulary
-(`x/conversation_events.py`), the Claude adapter into it (`x/claude_code/projection.py`) and a read
-surface over the result (`read_transcript`). What is still open is the turn loop reading the
-projection instead of Claude's frames (#4134) — so `claude_code/projection.py`'s own docstring still
-says "nothing calls this yet", and **all four interpreters counted below are still present on
-`devel`**. Everything else in this section is still the target; the paragraphs that have landed say
-so where they are.
+**What it projects into is built; the fold itself is half wired.** #4145 landed the neutral
+vocabulary (`x/conversation_events.py`), the Claude adapter into it (`x/claude_code/projection.py`)
+and a read surface over the result (`read_transcript`); #4149 made the adapter a reducer; the turn
+loop and the room's status line both read it now. What is still open is the durable cursor, and
+**two of the four interpreters counted below are still present on `devel`**. Everything else in
+this section is still the target; the paragraphs that have landed say so where they are.
 
 `_run_turn`'s frame `match` becomes `project`, with the cursor advanced beside its effects. The
 abort path collapses here too: an abort becomes an intent the transport writes, and the CLI's
@@ -196,6 +195,12 @@ answers, because the turn loop drops the `tool_result` blocks — so the read pa
 prefers its own answer wherever the row can point into the log. The fourth means a backend whose
 frames are spelled differently makes the room go silent while the agent works, and it is why the SPA
 has no in-progress display at all.
+
+**The first and the fourth are gone.** `_run_turn` acts on events, and `coarse_status` reads a run
+of them rather than a frame — the two that remain are the reconstruction in `adopt_open_turn` and
+the read-path re-derivation in `rollout_calls`. The status line cost one branch on the way:
+`system/task_progress` had a case there and has none in the adapter, which is a frame class the
+census has never seen (<../console/x/README.md> § The neutral projection).
 
 #### A message is provider-neutral, and tool calls are in it — **built**
 
@@ -262,8 +267,8 @@ them differently, and a classifier cares about outgoing agent text rather than b
 
 `RoomEventKind` — `REPLY`, `NARRATION`, `LIFECYCLE`, `STATUS`, `HOLDING`, `ROOM`, `UNREADABLE` — is
 already that enum, and it lives in `channels/matrix/client.py`: a neutral concept inside a channel-specific
-module, the same smell as `coarse_status` reading Claude's frames from the channel side. It moves
-into the neutral layer, and channels render categories rather than deciding them. That also
+module, the mirror of the smell `coarse_status` had — a neutral module reading one backend's wire.
+It moves into the neutral layer, and channels render categories rather than deciding them. That also
 delivers what <../console/plans/session_channels.md> asks for — session-level events recorded rather
 than existing only as Matrix notices — because a notice becomes a record both channels read.
 
