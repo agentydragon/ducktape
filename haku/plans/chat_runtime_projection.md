@@ -896,6 +896,17 @@ pure function of a frame sequence, then:
 Stage 5's outbox already relies on the fold being single-writer per session (see the closing note);
 reprojection is the other half of that bargain and wants writing at the same time.
 
+**Built, as `x/reprojection.py` and the `reprojection_bin` tool over it** — with three things the
+paragraph above did not anticipate. It must fold **as the write path configures the fold**, per
+frame and under `STREAM_EVENTS`, because `project_log` over a whole session is a different event
+sequence and a checker driving it reports drift everywhere; that is why the fold is now
+`x/frame_projection.py` rather than the turn loop's private function. It must run **per turn and
+skip a turn with no rows at all**, because that is what a replica on the image before these rows
+existed leaves behind, and without the skip every live session reports drift for one
+`session_ttl_seconds` after the release. And it does **not** run in CI: what it needs is production
+rows, so it is an operator's tool and a standing check against the live database, exiting non-zero
+when a turn drifted.
+
 #### Pressure-tested against the two things that would break it
 
 Neither is implemented; both are read from documentation rather than measured, in the same spirit as

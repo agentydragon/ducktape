@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -34,6 +34,35 @@ py_library(
         "@pypi//more_itertools",
         "@pypi//pydantic",
     ],
+)
+
+py_library(
+    name = "reprojection",
+    srcs = ["reprojection.py"],
+    deps = [
+        ":frame_projection",
+        ":session_events",
+        ":session_frames",
+        "//haku/console:chat_models",
+        "//haku/console:database_schema",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "reprojection_main",
+    srcs = ["reprojection_main.py"],
+    deps = [
+        ":reprojection",
+        "@pypi//sqlalchemy",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "reprojection_bin",
+    main_module = "haku.console.x.reprojection_main",
+    deps = [":reprojection_main"],
 )
 
 py_library(
@@ -230,6 +259,26 @@ py_test(
         "//haku/runtime/x/bridge:protocol",
         "@pypi//more_itertools",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_reprojection",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_reprojection.py"],
+    deps = [
+        ":conftest",
+        ":frame_projection",
+        ":reprojection",
+        ":session_store",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "@pypi//more_itertools",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

@@ -1,0 +1,233 @@
+"""What the drift check says about sessions the write path itself produced.
+
+The round trip is the point: frames recorded and projected exactly as the turn loop does it must
+re-project to the rows that were written, so anything this reports on such a session is a defect in
+the check rather than in the projection.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+from uuid import UUID
+
+import pytest_bazel
+from more_itertools import one
+from sqlalchemy import delete, update
+
+from haku.console.chat_models import ConversationEventKind, FrameDirection
+from haku.console.database_schema import Session, SessionEvent
+from haku.console.x import reprojection
+from haku.console.x.frame_projection import projected
+from haku.console.x.session_store import BridgeAuthentication, SpaSession
+
+
+def _assistant(*blocks: dict[str, Any], message_id: str = "msg_1") -> dict[str, Any]:
+    """One `assistant` frame. Every frame in a session needs its own *message_id*: `frame_uid`
+    dedupes on it, so two frames sharing one are one frame to the recorder."""
+    return {"type": "assistant", "message": {"id": message_id, "role": "assistant", "content": list(blocks)}}
+
+
+def _tool_result(call_id: str, text: str) -> dict[str, Any]:
+    return {
+        "type": "user",
+        "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": call_id, "content": text}]},
+        "tool_use_result": {"exit_code": 0},
+    }
+
+
+async def _turn_through_the_write_path(chat_store, operator_id, frames: list[dict[str, Any]]) -> tuple[UUID, UUID]:
+    """One session and one open turn, with *frames* recorded and projected as the turn loop does."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    session_id = view.session_id
+    assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, session_id, "what is in here?")
+    started = await chat_store.next_prompt(session_id)
+    assert started is not None
+    for payload in frames:
+        recorded = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, payload["type"], payload)
+        await chat_store.apply_frame(
+            session_id, started.turn_id, recorded.frame_seq, projected(frame_seq=recorded.frame_seq, payload=payload)
+        )
+    return session_id, started.turn_id
+
+
+async def test_a_session_the_write_path_projected_agrees_with_itself(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    session_id, turn_id = await _turn_through_the_write_path(
+        chat_store,
+        operator_id,
+        [
+            _assistant({"type": "thinking", "thinking": "which files"}),
+            _assistant(
+                {"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": "ls"}}, message_id="msg_2"
+            ),
+            _tool_result("toolu_1", "a.py"),
+            _assistant({"type": "text", "text": "one file"}, message_id="msg_3"),
+        ],
+    )
+
+    async with migrated_sessions() as db:
+        report = await reprojection.check_session(db, session_id)
+
+    turn = one(report.turns)
+    assert (turn.turn_id, turn.verdict) == (turn_id, reprojection.Verdict.AGREES)
+    assert turn.findings == ()
+    # Two rows per `assistant` frame: what the block said, and the message the frame closed —
+    # per-frame seeding means a message always ends at its own frame.
+    assert turn.stored_rows == 6
+    assert turn.unprojected_frames == 0
+
+
+async def test_a_row_whose_body_was_edited_is_reported_against_its_frame(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """The check's whole purpose: a stored row that the frames do not project to any more."""
+    session_id, _ = await _turn_through_the_write_path(
+        chat_store,
+        operator_id,
+        [_assistant({"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": "ls"}})],
+    )
+    async with migrated_sessions() as db:
+        await db.execute(
+            update(SessionEvent)
+            .where(SessionEvent.session_id == session_id, SessionEvent.kind == ConversationEventKind.TOOL_CALL_STARTED)
+            .values(body={"tool_name": "Write", "arguments": {"command": "ls"}})
+        )
+        await db.commit()
+        report = await reprojection.check_session(db, session_id)
+
+    turn = one(report.turns)
+    assert turn.verdict is reprojection.Verdict.DRIFTED
+    mismatch = one(turn.findings)
+    assert isinstance(mismatch, reprojection.RowMismatch)
+    assert [difference.field for difference in mismatch.differences] == ["body"]
+    assert "Bash" in mismatch.differences[0].projected
+    assert "Write" in mismatch.differences[0].stored
+
+
+async def test_a_row_that_is_gone_is_a_count_mismatch_rather_than_a_silent_pass(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    session_id, _ = await _turn_through_the_write_path(
+        chat_store,
+        operator_id,
+        [
+            _assistant(
+                {"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": "ls"}},
+                {"type": "text", "text": "looking"},
+            )
+        ],
+    )
+    async with migrated_sessions() as db:
+        await db.execute(
+            delete(SessionEvent).where(
+                SessionEvent.session_id == session_id, SessionEvent.kind == ConversationEventKind.TOOL_CALL_STARTED
+            )
+        )
+        await db.commit()
+        report = await reprojection.check_session(db, session_id)
+
+    finding = one(one(report.turns).findings)
+    assert isinstance(finding, reprojection.RowCountMismatch)
+    assert finding.projected == (ConversationEventKind.TOOL_CALL_STARTED, ConversationEventKind.MESSAGE_COMPLETED)
+    assert finding.stored == (ConversationEventKind.MESSAGE_COMPLETED,)
+
+
+async def test_a_turn_with_frames_and_no_rows_is_skipped_with_its_reason(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """The era bound, and the reason it exists: this is what a replica on the previous image left.
+
+    Without it every live session reports drift for one `session_ttl_seconds` after the release
+    that starts writing these rows.
+    """
+    session_id, _ = await _turn_through_the_write_path(
+        chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
+    )
+    async with migrated_sessions() as db:
+        await db.execute(delete(SessionEvent).where(SessionEvent.session_id == session_id))
+        await db.commit()
+        report = await reprojection.check_session(db, session_id)
+
+    turn = one(report.turns)
+    assert (turn.verdict, turn.findings) == (reprojection.Verdict.SKIPPED, ())
+    assert "before the release" in (turn.skipped_because or "")
+
+
+async def test_a_turn_the_cursor_never_reached_is_skipped_rather_than_re_projected(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """The other era, #4178's: a session whose cursor a previous image never advanced.
+
+    Its frames were projected by *something* — the rows are there — but nothing says how far, so
+    re-projecting them would compare against a position no writer claimed.
+    """
+    session_id, _ = await _turn_through_the_write_path(
+        chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
+    )
+    async with migrated_sessions() as db:
+        await db.execute(update(Session).where(Session.session_id == session_id).values(projected_frame_seq=None))
+        await db.commit()
+        report = await reprojection.check_session(db, session_id)
+
+    turn = one(report.turns)
+    assert turn.verdict is reprojection.Verdict.SKIPPED
+    assert turn.checked_frames == 0
+    assert "cursor" in (turn.skipped_because or "")
+
+
+async def test_a_frame_recorded_past_the_cursor_is_counted_and_not_reported(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """A replica that died between recording a frame and projecting it is not drift.
+
+    The cursor is what says so, and adoption is what will still redo the frame — so the check
+    counts it and stays quiet.
+    """
+    session_id, _ = await _turn_through_the_write_path(
+        chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
+    )
+    await chat_store.record_frame(
+        session_id,
+        FrameDirection.FROM_AGENT,
+        "assistant",
+        _assistant({"type": "text", "text": "and another"}, message_id="msg_2"),
+    )
+
+    async with migrated_sessions() as db:
+        report = await reprojection.check_session(db, session_id)
+
+    turn = one(report.turns)
+    assert (turn.verdict, turn.findings) == (reprojection.Verdict.AGREES, ())
+    assert (turn.checked_frames, turn.unprojected_frames) == (1, 1)
+
+
+async def test_the_rendered_report_names_the_session_and_every_turn(chat_store, migrated_sessions, operator_id) -> None:
+    session_id, turn_id = await _turn_through_the_write_path(
+        chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
+    )
+    async with migrated_sessions() as db:
+        lines = reprojection.rendered(await reprojection.check_session(db, session_id))
+
+    assert str(session_id) in lines[0]
+    assert str(turn_id) in lines[1]
+    assert reprojection.Verdict.AGREES in lines[1]
+
+
+async def test_the_default_range_is_the_newest_sessions_that_ran_a_turn(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    quiet, _ = await chat_store.create(operator_id, SpaSession())
+    session_id, _ = await _turn_through_the_write_path(
+        chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
+    )
+
+    async with migrated_sessions() as db:
+        chosen = await reprojection.recent_sessions(db, limit=10)
+
+    assert list(chosen) == [session_id], f"{quiet.session_id} never ran a turn, so there is nothing to check"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()
