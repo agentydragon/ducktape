@@ -123,12 +123,257 @@ The cheapest step with most of the benefit, and the one to do next. One additive
 loop keeps its current structure and reads and writes its state instead of holding it. This alone
 kills `TurnResumed`, `_said_anything`, `_streaming_assistant` and the `spoke` guess.
 
-### 4. The fold
+### 4. The fold, and what it projects **into**
 
-`_run_turn`'s frame `match` becomes `project`, with the cursor advanced beside its effects. Mostly
-moving code once stage 3 has made the state durable. The abort path collapses here too: an abort
-becomes an intent the transport writes, and the CLI's answer comes back as frames — which is what
-removes the "exactly one `anext` in flight" dance.
+`_run_turn`'s frame `match` becomes `project`, with the cursor advanced beside its effects. The
+abort path collapses here too: an abort becomes an intent the transport writes, and the CLI's
+answer comes back as frames — which is what removes the "exactly one `anext` in flight" dance.
+
+An earlier draft called this "mostly moving code once stage 3 has made the state durable". That
+undersold it. The fold is not a relocation of the `match`; it is where the system decides **what a
+message is**, and that decision is currently made four times in four places.
+
+#### The four interpreters, counted
+
+Frames are authoritative: they are what the runner protocol plus the inner CLI's protocol put on the
+wire. Everything else is derived — but nothing says so, so four bodies of code read Claude's frame
+vocabulary independently:
+
+| Where                             | Reads                                 | Produces                                        |
+| --------------------------------- | ------------------------------------- | ----------------------------------------------- |
+| `_run_turn`'s `match`             | `assistant`, `stream_event`, `result` | message rows, live                              |
+| `adopt_open_turn` and its helpers | the same, from the log                | the same, reconstructed                         |
+| `session_views.rollout_calls`     | `assistant`, `user`                   | tool calls **and their results**, on every read |
+| `room_status.coarse_status`       | `assistant`, `system`/`task_started`  | the room's status line                          |
+
+The third exists because `session_messages.tool_uses` is a **half copy** — the calls without their
+answers, because the turn loop drops the `tool_result` blocks — so the read path re-derives both and
+prefers its own answer wherever the row can point into the log. The fourth means a backend whose
+frames are spelled differently makes the room go silent while the agent works, and it is why the SPA
+has no in-progress display at all.
+
+#### A message is provider-neutral, and tool calls are in it
+
+The alternative — messages as prose only, tool activity left in frames — was considered and
+rejected, on an argument from what the channels already do (operator, 2026-08-16). **Matrix shows
+tool calls in progress.** If that display is to come from a neutral source rather than from one
+CLI's frame types, then tool calls have to be in the neutral layer, and as a **lifecycle** rather
+than as completed records stapled to a finished message:
+
+- `TextDelta`, `MessageCompleted` — what was said.
+- `ToolCallStarted(call_id, name, input)` → `ToolCallCompleted(call_id, result, is_error)`.
+- `Activity` — the harness's own prose for a step in flight (`task_started`'s `description`), which
+  is the case that has no tool name at all.
+- `Reasoning` — the agent thought, with a summary where it gave one. A distinct state rather than
+  empty text: Claude emits `thinking` blocks and Codex emits reasoning summaries, and a thinking-only
+  message currently renders blank, which is a live bug rather than a hypothetical.
+- `TurnCompleted` — with a **neutral** usage shape. Today `end_turn` stores Claude's `result` payload
+  as it arrived; leave that and "turn completed" quietly means "whatever that one CLI sent".
+
+This is not a second copy of the wire. It is a normalization, and the difference is that a copy
+duplicates a shape while a projection **replaces** one — the harness's content-block encodings,
+thinking signatures, stream-event mechanics and `msg_…` id formats stay in frames as evidence, and
+none of them appear in a message.
+
+**Identity is ours.** `rollout_calls` joins on `agent_message_id`, the agent's own id — and a
+production count found 1,417 assistant rows that have none, which render their tool calls with no
+results and say nothing about it. The neutral message owns `message_id`; the agent's id is optional
+provenance. This is the lesson `EventTag.transaction_id()` taught in stage 5: identity derived from
+the wire fails exactly when the wire does not carry it.
+
+#### Two categories, one ordered stream
+
+Bootstrap narration is the case that shows the vocabulary above is incomplete (operator's question,
+2026-08-16). Sandbox setup output is **not the model talking** — it is the bridge: the haku-state
+checkout, workspace preparation, and the CLI's own stderr, arriving as `SetupOutput` envelope frames
+in the runner's vocabulary rather than the inner CLI's. It has no turn and no speaker. But both
+channels want it — the room narrates it live, the SPA is getting it — so it cannot stay a
+channel-side interpretation of a raw frame.
+
+So the neutral stream carries two categories:
+
+- **Conversation** — what participants said: operator messages, agent messages, tool activity,
+  reasoning.
+- **Session events** — what happened _to_ the session: provisioning, bootstrap narration, a session
+  ending and being replaced, a held batch, an aborted turn's notice.
+
+**One stream, because ordering is the point**: narration interleaves with messages in the room, and
+the debug view above reads in sequence. **Two categories, because every consumer filters
+differently**: the index embeds conversation and not "provisioning a sandbox", the surfaces render
+them differently, and a classifier cares about outgoing agent text rather than bootstrap.
+
+`RoomEventKind` — `REPLY`, `NARRATION`, `LIFECYCLE`, `STATUS`, `HOLDING`, `ROOM`, `UNREADABLE` — is
+already that enum, and it lives in `matrix_client.py`: a neutral concept inside a channel-specific
+module, the same smell as `coarse_status` reading Claude's frames from the channel side. It moves
+into the neutral layer, and channels render categories rather than deciding them. That also
+delivers what <../console/plans/session_channels.md> asks for — session-level events recorded rather
+than existing only as Matrix notices — because a notice becomes a record both channels read.
+
+**A third origin, and it qualifies "frames are authoritative".** Some session events cross no wire
+at all: the replica owning a session changing hands — a lease taken, expired, or adopted — is a
+console-side fact with no frame and never will have one (operator's question, 2026-08-16). So the
+stream has three origins: the inner CLI (conversation), the bridge (setup output), and **the console
+itself** (ownership, lifecycle). Frames are authoritative for _what crossed the wire_; a
+console-origin event is authored directly and is its own evidence.
+
+Two consequences, and the first is a trap:
+
+- **Reprojection must preserve rather than re-derive them.** Re-projecting a session's frames cannot
+  rebuild an event that was never in them, so a naive rebuild-and-replace would silently delete every
+  ownership change while the check reported green.
+- **Provenance is a union, not a nullable range.** `frame_range | authored` — an authored event has
+  no range because it has no frames, which is different in kind from a frame-derived event whose
+  range is unknown.
+
+Worth recording because it is cheap and would already have paid: three hypotheses in the
+2026-08-15 drop investigation turned on whether a console had rolled, and the available evidence was
+the operator's recollection. Ownership in the stream makes that a query. It is also the clearest case
+of **recorded but not rendered** — it happens on every deploy, so it belongs in the log and the frame
+inspector rather than in a room or a transcript.
+
+**Status is not an event.** The typing indicator and the "running Bash" line are derived state —
+what is happening _now_ — and fall out of projecting the stream rather than being entries in it.
+Storing them would litter every transcript with status churn.
+
+#### The projection is not a one-way door
+
+**From the SPA, an operator must be able to click a message or an event and read the actual
+provider-specific frame JSON behind it** (operator, 2026-08-16). A normalization that cannot be
+appealed is a normalization nobody can debug — and the whole reason for keeping frames authoritative
+is that they are the record the projection can be checked against.
+
+So every projected thing carries its provenance: the frames it came from, addressed by
+`frame_seq`, not by the agent's own ids. That is #4105 (`session_messages`' inclusive frame range),
+which this makes a **product requirement** rather than the diagnostic convenience it was proposed as
+— and it should extend to tool calls and activity, not stop at messages, since those are exactly the
+elements whose neutral form loses the most detail.
+
+**Making the range required, without dropping history.** A nullable range that sometimes means
+"unknown" is the weak version of this, and the operator asked whether to recover history or drop it
+so a `CHECK` can require the range (2026-08-16). Neither, yet — take the middle:
+
+- **`ADD CONSTRAINT … CHECK (…) NOT VALID`** when provenance lands. New and updated rows must carry a
+  range; existing rows are tolerated and unchecked. That stops the problem growing, which is the part
+  that matters, and `VALIDATE CONSTRAINT` promotes it later without rewriting the table.
+- **Backfill falls out of the reprojection tool** rather than being its own archaeology: project a
+  session's frames, align the derived sequence against the stored rows, and write the range where the
+  alignment is unambiguous. Where it is not, that is a finding about the projection rather than a gap
+  to guess at.
+- **Bounded by frame completeness.** Stage 1 is what made every frame class recorded; before it the
+  log has holes, so no range is recoverable there at all. The boundary is checkable rather than
+  guessable, and the full `VALIDATE` can only ever cover the post-stage-1 era.
+
+**Dropping history is more expensive than it looks**, which is why it is not the recommendation:
+`session_messages` _is_ the `haku_index` chat corpus — `chat_source.py` embeds `role`, `content` and
+`created_at` for semantic recall — so dropping it deletes Haku's memory of past conversations. That
+may still be worth doing one day, but as a deliberate decision rather than a side effect of wanting a
+`NOT NULL`.
+
+Two things fall out of the same pointer. The transcript's join to tool activity becomes a range
+lookup rather than a scan-and-match on `agent_message_id`, which is what lets `rollout_calls` retire.
+And the reprojection check below has a per-row subject: not just "do the rows match" but "does _this_
+row match what _those_ frames project to".
+
+#### What makes it safe: the projection is a pure function, and that is testable
+
+The property that prevents drift is not "do not duplicate" but **determinism**. If `project` is a
+pure function of a frame sequence, then:
+
+- drift is **detectable** — re-project a recorded session's frames and compare against its stored
+  rows, over real sessions, in CI;
+- a projection bug is **repairable** — fix the fold, re-project, and the transcript is corrected,
+  rather than a row written wrong staying wrong forever;
+- and the rows with no agent id stop being permanently degraded, because the rebuild does not depend
+  on the agent having supplied one.
+
+Stage 5's outbox already relies on the fold being single-writer per session (see the closing note);
+reprojection is the other half of that bargain and wants writing at the same time.
+
+#### Pressure-tested against the two things that would break it
+
+Neither is implemented; both are read from documentation rather than measured, in the same spirit as
+<../runtime/x/claude_bridge/docs/second_backend.md>.
+
+**A Codex backend.** Forces the four points above: identity cannot be borrowed; reasoning is a state
+both harnesses have; `TurnCompleted` needs its own usage shape; and the status line has to derive
+from neutral events or the room goes quiet. What it does **not** force is an approval concept —
+approval requests and responses travel over MCP to the console's queue, not over this channel
+(operator, 2026-08-16), and a harness that wants to ask about commands is configured not to in its
+launch spec, which is what `CliBackend.resolve` is already for.
+
+**A Telegram channel.** Breaks something different and sharper: **`sendMessage` has no idempotency
+key.** The outbox's retry is safe against Matrix because a redrive reuses the transaction id and the
+homeserver refuses it; against Telegram an ambiguous timeout genuinely double-posts. So a channel
+port must **declare** whether it has an idempotency key, and R11.6's "possibly duplicated" marking —
+deliberately not implemented in stage 5 because a stable transaction id left it no case to fire on —
+is exactly what a channel without one brings back. Telegram also caps a message at 4096 characters,
+so one neutral message can be several channel messages: "sent" is a property of a _(message,
+channel)_ pair that may hold more than one remote id.
+
+What survives both, unchanged: frames as per-backend evidence, the outbox as rows with a cursor, and
+content as neutral markup rendered per channel — `matrix_markdown.py` already does the second half of
+that, so the channels share a source and not a rendering.
+
+#### Does a turn live over frames or over neutral events?
+
+Over the neutral events (operator's question, 2026-08-16) — but the question is worth answering
+carefully, because today the two are indistinguishable and the code picks the wrong one.
+
+`session_turns` opens when a prompt is claimed and closes on Claude's `result` frame, whose payload
+is stored as-is for cost, usage and duration. So the boundary is currently **one CLI invocation**.
+Every consumer, though, is neutral: the room's typing indicator and status line bracket a turn, the
+SPA renders turn boundaries inline in the transcript, the outbox keys a turn's last word by
+`turn_id`, adoption asks whether a turn is open, and I3 wants a batch acknowledged when its turn
+completes. None of them care how a particular CLI spells the end.
+
+**The concept is three jobs wearing one name**, which is why it is worth being careful before
+moving it. Counted from its readers:
+
+| Job                                                 | Reader                                                                                                                        | Belongs to                                                 |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| **A mutex** — one exchange at a time                | `enqueue_prompt` refuses while a turn is open, which is what makes queue-until-turn-end (R2.2) work                           | the harness cycle: one CLI cannot take two prompts at once |
+| **A recovery marker** — this exchange was abandoned | `adopt_open_turn`; the row already carries `first_frame_seq`, so a turn is quietly a frame range                              | the harness cycle: an invocation can be interrupted        |
+| **An accounting and display unit**                  | `list_turns` for the SPA's inline boundaries, outcome, duration and cost; `uq_session_outbox_turn` for one last word per turn | the conversational exchange                                |
+| **"Is the agent working"**                          | `responding = await _open_turn(...) is not None` — the status column no longer carries this                                   | both, today                                                |
+
+Mid-turn steering is exactly the change that separates them: the mutex relaxes (a second message
+joins a running exchange) while the display unit stays one turn. So when the split comes, the mutex
+and the recovery marker follow the invocation and the accounting unit follows the conversation —
+and "is the agent working" becomes a question about the invocation, since that is what the typing
+indicator is actually reporting.
+
+**Two concepts coincide today and need not always.** The _harness cycle_ — one prompt in, one result
+out, carrying that invocation's usage — and the _conversational exchange_, which is what a person
+means by a turn and what every surface renders. They are the same thing only because one batch makes
+one prompt which makes one invocation. Three plausible changes separate them: mid-turn steering
+(folding a message into a running exchange, deferred but planned), a backend needing several
+invocations for one exchange (continuation, compaction, an internal retry), and a harness reporting
+usage per invocation across an exchange that spans more than one.
+
+So the turn is neutral, its boundaries are **produced by the backend adapter** (`TurnCompleted`), and
+if the two ever diverge the neutral turn is the conversational one while "which invocations made it"
+becomes frame-level detail — reachable through the same `frame_seq` range as everything else. Two
+consequences: the neutral usage shape should be **aggregatable** rather than one payload, since an
+exchange may sum several invocations; and `end_turn` storing the raw `result` stops being "what the
+turn cost" and becomes evidence, with the cost living in columns that mean the same thing on every
+backend.
+
+#### Two decisions this leaves open
+
+- **The SPA renders messages by default and must let an operator inspect the tool calls underneath**
+  (operator, 2026-08-16). That is disclosure over one neutral source, not a second query path — but
+  which surface shows what, and whether in-progress calls appear in the SPA the way they do in the
+  room, is unbuilt.
+- **Reasoning and tool activity are not rendered in the channels or the SPA conversation view for
+  now** (operator, 2026-08-16). They are projected and stored; showing them is a later decision. Note
+  what that implies: the neutral layer carries strictly more than any surface currently displays,
+  which is the right direction — a projection that only holds what today's UI renders would have to
+  be re-derived the moment a surface grows.
+- **Durable tool inputs and results widen the read surface.** Commands, file contents and diffs
+  become neutral rows reachable through the `haku_conversations` tools.
+  <information*trust_tiers.md> reasons about who may read past \_conversations*; it will have to
+  reason about who may read past _tool activity_. The index should keep embedding prose only —
+  tool JSON would pollute the vectors — but that is a selection choice, not a boundary.
 
 ### 5. The room outbox — **done**
 
