@@ -150,6 +150,46 @@ phase timers, or one-off elapsed-time counters to production code just
 to understand a hotspot. If temporary instrumentation is unavoidable,
 keep it local to the investigation and remove it before review.
 
+## Splitting Work Into PRs
+
+**The scarce resource is operator review, not machine time.** What blocks progress is
+waiting for a PR to be written and then iterating on it — not builds, not conflicts. Every
+policy below follows from that one fact.
+
+**Split aggressively into independently approvable PRs, and dispatch them in parallel.**
+A reviewer who has five separate PRs in front of them can approve the three they agree with
+today and argue about the other two for as long as it takes. A reviewer holding one combined
+PR can approve none of it until they agree with all of it.
+
+**A conflict is not a reason to wait.** Rebasing and resolving cross-PR conflicts is agent
+work and costs the operator essentially nothing — they have said so explicitly, repeatedly.
+Sequencing costs them a great deal. So given a complex change A and a simple change B that
+overlaps it:
+
+- **Dispatch B anyway.** If B is something the operator is likely to be happy with, it can
+  land while A is still under discussion — and A's discussion may run for days. The codebase
+  gets better in the meantime instead of waiting.
+- **Whoever lands second rebases.** That is the expected cost of doing business, not a
+  failure. Do not treat "these two will collide" as information that changes the plan.
+- **Never sequence C, D, E, F behind A out of fear of collisions.** This is the specific
+  failure mode to avoid: a queue of ready work stalled behind one contested change.
+
+**The only legitimate reason to hold work back is that it cannot yet be specified** — its
+content genuinely depends on how an open question is resolved, so writing it now means
+guessing. That is a real dependency. "It will conflict", "it touches the same file", "it
+would be tidier afterwards", and "I would have to rebase it" are **not** real dependencies.
+When you catch yourself holding work for one of those, dispatch it instead.
+
+Corollaries worth stating:
+
+- **Stack rather than block.** Work that builds on an unmerged PR branches from it and says
+  so in the body, naming which commit is the one to review. It does not wait for a merge.
+- **Say what a PR deliberately leaves out**, and why, so the reviewer can see the split was
+  a decision rather than an omission. A PR that answers a review comment by changing stored
+  shape belongs apart from one whose thesis is that it changes no rows.
+- **Parallel agents will collide, and that is fine.** Do not have them coordinate, narrow
+  their scope to dodge each other, or wait in turn.
+
 ## Before Hand-off
 
 **Default: open the PR and let CI run the tests.** The required checks already
