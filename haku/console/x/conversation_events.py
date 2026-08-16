@@ -257,3 +257,23 @@ type ConversationEvent = (
     | ActivityCompleted
     | TurnCompleted
 )
+
+
+@dataclass(frozen=True, slots=True)
+class Projection:
+    """What a stretch of a backend's frames meant, plus what it held that this release cannot read.
+
+    Here rather than beside the Claude adapter because neither half mentions a backend: the events
+    are this vocabulary, and an unreadable frame is a fact about the reader. A second adapter
+    returns this same type, which is what lets a surface consume one without knowing which produced
+    it.
+
+    `unprojected` counts by whatever the adapter calls a frame class — for the Claude adapter,
+    `tool_progress`, `system/vcs_state_changed`, `user/text`. It is how the default branch stays
+    observable without costing an event per frame. An adapter's *deliberately* ignored classes are
+    not in it: the actionable signal is "the backend is sending something we do not map", not "the
+    heartbeat beat again".
+    """
+
+    events: tuple[ConversationEvent, ...]
+    unprojected: Mapping[str, int]
