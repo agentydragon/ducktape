@@ -477,9 +477,10 @@ class SessionStore:
                     return ResumedTurn(turn_id=turn_id, replay=await _unprojected_frames(db, session_id, cursor))
                 # CLEANUP(added 2026-08-16): delete this branch, `_recorded_completion` and
                 #   `RESULT_FRAME_KIND`'s use here once no session that can still acquire a frame
-                #   has a NULL or pre-turn `projected_frame_seq` — which `session_ttl_seconds`
-                #   (7200) clears within two hours of the release carrying migration 0051
-                #   converging:
+                #   has a NULL or pre-turn `projected_frame_seq`. That population does not empty on
+                #   its own — `_renew_lease` slides the sandbox's `shutdownTime` on every heartbeat,
+                #   so a session a replica is tending never ages out — so ending those sessions is
+                #   the gate (<../../plans/legacy_purge.md> phase 1):
                 #     SELECT count(*) FROM sessions s JOIN session_turns t USING (session_id)
                 #      WHERE t.ended_at IS NULL
                 #        AND (s.projected_frame_seq IS NULL OR s.projected_frame_seq < t.first_frame_seq - 1)

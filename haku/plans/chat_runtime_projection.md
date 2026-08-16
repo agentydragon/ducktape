@@ -201,11 +201,12 @@ console holds rather than colliding with it from 1.
 
 **Why this rides as an added field and not a `PROTOCOL_VERSION` bump.** `SUPPORTED_VERSIONS` is a
 single element, so a bump does not negotiate — it _refuses_ the peer on the other number. A runner's
-image is fixed when its SandboxClaim is created and a live session may outlast several console
-releases (`session_ttl_seconds` bounds it at two hours), so a bump kills every session in flight on
-the release that ships it. `protocol.py` already made the opposite trade for exactly this reason:
-`extra="ignore"`, so an unknown _field_ is dropped by a peer that predates it while an unknown
-_kind_ still fails closed. `seq` and `resume_from` are therefore optional fields on frames that
+image is fixed when its SandboxClaim is created and a live session outlasts console releases for as
+long as a replica tends it (`_renew_lease` slides the claim's `shutdownTime` on every heartbeat, so
+nothing bounds that), so a bump kills every session in flight on the release that ships it.
+`protocol.py` already made the opposite trade for exactly this reason: `extra="ignore"`, so an
+unknown _field_ is dropped by a peer that predates it while an unknown _kind_ still fails closed.
+`seq` and `resume_from` are therefore optional fields on frames that
 already exist, and both directions of skew degrade to today's behaviour: an old console sends no
 `resume_from` and gets the whole window; an old runner sends no `seq` and the console records none.
 
@@ -700,8 +701,8 @@ fold**, per frame and under `STREAM_EVENTS`, because `project_log` over a whole 
 different event sequence and a checker driving it reports drift everywhere; that is why the fold is
 now `x/frame_projection.py` rather than the turn loop's private function. It must run **per turn
 and skip a turn with no rows at all**, because that is what a replica on the image before these
-rows existed leaves behind, and without the skip every live session would be reported as drifted
-for one `session_ttl_seconds` after the release.
+rows existed leaves behind, and without the skip every live session predating the release would be
+reported as drifted until that session ends.
 
 **No standing check and no CLI over it** (operator, 2026-08-16). It cannot run in CI — what it
 needs is production rows — and production has almost none: `session_events` held **one row** on

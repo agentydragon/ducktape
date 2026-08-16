@@ -284,8 +284,9 @@ Four things to know before changing it:
   turn's last word is written between the two, so advancing when that frame was projected would
   put the cursor ahead of writes still to come.
 - **NULL means no cursor**, which is every session predating migration `0051`. Those take the
-  pre-cursor path, tombstoned on `adopt_open_turn`, and the population empties within
-  `session_ttl_seconds` of the release converging.
+  pre-cursor path, tombstoned on `adopt_open_turn`, and the population empties only when those
+  sessions are ended — `_renew_lease` slides the sandbox's `shutdownTime` on every heartbeat, so a
+  session a replica is tending never ages out.
 
 **`read_transcript` has no cursor and is not this one.** It re-reads the session and seeds an empty
 state per page, so it folds from the first frame every time; that is a read path with nowhere to

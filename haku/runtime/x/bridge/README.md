@@ -85,6 +85,7 @@ frames it writes down.
 The runner accepts `--websocket-url`, `--backend` and `--cli-path`, and optionally sends the
 `HAKU_AGENT_SDK_RUNNER_TOKEN` environment value as a bearer credential — a name this rename
 deliberately left alone, because it is a deploy contract shared with a SandboxTemplate, and a live
-session's runner pod keeps its image for up to `session_ttl_seconds`, so "new console, old runner"
-outlives any console roll. That bridge credential is removed from the child CLI's environment. The
+session's runner pod keeps its image until the session ends — `_renew_lease` slides the sandbox's
+`shutdownTime` on every heartbeat, so it does not age out — which makes "new console, old runner"
+outlive any console roll. That bridge credential is removed from the child CLI's environment. The
 sandbox image must make its backend's executable available at the path that backend's variable names.

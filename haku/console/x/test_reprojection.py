@@ -140,8 +140,8 @@ async def test_a_turn_with_frames_and_no_rows_is_skipped_with_its_reason(
 ) -> None:
     """The era bound, and the reason it exists: this is what a replica on the previous image left.
 
-    Without it every live session reports drift for one `session_ttl_seconds` after the release
-    that starts writing these rows.
+    Without it every live session predating the release that starts writing these rows reports
+    drift until that session ends.
     """
     session_id, _ = await _turn_through_the_write_path(
         chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]

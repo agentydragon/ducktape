@@ -19,8 +19,9 @@ lookup rather than a guess.
   than reported.
 - **The release.** A turn served before `session_events` had a writer has frames and no rows,
   which is indistinguishable from a projection that has stopped producing. Such a turn is skipped
-  with its reason, per turn, so the check does not report drift on every live session for one
-  `session_ttl_seconds` after the release.
+  with its reason, per turn, so the check does not report drift on every live session predating
+  that release — a population that lasts until those sessions are ended, since a session a replica
+  is tending never ages out.
 
 The third case is genuinely ambiguous and is reported rather than guessed at: a turn whose rows
 begin part-way through it, which is what a replica on the new image adopting a turn the old one
@@ -215,11 +216,13 @@ def _outcome(
         return Skipped(reason=SkipReason.CURSOR_NEVER_REACHED)
     if not rows and any(projected[seq] for seq in within):
         # CLEANUP(added 2026-08-16): delete this arm once no session that can still acquire a
-        #   frame predates the release that writes `session_events` — `session_ttl_seconds` (7200)
-        #   clears them within two hours of it converging:
-        #     SELECT count(*) FROM session_turns t
+        #   frame predates the release that writes `session_events`. That population does not empty
+        #   on its own — `_renew_lease` slides the sandbox's `shutdownTime` on every heartbeat, so a
+        #   session a replica is tending never ages out — so ending those sessions is the gate
+        #   (<../../plans/legacy_purge.md> phase 1):
+        #     SELECT count(*) FROM session_turns t JOIN sessions s USING (session_id)
         #      WHERE NOT EXISTS (SELECT 1 FROM session_events e WHERE e.turn_id = t.turn_id)
-        #        AND t.started_at > now() - interval '2 hours';
+        #        AND s.status NOT IN ('closed', 'failed');
         #   After that, a turn with frames and no rows is drift and must be reported as one.
         return Skipped(reason=SkipReason.NO_ROWS_AT_ALL)
     findings: list[Finding] = [
