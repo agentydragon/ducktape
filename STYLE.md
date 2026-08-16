@@ -409,6 +409,23 @@ bites.
 - `[custom text](path/to/file.md)` — link with custom text
 - Never `[path](path)` — duplicates the path
 
+**Gotcha: `<path>` is not a real autolink, and prettier will eat the underscores in one.** A
+CommonMark autolink needs a scheme, so `<docs/frame_shape_census.md>` is parsed as plain text.
+Prettier then treats the path's first `_` as an emphasis opener and pairs it with the next `_`
+anywhere in the same paragraph, rewriting both to `*`:
+
+```text
+see <docs/frame_shape_census.md> and this is _emphasised_ text.
+see <docs/frame*shape_census.md> and this is \_emphasised* text.   ← after prettier
+```
+
+The link then points at a file that does not exist, and the damage lands on commit rather than in
+review. It is silent when the paragraph has no second `_`, which is why it survives spot checks.
+
+**So a path containing `_` gets `[custom text](path)`**, whose target sits inside a real link
+destination where no emphasis parsing reaches. Angle brackets stay fine for paths with no
+underscore.
+
 ### Inline Code in Prose
 
 Backtick every code-like token in markdown prose: flags, paths, config keys, env vars,
