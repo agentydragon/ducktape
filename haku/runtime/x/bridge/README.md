@@ -5,14 +5,14 @@ console owns the CLI's own newline-delimited JSON protocol (`cli_client.py`, des
 <../../../cli_protocol/README.md>); a Claude Code process runs inside a Haku sandbox pod; this
 package is everything between them.
 
-| file            |                                                                                     |
-| --------------- | ----------------------------------------------------------------------------------- |
-| `protocol.py`   | the Haku envelope, its version, and the `TextWebSocket` port                        |
-| `transport.py`  | `WebSocketTransport` — the console end: launch, then frames both ways               |
-| `cli_client.py` | `ClaudeCli` — the protocol client, both channels, and the optional `FrameSink`      |
-| `backend.py`    | `CliBackend` — which CLI is being run, and the `ProcessLaunch` that starts it       |
-| `options.py`    | Claude as a backend: `ClaudeSession` → argv, and `ClaudeBackend` → the binary       |
-| `runner.py`     | `runner_bin`, which runs **inside** the sandbox and copies bytes to the CLI's stdio |
+| file            |                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------ |
+| `protocol.py`   | the Haku envelope, its version, and the `TextWebSocket` port                         |
+| `transport.py`  | `WebSocketTransport` — the console end: launch, then frames both ways                |
+| `cli_client.py` | `ClaudeCli` — the protocol client, both channels, and the `FrameSink` numbering them |
+| `backend.py`    | `CliBackend` — which CLI is being run, and the `ProcessLaunch` that starts it        |
+| `options.py`    | Claude as a backend: `ClaudeSession` → argv, and `ClaudeBackend` → the binary        |
+| `runner.py`     | `runner_bin`, which runs **inside** the sandbox and copies bytes to the CLI's stdio  |
 
 ## Backends
 

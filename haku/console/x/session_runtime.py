@@ -82,10 +82,6 @@ logger = logging.getLogger(__name__)
 # room has already heard the turn's prose — so an abort is visible either way.
 ABORTED_NOTICE = "[aborted by operator]"
 
-# Stands in for the rollout sequence of a frame that has none, so it can be projected at all — see
-# `_projected`. It never reaches a row: what the turn loop writes is the sequence it was handed.
-_UNNUMBERED_FRAME = -1
-
 
 def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
     """The message of the first leaf in *errors*, for the operator-facing `error` column.
@@ -825,10 +821,10 @@ def _projected(received: ReceivedFrame) -> tuple[ConversationEvent, ...]:
       message's.** A message then completes on the frame that *closed* it — a different
       `message.id`, or the `result` — so `source_last_frame_seq` records that one instead of the
       last frame that built the message. `test_projected_assistant_message_points_to_the_frames_that_built_it`
-      catches it. The fix is to read `event.provenance` back, and that first needs `frame_seq` to
-      stop being `int | None`: `_UNNUMBERED_FRAME` would otherwise reach the column
-      (<../../plans/chat_runtime_projection.md> § The projection is not a one-way door names that
-      seam as its own prerequisite).
+      catches it. The fix is to read `event.provenance` back, which is now open: `frame_seq` is
+      `int` at this boundary, so a `FrameRange` read off an event names frames that exist
+      (<../../plans/chat_runtime_projection.md> § The projection is not a one-way door named that
+      as the prerequisite; it is discharged).
     - **`streamed` is one accumulator, and under `STREAM_EVENTS` a `TextDelta` is keyed by the
       delta's own frame rather than the message's** (`_stream_delta` has no id to group by). With a
       state held, two adjacent text messages share it: the second's deltas arrive before the first
@@ -842,20 +838,9 @@ def _projected(received: ReceivedFrame) -> tuple[ConversationEvent, ...]:
     `Projection.unprojected` is dropped rather than logged: counting the classes this release has
     no meaning for is worth doing where the events are *stored*, and per frame in the hot path it
     would be a log line for every heartbeat.
-
-    A frame the client never numbered — `ClaudeCli` with no rollout sink, which is tests and
-    nothing in the console — still projects to the same events. Only its `FrameRange` has nothing
-    real to point at, so the loop writes the sequence it holds instead of reading one back out;
-    `FrameRange` is two integers on purpose, since "no frames at all" is `Authored` rather than a
-    null range.
     """
     return projection.project_log(
-        [
-            projection.RecordedFrame(
-                frame_seq=received.frame_seq if received.frame_seq is not None else _UNNUMBERED_FRAME,
-                payload=received.payload,
-            )
-        ],
+        [projection.RecordedFrame(frame_seq=received.frame_seq, payload=received.payload)],
         delta_source=projection.DeltaSource.STREAM_EVENTS,
     ).events
 

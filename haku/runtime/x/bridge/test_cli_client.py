@@ -10,7 +10,37 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from haku.runtime.x.bridge.cli_client import ClaudeCli, ClaudeCliError
+from haku.runtime.x.bridge.cli_client import ClaudeCli, ClaudeCliError, RecordedFrame
+
+# The gap between one frame's number and the next. Deliberately not 1: the real sink is a Postgres
+# `Identity` column, which skips, so the sequence is an order and never a dense count — and a test
+# that numbered densely would let a reader come to depend on adjacency.
+_SEQ_STRIDE = 3
+
+
+class CountingSink:
+    """A `FrameSink` that only numbers, which is all this file needs one for.
+
+    Every client keeps a rollout, so a test cannot construct one without a sink; what the console's
+    own sink additionally does — recognising a replayed frame — is `RolloutRecorder`'s, and is
+    covered against a real database in `haku/console/x/test_session_runtime.py`.
+    """
+
+    def __init__(self) -> None:
+        self.numbered: list[tuple[int, dict[str, Any]]] = []
+        self._next = 1
+
+    def _number(self, payload: dict[str, Any]) -> int:
+        seq = self._next
+        self._next += _SEQ_STRIDE
+        self.numbered.append((seq, payload))
+        return seq
+
+    async def sent(self, payload: dict[str, Any]) -> int:
+        return self._number(payload)
+
+    async def received(self, payload: dict[str, Any]) -> RecordedFrame:
+        return RecordedFrame(fresh=True, frame_seq=self._number(payload))
 
 
 class ScriptedChannel:
@@ -50,7 +80,7 @@ def _answer(request: dict[str, Any], **response: Any) -> dict[str, Any]:
 
 async def test_a_control_request_is_answered_by_its_own_response() -> None:
     channel = ScriptedChannel()
-    cli = ClaudeCli(channel, control_timeout=5)
+    cli = ClaudeCli(channel, CountingSink(), control_timeout=5)
     connecting = asyncio.create_task(cli.connect())
     await asyncio.sleep(0)
 
@@ -65,7 +95,8 @@ async def test_a_control_request_is_answered_by_its_own_response() -> None:
 async def test_conversation_frames_are_delivered_verbatim_and_control_is_not() -> None:
     """The record is the wire. A control response is plumbing and must not reach a reader."""
     channel = ScriptedChannel()
-    cli = ClaudeCli(channel, control_timeout=5)
+    sink = CountingSink()
+    cli = ClaudeCli(channel, sink, control_timeout=5)
     connecting = asyncio.create_task(cli.connect())
     await asyncio.sleep(0)
     channel.deliver(_answer(channel.written[0]))
@@ -76,8 +107,11 @@ async def test_conversation_frames_are_delivered_verbatim_and_control_is_not() -
     channel.deliver({"type": "result", "is_error": False})
     frames = cli.frames()
 
-    assert (await anext(frames)).payload == assistant
-    assert (await anext(frames)).payload["type"] == "result"
+    first, second = await anext(frames), await anext(frames)
+    assert (first.payload, second.payload["type"]) == (assistant, "result")
+    # Each carries the sink's number for it, which is what a reader addresses a frame by. The
+    # control response the sink numbered before them is plumbing and reached nobody.
+    assert [(first.frame_seq, first.payload), (second.frame_seq, second.payload)] == sink.numbered[-2:]
     await cli.aclose()
 
 
@@ -85,7 +119,8 @@ async def test_a_prompt_carries_the_id_its_lifecycle_will_be_reported_under() ->
     """Without a `uuid` the CLI reports no `command_lifecycle` for the prompt at all, and
     `interrupt`'s `cancel_queued` cannot reach it."""
     channel = ScriptedChannel()
-    cli = ClaudeCli(channel, control_timeout=5)
+    sink = CountingSink()
+    cli = ClaudeCli(channel, sink, control_timeout=5)
     connecting = asyncio.create_task(cli.connect())
     await asyncio.sleep(0)
     channel.deliver(_answer(channel.written[0]))
@@ -94,8 +129,9 @@ async def test_a_prompt_carries_the_id_its_lifecycle_will_be_reported_under() ->
     prompt = await cli.query("hello")
 
     assert channel.written[-1]["uuid"] == prompt.command_uuid
-    # No sink, so nothing numbered the frame and the prompt says so rather than inventing one.
-    assert prompt.frame_seq is None
+    # The number the prompt reports is the sink's own for the frame just written, which is what
+    # lets the console point the operator's message row at the frame it went out as.
+    assert sink.numbered[-1] == (prompt.frame_seq, channel.written[-1])
     assert channel.written[-1]["message"] == {"role": "user", "content": "hello"}
     await cli.aclose()
 
@@ -104,7 +140,7 @@ async def test_an_abort_also_drops_the_prompts_queued_behind_the_turn() -> None:
     """A bare `interrupt` cancels the running turn and the CLI starts the next queued prompt,
     which is not what an operator saying "stop" means."""
     channel = ScriptedChannel()
-    cli = ClaudeCli(channel, control_timeout=5)
+    cli = ClaudeCli(channel, CountingSink(), control_timeout=5)
     connecting = asyncio.create_task(cli.connect())
     await asyncio.sleep(0)
     channel.deliver(_answer(channel.written[0]))
@@ -122,7 +158,7 @@ async def test_an_abort_also_drops_the_prompts_queued_behind_the_turn() -> None:
 async def test_the_stream_ending_ends_the_frames_rather_than_hanging() -> None:
     """A consumer waiting for this turn's `result` has to learn the CLI is gone."""
     channel = ScriptedChannel()
-    cli = ClaudeCli(channel, control_timeout=5)
+    cli = ClaudeCli(channel, CountingSink(), control_timeout=5)
     connecting = asyncio.create_task(cli.connect())
     await asyncio.sleep(0)
     channel.deliver(_answer(channel.written[0]))
@@ -138,7 +174,7 @@ async def test_wait_closed_resolves_when_the_stream_ends() -> None:
     """The reader is a detached task, so a lost socket can only be observed, not caught: an idle
     owner races `wait_closed` to learn the stream is gone rather than parking (console handler)."""
     channel = ScriptedChannel()
-    cli = ClaudeCli(channel, control_timeout=5)
+    cli = ClaudeCli(channel, CountingSink(), control_timeout=5)
     connecting = asyncio.create_task(cli.connect())
     await asyncio.sleep(0)
     channel.deliver(_answer(channel.written[0]))
@@ -160,7 +196,7 @@ async def test_wait_closed_resolves_when_the_socket_breaks() -> None:
             yield  # pragma: no cover - marks this an async generator
 
     channel = BreakingChannel()
-    cli = ClaudeCli(channel, control_timeout=0.2)
+    cli = ClaudeCli(channel, CountingSink(), control_timeout=0.2)
     connecting = asyncio.create_task(cli.connect())
     await asyncio.sleep(0)
     channel.deliver(_answer(channel.written[0]))
@@ -172,7 +208,7 @@ async def test_wait_closed_resolves_when_the_socket_breaks() -> None:
 
 
 async def test_an_unanswered_control_request_times_out_rather_than_waiting_forever() -> None:
-    cli = ClaudeCli(ScriptedChannel(), control_timeout=0.05)
+    cli = ClaudeCli(ScriptedChannel(), CountingSink(), control_timeout=0.05)
     with pytest.raises(ClaudeCliError, match="initialize"):
         await cli.connect()
     await cli.aclose()
@@ -180,7 +216,7 @@ async def test_an_unanswered_control_request_times_out_rather_than_waiting_forev
 
 async def test_an_error_response_is_raised_to_the_caller() -> None:
     channel = ScriptedChannel()
-    cli = ClaudeCli(channel, control_timeout=5)
+    cli = ClaudeCli(channel, CountingSink(), control_timeout=5)
     connecting = asyncio.create_task(cli.connect())
     await asyncio.sleep(0)
     channel.deliver(
@@ -200,7 +236,7 @@ async def test_a_request_we_cannot_serve_is_refused_rather_than_left_hanging() -
     but an unanswered one blocks the CLI forever, which is a room that goes quiet for no
     recorded reason."""
     channel = ScriptedChannel()
-    cli = ClaudeCli(channel, control_timeout=5)
+    cli = ClaudeCli(channel, CountingSink(), control_timeout=5)
     connecting = asyncio.create_task(cli.connect())
     await asyncio.sleep(0)
     channel.deliver(_answer(channel.written[0]))

@@ -931,14 +931,15 @@ class SessionMessage(Base):
     # The two values are session-scoped; frame_seq is globally allocated and is not a foreign key
     # by itself.
     #
-    # **NULL here means three different things, and this table cannot tell them apart**, which is
+    # **NULL here means two different things, and this table cannot tell them apart**, which is
     # why the plan's "new and updated rows must carry a range" is not a constraint that can be
-    # written against these two columns: a row predating #4105; the operator's own prompt, written
-    # before the frame it goes out as exists and never pointed at all if no turn claims it; and a
-    # projection whose frame carried no sequence. The first two are the plan's `authored` arm, the
-    # third is its `frame_range`-but-unrecorded arm, and a `CHECK` sees only NULL. Requiring the
-    # range belongs where the union is a real discriminator — the neutral events of stage 4 — not
-    # here. See <plans/chat_runtime_projection.md> § "The projection is not a one-way door".
+    # written against these two columns: a row predating #4105, and the operator's own prompt,
+    # written before the frame it goes out as exists and never pointed at all if no turn claims
+    # it. Both are the plan's `authored` arm, and a `CHECK` sees only NULL. (It used to mean a
+    # third thing — a projection whose frame carried no sequence — which a numbered frame at the
+    # console's boundary has since made unreachable.) Requiring the range belongs where the union
+    # is a real discriminator — the neutral events of stage 4 — not here.
+    # See <plans/chat_runtime_projection.md> § "The projection is not a one-way door".
     source_first_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     source_last_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # What this message asked its tools to do, in the conversation vocabulary rather than in one

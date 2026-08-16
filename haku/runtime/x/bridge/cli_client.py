@@ -14,11 +14,15 @@ Two channels are multiplexed on one stream, distinguished by the top-level `type
 - **Control** — `control_request` / `control_response` correlated by `request_id`, carrying
   `initialize`, `interrupt` and the rest.
 
-**The record is taken here** when a caller passes a `FrameSink`, because this is where each
-frame is already parsed and where both channels are still visible. It used to be taken by a
+**The record is taken here**, by the `FrameSink` every client is built with, because this is where
+each frame is already parsed and where both channels are still visible. It used to be taken by a
 decorator around the socket, one layer down, which re-decoded every frame's envelope to see what
 had crossed — a second `json.loads` of the whole session, and a place that had to know the
 envelope in order to look inside it.
+
+**Every frame the client hands on carries the sink's number for it**, which is what lets a reader
+address one. The sink is therefore not optional: a client with nowhere to record is a client whose
+frames cannot be pointed at, and the console's projection has to point at them.
 
 **Gotcha this exists to avoid.** The SDK's message channel is a *blocking* 100-slot buffer, and
 its reader routes control responses. A consumer that stops draining conversation frames
@@ -88,10 +92,14 @@ class RecordedFrame:
 
 
 class FrameSink(Protocol):
-    """Where a session's frames are kept, if anywhere.
+    """Where a session's frames are kept, and what numbers them.
 
     Two methods rather than one plus a direction enum, because the only direction vocabulary
     that exists lives in the console's own schema and this package must not depend on it.
+
+    **The numbers it returns are an order, not a count.** The console's sink is a Postgres
+    `Identity` column, which leaves gaps — so a reader may compare two of them and may not read a
+    gap between them as a frame that went missing.
 
     Called from the client's write path and from its reader, so an implementation that raises
     takes the session down — which is the intent where the sink is the rollout: a record with
@@ -108,8 +116,7 @@ class SentPrompt:
     """One written prompt: the id its lifecycle is reported under, and where it was recorded."""
 
     command_uuid: str
-    # None when this client keeps no rollout, which is every use that passes no `FrameSink`.
-    frame_seq: int | None
+    frame_seq: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,8 +130,7 @@ class ReceivedFrame:
     """
 
     payload: dict[str, Any]
-    # None when this client keeps no rollout, as above.
-    frame_seq: int | None
+    frame_seq: int
 
 
 class ClaudeCliError(Exception):
@@ -135,11 +141,7 @@ class ClaudeCli:
     """One CLI process, addressed over an already-authenticated transport."""
 
     def __init__(
-        self,
-        channel: FrameChannel,
-        *,
-        control_timeout: float = CONTROL_TIMEOUT_SECONDS,
-        frames_to: FrameSink | None = None,
+        self, channel: FrameChannel, frames_to: FrameSink, *, control_timeout: float = CONTROL_TIMEOUT_SECONDS
     ):
         self._channel = channel
         self._control_timeout = control_timeout
@@ -234,10 +236,8 @@ class ClaudeCli:
         self._pending.clear()
         await self._channel.close()
 
-    async def _write(self, payload: dict[str, Any]) -> int | None:
+    async def _write(self, payload: dict[str, Any]) -> int:
         await self._channel.write(json.dumps(payload) + "\n")
-        if self._frames_to is None:
-            return None
         return await self._frames_to.sent(payload)
 
     async def _read(self) -> None:
@@ -255,13 +255,10 @@ class ClaudeCli:
                 # whatever the previous console may not have acknowledged, and a frame already in
                 # the log must not be routed again — a second `assistant` would post the same
                 # answer into the room twice.
-                frame_seq: int | None = None
-                if self._frames_to is not None:
-                    recorded = await self._frames_to.received(frame)
-                    if not recorded.fresh:
-                        skipped += 1
-                        continue
-                    frame_seq = recorded.frame_seq
+                recorded = await self._frames_to.received(frame)
+                if not recorded.fresh:
+                    skipped += 1
+                    continue
                 if skipped:
                     logger.info("Skipped %d replayed frame(s) already in the rollout", skipped)
                     skipped = 0
@@ -273,7 +270,7 @@ class ClaudeCli:
                     case "control_request":
                         await self._refuse(frame)
                     case _:
-                        self._conversation.put_nowait(ReceivedFrame(payload=frame, frame_seq=frame_seq))
+                        self._conversation.put_nowait(ReceivedFrame(payload=frame, frame_seq=recorded.frame_seq))
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -323,10 +320,7 @@ class ClaudeCli:
 
 
 def cli_over_websocket(
-    websocket: TextWebSocket,
-    launch: ClaudeLaunch,
-    on_progress: ProgressSink | None = None,
-    frames_to: FrameSink | None = None,
+    websocket: TextWebSocket, launch: ClaudeLaunch, on_progress: ProgressSink | None, frames_to: FrameSink
 ) -> ClaudeCli:
     """The console's composition: a CLI client over the runner's bridge socket."""
-    return ClaudeCli(WebSocketTransport(websocket, launch, on_progress), frames_to=frames_to)
+    return ClaudeCli(WebSocketTransport(websocket, launch, on_progress), frames_to)

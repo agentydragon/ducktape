@@ -194,7 +194,7 @@ Two consequences of that being live:
   calls `project_log`), so a message still ends at its own frame there. Holding one state across the
   turn is a two-line change now — and it was tried, and breaks two things in the _loop_, both
   written up in `_projected`'s docstring: the loop writes the frame it is holding rather than the
-  message's own range (which needs `frame_seq` to stop being `int | None` first), and `streamed` is
+  message's own range (whose prerequisite — `frame_seq` being `int` — is now met), and `streamed` is
   a single accumulator while a `STREAM_EVENTS` `TextDelta` is keyed by the delta's own frame. Those
   plus the stored-shape change — one row and one room reply per message rather than per frame —
   are why it belongs with the durable cursor rather than here.

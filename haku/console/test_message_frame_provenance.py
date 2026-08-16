@@ -144,10 +144,10 @@ def test_a_range_cannot_end_where_it_never_began(db_url: str, engine: Engine) ->
         # The operator's own prompt at the moment it is typed: written before the frame it goes
         # out as exists, and never pointed at all if no turn claims it.
         pytest.param("user", None, None, id="unclaimed-prompt"),
-        # A projection whose frame carried no sequence — a `ClaudeCli` with no rollout sink numbers
-        # nothing, so `ReceivedFrame.frame_seq` is `int | None`. Rejecting this would fail a turn
-        # and lose the room's reply, which is why the near end is *not* required.
-        pytest.param("assistant", None, None, id="unnumbered-frame"),
+        # An assistant row with no range at all: every row written before #4105, and
+        # `begin_assistant` with no opening frame named. Requiring the near end would refuse the
+        # history this table already holds, which is why it is *not* required.
+        pytest.param("assistant", None, None, id="unpointed-assistant"),
         # `begin_assistant` at insert: the near end alone, before any delta has widened it.
         pytest.param("assistant", 7, None, id="opened"),
         pytest.param("assistant", 7, 9, id="completed"),

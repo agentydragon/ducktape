@@ -1023,14 +1023,11 @@ class SessionStore:
             )
             return owed
 
-    async def set_message_source_frames(self, session_id: UUID, message_id: UUID, frame_seq: int | None) -> None:
+    async def set_message_source_frames(self, session_id: UUID, message_id: UUID, frame_seq: int) -> None:
         """Point an already-written message at the single frame it went out as.
 
-        For the operator's own prompt, whose row exists before the frame does. A client keeping no
-        rollout has no sequence to give, and the row then stays honestly unpointed.
+        For the operator's own prompt, whose row exists before the frame does.
         """
-        if frame_seq is None:
-            return
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
             message = await db.get(SessionMessage, message_id)

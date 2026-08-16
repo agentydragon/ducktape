@@ -71,6 +71,12 @@ def _result(text: str = "", **fields: Any) -> dict[str, Any]:
     return {"type": "result", "subtype": "success", "is_error": False, "result": text, **fields}
 
 
+# The gap this double leaves between one frame's number and the next. Deliberately not 1:
+# `session_frames.frame_seq` is a Postgres `Identity` column, so the real sequence is an order with
+# gaps in it and nothing may read a gap as a frame that went missing.
+_FAKE_SEQ_STRIDE = 5
+
+
 class _FakeCli:
     """A `ClaudeCli` that replays scripted frames.
 
@@ -82,15 +88,17 @@ class _FakeCli:
         self,
         script: list[dict[str, Any]] | None = None,
         *,
-        frame_seqs: Sequence[int | None] | None = None,
+        frame_seqs: Sequence[int] | None = None,
         prompt_frame_seq: int | None = None,
     ):
         self.script = list(script or [])
         # What the rollout numbered each scripted frame, for the tests that assert a projection
-        # points back at one. A test with nothing to say about provenance leaves them unnumbered,
-        # exactly as a client keeping no rollout does.
+        # points back at one. A test with nothing to say about provenance passes neither and this
+        # double numbers for itself — every frame the real client hands on carries a number, so a
+        # double that left one out would be standing in for a state that cannot occur.
+        self._next_seq = _FAKE_SEQ_STRIDE
         self.frame_seqs = frame_seqs
-        self.prompt_frame_seq = prompt_frame_seq
+        self.prompt_frame_seq = self._number() if prompt_frame_seq is None else prompt_frame_seq
         self.prompts: list[str] = []
         self.interrupted = False
         self.closed = False
@@ -111,12 +119,18 @@ class _FakeCli:
         A resumed turn asks no question — its question was asked by a process that is gone — so a
         double that only speaks when spoken to could not stand in for one.
         """
-        frame_seqs: Sequence[int | None] = self.frame_seqs or [None] * len(self.script)
-        for frame_seq, frame in zip(frame_seqs, self.script, strict=True):
+        for frame_seq, frame in zip(self.frame_seqs or [self._number() for _ in self.script], self.script, strict=True):
             self.deliver(frame, frame_seq)
 
     def deliver(self, frame: dict[str, Any], frame_seq: int | None = None) -> None:
-        self._queue.put_nowait(ReceivedFrame(payload=frame, frame_seq=frame_seq))
+        self._queue.put_nowait(
+            ReceivedFrame(payload=frame, frame_seq=self._number() if frame_seq is None else frame_seq)
+        )
+
+    def _number(self) -> int:
+        seq = self._next_seq
+        self._next_seq += _FAKE_SEQ_STRIDE
+        return seq
 
     async def interrupt(self) -> None:
         self.interrupted = True
@@ -240,7 +254,7 @@ class _LifecycleWebSocket:
 class _LifecycleClaudeClient(_FakeCli):
     last_launch: object | None = None
 
-    def __init__(self, adapter: object, launch: object, on_progress: object = None, frames_to: object = None):
+    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: object):
         super().__init__()
         type(self).last_launch = launch
         self.connected = False
@@ -695,7 +709,14 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     # What the previous holder got through before its pod went: the prompt written, and half an
     # answer streamed into a message it never closed.
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
-    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id)
+    opened_at = await chat_store.record_frame(
+        session_id, FrameDirection.FROM_AGENT, "stream_event", _text_delta_frame("because the ")
+    )
+    # Anchored at the frame it streamed from, as `_run_turn` opens every message: an inherited row
+    # with no near end is one `update_assistant` cannot widen (`ck_session_messages_source_anchored`).
+    assistant_id = await chat_store.begin_assistant(
+        session_id, started.turn_id, source_first_frame_seq=opened_at.frame_seq
+    )
     await chat_store.update_assistant(session_id, assistant_id, "because the ")
 
     resumed = await chat_store.adopt_open_turn(session_id)
@@ -1080,8 +1101,8 @@ async def test_the_calls_come_from_the_rollout_when_the_row_points_at_it(
 class _RealDbClaudeClient(_LifecycleClaudeClient):
     """Answers every prompt with "pong", then goes quiet like an idle CLI."""
 
-    def __init__(self, adapter: object, launch: object, on_progress: object = None, frames_to: object = None):
-        super().__init__(adapter, launch, on_progress)
+    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: object):
+        super().__init__(adapter, launch, on_progress, frames_to)
         self.script = [_assistant({"type": "text", "text": "pong"}), _result("pong")]
 
 
@@ -1184,7 +1205,7 @@ async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas
     view, _ = await chat_store.create(operator_id, SpaSession())
     tool_result = {"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": "42"}]}}
     channel = _ScriptedChannel()
-    cli = ClaudeCli(channel, control_timeout=5, frames_to=RolloutRecorder(chat_store, view.session_id))
+    cli = ClaudeCli(channel, RolloutRecorder(chat_store, view.session_id), control_timeout=5)
 
     connecting = asyncio.create_task(cli.connect())
     await asyncio.sleep(0)
@@ -1232,8 +1253,8 @@ def _text_delta_frame(text: str) -> dict[str, Any]:
 class _DyingMidStreamClaudeClient(_LifecycleClaudeClient):
     """Streams two deltas, then ends the turn without ever completing the message."""
 
-    def __init__(self, adapter: object, launch: object, on_progress: object = None, frames_to: object = None):
-        super().__init__(adapter, launch, on_progress)
+    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: object):
+        super().__init__(adapter, launch, on_progress, frames_to)
         self.script = [_text_delta_frame("half an "), _text_delta_frame("answer"), _result()]
 
 
@@ -1242,8 +1263,8 @@ class _DisconnectingClaudeClient(_LifecycleClaudeClient):
 
     instance: _DisconnectingClaudeClient | None = None
 
-    def __init__(self, adapter: object, launch: object, on_progress: object = None, frames_to: object = None):
-        super().__init__(adapter, launch, on_progress)
+    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: object):
+        super().__init__(adapter, launch, on_progress, frames_to)
         type(self).instance = self
 
 

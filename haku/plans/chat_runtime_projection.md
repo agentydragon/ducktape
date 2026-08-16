@@ -328,9 +328,11 @@ so a `CHECK` can require the range (2026-08-16). Neither, yet — take the middl
   three paragraphs above: **NULL in those two columns means three different things and a `CHECK`
   sees one.** A row predating #4105; the operator's prompt, written before the frame it goes out as
   exists and never pointed at all if no turn claims it; and a projection whose frame carried no
-  sequence, since `ReceivedFrame.frame_seq` is `int | None` — a `ClaudeCli` with no rollout sink
-  numbers nothing. The first two are the `authored` arm, the third is `frame_range`-but-unrecorded,
-  and requiring the range refuses all three alike. A discriminator column would separate them, but
+  sequence, since `ReceivedFrame.frame_seq` was `int | None` — a `ClaudeCli` with no rollout sink
+  numbered nothing. The first two are the `authored` arm, the third was
+  `frame_range`-but-unrecorded — **and the third is now gone**, closed by the numbered-frame
+  paragraph below. Two meanings a `CHECK` still cannot tell apart is one fewer than three and is
+  still not one. A discriminator column would separate them, but
   it would be dead on arrival: `session_messages` has no `authored` writer today (the operator's
   prompt does acquire a frame), so the column would carry `frames` ⟺ `first IS NOT NULL` and
   nothing else — the range restated.
@@ -341,12 +343,58 @@ so a `CHECK` can require the range (2026-08-16). Neither, yet — take the middl
   near end** — neither a range nor the absence of one — which every writer already satisfies, so it
   is roll-safe under `maxUnavailable: 0`.
 
-  **The `int | None` is the seam, and it is worth closing on its own.** The console's only client
-  is built with a `RolloutRecorder` unconditionally (one construction site, no branch), so an
-  unnumbered frame is not a state production reaches — but nothing says so in a type, #4134's
-  adapter fabricates a placeholder sequence to work around it, and a would-be constraint has to
-  tolerate it. A numbered-frame type at the console's boundary is what makes the requirement
-  expressible at all.
+  **The `int | None` was the seam, and it is closed.** The console's only client is built with a
+  `RolloutRecorder` unconditionally (one construction site, no branch), so an unnumbered frame was
+  never a state production reached — but nothing said so in a type, #4134's adapter fabricated a
+  placeholder sequence (`_UNNUMBERED_FRAME = -1`) to work around it, and a would-be constraint had
+  to tolerate it. `ClaudeCli` now takes its `FrameSink` as a required argument, so
+  `SentPrompt.frame_seq` and `ReceivedFrame.frame_seq` are `int` and the placeholder is deleted.
+  A numbered frame at the console's boundary is what makes the requirement expressible at all, and
+  it is the prerequisite `_projected`'s docstring named for threading a `ProjectionState` through
+  the turn loop.
+
+  **Who assigns the number is a separate, open question** (operator, 2026-08-16: _"I think frames
+  should come with a monotonic number from the runner already"_). Today Postgres does, at insert:
+  `RolloutRecorder` calls `record_frame`, which `INSERT`s and reads `Identity(always=True)` back.
+  A runner-assigned counter would be better on four counts — it is **dense**, so a gap really would
+  mean a missing frame (today gaps mean nothing, `database_schema.SessionFrame.frame_seq`); it
+  needs **no round trip**, so a frame is placed the moment it is read off the wire; it is the
+  **true wire order** rather than the insert order; and `None` would die structurally, since a
+  runner that always counts leaves the optionality nowhere to come from.
+  It is deliberately **not** part of the numbered-frame change, because it is a stored-shape change
+  with a migration and a protocol version behind it, and this seam is a prerequisite for the
+  durable cursor rather than a place for the cursor to wait. What it costs, so the next attempt
+  starts from here:
+  - **Three of the frame log's writers are not runner frames**, so a runner counter cannot number
+    the table on its own. `RolloutRecorder.sent` records a console→CLI write **before** the runner
+    has seen the bytes — asking the runner for its number turns a local insert into a full sandbox
+    round trip on the write path. `_progress_reporter` writes `setup_output` rows about sandbox
+    provisioning, which is a session's whole account when it dies before its first CLI frame, and
+    sometimes before any runner is connected. And the `partial` row is console-authored, taking its
+    `frame_seq` when the stream opens and being rewritten in place afterwards (itself already
+    tombstoned). So either `frame_seq` stops covering every row — and the cursor's key stops being
+    the table's own order — or two authorities mint into one space, which is where duplicates come
+    from.
+  - **The column is the primary key and is globally allocated.** Client-supplied means dropping
+    `Identity`, making uniqueness per session (`(session_id, frame_seq)`), and revisiting every
+    reader that treats the value as globally unique: `FrameCursor`, the forward and reverse keyset
+    reads, `session_turns.{first,last}_frame_seq`, `session_messages.source_{first,last}_frame_seq`,
+    the `haku_conversations` tools and the operator frames page.
+  - **Reconnect is the design question, not a detail.** The runner outlives a console roll and
+    replays its `REPLAY_WINDOW`; numbered replays would actually be an improvement, since the
+    console could dedup on the number instead of `frame_uid` and so dedup deltas, which it cannot
+    do today. But the runner process itself can restart with the session row intact, and its
+    counter resets — so the console has to seed it at connect from `max(frame_seq)` for that
+    session, which is a new field in the `start` envelope and therefore a `PROTOCOL_VERSION` bump.
+    That bump is not atomic in production: console and runner ship as separate images that roll
+    independently, so sessions fail their first frame for the minutes between the two rollouts
+    (<../runtime/x/bridge/README.md> § Framing). The seed must also be **per session, not per
+    connection** — two consoles can be replaying one runner's buffer at once, which is why
+    `record_frame` inserts with `ON CONFLICT DO NOTHING` — or two connections mint the same numbers.
+  - **Density has to be enforced to be relied on.** A counter is dense at the runner; the log is
+    dense only if every numbered frame reaches a row. That holds today because `RolloutRecorder`
+    excludes nothing, but it is a property the cursor would newly depend on, so it wants a test
+    rather than an assumption.
 
 - **Backfill falls out of the reprojection tool** rather than being its own archaeology: project a
   session's frames, align the derived sequence against the stored rows, and write the range where the
