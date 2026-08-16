@@ -11,6 +11,17 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class SessionStatus(StrEnum):
+    # CLEANUP(added 2026-08-16): `idle` deliberately has no writer yet — a session that exists and
+    #   holds no sandbox (<../plans/chat_runtime_cleanup.md> § Stage 6). This column is parsed
+    #   (`database_schema.TextBackedStrEnumColumn`), so a replica on the previous image reading an
+    #   `idle` row raises rather than degrading, and the console rolls with `maxUnavailable: 0`
+    #   (<README.md> § Perimeter / deploy). Write the first `idle` row only once every pod runs an
+    #   image at or after the release carrying migration 0054 — one tag out of
+    #   `kubectl get pods -n haku-console -o jsonpath='{.items[*].spec.containers[0].image}'`,
+    #   whose commit suffix is at or after this commit. Delete this comment with that writer, which
+    #   also owes the split `LIVE_SESSION_STATUSES` below still hides: until then the derivation
+    #   under it reads `idle` as ended.
+    IDLE = "idle"
     PROVISIONING = "provisioning"
     READY = "ready"
     RESPONDING = "responding"

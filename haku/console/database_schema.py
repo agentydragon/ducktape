@@ -913,7 +913,8 @@ class Session(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('provisioning','ready','responding','closing','closed','failed')", name="ck_sessions_status"
+            "status IN ('idle','provisioning','ready','responding','closing','closed','failed')",
+            name="ck_sessions_status",
         ),
         CheckConstraint("surface IS NULL OR surface IN ('spa','matrix')", name="ck_sessions_surface"),
         # A room without a Matrix surface, or a Matrix session with no room, are both states
