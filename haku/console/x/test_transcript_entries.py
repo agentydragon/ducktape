@@ -11,7 +11,7 @@ from more_itertools import one
 from haku.console.x import conversation_records, transcript_entries
 from haku.console.x.claude_code.projection import RecordedFrame, project_log
 from haku.console.x.claude_code.testing.wire import (
-    Accounting,
+    CENSUS_ACCOUNTING,
     assistant,
     recorded,
     result,
@@ -21,15 +21,9 @@ from haku.console.x.claude_code.testing.wire import (
     tool_use_block,
 )
 
-# Not one frame's counters: `input_tokens` and `output_tokens` are an `assistant` frame's, beside
-# a `result` frame's cache counter.
-_ACCOUNTING = Accounting(
-    input_tokens=4, output_tokens=91, cache_read_input_tokens=133_907, total_cost_usd=0.4213, duration_ms=41_902
-)
-
 
 def _result(frame_seq: int) -> RecordedFrame:
-    return recorded(frame_seq, result(accounting=_ACCOUNTING))
+    return recorded(frame_seq, result(accounting=CENSUS_ACCOUNTING))
 
 
 def test_deltas_do_not_reach_the_read_surface() -> None:
@@ -123,7 +117,7 @@ def test_a_turn_end_carries_the_accounting_in_neutral_terms() -> None:
     assert isinstance(entry, conversation_records.TurnEndEntry)
     assert entry.outcome == "answered"
     assert entry.usage == conversation_records.TurnUsage(
-        input_tokens=4, output_tokens=91, cached_input_tokens=133_907, cost_usd=0.4213, duration_ms=41_902
+        input_tokens=19, output_tokens=1_204, cached_input_tokens=133_907, cost_usd=0.4213, duration_ms=41_902
     )
 
 
