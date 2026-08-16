@@ -122,9 +122,23 @@ whatever the code does:
 The one deliberate exception is `FailingEngine`, which exists to make a connection fail —
 there is no way to ask a healthy Postgres for that.
 
+### The stand-ins live in `testing/`
+
+Everything a test stands something up _with_ is a module in `testing/` — the claim stand-in
+(`recording_claims.py`), the stub `claude` (`stub_claude.py`), the Synapse container
+(`synapse_container.py`) and the console replica (`matrix_console_replica.py`) — rather than a
+`conftest.py` fixture or a source file in a target's `data`. Two of them are processes a test
+starts, and a `py_binary` can import neither a conftest nor a file staged only as data. The
+`test_*.py` files stay beside what they test.
+
+The stub `claude` is a `py_binary` for one further reason: the runner execs `HAKU_CLAUDE_PATH`
+directly, and a source file staged in runfiles does not reliably carry its executable bit — which
+is why both tests used to copy it out and `chmod` it. One stub serves both, parameterised by the
+directions a prompt carries (`[hold]`, `[narrate=N]`, `[silent]`) and by `HAKU_STUB_GREETING`.
+
 ### The homeserver is a real Synapse as well
 
-`test_matrix_homeserver_e2e.py` brings one up in a container (`synapse_container.py`) and runs
+`test_matrix_homeserver_e2e.py` brings one up in a container (`testing/synapse_container.py`) and runs
 `MatrixClient` against it, with the room's other side driven straight through the client-server
 API rather than through the client under test. It exists for the questions a canned response can
 only agree with: whether a resumed `/sync` across a gap larger than `TIMELINE_LIMIT` really comes
@@ -141,9 +155,9 @@ budget costs one dict rather than thousands of messages.
 ### And the whole surface, as processes
 
 `test_matrix_fullstack_e2e.py` composes those two targets with the bridge one: that Synapse, a
-console replica as its own process (`matrix_console_replica.py`, with the real sync loop and
-supervisor), a runner process per sandbox behind a stub `claude` (`matrix_stub_claude.py`), and a
-real Postgres. It asserts one operator-facing property — every message the operator sent has
+console replica as its own process (`testing/matrix_console_replica.py`, with the real sync loop
+and supervisor), a runner process per sandbox behind a stub `claude` (`testing/stub_claude.py`),
+and a real Postgres. It asserts one operator-facing property — every message the operator sent has
 exactly one reply in the final room — which is what nothing below the whole stack can answer.
 
 **Three of its four tests were written failing**, because that property did not hold (R11.6, "a

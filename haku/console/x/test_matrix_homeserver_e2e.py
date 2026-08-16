@@ -29,7 +29,7 @@ import pytest
 import pytest_bazel
 
 from haku.console.x.matrix_client import TIMELINE_LIMIT, EventTag, Invite, MatrixClient, RoomEventKind
-from haku.console.x.synapse_container import Account, Synapse, run_synapse
+from haku.console.x.testing.synapse_container import Account, Synapse, run_synapse
 
 PASSWORD = "not-a-secret"
 

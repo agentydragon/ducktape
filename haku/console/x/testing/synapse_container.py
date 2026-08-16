@@ -1,6 +1,6 @@
 """A real Synapse in a container, plus the client-server calls a test drives it with.
 
-**Deviation from the other testcontainer fixtures** (<../../../util/testing/postgres_fixtures.py>):
+**Deviation from the other testcontainer fixtures** (<../../../../util/testing/postgres_fixtures.py>):
 Synapse does not serve until it holds a config it generated itself — a signing key and a macaroon
 secret are part of that config — so bring-up is two container runs over one host directory. The
 first is the image's `generate` mode; the second serves, reading the generated `homeserver.yaml`
@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 SERVER_NAME = "haku.test"
 
 _CLIENT_PORT = 8008
-_OVERRIDES = "_main/haku/console/x/synapse_overrides.yaml"
+_OVERRIDES = "_main/haku/console/x/testing/synapse_overrides.yaml"
 _STARTUP_BUDGET = datetime.timedelta(minutes=3)
 
 _ENVIRONMENT = {

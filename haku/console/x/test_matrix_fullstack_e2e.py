@@ -2,7 +2,7 @@
 **did every message I sent get an answer?**
 
 Everything below this runs as itself. A real Synapse in a container, a console replica as its own
-process (`matrix_console_replica.py`) with the real `/sync` loop and session supervisor, a real
+process (`testing/matrix_console_replica.py`) with the real `/sync` loop and session supervisor, a real
 runner process per sandbox with a stub `claude` behind it, and a real Postgres under all of it.
 The operator's side is driven straight through the client-server API, so what a test reads back is
 the room, not the console's account of the room.
@@ -50,14 +50,14 @@ import pytest_bazel
 
 from haku.console.chat_models import SessionStatus
 from haku.console.x.claude_chat import ASSISTANT_FRAME_KIND, SessionStore
-from haku.console.x.synapse_container import Account, Synapse, run_synapse
+from haku.console.x.testing.synapse_container import Account, Synapse, run_synapse
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-CONSOLE_BIN = "_main/haku/console/x/matrix_console_replica_bin"
+CONSOLE_BIN = "_main/haku/console/x/testing/matrix_console_replica_bin"
 RUNNER_BIN = "_main/haku/runtime/x/claude_bridge/runner_bin"
-STUB_CLAUDE = "_main/haku/console/x/matrix_stub_claude.py"
+STUB_CLAUDE = "_main/haku/console/x/testing/stub_claude_bin"
 SYSTEM_PROMPT_TEMPLATE = "_main/cluster/k8s/haku/console/matrix_system_prompt.md.j2"
 
 PASSWORD = "not-a-secret"
@@ -325,11 +325,6 @@ async def deployment(
     bot_user_id = synapse.create_user(f"haku{token_hex(6)}", PASSWORD)
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    # The runner execs `HAKU_CLAUDE_PATH` directly, and a source file staged in runfiles does not
-    # reliably carry its executable bit.
-    stub = tmp_path / "claude"
-    stub.write_text(get_required_path(STUB_CLAUDE).read_text())
-    stub.chmod(0o755)
     state = tmp_path / "deployment"
     state.mkdir()
     # One port across replicas: the runner redials the address its claim was created with, so
@@ -352,7 +347,7 @@ async def deployment(
             # inherits this environment in turn (`backend.child_environment`), which is how
             # it learns where to leave its handshake files.
             "HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL": f"ws://127.0.0.1:{port}/internal/claude/runner",
-            "HAKU_CLAUDE_PATH": str(stub),
+            "HAKU_CLAUDE_PATH": str(get_required_path(STUB_CLAUDE)),
             "HAKU_STUB_STATE": str(state / "stub"),
         },
         name=request.node.name,

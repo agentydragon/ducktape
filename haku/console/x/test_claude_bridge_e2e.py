@@ -40,7 +40,11 @@ from util.testing.asgi import serve_app
 
 RUNNER_BIN = "_main/haku/runtime/x/claude_bridge/runner_bin"
 
-STUB_CLAUDE = "_main/haku/console/x/stub_claude.py"
+STUB_CLAUDE = "_main/haku/console/x/testing/stub_claude_bin"
+
+# The line the stub prints to stderr before any turn, which is what the sandbox narration this
+# test reads back out of the rollout is made of.
+GREETING = "the sandbox says hello"
 
 
 def _console_app(database_url: str, workspace: Path) -> FastAPI:
@@ -70,17 +74,6 @@ def _console_app(database_url: str, workspace: Path) -> FastAPI:
     app = FastAPI(lifespan=lifespan)
     app.include_router(internal_router)
     return app
-
-
-def _stub_claude(path: Path) -> Path:
-    """Copy the stub out of runfiles and make it executable.
-
-    The runner execs `HAKU_CLAUDE_PATH` directly, and a source file staged in runfiles does not
-    reliably carry its executable bit.
-    """
-    path.write_text(get_required_path(STUB_CLAUDE).read_text())
-    path.chmod(0o755)
-    return path
 
 
 async def _wait_until(
@@ -124,8 +117,9 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
             "HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL": f"ws://127.0.0.1:{port}/internal/claude/runner",
             "HAKU_CLAUDE_SESSION_ID": str(session_id),
             "HAKU_AGENT_SDK_RUNNER_TOKEN": token,
-            "HAKU_CLAUDE_PATH": str(_stub_claude(tmp_path / "claude")),
+            "HAKU_CLAUDE_PATH": str(get_required_path(STUB_CLAUDE)),
             "HAKU_STUB_STATE": str(stub_state),
+            "HAKU_STUB_GREETING": GREETING,
         },
     )
 
@@ -150,7 +144,9 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
             await _wait_until("the runner's bridge handshake", bridge_connected, runner=runner)
             await chat_store.enqueue_prompt(operator_id, session_id, "first question")
             await _wait_until("the first turn to finish", first_turn_finished, runner=runner)
-            await chat_store.enqueue_prompt(operator_id, session_id, "second question")
+            # `[hold]` is the stub's direction to answer and then wait, which is what strands this
+            # turn in flight while the console below goes away.
+            await chat_store.enqueue_prompt(operator_id, session_id, "second question [hold]")
             await _wait_until("the CLI to receive the second prompt", the_cli_has_the_second_prompt, runner=runner)
 
         # The console is gone with the exchange unfinished. The sandbox is not: its CLI is still
@@ -174,17 +170,17 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     conversation = await chat_store.get(operator_id, session_id)
     assert [(message.role, message.content) for message in conversation.messages] == [
         (ChatMessageRole.USER, "first question"),
-        (ChatMessageRole.ASSISTANT, "answer 1"),
-        (ChatMessageRole.USER, "second question"),
+        (ChatMessageRole.ASSISTANT, "re: first question"),
+        (ChatMessageRole.USER, "second question [hold]"),
         # Once, whether the departed console recorded the frame or the adopting one took it from
         # the runner's replay window.
-        (ChatMessageRole.ASSISTANT, "answer 2"),
+        (ChatMessageRole.ASSISTANT, "re: second question"),
     ]
     # The sandbox's own account of itself, which is only durable because it is in the rollout —
     # the pod's log is reaped with the sandbox. Whole path: the CLI's stderr, the runner's
     # forwarding, the `setup_output` frame, and the transport reassembling it into a line.
     narration = await chat_store.read_frames(session_id, after_seq=None, limit=10, kinds=[SETUP_OUTPUT_KIND])
-    assert [frame.payload for frame in narration] == [{"kind": SETUP_OUTPUT_KIND, "text": "the sandbox says hello"}]
+    assert [frame.payload for frame in narration] == [{"kind": SETUP_OUTPUT_KIND, "text": GREETING}]
 
 
 if __name__ == "__main__":

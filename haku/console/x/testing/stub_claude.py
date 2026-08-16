@@ -1,13 +1,15 @@
-#!/usr/bin/env python3
-"""A stand-in for the `claude` binary, driven by what the operator typed into the room.
+"""A stand-in for the `claude` binary, for the end-to-end tests that run a real runner.
 
-Sibling of `stub_claude.py`, which answers a fixed script; this one answers *about* the prompt,
-because the test it serves asserts that every message the operator sent has its own reply. The
-prompt a Matrix turn carries is `[$event_id] $body` per message (`matrix_session._as_prompt`), so
-the answer is `re: $body` and a reply can be matched to the message that earned it.
+Speaks enough of the CLI's newline-delimited JSON to be honest about the parts those tests are
+actually about — the runner process, the transport, the websocket and the console either side of
+it. It is deliberately **not** a model: what it answers is decided by what was asked, and what the
+real CLI emits is pinned separately by the probes in `haku/cli_protocol/probes/`.
 
-The body also carries the turn's stage directions, in trailing `[…]` markers the test writes and
-this strips before answering:
+It answers `re: $body`, so a reply can be matched to the message that earned it — which is what
+`../test_matrix_fullstack_e2e.py` asserts of every message the operator sent. The prompt a Matrix
+turn carries is `[$event_id] $body` per message (`matrix_session._as_prompt`), so the event id is
+stripped first. The body also carries the turn's stage directions, in trailing `[…]` markers the
+test writes and this strips before answering:
 
 - `[hold]` — wait for `release` in `HAKU_STUB_STATE` before finishing the turn, which is what
   leaves a turn open across a console going away.
@@ -18,8 +20,25 @@ this strips before answering:
 - `[silent]` — answer with the `result` frame alone and no `assistant` message, which is the turn
   whose text exists only at the end (`_run_turn`'s `if not spoke` fallback).
 
-Every frame carries the id the console dedupes replays by (`haku/cli_protocol/frame_identity.py`);
-without one an adopted connection's replay would post every answer a second time.
+Two more behaviours are load-bearing rather than decorative, and each exists because leaving it
+out makes a test pass for the wrong reason:
+
+- **It answers the `initialize` control request.** `ClaudeCli.connect()` sends one and waits for a
+  correlated reply, so an echo loop hangs the console at connect rather than running a turn.
+- **Every conversation frame carries the id the console dedupes replays by.** Without one, the
+  console adopting a session would act on the runner's replay a second time and post the same
+  answer twice — which is the bug the replay window exists to avoid, so a test would be asserting
+  it away rather than exercising it. `_speak` puts each frame through the console's own reader
+  (`haku/cli_protocol/frame_identity.py`) rather than through a rule copied by hand here.
+
+`HAKU_STUB_GREETING`, when set, is written to stderr before anything else. Whatever the CLI writes
+to stderr is the sandbox's narration, which the runner forwards as its own frame kind; it is the
+console's one account of a session that never reached the model, so a test about that path
+(`../test_claude_bridge_e2e.py`) needs a line printed before any turn.
+
+The launch argv is ignored on purpose: what the console passes is pinned by
+`haku/runtime/x/claude_bridge/test_options.py`, and duplicating it here would be a second copy to
+keep in step.
 """
 
 from __future__ import annotations
@@ -32,12 +51,26 @@ import time
 from pathlib import Path
 from typing import Any
 
+from haku.cli_protocol.frame_identity import frame_uid
+from haku.console.x.session_frames import frame_kind
+
 _DIRECTIVE = re.compile(r"\s*\[(hold|silent|narrate=\d+)\]")
 
 
-def send(frame: dict[str, Any]) -> None:
+def _send(frame: dict[str, Any]) -> None:
     sys.stdout.write(json.dumps(frame) + "\n")
     sys.stdout.flush()
+
+
+def _speak(frame: dict[str, Any]) -> None:
+    """Send one conversation frame, refusing one the console could not recognise on a replay.
+
+    The same pair the console records with (`SessionStore.record_frame`), so a frame this stub
+    stamped in a way the dedupe cannot read fails here rather than in a test that would then be
+    asserting the replay window away.
+    """
+    assert frame_uid(frame_kind(frame), frame) is not None, f"a frame with no identity to dedupe on: {frame=}"
+    _send(frame)
 
 
 def _prompt_text(frame: dict[str, Any]) -> str:
@@ -60,7 +93,7 @@ def _answer(state: Path, prompt: str, answered: int) -> None:
             print(f"narration {answered}.{line}", file=sys.stderr, flush=True)
 
     if "silent" not in directives:
-        send(
+        _speak(
             {
                 "type": "assistant",
                 "message": {"id": f"msg_{answered}", "role": "assistant", "content": [{"type": "text", "text": text}]},
@@ -74,7 +107,7 @@ def _answer(state: Path, prompt: str, answered: int) -> None:
         # walking straight through this one's.
         release.unlink()
         asked.unlink()
-    send(
+    _speak(
         {
             "type": "result",
             "subtype": "success",
@@ -89,11 +122,14 @@ def _answer(state: Path, prompt: str, answered: int) -> None:
 
 def main() -> None:
     state = Path(os.environ["HAKU_STUB_STATE"])
+    if (greeting := os.environ.get("HAKU_STUB_GREETING")) is not None:
+        print(greeting, file=sys.stderr, flush=True)
+
     answered = 0
     while line := sys.stdin.readline():
         frame = json.loads(line)
         if frame["type"] == "control_request":
-            send(
+            _send(
                 {
                     "type": "control_response",
                     "response": {"subtype": "success", "request_id": frame["request_id"], "response": {}},

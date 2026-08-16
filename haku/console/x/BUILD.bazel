@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -165,7 +165,7 @@ py_test(
     size = "large",  # a Postgres database, a uvicorn console and a runner subprocess per test
     srcs = ["test_claude_bridge_e2e.py"],
     data = [
-        "stub_claude.py",
+        "//haku/console/x/testing:stub_claude_bin",
         "//haku/runtime/x/claude_bridge:runner_bin",
         "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
@@ -191,47 +191,14 @@ py_test(
     ],
 )
 
-py_library(
-    name = "matrix_console_replica",
-    testonly = True,
-    srcs = ["matrix_console_replica.py"],
-    deps = [
-        ":claude_chat",
-        ":matrix_client",
-        ":matrix_outbox",
-        ":matrix_session",
-        ":matrix_sync",
-        ":sandbox_claims",
-        ":session_notifications",
-        ":system_prompt",
-        "//haku/console:config",
-        "//haku/console:operator_identity",
-        "//haku/console:operator_identity_store",
-        "@pypi//fastapi",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-        "@pypi//uvicorn",
-    ],
-)
-
-py_binary(
-    name = "matrix_console_replica_bin",
-    testonly = True,
-    main_module = "haku.console.x.matrix_console_replica",
-    deps = [
-        ":matrix_console_replica",
-        "@pypi//websockets",  # keep: uvicorn's websocket protocol implementation, not a direct import
-    ],
-)
-
 py_test(
     name = "test_matrix_fullstack_e2e",
     size = "large",  # a Synapse, a Postgres, a console process and a runner process per test
     srcs = ["test_matrix_fullstack_e2e.py"],
     data = [
-        "matrix_stub_claude.py",
-        ":matrix_console_replica_bin",
         "//cluster/k8s:haku_console_system_prompt",
+        "//haku/console/x/testing:matrix_console_replica_bin",
+        "//haku/console/x/testing:stub_claude_bin",
         "//haku/runtime/x/claude_bridge:runner_bin",
         "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
@@ -241,10 +208,10 @@ py_test(
     deps = [
         ":claude_chat",
         ":conftest",
-        ":synapse_container",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
+        "//haku/console/x/testing:synapse_container",
         "//util:net",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
@@ -295,24 +262,6 @@ py_test(
     ],
 )
 
-py_library(
-    name = "synapse_container",
-    testonly = True,
-    srcs = ["synapse_container.py"],
-    # Reaches every target that runs a Synapse through `deps`, so a new one needs no `data` of its own.
-    data = ["synapse_overrides.yaml"],
-    deps = [
-        "//third_party/containers:rlocations",
-        "//util:oci",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
-        "@pypi//docker",
-        "@pypi//httpx",
-        "@pypi//tenacity",
-        "@pypi//testcontainers",
-    ],
-)
-
 py_test(
     name = "test_matrix_homeserver_e2e",
     size = "large",  # brings up a real Synapse, then overfills a room past its timeline limit
@@ -324,8 +273,8 @@ py_test(
     requires_docker = True,
     deps = [
         ":matrix_client",
-        ":synapse_container",
         "//:conftest",
+        "//haku/console/x/testing:synapse_container",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",

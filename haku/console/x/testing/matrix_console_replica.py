@@ -1,6 +1,6 @@
 """One console replica, as its own process, for the Matrix full-stack end-to-end test.
 
-`test_matrix_fullstack_e2e.py` is about what the room ends up containing across a console
+`../test_matrix_fullstack_e2e.py` is about what the room ends up containing across a console
 going away, so the console has to be something that can *go away* — a process the test starts,
 stops and starts again, on one port, against one database. Everything it composes is the
 production wiring from `haku.console.app`: the runner websocket route, the Claude chat service
@@ -48,11 +48,12 @@ from haku.console.x.matrix_client import MatrixError
 from haku.console.x.matrix_outbox import PendingReply, RoomOutbox
 from haku.console.x.matrix_session import MatrixConversationStore, MatrixSessionSupervisor, MatrixSurface, MatrixTurns
 from haku.console.x.matrix_sync import MatrixSyncService, MatrixSyncStore
-from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView, ProvisioningStep, provisioning_view
+from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.system_prompt import SystemPromptTemplate
+from haku.console.x.testing.recording_claims import fixed_provisioning_view
 
-logger = logging.getLogger("haku.console.x.matrix_console_replica")
+logger = logging.getLogger("haku.console.x.testing.matrix_console_replica")
 
 # The one identity namespace this replica resolves the configured operator subject in. Any value
 # works as long as every replica in a run agrees, since it is only ever resolved to a local UUID.
@@ -91,7 +92,7 @@ class FileSandboxClaims:
         logger.info("claim deleted for session %s", session_id)
 
     async def inspect(self, *, session_id: UUID) -> ClaudeSandboxProvisioningView:
-        return provisioning_view(f"claude-{session_id.hex}", step=ProvisioningStep.CLAIM_CREATED)
+        return fixed_provisioning_view(session_id)
 
     async def aclose(self) -> None:
         return None
