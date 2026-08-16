@@ -131,6 +131,33 @@ so linking one message to its frames is a filter over this view, not a second re
 deliberately not guessed at here: the join key the transcript has today (`agent_message_id`) is
 missing on thousands of production rows, which is why that change exists.
 
+## The neutral projection — built, and not wired to anything yet
+
+`conversation_events.py` is the provider-neutral vocabulary a conversation is read as — text,
+messages, reasoning, a tool-call lifecycle, harness activity, a completed turn — and
+`claude_projection.py` is the pure function from Claude's frames into it. Together they are the one
+interpreter that <../../plans/chat_runtime_projection.md> § stage 4 replaces four with. **Nothing
+calls them**: the fold that puts `_run_turn` on them is a separate change, and until it lands the
+turn loop, `adopt_open_turn`, `rollout_calls` and `coarse_status` still each read frames their own
+way.
+
+Three properties to preserve when that fold arrives:
+
+- **`project` is pure and deterministic.** That is what makes drift detectable (re-project a stored
+  session and compare), a projection bug repairable (fix the fold and re-project), and it is why the
+  function mints nothing random — a message's identity is the `frame_seq` it opened at.
+- **Every event carries provenance, and it is a union.** A frame-derived event has a `FrameRange` an
+  operator can click through to raw JSON; a console-authored one (narration, an ownership change)
+  has no frames at all. A rebuild that treated authored events as re-derivable would delete them.
+- **The default branch is counted, not dropped.** `Projection.unprojected` tallies frame classes
+  this release has no meaning for, because three frame classes and five `system` subtypes in
+  production are already undocumented and the CLI keeps adding them.
+
+Every rule in the adapter is a measured fact from <../debug/frame_shape_census.md> rather than a
+reading of `protocol.md` — a message is a whole run of frames that a tool result can interrupt, the
+renderable `content` of a tool result is not its result, and every "did this go wrong" field is
+uninformative. Read the census before changing what looks like belt and braces.
+
 ## Matrix chat surface — `channels/matrix/`
 
 - `client.py` — the client-API calls the loop makes, over `matrix-nio`.

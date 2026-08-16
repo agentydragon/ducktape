@@ -45,6 +45,22 @@ py_library(
 )
 
 py_library(
+    name = "conversation_events",
+    srcs = ["conversation_events.py"],
+    deps = ["//haku/console:chat_models"],
+)
+
+py_library(
+    name = "claude_projection",
+    srcs = ["claude_projection.py"],
+    deps = [
+        ":conversation_events",
+        ":session_frames",
+        "//haku/console:chat_models",
+    ],
+)
+
+py_library(
     name = "room_status",
     srcs = ["room_status.py"],
     deps = [":session_frames"],
@@ -222,6 +238,18 @@ py_test(
     deps = [
         ":session_frames",
         "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_claude_projection",
+    srcs = ["test_claude_projection.py"],
+    deps = [
+        ":claude_projection",
+        ":conversation_events",
+        "//:conftest",
+        "//haku/console:chat_models",
         "@pypi//pytest_bazel",
     ],
 )
