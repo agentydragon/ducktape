@@ -291,8 +291,10 @@ per session, so the two never have to be comparable. What must never happen is _
 one session_ — which is why the numbering scheme is a durable per-session fact
 (`sessions.frame_numbering`, `identity | runner`) decided when the session's first frame is
 recorded, rather than a property of whichever replica happens to be serving. A console adopting a
-legacy session keeps writing identity values for its whole life; the population ages out on its own
-within `session_ttl_seconds`.
+legacy session keeps writing identity values for its whole life; the population of _live_ such
+sessions ages out on its own within `session_ttl_seconds`. Their rows outlive them, and R5 is what
+deals with those — by renumbering the sessions where every reference has an image and dropping the
+ones where it does not (§ _R5's real question_).
 
 **Dropping `Identity` is the one step that is not additive**, and the trick that makes it roll-safe
 is that it does not have to be a drop. `ALTER COLUMN frame_seq DROP IDENTITY` followed by
@@ -331,13 +333,13 @@ after it — rather than on a release having elapsed. A stalled roll leaves the 
 which is exactly when "one release later" is the wrong gate (the same discipline `session_notifications.py`
 documents for the channel rename).
 
-| Release | What lands                                                                                                                                                                                                                                                                                                                                                                                                                                     | Additive?                                                                                                                                                                                                      |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **R1**  | The wire and the runner: optional `seq` on the runner→console envelopes, optional `resume_from` on `start`, the runner minting and replaying from the cursor. Separately (no ordering between them): `cli_type` added, dual-written, every reader onto `coalesce(cli_type, kind)`, backfilled where `kind <> 'setup_output'`; and `session_frames.runner_seq` recorded with a partial index, plus the console computing `resume_from` from it. | **Yes.** New optional fields, new nullable columns. Old replicas and old runner images unaffected.                                                                                                             |
-| **R2**  | The sink moves to `WebSocketTransport`; `kind` becomes the envelope discriminator. Schema made _capable_ of client-supplied numbers: `frame_ord`, the composite primary key, `Identity` demoted to a plain sequence default, `sessions.frame_numbering` added and written as `identity`.                                                                                                                                                       | Schema yes, behaviour no — the `kind` flip is safe **only** because R1 stopped every reader depending on it. An old replica still filtering `kind = 'assistant'` would mis-decide a turn in `adopt_open_turn`. |
-| **R3**  | New sessions are marked `frame_numbering = 'runner'` and their rows take `frame_seq` from the envelope. Gap detection reports. `kind` contracted to NOT NULL with `BridgeFrameKind` as its type; the coalesce dropped.                                                                                                                                                                                                                         | **No**, and it must not start before R2 has converged: an old replica adopting a runner-numbered session would insert a sequence value into it and mix the two schemes inside one session.                     |
-| **R4**  | Contract: `runner_seq` dropped (for a runner-numbered session it is `frame_seq`), the `partial` row and its two indexes retired, dedup keyed on position rather than `frame_uid`, `REPLAY_WINDOW` re-sized.                                                                                                                                                                                                                                    | Removals, so gated on R3 converging.                                                                                                                                                                           |
-| **R5**  | Identity numbering removed from the write path: `frame_seq`'s sequence default and the sequence behind it dropped, so an insert that does not supply a number fails instead of inventing one; `sessions.frame_numbering` dropped with its last reader. Historical identity-numbered rows are kept, and read by exactly the code that reads every other row.                                                                                    | Removals, and the gate is two-part rather than "R4 converged" — below.                                                                                                                                         |
+| Release | What lands                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Additive?                                                                                                                                                                                                      |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **R1**  | The wire and the runner: optional `seq` on the runner→console envelopes, optional `resume_from` on `start`, the runner minting and replaying from the cursor. Separately (no ordering between them): `cli_type` added, dual-written, every reader onto `coalesce(cli_type, kind)`, backfilled where `kind <> 'setup_output'`; and `session_frames.runner_seq` recorded with a partial index, plus the console computing `resume_from` from it.                                                   | **Yes.** New optional fields, new nullable columns. Old replicas and old runner images unaffected.                                                                                                             |
+| **R2**  | The sink moves to `WebSocketTransport`; `kind` becomes the envelope discriminator. Schema made _capable_ of client-supplied numbers: `frame_ord`, the composite primary key, `Identity` demoted to a plain sequence default, `sessions.frame_numbering` added and written as `identity`.                                                                                                                                                                                                         | Schema yes, behaviour no — the `kind` flip is safe **only** because R1 stopped every reader depending on it. An old replica still filtering `kind = 'assistant'` would mis-decide a turn in `adopt_open_turn`. |
+| **R3**  | New sessions are marked `frame_numbering = 'runner'` and their rows take `frame_seq` from the envelope. Gap detection reports. `kind` contracted to NOT NULL with `BridgeFrameKind` as its type; the coalesce dropped.                                                                                                                                                                                                                                                                           | **No**, and it must not start before R2 has converged: an old replica adopting a runner-numbered session would insert a sequence value into it and mix the two schemes inside one session.                     |
+| **R4**  | Contract: `runner_seq` dropped (for a runner-numbered session it is `frame_seq`), the `partial` row and its two indexes retired, dedup keyed on position rather than `frame_uid`, `REPLAY_WINDOW` re-sized.                                                                                                                                                                                                                                                                                      | Removals, so gated on R3 converging.                                                                                                                                                                           |
+| **R5**  | Identity numbering removed from the write path: `frame_seq`'s sequence default and the sequence behind it dropped, so an insert that does not supply a number fails instead of inventing one. Then the rows: each identity-numbered session renumbered to dense per-session ranks with its stored references rewritten in the same transaction, and the sessions where a reference has no image dropped. `sessions.frame_numbering` narrows to `runner \| renumbered` rather than being dropped. | Removals plus one destructive rewrite over terminal sessions, and the gate is two-part rather than "R4 converged" — below.                                                                                     |
 
 R1's two halves are independent and want separate PRs: the `cli_type` half touches only the console,
 the numbering half touches only the bridge, and neither blocks the other.
@@ -349,7 +351,7 @@ row into a `UniqueViolation` that ends the session. Uniqueness lands with the de
 in R4. R1 needs the index only for `max(runner_seq)` on one session.
 
 **Done when** `kind` answers one question, `BridgeFrameKind` is its type, `frame_seq` is the
-number the frame crossed the wire under, and — after R5 — that is the only number it can have.
+number the frame crossed the wire under, and — after R5 — that is the only number any row carries.
 
 ##### R5 — removing the other numbering, and what happens to the rows that used it
 
@@ -358,8 +360,10 @@ aren't numbered by the runner. I'll want that stacked as work provided condition
 R4 stops short of it. R4 drops `runner_seq` and re-keys dedup, but `frame_seq` still carries the
 plain sequence default R2 demoted `Identity` to — deliberately, because that default is the whole
 trick that made dropping `Identity` roll-safe — so a replica inserting without naming the column
-still gets a number from Postgres. R5 is the step that makes that impossible, and it is a
-`DROP DEFAULT` plus a `DROP SEQUENCE` plus the discriminator. It writes no rows and rewrites none.
+still gets a number from Postgres. R5 is the step that makes that impossible, and its first half is
+a `DROP DEFAULT` plus a `DROP SEQUENCE`, which writes no rows. Its second half does: the rows
+already numbered that way are renumbered or dropped, per § _R5's real question_, which is the
+destructive part and wants its own PR behind the schema change.
 
 **The gate is two observable halves, and it needs both.** They are different facts and the second
 does not follow from the first.
@@ -405,70 +409,218 @@ frame_numbering = 'identity'` over the whole table never reaches zero and never 
   converging and stays there. If it does not, that is one stuck session to go and read
   (`lease_holder` names the pod), not a gate to keep waiting on.
 
-**Why `sessions.frame_numbering` goes in the same step.** It is a last-reader argument, not tidying.
-The column has exactly two readers and both are about a _live_ session: the insert path, deciding
-whether to supply a number, and the `resume_from` computation, which must not hand a runner a cursor
-in the millions. Once the second half of the gate holds, both readers see `runner` unconditionally
-and the branch under them is dead. Dropping the discriminator is therefore the same removal as
-dropping the default, and keeping it would leave a column whose only content is a fact about
-historical rows that nothing consults.
+**The second half is also the renumber's precondition, which is why one gate serves both.** A
+session that can still acquire a frame cannot be renumbered — a runner appending under the old
+numbering mid-rewrite would mix the two schemes inside one session, the one thing § _The
+primary-key question_ says must never happen. Once the count above is `0`, every identity-numbered
+session is terminal and its log is closed, so the rewrite below is a one-shot batch over a fixed
+set of rows rather than a race against the write path.
+
+**Why `sessions.frame_numbering` narrows instead of dropping.** The drop was a last-reader
+argument: the column's two readers are both about a _live_ session — the insert path, deciding
+whether to supply a number, and the `resume_from` computation, which must not hand a runner a
+cursor in the millions — and once the gate's second half holds, both see `runner` unconditionally
+and the branch under them is dead. That much still stands, and it is why `identity` goes away as a
+value. What kept the column is a reader the drop argument did not have, because renumbering
+creates it: after R5 a historical session's numbers are dense, and nothing else in the row says
+whether that density was observed on a wire or assigned by the rewrite. The column is where that
+is said (§ _Density is not renumberable_).
 
 ##### R5's real question: `session_frames` is permanent, so what happens to the old rows
 
 "Remove all support for frames not numbered by the runner" cannot mean only "stop writing them" —
-sessions numbered before the cutover keep those rows forever. Three candidates, costed against the
-three consumers that would notice: the durable cursor (stage 4), the `haku_conversations` transcript
-tools, and the state index.
+sessions numbered before the cutover keep those rows forever.
 
-**Renumbering them is the one that can do damage, so take it first.** The reprojection tool
-(§ stage 4, _Backfill falls out of the reprojection tool_) is the natural instrument, and it is
-still the wrong one here. `frame_seq` is not an internal detail: it is a **published address**.
-`read_frame(session_id, frame_seq)` takes one, `read_rollout` takes one as its cursor, every
-transcript entry's `provenance` hands one out, and an agent that quoted one into a haku-state note
-or a Matrix event has put it somewhere permanent and federated. Renumbering silently repoints all of
-them — and repoints them at a frame that _resolves_, which is worse than a link that breaks. It
-would also have to rewrite every pointer in the same transaction: `session_turns.{first,last}_frame_seq`,
-`session_messages.source_{first,last}_frame_seq`, and stage 4's cursor. Against all that it buys
-nothing, because nothing reads density on a closed session — and it cannot even be honest if it did.
-`Identity` is sparse, so a gap in an old session is not evidence of anything; renumbering densely
-would _manufacture_ the claim that no frame was ever lost, inventing exactly the evidence that dense
-numbering exists to make trustworthy.
+**Decided, not derived** (operator, 2026-08-16), in two parts:
 
-**Retiring them costs the most and does not accomplish the removal anyway.** Bounding how far back
-the log is read lands hardest on `haku_conversations`, because `read_transcript` is _computed from
-frames per read_ — there is no stored neutral row until stage 4's table — so a retention window
-deletes the transcript of a retired session, not merely its raw protocol. `list_turns` survives, its
-rows being in `session_turns`, but its `frame_seq` ranges then point at nothing. The state index
-takes the worst of it in a way that is easy to miss: `chat_source.py` embeds `session_messages`, not
-frames, so `search` keeps returning hits into retired sessions and the drilldown those pointers exist
-for dead-ends — a result that cannot be opened is worse than one that was never indexed. And
-`haku_conversations` is the only place a tool call and the result it got are both recorded, so this
-is a permanent loss of the corpus's most distinctive content. The durable cursor is the one consumer
-that would not care; it only ever advances. Retention may still be worth doing one day — the same
-way § stage 4 records dropping `session_messages` — but as a deliberate decision with that cost
-named, not as a side effect of wanting a numbering scheme gone. It is also not a removal: a window
-is a policy, and identity-numbered rows stay inside it until it passes R3.
+> I would be okay with dropping all data in the production database that relies on the old
+> incorrect numbering of frames if it makes things easier. there is really not much more there than
+> just test conversations, nothing in the conversation tables I'd really miss in Haku console db
 
-**So: keep reading them — and the reason is that there is no residual support to remove.** This is
-not a concession, and it is worth stating precisely, because the phrase "keep supporting the old
-rows" makes it sound like one. Every line of dual-numbering machinery is on the write path — the
-sequence default, the `identity | runner` branch, `runner_seq`, `frame_uid` dedup — and all of it is
-gone by the end of R5 without a single historical row being involved. The read path has no
-numbering branch to remove, because it never had one: `FrameCursor`, `read_frames`,
-`read_operator_frames`, `session_turns`, `session_messages.source_*`, the MCP tools and the frames
-page all use `frame_seq` as **a per-session total order and nothing more**, which identity values
-satisfy exactly as well as runner values — uniqueness and ordering are per session, so the two never
-have to be comparable (§ _The primary-key question_). The only two consumers of _density_ are live
-contiguity checking and `resume_from` catch-up, and both need a runner attached to the socket, which
-no identity-numbered session has once the gate's second half holds.
+> renumbering would probably be good to preserve frame numbering where we can make that work
 
-What that leaves is one invariant rather than one code path, and R5's job is to state and pin it:
-**nothing in the read path may assume `frame_seq` is dense, or 1-based, or comparable across
-sessions.** It is true today by accident of how the readers were written; a test over a session with
-deliberately sparse, high-valued frames makes it true on purpose, and the historical rows are the
-live proof that it has to be. `session_turns.first_frame_seq` is already the documented example of
-getting this right — `max(frame_seq) + 1` is a **bound**, not a pointer, which is exactly why it
-survives both numbering schemes unchanged.
+So: **renumber each identity-numbered session to dense per-session ranks, and drop the sessions
+where a stored reference has no image under that map.** The preference between the two is the
+operator's — one numbering scheme rather than a permanent historical exception — and the
+authorisation to drop what does not fit is the operator's too.
+
+**What changed is a premise, not a mind.** An earlier draft of this section (#4167) rejected both
+renumbering and retirement and landed on "keep the rows". Both of its objections were arguments
+from the corpus's _worth_: renumbering silently repoints `frame_seq` values that agents have quoted
+into haku-state notes and into federated Matrix events, and retirement leaves `haku_index.search`
+returning hits whose drilldown dead-ends. Neither argument was wrong; both were priced against a
+corpus assumed to be worth keeping. The operator has now said what is in it — test conversations —
+so the published addresses point at test conversations and the dead-ends would be into test
+conversations. What does _not_ depend on the corpus's worth is the density argument, and it
+survives intact below.
+
+###### The map exists for every session, and "contiguous in insert order" is the wrong question
+
+The renumber is `row_number() OVER (PARTITION BY session_id ORDER BY frame_seq)`. That map is
+total, injective and order-preserving over any set of rows, so **every** identity-numbered session
+has one — there is no population of sessions the frames themselves refuse.
+
+Contiguity is not a precondition and could never be one: `Identity` is a _global_ sequence, so
+every session's frames are already sparse in it, with a gap wherever another session inserted a row
+in between. There is no session whose identity values are contiguous, and nothing would follow from
+one that was.
+
+What actually varies between sessions is whether the **references** to those numbers can move with
+them. That is the criterion, and it is checkable per session.
+
+###### The stored references, and what each does under the map
+
+`frame_seq` is addressed from three places in the database plus one that stage 4 has still to
+build. Each must be rewritten in the same transaction as the frames, or the renumber is exactly the
+silent corruption #4167 warned about.
+
+| Reference                                        | What it is                                                                            | Under the renumber                                                                                                                                 |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_frames.frame_seq`                       | the address itself                                                                    | its rank; `frame_ord` is `0` throughout, since ranks are distinct                                                                                  |
+| `session_turns.{first,last}_frame_seq`           | **bounds**, not pointers — `max(frame_seq) + 1` at open and `max(frame_seq)` at close | recomputed, exactly: a lower bound becomes the rank of the first surviving row at or above it, an upper bound the rank of the last row at or below |
+| `session_messages.source_{first,last}_frame_seq` | pointers at real rows — every writer passes a received frame's own `frame_seq`        | the direct image; **a pointer resolving to no row of its session has none, and that is the one case with no honest answer**                        |
+| stage 4's durable cursor                         | unbuilt; a per-session position that only advances                                    | the rank of the row it stands after, which on a terminal session is the session's frame count                                                      |
+
+Two of those rows are worth reading twice.
+
+**Bounds recompute rather than map, and the result is exact rather than approximate.** A turn's
+`first_frame_seq` deliberately names a value no row has, so it has no image under a map defined on
+rows. But every reader uses it as the predicate `frame_seq >= first_frame_seq`, and "the rank of the
+first surviving row at or above the bound" is the unique value that selects the same rows after the
+renumber as before. The same holds at the closing end. A turn that recorded nothing keeps an empty
+range, since the bound lands one past the last rank. This is `session_turns.first_frame_seq` being
+a bound paying off a second time — the reason it survived both numbering schemes is the reason it
+survives the rewrite between them.
+
+**Message pointers are what decide whether a session can be renumbered at all.** By construction
+they should always resolve: `begin_assistant`, `update_assistant` and `set_message_source_frames`
+each take a `frame_seq` off a frame the store has just recorded, `0045`'s backfill joined
+`agent_message_id` against real `assistant` frames, and nothing deletes a frame row except
+`clear_partial_frame`, whose row is never the one a message points at. "Should" is not "does", over
+rows written across several releases, so the renumber does not assume it — it asks:
+
+```sql
+SELECT m.session_id, count(*)
+FROM session_messages m
+WHERE (m.source_first_frame_seq IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM session_frames f
+                       WHERE f.session_id = m.session_id AND f.frame_seq = m.source_first_frame_seq))
+   OR (m.source_last_frame_seq IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM session_frames f
+                       WHERE f.session_id = m.session_id AND f.frame_seq = m.source_last_frame_seq))
+GROUP BY m.session_id;
+```
+
+A dangling pointer _could_ be moved by the bound rule, to the nearest surviving row. It must not
+be: that changes the row's meaning from "the frame that opened this message" to "some frame near
+where it used to be", silently, which is the failure the whole section is trying not to commit.
+NULL is likewise not available — `ck_session_messages_source_anchored` aside, a range erased to
+tidy up a renumber is a lie about provenance. So a session with a dangling pointer is not
+renumberable, and it is the drop's population.
+
+The state index needs no mention in this table, which is worth saying because it is where the
+previous draft's worst cost landed: `chat_chunk_messages` keys on `message_id`, a UUID the renumber
+does not touch, and `chat_source.py` embeds `session_messages.content`. A renumber is invisible to
+`haku_index` end to end.
+
+###### What gets dropped, and the blast radius of dropping it
+
+The drop is a **separate, reviewable step**, not a clause of the renumber: run the query above,
+read the session list it returns, and only then delete. If it returns nothing, the step still runs
+— its output is the evidence that no rows were destroyed.
+
+A dropped session is one `DELETE FROM sessions`, and the cascades do the rest:
+
+- `session_frames`, `session_messages`, `session_turns`, `session_prompts`, `session_outbox` —
+  `ON DELETE CASCADE` from `sessions`.
+- `session_turn_prompts` and `matrix_held_batch` — `CASCADE` from the message and turn rows going
+  with it. A held batch's disappearance is the documented safe direction: the watermark never
+  moved, so the homeserver re-offers it.
+- `session_turns.assistant_message_id` and `session_outbox.message_id` are `SET NULL`, but both
+  rows are cascading away regardless.
+- `matrix_conversation.session_id` is `SET NULL` — and must never fire here. It names the session
+  serving a room _now_, and the gate's second half has already established that every
+  identity-numbered session is terminal. A drop that would null it means the gate did not hold.
+
+Outside the console's own tables, one consumer holds pointers with no foreign key: the index's
+`chat_{sessions,chunks,chunk_messages}` live in their own schema and reference `session_id` as a
+bare UUID. **It repairs itself and the window is one sweep.** `sync_chat` computes
+`forgotten = indexed sessions − sessions the source still shows` and calls `forget_chat_sessions`
+before indexing anything, and the chat sweep runs every minute. So the drilldown dead-end #4167
+priced as permanent is bounded at roughly a minute — a real cost to state, not a reason to reopen
+the decision.
+
+What a reader sees afterwards:
+
+- `haku_conversations.list_conversations` no longer lists the session; `read_transcript`,
+  `read_rollout`, `read_frame` and `list_turns` on its id fail rather than return an empty
+  conversation.
+- `haku_index.search(corpus=conversations)` returns no hits from it after the next sweep, and
+  hits whose drilldown fails until then.
+- **The Matrix room still has the conversation.** Room history lives on the homeserver and is
+  federated; the drop reaches the console's record of it and nothing else. For a room-attached
+  session that asymmetry _is_ what dropping means, and it is the closest thing here to a surprise.
+
+###### Density is not renumberable, and that is independent of what the corpus is worth
+
+`Identity`'s gaps are allocation noise: the sequence is global, so a gap in a session's numbers
+records that another session inserted a row, and nothing else. A gap in a runner-numbered session
+means a frame is missing. Same shape, opposite meanings.
+
+So "renumber but preserve order-with-gaps" has nothing to preserve. Any injective order-preserving
+map either compresses to ranks or invents gaps that mean as little as the ones it replaced — there
+is no third option, because the source log carries no completeness information for a map to carry
+forward. **Density cannot be earned by a renumber; it can only be asserted or labelled.** A dense
+renumber makes a historical session's numbering look exactly like a log that lost nothing, and the
+rewrite has no way to know whether the console recorded every frame that crossed that session's
+wire. That would manufacture precisely the evidence dense numbering exists to make trustworthy.
+
+Being explicit is therefore the requirement, and a plan is not queryable, so it has to be durable:
+`sessions.frame_numbering` **narrows** at R5 rather than dropping, to `runner | renumbered`. Two
+consequences follow, and neither is optional:
+
+- The frame inspector says which of the two a session's numbers are, so an operator reading a dense
+  historical session is not reading it as a completeness claim.
+- Any future completeness or gap check refuses to run on a `renumbered` session rather than
+  reporting it clean. This is the reader the drop argument said the column had lost.
+
+**If a column is too much to carry for test conversations, the available alternative is the one the
+operator has already authorised**: drop every identity-numbered session and renumber nothing, at
+which point `frame_numbering` really does drop with its last reader. What is not available is
+renumbering densely and saying nothing.
+
+###### What the renumber costs outside the database — and why it breaks loudly
+
+Published addresses cannot be rewritten in the transaction: `read_frame` takes a `frame_seq`,
+`read_rollout` takes one as its cursor, every transcript entry's `provenance` hands one out, and an
+agent may have quoted one into a haku-state note or a Matrix event.
+
+**The failure mode is a break, not a mispoint, which is the specific thing #4167 got wrong once the
+numbers are looked at.** Identity values are global and in the millions; a renumbered session's
+values run `1..n` over its own frames. A stale quoted address therefore lands far above the
+session's new maximum, where `read_frame` raises `no such frame` and `read_rollout` returns an empty
+page. Both are loud, and a link that breaks is what that section preferred to one that silently
+resolves. The mispoint it feared needs a stale value below the session's new frame count — the
+earliest sessions ever recorded, whose identity values are genuinely small — and there
+`read_rollout` starts mid-log without saying so, since its cursor is a `>=` rather than an exact
+match. That residue is bounded, it is against test conversations, and it is the cost the operator's
+authorisation buys.
+
+###### The invariant, which both paths owe
+
+Whether the rows are renumbered or dropped, R5 states and pins one rule: **nothing in the read path
+may assume `frame_seq` is dense, or 1-based, or comparable across sessions.** It is true today by
+accident of how the readers were written — `FrameCursor`, `read_frames`, `read_operator_frames`,
+`session_turns`, `session_messages.source_*`, the MCP tools and the frames page all use `frame_seq`
+as a per-session total order and nothing more — and a test over a session with deliberately sparse,
+high-valued frames makes it true on purpose.
+
+That test matters **more** after a renumber, not less, and its fixture must stay sparse even once
+production holds no sparse session. A renumber is exactly the moment someone concludes that every
+session is dense now and writes a reader that assumes it; the fixture is a statement about what the
+readers must tolerate, not a sample of what the table currently contains. The only two consumers of
+density are live contiguity checking and `resume_from` catch-up, and both need a runner attached to
+the socket — which no closed session has, renumbered or not.
 
 ### 3. Turn state onto the turn row — **done**
 
