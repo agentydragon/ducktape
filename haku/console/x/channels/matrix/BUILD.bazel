@@ -73,6 +73,19 @@ py_library(
     ],
 )
 
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":session",
+        "//haku/console:config",
+        "//haku/console/x:conftest",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+    ],
+)
+
 py_test(
     name = "test_formatted_body",
     srcs = ["test_formatted_body.py"],
@@ -114,6 +127,7 @@ py_test(
     srcs = ["test_outbox.py"],
     deps = [
         ":client",
+        ":conftest",
         ":outbox",
         ":pacer",
         "//:conftest",
@@ -134,6 +148,7 @@ py_test(
     srcs = ["test_session.py"],
     deps = [
         ":client",
+        ":conftest",
         ":session",
         "//:conftest",
         "//haku/console:chat_models",
@@ -158,6 +173,7 @@ py_test(
     srcs = ["test_sync.py"],
     deps = [
         ":client",
+        ":conftest",
         ":outbox",
         ":pacer",
         ":session",

@@ -1,10 +1,14 @@
-"""Shared setup for the experimental console surfaces' tests.
+"""Shared setup for the runtime's tests — sessions, turns, frames, sandboxes.
 
 Fixtures more than one module needs, fixtures handing out stand-ins for what is genuinely
 outside the process (the stand-ins themselves live in `testing/`, so a non-pytest process can
 reach them too), and the reads more than one module makes of the test database directly — the
 store's tests and the runtime's both ask what a lease says and what the room is owed. Stores are
 never stood in for — see <README.md> § Tests run against a real database.
+
+**Nothing here may import a channel.** A second channel has to inherit this file unchanged, so
+anything a room has — the homeserver identities, the room/session binding — belongs in
+<channels/matrix/conftest.py> instead (<README.md> § The runtime's conftest names no channel).
 """
 
 from __future__ import annotations
@@ -18,26 +22,15 @@ from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
+from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import Session, SessionOutbox
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.x.channels.matrix.session import MatrixConversationStore
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import SessionStore
 from haku.console.x.testing.recording_claims import RecordingClaims
 
-MATRIX_USER = "@haku:allegedly.works"
-MATRIX_OPERATOR = "@rai:allegedly.works"
-MATRIX_ROOM = "!room:allegedly.works"
 OPERATOR_SUBJECT = "authentik-user-id"
-
-MATRIX_CONFIG = MatrixConfig(
-    homeserver="https://matrix.allegedly.works",
-    user_id=MATRIX_USER,
-    operator_user_id=MATRIX_OPERATOR,
-    operator_subject=OPERATOR_SUBJECT,
-)
 
 
 def runtime_config(**overrides: object) -> ClaudeRuntimeConfig:
@@ -87,11 +80,6 @@ def chat_service(
     chat_store: SessionStore, recording_claims: RecordingClaims, notifications: SessionNotifications
 ) -> SessionService:
     return SessionService(runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN)
-
-
-@pytest.fixture
-def conversations(migrated_sessions: async_sessionmaker[AsyncSession]) -> MatrixConversationStore:
-    return MatrixConversationStore(migrated_sessions)
 
 
 @pytest.fixture

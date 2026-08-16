@@ -1,4 +1,10 @@
-"""Focused contracts for the Agent Sandbox Claude chat runtime."""
+"""Focused contracts for the Agent Sandbox Claude chat runtime.
+
+**No channel is imported here, deliberately.** A room reaches this file only as the `RoomSurface`
+port `session_runtime.py` defines and the `room_id` string a `MatrixSession` records — never as
+`matrix-nio`, ingress or the room/session binding. What a homeserver's messages become is
+<channels/matrix/test_session.py>, beside the `MatrixTurns` that makes them turns.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +20,7 @@ from uuid import UUID
 import pytest
 import pytest_bazel
 from more_itertools import one
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import (
@@ -27,20 +33,8 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.config import ClaudeRuntimeConfig
-from haku.console.database_schema import Session, SessionFrame, SessionMessage
-from haku.console.x.channels.matrix.client import InboundMessage
-from haku.console.x.channels.matrix.session import MatrixTurns
-from haku.console.x.conftest import (
-    MATRIX_CONFIG,
-    MATRIX_OPERATOR,
-    MATRIX_ROOM,
-    MATRIX_USER,
-    MCP_TOKEN,
-    age_lease,
-    lease_of,
-    queued_for_the_room,
-    runtime_config,
-)
+from haku.console.database_schema import SessionFrame, SessionMessage
+from haku.console.x.conftest import MCP_TOKEN, age_lease, lease_of, queued_for_the_room, runtime_config
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import ABORTED_NOTICE, GOING_AWAY_CODE, RolloutRecorder, SessionService
 from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, MatrixSession, SessionStore, SpaSession
@@ -1058,55 +1052,6 @@ async def test_the_calls_come_from_the_rollout_when_the_row_points_at_it(
     assert (call.call_id, call.tool_name) == ("toolu_ok", "Bash"), "the rollout wins over the column"
     assert call.result is not None
     assert call.result.content == "7"
-
-
-async def test_a_matrix_batch_offered_mid_turn_is_still_held(
-    chat_store, conversations, migrated_identity_store, operator_id
-) -> None:
-    """The homeserver re-delivers what `offer` refuses, so refusing is how a message sent while
-    Haku is working waits for the next turn instead of being answered a turn late."""
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=MATRIX_ROOM))
-    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    assert await conversations.claim_room(MATRIX_USER, MATRIX_ROOM) == MATRIX_ROOM
-    await conversations.set_session(MATRIX_USER, view.session_id)
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "first")
-    assert await chat_store.next_prompt(view.session_id) is not None
-    turns = MatrixTurns(MATRIX_CONFIG, conversations, chat_store, migrated_identity_store)
-
-    offered = await turns.offer(
-        [
-            InboundMessage(
-                room_id=MATRIX_ROOM, event_id="$2", sender=MATRIX_OPERATOR, body="and another thing", origin_server_ts=2
-            )
-        ]
-    )
-
-    assert offered is None
-
-
-async def test_a_batch_offered_to_a_session_that_is_gone_is_held_rather_than_raised(
-    chat_store, conversations, migrated_identity_store, migrated_sessions, operator_id
-) -> None:
-    """The supervisor is between sessions, which the room must survive.
-
-    `enqueue_prompt` answers a vanished session with `KeyError`, and `offer` used to catch only
-    `RuntimeError` — so this raised into the sync loop, which logged something generic and slept.
-    The watermark stayed put, so nothing was lost, but ingress stalled in a retry loop and the
-    operator was told nothing. Refusing is the answer that gets them a "holding" notice.
-    """
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=MATRIX_ROOM))
-    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    assert await conversations.claim_room(MATRIX_USER, MATRIX_ROOM) == MATRIX_ROOM
-    await conversations.set_session(MATRIX_USER, view.session_id)
-    turns = MatrixTurns(MATRIX_CONFIG, conversations, chat_store, migrated_identity_store)
-    async with migrated_sessions.begin() as db:
-        await db.execute(delete(Session).where(Session.session_id == view.session_id))
-
-    offered = await turns.offer(
-        [InboundMessage(room_id=MATRIX_ROOM, event_id="$1", sender=MATRIX_OPERATOR, body="hi", origin_server_ts=1)]
-    )
-
-    assert offered is None
 
 
 class _RealDbClaudeClient(_LifecycleClaudeClient):

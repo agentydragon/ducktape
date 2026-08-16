@@ -1,4 +1,9 @@
-"""Contracts of the session store: the rows, and which of them commit together."""
+"""Contracts of the session store: the rows, and which of them commit together.
+
+A room is a `room_id` string on a session row here and nothing more — no channel is imported, so
+this file is what a second channel inherits (<README.md> § The runtime's conftest names no
+channel).
+"""
 
 from __future__ import annotations
 
@@ -26,7 +31,7 @@ from haku.console.chat_models import (
 )
 from haku.console.database_schema import Session, SessionMessage, SessionPrompt
 from haku.console.tools.conversations import ConversationCursor, FrameCursor, TranscriptCursor, TurnCursor
-from haku.console.x.conftest import MATRIX_ROOM, age_lease, lease_of, queued_for_the_room
+from haku.console.x.conftest import age_lease, lease_of, queued_for_the_room
 from haku.console.x.session_notifications import SessionEventKind
 from haku.console.x.session_store import (
     ADOPTION_GRACE,
@@ -596,8 +601,13 @@ async def test_a_prompt_from_a_replica_that_wrote_no_queue_row_is_still_answered
 
 @pytest.fixture
 async def accepted_prompt(chat_store: SessionStore, operator_id: UUID) -> tuple[UUID, UUID]:
-    """A ready session and one prompt it has accepted — where `prompt_fate` starts from."""
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=MATRIX_ROOM))
+    """A ready session and one prompt it has accepted — where `prompt_fate` starts from.
+
+    Room-backed because `prompt_fate` exists for a source that acknowledges — but a room is a
+    `room_id` on the session row here, not a homeserver: the caller that asks the question is
+    tested in <channels/matrix/test_session.py>.
+    """
+    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     prompt = await chat_store.enqueue_prompt(operator_id, view.session_id, "what were we doing")
     return view.session_id, prompt.message_id

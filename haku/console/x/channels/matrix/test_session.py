@@ -1,4 +1,11 @@
-"""What the supervisor does when the room's session is missing, live, or dead."""
+"""What `session.py` does with a room: keep a session behind it, build the prompt that starts one,
+read back what the room has been told, and take what is said in it into a turn.
+
+Ingress is here rather than beside the turn loop it feeds. `MatrixTurns.offer` takes homeserver
+events and hands them to `enqueue_prompt`, so a test of it is a test of the crossing — the refusals
+it turns into a held batch cannot be expressed without both sides. The turn loop's own admission
+rules are <../../test_session_runtime.py>, where no channel appears at all.
+"""
 
 from __future__ import annotations
 
@@ -13,15 +20,17 @@ from sqlalchemy import delete, select
 
 from haku.console.chat_models import ChatMessageRole, SessionStatus, TurnOutcome
 from haku.console.database_schema import Session
-from haku.console.x.channels.matrix.client import RoomEventKind
+from haku.console.x.channels.matrix.client import InboundMessage, RoomEventKind
+from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
 from haku.console.x.channels.matrix.session import (
     NOTHING_SAID,
     MatrixConversationStore,
     MatrixSessionSupervisor,
     MatrixSurface,
+    MatrixTurns,
     RoomTranscript,
 )
-from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER, runtime_config
+from haku.console.x.conftest import runtime_config
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, MatrixSession, SessionStore, SpaSession
@@ -499,6 +508,64 @@ async def test_the_limit_takes_the_tail(
     said = await transcript.recent(MATRIX_ROOM, before_session=uuid4(), limit=2)
 
     assert [message.body for message in said] == ["[$b] two", "re: two"], "the newest, still oldest first"
+
+
+@pytest.fixture
+def turns(conversations: MatrixConversationStore, chat_store: SessionStore, migrated_identity_store) -> MatrixTurns:
+    """Ingress over the real stores — only the homeserver's events are handed in by the test."""
+    return MatrixTurns(MATRIX_CONFIG, conversations, chat_store, migrated_identity_store)
+
+
+async def serving_room(conversations: MatrixConversationStore, session_id: UUID) -> None:
+    """Point the room at *session_id*, the way the supervisor does once a session is provisioned."""
+    assert await conversations.claim_room(MATRIX_USER, MATRIX_ROOM) == MATRIX_ROOM
+    await conversations.set_session(MATRIX_USER, session_id)
+
+
+def operator_message(body: str, *, event_id: str, at: int) -> InboundMessage:
+    """The operator saying *body* in the room, as `/sync` hands it over."""
+    return InboundMessage(
+        room_id=MATRIX_ROOM, event_id=event_id, sender=MATRIX_OPERATOR, body=body, origin_server_ts=at
+    )
+
+
+async def test_a_batch_offered_mid_turn_is_still_held(
+    turns: MatrixTurns, conversations: MatrixConversationStore, chat_store: SessionStore, operator_id: UUID
+) -> None:
+    """The homeserver re-delivers what `offer` refuses, so refusing is how a message sent while
+    Haku is working waits for the next turn instead of being answered a turn late."""
+    session_id = await serving_session(chat_store, operator_id)
+    await serving_room(conversations, session_id)
+    await chat_store.enqueue_prompt(operator_id, session_id, "first")
+    assert await chat_store.next_prompt(session_id) is not None
+
+    offered = await turns.offer([operator_message("and another thing", event_id="$2", at=2)])
+
+    assert offered is None
+
+
+async def test_a_batch_offered_to_a_session_that_is_gone_is_held_rather_than_raised(
+    turns: MatrixTurns,
+    conversations: MatrixConversationStore,
+    chat_store: SessionStore,
+    migrated_sessions,
+    operator_id: UUID,
+) -> None:
+    """The supervisor is between sessions, which the room must survive.
+
+    `enqueue_prompt` answers a vanished session with `KeyError`, and `offer` used to catch only
+    `RuntimeError` — so this raised into the sync loop, which logged something generic and slept.
+    The watermark stayed put, so nothing was lost, but ingress stalled in a retry loop and the
+    operator was told nothing. Refusing is the answer that gets them a "holding" notice.
+    """
+    session_id = await serving_session(chat_store, operator_id)
+    await serving_room(conversations, session_id)
+    async with migrated_sessions.begin() as db:
+        await db.execute(delete(Session).where(Session.session_id == session_id))
+
+    offered = await turns.offer([operator_message("hi", event_id="$1", at=1)])
+
+    assert offered is None
 
 
 if __name__ == "__main__":

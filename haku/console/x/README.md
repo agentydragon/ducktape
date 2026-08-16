@@ -249,6 +249,25 @@ whatever the code does:
 The one deliberate exception is `FailingEngine`, which exists to make a connection fail —
 there is no way to ask a healthy Postgres for that.
 
+### The runtime's conftest names no channel
+
+The placement rule above applies to the fixtures too, and it is the one place it is easy to lose:
+`conftest.py` is inherited downwards, so a runtime-level fixture that reaches into
+`channels/matrix/` makes every runtime test depend on a homeserver's vocabulary and makes a second
+channel unaddable without dragging Matrix along. So `x/conftest.py` holds the stores, the service,
+the claim stand-in and the operator's identity — and nothing a room knows — while the homeserver
+identities (`MATRIX_*`), the config they compose into, and the room/session binding
+(`conversations`) live in `channels/matrix/conftest.py`. The dependency runs channel → runtime and
+never back: `OPERATOR_SUBJECT` is imported down rather than restated, because
+`MATRIX_CONFIG.operator_subject` and the `operator_id` fixture have to name the same operator.
+
+The test files divide on the same seam. `test_session_runtime.py` and `test_session_store.py` reach
+a room only through the `RoomSurface` port and the `room_id` string a session records — never
+`matrix-nio` — so what they cover (the turn loop, the outbox row, provenance, adoption, the abort
+drain, prompt fate) is what a second channel inherits. A message _arriving_ from a room and becoming
+a turn is the crossing itself and cannot be written without both halves, so `MatrixTurns.offer` is
+tested in `channels/matrix/test_session.py`, beside the module that defines it.
+
 ### The stand-ins live in `testing/`
 
 Everything a test stands something up _with_ is a module in `testing/` — the claim stand-in

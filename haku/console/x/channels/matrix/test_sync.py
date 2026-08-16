@@ -23,11 +23,11 @@ from haku.console.x.channels.matrix.client import (
     SyncResult,
     UnmappableEvent,
 )
+from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
 from haku.console.x.channels.matrix.outbox import PendingReply
 from haku.console.x.channels.matrix.pacer import RoomPacer
 from haku.console.x.channels.matrix.session import RoomTranscript
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
-from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
 from haku.console.x.session_store import BridgeAuthentication, MatrixSession, SessionStore, SpaSession
 
 
