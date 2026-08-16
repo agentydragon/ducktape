@@ -19,6 +19,21 @@ py_library(
     ],
 )
 
+py_library(
+    name = "redaction",
+    srcs = ["redaction.py"],
+)
+
+py_test(
+    name = "test_redaction",
+    srcs = ["test_redaction.py"],
+    deps = [
+        ":redaction",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "test_frames",
     srcs = ["test_frames.py"],

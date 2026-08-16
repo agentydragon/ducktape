@@ -353,6 +353,34 @@ both carry. `bb run //haku/console/x:message_provenance_bin -- --limit N` report
 - **A session with a turn still running is left alone**, since those rows are the runtime's to
   point and it is still projecting frames into them.
 
+### Recording a session as a fixture — `frame_export.py`
+
+`claude_code/testdata/diverse_session.jsonl` was captured off the CLI's stdout in a throwaway
+directory, so it can only ever hold a session somebody ran for the purpose. The shapes still
+unrecorded are the ones a console session produces — a `Task` subagent, a backgrounded `Bash`, the
+`BashOutput` loop watching it — and those exist in `session_frames`. `frame_export.py` is the
+second route to the same file format:
+
+```bash
+bb run //haku/console/x:frame_export_bin -- \
+    --session <uuid> --output haku/console/x/claude_code/testdata/<name>.jsonl
+```
+
+`--database-url` comes from `HAKU_CONSOLE_DATABASE_URL`. Check the file in with a `data` entry on
+the test that reads it, as `test_diverse_session` has.
+
+- **The exported file is a proposal, not an artifact.** Read it before committing. Redaction
+  (`claude_code/redaction.py`) is fail-closed by key — identifiers are pseudonymised so equality
+  survives, a short list of discriminators and tool names is kept, and every other string elides to
+  its own length — so what it keeps is a list rather than a judgement about one session, and the
+  review is the other half of that.
+- **What it exports is what the fold reads**, so the console's own two authored row kinds are gone
+  and a record's index is its `frame_seq` rather than the table's number. Both differences are
+  written up in `frame_export.py`.
+- **The composed half is `test_agents_and_background.py`.** It pins what the projection does with
+  each of those shapes today, built from `claude_code/testing/wire.py`; the subagent frames in it
+  are a hypothesis drawn from `protocol.md` and the census, which a capture is what settles.
+
 ## Matrix chat surface — `channels/matrix/`
 
 - `client.py` — the client-API calls the loop makes, over `matrix-nio`.

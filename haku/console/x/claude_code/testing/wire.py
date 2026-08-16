@@ -67,9 +67,17 @@ def tool_use_block(call_id: str, name: str, arguments: Mapping[str, Any]) -> dic
     return {"caller": {"type": "direct"}, "id": call_id, "input": dict(arguments), "name": name, "type": "tool_use"}
 
 
-def assistant(*blocks: dict[str, Any], message_id: str | None = None) -> dict[str, Any]:
+def assistant(
+    *blocks: dict[str, Any], message_id: str | None = None, parent_tool_use_id: str | None = None
+) -> dict[str, Any]:
     """One frame of an answer. Production sends one content block per frame, so several blocks
-    here is a shape the wire does not produce — pass one, and a second frame for the next."""
+    here is a shape the wire does not produce — pass one, and a second frame for the next.
+
+    `parent_tool_use_id` is the call a nested frame belongs to. `protocol.md` describes it as the
+    marker of a subagent's forwarded frames; the census saw it non-null on `tool_progress` and
+    nowhere else, because no subagent ran. Passing it is a hypothesis about a shape nobody has
+    captured, which is why every test that does says so.
+    """
     message: dict[str, Any] = {
         "content": list(blocks),
         "context_management": None,
@@ -88,7 +96,7 @@ def assistant(*blocks: dict[str, Any], message_id: str | None = None) -> dict[st
         message["id"] = message_id
     return {
         "message": message,
-        "parent_tool_use_id": None,
+        "parent_tool_use_id": parent_tool_use_id,
         "request_id": "req_011CX",
         "session_id": SESSION_ID,
         "timestamp": "2026-08-15T06:12:04.113Z",
@@ -96,7 +104,14 @@ def assistant(*blocks: dict[str, Any], message_id: str | None = None) -> dict[st
     }
 
 
-def tool_result(call_id: str, content: Any, *, structured: Any = None, is_error: bool | None = None) -> dict[str, Any]:
+def tool_result(
+    call_id: str,
+    content: Any,
+    *,
+    structured: Any = None,
+    is_error: bool | None = None,
+    parent_tool_use_id: str | None = None,
+) -> dict[str, Any]:
     """An inbound `user` frame: what a tool answered.
 
     `is_error=None` is the 56% of results that omit the key entirely, which is why the key is
@@ -108,10 +123,29 @@ def tool_result(call_id: str, content: Any, *, structured: Any = None, is_error:
         block["is_error"] = is_error
     return {
         "message": {"content": [block], "role": "user"},
-        "parent_tool_use_id": None,
+        "parent_tool_use_id": parent_tool_use_id,
         "session_id": SESSION_ID,
         "tool_use_result": structured,
         "type": "user",
+    }
+
+
+def tool_progress(
+    call_id: str, tool_name: str, *, parent_tool_use_id: str, elapsed_time_seconds: int
+) -> dict[str, Any]:
+    """A long-running tool saying it is still running — 113 frames over 7 sessions, and the only
+    frame class the census ever saw carrying a non-null `parent_tool_use_id`.
+
+    Absent from `protocol.md` entirely, so nothing in the fold has a case for it.
+    """
+    return {
+        "elapsed_time_seconds": elapsed_time_seconds,
+        "heartbeat": True,
+        "parent_tool_use_id": parent_tool_use_id,
+        "session_id": SESSION_ID,
+        "tool_name": tool_name,
+        "tool_use_id": call_id,
+        "type": "tool_progress",
     }
 
 
