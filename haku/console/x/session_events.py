@@ -1,0 +1,181 @@
+"""The neutral conversation events as `session_events` rows.
+
+The one place the vocabulary in <conversation_events.py> meets the table in
+<../database_schema.py>: a `ConversationEvent` in, a row out. Nothing else reads or writes
+`session_events.body`, so the stored spelling of an event is settled here and is a boundary shape
+rather than a second vocabulary — the events themselves stay dataclasses.
+
+**Three of an event's fields are columns rather than body, because readers address rows by them**:
+the provenance union, the frame range it discriminates, and a tool call's `call_id`. What is left
+is the body, and it is per kind.
+
+**The message key is not stored.** `MessageKey` groups a fold's output while the fold runs; what
+survives it is the frame range, which is also what `session_messages` records its own span in and
+so what joins the two tables.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import StrEnum
+from typing import Literal
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from haku.console.chat_models import ConversationEventKind, EventProvenance
+from haku.console.database_schema import SessionEvent
+from haku.console.x.conversation_events import (
+    ActivityCompleted,
+    ActivityStarted,
+    ConversationEvent,
+    FrameRange,
+    Json,
+    MessageCompleted,
+    OpaqueContent,
+    Outcome,
+    Reasoning,
+    TextContent,
+    TextDelta,
+    ToolCallCompleted,
+    ToolCallStarted,
+    ToolReferences,
+    ToolResultContent,
+    TurnCompleted,
+)
+
+
+class ResultShape(StrEnum):
+    """Which arm of `ToolResultContent` a stored result carries."""
+
+    TEXT = "text"
+    TOOL_REFERENCES = "tool_references"
+    OPAQUE = "opaque"
+
+
+class TextResultBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    shape: Literal[ResultShape.TEXT] = ResultShape.TEXT
+    text: str
+
+
+class ToolReferencesResultBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    shape: Literal[ResultShape.TOOL_REFERENCES] = ResultShape.TOOL_REFERENCES
+    tool_names: list[str]
+
+
+class OpaqueResultBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    shape: Literal[ResultShape.OPAQUE] = ResultShape.OPAQUE
+    payload: Json
+
+
+type ResultContentBody = TextResultBody | ToolReferencesResultBody | OpaqueResultBody
+
+
+class MessageBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str | None = Field(description="The message's prose, joined. None for one that was all thinking and tools.")
+    agent_message_id: str | None = Field(description="What the frames called this message — provenance, not identity.")
+
+
+class ReasoningBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str | None
+
+
+class ToolCallBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tool_name: str
+    arguments: dict[str, Json]
+
+
+class ToolResultBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content: ResultContentBody = Field(discriminator="shape", description="The part a transcript prints.")
+    structured: Json = Field(description="The exit code, the patch, the MCP structuredContent — an open set.")
+    outcome: Outcome
+
+
+class ActivityStartedBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    activity_id: str
+    description: str
+
+
+class ActivityCompletedBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    activity_id: str
+    summary: str | None
+    outcome: Outcome
+
+
+def row(event: ConversationEvent, *, session_id: UUID, turn_id: UUID, now: datetime) -> SessionEvent | None:
+    """The row *event* is stored as, or None for one whose durable home is elsewhere.
+
+    A `TextDelta` has none: it is an increment of prose the completed message carries whole. A
+    `TurnCompleted` has `session_turns`, which already holds the exchange's outcome, its cost and
+    its frame bracket.
+    """
+    if (stored := _stored(event)) is None:
+        return None
+    kind, body, call_id = stored
+    frames = event.provenance if isinstance(event.provenance, FrameRange) else None
+    return SessionEvent(
+        session_id=session_id,
+        turn_id=turn_id,
+        kind=kind,
+        provenance=EventProvenance.AUTHORED if frames is None else EventProvenance.FRAME_RANGE,
+        source_first_frame_seq=None if frames is None else frames.first_frame_seq,
+        source_last_frame_seq=None if frames is None else frames.last_frame_seq,
+        call_id=call_id,
+        body=body.model_dump(mode="json"),
+        created_at=now,
+    )
+
+
+def _stored(event: ConversationEvent) -> tuple[ConversationEventKind, BaseModel, str | None] | None:
+    match event:
+        case TextDelta() | TurnCompleted():
+            return None
+        case MessageCompleted():
+            body = MessageBody(text=event.text, agent_message_id=event.agent_message_id)
+            return ConversationEventKind.MESSAGE_COMPLETED, body, None
+        case Reasoning():
+            return ConversationEventKind.REASONING, ReasoningBody(summary=event.summary), None
+        case ToolCallStarted():
+            call = ToolCallBody(tool_name=event.tool_name, arguments=dict(event.arguments))
+            return ConversationEventKind.TOOL_CALL_STARTED, call, event.call_id
+        case ToolCallCompleted():
+            result = ToolResultBody(
+                content=_result_content(event.content), structured=event.structured, outcome=event.outcome
+            )
+            return ConversationEventKind.TOOL_CALL_COMPLETED, result, event.call_id
+        case ActivityStarted():
+            started = ActivityStartedBody(activity_id=event.activity_id, description=event.description)
+            return ConversationEventKind.ACTIVITY_STARTED, started, None
+        case ActivityCompleted():
+            completed = ActivityCompletedBody(
+                activity_id=event.activity_id, summary=event.summary, outcome=event.outcome
+            )
+            return ConversationEventKind.ACTIVITY_COMPLETED, completed, None
+
+
+def _result_content(content: ToolResultContent) -> ResultContentBody:
+    match content:
+        case TextContent():
+            return TextResultBody(text=content.text)
+        case ToolReferences():
+            return ToolReferencesResultBody(tool_names=list(content.tool_names))
+        case OpaqueContent():
+            return OpaqueResultBody(payload=content.payload)

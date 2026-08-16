@@ -15,6 +15,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
+from more_itertools import one
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -24,15 +25,26 @@ from haku.console.chat_models import (
     ChatMessageRole,
     ChatMessageStatus,
     ChatSurface,
+    ConversationEventKind,
+    EventProvenance,
     FrameDirection,
     PromptFate,
     RecordedToolCall,
     SessionStatus,
     TurnOutcome,
 )
-from haku.console.database_schema import Session, SessionMessage, SessionPrompt, SessionTurn
+from haku.console.database_schema import Session, SessionEvent, SessionMessage, SessionPrompt, SessionTurn
 from haku.console.x.conftest import age_lease, lease_of, queued_for_the_room
-from haku.console.x.conversation_events import Usage
+from haku.console.x.conversation_events import (
+    FrameRange,
+    MessageCompleted,
+    MessageKey,
+    Outcome,
+    TextContent,
+    ToolCallCompleted,
+    ToolCallStarted,
+    Usage,
+)
 from haku.console.x.conversation_records import ConversationCursor, FrameCursor, TranscriptCursor, TurnCursor
 from haku.console.x.session_notifications import SessionEventKind
 from haku.console.x.session_store import (
@@ -1037,6 +1049,119 @@ async def test_an_ended_session_is_not_reclassified_by_the_sweep(chat_store, mig
 
     assert await chat_store.expire_stale_leases() == 0
     assert (await chat_store.get(operator_id, view.session_id)).error == "something else went wrong first"
+
+
+async def test_a_frames_events_land_as_rows_with_the_cursor_that_says_they_did(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """The projection's own output, stored — and stored in the transaction that moves the cursor.
+
+    A tool call's answer is the row nothing has ever held: `session_messages.tool_calls` keeps what
+    was asked and the frames carrying the reply are re-parsed on every read.
+    """
+    view, token = await chat_store.create(operator_id, SpaSession())
+    session_id = view.session_id
+    assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, session_id, "list the files")
+    started = await chat_store.next_prompt(session_id)
+    assert started is not None
+    message = MessageKey(opened_at_frame_seq=7)
+
+    await chat_store.apply_frame(
+        session_id,
+        started.turn_id,
+        7,
+        [
+            ToolCallStarted(
+                message=message,
+                call_id="toolu_1",
+                tool_name="Bash",
+                arguments={"command": "ls"},
+                provenance=FrameRange(7, 7),
+            ),
+            MessageCompleted(message=message, text="looking", agent_message_id=None, provenance=FrameRange(7, 7)),
+        ],
+    )
+    await chat_store.apply_frame(
+        session_id,
+        started.turn_id,
+        8,
+        # A result comes back on its own frame, and finds its call by the id rather than by
+        # anything the message said.
+        [
+            ToolCallCompleted(
+                call_id="toolu_1",
+                content=TextContent(text="a.py"),
+                structured={"exit_code": 0},
+                outcome=Outcome.SUCCEEDED,
+                provenance=FrameRange(8, 8),
+            )
+        ],
+    )
+
+    async with migrated_sessions() as db:
+        rows = list(
+            (
+                await db.scalars(
+                    select(SessionEvent).where(SessionEvent.session_id == session_id).order_by(SessionEvent.event_seq)
+                )
+            ).all()
+        )
+        assert (await db.get(Session, session_id)).projected_frame_seq == 8
+    assert [row.kind for row in rows] == [
+        ConversationEventKind.TOOL_CALL_STARTED,
+        ConversationEventKind.MESSAGE_COMPLETED,
+        ConversationEventKind.TOOL_CALL_COMPLETED,
+    ]
+    assert {row.turn_id for row in rows} == {started.turn_id}
+    answered = one(row for row in rows if row.kind == ConversationEventKind.TOOL_CALL_COMPLETED)
+    assert answered.call_id == "toolu_1"
+    assert answered.body["content"] == {"shape": "text", "text": "a.py"}
+
+
+async def test_an_event_row_cannot_be_written_without_a_provenance_union(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """The requirement #4143 could not put on `session_messages`, where NULL means two things.
+
+    Either arm is writable and neither can be written half: `frame_range` without a range, and
+    `authored` with one, are both refused by the table rather than by whoever remembers.
+    """
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "list the files")
+    started = await chat_store.next_prompt(view.session_id)
+    assert started is not None
+
+    def event(**overrides) -> SessionEvent:
+        values = {
+            "session_id": view.session_id,
+            "turn_id": started.turn_id,
+            "kind": ConversationEventKind.REASONING,
+            "provenance": EventProvenance.FRAME_RANGE,
+            "source_first_frame_seq": 3,
+            "source_last_frame_seq": 4,
+            "call_id": None,
+            "body": {"summary": None},
+            "created_at": datetime.now(UTC),
+        }
+        return SessionEvent(**(values | overrides))
+
+    for unwritable in (
+        event(source_first_frame_seq=None, source_last_frame_seq=None),
+        event(source_last_frame_seq=None),
+        event(provenance=EventProvenance.AUTHORED),
+        event(source_first_frame_seq=9),
+        event(call_id="toolu_1"),
+    ):
+        async with migrated_sessions() as db:
+            db.add(unwritable)
+            with pytest.raises(IntegrityError):
+                await db.commit()
+
+    async with migrated_sessions() as db:
+        db.add(event(provenance=EventProvenance.AUTHORED, source_first_frame_seq=None, source_last_frame_seq=None))
+        await db.commit()
 
 
 if __name__ == "__main__":

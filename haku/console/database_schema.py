@@ -38,6 +38,8 @@ from haku.console.chat_models import (
     ChatMessageRole,
     ChatMessageStatus,
     ChatSurface,
+    ConversationEventKind,
+    EventProvenance,
     FrameDirection,
     RecordedToolCall,
     SessionStatus,
@@ -1168,6 +1170,81 @@ class SessionTurnPrompt(Base):
     )
     message_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("session_messages.message_id", ondelete="CASCADE"), primary_key=True
+    )
+
+
+class SessionEvent(Base):
+    """What the fold made of a session's frames, as rows: the neutral conversation, stored.
+
+    The vocabulary is `x/conversation_events.py` — what the agent said, what it thought, the
+    activity the harness narrated, and the tool calls it made **with their answers**, which no
+    other row has ever held. Written inside `SessionStore.apply_frame`'s transaction, beside the
+    message row and `sessions.projected_frame_seq`, so a row exists here exactly when the cursor
+    says its frame was projected.
+
+    **A row is found by frame range, not by the agent's id for a message.** `session_messages`
+    records the inclusive span it was built from and an event's own span falls inside it, so the
+    join that used to run over `agent_message_id` — absent on thousands of production rows, which
+    rendered their tool calls with no results — is a range lookup that needs nothing from the wire.
+
+    **Deliberately not one row per `TextDelta`.** A delta is an increment of prose that the
+    message's own row carries whole, at hundreds per turn; the `stream_event` frames it was cut
+    from are in `session_frames`, which is where an operator appeals the joined text to the wire.
+    """
+
+    __tablename__ = "session_events"
+
+    # Database-assigned, so the order events were written in survives a replica being replaced
+    # mid-turn. Ordering by frame is coarser: several events come out of one frame.
+    event_seq: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    session_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False
+    )
+    # Every event so far belongs to an exchange, because the fold only runs while a turn is open.
+    # A session event with no turn — a lease changing hands, a sandbox coming up — is the second
+    # category <plans/chat_runtime_projection.md> § stage 4 has still to build, and it is what
+    # would make this nullable.
+    turn_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("session_turns.turn_id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[ConversationEventKind] = mapped_column(TextBackedStrEnumColumn(ConversationEventKind), nullable=False)
+    # Which arm of the provenance union this row carries, and NOT NULL is the point: an event whose
+    # origin is unstated is exactly what `session_messages` cannot rule out.
+    provenance: Mapped[EventProvenance] = mapped_column(TextBackedStrEnumColumn(EventProvenance), nullable=False)
+    # The inclusive span of frames this event was projected from — both set on the `frame_range`
+    # arm and both NULL on `authored`, which the constraint below makes the only two possibilities.
+    source_first_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    source_last_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # The correlation key of a tool call's lifecycle, on both of its events and on nothing else, so
+    # a call finds its answer by a lookup rather than by a parse of the frame log. Unique within a
+    # session by the protocol's own contract, which is why it needs no per-message association.
+    call_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The event's remaining fields, in the neutral spelling; `x/session_events.py` is the one
+    # place that reads or writes this shape.
+    body: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('message_completed','reasoning','tool_call_started','tool_call_completed',"
+            "'activity_started','activity_completed')",
+            name="ck_session_events_kind",
+        ),
+        CheckConstraint("provenance IN ('frame_range','authored')", name="ck_session_events_provenance"),
+        # The union, as the table states it: frames are present on exactly the `frame_range` arm,
+        # and a range has two ends or none. Written as one constraint because the three clauses are
+        # one rule — that the discriminator and the columns it discriminates cannot disagree.
+        CheckConstraint(
+            "(provenance = 'frame_range') = (source_first_frame_seq IS NOT NULL) "
+            "AND (source_first_frame_seq IS NULL) = (source_last_frame_seq IS NULL) "
+            "AND (source_first_frame_seq IS NULL OR source_first_frame_seq <= source_last_frame_seq)",
+            name="ck_session_events_provenance_frames",
+        ),
+        CheckConstraint(
+            "(call_id IS NOT NULL) = (kind IN ('tool_call_started','tool_call_completed'))",
+            name="ck_session_events_call_id",
+        ),
+        Index("idx_session_events_session", "session_id", "event_seq"),
     )
 
 

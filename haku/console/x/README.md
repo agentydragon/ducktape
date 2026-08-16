@@ -216,9 +216,25 @@ onto the read models in `conversation_records.py`. And the live path reads them 
 events, so the live path no longer knows that `assistant`, `stream_event` and `result` exist. The
 status line is the second — `coarse_status` reads a run of events rather than a frame, which is what
 stops the driver being one of the interpreters it is supposed to sit above. `rollout_calls` still
-reads frames its own way; that is its own change. Nothing stores the events yet either —
-`session_messages` and the outbox keep the shapes they had, which is what makes the cursor below
-one column rather than a table.
+reads frames its own way; that is its own change.
+
+### The events, stored — `session_events`
+
+`session_events.py` maps a `ConversationEvent` onto a row and `apply_frame` writes it inside the
+transaction that moves the cursor, so a row exists exactly when the cursor says its frame was
+projected. What the table holds that nothing else does is a **tool call's answer**:
+`session_messages.tool_calls` records what was asked, and until now the reply existed only as
+frames that `rollout_calls` re-parsed on every read.
+
+- **A message is found by frame range**, not by the agent's id for it — `session_messages` records
+  the span it was built from and an event's own span falls inside it, so the join needs nothing the
+  wire may have omitted.
+- **Provenance is a column, and `NOT NULL`.** `frame_range` carries both ends and `authored`
+  carries neither, which the table's own constraint makes the only two possibilities — the
+  requirement #4143 could not put on `session_messages`, where NULL means two things.
+- **Two members of the vocabulary have no row.** A `TextDelta` is an increment of prose the
+  completed message carries whole; a `TurnCompleted` is the `session_turns` row, which already
+  holds the exchange's outcome, its cost and its bracket.
 
 **One status source did not survive that, and it is worth knowing before it is missed.**
 `coarse_status` used to answer for `system/task_progress` as well as `task_started`; the adapter

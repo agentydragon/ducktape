@@ -113,6 +113,38 @@ class RecordedToolCall(BaseModel):
     arguments: dict[str, Any] = Field(description="Whatever the agent passed, as the protocol carried it.")
 
 
+class ConversationEventKind(StrEnum):
+    """Which neutral event a `session_events` row records.
+
+    The vocabulary is `x/conversation_events.ConversationEvent` less its two members that already
+    have a durable home: a `TextDelta` is an increment of prose the completed message carries
+    whole, and a `TurnCompleted` is the `session_turns` row.
+    """
+
+    MESSAGE_COMPLETED = "message_completed"
+    REASONING = "reasoning"
+    TOOL_CALL_STARTED = "tool_call_started"
+    TOOL_CALL_COMPLETED = "tool_call_completed"
+    ACTIVITY_STARTED = "activity_started"
+    ACTIVITY_COMPLETED = "activity_completed"
+
+
+# The two kinds that name a call rather than a message, and so carry `session_events.call_id`.
+TOOL_CALL_EVENT_KINDS = frozenset({ConversationEventKind.TOOL_CALL_STARTED, ConversationEventKind.TOOL_CALL_COMPLETED})
+
+
+class EventProvenance(StrEnum):
+    """Which arm of `x/conversation_events.Provenance` a stored event carries.
+
+    A discriminator rather than a nullable frame range. An event the console authored crossed no
+    wire and never will, so "no frames" and "frames not recorded" are different states, where on
+    `session_messages` both are NULL and no constraint can tell them apart (#4143).
+    """
+
+    FRAME_RANGE = "frame_range"
+    AUTHORED = "authored"
+
+
 LIVE_SESSION_STATUSES = frozenset({SessionStatus.PROVISIONING, SessionStatus.READY, SessionStatus.RESPONDING})
 # Derived rather than spelled out: the two sets partition the enum, and a status added to one
 # without the other is the bug this shape makes unrepresentable.

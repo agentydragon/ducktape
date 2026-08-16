@@ -52,7 +52,7 @@ from haku.console.database_schema import (
     SessionTurn,
     SessionTurnPrompt,
 )
-from haku.console.x import transcript_entries
+from haku.console.x import session_events, transcript_entries
 from haku.console.x.claude_code import projection
 from haku.console.x.conversation_events import (
     ConversationEvent,
@@ -982,8 +982,9 @@ class SessionStore:
     ) -> TurnState:
         """Write what one frame's events imply, and move the cursor past that frame, together.
 
-        **One transaction, and the cursor is inside it.** The message row, the room's outbox row,
-        the turn's state and `sessions.projected_frame_seq` commit or do not commit as one, which
+        **One transaction, and the cursor is inside it.** The message row, the neutral event rows,
+        the room's outbox row, the turn's state and `sessions.projected_frame_seq` commit or do not
+        commit as one, which
         is the whole of what makes those effects exactly-once: a process that dies anywhere leaves
         the cursor naming the last frame whose effects are durable, so whoever adopts the session
         re-projects from there and redoes exactly the frames whose effects did not commit
@@ -1063,11 +1064,19 @@ class SessionStore:
                         await _clear_partial_frame(db, session_id)
                         message, tool_calls = None, []
                     case _:
-                        # Projected and deliberately not stored: what the agent thought, what its
-                        # calls answered and what the harness narrated are richer than any surface
-                        # renders today, and giving them rows is the half of stage 4 that moves
-                        # data.
+                        # Every event is stored below, whatever the transcript row does with it.
+                        # This arm is what the *message* row makes of one — nothing, for reasoning,
+                        # a tool's answer and the harness's narration.
                         pass
+            # In this transaction, so a row exists here exactly when the cursor says its frame was
+            # projected: a process that dies leaves no half-written stream to reconcile, and the
+            # frames whose effects did not commit are re-projected into rows that were never
+            # written.
+            db.add_all(
+                stored
+                for event in events
+                if (stored := session_events.row(event, session_id=session_id, turn_id=turn_id, now=now)) is not None
+            )
             _advance_cursor(chat, frame_seq)
             chat.updated_at = now
             await notify(db, SessionEventKind.UPDATE, session_id)
