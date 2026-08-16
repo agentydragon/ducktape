@@ -49,7 +49,8 @@ In flight, and treated as in-flight rather than as new work:
 | The runner numbers the frames it sends          | #4166 | **Landed.** R1's wire-and-runner half; § 2b of <chat_runtime_projection.md> holds the schedule                                    |
 | Retiring identity numbering scheduled as R5     | #4167 | **Landed.** The gate is two observable halves — Flux convergence and no live identity-numbered session                            |
 | A turn's cost is columns, not a CLI payload     | #4169 | **Landed.** Parallel item B                                                                                                       |
-| The console records the runner's number         | #4172 | In flight. R1's console half: `runner_seq` recorded, `resume_from` computed from it                                               |
+| The console records the runner's number         | #4172 | **Landed.** R1's console half: `runner_seq` recorded, `resume_from` computed from it                                              |
+| The durable projection cursor                   | #4178 | **Landed.** Spine item 3 — `sessions.projected_frame_seq`, migration `0051`                                                       |
 | R5 renumbers historical frames                  | #4170 | In flight. Revises R5's disposition of the rows that predate the cutover                                                          |
 
 Everything the previous month planned and landed is in `git log` and in the PRs; this document
@@ -91,6 +92,12 @@ differs by an order of magnitude:
 records how heavy the heaviest sessions are, and a turn in one of them is not a small
 re-projection. **This is the one thing to measure before writing item 3**, not to argue about.
 
+**Measured, and answered (#4178).** The fold costs ≈1 µs/frame — 14 ms for the 14,000-frame
+heaviest session, ~1.5 ms for a turn of it. (3) is affordable and was still not needed: the turn
+loop seeds a fresh `ProjectionState` per frame, so every frame boundary is already a finish
+boundary and (2) costs nothing. (3) becomes the answer the moment the loop threads one state across
+a turn; (1) was not attempted, and the roll-safety cost that made it last is unchanged.
+
 ## The spine
 
 Ordered because each one is what makes the next expressible. Each says how you would know it is
@@ -128,7 +135,7 @@ whose sequence is `None`.
 **Why here:** item 4 cannot express its `CHECK` without it, and item 3 would otherwise carry the
 placeholder into a durable position.
 
-### 3. The durable cursor — in flight
+### 3. The durable cursor — **landed** (#4178)
 
 A per-session position that advances in the same transaction as the effects the reducer produced.
 This is the item the whole month is arranged around, and it is what deletes code rather than
@@ -138,6 +145,26 @@ resume from.
 
 **Done when** the live path and the adoption path call the same function with a different starting
 cursor, and `adopt_open_turn` no longer asks the frames which of three situations a turn is in.
+
+`sessions.projected_frame_seq` (migration `0051`), advanced inside `SessionStore.apply_frame`
+alongside the message row, the outbox row and the turn's state. Adoption returns the frames past
+the cursor and the turn loop replays them through the same call the socket feeds, so the two paths
+are one.
+
+**Two things it found that this plan had wrong.** `_prompt_left` is _not_ the cursor's to take: it
+asks whether the console's own **outbound** write happened, which the fold projects to nothing by
+design — so two of the three cases collapsed and the third is a different kind of question, still
+asked of the frames. And the cursor **cannot be backfilled at all**: no query can say how far a
+previous holder got, since `max(frame_seq)` loses a turn's ending and `0` re-projects committed
+effects. NULL therefore means "no cursor" and the pre-cursor path stays behind a tombstone gated on
+`session_ttl_seconds`, which is a qualification of "the three-way case analysis goes" rather than
+the clean deletion this section promised.
+
+**The state-at-the-cursor question was measured** at ≈1 µs/frame, so option (3) — re-projecting
+from `first_frame_seq` — costs ~1.5 ms for a heavy turn and 14 ms for the 14,000-frame worst case.
+It is affordable, and was still not needed: the loop seeds a fresh `ProjectionState` per frame, so
+every frame boundary is a finish boundary and option (2) is free. (3) is the answer the moment the
+loop threads one state across a turn.
 
 **Note what it does not need:** persisted events. The effects it advances beside are the rows that
 already exist — the message upsert, the turn open and close, the outbox row. One column, no rows
