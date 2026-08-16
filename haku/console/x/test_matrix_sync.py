@@ -14,7 +14,7 @@ from pydantic import SecretStr
 
 from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, PromptFate
 from haku.console.database_schema import SessionMessage
-from haku.console.x.claude_chat import SessionStore, SpaSession
+from haku.console.x.claude_chat import BridgeAuthentication, MatrixSession, SessionStore, SpaSession
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
 from haku.console.x.matrix_client import (
     EventTag,
@@ -27,6 +27,7 @@ from haku.console.x.matrix_client import (
 )
 from haku.console.x.matrix_outbox import PendingReply
 from haku.console.x.matrix_pacer import RoomPacer
+from haku.console.x.matrix_session import RoomTranscript
 from haku.console.x.matrix_sync import MatrixSyncService, MatrixSyncStore
 
 
@@ -149,7 +150,12 @@ def matrix() -> _FakeMatrix:
 
 
 @pytest.fixture
-async def service(sync_store, conversations, turns, matrix):
+def transcript(migrated_sessions) -> RoomTranscript:
+    return RoomTranscript(migrated_sessions)
+
+
+@pytest.fixture
+async def service(sync_store, conversations, turns, transcript, matrix):
     """The service with its outbound queue running, because every send goes through it.
 
     Unthrottled: what the real budget is and how it is spent is `test_matrix_pacer`'s subject,
@@ -163,6 +169,7 @@ async def service(sync_store, conversations, turns, matrix):
         store=sync_store,
         conversations=conversations,
         turns=cast(Any, turns),
+        transcript=transcript,
         # Answers are outbox rows, drained by a task `run()` starts; these tests drive one sync
         # pass and assert the narration, which never touches the table. `test_matrix_outbox` is
         # where the drain is exercised.
@@ -690,6 +697,38 @@ async def test_each_kind_of_notice_says_which_it_is(service, matrix, turns, boun
         RoomEventKind.NARRATION,
         RoomEventKind.STATUS,
     ]
+
+
+async def test_history_is_read_from_our_record_and_not_from_the_homeserver(
+    service, matrix, chat_store, operator_id, bound_room
+) -> None:
+    """The whole of this change, at the seam: what a replacement session is told it said.
+
+    A role becomes an MXID here because that is the per-channel half of the answer — the record
+    knows who spoke, and only the channel knows what to call them. `matrix` is asserted untouched
+    because "we asked the homeserver" and "we asked ourselves" are otherwise indistinguishable
+    from the outside, and the difference is the point.
+    """
+    view, token = await chat_store.create(operator_id, MatrixSession(room_id=MATRIX_ROOM))
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "[$a] hi")
+    start = await chat_store.next_prompt(view.session_id)
+    assert start is not None
+    message_id = await chat_store.begin_assistant(view.session_id, start.turn_id)
+    await chat_store.update_assistant(view.session_id, message_id, "hello", complete=True)
+
+    said = await service.recent_history(uuid4(), 20)
+
+    assert [(message.sender, message.body) for message in said] == [
+        (MATRIX_OPERATOR, "[$a] hi"),
+        (MATRIX_USER, "hello"),
+    ]
+    assert matrix.since is None, "the homeserver was not asked anything to answer this"
+
+
+async def test_a_room_nothing_has_been_recorded_for_has_no_history(service, bound_room) -> None:
+    """A first-ever session and one whose room was just bound read the same, and both correctly."""
+    assert await service.recent_history(uuid4(), 20) == ()
 
 
 if __name__ == "__main__":

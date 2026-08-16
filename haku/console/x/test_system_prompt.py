@@ -29,10 +29,8 @@ def introduction(*messages: HistoryMessage) -> SessionIntroduction:
     )
 
 
-def history(sender: str, body: str, event_id: str = "$event") -> HistoryMessage:
-    return HistoryMessage(
-        sender=sender, body=body, event_id=event_id, sent_at=datetime.datetime(2026, 8, 11, 3, 14, tzinfo=datetime.UTC)
-    )
+def history(sender: str, body: str) -> HistoryMessage:
+    return HistoryMessage(sender=sender, body=body, sent_at=datetime.datetime(2026, 8, 11, 3, 14, tzinfo=datetime.UTC))
 
 
 def test_names_the_session_and_room():
@@ -71,16 +69,17 @@ def test_deployed_template_renders_a_fresh_room(deployed: SystemPromptTemplate):
 def test_deployed_template_carries_both_sides_of_the_history(deployed: SystemPromptTemplate):
     rendered = deployed.render(
         introduction(
-            history("@rai:allegedly.works", "did the OA thing happen?", "$first"),
-            history("@haku:allegedly.works", "you booked it for Monday", "$second"),
+            history("@rai:allegedly.works", "[$first] did the OA thing happen?"),
+            history("@haku:allegedly.works", "you booked it for Monday"),
         )
     )
     assert "Where the conversation was" in rendered
     # Haku's own replies are context, not noise: a prompt with only Rai's half reads as a
     # monologue and invites the agent to answer questions it already answered.
     assert "you booked it for Monday" in rendered
+    # Rai's half carries the event IDs it arrived with, inline, because the recorded prompt is
+    # what ingress wrote — the console never learns an ID for a reply of its own.
     assert "$first" in rendered
-    assert "$second" in rendered
     assert "no earlier conversation" not in rendered
 
 

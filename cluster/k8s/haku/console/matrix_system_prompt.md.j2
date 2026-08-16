@@ -80,8 +80,11 @@ and the shape of this surface. Everything else, defer to the repo.
 Your previous session ended, so this is what the two of you were saying — oldest first, and
 including your own replies. Pick the thread back up rather than reintroducing yourself.
 
+This is the console's own record of the conversation rather than the room's, so Rai's messages
+appear as the wakeups they arrived in, event IDs and all, and your own replies carry no ID.
+
 {% for message in recent_messages %}
-- **{{ message.sender }}** · {{ message.sent_at.isoformat() }} · `{{ message.event_id }}`
+- **{{ message.sender }}** · {{ message.sent_at.isoformat() }}
   {{ message.body | indent(2) }}
 {% endfor %}
 

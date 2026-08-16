@@ -33,10 +33,11 @@ a Synapse that rekeys its cache fails the test instead of quietly invalidating t
 ## A `/sync` watermark is a valid `/messages` pagination token, at both ends
 
 `MatrixClient._backfill` closes a truncated timeline by paginating from the sync response's
-`prev_batch` back to the stored watermark, and `recent_messages` reads history backwards from that
-same watermark — both passing an `s…` sync token where the client-server API talks about pagination
-tokens. Synapse accepts it, and the backfilled span meets the truncated timeline exactly: nothing is
-delivered twice and nothing falls in the join. Checked against Synapse v1.158.0 on 2026-08-15 by
+`prev_batch` back to the stored watermark — passing an `s…` sync token at both ends, where the
+client-server API talks about pagination tokens. Synapse accepts it, and the backfilled span meets
+the truncated timeline exactly: nothing is delivered twice and nothing falls in the join. (Gap
+recovery is now the only caller; re-awakening used to be the other, and reads the console's own
+transcript instead.) Checked against Synapse v1.158.0 on 2026-08-15 by
 `//haku/console/x:test_matrix_homeserver_e2e`, which fills a room past `TIMELINE_LIMIT` with the
 loop stopped — the only way to reach the case at all (R1.7).
 

@@ -224,9 +224,10 @@ One honest limitation and one route decision:
 operator's MXID, so a console-originated message either does not appear in the room at all, or
 appears under Haku's account.
 
-**Not posting it is ruled out**, because three readers would then see half a conversation: the
-operator's own Element; `recent_messages`, which re-awakens a replacement session (R3.3a); and any
-room read tool (R11.3), when it lands.
+**Not posting it is ruled out**, because two readers would then see half a conversation: the
+operator's own Element, and any room read tool (R11.3) when it lands. Re-awakening used to be the
+third and is not any more — it reads the transcript (`matrix_session.RoomTranscript`), where a
+console-originated prompt is a row like any other whether or not the relay ever posted.
 
 **So: a relay message.** `@haku` posts the operator's text under a new `RoomEventKind` — `relay` —
 tagged in `works.allegedly.haku` like every other console-authored event, and rendered so the room
@@ -242,10 +243,6 @@ console send and a dropped reply are repaired by the same code.
 
 What remains to get right:
 
-- **`_is_conversational` must include the new kind.** It reads `tag is None or kind is REPLY`
-  today, encoding "everything the console says _about_ the conversation is not the conversation".
-  A relayed operator message is the exception — it **is** the conversation. Get this wrong and
-  every rotation re-awakens a session with every console-sent prompt missing, silently.
 - **Ingress needs no change at all.** R1.5 excludes Haku's own sender from input, so a relay
   cannot loop back and be answered twice. This is the one place where posting under `@haku` is an
   advantage rather than a compromise.

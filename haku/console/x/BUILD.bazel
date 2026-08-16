@@ -371,6 +371,7 @@ py_library(
         ":matrix_outbox",
         ":matrix_pacer",
         ":matrix_session",
+        ":system_prompt",
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:database_schema",

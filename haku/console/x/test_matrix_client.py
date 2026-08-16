@@ -10,7 +10,7 @@ import pytest_bazel
 from nio.responses import RoomMessagesResponse, SyncResponse
 
 from haku.console.x import matrix_client
-from haku.console.x.matrix_client import HAKU_CONTENT_KEY, EventTag, MatrixClient, RoomEventKind
+from haku.console.x.matrix_client import EventTag, MatrixClient, RoomEventKind
 
 USER = "@haku:allegedly.works"
 OPERATOR = "@rai:allegedly.works"
@@ -298,55 +298,20 @@ async def test_backfill_is_bounded_and_says_what_it_dropped(monkeypatch, caplog)
     assert "gave up backfilling" in caplog.text
 
 
-async def test_history_counts_messages_rather_than_timeline_events():
-    """What a replacement session is handed is `limit` *messages* (R3.3a).
-
-    It used to be `limit` events, filtered afterwards — and this room's timeline is mostly the
-    console's own notices, so a re-awakening could come back with almost nothing while believing
-    it had asked for twenty. Silently: the prompt renders with whatever it found.
-    """
-    chatter = [_message(USER, f"provisioning {index}", event_id=f"$n{index}", msgtype="m.notice") for index in range(4)]
-    older = {"chunk": [_message(OPERATOR, "the actual question", event_id="$q")], "start": "p2", "end": "p3"}
-    client, homeserver = _client(_sync_body(), pages=[{"chunk": chatter, "start": "p1", "end": "p2"}, older])
-
-    recent = await client.recent_messages("tok", ROOM, since="s1", limit=1)
-
-    assert [message.body for message in recent] == ["the actual question"]
-    assert homeserver.message_kwargs["start"] == "p2", "the second page is asked for from where the first ended"
-
-
-async def test_history_stops_at_the_start_of_the_room():
-    """A room with less history than asked for ends the paging rather than re-reading it."""
-    # No `end`: the homeserver's way of saying there is no earlier page to ask for.
-    first = {"chunk": [_message(OPERATOR, "all there is", event_id="$a")], "start": "p1"}
-    client, _ = _client(_sync_body(), pages=[first])
-
-    recent = await client.recent_messages("tok", ROOM, since="s1", limit=20)
-
-    assert [message.body for message in recent] == ["all there is"]
-
-
-def test_a_tag_survives_the_wire() -> None:
+def test_a_tag_is_ids_and_kinds_and_omits_what_it_has_none_of() -> None:
+    """What goes under the console's own content key. Nothing reads one back — re-awakening asks
+    the transcript now — so what this pins is the wire, for the room's readers."""
     tag = EventTag(
         kind=RoomEventKind.REPLY,
         session_id=UUID("11111111-2222-3333-4444-555555555555"),
         message_id=UUID("99999999-8888-7777-6666-555555555555"),
-        agent_message_id="msg_01abc",
     )
 
-    assert EventTag.parse({HAKU_CONTENT_KEY: tag.content()}) == tag
-
-
-def test_an_untagged_event_is_readable_as_untagged() -> None:
-    """Every event predating this, and every event the operator sends. Neither can be
-    interpreted, and both already have a reading — the msgtype and sender rules."""
-    assert EventTag.parse({"msgtype": "m.text", "body": "hello"}) is None
-
-
-def test_a_kind_this_release_does_not_know_is_refused_rather_than_guessed() -> None:
-    """A newer console talking. Reading it as some default would be worse than admitting it is
-    unreadable, since every caller already handles an untagged event."""
-    assert EventTag.parse({HAKU_CONTENT_KEY: {"kind": "something_later"}}) is None
+    assert tag.content() == {
+        "kind": "reply",
+        "session_id": "11111111-2222-3333-4444-555555555555",
+        "message_id": "99999999-8888-7777-6666-555555555555",
+    }
 
 
 if __name__ == "__main__":

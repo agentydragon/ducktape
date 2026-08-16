@@ -46,7 +46,13 @@ from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.claude_chat import SessionService, SessionStore, internal_router
 from haku.console.x.matrix_client import MatrixError
 from haku.console.x.matrix_outbox import PendingReply, RoomOutbox
-from haku.console.x.matrix_session import MatrixConversationStore, MatrixSessionSupervisor, MatrixSurface, MatrixTurns
+from haku.console.x.matrix_session import (
+    MatrixConversationStore,
+    MatrixSessionSupervisor,
+    MatrixSurface,
+    MatrixTurns,
+    RoomTranscript,
+)
 from haku.console.x.matrix_sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.session_notifications import SessionNotifications
@@ -165,6 +171,7 @@ async def _serve() -> None:
         MatrixSyncStore(sessions),
         conversations,
         MatrixTurns(matrix, conversations, store, identities),
+        RoomTranscript(sessions),
         RoomOutbox(sessions),
         armed=Path(_environment("HAKU_E2E_REFUSE_NEXT_REPLY")),
     )

@@ -196,6 +196,16 @@ class Deployment:
         runner.kill()
         await runner.wait()
 
+    def system_prompts(self) -> list[str]:
+        """What each CLI this deployment launched was woken with, in launch order.
+
+        Written by the stub out of its own argv, because nothing else can see it: the console
+        renders the prompt into the launch envelope, and the runner ignores a launch for a process
+        it is already holding.
+        """
+        recorded = self.stub_state / "system-prompts.jsonl"
+        return [json.loads(line) for line in recorded.read_text().splitlines()] if recorded.exists() else []
+
     async def wait_until_queued(self, session_id: UUID, body: str) -> None:
         """Wait until *body* is a prompt row on *session_id*.
 
@@ -582,6 +592,41 @@ async def test_a_message_accepted_by_a_dying_session_is_answered_by_its_replacem
 
     await deployment.wait_for_reply(room, "re: two")
     assert room.replies() == ["re: one", "re: two"]
+
+
+async def test_a_replacement_session_wakes_from_our_transcript_rather_than_from_the_room(
+    deployment: Deployment, room: Room
+) -> None:
+    """R3.3a, answered out of the console's own record: **which copy of the conversation is this?**
+
+    The two copies are distinguishable here, which is why this can assert provenance rather than
+    only content. Our transcript holds the operator's message as the wakeup ingress wrote —
+    `[$event] one`, event id inline — while the homeserver holds an event whose body is `one` and
+    whose id is a field beside it. So a prompt containing the first form was built from the
+    transcript, and one built by paginating `/messages` could not contain it.
+
+    The killed sandbox is how a replacement session gets made at all, and it also puts the
+    load-bearing case in the same test: `two` is accepted by the dying session and never answered
+    by it, so it sits past the sync watermark — exactly the messages the `/messages` read had to
+    reach back for with a held-batch cursor, and exactly the ones a history that stopped at the
+    watermark would have hidden from the session about to be handed them.
+    """
+    await deployment.start_console("console-1")
+    doomed = await deployment.serving()
+    one = room.say("one")
+    await deployment.wait_for_reply(room, "re: one")
+
+    await deployment.kill_sandbox(doomed)
+    two = room.say("two")
+    await deployment.wait_until_queued(doomed, "two")
+    await deployment.wait_for_reply(room, "re: two")
+
+    launched = deployment.system_prompts()
+    assert len(launched) >= 2, "no replacement session was ever started"
+    woken = launched[-1]
+    assert f"[{one}] one" in woken, "the operator's message, in the form only our record holds"
+    assert "re: one" in woken, "half a conversation is not context — Haku's own reply is there too"
+    assert f"[{two}] two" in woken, "the batch its predecessor died holding"
 
 
 if __name__ == "__main__":

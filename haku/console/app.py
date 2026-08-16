@@ -286,6 +286,7 @@ def create_app(
             matrix_sync.MatrixSyncStore(db_sessions),
             matrix_conversations,
             matrix_session.MatrixTurns(matrix_config, matrix_conversations, session_store, operator_identity_store),
+            matrix_session.RoomTranscript(db_sessions),
             matrix_outbox.RoomOutbox(db_sessions),
         )
         if claude_runtime is not None:

@@ -21,16 +21,23 @@ import datetime
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import LIVE_SESSION_STATUSES, PromptFate, SessionStatus
+from haku.console.chat_models import (
+    LIVE_SESSION_STATUSES,
+    ChatMessageRole,
+    ChatMessageStatus,
+    PromptFate,
+    SessionStatus,
+)
 from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
-from haku.console.database_schema import MatrixConversation
+from haku.console.database_schema import MatrixConversation, Session, SessionMessage
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.claude_chat import REPLICA, MatrixSession, SessionService, SessionStore
 from haku.console.x.matrix_client import InboundMessage, RoomEventKind
@@ -76,10 +83,12 @@ class RoomChannel(Protocol):
     is the only way a producer can be told that the room actually heard one.
 
     Implemented by the sync loop, the only holder of the credential and the only object that
-    knows which room is bound.
+    knows which room is bound. `recent_history` is the one method that asks it for something
+    rather than telling it something, and it is answered out of our own transcript — the channel
+    is still who to ask, because it knows which room this is, but not where the answer comes from.
     """
 
-    async def recent_history(self, limit: int) -> Sequence[InboundMessage]: ...
+    async def recent_history(self, before_session: UUID, limit: int) -> Sequence[HistoryMessage]: ...
 
     async def announce(self, body: str, kind: RoomEventKind = ...) -> None: ...
 
@@ -91,8 +100,12 @@ class RoomChannel(Protocol):
 
 
 # How much of the conversation a replacement session is handed. Enough to pick up a thread
-# mid-topic, not enough to be a transcript — anything older is in the room, which the agent
-# can be pointed at (R3.3a, [v1] "start without the summary").
+# mid-topic, not enough to be a transcript — anything older is indexed, and the prompt points the
+# agent at `haku_index` for it (R3.3a, [v1] "start without the summary").
+#
+# Counted in **recorded rows**, where it used to count room events: a batch the operator sent as
+# three messages is one prompt row, so twenty here is twenty exchanges' worth rather than twenty
+# events of a conversation that may be mostly one side.
 RE_AWAKENING_MESSAGES = 20
 
 
@@ -135,6 +148,66 @@ class MatrixConversationStore:
             if row is None:
                 raise RuntimeError("cannot bind a session before a room is bound")
             row.session_id = session_id
+
+
+@dataclass(frozen=True)
+class RecordedMessage:
+    """One thing that was said in a room, as the console wrote it down."""
+
+    role: ChatMessageRole
+    body: str
+    sent_at: datetime.datetime
+
+
+class RoomTranscript:
+    """What was said in a room, read back out of the console's own record.
+
+    The read half of what `MatrixTurns.offer` and the turn loop write, and the reason it is a
+    separate object from `SessionStore`: this question is keyed by **room** and spans every
+    session that has served it, where a store scoped to one session cannot answer it — a
+    replacement session's whole problem is that the rows it needs belong to its predecessor.
+    `sessions.room_id` is what makes that chain readable, since it is written once and never moves
+    (R11.3a), unlike the pointer in `matrix_conversation`.
+
+    **A row is here once it was said, and the two sides say that differently.** An operator row
+    exists from the moment ingress accepted the batch, which is the only statement we have that it
+    was said at all; a Haku row is said when it completes, which is the exact condition under which
+    `_enqueue_reply` wrote the room's copy in the same transaction. So a message still streaming, a
+    turn that failed mid-answer, and the empty row a tool-only message leaves are all excluded —
+    the room was never told any of them either.
+    """
+
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]):
+        self._sessions = sessions
+
+    async def recent(self, room_id: str, *, before_session: UUID, limit: int) -> tuple[RecordedMessage, ...]:
+        """The last *limit* things said in *room_id*, oldest first, excluding *before_session*'s own.
+
+        Nothing keyed to the session being started belongs in its history: the only way it has a row
+        before its first turn is the re-offer of the batch it is about to be handed, and a message
+        in both the history and the prompt reads as having been said twice.
+        """
+        said = (
+            select(SessionMessage.role, SessionMessage.content, SessionMessage.created_at)
+            .join(Session, Session.session_id == SessionMessage.session_id)
+            .where(
+                Session.room_id == room_id,
+                SessionMessage.session_id != before_session,
+                or_(
+                    SessionMessage.role == ChatMessageRole.USER,
+                    and_(SessionMessage.status == ChatMessageStatus.COMPLETE, func.trim(SessionMessage.content) != ""),
+                ),
+            )
+            # Descending with a limit, then reversed: the tail is what is wanted, and paging from
+            # the front of a long-lived room to reach it would read the whole conversation.
+            .order_by(SessionMessage.created_at.desc(), SessionMessage.message_id.desc())
+            .limit(limit)
+        )
+        async with self._sessions() as db:
+            rows = (await db.execute(said)).all()
+        return tuple(
+            RecordedMessage(role=role, body=content, sent_at=created_at) for role, content, created_at in reversed(rows)
+        )
 
 
 class MatrixTurns:
@@ -233,9 +306,15 @@ class MatrixSurface:
     delivery, in a form where getting it wrong meant silently saying nothing.
 
     History is read here rather than carried forward from the previous session, because by
-    the time a replacement session starts, the one that held the context is gone. The room is
-    the source (R3.3a) — it is also what Rai sees, so what the prompt claims was said and
-    what the room shows cannot disagree.
+    the time a replacement session starts, the one that held the context is gone. **Our own
+    transcript is the source, not the homeserver's copy of the room** (R3.3a, as amended by the
+    invariant in <../debug/channel_write_audit.md>, #4130): Matrix is one channel among several, and a
+    session re-awakened from the channel's record is a session whose memory a second channel
+    could not reproduce.
+
+    The two can still disagree, in both directions, and the record wins by construction: a reply
+    the outbox has not drained yet is here before it is in the room, and an operator message
+    redacted after we recorded it stays here after the room has forgotten it.
 
     The `RoomChannel` is the sync service, which holds the only Matrix credential and services
     one room (R3.6a) — so `room_id` names the room it already speaks to rather than choosing
@@ -257,7 +336,7 @@ class MatrixSurface:
                 room_id=room_id,
                 operator_user_id=self._config.operator_user_id,
                 workspace=self._runtime.cwd,
-                recent_messages=await self._recent(),
+                recent_messages=await self._recent(session_id),
             )
         )
 
@@ -293,28 +372,21 @@ class MatrixSurface:
         del room_id
         await self._room.set_typing(active)
 
-    async def _recent(self) -> list[HistoryMessage]:
-        """The tail of the conversation, or none of it if the homeserver would not say.
+    async def _recent(self, session_id: UUID) -> Sequence[HistoryMessage]:
+        """The tail of the conversation, or none of it if our own record would not answer.
 
         The one degradation in this path that is worth taking rather than failing the
         session over: a session that starts without its last twenty messages is still Haku
         and can be told what it missed, where a session that never starts is a room that
-        goes quiet. Loud, though — this is a homeserver problem and should be visible.
+        goes quiet. Loud, though — and what it now means is different: this used to be the
+        homeserver refusing to serve history, and is now our own store failing to answer a read,
+        which is a symptom worth seeing on its own rather than only as the next query's error.
         """
         try:
-            messages = await self._room.recent_history(RE_AWAKENING_MESSAGES)
+            return await self._room.recent_history(session_id, RE_AWAKENING_MESSAGES)
         except Exception:
-            logger.exception("Matrix: could not read room history; starting the session without it")
+            logger.exception("Matrix: could not read this room's transcript; starting the session without it")
             return []
-        return [
-            HistoryMessage(
-                sender=message.sender,
-                body=message.body,
-                event_id=message.event_id,
-                sent_at=datetime.datetime.fromtimestamp(message.origin_server_ts / 1000, datetime.UTC),
-            )
-            for message in messages
-        ]
 
 
 class MatrixSessionSupervisor:

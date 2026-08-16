@@ -28,7 +28,7 @@ from uuid import uuid4
 import pytest
 import pytest_bazel
 
-from haku.console.x.matrix_client import TIMELINE_LIMIT, EventTag, Invite, MatrixClient, RoomEventKind
+from haku.console.x.matrix_client import HAKU_CONTENT_KEY, TIMELINE_LIMIT, EventTag, Invite, MatrixClient, RoomEventKind
 from haku.console.x.testing.synapse_container import Account, Synapse, run_synapse
 
 PASSWORD = "not-a-secret"
@@ -221,12 +221,9 @@ async def test_a_tag_and_its_rendering_survive_the_homeserver(bot: Bot, operator
     content = operator.event(joined_room, event_id)["content"]
     assert content["formatted_body"] == "<p><strong>bold</strong> answer</p>"
     assert content["body"] == "**bold** answer", "the Markdown source stays the fallback (R11.7)"
-
-    # Read back the way a re-awakened session reads its history — which also says a `/sync`
-    # watermark is a `/messages` pagination token.
-    watermark = (await bot.client.sync(bot.token, since=None)).next_batch
-    [remembered] = await bot.client.recent_messages(bot.token, joined_room, since=watermark, limit=5)
-    assert (remembered.event_id, remembered.body, remembered.tag) == (event_id, "**bold** answer", tag)
+    # Read off the raw event, because nothing in the console reads a tag back any more: the
+    # readers this is for are in the room (`EventTag`).
+    assert content[HAKU_CONTENT_KEY] == tag.content()
 
 
 async def test_the_same_transcript_row_cannot_post_twice(bot: Bot, operator: Account, joined_room: str) -> None:
@@ -260,12 +257,20 @@ async def test_an_edit_replaces_the_status_line_rather_than_adding_one(
     [edit] = operator.relations(joined_room, event_id, "m.replace")
     assert edit["content"]["m.new_content"]["body"] == "running Bash"
     assert edit["content"]["body"] == "* running Bash", "the fallback body is what a client that ignores edits shows"
-    assert EventTag.parse(edit["content"]["m.new_content"]) == tag, "the tag rides on the half a client re-renders"
-    assert EventTag.parse(edit["content"]) == tag
+    assert edit["content"]["m.new_content"][HAKU_CONTENT_KEY] == tag.content(), (
+        "the tag rides on the half a client re-renders"
+    )
+    assert edit["content"][HAKU_CONTENT_KEY] == tag.content()
 
 
 async def test_a_redacted_event_is_gone_from_the_room(bot: Bot, operator: Account, joined_room: str) -> None:
-    """R6.5 — a retired status line leaves nothing behind, including for a re-awakened session."""
+    """R6.5 — a retired status line leaves nothing behind, and leaves it nowhere the room reads.
+
+    It does still leave something in the console's transcript, which is where a re-awakened
+    session now reads from (`matrix_sync.recent_history`) — a redaction is the one thing the room
+    knows and our record does not. Harmless for what redaction is used for here, since a status
+    line was never recorded in the first place.
+    """
     tag = EventTag(kind=RoomEventKind.REPLY, message_id=uuid4())
     event_id = await bot.client.send_text(bot.token, joined_room, "spent", txn_id=tag.transaction_id(), tag=tag)
 
@@ -274,8 +279,6 @@ async def test_a_redacted_event_is_gone_from_the_room(bot: Bot, operator: Accoun
     redacted = operator.event(joined_room, event_id)
     assert redacted["content"] == {}
     assert redacted["unsigned"]["redacted_because"]["content"]["reason"] == "turn finished"
-    watermark = (await bot.client.sync(bot.token, since=None)).next_batch
-    assert await bot.client.recent_messages(bot.token, joined_room, since=watermark, limit=5) == ()
 
 
 async def test_the_typing_notice_starts_and_stops(bot: Bot, operator: Account, joined_room: str) -> None:

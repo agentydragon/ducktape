@@ -42,7 +42,7 @@ from nio.responses import (
     SyncResponse,
     WhoamiResponse,
 )
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict
 
 from haku.console.x.matrix_markdown import to_formatted_body
 
@@ -109,6 +109,11 @@ class RoomEventKind(StrEnum):
 class EventTag(BaseModel):
     """What the console states about an event it is sending.
 
+    **Write-only, for now.** Nothing here reads a tag back off an event: ingress excludes Haku's
+    own sender (R1.5) and re-awakening reads the console's transcript rather than the room, so
+    what the tag is for is a reader in the room — Element showing which session answered, and the
+    room-read tools of R11.3 when they land, which is what brings a parser back with it.
+
     **Ids and kinds only.** This room is public and federated, so the content travels to every
     server in it and is not ours to take back; a tag that carried text would be publishing the
     same thing twice, in a field nobody renders. Redaction strips it along with the rest of
@@ -144,26 +149,6 @@ class EventTag(BaseModel):
         """
         return self.message_id.hex if self.message_id is not None else uuid4().hex
 
-    @classmethod
-    def parse(cls, content: dict[str, Any]) -> EventTag | None:
-        """Read a tag off an event, or None for anything this console did not tag.
-
-        None covers two different things and deliberately does not distinguish them: an event
-        somebody else sent, and one this console sent before tagging existed. Neither can be
-        interpreted, so both fall back to the msgtype and sender rules that predate this.
-
-        `extra="ignore"` rather than `forbid`, for the same reason the bridge envelope ignores
-        them: a newer console adding a field must not make its events unreadable here. An unknown
-        `kind` is the opposite case and does fail — a kind is what this is dispatched on.
-        """
-        if not isinstance(stated := content.get(HAKU_CONTENT_KEY), dict):
-            return None
-        try:
-            return cls.model_validate(stated)
-        except ValidationError:
-            logger.warning("Matrix: unreadable Haku tag %r", stated)
-            return None
-
 
 class MatrixError(Exception):
     """The homeserver returned an error for a call we made.
@@ -189,15 +174,19 @@ class MatrixAuthError(MatrixError):
 
 @dataclass(frozen=True)
 class InboundMessage:
-    """One `m.room.message` addressed to us."""
+    """One `m.room.message` addressed to us.
+
+    It carries no parsed `EventTag`, and cannot usefully: `_read` drops everything Haku sent
+    (R1.5) and nothing else in the room tags anything, so the field was structurally always
+    absent once the history read — its only consumer — stopped going to the homeserver
+    (`matrix_sync.recent_history`).
+    """
 
     room_id: str
     event_id: str
     sender: str
     body: str
     origin_server_ts: int
-    # Present only on events this console sent since tagging landed; see `EventTag.parse`.
-    tag: EventTag | None = None
 
 
 @dataclass(frozen=True)
@@ -235,15 +224,6 @@ class SyncResult:
     # Defaulted because a sync with nothing unreadable in it is the ordinary case, and every
     # caller that constructs one by hand means exactly that.
     unmappable: tuple[UnmappableEvent, ...] = ()
-
-
-def _is_conversational(message: InboundMessage) -> bool:
-    """Whether *message* is part of the conversation rather than the console talking about it.
-
-    An untagged event is the operator's, or predates tagging — either way the msgtype rule that
-    got it this far is the only reading available, and it already said yes.
-    """
-    return message.tag is None or message.tag.kind is RoomEventKind.REPLY
 
 
 def _msgtype(event: Event | BadEvent) -> str | None:
@@ -326,46 +306,6 @@ class MatrixClient:
     async def join(self, token: str, room_id: str) -> None:
         self._client.access_token = token
         _unwrap(await self._client.join(room_id), JoinResponse)
-
-    async def recent_messages(self, token: str, room_id: str, since: str, limit: int) -> tuple[InboundMessage, ...]:
-        """The last `limit` conversational messages before `since`, oldest first.
-
-        **Filters the opposite way from `sync`.** Ingress drops Haku's own messages, because
-        answering yourself is a loop (R1.5); history keeps them, because half a conversation is
-        not context (R3.3a). Same room and same events, so the two cannot share a filter.
-
-        `since` is a `/sync` watermark, which is also a valid `/messages` pagination token, so
-        this reads back from wherever the loop has got to with no second position to keep.
-
-        **`limit` counts messages, not timeline events**, and pages until it is met. This room's
-        timeline is mostly the console talking to itself — announcements, bootstrap narration, the
-        status line's edits and redaction — all correctly excluded here, and all of which would
-        otherwise spend the page. Asking for twenty and rendering three, silently, is what
-        counting events instead would do.
-        """
-        self._client.access_token = token
-        recent: list[InboundMessage] = []
-        start = since
-        for _ in range(MAX_BACKFILL_PAGES):
-            page = _unwrap(
-                await self._client.room_messages(
-                    room_id, start=start, direction=MessageDirection.back, limit=TIMELINE_LIMIT
-                ),
-                RoomMessagesResponse,
-            )
-            recent.extend(
-                message
-                for event in page.chunk
-                if isinstance(event, RoomMessageText | RoomMessageEmote)
-                if _is_conversational(message := self._inbound(room_id, event))
-            )
-            # `end` is absent at the start of the room's history: there is no earlier page to ask
-            # for, and asking again would re-read this one forever.
-            if len(recent) >= limit or not page.chunk or page.end is None:
-                break
-            start = page.end
-        recent.reverse()
-        return tuple(recent[-limit:] if len(recent) > limit else recent)
 
     async def send_text(self, token: str, room_id: str, body: str, txn_id: str, tag: EventTag) -> str:
         """Send Haku's reply, rendering its Markdown for clients that display HTML.
@@ -573,5 +513,4 @@ class MatrixClient:
             sender=event.sender,
             body=event.body,
             origin_server_ts=event.server_timestamp,
-            tag=EventTag.parse(event.source.get("content", {})),
         )

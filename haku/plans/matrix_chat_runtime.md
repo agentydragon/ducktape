@@ -292,17 +292,19 @@ input to a running turn**. Interrupt exists; steer does not.
   operator can say so and be answered from the room. That is a good trade for not building
   summarisation before there is evidence about how often rotation actually happens.
 
-  **Control messages are excluded from that N, by an explicit mark.** Lifecycle notices are
-  already `m.notice` while conversation is `m.text`, so the distinction half exists — but
-  `msgtype` is a rendering hint clients may treat loosely, so the contract should be a
-  namespaced key in the event content (`works.allegedly.haku.kind`), with `m.notice` kept
-  for how clients style it. Re-awakening a session with its own status chatter as context
-  is both noise and slightly self-referential.
+  **Control messages are excluded from that N, and reading our own record is what excludes
+  them.** They were to be told apart by a namespaced key in the event content
+  (`works.allegedly.haku.kind`), because `msgtype` is a rendering hint clients may treat
+  loosely — a filter that had to be got right. It no longer has to be: the console's narration
+  is not in `session_messages` at all (it is the bypassing-write class of
+  <../console/debug/channel_write_audit.md>, #4130), so a transcript read cannot pick it up. The tag
+  stays on the wire for readers in the room; nothing in the console parses one back.
 
-  **Gotcha: the history read filters differently from ingress.** Ingress excludes Haku's own
-  messages, because answering yourself is a loop (R1.5). History must _include_ them — half
-  a conversation is not context. Same room, same API, opposite rule on the same events, so
-  the two read paths cannot share a filter.
+  **Both sides are in it, and neither is a filter.** The old gotcha here was that history had to
+  filter the opposite way from ingress — ingress drops Haku's own messages because answering
+  yourself is a loop (R1.5), while half a conversation is not context — on the same events
+  through the same API. Reading the transcript makes them different questions rather than
+  opposite answers: ingress asks who sent an event, and history asks what was said.
 
   **[later] Where would the summary come from?** The session that held the context is gone by
   definition, so it cannot produce one at the moment it is needed. Three shapes, with
@@ -322,12 +324,20 @@ input to a running turn**. Interrupt exists; steer does not.
   what yesterday was about. So summary-less re-awakening is the honest default now, and the
   expensive summary half is worth building only if a rare rotation still proves too lossy.
 
-  **The room is the primary source, not the database.** Matrix already holds the
-  conversation, it is what the operator sees, and the recovery path is `/messages`
-  pagination the console already runs for gap recovery (R1.7). The console's own tables hold
-  something different and complementary — the _trace_: tool calls, results, timings, the
-  things the room never showed. Reading the room reconstructs the conversation; reading the
-  trace reconstructs the work.
+  **The database is the primary source, not the room — reversed on 2026-08-16.** This used to
+  say the opposite, on the grounds that Matrix already holds the conversation, it is what the
+  operator sees, and `/messages` pagination was already being run for gap recovery (R1.7). What
+  that missed is the invariant the operator stated a day earlier: **Matrix is one pluggable
+  channel among several, and nothing may reach a channel except through our record.** Re-awakening
+  ran it backwards — the channel was the source of truth for the conversation, and a second
+  channel (Telegram's bot API cannot page a chat's history) could not have reproduced the memory,
+  so two channels would have re-awakened from two records that can disagree. The read is now
+  `session_messages` scoped by `sessions.room_id` (`matrix_session.RoomTranscript`).
+
+  Two things the room knows and our record does not, both accepted: history from before we were
+  recording, and a redaction — the operator unsaying a message removes it from the room and not
+  from the transcript. The trace stays what it always was, the complementary half: tool calls,
+  results, timings, the things the room never showed.
 
   **Reading the trace has its link.** Rotation still overwrites the conversation's `session_id`,
   but `sessions` now carries `surface` and `room_id` of its own (R11.3a), so a room's past
@@ -801,14 +811,15 @@ that.
 
 - **R11.8 [later] The operator can speak into the room from somewhere other than a Matrix client.**
   The console's conversation view is a second surface onto the same session, and a message sent
-  from it must appear in the room — otherwise Element shows half a conversation, and R3.3a's
-  re-awakening restores Haku's answers with the questions missing. The console holds only
-  `@haku`'s credential (R5.1), so the operator's message is **relayed**: posted by Haku's account
-  under its own `RoomEventKind`, stating that the operator wrote it and Haku's account delivered
-  it. Ingress needs nothing — R1.5 already excludes Haku's sender, so a relay cannot loop back as
-  input — but `_is_conversational` must count a relay as conversation rather than as console
-  chatter, or a rotation loses the operator's half of every exchange. This is the operator
-  writing, not the agent, so R5.4's read-only tool surface is untouched. Staging, the enqueue/post
+  from it must appear in the room — otherwise Element shows half a conversation. The console holds
+  only `@haku`'s credential (R5.1), so the operator's message is **relayed**: posted by Haku's
+  account under its own `RoomEventKind`, stating that the operator wrote it and Haku's account
+  delivered it. Ingress needs nothing — R1.5 already excludes Haku's sender, so a relay cannot loop
+  back as input — and re-awakening needs nothing either, now that it reads the transcript: a
+  console-sent message is a prompt row whether or not the relay ever posted, so what used to be a
+  filter to get exactly right ("count a relay as conversation, or a rotation loses the operator's
+  half of every exchange") is not a filter at all. This is the operator writing, not the agent, so
+  R5.4's read-only tool surface is untouched. Staging, the enqueue/post
   ordering, and why this wants the room outbox: <../console/plans/session_channels.md>.
 
   Part of a larger direction set by the operator on 2026-08-15 — **Matrix and the console as two
@@ -1066,8 +1077,9 @@ limit, kinds)` pages `session_frames` by its `frame_seq`, and skimming is a `kin
 same frame rows, which is why the frames are the granularity to store.
 
 The payoff worth naming: this is what makes R3.3's "compaction that crossed a process
-boundary" reachable. A replacement session today gets the last N room messages (R3.3a) and
-nothing else; with the rollout readable it can consult what its predecessor actually did.
+boundary" reachable. A replacement session today gets the last N messages of its own transcript
+(R3.3a) and nothing else; with the rollout readable it can consult what its predecessor actually
+did.
 
 ### The decision that gates Phase 1
 

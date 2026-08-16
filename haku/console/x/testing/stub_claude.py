@@ -36,9 +36,12 @@ to stderr is the sandbox's narration, which the runner forwards as its own frame
 console's one account of a session that never reached the model, so a test about that path
 (`../test_claude_bridge_e2e.py`) needs a line printed before any turn.
 
-The launch argv is ignored on purpose: what the console passes is pinned by
+The launch argv is **not acted on**: what the console passes is pinned by
 `haku/runtime/x/claude_bridge/test_options.py`, and duplicating it here would be a second copy to
-keep in step.
+keep in step. One value is copied out of it rather than obeyed — `--append-system-prompt`, appended
+to `system-prompts.jsonl` in `HAKU_STUB_STATE`, one line per CLI this run launched. It is the only
+way a test can see what a session was woken with, and what a *replacement* session is woken with is
+the whole of R3.3a.
 """
 
 from __future__ import annotations
@@ -120,8 +123,22 @@ def _answer(state: Path, prompt: str, answered: int) -> None:
     )
 
 
+def _record_system_prompt(state: Path) -> None:
+    """Append what this CLI was launched with, for a test that asks how a session was woken.
+
+    Appended rather than written, because the file spans every sandbox a test starts: a
+    replacement session is a second launch, and telling it from the first is the point.
+    """
+    if "--append-system-prompt" not in sys.argv:
+        return
+    prompt = sys.argv[sys.argv.index("--append-system-prompt") + 1]
+    with (state / "system-prompts.jsonl").open("a") as recorded:
+        recorded.write(json.dumps(prompt) + "\n")
+
+
 def main() -> None:
     state = Path(os.environ["HAKU_STUB_STATE"])
+    _record_system_prompt(state)
     if (greeting := os.environ.get("HAKU_STUB_GREETING")) is not None:
         print(greeting, file=sys.stderr, flush=True)
 

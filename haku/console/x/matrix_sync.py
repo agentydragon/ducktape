@@ -18,6 +18,11 @@ the room and then acknowledged (`_report_unreadable`), which is the other half o
 It is also the only holder of a Matrix credential, so the session supervisor's lifecycle
 notices go out through `announce` rather than through a second login — and so an answer, which
 lives as a row until it has been said, is drained into the room from here (`matrix_outbox`).
+
+The one thing it is asked *for* rather than told is this room's recent conversation
+(`recent_history`), and that one is answered out of the console's own transcript. It is still
+this object's to answer because it is the object that knows which room is bound; the credential
+has nothing to do with it any more.
 """
 
 from __future__ import annotations
@@ -35,7 +40,7 @@ from pydantic import SecretStr
 from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import PromptFate
+from haku.console.chat_models import ChatMessageRole, PromptFate
 from haku.console.config import MatrixConfig
 from haku.console.database_schema import MatrixHeldBatch, MatrixSyncState
 from haku.console.x.matrix_client import (
@@ -49,7 +54,8 @@ from haku.console.x.matrix_client import (
 )
 from haku.console.x.matrix_outbox import PendingReply, RoomOutbox, RoomOutboxDrain
 from haku.console.x.matrix_pacer import RoomPacer
-from haku.console.x.matrix_session import MatrixConversationStore, MatrixTurns
+from haku.console.x.matrix_session import MatrixConversationStore, MatrixTurns, RoomTranscript
+from haku.console.x.system_prompt import HistoryMessage
 
 logger = logging.getLogger(__name__)
 
@@ -180,6 +186,7 @@ class MatrixSyncService:
         store: MatrixSyncStore,
         conversations: MatrixConversationStore,
         turns: MatrixTurns,
+        transcript: RoomTranscript,
         outbox: RoomOutbox,
     ):
         # Taken separately from `config`, which carries it as optional: the service is
@@ -190,6 +197,7 @@ class MatrixSyncService:
         self._store = store
         self._conversations = conversations
         self._turns = turns
+        self._transcript = transcript
         self._client = MatrixClient(config.homeserver, config.user_id, config.device_id)
         # Public because it has a lifecycle, and this object's owner is the one that drives it:
         # everything the console says into the room goes through here, so it outlives no
@@ -334,24 +342,42 @@ class MatrixSyncService:
 
         self.pacer.send(retire)
 
-    async def recent_history(self, limit: int) -> tuple[InboundMessage, ...]:
+    async def recent_history(self, before_session: UUID, limit: int) -> tuple[HistoryMessage, ...]:
         """The tail of the live room's conversation, for re-awakening a replacement session.
 
-        Reads back from the furthest position the loop has reached rather than from the watermark,
-        which are the same token except while a batch is held — and that exception is exactly when
-        this is called. A session replacing one that died mid-batch would otherwise be handed a
-        history stopping short of the messages that killed it, including the one it is about to be
-        offered.
+        **Answered from our own transcript, not from the homeserver's copy of the room.** Matrix is
+        one channel among several, so what a replacement session believes happened has to come from
+        the record every channel writes into; reading it back out of `/messages` made the channel
+        the source of truth for its own conversation, and a second channel — Telegram's bot API
+        cannot page a chat's history — could not have reproduced that memory
+        (<../debug/channel_write_audit.md> § "What a second channel would need", #4130).
 
-        Empty before the loop has ever synced: with no position there is no pagination token to
-        read back from, and a room nothing has synced has nothing in it that Haku said.
+        **The read still runs past the sync watermark, which is the property that had to survive.**
+        The `/messages` read paginated back from the furthest position the loop had reached rather
+        than from the watermark — the same token except while a batch is held, which is exactly
+        when a replacement session starts, so a session replacing one that died mid-batch was not
+        handed a history stopping short of the messages that killed it. Here that falls out instead
+        of being arranged: ingress writes the prompt row when it **offers** a batch, and a batch is
+        held precisely because it was offered, so a held batch is already in the transcript. The
+        other half matches too — a batch that was *refused* has no row, and the token read did not
+        show it either, since a refusal leaves the watermark behind it.
+
+        Empty until something has been recorded for this room, which is honestly what a room with
+        no transcript has: a first-ever session and a session whose room only just bound both read
+        the same, and both are correct.
         """
         conversation = await self._conversations.load(self._config.user_id)
-        position = await self._store.position(self._config.user_id)
-        if conversation is None or position.since is None:
+        if conversation is None:
             return ()
-        return await self._client.recent_messages(
-            await self._token(), conversation.room_id, since=position.since, limit=limit
+        return tuple(
+            HistoryMessage(
+                # The one per-channel step in this path: a recorded role becomes an address, and
+                # which addresses those are is the channel's own business.
+                sender=self._config.operator_user_id if said.role is ChatMessageRole.USER else self._config.user_id,
+                body=said.body,
+                sent_at=said.sent_at,
+            )
+            for said in await self._transcript.recent(conversation.room_id, before_session=before_session, limit=limit)
         )
 
     async def announce(self, body: str, kind: RoomEventKind = RoomEventKind.LIFECYCLE) -> None:
