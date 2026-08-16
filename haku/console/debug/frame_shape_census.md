@@ -468,6 +468,13 @@ that route's window, not absence from the CLI. Redaction elides operator-specifi
 renumbers UUIDs, and rewrites paths to `/workspace`; a record whose payload shrank carries
 `original_bytes` with its true pre-redaction size.
 
+**Thinking-block signatures are elided too** — every `signature` value under a `thinking` block or
+a `signature_delta` reads `<elided: thinking signature>`. The _key_ is kept, because a reader that
+has to tolerate the field is the point of the fixture, but the opaque token is not ours to
+republish. So the fixture pins the shape of a signed thinking block and deliberately not a valid
+one: a test must never assert that a signature verifies, or that its length is anything in
+particular.
+
 ### Five frame classes the adapter has never seen
 
 None is in `projection.py`'s `_IGNORED_KINDS` or `_IGNORED_SYSTEM_SUBTYPES`, so each reaches the
