@@ -36,6 +36,7 @@ from haku.console.chat_models import (
     ChatSurface,
     FrameDirection,
     PromptFate,
+    RecordedToolCall,
     SessionStatus,
     TurnOutcome,
 )
@@ -500,7 +501,6 @@ class SessionStore:
                 role=ChatMessageRole.USER,
                 status=ChatMessageStatus.PENDING,
                 content=prompt_text,
-                tool_uses=[],
                 error=None,
                 created_at=now,
                 updated_at=now,
@@ -892,7 +892,6 @@ class SessionStore:
                     role=ChatMessageRole.ASSISTANT,
                     status=ChatMessageStatus.STREAMING,
                     content="",
-                    tool_uses=[],
                     error=None,
                     source_first_frame_seq=source_first_frame_seq,
                     created_at=now,
@@ -913,7 +912,7 @@ class SessionStore:
         message_id: UUID,
         content: str,
         *,
-        tool_uses: list[dict[str, Any]] | None = None,
+        tool_calls: list[RecordedToolCall] | None = None,
         agent_message_id: str | None = None,
         source_last_frame_seq: int | None = None,
         complete: bool = False,
@@ -939,8 +938,8 @@ class SessionStore:
             if message is None or chat is None:
                 return False
             message.content = content
-            if tool_uses is not None:
-                message.tool_uses = tool_uses
+            if tool_calls is not None:
+                message.tool_calls = tool_calls
             if agent_message_id is not None:
                 message.agent_message_id = agent_message_id
             # Only the far end moves here. `begin_assistant` set the near end once, and frames

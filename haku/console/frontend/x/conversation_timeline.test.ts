@@ -9,7 +9,7 @@ function message(id: string, createdAt: string): ClaudeChatMessage {
     role: "user",
     status: "complete",
     content: id,
-    tool_uses: [],
+    tool_calls: [],
     error: null,
     source_first_frame_seq: null,
     source_last_frame_seq: null,

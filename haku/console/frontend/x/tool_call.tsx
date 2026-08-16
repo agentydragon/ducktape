@@ -3,7 +3,7 @@ import type { ClaudeChatMessage } from "../client";
 
 import { CodeBlock } from "../code_block";
 
-type ClaudeToolUse = ClaudeChatMessage["tool_uses"][number];
+type ToolCall = ClaudeChatMessage["tool_calls"][number];
 
 const COLLAPSE_AFTER_CHARACTERS = 600;
 const COLLAPSE_AFTER_LINES = 10;
@@ -55,8 +55,19 @@ function payloadSize(text: string): string {
   return `${(text.length / 1000).toFixed(1)}k chars`;
 }
 
-function ToolPayload({ label, value, emptyLabel }: { label: string; value: unknown; emptyLabel: string }) {
-  if (value == null || (label === "Input" && isEmptyObject(value))) {
+function ToolPayload({
+  label,
+  value,
+  emptyLabel,
+  emptyWhenNoKeys = false,
+}: {
+  label: string;
+  value: unknown;
+  emptyLabel: string;
+  /** An argument object with no keys is a call with no arguments; an empty result is not. */
+  emptyWhenNoKeys?: boolean;
+}) {
+  if (value == null || (emptyWhenNoKeys && isEmptyObject(value))) {
     return (
       <Text c="dimmed" size="xs">
         {emptyLabel}
@@ -114,27 +125,27 @@ function ToolPayload({ label, value, emptyLabel }: { label: string; value: unkno
   );
 }
 
-export function ClaudeToolUseView({ toolUse }: { toolUse: ClaudeToolUse }) {
+export function ToolCallView({ toolCall }: { toolCall: ToolCall }) {
   return (
     <Paper withBorder p="sm" radius="sm" className="haku-claude-tool-use">
       <Group gap="xs" mb="xs">
         <Badge variant="light" color="gray">
           Tool
         </Badge>
-        <Code style={{ overflowWrap: "anywhere" }}>{toolUse.name}</Code>
-        {toolUse.result?.is_error && (
+        <Code style={{ overflowWrap: "anywhere" }}>{toolCall.tool_name}</Code>
+        {toolCall.result?.is_error && (
           <Badge variant="light" color="red">
             failed
           </Badge>
         )}
       </Group>
       <Stack gap="xs">
-        <ToolPayload label="Input" value={toolUse.input} emptyLabel="No arguments." />
-        {toolUse.result ? (
+        <ToolPayload label="Arguments" value={toolCall.arguments} emptyLabel="No arguments." emptyWhenNoKeys />
+        {toolCall.result ? (
           <ToolPayload
             label="Result"
-            value={toolUse.result.content}
-            emptyLabel={toolUse.result.is_error ? "No error details captured." : "Empty result."}
+            value={toolCall.result.content}
+            emptyLabel={toolCall.result.is_error ? "No error details captured." : "Empty result."}
           />
         ) : (
           <Text c="dimmed" size="xs">

@@ -126,7 +126,6 @@ async def prompts(chat_store: SessionStore, operator_id: UUID, migrated_sessions
             role=ChatMessageRole.USER,
             status=ChatMessageStatus.PENDING,
             content="a batch, as one prompt",
-            tool_uses=[],
             error=None,
             created_at=now,
             updated_at=now,

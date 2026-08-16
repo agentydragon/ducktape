@@ -26,8 +26,8 @@ ts_library(
 )
 
 ts_library(
-    name = "claude_tool_use",
-    srcs = ["claude_tool_use.tsx"],
+    name = "tool_call",
+    srcs = ["tool_call.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@mantine/core",
@@ -44,8 +44,8 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":chat_scroll",
-        ":claude_tool_use",
         ":markdown",
+        ":tool_call",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -97,9 +97,9 @@ ts_library(
     deps = [
         ":bootstrap_narration",
         ":chat_scroll",
-        ":claude_tool_use",
         ":conversation_timeline",
         ":markdown",
+        ":tool_call",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",

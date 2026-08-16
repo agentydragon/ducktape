@@ -101,9 +101,11 @@ console became the interpreter.
 
 Two corrections this forces on items that would otherwise look like cleanups:
 
-- **`tool_uses` must be deleted into a `tool_call` table**, written by the adapter — not into a parse
-  of Claude frames, which only sessions on that backend have. It answers the lossy-copy objection by
-  holding the result, and it is where the rollout join lands anyway.
+- **The stored calls must end in a `tool_call` table**, written by the adapter — not in a parse of
+  Claude frames, which only sessions on that backend have. It answers the lossy-copy objection by
+  holding the result, and it is where the rollout join lands anyway. Migration 0047 did the
+  vocabulary half early (`session_messages.tool_calls` stores `{call_id, tool_name, arguments}`);
+  what is left is the table, which is the half that moves data.
 - **"Projection or primary" is settled against the projection.** The rollout is one protocol's wire
   and cannot be the record a second backend shares. Transcript primary, rollout per-backend evidence
   — so what to remove from the duplication is the double write and `agent_message_id`.
@@ -144,9 +146,9 @@ loop's signatures.
 - **The prompt queue's compatibility half.** The transcript row is still minted `pending` and the
   `_legacy_pending` scan still answers a prompt an old replica accepted. Both tombstoned. Write the
   row final and drop the scan; `'pending'` stays in the CHECK constraint.
-- **`tool_uses`.** Server default first (`SET DEFAULT '[]'::jsonb`), then stop writing it, then
-  `drop_column` in a third release — an old replica's `_message_view` selects the mapped column by
-  name. Into the `tool_call` table of stage 7, not into a frame parse.
+- **`tool_uses`.** Server default and "stop writing it" both landed with migration 0047, which
+  added `tool_calls` beside it. What is left is the `drop_column`, once no replica running the
+  previous image can still select the mapped column by name.
 
 ## Later
 

@@ -22,6 +22,7 @@ from haku.console.chat_models import (
     ChatMessageRole,
     ChatMessageStatus,
     FrameDirection,
+    RecordedToolCall,
     SessionStatus,
     TurnOutcome,
 )
@@ -171,14 +172,14 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
     messages = [
         m for m in (await chat_store.get(operator_id, view.session_id)).messages if m.role == ChatMessageRole.ASSISTANT
     ]
-    assert [(m.content, [u.model_dump() for u in m.tool_uses], m.status) for m in messages] == [
+    assert [(m.content, [u.model_dump() for u in m.tool_calls], m.status) for m in messages] == [
         (
             "",
             [
                 {
-                    "tool_use_id": "toolu_01",
-                    "name": "mcp__haku-console__haku-console__list_mcp_servers",
-                    "input": {},
+                    "call_id": "toolu_01",
+                    "tool_name": "mcp__haku-console__haku-console__list_mcp_servers",
+                    "arguments": {},
                     # No `user` frame answered it in this test, and the view says so rather than
                     # showing an empty result.
                     "result": None,
@@ -970,9 +971,9 @@ async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(
 
 
 async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_service, operator_id) -> None:
-    """`session_messages.tool_uses` keeps the `tool_use` blocks that asked and nothing that
+    """`session_messages.tool_calls` keeps the calls that were asked and nothing that
     answered — the turn loop drops the `user` frames carrying results. The frames beside it hold
-    both, so the view joins them by `tool_use_id`, which is exact where matching the Nth message to
+    both, so the view joins them by `call_id`, which is exact where matching the Nth message to
     the Nth frame would be a guess."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -1004,9 +1005,9 @@ async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_s
     )
 
     calls = {
-        call.tool_use_id: call
+        call.call_id: call
         for message in (await chat_store.get(operator_id, view.session_id)).messages
-        for call in message.tool_uses
+        for call in message.tool_calls
     }
 
     assert calls["toolu_ok"].result is not None
@@ -1019,7 +1020,7 @@ async def test_the_calls_come_from_the_rollout_when_the_row_points_at_it(
 ) -> None:
     """The transcript row records the agent's own message id, which is the pointer the message
     rows never had — so a message finds exactly the calls it made instead of the view matching by
-    position. `tool_uses` is then a copy nothing reads for such a row."""
+    position. `tool_calls` is then a copy nothing reads for such a row."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "count the files")
@@ -1048,13 +1049,13 @@ async def test_the_calls_come_from_the_rollout_when_the_row_points_at_it(
     # Whatever the column says is now beside the point, so make it say something wrong.
     async with migrated_sessions.begin() as db:
         for message in await db.scalars(select(SessionMessage).where(SessionMessage.agent_message_id == "msg_01")):
-            message.tool_uses = [{"tool_use_id": "toolu_stale", "name": "Stale", "input": {}}]
+            message.tool_calls = [RecordedToolCall(call_id="toolu_stale", tool_name="Stale", arguments={})]
 
     [call] = [
-        call for message in (await chat_store.get(operator_id, view.session_id)).messages for call in message.tool_uses
+        call for message in (await chat_store.get(operator_id, view.session_id)).messages for call in message.tool_calls
     ]
 
-    assert (call.tool_use_id, call.name) == ("toolu_ok", "Bash"), "the rollout wins over the column"
+    assert (call.call_id, call.tool_name) == ("toolu_ok", "Bash"), "the rollout wins over the column"
     assert call.result is not None
     assert call.result.content == "7"
 

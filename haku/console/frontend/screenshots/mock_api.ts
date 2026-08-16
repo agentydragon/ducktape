@@ -33,7 +33,7 @@ const claudeBoundaryMessages = [
     role: "user",
     status: "complete",
     content: "Try the Haku Console MCP tools.",
-    tool_uses: [],
+    tool_calls: [],
     error: null,
     created_at: "2026-08-01T03:00:10Z",
     updated_at: "2026-08-01T03:00:10Z",
@@ -43,7 +43,7 @@ const claudeBoundaryMessages = [
     role: "assistant",
     status: "complete",
     content: "I'll start with the catalog, then try a read-only query.",
-    tool_uses: [],
+    tool_calls: [],
     error: null,
     created_at: "2026-08-01T03:00:11Z",
     updated_at: "2026-08-01T03:00:11Z",
@@ -53,11 +53,11 @@ const claudeBoundaryMessages = [
     role: "assistant",
     status: "complete",
     content: "",
-    tool_uses: [
+    tool_calls: [
       {
-        tool_use_id: "toolu_01HakuConsoleRead",
-        name: "mcp__haku-console__haku-console__list_mcp_servers",
-        input: {},
+        call_id: "toolu_01HakuConsoleRead",
+        tool_name: "mcp__haku-console__haku-console__list_mcp_servers",
+        arguments: {},
         result: {
           content:
             '{"servers": [{"server_id": "gmail", "status": "alive"}, {"server_id": "tana", "status": "degraded"}]}',
@@ -65,9 +65,9 @@ const claudeBoundaryMessages = [
         },
       },
       {
-        tool_use_id: "toolu_01EditTranscript",
-        name: "Edit",
-        input: {
+        call_id: "toolu_01EditTranscript",
+        tool_name: "Edit",
+        arguments: {
           file_path: "/workspace/src/renderer.ts",
           old_string: "const transcript = messages.map(renderMessage);\n".repeat(16),
           new_string: "const transcript = messages.map(renderClaudeMessage);\n".repeat(16),
@@ -75,9 +75,9 @@ const claudeBoundaryMessages = [
         result: { content: "Updated /workspace/src/renderer.ts", is_error: false },
       },
       {
-        tool_use_id: "toolu_02BashTranscript",
-        name: "Bash",
-        input: { command: "git diff --check" },
+        call_id: "toolu_02BashTranscript",
+        tool_name: "Bash",
+        arguments: { command: "git diff --check" },
         result: {
           content: Array.from(
             { length: 14 },
@@ -96,7 +96,7 @@ const claudeBoundaryMessages = [
     role: "assistant",
     status: "complete",
     content: "The Haku Console catalog is available. Next I'll try the read-only query.",
-    tool_uses: [],
+    tool_calls: [],
     error: null,
     created_at: "2026-08-01T03:00:13Z",
     updated_at: "2026-08-01T03:00:13Z",
@@ -108,7 +108,7 @@ const standardClaudeMessages = [
     role: "user",
     status: "complete",
     content: "Create a **short note** in the sandbox and tell me what you wrote.",
-    tool_uses: [],
+    tool_calls: [],
     error: null,
     created_at: "2026-08-01T03:00:10Z",
     updated_at: "2026-08-01T03:00:10Z",
@@ -119,7 +119,7 @@ const standardClaudeMessages = [
     status: "complete",
     content:
       "I created `/workspace/note.txt` with:\n\n> Hello from the disposable Haku sandbox.\n\n- Saved locally\n- Ready to inspect",
-    tool_uses: [],
+    tool_calls: [],
     error: null,
     created_at: "2026-08-01T03:00:11Z",
     updated_at: "2026-08-01T03:00:15Z",
@@ -133,7 +133,7 @@ const overflowingClaudeMessages = Array.from({ length: 8 }, (_, index) => {
       role: "user" as const,
       status: "complete" as const,
       content: `Question **${index + 1}**: inspect the current sandbox state.`,
-      tool_uses: [],
+      tool_calls: [],
       error: null,
       created_at: `2026-08-01T03:00:${String(index * 2).padStart(2, "0")}Z`,
       updated_at: `2026-08-01T03:00:${String(index * 2).padStart(2, "0")}Z`,
@@ -146,7 +146,7 @@ const overflowingClaudeMessages = Array.from({ length: 8 }, (_, index) => {
         index === 7
           ? "### Latest answer\n\nThe transcript stayed pinned to the newest message."
           : `Answer ${index + 1}: the sandbox is **ready**.`,
-      tool_uses: [],
+      tool_calls: [],
       error: null,
       created_at: `2026-08-01T03:00:${String(index * 2 + 1).padStart(2, "0")}Z`,
       updated_at: `2026-08-01T03:00:${String(index * 2 + 1).padStart(2, "0")}Z`,
@@ -194,11 +194,11 @@ const claudeSession = scene?.startsWith("claude-provisioning")
                 message.role === "assistant" && scene?.startsWith("claude-tool-use")
                   ? {
                       ...message,
-                      tool_uses: [
+                      tool_calls: [
                         {
-                          tool_use_id: "toolu_01HakuConsoleRead",
-                          name: "mcp__haku-console__haku-console__list_mcp_servers",
-                          input: {},
+                          call_id: "toolu_01HakuConsoleRead",
+                          tool_name: "mcp__haku-console__haku-console__list_mcp_servers",
+                          arguments: {},
                           result: {
                             content:
                               '{"servers": [{"server_id": "gmail", "status": "alive"}, {"server_id": "tana", "status": "degraded"}]}',
@@ -206,9 +206,9 @@ const claudeSession = scene?.startsWith("claude-provisioning")
                           },
                         },
                         {
-                          tool_use_id: "toolu_02WriteNote",
-                          name: "Write",
-                          input: {
+                          call_id: "toolu_02WriteNote",
+                          tool_name: "Write",
+                          arguments: {
                             file_path: "/workspace/note.txt",
                             content: "Hello from the disposable Haku sandbox.",
                           },
@@ -220,14 +220,14 @@ const claudeSession = scene?.startsWith("claude-provisioning")
                           },
                         },
                         {
-                          tool_use_id: "toolu_03StillRunning",
-                          name: "Bash",
-                          input: { command: "rg --files | wc -l" },
+                          call_id: "toolu_03StillRunning",
+                          tool_name: "Bash",
+                          arguments: { command: "rg --files | wc -l" },
                         },
                         {
-                          tool_use_id: "toolu_04Edit",
-                          name: "Edit",
-                          input: {
+                          call_id: "toolu_04Edit",
+                          tool_name: "Edit",
+                          arguments: {
                             file_path: "/workspace/src/renderer.ts",
                             old_string: "const transcript = messages.map(renderMessage);\n".repeat(16),
                             new_string: "const transcript = messages.map(renderClaudeMessage);\n".repeat(16),
@@ -235,9 +235,9 @@ const claudeSession = scene?.startsWith("claude-provisioning")
                           result: { content: "Updated /workspace/src/renderer.ts", is_error: false },
                         },
                         {
-                          tool_use_id: "toolu_05BashOutput",
-                          name: "Bash",
-                          input: { command: "git diff --check" },
+                          call_id: "toolu_05BashOutput",
+                          tool_name: "Bash",
+                          arguments: { command: "git diff --check" },
                           result: {
                             content: Array.from(
                               { length: 14 },
@@ -319,7 +319,7 @@ const conversationMessages = [
     role: "user",
     status: "complete",
     content: "Now check whether the degraded server recovered.",
-    tool_uses: [],
+    tool_calls: [],
     error: null,
     created_at: "2026-08-01T03:00:20Z",
     updated_at: "2026-08-01T03:00:20Z",
@@ -329,7 +329,7 @@ const conversationMessages = [
     role: "assistant",
     status: "complete",
     content: "The reflection call timed out before I could answer.",
-    tool_uses: [],
+    tool_calls: [],
     error: null,
     created_at: "2026-08-01T03:00:24Z",
     updated_at: "2026-08-01T03:00:24Z",

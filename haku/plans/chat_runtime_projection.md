@@ -169,7 +169,7 @@ vocabulary independently:
 | `session_views.rollout_calls`     | `assistant`, `user`                   | tool calls **and their results**, on every read |
 | `room_status.coarse_status`       | `assistant`, `system`/`task_started`  | the room's status line                          |
 
-The third exists because `session_messages.tool_uses` is a **half copy** — the calls without their
+The third exists because `session_messages.tool_calls` is a **half copy** — the calls without their
 answers, because the turn loop drops the `tool_result` blocks — so the read path re-derives both and
 prefers its own answer wherever the row can point into the log. The fourth means a backend whose
 frames are spelled differently makes the room go silent while the agent works, and it is why the SPA

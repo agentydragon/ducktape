@@ -20,6 +20,7 @@ from haku.console.chat_models import (
     ChatSurface,
     FrameDirection,
     PromptFate,
+    RecordedToolCall,
     SessionStatus,
     TurnOutcome,
 )
@@ -350,15 +351,15 @@ async def test_a_message_with_nothing_to_point_at_still_reads_its_calls_from_the
         view.session_id,
         message_id,
         "did a thing",
-        tool_uses=[{"tool_use_id": "toolu_legacy", "name": "Bash", "input": {}}],
+        tool_calls=[RecordedToolCall(call_id="toolu_legacy", tool_name="Bash", arguments={})],
         complete=True,
     )
 
     [call] = [
-        call for message in (await chat_store.get(operator_id, view.session_id)).messages for call in message.tool_uses
+        call for message in (await chat_store.get(operator_id, view.session_id)).messages for call in message.tool_calls
     ]
 
-    assert call.tool_use_id == "toolu_legacy"
+    assert call.call_id == "toolu_legacy"
     async with migrated_sessions() as db:
         assert (
             await db.scalar(select(SessionMessage.agent_message_id).where(SessionMessage.message_id == message_id))
@@ -423,7 +424,6 @@ async def test_one_prompt_in_flight_is_a_schema_property(chat_store, migrated_se
             role=ChatMessageRole.USER,
             status=ChatMessageStatus.PENDING,
             content="second",
-            tool_uses=[],
             error=None,
             created_at=datetime.now(UTC),
             updated_at=datetime.now(UTC),
@@ -456,7 +456,6 @@ async def test_a_prompt_from_a_replica_that_wrote_no_queue_row_is_still_answered
                 role=ChatMessageRole.USER,
                 status=ChatMessageStatus.PENDING,
                 content="enqueued by the previous image",
-                tool_uses=[],
                 error=None,
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
@@ -476,7 +475,6 @@ async def test_a_prompt_from_a_replica_that_wrote_no_queue_row_is_still_answered
                 role=ChatMessageRole.USER,
                 status=ChatMessageStatus.PENDING,
                 content="another legacy one",
-                tool_uses=[],
                 error=None,
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),

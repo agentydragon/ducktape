@@ -24,6 +24,7 @@ from haku.console.chat_models import (
     ChatMessageStatus,
     ChatSurface,
     FrameDirection,
+    RecordedToolCall,
     SessionStatus,
     TurnOutcome,
 )
@@ -46,16 +47,18 @@ class SessionToolResultView(BaseModel):
     is_error: bool = False
 
 
-class SessionToolUseView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class SessionToolCallView(RecordedToolCall):
+    """A recorded call, plus the answer that is not recorded beside it.
 
-    tool_use_id: str
-    name: str
-    input: dict[str, Any]
-    # Absent while the call is still running, and on a turn that died before it answered — which
-    # is a state worth seeing rather than one to hide. It comes from the rollout, because
-    # `session_messages.tool_uses` never held it: the turn loop keeps the `tool_use` blocks
-    # that asked and drops the `user` frames that answered.
+    Inheriting the stored model is the statement of that split. `call_id`, `tool_name` and
+    `arguments` are the row; `result` is joined onto it at read time out of the frame log, which
+    is the only place a result exists at all — the turn loop keeps the blocks that asked and
+    drops the frames that answered.
+
+    Absent while the call is still running, and on a turn that died before it answered, which is
+    a state worth seeing rather than one to hide.
+    """
+
     result: SessionToolResultView | None = None
 
 
@@ -66,7 +69,7 @@ class SessionMessageView(BaseModel):
     role: ChatMessageRole
     status: ChatMessageStatus
     content: str
-    tool_uses: list[SessionToolUseView]
+    tool_calls: list[SessionToolCallView]
     error: str | None
     source_first_frame_seq: int | None
     source_last_frame_seq: int | None
@@ -219,7 +222,7 @@ class RolloutCalls:
     its own id — unique within a session, so that half needs no per-message association at all.
     """
 
-    by_message: Mapping[str, list[dict[str, Any]]]
+    by_message: Mapping[str, list[RecordedToolCall]]
     results: Mapping[str, SessionToolResultView]
 
 
@@ -227,15 +230,18 @@ async def rollout_calls(db: AsyncSession, session_id: UUID) -> RolloutCalls:
     """Read the calls and their results out of the session's rollout.
 
     Both live only here: `assistant` frames carry the `tool_use` blocks, `user` frames carry the
-    `tool_result` blocks the turn loop drops, and `session_messages.tool_uses` is a copy of the
+    `tool_result` blocks the turn loop drops, and `session_messages.tool_calls` is a copy of the
     first half with the second half missing.
+
+    This is a Claude frame parser and says so — one of the four interpreters the projection work
+    is counting down. What it produces is neutral: the same `RecordedToolCall` the row stores.
     """
     frames = await db.execute(
         select(SessionFrame.kind, SessionFrame.payload)
         .where(SessionFrame.session_id == session_id, SessionFrame.kind.in_([ASSISTANT_FRAME_KIND, PROMPT_FRAME_KIND]))
         .order_by(SessionFrame.frame_seq)
     )
-    by_message: dict[str, list[dict[str, Any]]] = {}
+    by_message: dict[str, list[RecordedToolCall]] = {}
     results: dict[str, SessionToolResultView] = {}
     for kind, payload in frames:
         message = payload.get("message")
@@ -248,7 +254,7 @@ async def rollout_calls(db: AsyncSession, session_id: UUID) -> RolloutCalls:
             match block.get("type"):
                 case "tool_use" if kind == ASSISTANT_FRAME_KIND and agent_id:
                     by_message.setdefault(str(agent_id), []).append(
-                        {"tool_use_id": block["id"], "name": block["name"], "input": block["input"]}
+                        RecordedToolCall(call_id=block["id"], tool_name=block["name"], arguments=block["input"])
                     )
                 case "tool_result" if call_id := block.get("tool_use_id"):
                     results[str(call_id)] = SessionToolResultView(
@@ -291,9 +297,14 @@ def message_view(message: SessionMessage, calls: RolloutCalls) -> SessionMessage
         role=message.role,
         status=message.status,
         content=message.content,
-        tool_uses=[
-            SessionToolUseView.model_validate(tool_use | {"result": calls.results.get(tool_use["tool_use_id"])})
-            for tool_use in (recorded if recorded is not None else message.tool_uses)
+        tool_calls=[
+            SessionToolCallView(
+                call_id=call.call_id,
+                tool_name=call.tool_name,
+                arguments=call.arguments,
+                result=calls.results.get(call.call_id),
+            )
+            for call in (recorded if recorded is not None else message.tool_calls)
         ],
         error=message.error,
         source_first_frame_seq=message.source_first_frame_seq,

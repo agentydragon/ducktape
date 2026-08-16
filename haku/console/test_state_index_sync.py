@@ -81,7 +81,6 @@ async def say(sessions: async_sessionmaker[AsyncSession], operator_id: UUID, con
                 role=ChatMessageRole.USER,
                 status=ChatMessageStatus.COMPLETE,
                 content=content,
-                tool_uses=[],
                 created_at=_NOW,
                 updated_at=_NOW,
             )

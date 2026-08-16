@@ -148,7 +148,7 @@ no use for; adding them is a React page shaping an LLM-facing tool. The scope ga
 ### `GET /api/conversations/{id}` vs — nothing
 
 There is no MCP twin. `get_operator_conversation` returns the **interpreted** view: the transcript
-(`SessionMessageView`, with `tool_uses` joined to their results out of the rollout and, since
+(`SessionMessageView`, with `tool_calls` joined to their results out of the rollout and, since
 #4105, `source_first_frame_seq`/`source_last_frame_seq`), the setup narration, and the turn
 summaries — assembled in one call. <../../plans/chat_runtime_projection.md> names this a lossy
 projection of the frame log; it is the console's own interpretation, product-shaped and

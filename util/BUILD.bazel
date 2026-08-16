@@ -97,7 +97,10 @@ py_library(
     name = "sqlalchemy_types",
     srcs = ["sqlalchemy_types.py"],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//sqlalchemy"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
 )
 
 py_library(

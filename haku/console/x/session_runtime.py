@@ -22,7 +22,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, SecretStr
 
-from haku.console.chat_models import ENDED_SESSION_STATUSES, FrameDirection, SessionStatus, TurnOutcome
+from haku.console.chat_models import (
+    ENDED_SESSION_STATUSES,
+    FrameDirection,
+    RecordedToolCall,
+    SessionStatus,
+    TurnOutcome,
+)
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.x.room_status import TurnStatus, ignore_clear, ignore_status
@@ -636,8 +642,8 @@ class SessionService:
                         text = "".join(
                             str(block.get("text", "")) for block in blocks if block.get("type") == "text"
                         ).strip()
-                        tool_uses = [
-                            {"tool_use_id": block["id"], "name": block["name"], "input": block["input"]}
+                        tool_calls = [
+                            RecordedToolCall(call_id=block["id"], tool_name=block["name"], arguments=block["input"])
                             for block in blocks
                             if block.get("type") == "tool_use"
                         ]
@@ -652,7 +658,7 @@ class SessionService:
                                 session_id,
                                 assistant_id,
                                 said,
-                                tool_uses=tool_uses,
+                                tool_calls=tool_calls,
                                 # The wire's own id for this message, which is what lets a reader
                                 # find its calls in the frame log rather than match by position.
                                 agent_message_id=agent_message_id(frame),
@@ -688,7 +694,7 @@ class SessionService:
                 # No frame range is passed: the deltas that produced this text already recorded
                 # theirs, and the `result` frame closing the turn is not where the words came from.
                 carried_final = await self._store.update_assistant(
-                    session_id, assistant_id, final_text, tool_uses=[], complete=True
+                    session_id, assistant_id, final_text, tool_calls=[], complete=True
                 )
                 assistant_id = None
             elif not saw_assistant_message:
@@ -700,7 +706,7 @@ class SessionService:
                     session_id,
                     assistant_id,
                     final_text,
-                    tool_uses=[],
+                    tool_calls=[],
                     source_last_frame_seq=result_frame_seq,
                     complete=True,
                 )

@@ -2,7 +2,7 @@ import { Badge, Box, Button, Code, Group, Loader, Paper, Stack, Text, Textarea, 
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { isNearChatBottom } from "./chat_scroll";
-import { ClaudeToolUseView } from "./claude_tool_use";
+import { ToolCallView } from "./tool_call";
 import {
   createClaudeChatSession,
   deleteClaudeChatSession,
@@ -335,10 +335,10 @@ export function ClaudeChatPage() {
                       </Badge>
                     )}
                   </Group>
-                  {(message.tool_uses ?? []).length > 0 && (
+                  {message.tool_calls.length > 0 && (
                     <Stack gap="xs" mb="sm">
-                      {(message.tool_uses ?? []).map((toolUse) => (
-                        <ClaudeToolUseView key={toolUse.tool_use_id} toolUse={toolUse} />
+                      {message.tool_calls.map((toolCall) => (
+                        <ToolCallView key={toolCall.call_id} toolCall={toolCall} />
                       ))}
                     </Stack>
                   )}
@@ -346,13 +346,11 @@ export function ClaudeChatPage() {
                     source={message.content.trim() || (message.status === "streaming" ? "…" : "")}
                     className="haku-chat-markdown"
                   />
-                  {!message.content.trim() &&
-                    (message.tool_uses ?? []).length === 0 &&
-                    message.status === "complete" && (
-                      <Text c="dimmed" size="xs">
-                        No assistant text was captured.
-                      </Text>
-                    )}
+                  {!message.content.trim() && message.tool_calls.length === 0 && message.status === "complete" && (
+                    <Text c="dimmed" size="xs">
+                      No assistant text was captured.
+                    </Text>
+                  )}
                   {message.error && (
                     <Text c="red" size="xs" mt="xs">
                       {message.error}

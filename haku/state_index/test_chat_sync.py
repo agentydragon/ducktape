@@ -84,7 +84,6 @@ async def say(
             role=role,
             status=status,
             content=content,
-            tool_uses=[],
             created_at=at,
             updated_at=at,
         )

@@ -39,6 +39,7 @@ from haku.console.chat_models import (
     ChatMessageStatus,
     ChatSurface,
     FrameDirection,
+    RecordedToolCall,
     SessionStatus,
     TurnOutcome,
 )
@@ -46,7 +47,7 @@ from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.operator_identity import OperatorStatus
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_calls import ToolCallStatus
-from util.sqlalchemy_types import StrEnumColumn, StringBackedStrEnumColumn, TextBackedStrEnumColumn
+from util.sqlalchemy_types import PydanticListColumn, StrEnumColumn, StringBackedStrEnumColumn, TextBackedStrEnumColumn
 
 
 class Base(DeclarativeBase):
@@ -921,7 +922,7 @@ class SessionMessage(Base):
     #
     # NULL where there is nothing to point at: a user row, a row written before this column, or an
     # assistant row the console synthesized rather than observed — a turn whose text arrived only
-    # on the `result` frame. Such a row's calls come from `tool_uses`, which is why that column is
+    # on the `result` frame. Such a row's calls come from `tool_calls`, which is why that column is
     # still written.
     agent_message_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Inclusive range in the session's raw frame log from which this projection was built. These
@@ -940,6 +941,19 @@ class SessionMessage(Base):
     # here. See <plans/chat_runtime_projection.md> § "The projection is not a one-way door".
     source_first_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     source_last_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # What this message asked its tools to do, in the conversation vocabulary rather than in one
+    # backend's. Still the calls without their answers: the pairing is reconstructed at read time
+    # from the frame log, because that is where a result exists at all
+    # (`x/session_views.rollout_calls`).
+    tool_calls: Mapped[list[RecordedToolCall]] = mapped_column(
+        PydanticListColumn(RecordedToolCall), nullable=False, server_default=text("'[]'::jsonb")
+    )
+    # CLEANUP(added 2026-08-16): drop `session_messages.tool_uses` in the release after the one
+    #   carrying migration 0047 — the Claude-spelled predecessor of `tool_calls`, now written by
+    #   nothing and read by nothing in this tree. It stays mapped and defaulted for exactly one
+    #   release because a replica on the previous image still SELECTs it by name for the length of
+    #   a roll (README § Perimeter / deploy), and dropping a column out from under a running
+    #   replica is the destructive half of expand/contract.
     tool_uses: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)

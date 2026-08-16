@@ -5,6 +5,9 @@ surfaces that read and write them live in `x/` — an enum here cannot invert th
 """
 
 from enum import StrEnum
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SessionStatus(StrEnum):
@@ -87,6 +90,27 @@ class ChatMessageStatus(StrEnum):
     STREAMING = "streaming"
     COMPLETE = "complete"
     FAILED = "failed"
+
+
+class RecordedToolCall(BaseModel):
+    """One tool call, as a transcript row records it: which tool, with what, under which id.
+
+    Spelled in the conversation vocabulary (`x/conversation_events.ToolCallStarted`) rather than in
+    a backend's. `tool_use_id`/`name`/`input` — the shape this replaces — are Anthropic's wire
+    words, so a second backend had to pretend to be Claude in order to record a call its agent
+    made. Nothing here is provider-specific: every tool protocol worth storing has a name, some
+    arguments, and an id to answer against.
+
+    **What the call answered is deliberately not here.** `call_id` is the correlation key and the
+    only half of the pair this row holds; the answer is joined at read time out of the frame log
+    (`x/session_views.SessionToolCallView`).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    call_id: str = Field(description="Correlates this call to its result. Unique within a session.")
+    tool_name: str
+    arguments: dict[str, Any] = Field(description="Whatever the agent passed, as the protocol carried it.")
 
 
 LIVE_SESSION_STATUSES = frozenset({SessionStatus.PROVISIONING, SessionStatus.READY, SessionStatus.RESPONDING})

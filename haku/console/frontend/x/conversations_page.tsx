@@ -14,7 +14,7 @@ import { changedSessionId, useConsoleEvents } from "../console_events";
 import { conversationPath, CONVERSATIONS_PATH, navigateToConsolePath, sessionFramesPath } from "../routing";
 import { bootstrapNarration, type BootstrapNarration } from "./bootstrap_narration";
 import { isNearChatBottom } from "./chat_scroll";
-import { ClaudeToolUseView } from "./claude_tool_use";
+import { ToolCallView } from "./tool_call";
 import { conversationTimeline, type ConversationTurn } from "./conversation_timeline";
 import { Markdown } from "./markdown";
 
@@ -128,10 +128,10 @@ function MessageView({ message }: { message: ClaudeChatMessage }) {
           </Badge>
         )}
       </Group>
-      {message.tool_uses.length > 0 && (
+      {message.tool_calls.length > 0 && (
         <Stack gap="xs" mb="sm">
-          {message.tool_uses.map((toolUse) => (
-            <ClaudeToolUseView key={toolUse.tool_use_id} toolUse={toolUse} />
+          {message.tool_calls.map((toolCall) => (
+            <ToolCallView key={toolCall.call_id} toolCall={toolCall} />
           ))}
         </Stack>
       )}
@@ -139,7 +139,7 @@ function MessageView({ message }: { message: ClaudeChatMessage }) {
         source={message.content.trim() || (message.status === "streaming" ? "…" : "")}
         className="haku-chat-markdown"
       />
-      {!message.content.trim() && message.tool_uses.length === 0 && message.status === "complete" && (
+      {!message.content.trim() && message.tool_calls.length === 0 && message.status === "complete" && (
         <Text c="dimmed" size="xs">
           No assistant text was captured.
         </Text>
