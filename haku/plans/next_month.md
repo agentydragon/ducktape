@@ -18,6 +18,12 @@ What is left is a **list**, not a spine. Item 4 depends on item 1; nothing else 
 else, so the rest is ordered by what a delay costs. Dispatch in parallel
 (`AGENTS.md` § Splitting Work Into PRs).
 
+**Items 3, 4 and 5 are now downstream of one decision.** The operator has accepted dropping the
+early chat data outright — two days of it, nothing worth keeping — rather than carrying the branches
+and nullable columns that exist to accommodate it. [The purge plan](legacy_purge.md) sequences that:
+what dies by migration, what dies by dropping rows, and the constraints that become expressible once
+the rows are gone. Where it disagrees with an item below, it is the later document and it wins.
+
 ## The list
 
 ### 1. The reprojection tool, which is also the drift check — open as #4183
@@ -82,6 +88,12 @@ un-clear.
 gone. Migration `0045` filled it for the rows whose `agent_message_id` matched an `assistant` frame;
 the rows with no agent id — 1,417 assistant rows at #4180's count, the population the neutral message
 exists to fix — are still NULL.
+
+**Shipped as #4191, and then overtaken.** The instrument exists — `message_provenance.py` plus
+`unpointable_reason`, the column that records a row it cannot point. But [the purge
+plan](legacy_purge.md) deletes exactly the rows it was built to fill, so running it is now optional
+and the column it added is on that plan's drop list. Keep the code until the purge lands; if the
+purge is abandoned, this becomes live again unchanged.
 
 **Not `session_events`.** That table has nothing to backfill — a row is written in the transaction
 that moves the cursor, and there was no cursor before #4178. The backfill paragraph item 4 carried
