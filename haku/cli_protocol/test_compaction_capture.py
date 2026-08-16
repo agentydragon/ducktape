@@ -10,13 +10,14 @@ broken something a consumer of this protocol depends on.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import pytest
 import pytest_bazel
 
-CAPTURE = Path(__file__).parent / "testdata" / "compaction_session.jsonl"
+from util.bazel.runfiles import get_required_path
+
+CAPTURE = get_required_path("ducktape/haku/cli_protocol/testdata/compaction_session.jsonl")
 
 
 @pytest.fixture(scope="module")
