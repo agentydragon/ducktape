@@ -139,9 +139,9 @@ loop's signatures.
 
 ## When their rolls converge
 
-- **The prompt queue's compatibility half.** The transcript row is still minted `pending` and the
-  `_legacy_pending` scan still answers a prompt an old replica accepted. Both tombstoned. Write the
-  row final and drop the scan; `'pending'` stays in the CHECK constraint.
+- **The prompt queue's compatibility half.** The `_legacy_pending` scan is gone — every live
+  replica writes a queue row. The transcript row is still minted `pending`, which is now the SPA's
+  rendering of a prompt that has not started rather than a compatibility shim.
 - **`tool_uses`.** Server default and "stop writing it" both landed with migration 0047, which
   added `tool_calls` beside it. What is left is the `drop_column`, once no replica running the
   previous image can still select the mapped column by name.

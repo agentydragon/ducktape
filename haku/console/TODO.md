@@ -221,12 +221,9 @@ ConfigMap edit instead of a roll.
 
 ## Finish the `claude_chat` → `session` rename
 
-The tables, the wake channel, the Python and the operator routes moved; three things are
+The tables, the wake channel, the Python and the operator routes moved; two things are
 deliberately still holding the old name, each for its own reason.
 
-- **The legacy `/api/claude/sessions/…` registrations**, which exist only so a browser tab loaded
-  before the roll keeps working until it reloads. Drop them one release after they ship, when no
-  deployed bundle names them.
 - **`/internal/claude/runner/{session_id}`.** Left alone on purpose: the runner image dials it, so
   renaming it is a coordinated two-sided roll, not part of a console-only change.
 - **The SPA's `frontend/x/claude_chat_page.tsx`.** The Python side is done — `x/claude_chat.py` is

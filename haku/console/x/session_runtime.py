@@ -874,17 +874,7 @@ async def read_conversation_frames(
         raise HTTPException(status_code=404, detail="Conversation not found") from error
 
 
-# The operator surface moved from `/api/claude/sessions` to `/api/sessions` with the tables it
-# reads. Both are served, and only the new path is in the schema — so the generated client (and
-# so the SPA) can only call the new one, while a browser tab that loaded the previous bundle keeps
-# working until it reloads. That window is what `maxUnavailable: 0` makes unavoidable: old pods,
-# and old tabs, outlive the release.
-#
-# CLEANUP(added 2026-08-15): drop the `include_in_schema=False` registrations one release after
-# this ships, when no deployed bundle names them. `/internal/claude/runner` is *not* part of this
-# rename — the runner image dials it and that is a two-sided roll of its own.
 @router.post("/api/sessions")
-@router.post("/api/claude/sessions", include_in_schema=False)
 async def create_session(actor: OperatorActorDep, service: SessionServiceDep) -> SessionView:
     try:
         return await service.create(actor.operator_id, SpaSession())
@@ -893,7 +883,6 @@ async def create_session(actor: OperatorActorDep, service: SessionServiceDep) ->
 
 
 @router.get("/api/sessions/{session_id}")
-@router.get("/api/claude/sessions/{session_id}", include_in_schema=False)
 async def get_session(session_id: UUID, actor: OperatorActorDep, service: SessionServiceDep) -> SessionView:
     try:
         return await service.get(actor.operator_id, session_id)
@@ -933,7 +922,6 @@ async def _sse_stream(
 
 
 @router.get("/api/sessions/{session_id}/stream")
-@router.get("/api/claude/sessions/{session_id}/stream", include_in_schema=False)
 async def stream_session(
     session_id: UUID, actor: OperatorActorDep, store: SessionStoreDep, notifications: SessionNotificationsDep
 ) -> StreamingResponse:
@@ -947,7 +935,6 @@ async def stream_session(
 
 
 @router.post("/api/sessions/{session_id}/abort", status_code=202)
-@router.post("/api/claude/sessions/{session_id}/abort", status_code=202, include_in_schema=False)
 async def abort_session(session_id: UUID, actor: OperatorActorDep, service: SessionServiceDep) -> dict[str, str]:
     try:
         aborted = await service.request_abort(actor.operator_id, session_id)
@@ -959,7 +946,6 @@ async def abort_session(session_id: UUID, actor: OperatorActorDep, service: Sess
 
 
 @router.post("/api/sessions/{session_id}/messages")
-@router.post("/api/claude/sessions/{session_id}/messages", include_in_schema=False)
 async def send_message(
     session_id: UUID, body: SessionPromptRequest, actor: OperatorActorDep, store: SessionStoreDep
 ) -> SessionMessageView:
@@ -972,7 +958,6 @@ async def send_message(
 
 
 @router.delete("/api/sessions/{session_id}", status_code=204)
-@router.delete("/api/claude/sessions/{session_id}", status_code=204, include_in_schema=False)
 async def delete_session(session_id: UUID, actor: OperatorActorDep, service: SessionServiceDep) -> None:
     try:
         await service.dispose(actor.operator_id, session_id)
