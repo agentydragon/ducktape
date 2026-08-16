@@ -251,6 +251,51 @@ schedule. If the arm gets a writer instead, nothing here changes.
 
 Independent of the purge and gated only on phase 0's roll. <next_month.md> § 2 owns it.
 
+### Phase 6 — squash the chain, and the tests that exist only to guard it
+
+The purge's own reward, asked for by the operator: _"once we've migrated prod to proper schema shape
+and constraints without weird legacy or wrong data I'd want to drop the load of keeping around all
+the migration tests."_ It is last because its gate is everything above — a chain can only be
+squashed once the only database that will ever replay it is stamped past the end of it.
+
+**Gate:** production stamped at phase 3's head, every replica on an image at or after the release
+that carried it. That is step 1 of the cutover asked one revision later.
+
+**The load, measured on `devel` at `b5ad637b43`:** 46 revisions from `0010` to `0056`, with `0053`
+missing because #4194 renamed it out of a fork; six dedicated migration tests; and three further
+test modules that drive alembic for other reasons.
+
+**A squash here is not a new technique** — `0010` is one, and its docstring records how: the
+revision id of the deployed head is retained, so a database already stamped at it is a no-op while a
+fresh database creates the frozen schema directly. Repeating that at phase 3's head collapses
+`0011`–head into one file and leaves production untouched.
+
+The six tests split three ways, and the split is the point — "drop the migration tests" deletes two
+things that are not about migration at all:
+
+| Test                                         | Rev    | After the squash                                                                                                                                                                                                                    |
+| -------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test_message_tool_calls_migration.py`       | `0047` | **Goes.** Already moot — `0056` dropped the column it backfills from, which its own docstring says                                                                                                                                  |
+| `test_neutral_turn_usage_migration.py`       | `0049` | **Goes.** Same: `0056` dropped `session_turns.usage`                                                                                                                                                                                |
+| `test_session_claim_cleaned_at_migration.py` | `0048` | **Goes.** A backfill of rows phase 1 deletes                                                                                                                                                                                        |
+| `test_frame_runner_seq_migration.py`         | `0050` | **Goes.** Asserts a nullable column an old writer could omit; phase 2 makes it not-nullable                                                                                                                                         |
+| `test_session_idle_status_migration.py`      | `0054` | **Becomes a constraint test.** Both assertions are about what `ck_sessions_status` admits, which the baseline will state directly. Not before phase 5 ships, since until then the widening is the live half of a two-release change |
+| `test_state_index_migration.py`              | `0037` | **Stays, rebased.** It is not a migration test: it compares <../state_index/schema.py> against what the deployed database gets, and nothing else does. Point it at the new baseline                                                 |
+
+That is 473 of the six files' 624 lines deleted outright, and no coverage lost that a database at
+head can still exercise — because the two tests that assert the property a squash actually endangers
+already exist, in `test_agent_authority_schema.py`:
+`test_fresh_baseline_matches_sqlalchemy_metadata` (`compare_metadata` against the ORM returns empty)
+and `test_database_already_at_head_is_unchanged` (re-applying at head is a no-op). Those are what
+<../../STYLE.md> § Testing asks for in place of per-migration change-detectors, and they are the two
+that must pass **before** the squash lands as well as after — a squash whose baseline disagrees with
+the ORM is a console that cannot boot.
+
+**What the squash does not buy.** Every migration written after it is a migration again, with the
+same expand/contract cost, so this is a one-time collection of a debt rather than a change of
+policy. And it forecloses nothing except replaying history on a database older than production —
+which, after phase 1, is no database that exists.
+
 ## The cutover
 
 Run through an approval-gated console exec against the production database. Each step says what it
