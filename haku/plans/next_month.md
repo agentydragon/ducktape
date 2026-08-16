@@ -53,6 +53,8 @@ In flight, and treated as in-flight rather than as new work:
 | The durable projection cursor                   | #4178 | **Landed.** Spine item 3 — `sessions.projected_frame_seq`, migration `0051`                                                       |
 | R5 renumbers historical frames                  | #4170 | **Landed.** R5 renumbers where every reference has an image and drops the sessions where one does not                             |
 | Docs concision across `haku/console/x/`         | #4171 | **Landed.** No executable line changed; AST-identical to `devel` with docstrings stripped                                         |
+| The neutral events get rows                     | #4179 | In flight. Spine item 4's write half — `session_events`, migration `0052`, written inside `apply_frame`                           |
+| The transcript reads calls from rows            | #4180 | In flight, stacked on #4179. `rollout_calls` deleted — the last Claude frame parser on the read path                              |
 
 Everything the previous month planned and landed is in `git log` and in the PRs; this document
 does not re-list it. What it does assume, and what a reader should check before trusting the
@@ -176,12 +178,22 @@ becomes derivable (the greatest `frame_seq` among a session's stored events) rat
 of its own. That is tidier and it front-loads the migration onto a shape that has not yet been
 proven resumable. Cursor first, on the review-attention argument.
 
-### 4. The neutral events, stored
+### 4. The neutral events, stored — **landed** (#4179, #4180)
 
 The table <../console/plans/session_channels.md> § 3 wants for lifecycle, the table
 <chat_runtime_cleanup.md> § stage 7 calls a `tool_call` table, and the table #4143 says the
 provenance requirement has to move to are **one table**. This plan makes that explicit, because
 the two design docs currently name two:
+
+> **This paragraph's premise is wrong on one of the three, and the correction matters.**
+> `session_channels.md` § 3 does not ask for a table — it decided against one: _"lifecycle events
+> become frame-log rows under their own bridge-side `kind`, **not a new table** — which also makes
+> § 1's cursor a position in one ordered log rather than a join across several."_ So it was two
+> documents asking for a table and one that had ruled it out. The consequence is live: `session_events`
+> ships with **no lifecycle writer, and therefore no writer for the `authored` provenance arm**. The
+> arm is still right — it is what makes the `CHECK` expressible, and adding it later would be a
+> second migration on this table — but whoever builds the session-event category has to reconcile
+> § 3's frame-log decision with stage 4's "one ordered stream" first.
 
 - **Against a separate `tool_call` table.** <chat_runtime_projection.md> § stage 4 settled that
   tool calls live in the neutral layer as a **lifecycle** — `ToolCallStarted` → `ToolCallCompleted`
@@ -205,6 +217,32 @@ against the stored rows, write the range where the alignment is unambiguous, and
 ambiguous one as a finding about the projection. That tool is also the drift check
 <chat_runtime_projection.md> § "What makes it safe" asks for, and it should be written once and
 used for both.
+
+**Still owed, and larger than it reads here.** #4179 and #4180 built the table and moved the
+readers; the tool is a third PR, for three reasons the paragraph above did not anticipate:
+
+- **`project_log` over a session is the wrong fold to compare against.** The write path folds
+  **per frame, seeded empty, under `DeltaSource.STREAM_EVENTS`**; `project_log` over a whole
+  session merges frames sharing one `message.id` and cuts deltas from completed blocks. Both are
+  correct and they are different event sequences, so a checker using the second would report drift
+  everywhere. It has to reproduce the fold _as the write path configures it_, which means
+  `session_runtime._projected` stops being private and becomes the one function writer and checker
+  share. That refactor is the tool's first commit.
+- **The check has an era bound**, the same shape as the cursor's in item 3: a turn served by a
+  replica on the previous image has frames and no event rows, which is indistinguishable from a
+  projection that has stopped producing. It must run per turn, skip a turn with no rows at all,
+  and say so — or it reports drift on every live session for one `session_ttl_seconds` after the
+  release.
+- **`session_events` has nothing to backfill.** Rows cannot be written retroactively, because the
+  cursor that makes them exactly-once did not exist then. What the backfill paragraph is actually
+  describing is `session_messages.source_{first,last}_frame_seq` for rows with no agent id — a
+  different target from this table.
+
+**Two vocabulary members deliberately get no row**, so the stored stream is not the projected
+stream: `TextDelta` (an increment of prose `MessageCompleted` carries whole, hundreds per turn —
+the `stream_event` frames stay the evidence) and `TurnCompleted` (outcome, the neutral usage
+columns from #4169 and the frame bracket are all `session_turns`). A reader wanting a session's
+events in order unions the table with `session_turns`.
 
 ## In parallel
 
