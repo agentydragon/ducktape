@@ -1,5 +1,13 @@
 # Atlas: Proxmox → NixOS Migration Delta
 
+Written 2026-04-19 and **not started since**: `atlas` still runs Proxmox
+(<../cluster/README.md> node table), `ansible/atlas.yaml` still configures it, and
+`cluster/terraform.tf` still pins `bpg/proxmox`. The delta analysis below is the
+value here — it is what would otherwise be re-derived — not a scheduled piece of
+work. The friction it exists to remove is still real and still recorded elsewhere:
+<../nix/TODO.md> has to special-case atlas for `services.google-drive` because it is
+not NixOS.
+
 ## Current state
 
 Atlas runs Proxmox VE 9.1.7 (Debian trixie) with kernel 6.17.13-2-pve.
@@ -19,18 +27,6 @@ Authentik SSO at `atlas.allegedly.works`). Replacements:
 - **`cockpit-machines`** — Web UI for libvirt VMs. Less polished than PVE but functional.
   NixOS has `services.cockpit`.
 - **`virsh` CLI** — Always available, scriptable.
-
-### Proxmox CSI driver (`proxmox-csi-plugin`)
-
-K8s storage class `proxmox-csi-retain` uses the PVE API to provision zvol-backed PVs.
-Already have parallel storage classes that don't depend on PVE:
-
-- `lvm-proxmox-ssd` / `lvm-proxmox-hdd` (OpenEBS LVM CSI)
-- `local-path-proxmox` (local-path provisioner)
-
-Migration: move existing PVCs off `proxmox-csi-retain` to OpenEBS LVM, then remove the
-CSI driver. The CSI capacity bug (zero `CSIStorageCapacity` objects) has been an open
-issue anyway.
 
 ### Terraform provider (`bpg/proxmox` → `dmacvicar/libvirt`)
 
@@ -71,6 +67,14 @@ Would need to point at whatever replacement web UI is chosen (cockpit, or remove
 | LXC containers                    | None running                                     |
 | PVE SDN                           | Not configured                                   |
 | Corosync                          | Single node                                      |
+| Proxmox CSI driver                | Already removed — see below                      |
+
+The Proxmox CSI driver (`csi.proxmox.sinextra.dev`) and its `proxmox-csi-retain`
+StorageClass were the one item on the original loss list that has since been dealt
+with, and for reasons unrelated to this migration: the per-node volume-attachment cap
+forced the move to OpenEBS LVM in July 2026. See
+<../cluster/docs/lessons_learned/2026_07_16_disable_proxmox_csi.md>. Nothing depends
+on the PVE API for storage any more.
 
 ## Direct equivalents (no migration work beyond NixOS config)
 
@@ -102,9 +106,8 @@ Would need to point at whatever replacement web UI is chosen (cockpit, or remove
 
 1. Write NixOS config for atlas (ZFS root, networking, libvirtd, VFIO, kernel params)
 2. Port Terraform VM definitions from `bpg/proxmox` to `dmacvicar/libvirt`
-3. Migrate PVCs from `proxmox-csi-retain` to OpenEBS LVM
-4. Test VFIO passthrough + virtiofs in libvirt (the trickiest part — RTX 5090 D3cold
+3. Test VFIO passthrough + virtiofs in libvirt (the trickiest part — RTX 5090 D3cold
    workarounds, `cache=never`, etc.)
-5. Install NixOS on atlas (ZFS pools preserved, just swap root)
-6. Remove Proxmox-specific infra: CSI driver, Terraform provider, Ansible playbook,
-   Authentik blueprint
+4. Install NixOS on atlas (ZFS pools preserved, just swap root)
+5. Remove Proxmox-specific infra: Terraform provider, Ansible playbook, Authentik
+   blueprint

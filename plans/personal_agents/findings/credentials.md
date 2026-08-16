@@ -186,4 +186,4 @@ platforms — and concluded nothing off-the-shelf fits. There is in fact a sizea
 the TLS write path with no interception and no CA at all**, which would delete
 the F8 failure class outright. Corrected survey, the three-camp breakdown, and
 what it means for this shape:
-[credential_proxy_options.md](credential_proxy_options.md).
+[../credential_proxy_options.md](../credential_proxy_options.md).

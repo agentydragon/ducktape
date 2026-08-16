@@ -137,7 +137,7 @@ equivalent.
   mirror sync fires when `exec` _returns_, which is on yield, so a command that
   outruns `yieldMs` gets snapshotted mid-write and the next `exec` restores that
   partial state over it — the vanishing-clone incident of 2026-07-28
-  (`cluster/docs/lessons_learned/2026_07_28_openclaw_sandbox_clone_loss_and_ssh_orphan.md`).
+  ([findings/openshell.md](findings/openshell.md) F1).
   Read as a signal about maturity rather than as one bug: the "execute elsewhere"
   path has a sync that is only correct when nothing is still running, gateway-side
   file tools that had to be disabled outright (#3556), and a sandbox that wedged

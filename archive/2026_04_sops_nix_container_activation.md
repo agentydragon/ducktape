@@ -1,5 +1,14 @@
 # sops-nix: container activation without systemd
 
+> **Archived 2026-08-16, not a current plan.** Written 2026-04-19, never acted on.
+> Its own conclusion was Option D — do nothing — and the trigger it named for
+> revisiting ("when Docker mTLS goes live") has since gone the other way:
+> `secrets/docker-ci/client-key.sops.pem` no longer exists in the repo. The
+> `devinfra/claude/claude_hook/web_env.sh` rows in the tables below also name a file
+> that has been removed. Kept for the options analysis (A-D, with the closure-size
+> reasoning) and the secret inventory, both of which would otherwise be redone from
+> scratch; read the inventory as a 2026-04 snapshot, not as current state.
+
 ## Problem
 
 The BuildBuddy API key is decrypted and templated into a bazelrc in **three

@@ -346,7 +346,7 @@ path` whenever a target resolves outside a mount, and `/tmp` is not one
     later attempts leave a directory containing **only `.git`** — exactly what a
     snapshot taken between "objects fetched" and "working tree written"
     produces. Full write-up, including the separate SSH failure it gets confused
-    with: <../../cluster/docs/lessons_learned/2026_07_28_openclaw_sandbox_clone_loss_and_ssh_orphan.md>.
+    with: [../findings/openshell.md](../findings/openshell.md) F1.
 
   - **Every `exec` pays a full-tree upload and download**, `.git` objects
     included, so per-turn sync cost scales with repo size — a second, quieter

@@ -10,11 +10,11 @@ work.
 Gaffer-local pinning notes live in
 `../gaffer-private/tana/re/DUCKTAPE_PINNING.md`.
 
-Latest manual sync: Gaffer has absorbed the Ducktape pin for
-`f55e68b631bf1e25edb1cfeeb956608afc6bf8fa`. The required Tana RE web and
-desktop debundle gates passed against that pin, so the remaining value here is
-automation/review hygiene for the next pin bump, not another Ducktape producer
-change.
+**No Ducktape-side work remains**, and Ducktape cannot observe whether the Gaffer
+side has landed. Manual syncs have been done and their gates passed; which pin
+Gaffer currently carries is a fact about Gaffer, so it is tracked there rather than
+restated here where it silently goes stale. The remaining value in this file is the
+workflow shape and validation gate below.
 
 ## Current Ducktape State
 

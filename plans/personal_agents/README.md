@@ -29,10 +29,19 @@ configurations that failed on the way, are in [lab_notes.md](lab_notes.md).
 | [success_criteria.md](success_criteria.md)                 | S1–S5: the observable pass conditions, and what a failure of each would force us to decide             |
 | [credential_proxy_options.md](credential_proxy_options.md) | Survey of credential-injecting proxies: three architectural camps, what was tested, where we landed    |
 | [personal_data_agent.md](personal_data_agent.md)           | How we would build the personal-data agent today, and how its Google credentials would work            |
-| [reviving_openshell.md](reviving_openshell.md)             | How to bring OpenShell back for a scoped experiment, and the five things that will bite again          |
 | [TODO.md](TODO.md)                                         | Open work, each item carrying the evidence for why it matters                                          |
 | [requirements.md](requirements.md)                         | The original stated wants, cross-cutting and per-agent-function                                        |
 | [survey/](survey/README.md)                                | The sourced evidence behind the verdicts: upstream code, live CRD schemas, vendor docs, with citations |
+
+`archive/` holds notes on approaches that are closed rather than pending — inactive
+history, not work waiting to be picked up.
+
+Most of this tree is a **decision record for infrastructure that shipped**, not a
+proposal. `cluster/k8s/agents/public-coder-agent/` cites its findings by number from
+manifest comments, and <../../cluster/archive/2026_08_openclaw_namespace_retirement.md>
+names [verdicts.md](verdicts.md) as the rationale for that retirement. The
+forward-looking part is [TODO.md](TODO.md) plus [verdicts.md](verdicts.md) § "Still
+open"; everything else is evidence.
 
 Where the survey and the findings disagree, the findings win: one is what the
 documentation claimed, the other is what the cluster did. That ordering is about

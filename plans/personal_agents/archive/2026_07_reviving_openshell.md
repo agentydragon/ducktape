@@ -1,5 +1,17 @@
 # Reviving OpenShell for an experiment
 
+> **Archived, not a current plan.** OpenShell is ruled out for unattended use
+> ([../verdicts.md](../verdicts.md) § Isolation and sandboxing) and revisiting it is
+> gated on two upstream milestones that have not landed. Nothing here is scheduled;
+> this is the recovery guide should that gate ever open. One precondition on any
+> revival is still unmet: production wedged on 2026-07-28 by a route nobody has
+> identified — `kubectl exec` reproduces the wedge but is not what happened, and the
+> `process` tool, ordinary `exec`, six abandoned yielding background sessions and a
+> `gh`/`git` probe have each been ruled out since. Until the trigger is known an
+> OpenShell-backed agent cannot be trusted unattended; the failure is silent,
+> permanent, and reachable by something ordinary. Write-up:
+> [../findings/openshell.md](../findings/openshell.md) F1.
+
 OpenShell was deleted from the cluster on 2026-07-31 (#3607) along with the
 OpenClaw gateway that was its only consumer. This is what you need to bring it
 back, and — more importantly — what to do differently.
@@ -9,7 +21,7 @@ made the teardown necessary: a cluster-wide stateful gateway, owned by Flux,
 serving exactly one agent, left running and wedged for days because nothing
 depended on it noticing. Scope the revival to the experiment that needs it and
 delete it with the experiment. The decision record is
-[verdicts.md](verdicts.md) § Isolation and sandboxing.
+[../verdicts.md](../verdicts.md) § Isolation and sandboxing.
 
 ## What it was
 
@@ -124,4 +136,4 @@ deletes the namespace object while orphaning its contents in etcd.
 The same cleanup was later required for `openclaw-gateway`: a stuck
 `OpenClawInstance`, the StatefulSet it owned, 21 GiB of PVCs, and three
 `openclaw.rocks` CRDs. The completed teardown is recorded in
-<../../cluster/archive/2026_08_openclaw_namespace_retirement.md>.
+<../../../cluster/archive/2026_08_openclaw_namespace_retirement.md>.

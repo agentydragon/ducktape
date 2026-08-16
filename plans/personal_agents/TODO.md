@@ -27,21 +27,23 @@ next refresh (1h) with no manifest change.
 
 **Delete this section once rotated.**
 
-## Pin iron-proxy by digest and mirror it to Harbor
+## Decide deliberately how the iron-proxy image is pinned
 
-The adoption decision came with a condition that only got half-met. Production
-runs `ironsh/iron-proxy:0.49.0` — a **tag**, pulled from Docker Hub, on the one
-process in this design that holds the GitHub credential. A tag is mutable, so the
-thing standing between a compromised upstream account and our token is Docker
-Hub's access control.
+The adoption decision asked for digest pinning plus a mirror
+(<../../cluster/docs/container-images.md>), and the answer moved underneath the
+question. The Docker Hub half is settled: production no longer runs
+`ironsh/iron-proxy:0.49.0` but a commit-built image of our own
+(<../../cluster/images/iron-proxy/>, upstream commit `c90f4fe`) from
+`git.allegedly.works`, so no third-party account stands between an attacker and the
+one process holding the GitHub credential.
 
-The repo's own convention for container images is digest pinning plus a mirror
-(<../../cluster/docs/container-images.md>). Both halves matter for different
-reasons: the digest removes the mutable-tag window, and the Harbor mirror removes
-the runtime dependency on Docker Hub being reachable and honest.
-
-This is the last unmet item from the iron-proxy adoption; everything else in that
-decision shipped.
+What remains is that the image now tracks a **moving tag** under Flux image
+automation, on that same process — see
+[requirements_status.md](requirements_status.md) § "Rough edges". Defensible because
+the build is ours, but it should be a decision rather than a side effect of how the
+temporary fork was packaged. Fold it into the return to the official image that
+<../../cluster/k8s/agents/public-coder-agent/README.md> already schedules for
+iron-proxy v0.50.0.
 
 ## Cost a Kubernetes `WorkerProvider` — the live candidate for W2
 
@@ -175,15 +177,6 @@ this file, because they rotate themselves.
 Strongest remaining move on the credential axis, and not started. Prefer this
 over adding request-level rules to the proxy.
 
-## Move the remaining agents onto LiteLLM embeddings
-
-Done and measured for the lab agent (lab_notes.md F9): `gemini-embedding-2` via
-LiteLLM, 3072 dims, semantic retrieval verified, and the temporary embeddings pod
-deleted. #3575 added the models, #3576 granted them to the openclaw key.
-
-`public-coder-agent` is done too — #3586 made its seeded config authoritative and
-the index built on the next restart, with semantic recall confirmed live.
-
 ## Verify OpenClaw configs against the shipped schema **in CI**
 
 Two config values on `public-coder-agent` were accepted by the file and rejected
@@ -245,18 +238,6 @@ number is not evidence for the rest.
 Above ~1.04M the 5.2 route returns HTTP 200 with `input_tokens: 0`. The probe's
 truncation guard reports that as TRUNCATED rather than scoring it a pass; the true
 ceiling is unknown, not 1,037,527.
-
-## Find what wedged production's OpenShell sandbox
-
-`kubectl exec` into a sandbox pod reproduces the wedge exactly and permanently,
-but that is not what happened in production on 2026-07-28 — nobody exec'd into it.
-Ruled out by test since: the `process` tool alone, ordinary `exec` use, six
-abandoned yielding background sessions, and a `gh`/`git` probe.
-
-Until the trigger is known, an OpenShell-backed agent cannot be trusted
-unattended: the failure is silent, permanent, and reachable by something ordinary.
-Full write-up in
-<../../cluster/docs/lessons_learned/2026_07_28_openclaw_sandbox_clone_loss_and_ssh_orphan.md>.
 
 ## Detect an agent routing around a broken security control
 

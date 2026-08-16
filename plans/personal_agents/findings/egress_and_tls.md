@@ -17,7 +17,7 @@ tunnels through and returns 200 once the CA is mounted. Because the proxy
 resolves the hostname itself, a client cannot smuggle an allowed name to an
 arbitrary address.
 
-**This is the right shape for S4** — domain-level, per <success_criteria.md>,
+**This is the right shape for S4** — domain-level, per <../success_criteria.md>,
 with the pod policy as the outer fence that makes it unbypassable. Only the
 outer fence is missing, per F3.
 
