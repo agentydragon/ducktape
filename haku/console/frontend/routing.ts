@@ -13,7 +13,11 @@ export const HOME_PATH = "/";
 const LAST_EMBED_PATH_KEY = "haku-console:last-embed-path";
 
 export type ConsoleNavigationView = "embed" | "settings" | "toolCalls" | "claudeChat" | "conversations";
-export type ConsoleView = ConsoleNavigationView | "agentEnrollment" | "oauthResult" | "notFound";
+export type ConsoleView = ConsoleNavigationView | "agentEnrollment" | "oauthResult" | "sessionFrames" | "notFound";
+
+// Every id-bearing console route carries a canonical UUIDv4, and each spelled its own pattern
+// until there were four of them.
+const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
 
 // A single call, deep-linked — what a push notification's "Details" opens, and what the MCP
 // server advertises to an agent whose call is waiting. It resolves to the ordinary embed view
@@ -22,18 +26,27 @@ export type ConsoleView = ConsoleNavigationView | "agentEnrollment" | "oauthResu
 // are `tc_` + 24 hex (mcp_approval.py), not UUIDs like the other two id-bearing routes here.
 const TOOL_CALL_PATH = new RegExp(`^${TOOL_CALLS_PATH}/(tc_[0-9a-f]{24})$`, "i");
 
-const OAUTH_RESULT_PATH = new RegExp(
-  `^${OAUTH_RESULT_PATH_PREFIX}/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$`,
-  "i"
-);
-const AGENT_ENROLLMENT_PATH = new RegExp(
-  `^${AGENT_ENROLLMENT_PATH_PREFIX}/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$`,
-  "i"
-);
-const CONVERSATION_PATH = new RegExp(
-  `^${CONVERSATIONS_PATH}/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$`,
-  "i"
-);
+const OAUTH_RESULT_PATH = new RegExp(`^${OAUTH_RESULT_PATH_PREFIX}/(${UUID})$`, "i");
+const AGENT_ENROLLMENT_PATH = new RegExp(`^${AGENT_ENROLLMENT_PATH_PREFIX}/(${UUID})$`, "i");
+const CONVERSATION_PATH = new RegExp(`^${CONVERSATIONS_PATH}/(${UUID})$`, "i");
+// The raw frame log behind one conversation, under the conversation it belongs to: a debug view
+// is deep-linkable so "look at frame 412" can be a link rather than a set of directions.
+const SESSION_FRAMES_PATH = new RegExp(`^${CONVERSATIONS_PATH}/(${UUID})/frames$`, "i");
+
+export function conversationPath(sessionId: string): string {
+  return `${CONVERSATIONS_PATH}/${sessionId}`;
+}
+
+export function sessionFramesPath(sessionId: string): string {
+  return `${conversationPath(sessionId)}/frames`;
+}
+
+/** Move the console to one of its own paths. The shell reads the view off `window.location` and
+ * listens for `popstate`, which `pushState` does not fire by itself. */
+export function navigateToConsolePath(path: string): void {
+  history.pushState(null, "", path);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
 
 export function toolCallIdForPathname(pathname: string): string | null {
   return TOOL_CALL_PATH.exec(pathname)?.[1] ?? null;
@@ -51,12 +64,17 @@ export function conversationIdForPathname(pathname: string): string | null {
   return CONVERSATION_PATH.exec(pathname)?.[1] ?? null;
 }
 
+export function sessionFramesIdForPathname(pathname: string): string | null {
+  return SESSION_FRAMES_PATH.exec(pathname)?.[1] ?? null;
+}
+
 export function viewForPathname(pathname: string): ConsoleView {
   if (pathname === CONSOLE_ROOT_PATH || pathname === `${CONSOLE_ROOT_PATH}/`) return "embed";
   if (pathname === SETTINGS_PATH) return "settings";
   if (agentEnrollmentIdForPathname(pathname) !== null) return "agentEnrollment";
   if (pathname === TOOL_CALLS_PATH) return "toolCalls";
   if (pathname === CLAUDE_CHAT_PATH) return "claudeChat";
+  if (sessionFramesIdForPathname(pathname) !== null) return "sessionFrames";
   if (pathname === CONVERSATIONS_PATH || conversationIdForPathname(pathname) !== null) return "conversations";
   if (toolCallIdForPathname(pathname) !== null) return "embed";
   if (oauthResultIdForPathname(pathname) !== null) return "oauthResult";
@@ -105,6 +123,7 @@ export function useConsoleView(): {
   oauthResultId: string | null;
   toolCallId: string | null;
   conversationId: string | null;
+  sessionFramesId: string | null;
   navigate: (view: ConsoleNavigationView) => void;
 } {
   const [pathname, setPathname] = useState(() => window.location.pathname);
@@ -139,6 +158,7 @@ export function useConsoleView(): {
     oauthResultId: oauthResultIdForPathname(pathname),
     toolCallId: toolCallIdForPathname(pathname),
     conversationId: conversationIdForPathname(pathname),
+    sessionFramesId: sessionFramesIdForPathname(pathname),
     navigate,
   };
 }

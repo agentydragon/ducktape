@@ -389,6 +389,93 @@ const conversationDetailForScene = scene?.startsWith("conversation-bootstrap")
   : scene?.startsWith("conversation-narration")
     ? conversationNarrationCollapsed
     : conversationDetail;
+// The rollout behind that conversation, as the frame inspector reads it: one exchange in wire
+// order, with a tool call and the result it got — the pair `session_messages` cannot show — plus a
+// `partial` row for the answer that was still streaming when the turn died.
+const conversationFrames = {
+  frames: [
+    {
+      frame_seq: 412,
+      direction: "to_agent",
+      kind: "user",
+      partial: false,
+      created_at: "2026-08-01T03:00:20Z",
+      payload: { type: "user", message: { role: "user", content: "Now check whether the degraded server recovered." } },
+    },
+    {
+      frame_seq: 413,
+      direction: "from_agent",
+      kind: "assistant",
+      partial: false,
+      created_at: "2026-08-01T03:00:21Z",
+      payload: {
+        type: "assistant",
+        message: {
+          id: "msg_01HZ4kQ",
+          role: "assistant",
+          model: "claude-opus-5",
+          content: [
+            { type: "text", text: "Reflecting the server now." },
+            {
+              type: "tool_use",
+              id: "toolu_01Rk",
+              name: "mcp__haku-console__get_mcp_server_status",
+              input: { server_id: "grocy-sf", include_tool_schemas: false },
+            },
+          ],
+        },
+      },
+    },
+    {
+      frame_seq: 414,
+      direction: "from_agent",
+      kind: "user",
+      partial: false,
+      created_at: "2026-08-01T03:00:23Z",
+      payload: {
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_01Rk",
+              is_error: true,
+              content: "McpError: reflection timed out after 30s contacting https://grocy-sf.allegedly.works/mcp",
+            },
+          ],
+        },
+      },
+    },
+    {
+      frame_seq: 415,
+      direction: "from_agent",
+      kind: "assistant",
+      partial: true,
+      created_at: "2026-08-01T03:00:24Z",
+      payload: {
+        type: "assistant",
+        message: { role: "assistant", content: [{ type: "text", text: "The reflection call timed out before" }] },
+      },
+    },
+    {
+      frame_seq: 416,
+      direction: "from_agent",
+      kind: "result",
+      partial: false,
+      created_at: "2026-08-01T03:00:24Z",
+      payload: {
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        duration_ms: 3600,
+        total_cost_usd: 0.0041,
+        usage: { input_tokens: 1900, output_tokens: 60 },
+      },
+    },
+  ],
+  next_before_seq: 412,
+} as const;
 const mcpServers =
   scene === "settings-oauth-success"
     ? SAMPLE_MCP_SERVERS.map((server) =>
@@ -475,6 +562,8 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
     });
   }
   if (url.includes("/api/deployment")) return jsonResponse(SAMPLE_DEPLOYMENT);
+  // Before the conversation detail below, which its path is a prefix of.
+  if (url.includes("/frames")) return jsonResponse(conversationFrames);
   if (url.includes("/api/conversations/")) return jsonResponse(conversationDetailForScene);
   if (url.includes("/api/conversations")) return jsonResponse(conversationSummaries);
   if (url.includes("/api/sessions")) return jsonResponse(claudeSession);

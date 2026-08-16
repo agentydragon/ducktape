@@ -22,7 +22,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, SecretStr
-from sqlalchemy import CursorResult, delete, func, literal, or_, select, text, update
+from sqlalchemy import CursorResult, Select, delete, func, literal, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -67,12 +67,16 @@ from haku.console.x.session_frames import (
 )
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications, notify
 from haku.console.x.session_views import (
+    DEFAULT_FRAME_PAGE,
+    MAX_FRAME_PAGE,
     NO_CALLS,
     ConversationSessionSummary,
     ConversationSessionView,
     ConversationTurnView,
+    SessionFramePage,
     SessionMessageView,
     SessionView,
+    frame_page,
     message_view,
     rollout_calls,
     session_view,
@@ -121,6 +125,18 @@ def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
     while leaves and isinstance(leaves[0], BaseExceptionGroup):
         leaves = leaves[0].exceptions
     return str(leaves[0]) if leaves else str(errors)
+
+
+def _frames_of_kinds(query: Select[tuple[SessionFrame]], kinds: Sequence[str] | None) -> Select[tuple[SessionFrame]]:
+    """Restrict a frame query to *kinds*, or to everything a reader means by "everything".
+
+    **Deltas are in the log but not in the default view.** A turn streams them in the hundreds and
+    each carries a few characters of an answer that arrives whole a moment later, so a reader
+    asking for "everything" wants the frames, not the typing. Naming the kind is how a caller
+    reading a truncated answer asks for them anyway — for the MCP reader and the console's frame
+    inspector alike, which is why the policy lives here rather than in either one.
+    """
+    return query.where(SessionFrame.kind.in_(kinds) if kinds else SessionFrame.kind != DELTA_FRAME_KIND)
 
 
 class BridgeAuthentication(StrEnum):
@@ -761,22 +777,14 @@ class SessionStore:
     async def read_frames(
         self, session_id: UUID, *, after_seq: int | None, limit: int, kinds: Sequence[str] | None
     ) -> list[RolloutFrame]:
-        """One page of a session's rollout, in wire order.
+        """One page of a session's rollout, in wire order, from the start of the log onwards.
 
         Keyset paging on `frame_seq` rather than an offset: the log is append-only, so a cursor
         cannot skip or repeat a row the way an offset would once new frames land between pages.
         """
-        query = select(SessionFrame).where(SessionFrame.session_id == session_id)
+        query = _frames_of_kinds(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
         if after_seq is not None:
             query = query.where(SessionFrame.frame_seq > after_seq)
-        if kinds:
-            query = query.where(SessionFrame.kind.in_(kinds))
-        else:
-            # **Deltas are in the log but not in the default view.** A turn streams them in the
-            # hundreds and each carries a few characters of an answer that arrives whole a moment
-            # later, so a reader asking for "everything" wants the frames, not the typing. Naming
-            # the kind is how a caller reading a truncated answer asks for them anyway.
-            query = query.where(SessionFrame.kind != DELTA_FRAME_KIND)
         async with self._sessions() as db:
             rows = (await db.scalars(query.order_by(SessionFrame.frame_seq).limit(limit))).all()
         return [
@@ -790,6 +798,35 @@ class SessionStore:
             )
             for row in rows
         ]
+
+    async def read_operator_frames(
+        self, operator_id: UUID, session_id: UUID, *, before_seq: int | None, limit: int, kinds: Sequence[str] | None
+    ) -> SessionFramePage:
+        """The tail of an Operator-owned session's rollout, for the console's frame inspector.
+
+        Two things differ from `read_frames`, which serves the MCP reader. It is scoped, because a
+        browser surface must never read another Operator's session. And its keyset runs backwards:
+        the frames an operator opens this for are a session's *last* ones — an answer that was cut
+        off, a turn that died — so paging forward from frame one to reach them is exactly the
+        punishment a long session must not carry. The rows still come back in wire order; only
+        which page is the first one differs.
+
+        **Where per-message provenance hooks in** (`agent/claude-frame-provenance`, #4105): a
+        message's inclusive `frame_seq` range is a bound on this same query, and `before_seq` is
+        already its upper half — so linking a message to its frames stays a filter over this view
+        rather than a second read path.
+        """
+        query = _frames_of_kinds(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
+        if before_seq is not None:
+            query = query.where(SessionFrame.frame_seq < before_seq)
+        async with self._sessions() as db:
+            owned = await db.scalar(
+                select(Session.session_id).where(Session.session_id == session_id, Session.operator_id == operator_id)
+            )
+            if owned is None:
+                raise KeyError(session_id)
+            rows = (await db.scalars(query.order_by(SessionFrame.frame_seq.desc()).limit(limit))).all()
+        return frame_page(list(reversed(rows)), limit=limit)
 
     async def update_partial_frame(self, session_id: UUID, text: str) -> None:
         """Record the assistant message streaming right now, replacing any earlier state of it.
@@ -1963,6 +2000,34 @@ async def get_conversation(
 ) -> ConversationSessionView:
     try:
         return await store.get_operator_conversation(actor.operator_id, session_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Conversation not found") from error
+
+
+@router.get("/api/conversations/{session_id}/frames")
+async def read_conversation_frames(
+    session_id: UUID,
+    actor: OperatorActorDep,
+    store: SessionStoreDep,
+    before_seq: Annotated[int | None, Query(ge=1)] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_FRAME_PAGE)] = DEFAULT_FRAME_PAGE,
+    kind: Annotated[list[str] | None, Query()] = None,
+) -> SessionFramePage:
+    """The raw protocol frames behind a conversation, newest page first.
+
+    What `session_messages` is a lossy projection *of*: the transcript this console shows is an
+    interpretation, and this is the record it was interpreted from. Omitting `before_seq` opens on
+    the end of the log; the response's `next_before_seq` walks back from there.
+
+    `kind` is repeatable and open, because the column is: the CLI may send a `type` this release
+    has never heard of, and an inspector that could only name a closed list would be the surface
+    hiding exactly the frame worth looking at. Omitting it means everything except `stream_event`
+    — see `_frames_of_kinds`.
+    """
+    try:
+        return await store.read_operator_frames(
+            actor.operator_id, session_id, before_seq=before_seq, limit=limit, kinds=kind
+        )
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Conversation not found") from error
 

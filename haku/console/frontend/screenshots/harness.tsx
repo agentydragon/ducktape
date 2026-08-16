@@ -26,10 +26,12 @@ function ConsoleScene({
   view,
   reconnect = false,
   conversationId = null,
+  sessionFramesId = null,
 }: {
   view: ConsoleView;
   reconnect?: boolean;
   conversationId?: string | null;
+  sessionFramesId?: string | null;
 }) {
   return (
     <HakuUiEmbed
@@ -39,6 +41,7 @@ function ConsoleScene({
       agentEnrollmentId={view === "agentEnrollment" ? ENROLLMENT_ID : null}
       agentEnrollmentInitialChoice={reconnect ? "reconnect" : undefined}
       conversationId={conversationId}
+      sessionFramesId={sessionFramesId}
       onNavigate={noopNavigate}
     />
   );
@@ -138,6 +141,9 @@ function sceneElement(scene: string) {
     case "conversation-bootstrap-mobile":
     case "conversation-narration-collapsed":
       return <ConsoleScene view="conversations" conversationId={CONVERSATION_ID} />;
+    case "session-frames":
+    case "session-frames-mobile":
+      return <ConsoleScene view="sessionFrames" sessionFramesId={CONVERSATION_ID} />;
     case "settings-oauth-success":
       return <OAuthSettingsResultScene status="success" />;
     case "settings-oauth-error":

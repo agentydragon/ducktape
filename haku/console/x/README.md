@@ -68,6 +68,37 @@ the turn loop kept their shape while the file lost the parts that never needed t
 | `session_views.py`  | The read models the API returns for a session or a conversation, and the projection that assembles one out of the session row, its transcript and its rollout.                   |
 | `room_status.py`    | The per-turn status driver: what the room is shown while a turn runs, and when. It is handed two coroutines and never learns which room it speaks to.                            |
 
+## The frame inspector — reading the record the transcript is a projection of
+
+`session_messages` is a **lossy projection** of `session_frames`
+(<../../plans/chat_runtime_projection.md> § stage 4), and a projection nobody can appeal is a
+projection nobody can debug. So a conversation in the console carries a **Raw frames** button, and
+`GET /api/conversations/{session_id}/frames` is what it reads: one page of the rollout, in wire
+order, each frame's payload whole. Frontend: `frontend/x/session_frames_page.tsx`, at its own route
+(`/_console/conversations/<id>/frames`) so a frame is something an operator can link to.
+
+Three decisions worth knowing before changing it:
+
+- **The first page is the tail, and the cursor walks backwards.** `read_operator_frames` is the
+  reverse keyset of `read_frames`, which the MCP reader uses forwards. The frames an operator opens
+  this for are a session's last ones, and paging forward from frame one to reach them is what would
+  make a long session expensive to debug. Each page still comes back in wire order.
+- **Deltas are a mode, not a checkbox.** The default view is `read_frames`' own — everything except
+  `stream_event` — because a turn streams those in the hundreds and the completed `assistant` frame
+  repeats their content. Interleaving them would bury the frames they duplicate, so "Stream deltas"
+  asks for that kind alone; the one question they answer is how far an answer got before it was cut
+  off.
+- **Nothing is clipped, and the page size is what bounds the response.** The MCP reader clips a
+  frame to a context budget; here the wire is the answer, so clipping would be the lossy projection
+  again one level down. The browser's other cost is drawn down instead: a payload builds its
+  syntax-highlighted editor only once it nears the viewport (`frontend/code_block.tsx`).
+
+**Where per-message provenance lands** (`agent/claude-frame-provenance`, #4105): a message's
+inclusive `frame_seq` range is a bound on the same query — `before_seq` is already its upper half —
+so linking one message to its frames is a filter over this view, not a second read path. It is
+deliberately not guessed at here: the join key the transcript has today (`agent_message_id`) is
+missing on thousands of production rows, which is why that change exists.
+
 ## Matrix chat surface
 
 - `matrix_client.py` — the client-API calls the loop makes, over `matrix-nio`.

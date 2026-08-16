@@ -9,7 +9,7 @@ import {
   type ConversationSession,
   type ConversationSessionSummary,
 } from "../client";
-import { CONVERSATIONS_PATH } from "../routing";
+import { conversationPath, CONVERSATIONS_PATH, navigateToConsolePath, sessionFramesPath } from "../routing";
 import { bootstrapNarration, type BootstrapNarration } from "./bootstrap_narration";
 import { isNearChatBottom } from "./chat_scroll";
 import { ClaudeToolUseView } from "./claude_tool_use";
@@ -17,13 +17,11 @@ import { conversationTimeline, type ConversationTurn } from "./conversation_time
 import { Markdown } from "./markdown";
 
 function openConversation(sessionId: string): void {
-  history.pushState(null, "", `${CONVERSATIONS_PATH}/${sessionId}`);
-  window.dispatchEvent(new PopStateEvent("popstate"));
+  navigateToConsolePath(conversationPath(sessionId));
 }
 
 function backToConversations(): void {
-  history.pushState(null, "", CONVERSATIONS_PATH);
-  window.dispatchEvent(new PopStateEvent("popstate"));
+  navigateToConsolePath(CONVERSATIONS_PATH);
 }
 
 function statusColor(status: ConversationSessionSummary["status"]): string {
@@ -328,9 +326,20 @@ function ConversationDetailPage({ sessionId }: { sessionId: string }) {
               {conversation.room_id ?? "Console chat session"} · started {timestamp(conversation.created_at)}
             </Text>
           </div>
-          <Badge color={statusColor(conversation.status)} variant="light">
-            {conversation.status}
-          </Badge>
+          <Group gap="xs" wrap="nowrap" align="center">
+            {/* The transcript is a lossy projection of the frame log, so an operator reading one
+                that looks wrong needs the record it was projected from — one click away. */}
+            <Button
+              variant="light"
+              size="compact-sm"
+              onClick={() => navigateToConsolePath(sessionFramesPath(conversation.session_id))}
+            >
+              Raw frames
+            </Button>
+            <Badge color={statusColor(conversation.status)} variant="light">
+              {conversation.status}
+            </Badge>
+          </Group>
         </div>
       </header>
       <div className="haku-conversation-detail-body">

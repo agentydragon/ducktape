@@ -8,18 +8,25 @@ routes hand back.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from types import MappingProxyType
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSurface, SessionStatus, TurnOutcome
+from haku.console.chat_models import (
+    ChatMessageRole,
+    ChatMessageStatus,
+    ChatSurface,
+    FrameDirection,
+    SessionStatus,
+    TurnOutcome,
+)
 from haku.console.database_schema import Session, SessionFrame, SessionMessage
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.session_frames import ASSISTANT_FRAME_KIND, PROMPT_FRAME_KIND, SETUP_OUTPUT_KIND
@@ -143,6 +150,62 @@ class ConversationSessionView(BaseModel):
     narration: list[SetupNarrationView]
     messages: list[SessionMessageView]
     turns: list[ConversationTurnView]
+
+
+# Frames per page of the inspector. A frame is usually small, but one `user` frame carries a whole
+# tool result — a file read, a command's output — so the row count alone does not bound a response,
+# and the browser pays again to syntax-highlight each one (`frontend/code_block.tsx`). Fifty is
+# roughly two exchanges: enough that the answer to "what happened at the end" is on the first page,
+# few enough that reaching it costs one request.
+DEFAULT_FRAME_PAGE = 50
+MAX_FRAME_PAGE = 200
+
+
+class SessionFrameView(BaseModel):
+    """One row of the rollout, as the console's frame inspector reads it.
+
+    The payload is the wire, whole: this surface exists because `session_messages` is a lossy
+    projection of the frame log, so clipping the frame for size here would reintroduce the same
+    problem one level down. Bounding a response is the page's job, not the frame's.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    frame_seq: int
+    direction: FrameDirection
+    kind: str
+    partial: bool
+    created_at: datetime
+    payload: dict[str, Any]
+
+
+class SessionFramePage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    frames: list[SessionFrameView]
+    next_before_seq: int | None = Field(
+        description="Pass back as `before_seq` for the page of earlier frames, or absent at the start of the log."
+    )
+
+
+def frame_page(rows: Sequence[SessionFrame], *, limit: int) -> SessionFramePage:
+    """One page of rollout rows in wire order, with the cursor for the page before it.
+
+    A short page is the first one, the same rule the MCP reader uses in the other direction:
+    cheaper than a second count query, for the only question a caller has — whether to ask again.
+    """
+    frames = [
+        SessionFrameView(
+            frame_seq=row.frame_seq,
+            direction=row.direction,
+            kind=row.kind,
+            partial=row.partial,
+            created_at=row.created_at,
+            payload=row.payload,
+        )
+        for row in rows
+    ]
+    return SessionFramePage(frames=frames, next_before_seq=frames[0].frame_seq if len(frames) == limit else None)
 
 
 @dataclass(frozen=True, slots=True)

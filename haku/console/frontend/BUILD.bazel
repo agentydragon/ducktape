@@ -625,6 +625,7 @@ ts_library(
         "//:node_modules/react",
         "//haku/console/frontend/x:claude_chat_page",
         "//haku/console/frontend/x:conversations_page",
+        "//haku/console/frontend/x:session_frames_page",
     ],
 )
 
@@ -1156,6 +1157,7 @@ vitest_bin.vitest_test(
         "//haku/console/frontend/x:bootstrap_narration_test",
         "//haku/console/frontend/x:chat_scroll_test",
         "//haku/console/frontend/x:conversation_timeline_test",
+        "//haku/console/frontend/x:frame_log_test",
         "//haku/console/frontend/x:markdown_test",
     ],
 )

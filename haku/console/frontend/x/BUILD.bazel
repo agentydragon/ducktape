@@ -61,6 +61,29 @@ ts_library(
 )
 
 ts_library(
+    name = "frame_log",
+    srcs = ["frame_log.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//haku/console/frontend:client"],
+)
+
+ts_library(
+    name = "session_frames_page",
+    srcs = ["session_frames_page.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":frame_log",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//haku/console/frontend:client",
+        "//haku/console/frontend:json_preview",
+        "//haku/console/frontend:routing",
+        "//haku/console/frontend:variant_control",
+    ],
+)
+
+ts_library(
     name = "conversation_timeline",
     srcs = ["conversation_timeline.ts"],
     tsconfig = TSCONFIG,
@@ -118,6 +141,17 @@ ts_library(
 )
 
 ts_library(
+    name = "frame_log_test",
+    srcs = ["frame_log.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":frame_log",
+        "//:node_modules/vitest",
+        "//haku/console/frontend:client",
+    ],
+)
+
+ts_library(
     name = "markdown_test",
     srcs = ["markdown.test.ts"],
     tsconfig = TSCONFIG,
@@ -133,5 +167,6 @@ filegroup(
     srcs = [
         "claude_chat_page.tsx",
         "conversations_page.tsx",
+        "session_frames_page.tsx",
     ],
 )

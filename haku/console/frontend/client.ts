@@ -40,6 +40,8 @@ export type ClaudeChatSession = components["schemas"]["SessionView"];
 export type ClaudeChatMessage = components["schemas"]["SessionMessageView"];
 export type ConversationSessionSummary = components["schemas"]["ConversationSessionSummary"];
 export type ConversationSession = components["schemas"]["ConversationSessionView"];
+export type SessionFrame = components["schemas"]["SessionFrameView"];
+export type SessionFramePage = components["schemas"]["SessionFramePage"];
 export type AgentListResponse = components["schemas"]["AgentListResponse"];
 export type EnrollmentView = components["schemas"]["EnrollmentView"];
 export type EnrollmentDecisionRequest =
@@ -108,6 +110,25 @@ export async function fetchConversation(sessionId: string): Promise<Conversation
     params: { path: { session_id: sessionId } },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to load conversation"));
+  return data;
+}
+
+/** One page of a conversation's raw protocol frames, in wire order.
+ *
+ * Omitting `beforeSeq` reads the *tail* of the log; the response's `next_before_seq` walks back
+ * from there. `kinds` restricts the frame types, and omitting it means everything except the
+ * stream deltas — the server owns that default, so a frame kind this bundle predates still shows.
+ */
+export async function fetchSessionFrames(
+  sessionId: string,
+  limit: number,
+  beforeSeq?: number,
+  kinds?: string[]
+): Promise<SessionFramePage> {
+  const { data, error } = await api.GET("/api/conversations/{session_id}/frames", {
+    params: { path: { session_id: sessionId }, query: { limit, before_seq: beforeSeq, kind: kinds } },
+  });
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load session frames"));
   return data;
 }
 

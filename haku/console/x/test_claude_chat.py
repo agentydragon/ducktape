@@ -673,6 +673,71 @@ async def test_one_session_never_reads_another_session_frames(chat_store, operat
     assert [frame.kind for frame in frames] == ["assistant"]
 
 
+async def test_the_frame_inspector_opens_on_the_end_of_the_log_and_walks_back(chat_store, operator_id) -> None:
+    """The console's read is the reverse keyset of the MCP reader's.
+
+    A long session's interesting frames are its last ones, so the first page is the tail and the
+    cursor walks towards the start — while each page itself stays in wire order, because reading
+    a protocol log backwards within a page is not what anyone means by reading it.
+    """
+    session, _ = await chat_store.create(operator_id, SpaSession())
+    for kind in ("system", "user", "assistant", "result"):
+        await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, kind, {"type": kind})
+
+    newest = await chat_store.read_operator_frames(
+        operator_id, session.session_id, before_seq=None, limit=2, kinds=None
+    )
+    earlier = await chat_store.read_operator_frames(
+        operator_id, session.session_id, before_seq=newest.next_before_seq, limit=2, kinds=None
+    )
+
+    assert [frame.kind for frame in newest.frames] == ["assistant", "result"]
+    assert [frame.kind for frame in earlier.frames] == ["system", "user"]
+    # A short page is the first one; this page is full, so whether it is the first is unknown.
+    assert earlier.next_before_seq == earlier.frames[0].frame_seq
+
+
+async def test_the_frame_inspector_leaves_deltas_out_until_they_are_asked_for(chat_store, operator_id) -> None:
+    """The same default view the MCP reader gets, for the same reason — one policy, one place."""
+    session, _ = await chat_store.create(operator_id, SpaSession())
+    session_id = session.session_id
+    await chat_store.record_frame(
+        session_id, FrameDirection.FROM_AGENT, "stream_event", {"type": "stream_event", "event": {}}
+    )
+    await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "result", {"type": "result"})
+
+    default = await chat_store.read_operator_frames(operator_id, session_id, before_seq=None, limit=25, kinds=None)
+    asked = await chat_store.read_operator_frames(
+        operator_id, session_id, before_seq=None, limit=25, kinds=["stream_event"]
+    )
+
+    assert [frame.kind for frame in default.frames] == ["result"]
+    assert [frame.kind for frame in asked.frames] == ["stream_event"]
+    assert default.next_before_seq is None
+
+
+async def test_the_frame_inspector_refuses_a_session_another_operator_owns(chat_store, operator_id) -> None:
+    """The MCP reader is deliberately unscoped (R5.3a); a browser surface must never be."""
+    session, _ = await chat_store.create(operator_id, SpaSession())
+    await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "result", {"type": "result"})
+
+    with pytest.raises(KeyError):
+        await chat_store.read_operator_frames(uuid4(), session.session_id, before_seq=None, limit=25, kinds=None)
+
+
+async def test_a_frame_reaches_the_inspector_with_its_payload_whole(chat_store, operator_id) -> None:
+    """No clipping on this path. The MCP reader clips for context budget; here the wire *is* the
+    answer, and a clipped frame would be the lossy projection again one level down."""
+    session, _ = await chat_store.create(operator_id, SpaSession())
+    payload = {"type": "user", "message": {"content": [{"type": "tool_result", "content": "x" * 20_000}]}}
+    await chat_store.record_frame(session.session_id, FrameDirection.TO_AGENT, "user", payload)
+
+    page = await chat_store.read_operator_frames(operator_id, session.session_id, before_seq=None, limit=25, kinds=None)
+
+    assert page.frames[0].payload == payload
+    assert page.frames[0].direction == FrameDirection.TO_AGENT
+
+
 async def test_conversations_come_back_newest_first_with_the_room_they_served(chat_store, operator_id) -> None:
     await chat_store.create(operator_id, SpaSession())
     matrix, _ = await chat_store.create(operator_id, MatrixSession(room_id="!room:example.org"))

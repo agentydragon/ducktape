@@ -203,6 +203,22 @@ const SCENES = [
     frame: true,
   },
   {
+    // The frame inspector, which opens on the tail of the log — so the visible rows are the last
+    // ones, `partial` badge included.
+    name: "session-frames",
+    viewport: { width: 1200, height: 1000 },
+    closeApprovals: true,
+    expectVisible: "::-p-text(error_during_execution)",
+    frame: true,
+  },
+  {
+    name: "session-frames-mobile",
+    viewport: { width: 390, height: 900 },
+    closeApprovals: true,
+    expectVisible: "::-p-text(error_during_execution)",
+    frame: true,
+  },
+  {
     name: "settings-oauth-success",
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
