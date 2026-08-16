@@ -42,7 +42,7 @@ py_library(
     deps = [
         ":frame_projection",
         ":session_events",
-        ":session_frames",
+        ":setup_output",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
         "@pypi//sqlalchemy",

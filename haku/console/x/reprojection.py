@@ -41,7 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from haku.console.chat_models import ConversationEventKind, EventProvenance
 from haku.console.database_schema import Session, SessionEvent, SessionFrame, SessionTurn
 from haku.console.x import frame_projection, session_events
-from haku.console.x.session_frames import SETUP_OUTPUT_KIND
+from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 
 # Only ever the `created_at` of a row that is compared against a stored one on every column but
 # that, so the value is arbitrary and being a constant keeps two runs of the check identical.
