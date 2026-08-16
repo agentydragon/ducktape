@@ -77,6 +77,7 @@ py_library(
     srcs = ["conversations.py"],
     visibility = ["//haku/console:__subpackages__"],
     deps = [
+        "//haku/console/x:conversation_records",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
@@ -111,6 +112,7 @@ py_test(
     deps = [
         ":conversations",
         "//:conftest",
+        "//haku/console/x:conversation_records",
         "@pypi//fastmcp_slim",
         "@pypi//more_itertools",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import

@@ -14,9 +14,13 @@ from more_itertools import one
 from haku.console.tools.conversations import (
     HAKU_CONVERSATIONS_SERVER_ID,
     MAX_PAGE_BYTES,
+    ConversationPage,
+    TranscriptPage,
+    build_mcp,
+)
+from haku.console.x.conversation_records import (
     Conversation,
     ConversationCursor,
-    ConversationPage,
     FrameCursor,
     FromFrames,
     MessageEntry,
@@ -27,11 +31,9 @@ from haku.console.tools.conversations import (
     ToolResultEntry,
     TranscriptCursor,
     TranscriptEntry,
-    TranscriptPage,
     TranscriptSlice,
     TurnCursor,
     TurnRecord,
-    build_mcp,
 )
 
 SESSION = UUID("11111111-1111-1111-1111-111111111111")

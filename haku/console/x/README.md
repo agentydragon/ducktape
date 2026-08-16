@@ -104,6 +104,21 @@ service calls it on every path, so that split is a seam and not a leaf.
 | `session_views.py`  | The read models the API returns for a session or a conversation, and the projection that assembles one out of the session row, its transcript and its rollout.                   |
 | `room_status.py`    | The per-turn status driver: what the room is shown while a turn runs, and when. It is handed two coroutines and never learns which room it speaks to.                            |
 
+### The records a read hands back — `conversation_records.py`
+
+What a conversation read produces: a session row, a rollout frame, a turn, a transcript entry,
+and the cursors that page them. Here because the store is what produces them — the store used to
+import them from <../tools/conversations.py>, the MCP server that reads it, which is the
+dependency running backwards. The line the split draws is **record versus page**: what one read
+produced is here, and how it is handed out — the `Page` envelope, the byte budget a page spends,
+and the clipping that budget forces — stays with the tool.
+
+**It is the one edge that runs stable → experimental**, so it is worth knowing before it
+surprises: everything else outside `x/` that names a module inside it is the composition root
+(<../app.py>). This module is a leaf of Pydantic models with no dependency of its own, so naming
+it drags in no runtime — but if the tools catalog ever has to build without `x/`, moving this
+module to the console level is the fix, not reinstating the models on the tool.
+
 ## The frame inspector — reading the record the transcript is a projection of
 
 `session_messages` is a **lossy projection** of `session_frames`
@@ -149,8 +164,8 @@ are, so it lives under the harness directory. A second backend adds a sibling ad
 neither the vocabulary nor its readers.
 
 **Two readers are on them.** `haku_conversations.read_transcript` reads a stored session:
-`SessionStore.read_transcript` folds it and `transcript_entries.py` maps the result onto the MCP
-surface's wire models. And now the live path reads them too.
+`SessionStore.read_transcript` folds it and `transcript_entries.py` maps the result onto the read
+models in `conversation_records.py`. And now the live path reads them too.
 
 **`_run_turn` is the first of the four onto it**: it projects each frame as it lands and acts on the
 events, so the live path no longer knows that `assistant`, `stream_event` and `result` exist.

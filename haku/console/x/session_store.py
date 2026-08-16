@@ -51,7 +51,9 @@ from haku.console.database_schema import (
     SessionTurn,
     SessionTurnPrompt,
 )
-from haku.console.tools.conversations import (
+from haku.console.x import transcript_entries
+from haku.console.x.claude_code import projection
+from haku.console.x.conversation_records import (
     Conversation,
     ConversationCursor,
     FrameCursor,
@@ -61,8 +63,6 @@ from haku.console.tools.conversations import (
     TurnCursor,
     TurnRecord,
 )
-from haku.console.x import transcript_entries
-from haku.console.x.claude_code import projection
 from haku.console.x.session_frames import (
     ASSISTANT_FRAME_KIND,
     DELTA_FRAME_KIND,
@@ -73,7 +73,6 @@ from haku.console.x.session_frames import (
 )
 from haku.console.x.session_notifications import SessionEventKind, notify
 from haku.console.x.session_views import (
-    NO_CALLS,
     ConversationSessionSummary,
     ConversationSessionView,
     ConversationTurnView,
@@ -81,10 +80,10 @@ from haku.console.x.session_views import (
     SessionMessageView,
     SessionView,
     frame_page,
-    message_view,
     rollout_calls,
     session_view,
     setup_narration,
+    user_message_view,
 )
 from haku.runtime.x.claude_bridge.cli_client import RecordedFrame
 
@@ -519,7 +518,7 @@ class SessionStore:
             chat.updated_at = now
             await notify(db, SessionEventKind.PROMPT, session_id)
             await notify(db, SessionEventKind.UPDATE, session_id)
-        return message_view(message, NO_CALLS)
+        return user_message_view(message)
 
     async def prompt_fate(self, message_id: UUID) -> PromptFate:
         """Say whether an accepted prompt is still coming, has been through a turn, or is stranded.

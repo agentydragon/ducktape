@@ -136,9 +136,7 @@ loop's signatures.
   reshuffle with no acceptance criterion.
 - **`bridge_token_fingerprint = b""`** is a cleanup-pending tri-state on a credential column, and the
   zero value STYLE says never to use for absence. It wants to be `claim_cleaned_at`.
-- Smaller: the store imports its read models from the MCP tool that reads it; `message_view`'s
-  `NO_CALLS` default serves one caller that structurally cannot need it; "surface" names five
-  things and "turn" three.
+- Smaller: "surface" names five things and "turn" three.
 
 ## When their rolls converge
 

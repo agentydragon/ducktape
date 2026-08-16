@@ -1,10 +1,10 @@
 """The neutral conversation vocabulary as `haku_conversations` hands it out.
 
 <conversation_events.py> is what a conversation *is*, in dataclasses the console's own code folds
-and renders. <../tools/conversations.py> is what an MCP caller reads, in Pydantic models with
-discriminators and descriptions. This is the one place the two are the same conversation, so a
-change to either shows up here rather than as a surface quietly drifting from the vocabulary it
-claims to expose.
+and renders. <conversation_records.py> is what a read hands back, in Pydantic models with
+discriminators and descriptions that <../tools/conversations.py> serialises. This is the one place
+the two are the same conversation, so a change to either shows up here rather than as a surface
+quietly drifting from the vocabulary it claims to expose.
 
 Two things happen on the way across.
 
@@ -20,11 +20,10 @@ ordinal is a safe key for this one order.
 
 from __future__ import annotations
 
-from haku.console.tools import conversations
-from haku.console.x import conversation_events
+from haku.console.x import conversation_events, conversation_records
 
 
-def entries(projection: conversation_events.Projection) -> list[conversations.TranscriptEntry]:
+def entries(projection: conversation_events.Projection) -> list[conversation_records.TranscriptEntry]:
     """One session's projection as the wire models, deltas dropped and the rest numbered."""
     return [
         _entry(event, index)
@@ -39,11 +38,11 @@ def unreadable(projection: conversation_events.Projection) -> dict[str, int] | N
     return dict(projection.unprojected) or None
 
 
-def _entry(event: conversation_events.ConversationEvent, index: int) -> conversations.TranscriptEntry:
+def _entry(event: conversation_events.ConversationEvent, index: int) -> conversation_records.TranscriptEntry:
     provenance = _provenance(event.provenance)
     match event:
         case conversation_events.MessageCompleted():
-            return conversations.MessageEntry(
+            return conversation_records.MessageEntry(
                 index=index,
                 provenance=provenance,
                 message=_message(event.message),
@@ -51,11 +50,11 @@ def _entry(event: conversation_events.ConversationEvent, index: int) -> conversa
                 agent_message_id=event.agent_message_id,
             )
         case conversation_events.Reasoning():
-            return conversations.ReasoningEntry(
+            return conversation_records.ReasoningEntry(
                 index=index, provenance=provenance, message=_message(event.message), summary=event.summary
             )
         case conversation_events.ToolCallStarted():
-            return conversations.ToolCallEntry(
+            return conversation_records.ToolCallEntry(
                 index=index,
                 provenance=provenance,
                 message=_message(event.message),
@@ -64,28 +63,28 @@ def _entry(event: conversation_events.ConversationEvent, index: int) -> conversa
                 arguments=dict(event.arguments),
             )
         case conversation_events.ToolCallCompleted():
-            return conversations.ToolResultEntry(
+            return conversation_records.ToolResultEntry(
                 index=index,
                 provenance=provenance,
                 call_id=event.call_id,
                 content=_content(event.content),
                 structured=event.structured,
-                outcome=conversations.Outcome(event.outcome),
+                outcome=conversation_records.Outcome(event.outcome),
             )
         case conversation_events.ActivityStarted():
-            return conversations.ActivityStartedEntry(
+            return conversation_records.ActivityStartedEntry(
                 index=index, provenance=provenance, activity_id=event.activity_id, description=event.description
             )
         case conversation_events.ActivityCompleted():
-            return conversations.ActivityFinishedEntry(
+            return conversation_records.ActivityFinishedEntry(
                 index=index,
                 provenance=provenance,
                 activity_id=event.activity_id,
                 summary=event.summary,
-                outcome=conversations.Outcome(event.outcome),
+                outcome=conversation_records.Outcome(event.outcome),
             )
         case conversation_events.TurnCompleted():
-            return conversations.TurnEndEntry(
+            return conversation_records.TurnEndEntry(
                 index=index, provenance=provenance, outcome=event.outcome, usage=_usage(event.usage)
             )
         # `TextDelta` is the remaining member of the union and never reaches here; a member added
@@ -94,34 +93,34 @@ def _entry(event: conversation_events.ConversationEvent, index: int) -> conversa
             raise ValueError(f"no transcript entry for {event=}")
 
 
-def _message(key: conversation_events.MessageKey) -> conversations.MessageRef:
-    return conversations.MessageRef(opened_at_frame_seq=key.opened_at_frame_seq)
+def _message(key: conversation_events.MessageKey) -> conversation_records.MessageRef:
+    return conversation_records.MessageRef(opened_at_frame_seq=key.opened_at_frame_seq)
 
 
-def _provenance(provenance: conversation_events.Provenance) -> conversations.EntryProvenance:
+def _provenance(provenance: conversation_events.Provenance) -> conversation_records.EntryProvenance:
     match provenance:
         case conversation_events.FrameRange():
-            return conversations.FromFrames(
+            return conversation_records.FromFrames(
                 first_frame_seq=provenance.first_frame_seq, last_frame_seq=provenance.last_frame_seq
             )
         case conversation_events.Authored():
-            return conversations.ConsoleAuthored()
+            return conversation_records.ConsoleAuthored()
 
 
-def _content(content: conversation_events.ToolResultContent) -> conversations.ResultContent:
+def _content(content: conversation_events.ToolResultContent) -> conversation_records.ResultContent:
     match content:
         case conversation_events.TextContent():
-            return conversations.ResultText(text=content.text)
+            return conversation_records.ResultText(text=content.text)
         case conversation_events.ToolReferences():
-            return conversations.ResultToolReferences(tool_names=list(content.tool_names))
+            return conversation_records.ResultToolReferences(tool_names=list(content.tool_names))
         case conversation_events.OpaqueContent():
-            return conversations.ResultOpaque(payload=content.payload)
+            return conversation_records.ResultOpaque(payload=content.payload)
 
 
-def _usage(usage: conversation_events.Usage | None) -> conversations.TurnUsage | None:
+def _usage(usage: conversation_events.Usage | None) -> conversation_records.TurnUsage | None:
     if usage is None:
         return None
-    return conversations.TurnUsage(
+    return conversation_records.TurnUsage(
         input_tokens=usage.input_tokens,
         output_tokens=usage.output_tokens,
         cached_input_tokens=usage.cached_input_tokens,

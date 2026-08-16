@@ -30,8 +30,8 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.database_schema import Session, SessionMessage, SessionPrompt
-from haku.console.tools.conversations import ConversationCursor, FrameCursor, TranscriptCursor, TurnCursor
 from haku.console.x.conftest import age_lease, lease_of, queued_for_the_room
+from haku.console.x.conversation_records import ConversationCursor, FrameCursor, TranscriptCursor, TurnCursor
 from haku.console.x.session_notifications import SessionEventKind
 from haku.console.x.session_store import (
     ADOPTION_GRACE,

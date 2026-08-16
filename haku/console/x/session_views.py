@@ -11,7 +11,6 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from types import MappingProxyType
 from typing import Any
 from uuid import UUID
 
@@ -282,21 +281,13 @@ async def setup_narration(db: AsyncSession, session_id: UUID) -> list[SetupNarra
     ]
 
 
-# Passed explicitly rather than defaulted, so a caller says it has no rollout to join against
-# instead of inheriting that silently: exactly one does, and it is the row it just inserted.
-NO_CALLS = RolloutCalls(by_message=MappingProxyType({}), results=MappingProxyType({}))
-
-
 def message_view(message: SessionMessage, calls: RolloutCalls) -> SessionMessageView:
     # The rollout where the row points into it, the column otherwise. That column is the lossy copy
     # — the calls without their answers — and is kept only for rows with nothing to point at: ones
     # that predate the pointer, and ones this console synthesized rather than observed.
     recorded = calls.by_message.get(message.agent_message_id or "")
-    return SessionMessageView(
-        message_id=message.message_id,
-        role=message.role,
-        status=message.status,
-        content=message.content,
+    return _view(
+        message,
         tool_calls=[
             SessionToolCallView(
                 call_id=call.call_id,
@@ -306,6 +297,27 @@ def message_view(message: SessionMessage, calls: RolloutCalls) -> SessionMessage
             )
             for call in (recorded if recorded is not None else message.tool_calls)
         ],
+    )
+
+
+def user_message_view(message: SessionMessage) -> SessionMessageView:
+    """The prompt row `enqueue_prompt` has just written, as its caller reads it back.
+
+    Its own constructor rather than `message_view` with an empty `RolloutCalls`, because the
+    empty value was a caller asserting a fact about its message and reads equally as "I did not
+    look": a prompt that has only just been accepted is a user turn nothing has answered, so
+    there are no tool calls to join and no rollout to join them out of.
+    """
+    return _view(message, tool_calls=[])
+
+
+def _view(message: SessionMessage, *, tool_calls: list[SessionToolCallView]) -> SessionMessageView:
+    return SessionMessageView(
+        message_id=message.message_id,
+        role=message.role,
+        status=message.status,
+        content=message.content,
+        tool_calls=tool_calls,
         error=message.error,
         source_first_frame_seq=message.source_first_frame_seq,
         source_last_frame_seq=message.source_last_frame_seq,

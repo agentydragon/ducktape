@@ -10,8 +10,7 @@ from typing import Any
 import pytest_bazel
 from more_itertools import one
 
-from haku.console.tools import conversations
-from haku.console.x import transcript_entries
+from haku.console.x import conversation_records, transcript_entries
 from haku.console.x.claude_code.projection import RecordedFrame, project
 
 
@@ -61,7 +60,7 @@ def test_deltas_do_not_reach_the_read_surface() -> None:
 
     entry = one(transcript_entries.entries(projection))
 
-    assert isinstance(entry, conversations.MessageEntry)
+    assert isinstance(entry, conversation_records.MessageEntry)
     assert entry.text == "half an answer"
 
 
@@ -95,8 +94,8 @@ def test_a_multi_frame_message_reports_the_span_it_was_read_off() -> None:
 
     entry = one(transcript_entries.entries(projection))
 
-    assert isinstance(entry, conversations.MessageEntry)
-    assert entry.provenance == conversations.FromFrames(first_frame_seq=4, last_frame_seq=6)
+    assert isinstance(entry, conversation_records.MessageEntry)
+    assert entry.provenance == conversation_records.FromFrames(first_frame_seq=4, last_frame_seq=6)
     assert entry.message.opened_at_frame_seq == 4
 
 
@@ -113,11 +112,11 @@ def test_a_tool_call_and_its_answer_are_joined_by_call_id_and_nothing_else() -> 
     # The third entry is the message closing at the end of the input, which every fold emits.
     call, answer, _ = transcript_entries.entries(projection)
 
-    assert isinstance(call, conversations.ToolCallEntry)
-    assert isinstance(answer, conversations.ToolResultEntry)
+    assert isinstance(call, conversation_records.ToolCallEntry)
+    assert isinstance(answer, conversation_records.ToolResultEntry)
     assert (call.tool_name, call.call_id) == ("Read", "toolu_1")
     assert answer.call_id == "toolu_1"
-    assert answer.content == conversations.ResultText(text="file contents")
+    assert answer.content == conversation_records.ResultText(text="file contents")
     assert answer.structured == {"filePath": "/x"}
 
 
@@ -128,8 +127,8 @@ def test_an_absent_is_error_stays_unknown_rather_than_reading_as_fine() -> None:
 
     entry = one(transcript_entries.entries(projection))
 
-    assert isinstance(entry, conversations.ToolResultEntry)
-    assert entry.outcome == conversations.Outcome.UNKNOWN
+    assert isinstance(entry, conversation_records.ToolResultEntry)
+    assert entry.outcome == conversation_records.Outcome.UNKNOWN
 
 
 def test_a_turn_end_carries_the_accounting_in_neutral_terms() -> None:
@@ -137,9 +136,9 @@ def test_a_turn_end_carries_the_accounting_in_neutral_terms() -> None:
 
     entry = one(transcript_entries.entries(projection))
 
-    assert isinstance(entry, conversations.TurnEndEntry)
+    assert isinstance(entry, conversation_records.TurnEndEntry)
     assert entry.outcome == "answered"
-    assert entry.usage == conversations.TurnUsage(
+    assert entry.usage == conversation_records.TurnUsage(
         input_tokens=4, output_tokens=91, cached_input_tokens=133_907, cost_usd=0.4213, duration_ms=41_902
     )
 
