@@ -396,6 +396,31 @@
   align-self: stretch;
 }
 
+/* Bootstrap narration is about the session rather than said by either party in it, so it spans
+   the column instead of taking a side the way a message does. */
+.haku-conversation-narration {
+  align-self: stretch;
+  background: var(--haku-panel-bg);
+}
+
+/* A session with nothing but narration is not a chat log growing up from the bottom — it is a
+   page with one thing on it. Undo the transcript's bottom-anchoring (`> :first-child` below)
+   for that case only, or a provisioning session shows a screenful of blank above its own
+   progress. With a transcript underneath, the anchoring is still right and stays. */
+.haku-chat-messages > .haku-conversation-narration:only-child {
+  margin-top: 0;
+}
+
+/* Every line is kept (a repeat is not a replay), so the log scrolls within a bounded height
+   rather than pushing the transcript off the page. Wrapping is `anywhere` because a setup line
+   is often one long unbroken path or URL, which would otherwise scroll the page sideways. */
+.haku-conversation-narration-log {
+  max-height: 18rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .haku-claude-body {
   flex: 1 1 auto;
   min-height: 0;

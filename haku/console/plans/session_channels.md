@@ -10,18 +10,18 @@ This supersedes nothing; it is the frame the pieces below belong to.
 
 ## Where the parity actually stands
 
-| Capability            | Matrix                         | Console                        |
-| --------------------- | ------------------------------ | ------------------------------ |
-| Read the transcript   | native                         | yes, read-only                 |
-| Live updates          | native                         | **no** — one fetch on mount    |
-| Send a prompt         | yes                            | **only on `/chat`**            |
-| Start a session       | no — the supervisor owns it    | yes, on `/chat`                |
-| Abort a turn          | **no**                         | yes, on `/chat`                |
-| Close a session       | no                             | yes, on `/chat`                |
-| A turn is in progress | typing indicator + status line | **no**                         |
-| Lifecycle transitions | `m.notice`, unrecorded         | **no**                         |
-| Bootstrap narration   | `m.notice`, one line each      | **no** — though the rows exist |
-| Formatted replies     | yes (R11.7)                    | yes (Markdown renderer)        |
+| Capability            | Matrix                         | Console                       |
+| --------------------- | ------------------------------ | ----------------------------- |
+| Read the transcript   | native                         | yes, read-only                |
+| Live updates          | native                         | **no** — one fetch on mount   |
+| Send a prompt         | yes                            | **only on `/chat`**           |
+| Start a session       | no — the supervisor owns it    | yes, on `/chat`               |
+| Abort a turn          | **no**                         | yes, on `/chat`               |
+| Close a session       | no                             | yes, on `/chat`               |
+| A turn is in progress | typing indicator + status line | **no**                        |
+| Lifecycle transitions | `m.notice`, unrecorded         | **no**                        |
+| Bootstrap narration   | `m.notice`, one line each      | yes, at the transcript's head |
+| Formatted replies     | yes (R11.7)                    | yes (Markdown renderer)       |
 
 **Parity is not symmetry.** Some gaps are load-bearing and stay: Matrix does not start sessions
 because the supervisor owns provisioning (R3.1, R3.2), and the console does not bind or unbind
@@ -153,8 +153,9 @@ log rather than a join across several.
 
 Two things fall out, both good:
 
-- **The console channel can render bootstrap narration today**, from rows that already exist. It
-  is the cheapest single item in this plan.
+- **The console channel renders bootstrap narration**, from rows that already existed —
+  `ConversationSessionView.narration`, drawn at the head of the transcript on the conversations
+  detail page. It was the cheapest single item in this plan, and it is done.
 - **Announcement dedup stops being per-process.** `_SessionStatusAnnouncer._last_announced` is a
   local, so a leader handover re-announces the current status — legible in a room, but it also
   means there is no durable answer to "when did this session become `failed`". Under §1 the cursor
@@ -342,14 +343,15 @@ surface whose client only read message rows; it is not true of a channel:
 
 ## Order
 
-1. **Render narration in the console** — the rows already exist; smallest thing that makes the
-   console a channel rather than a viewer.
-2. **Live updates** (§4). Depends on nothing.
-3. **Merge the two pages** (§2) and move sending into the merged detail (§5, SPA half).
-4. **Record lifecycle events** (§3) and render them in both channels.
-5. **The reconcile loop** (§1) — the cursor on `chat_attachment`, and Matrix delivery moved onto
+**Done: render narration in the console** — the smallest thing that made the console a channel
+rather than a viewer, from rows that already existed. What remains:
+
+1. **Live updates** (§4). Depends on nothing.
+2. **Merge the two pages** (§2) and move sending into the merged detail (§5, SPA half).
+3. **Record lifecycle events** (§3) and render them in both channels.
+4. **The reconcile loop** (§1) — the cursor on `chat_attachment`, and Matrix delivery moved onto
    it. Wants cleanup stage 7's schema half; everything above is possible without it.
-6. **The Matrix relay** (§5, Matrix half) — one more thing the loop already does, once it exists.
+5. **The Matrix relay** (§5, Matrix half) — one more thing the loop already does, once it exists.
 
 Two items sit outside that spine. **The session link in the R7.2 notice** (§6) is small and can
 land any time after §2 has settled the route — not before, since a posted link is permanent.

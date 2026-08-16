@@ -1,4 +1,4 @@
-import { Badge, Box, Button, Divider, Group, Loader, Paper, Stack, Text, Title } from "@mantine/core";
+import { Badge, Box, Button, Code, Divider, Group, Loader, Paper, Stack, Text, Title } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -10,6 +10,7 @@ import {
   type ConversationSessionSummary,
 } from "../client";
 import { CONVERSATIONS_PATH } from "../routing";
+import { bootstrapNarration, type BootstrapNarration } from "./bootstrap_narration";
 import { isNearChatBottom } from "./chat_scroll";
 import { ClaudeToolUseView } from "./claude_tool_use";
 import { conversationTimeline, type ConversationTurn } from "./conversation_timeline";
@@ -72,6 +73,45 @@ function TurnBoundary({ turn, number }: { turn: ConversationTurn; number: number
         </Group>
       }
     />
+  );
+}
+
+/** The sandbox's own account of coming up, at the head of the transcript where it happened.
+ *
+ * It sits first because it is first: narration is recorded before the CLI produces anything, and
+ * a session that never got past setup has nothing below it. Open while that is still the case
+ * (`bootstrapNarration` decides), collapsed to a summary line once the transcript is what the
+ * operator came to read — with the last line kept visible there, since a bootstrap that ended
+ * badly says so on its final line.
+ */
+function BootstrapNarrationPanel({ narration, starting }: { narration: BootstrapNarration; starting: boolean }) {
+  const [expanded, setExpanded] = useState(narration.startsExpanded);
+  return (
+    <Paper withBorder p="sm" className="haku-conversation-narration">
+      <Group justify="space-between" align="center" wrap="nowrap" gap="xs">
+        <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+          {starting && <Loader size="xs" />}
+          <Text fw={600} size="xs">
+            Sandbox setup
+          </Text>
+          <Text c="dimmed" size="xs">
+            {narration.lines.length === 1 ? "1 line" : `${narration.lines.length} lines`}
+          </Text>
+        </Group>
+        <Button variant="subtle" size="compact-xs" onClick={() => setExpanded(!expanded)}>
+          {expanded ? "Hide" : "Show"}
+        </Button>
+      </Group>
+      {expanded ? (
+        <Code block className="haku-conversation-narration-log" mt="xs">
+          {narration.lines.map((line) => line.text).join("\n")}
+        </Code>
+      ) : (
+        <Text c="dimmed" size="xs" mt={4} lineClamp={1}>
+          {narration.lines[narration.lines.length - 1].text}
+        </Text>
+      )}
+    </Paper>
   );
 }
 
@@ -273,6 +313,8 @@ function ConversationDetailPage({ sessionId }: { sessionId: string }) {
   }
 
   const title = conversation.surface === "matrix" ? "Matrix conversation" : "Conversation";
+  const narration = bootstrapNarration(conversation);
+  const timeline = conversationTimeline(conversation.messages, conversation.turns);
   return (
     <section className="haku-page" aria-label="Conversation">
       <header className="haku-page-header">
@@ -300,17 +342,19 @@ function ConversationDetailPage({ sessionId }: { sessionId: string }) {
           }}
         >
           <div className="haku-page-list haku-chat-messages">
-            {conversation.messages.length === 0 && conversation.turns.length === 0 ? (
+            {narration && (
+              <BootstrapNarrationPanel narration={narration} starting={conversation.status === "provisioning"} />
+            )}
+            {timeline.length === 0 && !narration && (
               <Text c="dimmed" size="sm">
                 No transcript messages were recorded.
               </Text>
-            ) : (
-              conversationTimeline(conversation.messages, conversation.turns).map((entry) =>
-                entry.kind === "message" ? (
-                  <MessageView key={entry.message.message_id} message={entry.message} />
-                ) : (
-                  <TurnBoundary key={entry.turn.turn_id} turn={entry.turn} number={entry.number} />
-                )
+            )}
+            {timeline.map((entry) =>
+              entry.kind === "message" ? (
+                <MessageView key={entry.message.message_id} message={entry.message} />
+              ) : (
+                <TurnBoundary key={entry.turn.turn_id} turn={entry.turn} number={entry.number} />
               )
             )}
           </div>

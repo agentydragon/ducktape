@@ -75,6 +75,7 @@ from haku.console.x.session_views import (
     message_view,
     rollout_calls,
     session_view,
+    setup_narration,
 )
 from haku.runtime.x.claude_bridge.cli_client import ClaudeCli, cli_over_websocket
 from haku.runtime.x.claude_bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch
@@ -309,12 +310,17 @@ class SessionStore:
         ]
 
     async def get_operator_conversation(self, operator_id: UUID, session_id: UUID) -> ConversationSessionView:
-        """Read one Operator-owned conversation without the raw frame log."""
+        """Read one Operator-owned conversation: transcript, turns and bootstrap narration.
+
+        Not the raw frame log — the narration is the one projection of it this surface carries,
+        because for a session that died before the CLI produced anything it is the whole account.
+        """
         view = await self.get(operator_id, session_id)
         async with self._sessions() as db:
             session = await db.scalar(
                 select(Session).where(Session.session_id == session_id, Session.operator_id == operator_id)
             )
+            narration = await setup_narration(db, session_id)
         if session is None:
             raise KeyError(session_id)
         turns = await self.list_turns(session_id, limit=100)
@@ -326,6 +332,7 @@ class SessionStore:
             error=view.error,
             created_at=view.created_at,
             updated_at=view.updated_at,
+            narration=narration,
             messages=view.messages,
             turns=[
                 ConversationTurnView(

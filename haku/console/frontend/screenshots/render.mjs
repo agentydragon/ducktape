@@ -175,6 +175,33 @@ const SCENES = [
     expectVisible: "::-p-text(The reflection call timed out before I could answer.)",
     frame: true,
   },
+  // A session still coming up: the bootstrap narration is the whole view, since there is no
+  // transcript yet. The mobile pair is where a long unbroken path would overflow if it could.
+  {
+    name: "conversation-bootstrap",
+    viewport: { width: 1200, height: 900 },
+    closeApprovals: true,
+    // A line the panel shows only while expanded, which is the state this scene exists to check.
+    expectVisible: "::-p-text(Enumerating objects: 4821)",
+    frame: true,
+  },
+  {
+    name: "conversation-bootstrap-mobile",
+    viewport: { width: 390, height: 900 },
+    closeApprovals: true,
+    // A line the panel shows only while expanded, which is the state this scene exists to check.
+    expectVisible: "::-p-text(Enumerating objects: 4821)",
+    frame: true,
+  },
+  // The other half of the panel: a finished session, where the narration is collapsed to its
+  // summary line and the transcript is what the page is for.
+  {
+    name: "conversation-narration-collapsed",
+    viewport: { width: 1200, height: 900 },
+    closeApprovals: true,
+    expectVisible: "::-p-text(Workspace ready at)",
+    frame: true,
+  },
   {
     name: "settings-oauth-success",
     viewport: { width: 1200, height: 1000 },

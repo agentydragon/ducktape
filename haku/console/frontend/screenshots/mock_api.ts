@@ -252,6 +252,29 @@ const claudeSession = scene?.startsWith("claude-provisioning")
               ),
     } as const);
 const conversationSessionId = "70000000-0000-4000-8000-000000000001";
+// What the shared sandbox bootstrap script writes, forwarded verbatim by the runner — long,
+// unbroken paths included, since those are what a narrow viewport has to wrap rather than
+// scroll sideways.
+const setupNarration = [
+  {
+    frame_seq: 1,
+    text: "+ install -m 600 /var/run/secrets/haku/netrc /root/.netrc",
+    created_at: "2026-08-01T02:59:41Z",
+  },
+  { frame_seq: 2, text: "Cloning into '/workspace/haku-state'...", created_at: "2026-08-01T02:59:42Z" },
+  { frame_seq: 3, text: "remote: Enumerating objects: 4821, done.", created_at: "2026-08-01T02:59:44Z" },
+  {
+    frame_seq: 4,
+    text: "Receiving objects: 100% (4821/4821), 12.44 MiB | 8.30 MiB/s, done.",
+    created_at: "2026-08-01T02:59:51Z",
+  },
+  { frame_seq: 5, text: "Resolving deltas: 100% (2610/2610), done.", created_at: "2026-08-01T02:59:52Z" },
+  {
+    frame_seq: 6,
+    text: "Workspace ready at /workspace/haku-state (tip 9f2c1ab8d4e05137c2a9b6f1e83d47a0c5b29e6f).",
+    created_at: "2026-08-01T02:59:53Z",
+  },
+] as const;
 const conversationSummaries = [
   {
     session_id: conversationSessionId,
@@ -320,6 +343,7 @@ const conversationDetail = {
   error: null,
   created_at: "2026-08-01T03:00:00Z",
   updated_at: "2026-08-01T03:01:00Z",
+  narration: setupNarration,
   messages: conversationMessages,
   // Newest first, as the endpoint returns them — the transcript numbers them the other way.
   turns: [
@@ -343,6 +367,28 @@ const conversationDetail = {
     },
   ],
 } as const;
+// The same session a few seconds earlier: still provisioning, mid-clone, with nothing but the
+// narration to show. This is what the panel exists for, so it gets its own scene.
+const conversationBootstrap = {
+  ...conversationDetail,
+  status: "provisioning",
+  updated_at: "2026-08-01T02:59:51Z",
+  narration: setupNarration.slice(0, 4),
+  messages: [],
+  turns: [],
+} as const;
+// A finished session short enough that the collapsed panel stays on screen: the detail scene's
+// transcript opens scrolled to its newest message, which puts the collapsed panel above the fold.
+const conversationNarrationCollapsed = {
+  ...conversationDetail,
+  messages: standardClaudeMessages,
+  turns: [],
+} as const;
+const conversationDetailForScene = scene?.startsWith("conversation-bootstrap")
+  ? conversationBootstrap
+  : scene?.startsWith("conversation-narration")
+    ? conversationNarrationCollapsed
+    : conversationDetail;
 const mcpServers =
   scene === "settings-oauth-success"
     ? SAMPLE_MCP_SERVERS.map((server) =>
@@ -429,7 +475,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
     });
   }
   if (url.includes("/api/deployment")) return jsonResponse(SAMPLE_DEPLOYMENT);
-  if (url.includes("/api/conversations/")) return jsonResponse(conversationDetail);
+  if (url.includes("/api/conversations/")) return jsonResponse(conversationDetailForScene);
   if (url.includes("/api/conversations")) return jsonResponse(conversationSummaries);
   if (url.includes("/api/sessions")) return jsonResponse(claudeSession);
   // Push is configured on this console, and one *other* device is enrolled — the two facts the

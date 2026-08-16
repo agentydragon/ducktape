@@ -134,6 +134,9 @@ function sceneElement(scene: string) {
       return <ConsoleScene view="conversations" />;
     case "conversation-detail":
     case "conversation-detail-mobile":
+    case "conversation-bootstrap":
+    case "conversation-bootstrap-mobile":
+    case "conversation-narration-collapsed":
       return <ConsoleScene view="conversations" conversationId={CONVERSATION_ID} />;
     case "settings-oauth-success":
       return <OAuthSettingsResultScene status="success" />;

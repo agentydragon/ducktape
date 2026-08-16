@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSurface, SessionStatus, TurnOutcome
 from haku.console.database_schema import Session, SessionFrame, SessionMessage
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
-from haku.console.x.session_frames import ASSISTANT_FRAME_KIND, PROMPT_FRAME_KIND
+from haku.console.x.session_frames import ASSISTANT_FRAME_KIND, PROMPT_FRAME_KIND, SETUP_OUTPUT_KIND
 
 
 class SessionToolResultView(BaseModel):
@@ -98,6 +98,22 @@ class ConversationSessionSummary(BaseModel):
     last_message_at: datetime | None
 
 
+class SetupNarrationView(BaseModel):
+    """One thing the sandbox said while coming up, as the frame log recorded it.
+
+    Positioned by `frame_seq` and by nothing else. These rows are recorded with **no frame
+    identity** — the runner sends them `replayable=False`, because narration is a frame a console
+    could not tell a replay of from a repeat — so the sequence is the only order there is, and two
+    identical lines are two things that happened rather than one thing seen twice.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    frame_seq: int
+    text: str
+    created_at: datetime
+
+
 class ConversationTurnView(BaseModel):
     """A turn summary, without exposing the raw frame range yet."""
 
@@ -124,6 +140,7 @@ class ConversationSessionView(BaseModel):
     error: str | None
     created_at: datetime
     updated_at: datetime
+    narration: list[SetupNarrationView]
     messages: list[SessionMessageView]
     turns: list[ConversationTurnView]
 
@@ -173,6 +190,25 @@ async def rollout_calls(db: AsyncSession, session_id: UUID) -> RolloutCalls:
                         content=block.get("content"), is_error=bool(block.get("is_error"))
                     )
     return RolloutCalls(by_message=by_message, results=results)
+
+
+async def setup_narration(db: AsyncSession, session_id: UUID) -> list[SetupNarrationView]:
+    """What the sandbox printed while bootstrapping, in the order it produced it.
+
+    Unbounded, like the transcript beside it in the same response. Narration is the shorter of
+    the two in any session that got as far as answering — and in the session where it is not,
+    one that died during setup, it is the entire account of what happened, which is exactly
+    what a cap would cut the end off.
+    """
+    rows = await db.execute(
+        select(SessionFrame.frame_seq, SessionFrame.payload, SessionFrame.created_at)
+        .where(SessionFrame.session_id == session_id, SessionFrame.kind == SETUP_OUTPUT_KIND)
+        .order_by(SessionFrame.frame_seq)
+    )
+    return [
+        SetupNarrationView(frame_seq=frame_seq, text=payload["text"], created_at=created_at)
+        for frame_seq, payload, created_at in rows
+    ]
 
 
 # Passed explicitly rather than defaulted, so a caller says it has no rollout to join against

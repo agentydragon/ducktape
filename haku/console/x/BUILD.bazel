@@ -150,6 +150,22 @@ py_test(
 )
 
 py_test(
+    name = "test_session_views",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_session_views.py"],
+    deps = [
+        ":claude_chat",
+        ":conftest",
+        ":session_frames",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console:conftest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_room_status",
     srcs = ["test_room_status.py"],
     deps = [

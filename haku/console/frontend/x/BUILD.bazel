@@ -54,6 +54,13 @@ ts_library(
 )
 
 ts_library(
+    name = "bootstrap_narration",
+    srcs = ["bootstrap_narration.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//haku/console/frontend:client"],
+)
+
+ts_library(
     name = "conversation_timeline",
     srcs = ["conversation_timeline.ts"],
     tsconfig = TSCONFIG,
@@ -65,6 +72,7 @@ ts_library(
     srcs = ["conversations_page.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":bootstrap_narration",
         ":chat_scroll",
         ":claude_tool_use",
         ":conversation_timeline",
@@ -84,6 +92,17 @@ ts_library(
     deps = [
         ":chat_scroll",
         "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "bootstrap_narration_test",
+    srcs = ["bootstrap_narration.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":bootstrap_narration",
+        "//:node_modules/vitest",
+        "//haku/console/frontend:client",
     ],
 )
 
