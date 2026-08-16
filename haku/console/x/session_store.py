@@ -51,15 +51,20 @@ from haku.console.database_schema import (
 from haku.console.tools.conversations import (
     Conversation,
     ConversationCursor,
-    ConversationPage,
+    FrameCursor,
     RolloutFrame,
+    TranscriptCursor,
+    TranscriptSlice,
+    TurnCursor,
     TurnRecord,
 )
+from haku.console.x import claude_projection, transcript_entries
 from haku.console.x.session_frames import (
     ASSISTANT_FRAME_KIND,
     DELTA_FRAME_KIND,
     PROMPT_FRAME_KIND,
     RESULT_FRAME_KIND,
+    SETUP_OUTPUT_KIND,
     assistant_frame,
 )
 from haku.console.x.session_notifications import SessionEventKind, notify
@@ -318,7 +323,7 @@ class SessionStore:
             narration = await setup_narration(db, session_id)
         if session is None:
             raise KeyError(session_id)
-        turns = await self.list_turns(session_id, limit=100)
+        turns = await self.list_turns(session_id, cursor=None, limit=100)
         return ConversationSessionView(
             session_id=view.session_id,
             surface=session.surface,
@@ -654,16 +659,23 @@ class SessionStore:
                 chat.updated_at = now
                 await notify(db, SessionEventKind.UPDATE, turn.session_id)
 
-    async def list_turns(self, session_id: UUID, *, limit: int) -> list[TurnRecord]:
-        """A session's exchanges, newest first, for the `haku_conversations` read tools."""
+    async def list_turns(self, session_id: UUID, *, cursor: TurnCursor | None, limit: int) -> list[TurnRecord]:
+        """A session's exchanges from *cursor*, newest first, for the `haku_conversations` tools.
+
+        Keyset on `(started_at, turn_id)`, and the tiebreak is what makes it one: two turns of one
+        session can share a start instant, and a cursor naming only the timestamp would hand a
+        tied pair out twice or step over one. Inclusive of the row the cursor names, which is the
+        first row the previous page did not return.
+        """
+        query = select(SessionTurn).where(SessionTurn.session_id == session_id)
+        if cursor is not None:
+            query = query.where(
+                tuple_(SessionTurn.started_at, SessionTurn.turn_id)
+                <= tuple_(literal(cursor.started_at), literal(cursor.turn_id))
+            )
         async with self._sessions() as db:
             rows = (
-                await db.scalars(
-                    select(SessionTurn)
-                    .where(SessionTurn.session_id == session_id)
-                    .order_by(SessionTurn.started_at.desc())
-                    .limit(limit)
-                )
+                await db.scalars(query.order_by(SessionTurn.started_at.desc(), SessionTurn.turn_id.desc()).limit(limit))
             ).all()
         return [
             TurnRecord(
@@ -739,8 +751,8 @@ class SessionStore:
                 raise RuntimeError(f"replayed frame disappeared from the rollout for {uid=}")
         return RecordedFrame(fresh=False, frame_seq=int(existing_seq))
 
-    async def list_conversations(self, *, after: ConversationCursor | None, limit: int) -> ConversationPage:
-        """One page of past sessions, newest first, for the `haku_conversations` read tools.
+    async def list_conversations(self, *, cursor: ConversationCursor | None, limit: int) -> list[Conversation]:
+        """Past sessions from *cursor*, newest first, for the `haku_conversations` read tools.
 
         Keyset paging on `(created_at, session_id)`, for the same reason `read_frames` pages on
         `frame_seq`: an offset counts from the top of the order, and this order grows at the top
@@ -748,19 +760,19 @@ class SessionStore:
         boundary — skipping it or repeating it. `session_id` is in the key because `created_at`
         alone is not a total order; a pair created in one instant would straddle the boundary.
 
-        Unscoped by R5.3a: every session, whichever room it served.
+        Unscoped by R5.3a: every session, whichever room it served. Inclusive of the row the
+        cursor names, which is the first row the previous page did not return — so a caller
+        resumes with the cursor it was handed and no arithmetic.
         """
         query = select(Session).order_by(Session.created_at.desc(), Session.session_id.desc())
-        if after is not None:
+        if cursor is not None:
             query = query.where(
                 tuple_(Session.created_at, Session.session_id)
-                < tuple_(literal(after.created_at), literal(after.session_id))
+                <= tuple_(literal(cursor.created_at), literal(cursor.session_id))
             )
         async with self._sessions() as db:
-            # One row past the limit, so a full page that happens to be the last one says so
-            # rather than handing back a cursor onto nothing.
-            rows = (await db.scalars(query.limit(limit + 1))).all()
-        conversations = [
+            rows = (await db.scalars(query.limit(limit))).all()
+        return [
             Conversation(
                 session_id=row.session_id,
                 surface=row.surface,
@@ -769,24 +781,22 @@ class SessionStore:
                 created_at=row.created_at,
                 error=row.error,
             )
-            for row in rows[:limit]
+            for row in rows
         ]
-        return ConversationPage(
-            conversations=conversations,
-            next_cursor=ConversationCursor.of(conversations[-1]) if len(rows) > limit else None,
-        )
 
     async def read_frames(
-        self, session_id: UUID, *, after_seq: int | None, limit: int, kinds: Sequence[str] | None
+        self, session_id: UUID, *, cursor: FrameCursor | None, limit: int, kinds: Sequence[str] | None
     ) -> list[RolloutFrame]:
         """One page of a session's rollout, in wire order, from the start of the log onwards.
 
         Keyset paging on `frame_seq` rather than an offset: the log is append-only, so a cursor
         cannot skip or repeat a row the way an offset would once new frames land between pages.
+        The cursor names the first frame to return rather than the last one already returned, so
+        a transcript entry's `first_frame_seq` is a cursor as it stands.
         """
         query = _frames_of_kinds(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
-        if after_seq is not None:
-            query = query.where(SessionFrame.frame_seq > after_seq)
+        if cursor is not None:
+            query = query.where(SessionFrame.frame_seq >= cursor.frame_seq)
         async with self._sessions() as db:
             rows = (await db.scalars(query.order_by(SessionFrame.frame_seq).limit(limit))).all()
         return [
@@ -800,6 +810,46 @@ class SessionStore:
             )
             for row in rows
         ]
+
+    async def read_transcript(
+        self, session_id: UUID, *, cursor: TranscriptCursor | None, limit: int
+    ) -> TranscriptSlice:
+        """A window of the session's projected transcript, for the `haku_conversations` reader.
+
+        **The fold always runs from the session's first frame**, whatever the cursor says. The
+        projection is order-dependent — a message is the run of frames sharing one id, closed by a
+        different one — so folding a window instead would let a page boundary close a message the
+        whole session does not end there, and the same entry would read differently depending on
+        which page it landed on. Determinism is the property the projection exists for
+        (<claude_projection.py>), and it is not a property of a suffix.
+
+        That costs one read of the session's projectable frames per page, the same order of cost
+        as `session_views.rollout_calls`, which the SPA's detail view already pays per request.
+
+        Two kinds are excluded in SQL rather than by the fold. `setup_output` is the console's own
+        envelope and carries no protocol `type` at all, so `project` would refuse it; deltas are
+        hundreds per turn of prose that arrives again whole. Everything else is passed through, so
+        a frame class the CLI adds still lands in `Projection.unprojected` and is reported.
+        """
+        async with self._sessions() as db:
+            rows = (
+                await db.scalars(
+                    select(SessionFrame)
+                    .where(
+                        SessionFrame.session_id == session_id,
+                        SessionFrame.kind.not_in([SETUP_OUTPUT_KIND, DELTA_FRAME_KIND]),
+                    )
+                    .order_by(SessionFrame.frame_seq)
+                )
+            ).all()
+        projection = claude_projection.project(
+            claude_projection.RecordedFrame(frame_seq=row.frame_seq, payload=row.payload) for row in rows
+        )
+        entries = transcript_entries.entries(projection)
+        start = cursor.index if cursor is not None else 0
+        return TranscriptSlice(
+            entries=entries[start : start + limit], unreadable=transcript_entries.unreadable(projection)
+        )
 
     async def read_operator_frames(
         self, operator_id: UUID, session_id: UUID, *, before_seq: int | None, limit: int, kinds: Sequence[str] | None

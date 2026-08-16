@@ -225,7 +225,7 @@ class Deployment:
         """
 
         async def recorded() -> bool:
-            frames = await self._store.read_frames(session_id, after_seq=None, limit=200, kinds=[ASSISTANT_FRAME_KIND])
+            frames = await self._store.read_frames(session_id, cursor=None, limit=200, kinds=[ASSISTANT_FRAME_KIND])
             return any(
                 _assistant_text(frame.payload) == text
                 for frame in frames
@@ -236,7 +236,10 @@ class Deployment:
 
     async def wait_for_finished_turns(self, session_id: UUID, count: int) -> None:
         async def finished() -> bool:
-            return len([turn for turn in await self._store.list_turns(session_id, limit=50) if turn.ended_at]) >= count
+            return (
+                len([turn for turn in await self._store.list_turns(session_id, cursor=None, limit=50) if turn.ended_at])
+                >= count
+            )
 
         await self._wait_until(f"{count} finished turn(s)", finished)
 

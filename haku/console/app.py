@@ -421,7 +421,7 @@ def create_app(
                 index=index_searcher,
                 # Only when the Claude runtime is configured: without it nothing writes sessions,
                 # so the read tools would reflect an always-empty corpus.
-                rollout=session_store if claude_runtime is not None else None,
+                conversations=session_store if claude_runtime is not None else None,
             )
         )
     validate_in_process_server_bindings(console_config, in_process_servers)

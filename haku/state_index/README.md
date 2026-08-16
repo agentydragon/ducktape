@@ -370,8 +370,8 @@ What settling it touches:
   else. A scope is a `WHERE` over `sessions.operator_id`/`room_id`, which means the
   search joins that table (or `chat_chunks` denormalizes both, the way
   `sessions.room_id` itself is denormalized from `matrix_conversation`).
-- **`haku/console/tools/conversations.py`** — `list_conversations`, `read_rollout`, and
-  `list_turns` are unscoped by the same open decision. Scoping search but not the drilldown it
+- **`haku/console/tools/conversations.py`** — `list_conversations`, `list_turns`,
+  `read_transcript` and `read_rollout` are unscoped by the same open decision. Scoping search but not the drilldown it
   hands off to would be theatre: the message ids in a hit are exactly what `read_rollout` takes.
 - **Whatever identity the scope keys on.** An Agent's canonical identity and owning Operator come
   from `haku/console/agents/authorization.py` and `mcp_agent_auth.py`; a room-scoped rule instead

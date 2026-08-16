@@ -125,7 +125,7 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     )
 
     async def finished_turns() -> list[str | None]:
-        turns = await chat_store.list_turns(session_id, limit=10)
+        turns = await chat_store.list_turns(session_id, cursor=None, limit=10)
         return [turn.outcome for turn in sorted(turns, key=lambda turn: turn.started_at) if turn.ended_at]
 
     async def bridge_connected() -> bool:
@@ -153,7 +153,9 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
         # The console is gone with the exchange unfinished. The sandbox is not: its CLI is still
         # holding an answer, which is the whole reason the runner outlives a connection.
         assert await chat_store.status(session_id) in LIVE_SESSION_STATUSES, "a roll is not a session ending"
-        [in_flight] = [turn for turn in await chat_store.list_turns(session_id, limit=10) if turn.ended_at is None]
+        [in_flight] = [
+            turn for turn in await chat_store.list_turns(session_id, cursor=None, limit=10) if turn.ended_at is None
+        ]
 
         async with serve_app(_console_app(migrated_db_url, workspace), port=port):
             (stub_state / "release").touch()
@@ -164,7 +166,7 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
             await runner.wait()
 
     assert await finished_turns() == [TurnOutcome.ANSWERED, TurnOutcome.ANSWERED]
-    turns = sorted(await chat_store.list_turns(session_id, limit=10), key=lambda turn: turn.started_at)
+    turns = sorted(await chat_store.list_turns(session_id, cursor=None, limit=10), key=lambda turn: turn.started_at)
     assert turns[1].turn_id == in_flight.turn_id, "the second console finished that turn rather than opening its own"
     # Cost lives only on the `result` frame, so this is that frame having crossed the real bridge.
     assert [turn.cost_usd for turn in turns] == [0.01, 0.01]
@@ -180,7 +182,7 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     # The sandbox's own account of itself, which is only durable because it is in the rollout —
     # the pod's log is reaped with the sandbox. Whole path: the CLI's stderr, the runner's
     # forwarding, the `setup_output` frame, and the transport reassembling it into a line.
-    narration = await chat_store.read_frames(session_id, after_seq=None, limit=10, kinds=[SETUP_OUTPUT_KIND])
+    narration = await chat_store.read_frames(session_id, cursor=None, limit=10, kinds=[SETUP_OUTPUT_KIND])
     assert [frame.payload for frame in narration] == [{"kind": SETUP_OUTPUT_KIND, "text": GREETING}]
 
 

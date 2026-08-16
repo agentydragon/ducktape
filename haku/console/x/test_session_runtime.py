@@ -449,7 +449,7 @@ async def test_adoption_closes_a_turn_whose_result_nobody_wrote_down(
 
     assert await chat_store.adopt_open_turn(session_id) is None
 
-    [turn] = await chat_store.list_turns(str(session_id), limit=5)
+    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
     assert (turn.outcome, turn.cost_usd, turn.duration_ms) == (TurnOutcome.ANSWERED, 0.5, 1200)
 
 
@@ -718,7 +718,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     assert queued == ["because the disk was full"], "one row, not the answer twice"
     assistants = [m for m in (await chat_store.get(operator_id, session_id)).messages if m.role == "assistant"]
     assert [m.message_id for m in assistants] == [assistant_id], "continued, rather than forked into a second"
-    [turn] = await chat_store.list_turns(str(session_id), limit=5)
+    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
     assert (turn.turn_id, turn.outcome) == (started.turn_id, TurnOutcome.ANSWERED)
 
 
@@ -959,7 +959,7 @@ async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(
     )
     # Recorded by the real socket wrapper in production; here the turn wrote none of its own, so
     # the upper bound is the frame that predates it and the range is honestly empty.
-    [record] = await chat_store.list_turns(str(view.session_id), limit=10)
+    [record] = await chat_store.list_turns(str(view.session_id), cursor=None, limit=10)
 
     assert record.outcome == TurnOutcome.ANSWERED
     assert record.cost_usd == 0.0125
@@ -1148,10 +1148,14 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, 
             # so waiting on that would be a wait for something already true.
             await chat_store.enqueue_prompt(operator_id, view.session_id, "ping")
             for _ in range(75):
-                if [turn for turn in await chat_store.list_turns(str(view.session_id), limit=2) if turn.ended_at]:
+                if [
+                    turn
+                    for turn in await chat_store.list_turns(str(view.session_id), cursor=None, limit=2)
+                    if turn.ended_at
+                ]:
                     break
                 await asyncio.sleep(0.2)
-            [turn] = await chat_store.list_turns(str(view.session_id), limit=2)
+            [turn] = await chat_store.list_turns(str(view.session_id), cursor=None, limit=2)
             assert turn.outcome == TurnOutcome.ANSWERED, "the turn never completed"
         finally:
             runner.cancel()

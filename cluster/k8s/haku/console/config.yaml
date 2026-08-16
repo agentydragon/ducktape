@@ -152,9 +152,10 @@ auto_approval_policies:
     tools:
       haku_conversations:
         - list_conversations
+        - list_turns
+        - read_transcript
         - read_rollout
         - read_frame
-        - list_turns
       haku_index:
         - search
         - index_status

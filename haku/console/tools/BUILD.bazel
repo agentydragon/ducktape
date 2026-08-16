@@ -112,6 +112,7 @@ py_test(
         ":conversations",
         "//:conftest",
         "@pypi//fastmcp_slim",
+        "@pypi//more_itertools",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],

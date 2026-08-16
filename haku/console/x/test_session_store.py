@@ -24,6 +24,7 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.database_schema import Session, SessionMessage, SessionPrompt
+from haku.console.tools.conversations import ConversationCursor, FrameCursor, TranscriptCursor, TurnCursor
 from haku.console.x.conftest import MATRIX_ROOM, age_lease, lease_of, queued_for_the_room
 from haku.console.x.session_notifications import SessionEventKind
 from haku.console.x.session_store import (
@@ -112,8 +113,10 @@ async def test_the_rollout_reads_back_in_wire_order_with_a_keyset_cursor(chat_st
     for kind in ("user", "assistant", "result"):
         await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, kind, {"type": kind})
 
-    first = await chat_store.read_frames(str(session.session_id), after_seq=None, limit=2, kinds=None)
-    rest = await chat_store.read_frames(str(session.session_id), after_seq=first[-1].frame_seq, limit=2, kinds=None)
+    first = await chat_store.read_frames(str(session.session_id), cursor=None, limit=2, kinds=None)
+    rest = await chat_store.read_frames(
+        str(session.session_id), cursor=FrameCursor(frame_seq=first[-1].frame_seq + 1), limit=2, kinds=None
+    )
 
     assert [frame.kind for frame in first] == ["user", "assistant"]
     assert [frame.kind for frame in rest] == ["result"]
@@ -124,9 +127,7 @@ async def test_the_kinds_filter_skims_without_paging_through_everything(chat_sto
     for kind in ("user", "system", "assistant", "system", "result"):
         await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, kind, {"type": kind})
 
-    frames = await chat_store.read_frames(
-        str(session.session_id), after_seq=None, limit=25, kinds=["assistant", "result"]
-    )
+    frames = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, kinds=["assistant", "result"])
 
     assert [frame.kind for frame in frames] == ["assistant", "result"]
 
@@ -141,7 +142,7 @@ async def test_a_replayed_frame_is_recorded_once(chat_store, operator_id) -> Non
     assert (await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "assistant", frame)).fresh
     assert not (await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "assistant", frame)).fresh
 
-    frames = await chat_store.read_frames(str(session.session_id), after_seq=None, limit=25, kinds=None)
+    frames = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, kinds=None)
     assert [frame.kind for frame in frames] == ["assistant"]
 
 
@@ -165,7 +166,7 @@ async def test_frames_with_no_identity_are_never_collapsed(chat_store, operator_
     assert (await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "stream_event", delta)).fresh
     assert (await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "stream_event", delta)).fresh
 
-    frames = await chat_store.read_frames(str(session.session_id), after_seq=None, limit=25, kinds=["stream_event"])
+    frames = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, kinds=["stream_event"])
     assert len(frames) == 2
 
 
@@ -180,8 +181,8 @@ async def test_deltas_are_in_the_log_but_not_in_the_default_view(chat_store, ope
     )
     await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "result", {"type": "result", "uuid": "r1"})
 
-    default = await chat_store.read_frames(str(session_id), after_seq=None, limit=25, kinds=None)
-    asked = await chat_store.read_frames(str(session_id), after_seq=None, limit=25, kinds=["stream_event"])
+    default = await chat_store.read_frames(str(session_id), cursor=None, limit=25, kinds=None)
+    asked = await chat_store.read_frames(str(session_id), cursor=None, limit=25, kinds=["stream_event"])
 
     assert [frame.kind for frame in default] == ["result"]
     assert [frame.kind for frame in asked] == ["stream_event"]
@@ -193,7 +194,7 @@ async def test_one_session_never_reads_another_session_frames(chat_store, operat
     await chat_store.record_frame(mine.session_id, FrameDirection.FROM_AGENT, "assistant", {"type": "assistant"})
     await chat_store.record_frame(theirs.session_id, FrameDirection.FROM_AGENT, "result", {"type": "result"})
 
-    frames = await chat_store.read_frames(str(mine.session_id), after_seq=None, limit=25, kinds=None)
+    frames = await chat_store.read_frames(str(mine.session_id), cursor=None, limit=25, kinds=None)
 
     assert [frame.kind for frame in frames] == ["assistant"]
 
@@ -267,12 +268,11 @@ async def test_conversations_come_back_newest_first_with_the_room_they_served(ch
     await chat_store.create(operator_id, SpaSession())
     matrix, _ = await chat_store.create(operator_id, MatrixSession(room_id="!room:example.org"))
 
-    page = await chat_store.list_conversations(after=None, limit=10)
+    conversations = await chat_store.list_conversations(cursor=None, limit=10)
 
-    assert page.conversations[0].session_id == matrix.session_id
-    assert page.conversations[0].room_id == "!room:example.org"
-    assert page.conversations[1].room_id is None
-    assert page.next_cursor is None, "a page shorter than its limit is the last one"
+    assert conversations[0].session_id == matrix.session_id
+    assert conversations[0].room_id == "!room:example.org"
+    assert conversations[1].room_id is None
 
 
 async def test_a_session_created_between_two_pages_cannot_shift_what_the_second_one_holds(
@@ -283,12 +283,13 @@ async def test_a_session_created_between_two_pages_cannot_shift_what_the_second_
     older, _ = await chat_store.create(operator_id, SpaSession())
     newer, _ = await chat_store.create(operator_id, SpaSession())
 
-    first = await chat_store.list_conversations(after=None, limit=1)
+    # Two rows for a page of one: the extra row is the one the tool's cursor names.
+    first, resume = await chat_store.list_conversations(cursor=None, limit=2)
     await chat_store.create(operator_id, SpaSession())
-    second = await chat_store.list_conversations(after=first.next_cursor, limit=1)
+    second = await chat_store.list_conversations(cursor=ConversationCursor.of(resume), limit=1)
 
-    assert [conversation.session_id for conversation in first.conversations] == [newer.session_id]
-    assert [conversation.session_id for conversation in second.conversations] == [older.session_id]
+    assert first.session_id == newer.session_id
+    assert [conversation.session_id for conversation in second] == [older.session_id]
 
 
 async def test_two_sessions_created_in_one_instant_are_paged_exactly_once_each(
@@ -305,12 +306,120 @@ async def test_two_sessions_created_in_one_instant_are_paged_exactly_once_each(
             .values(created_at=datetime(2026, 8, 12, 9, 0, tzinfo=UTC))
         )
 
-    page = await chat_store.list_conversations(after=None, limit=1)
-    rest = await chat_store.list_conversations(after=page.next_cursor, limit=10)
+    page, resume = await chat_store.list_conversations(cursor=None, limit=2)
+    rest = await chat_store.list_conversations(cursor=ConversationCursor.of(resume), limit=10)
 
-    assert [conversation.session_id for conversation in [*page.conversations, *rest.conversations]] == sorted(
+    assert [conversation.session_id for conversation in [page, *rest]] == sorted(
         [first.session_id, second.session_id], reverse=True
     )
+
+
+async def test_exchanges_page_by_their_own_keyset(chat_store, operator_id) -> None:
+    """`(started_at, turn_id)`, because two exchanges of one session can share a start instant and
+    a cursor naming only the timestamp would step over one of a tied pair."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    for index in range(3):
+        await chat_store.enqueue_prompt(operator_id, view.session_id, f"prompt {index}")
+        turn = await chat_store.next_prompt(view.session_id)
+        assert turn is not None
+        await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
+
+    # One row past the page, exactly as the tool asks: the cursor names the first row not returned.
+    *page, resume = await chat_store.list_turns(view.session_id, cursor=None, limit=3)
+    rest = await chat_store.list_turns(view.session_id, cursor=TurnCursor.of(resume), limit=5)
+
+    assert len(page) == 2
+    assert [turn.turn_id for turn in rest] == [resume.turn_id]
+
+
+async def test_the_transcript_reads_the_conversation_rather_than_the_protocol(chat_store, operator_id) -> None:
+    """The neutral half of the read surface: what a session meant, with a way back to the frames
+    it was read off."""
+    session, _ = await chat_store.create(operator_id, SpaSession())
+    await chat_store.record_frame(
+        session.session_id,
+        FrameDirection.FROM_AGENT,
+        "assistant",
+        {
+            "type": "assistant",
+            "message": {"id": "msg_1", "role": "assistant", "content": [{"type": "text", "text": "hi"}]},
+        },
+    )
+    await chat_store.record_frame(
+        session.session_id, FrameDirection.FROM_AGENT, "result", {"type": "result", "subtype": "success", "uuid": "r1"}
+    )
+
+    transcript = await chat_store.read_transcript(session.session_id, cursor=None, limit=10)
+
+    assert [entry.kind for entry in transcript.entries] == ["message", "turn_end"]
+    assert transcript.entries[0].text == "hi"
+    named = await chat_store.read_frames(
+        session.session_id,
+        cursor=FrameCursor(frame_seq=transcript.entries[0].provenance.first_frame_seq),
+        limit=1,
+        kinds=None,
+    )
+    assert named[0].payload["message"]["id"] == "msg_1", "provenance points at the frame it was read off"
+
+
+async def test_a_transcript_page_holds_what_the_whole_session_holds_at_that_position(chat_store, operator_id) -> None:
+    """The fold runs from the session's first frame however far in the cursor is, so a page
+    boundary cannot close a message the whole session does not end there."""
+    session, _ = await chat_store.create(operator_id, SpaSession())
+    for index in range(3):
+        await chat_store.record_frame(
+            session.session_id,
+            FrameDirection.FROM_AGENT,
+            "assistant",
+            {
+                "type": "assistant",
+                "message": {"id": "msg_1", "role": "assistant", "content": [{"type": "text", "text": f"{index} "}]},
+            },
+        )
+        await chat_store.record_frame(
+            session.session_id,
+            FrameDirection.FROM_AGENT,
+            "result",
+            {"type": "result", "subtype": "success", "uuid": f"r{index}"},
+        )
+
+    whole = await chat_store.read_transcript(session.session_id, cursor=None, limit=100)
+    first = await chat_store.read_transcript(session.session_id, cursor=None, limit=3)
+    rest = await chat_store.read_transcript(session.session_id, cursor=TranscriptCursor(index=3), limit=100)
+
+    assert first.entries + rest.entries == whole.entries
+    assert [entry.index for entry in whole.entries] == list(range(len(whole.entries)))
+
+
+async def test_deltas_are_not_on_the_transcript_at_all(chat_store, operator_id) -> None:
+    """They are recorded, and `read_rollout` still serves them by name — but the prose they carry
+    arrives again whole in the message that follows, so a reader of a finished conversation would
+    get it twice."""
+    session, _ = await chat_store.create(operator_id, SpaSession())
+    await chat_store.record_frame(
+        session.session_id,
+        FrameDirection.FROM_AGENT,
+        "stream_event",
+        {
+            "type": "stream_event",
+            "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "h"}},
+        },
+    )
+    await chat_store.record_frame(
+        session.session_id,
+        FrameDirection.FROM_AGENT,
+        "assistant",
+        {
+            "type": "assistant",
+            "message": {"id": "msg_1", "role": "assistant", "content": [{"type": "text", "text": "hi"}]},
+        },
+    )
+
+    transcript = await chat_store.read_transcript(session.session_id, cursor=None, limit=10)
+
+    assert [entry.kind for entry in transcript.entries] == ["message"]
+    assert transcript.unreadable is None
 
 
 async def test_operator_conversation_read_surface_keeps_inventory_and_transcript_separate(
@@ -578,7 +687,7 @@ async def test_a_session_that_ended_does_not_report_a_turn_it_left_open(
 
     assert await chat_store.expire_stale_leases() == 1
 
-    [record] = await chat_store.list_turns(str(view.session_id), limit=10)
+    [record] = await chat_store.list_turns(str(view.session_id), cursor=None, limit=10)
     assert record.ended_at is None, "nothing ran to close it, and the record should say so"
     assert (await chat_store.get(operator_id, view.session_id)).status == SessionStatus.FAILED
 

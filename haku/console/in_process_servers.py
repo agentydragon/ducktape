@@ -48,10 +48,10 @@ class InProcessServerDependencies:
 
     routine_launcher: routine_tools.RoutineLauncher | None = None
     hostexec: HostexecServerConfig | None = None
-    # The chat runtime's rollout store, satisfying `conversations_tools.RolloutReader`
+    # The chat runtime's session store, satisfying `conversations_tools.ConversationReader`
     # structurally — set only when the Claude runtime is configured, since without it there are
     # no sessions to read.
-    rollout: conversations_tools.RolloutReader | None = None
+    conversations: conversations_tools.ConversationReader | None = None
     # The semantic index over haku-state's files and past conversations — set only when
     # `config.yaml` lists the server, which is also what requires an embedder to be configured.
     index: state_index_tools.IndexSearcher | None = None
@@ -76,9 +76,9 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
         servers[routine_tools.HAKU_ROUTINE_SERVER_ID] = const_in_process_server(
             routine_tools.build_mcp(dependencies.routine_launcher)
         )
-    if dependencies.rollout is not None:
+    if dependencies.conversations is not None:
         servers[conversations_tools.HAKU_CONVERSATIONS_SERVER_ID] = const_in_process_server(
-            conversations_tools.build_mcp(dependencies.rollout)
+            conversations_tools.build_mcp(dependencies.conversations)
         )
     if dependencies.index is not None:
         servers[state_index_tools.HAKU_INDEX_SERVER_ID] = const_in_process_server(

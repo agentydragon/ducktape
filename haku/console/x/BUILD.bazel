@@ -27,9 +27,11 @@ py_library(
     name = "session_store",
     srcs = ["session_store.py"],
     deps = [
+        ":claude_projection",
         ":session_frames",
         ":session_notifications",
         ":session_views",
+        ":transcript_entries",
         "//haku/cli_protocol:frame_identity",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
@@ -57,6 +59,15 @@ py_library(
         ":conversation_events",
         ":session_frames",
         "//haku/console:chat_models",
+    ],
+)
+
+py_library(
+    name = "transcript_entries",
+    srcs = ["transcript_entries.py"],
+    deps = [
+        ":conversation_events",
+        "//haku/console/tools:conversations",
     ],
 )
 
@@ -211,6 +222,7 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "//haku/console/tools:conversations",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
@@ -250,6 +262,19 @@ py_test(
         ":conversation_events",
         "//:conftest",
         "//haku/console:chat_models",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_transcript_entries",
+    srcs = ["test_transcript_entries.py"],
+    deps = [
+        ":claude_projection",
+        ":transcript_entries",
+        "//:conftest",
+        "//haku/console/tools:conversations",
+        "@pypi//more_itertools",
         "@pypi//pytest_bazel",
     ],
 )

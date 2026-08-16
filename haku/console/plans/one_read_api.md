@@ -6,7 +6,7 @@ same questions off the same tables:
 | Question                         | REST                                 | MCP (`haku_conversations`)   |
 | -------------------------------- | ------------------------------------ | ---------------------------- |
 | which sessions are there         | `GET /api/conversations`             | `list_conversations`         |
-| what was said (interpreted)      | `GET /api/conversations/{id}`        | —                            |
+| what was said (interpreted)      | `GET /api/conversations/{id}`        | `read_transcript`            |
 | the raw protocol log             | `GET /api/conversations/{id}/frames` | `read_rollout`, `read_frame` |
 | the exchanges and what they cost | (nested in the detail view)          | `list_turns`                 |
 

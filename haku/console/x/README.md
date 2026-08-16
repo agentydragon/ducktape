@@ -131,15 +131,18 @@ so linking one message to its frames is a filter over this view, not a second re
 deliberately not guessed at here: the join key the transcript has today (`agent_message_id`) is
 missing on thousands of production rows, which is why that change exists.
 
-## The neutral projection — built, and not wired to anything yet
+## The neutral projection — read-only so far
 
 `conversation_events.py` is the provider-neutral vocabulary a conversation is read as — text,
 messages, reasoning, a tool-call lifecycle, harness activity, a completed turn — and
 `claude_projection.py` is the pure function from Claude's frames into it. Together they are the one
-interpreter that <../../plans/chat_runtime_projection.md> § stage 4 replaces four with. **Nothing
-calls them**: the fold that puts `_run_turn` on them is a separate change, and until it lands the
-turn loop, `adopt_open_turn`, `rollout_calls` and `coarse_status` still each read frames their own
-way.
+interpreter that <../../plans/chat_runtime_projection.md> § stage 4 replaces four with.
+
+**One reader is on them: `haku_conversations.read_transcript`.** `SessionStore.read_transcript`
+folds a session and `transcript_entries.py` maps the result onto the MCP surface's wire models.
+Nothing _writes_ through them yet — the fold that puts `_run_turn` on the projection is a separate
+change, and until it lands the turn loop, `adopt_open_turn`, `rollout_calls` and `coarse_status`
+still each read frames their own way.
 
 Three properties to preserve when that fold arrives:
 

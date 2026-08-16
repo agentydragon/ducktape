@@ -1054,7 +1054,7 @@ transcript with every tool result missing (R5.5):
    conversation, skim it, read the part that matters — so no tool can return a whole session's
    rollout and each call's payload stays bounded. Context is the scarce resource here, not rows.
 
-   **Shaped as a cursor over the frame log, not as turns.** `read_rollout(session_id, after_seq,
+   **Shaped as a cursor over the frame log, not as turns.** `read_rollout(session_id, cursor,
 limit, kinds)` pages `session_frames` by its `frame_seq`, and skimming is a `kinds`
    filter — assistant text and tool names — rather than a coarser unit. Three reasons it is
    better than the turn-shaped version this used to specify. It needs no schema change, so it is
