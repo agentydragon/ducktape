@@ -130,7 +130,7 @@ proven resumable. Cursor first, on the review-attention argument.
 
 ### 4. The neutral events, stored
 
-The table `session_channels.md` § 3 wants for lifecycle, the table
+The table <../console/plans/session_channels.md> § 3 wants for lifecycle, the table
 <chat_runtime_cleanup.md> § stage 7 calls a `tool_call` table, and the table #4143 says the
 provenance requirement has to move to are **one table**. This plan makes that explicit, because
 the two design docs currently name two:
