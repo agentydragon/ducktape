@@ -221,7 +221,10 @@ py_wheel(
     },
     python_requires = ">=3.13",
     # SYNC: This list must match propagatedBuildInputs in nix/packages/default.nix
-    # (ducktape-git-hooks). When adding a dependency, update BOTH places.
+    # (ducktape-git-hooks). When adding a dependency, update BOTH places. That
+    # list currently carries two extras under a CLEANUP tombstone — it is checked
+    # against the *pinned* released wheel, which lags this list by one pin
+    # rotation; read the tombstone before "fixing" the mismatch.
     requires = [
         "networkx",
         "opentelemetry-api",
