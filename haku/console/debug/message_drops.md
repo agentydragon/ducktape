@@ -162,15 +162,38 @@ The loss that does exist is upstream: `_serviced` (`matrix_sync.py:282-300`) dro
 messages with a warning and the watermark advances regardless; when it returns `[]` the entire batch
 is discarded and acknowledged. Warned, so not silent — still unrecoverable.
 
-### I3. The batch is acknowledged at enqueue, not at turn completion — R2.5 is not satisfied
+### I3. The batch is acknowledged at enqueue, not at turn completion — FIXED (#4110)
 
-`save_batch` runs as soon as `offer` returns, which is as soon as `enqueue_prompt` commits. A
-session dying between enqueue and the turn orphans the prompt: `expire_stale_leases` fails the
+`save_batch` ran as soon as `offer` returned, which is as soon as `enqueue_prompt` commits. A
+session dying between enqueue and the turn orphaned the prompt: `expire_stale_leases` fails the
 session, the supervisor creates a **new** `session_id`, and the old prompt row is keyed to the dead
 one, so `next_prompt` never sees it. Acknowledged on the homeserver, queued in a dead session,
 never answered. The room hears only "session ended … starting a new one".
 
-Needs a session death, so a weaker candidate here — the plainest requirement violation on this side.
+Needed a session death, so a weaker candidate here — the plainest requirement violation on this
+side.
+
+Fixed by **deferring the acknowledgement to the turn, without holding the batch here either**. A
+batch that reaches a session leaves a `matrix_held_batch` row carrying the `/sync` token it ended
+at and the transcript row `enqueue_prompt` minted; the watermark stays where it was until the
+prompt's fate (`SessionStore.prompt_fate`) comes back. `COMPLETED` — the turn ended, whatever its
+`TurnOutcome` — publishes the held token; `LOST` — the session ended without the prompt ever
+reaching a turn that ran — drops the row and leaves the watermark, so the next pass offers the same
+messages to the replacement session. Nothing is copied anywhere: the homeserver is still the queue,
+exactly as it is for a refusal.
+
+Two things fell out of it that are worth knowing before changing this code:
+
+- **The loop reads ahead of what it promises.** Polling from the watermark while holding it would
+  re-deliver the batch a session already has on every pass — and `/sync` long-polls only for data
+  the caller has _not_ been sent, so it would return instantly for the whole length of a turn. The
+  held token is the poll cursor; the watermark is the promise. That also means there is no
+  message-level dedupe to get right: the delivered events are simply behind the cursor.
+- **`FAILED` and `ABORTED` acknowledge.** Holding out for `ANSWERED` would wedge ingress behind the
+  first turn that does not produce one — the same non-convergence that made an unreadable event
+  something to announce rather than refuse (I1). The cost is explicit: a turn that ran and died
+  takes its batch with it, which is exactly what R2.5 licenses ("losing an in-flight turn to a
+  crash is acceptable") and what R8.4 tells the agent to expect.
 
 ### I4. Backfill page cap
 
@@ -196,7 +219,7 @@ change deleted `offer`'s status pre-check — admission is `enqueue_prompt`'s al
 | ------------------------------------------------- | ------------------------ | ----------------------------------------------------- |
 | R1.6 no inbound message silently dropped          | Fixed (#4087)            | was `matrix_client.py:422,440` + `matrix_sync.py:323` |
 | R1.7 downtime recovery, never skip silently       | Satisfied in spirit      | `matrix_client.py:447` logs loudly, still advances    |
-| R2.5 batch acknowledged after its turn completes  | **Not satisfied**        | `matrix_sync.py:318-323` acks on enqueue              |
+| R2.5 batch acknowledged after its turn completes  | Fixed (#4110)            | was `matrix_sync.py:318-323`, acked on enqueue        |
 | R11.2 every turn speaks                           | Fixed (#4088)            | was `matrix_session.py:247-249`                       |
 | R11.6 produced reply never lost silently, retried | Fixed (`session_outbox`) | was `matrix_pacer.py:152-162`                         |
 
@@ -217,7 +240,7 @@ reply — the second of those because writing a turn's last word before closing 
 what keeps it from being stranded, is also what lets a replacement replica re-derive it.
 
 **Does not close** E3 (the drain never produced the reply) or I2–I4 (ingress acknowledgement
-semantics). E3 has since been fixed in its own change — the abort drain is the main loop, so it
-processes `assistant` frames like anything else. What is left is moving `save_batch` behind turn
-completion. E5 and I1 were on this list and were likewise fixed in their own changes, which is the
-shape the rest should take.
+semantics). E3, E5, I1 and I3 have each since been fixed in a change of their own, which is the
+shape the rest should take. What is left on this list is I2's other half — a batch whose messages
+all come from an unserviced room is still discarded and acknowledged, warned about but
+unrecoverable — and I4's backfill page cap.

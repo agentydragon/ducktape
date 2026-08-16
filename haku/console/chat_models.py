@@ -55,6 +55,28 @@ class TurnOutcome(StrEnum):
     FAILED = "failed"
 
 
+class PromptFate(StrEnum):
+    """What became of an accepted prompt, for a caller still owing an acknowledgement for it.
+
+    `enqueue_prompt` accepting a prompt is not the same as anything working on it: the session it
+    was queued against can end before it is ever claimed, and the replacement session's
+    `next_prompt` never sees a row keyed to its predecessor. A surface that acknowledged the
+    prompt's source the moment it was accepted therefore has no way back to it — which is what
+    Matrix ingress asks this to avoid (R2.5).
+    """
+
+    IN_FLIGHT = "in_flight"
+    # Its turn ended, whatever the turn's `TurnOutcome` was. **A failed or aborted turn is a
+    # completed one here**: waiting for `ANSWERED` would hold a source's acknowledgement against
+    # a turn that will never produce one, and re-offering work that already crashed the runtime
+    # once converges no better than re-offering an unreadable event does (message_drops.md I1).
+    COMPLETED = "completed"
+    # Its session ended without it ever being claimed into a turn that ran, so nothing will
+    # answer it. The prompt is not re-queued anywhere: the source still holds it, and offering it
+    # again to the replacement session is the only thing that can answer it.
+    LOST = "lost"
+
+
 class ChatMessageRole(StrEnum):
     USER = "user"
     ASSISTANT = "assistant"

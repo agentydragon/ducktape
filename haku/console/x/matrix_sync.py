@@ -5,7 +5,11 @@ hands what the operator types to the session behind that room.
 
 A batch the session cannot take yet is not held here: the watermark simply is not
 advanced, so the homeserver re-delivers it next pass. Queue-until-turn-end (R2.2) and
-"nothing is silently dropped" (R1.6) then need no local queue at all.
+"nothing is silently dropped" (R1.6) then need no local queue at all. A batch the session
+*took* is not acknowledged here either, until the turn answering it has ended (R2.5) — the same
+mechanism, extended over the one gap it did not cover, where a session that dies between the
+enqueue and the turn leaves the prompt keyed to itself and the operator's message answered by
+nobody (<../debug/message_drops.md> I3).
 
 The one thing that mechanism cannot cover is an event Haku has no way to read — a screenshot,
 a voice memo — because re-offering it would never converge on an answer. Those are announced in
@@ -24,14 +28,16 @@ import datetime
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from uuid import UUID
 
 from pydantic import SecretStr
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from haku.console.chat_models import PromptFate
 from haku.console.config import MatrixConfig
-from haku.console.database_schema import MatrixSyncState
+from haku.console.database_schema import MatrixHeldBatch, MatrixSyncState
 from haku.console.x.matrix_client import (
     EventTag,
     InboundMessage,
@@ -54,16 +60,45 @@ _SYNC_ADVISORY_LOCK = 0x4D58_5359  # "MXSY"
 LEADER_RETRY = datetime.timedelta(seconds=30)
 # Backoff after a failed sync, so a homeserver outage does not become a hot loop.
 ERROR_BACKOFF = datetime.timedelta(seconds=10)
-# Backoff after a refused batch. `sync_once` deliberately does not advance the watermark on
-# refusal (R2.2 — Matrix itself holds the message), but that means the same still-unread events
-# match the next `/sync` immediately: Synapse's long-poll only blocks waiting for *new* data,
-# and to it nothing looks new. Without this, a turn in flight while a message is waiting turns
-# into a hot loop bounded only by round-trip time to the homeserver (observed: ~20/s).
-REFUSED_BATCH_BACKOFF = datetime.timedelta(seconds=1)
+# Backoff after a pass that did not advance the watermark: a batch the session refused, or one
+# whose turn is still running while newer messages wait behind it. Those events match the next
+# `/sync` immediately — Synapse's long-poll only blocks waiting for *new* data, and to it nothing
+# looks new — so without this a turn in flight while a message is waiting becomes a hot loop
+# bounded only by round-trip time to the homeserver (observed: ~20/s). A batch that is merely
+# waiting on its turn with nothing behind it does not need this: the poll runs from past that
+# batch, so the homeserver has nothing to hand back and blocks as it should (`SyncPosition`).
+UNADVANCED_BATCH_BACKOFF = datetime.timedelta(seconds=1)
+
+
+@dataclass(frozen=True)
+class HeldBatch:
+    """A batch already with a session, whose acknowledgement is waiting on that session's turn."""
+
+    next_batch: str
+    message_id: UUID
+
+
+@dataclass(frozen=True)
+class SyncPosition:
+    """Where the loop may say it has got to, and where it actually reads from.
+
+    The two differ while a batch is held, and the distinction is R2.5: `watermark` is a promise —
+    everything before it has been answered, and a crash resumes there — while `since` is only a
+    cursor. Reading from the watermark instead would re-deliver, every pass, events a session
+    already has, which is both re-offered work and a `/sync` that can never block (it is being
+    asked for data the homeserver has already sent).
+    """
+
+    watermark: str | None
+    held: HeldBatch | None
+
+    @property
+    def since(self) -> str | None:
+        return self.watermark if self.held is None else self.held.next_batch
 
 
 class MatrixSyncStore:
-    """Durable sync state: the access token we cached and the watermark we reached."""
+    """Durable sync state: the token we cached, the watermark we reached, and the batch we owe."""
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]):
         self._sessions = sessions
@@ -82,18 +117,56 @@ class MatrixSyncStore:
             else:
                 row.access_token = token
 
+    async def position(self, user_id: str) -> SyncPosition:
+        async with self._sessions() as db:
+            state = await db.scalar(select(MatrixSyncState).where(MatrixSyncState.user_id == user_id))
+            held = await db.scalar(select(MatrixHeldBatch).where(MatrixHeldBatch.user_id == user_id))
+        return SyncPosition(
+            watermark=state.next_batch if state is not None else None,
+            held=None if held is None else HeldBatch(next_batch=held.next_batch, message_id=held.message_id),
+        )
+
     async def save_batch(self, user_id: str, next_batch: str) -> None:
         """Advance the watermark.
 
-        Written only after the batch's events have been acted on: the token is what makes
-        an outage replay rather than skip (R1.7), so persisting it early loses messages.
+        Written only for a batch that is finished with: the token is what makes an outage replay
+        rather than skip (R1.7), so persisting it early loses messages. A batch that has been
+        handed to a session is not finished with — that one goes through `hold`.
         """
         async with self._sessions() as db, db.begin():
-            row = await db.scalar(select(MatrixSyncState).where(MatrixSyncState.user_id == user_id))
-            if row is None:
-                db.add(MatrixSyncState(user_id=user_id, access_token=None, next_batch=next_batch))
-            else:
-                row.next_batch = next_batch
+            await self._advance(db, user_id, next_batch)
+
+    async def hold(self, user_id: str, next_batch: str, message_id: UUID) -> None:
+        """Withhold *next_batch* until the turn answering *message_id* has ended (R2.5)."""
+        async with self._sessions() as db, db.begin():
+            db.add(MatrixHeldBatch(user_id=user_id, next_batch=next_batch, message_id=message_id))
+
+    async def acknowledge(self, user_id: str) -> None:
+        """Publish the held batch's token as the watermark and stop holding it.
+
+        One transaction, because the two halves are one statement: a watermark advanced without
+        the row going too would hold the *next* batch against a turn that has already ended, and
+        a row deleted without the watermark advancing would re-offer a batch already answered.
+        """
+        async with self._sessions() as db, db.begin():
+            held = await db.scalar(select(MatrixHeldBatch).where(MatrixHeldBatch.user_id == user_id))
+            if held is None:
+                return
+            await self._advance(db, user_id, held.next_batch)
+            await db.delete(held)
+
+    async def abandon(self, user_id: str) -> None:
+        """Stop holding the batch without acknowledging it, so the next pass offers it again."""
+        async with self._sessions() as db, db.begin():
+            await db.execute(delete(MatrixHeldBatch).where(MatrixHeldBatch.user_id == user_id))
+
+    @staticmethod
+    async def _advance(db: AsyncSession, user_id: str, next_batch: str) -> None:
+        row = await db.scalar(select(MatrixSyncState).where(MatrixSyncState.user_id == user_id))
+        if row is None:
+            db.add(MatrixSyncState(user_id=user_id, access_token=None, next_batch=next_batch))
+        else:
+            row.next_batch = next_batch
 
 
 class MatrixSyncService:
@@ -264,15 +337,21 @@ class MatrixSyncService:
     async def recent_history(self, limit: int) -> tuple[InboundMessage, ...]:
         """The tail of the live room's conversation, for re-awakening a replacement session.
 
-        Empty before the loop has ever synced: with no watermark there is no pagination token
-        to read back from, and a room nothing has synced has nothing in it that Haku said.
+        Reads back from the furthest position the loop has reached rather than from the watermark,
+        which are the same token except while a batch is held — and that exception is exactly when
+        this is called. A session replacing one that died mid-batch would otherwise be handed a
+        history stopping short of the messages that killed it, including the one it is about to be
+        offered.
+
+        Empty before the loop has ever synced: with no position there is no pagination token to
+        read back from, and a room nothing has synced has nothing in it that Haku said.
         """
         conversation = await self._conversations.load(self._config.user_id)
-        state = await self._store.load(self._config.user_id)
-        if conversation is None or state is None or state.next_batch is None:
+        position = await self._store.position(self._config.user_id)
+        if conversation is None or position.since is None:
             return ()
         return await self._client.recent_messages(
-            await self._token(), conversation.room_id, since=state.next_batch, limit=limit
+            await self._token(), conversation.room_id, since=position.since, limit=limit
         )
 
     async def announce(self, body: str, kind: RoomEventKind = RoomEventKind.LIFECYCLE) -> None:
@@ -317,32 +396,71 @@ class MatrixSyncService:
         return serviced
 
     async def sync_once(self, token: str) -> bool:
-        """One `/sync` pass: act on what came back, then advance the watermark.
+        """One `/sync` pass: act on what came back, and say whether the watermark moved.
 
-        Returns False, without advancing, when the session cannot take the batch. That is the
-        whole queue-until-turn-end mechanism (R2.2): the events stay unacknowledged on the
-        homeserver and the next pass re-offers them, so nothing needs to be held here. The
-        caller backs off on a False so re-offering does not become a hot loop against a
-        homeserver that only long-polls for genuinely new data (`REFUSED_BATCH_BACKOFF`).
+        It moves only for a batch that is finished with. A batch the session cannot take yet
+        leaves it where it is — the whole queue-until-turn-end mechanism (R2.2): the events stay
+        unacknowledged on the homeserver and the next pass re-offers them, so nothing needs to be
+        held here. A batch the session *did* take leaves it there too, until the turn answering it
+        has ended (R2.5), which is what makes a session dying before that turn recoverable rather
+        than a message acknowledged to nobody.
+
+        The caller backs off on a False so re-offering does not become a hot loop against a
+        homeserver that only long-polls for genuinely new data (`UNADVANCED_BATCH_BACKOFF`).
         """
-        state = await self._store.load(self._config.user_id)
-        result = await self._client.sync(token, state.next_batch if state else None)
+        position = await self._store.position(self._config.user_id)
+        result = await self._client.sync(token, position.since)
         for invite in result.invites:
             await self._handle_invite(token, invite)
         # Read after the invites, so a room bound by this very batch serves it too.
         live_room = await self._live_room(token, result.messages)
-        if messages := self._serviced(result.messages, live_room):
-            if not await self._turns.offer(messages):
-                self._report_holding(live_room, len(messages))
-                return False
+        # Resolved after the sync rather than before it, so a turn that ended while this pass was
+        # long-polling is acknowledged and its successor offered in the same pass, instead of
+        # costing the next message a whole backoff.
+        if position.held is not None and not await self._resolve(position.held, live_room, result.messages):
+            return False
+        messages = self._serviced(result.messages, live_room)
+        # `None` from a batch that was offered means the session cannot take it; `None` with no
+        # batch to offer means there was nothing to hand over, and `messages` tells them apart.
+        delivered = await self._turns.offer(messages) if messages else None
+        if messages and delivered is None:
+            self._report_holding(live_room, len(messages))
+            return False
+        if delivered is not None:
             self._holding = False
             logger.info("Matrix: handed %d message(s) to the session", len(messages))
-        # After the offer, so a batch that was refused is not announced on every re-offer; and on
-        # this path only, which is the one that advances the watermark — so each unreadable event
-        # is announced exactly once, on the pass that acknowledges it.
+        # After the offer, so a batch that was refused is not announced on every re-offer — an
+        # unreadable event is announced on the pass its batch is taken, exactly once, because from
+        # then on the loop reads from past it.
         self._report_unreadable(live_room, self._serviced(result.unmappable, live_room))
-        await self._store.save_batch(self._config.user_id, result.next_batch)
-        return True
+        if delivered is None:
+            await self._store.save_batch(self._config.user_id, result.next_batch)
+            return True
+        await self._store.hold(self._config.user_id, result.next_batch, delivered)
+        return False
+
+    async def _resolve(self, held: HeldBatch, live_room: str | None, arrived: tuple[InboundMessage, ...]) -> bool:
+        """Settle a batch already with a session; False while it is still owed an answer.
+
+        The three fates are three things to do with the watermark, and `MatrixTurns.fate` is where
+        the mapping is argued. `LOST` returns False having stopped holding, because the batch it
+        needs to offer again is *behind* the cursor this pass read from — only a pass starting
+        from the watermark will see it, which is the next one.
+        """
+        match await self._turns.fate(held.message_id):
+            case PromptFate.IN_FLIGHT:
+                self._report_holding(live_room, len(self._serviced(arrived, live_room)))
+                return False
+            case PromptFate.LOST:
+                logger.warning(
+                    "Matrix: the session holding prompt %s ended without answering it; offering the batch again",
+                    held.message_id,
+                )
+                await self._store.abandon(self._config.user_id)
+                return False
+            case PromptFate.COMPLETED:
+                await self._store.acknowledge(self._config.user_id)
+                return True
 
     async def _live_room(self, token: str, messages: tuple[InboundMessage, ...]) -> str | None:
         """The room being serviced, adopting one from traffic when nothing is bound.
@@ -372,8 +490,11 @@ class MatrixSyncService:
         turn in flight, a sandbox still provisioning, and no session at all — and the first
         message ever sent to a fresh room hits the last of those, where announcing "until
         the current turn finishes" describes a turn that does not exist.
+
+        Nothing waiting is not a hold: a pass that is only waiting on a turn to end, with an empty
+        room behind it, has nothing to report and would otherwise announce a hold on every turn.
         """
-        if self._holding or live_room is None:
+        if self._holding or live_room is None or not count:
             return
         self._holding = True
         self._queue_notice(live_room, f"holding {count} message(s) until Haku is ready", RoomEventKind.HOLDING)
@@ -407,7 +528,7 @@ class MatrixSyncService:
         while True:
             try:
                 if not await self.sync_once(token):
-                    await asyncio.sleep(REFUSED_BATCH_BACKOFF.total_seconds())
+                    await asyncio.sleep(UNADVANCED_BATCH_BACKOFF.total_seconds())
             except MatrixAuthError:
                 logger.warning("Matrix: access token rejected, logging in again")
                 token = await self._token()

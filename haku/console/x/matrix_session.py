@@ -28,7 +28,7 @@ from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import LIVE_SESSION_STATUSES, SessionStatus
+from haku.console.chat_models import LIVE_SESSION_STATUSES, PromptFate, SessionStatus
 from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.database_schema import MatrixConversation
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
@@ -147,6 +147,10 @@ class MatrixTurns:
     next pass re-offers it — which is what makes queue-until-turn-end (R2.2) and "no
     message is silently dropped" (R1.6) fall out of machinery that already exists, with no
     second durable queue to keep correct.
+
+    **Acceptance is not delivery either**, which is why `offer` names the prompt it made and
+    `fate` reports on it: the same contract has to hold for a batch a session took and then died
+    without answering, and the only thing that can answer it is the caller offering it again.
     """
 
     def __init__(
@@ -161,19 +165,23 @@ class MatrixTurns:
         self._chat_store = chat_store
         self._identities = identities
 
-    async def offer(self, messages: Sequence[InboundMessage]) -> bool:
-        """Enqueue `messages` as one prompt. False if the session cannot take it yet.
+    async def offer(self, messages: Sequence[InboundMessage]) -> UUID | None:
+        """Enqueue `messages` as one prompt, and name it. None if the session cannot take it yet.
 
         The whole batch or none of it: a partial enqueue followed by a refusal would be
         re-offered on the next pass and deliver its accepted half twice.
+
+        What is returned is the transcript row the prompt became, which is the caller's durable
+        handle on it — the one thing that survives this process and can be asked, later and from
+        another replica, whether the batch was ever answered (`fate`).
         """
         conversation = await self._conversations.load(self._config.user_id)
         if conversation is None or conversation.session_id is None:
             logger.info("Matrix: no session bound yet, holding %d message(s)", len(messages))
-            return False
+            return None
         operator_id = await self._identities.resolve_configured_external_user_key(self._config.operator_subject)
         try:
-            await self._chat_store.enqueue_prompt(operator_id, conversation.session_id, _as_prompt(messages))
+            prompt = await self._chat_store.enqueue_prompt(operator_id, conversation.session_id, _as_prompt(messages))
         except (RuntimeError, KeyError) as error:
             # Admission is `enqueue_prompt`'s alone, and it decides under `SELECT … FOR UPDATE`.
             # A status read here first could only ever agree with a decision that had not been
@@ -186,8 +194,23 @@ class MatrixTurns:
             # room a "holding" notice, instead of stalling ingress in a retry loop that says
             # nothing to the operator.
             logger.info("Matrix: session %s refused the batch: %s", conversation.session_id, error)
-            return False
-        return True
+            return None
+        return prompt.message_id
+
+    async def fate(self, message_id: UUID) -> PromptFate:
+        """What became of a batch this accepted, for a caller that has not acknowledged it yet.
+
+        The three answers are three things the sync loop must do with its watermark, and the
+        mapping is the whole of R2.5:
+
+        - `IN_FLIGHT` — keep holding. The turn is still coming or still running.
+        - `COMPLETED` — acknowledge. The turn ended; a `FAILED` or `ABORTED` one counts, because
+          a batch held until it succeeds is a batch held forever the first time one does not.
+        - `LOST` — stop holding *without* acknowledging, so the next pass offers the batch to the
+          replacement session. This is the state that made the acknowledgement premature: the
+          prompt row is keyed to a session that has ended, where nothing will ever read it.
+        """
+        return await self._chat_store.prompt_fate(message_id)
 
 
 def _as_prompt(messages: Sequence[InboundMessage]) -> str:

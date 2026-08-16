@@ -1234,6 +1234,10 @@ class MatrixSyncState(Base):
 
     One row per bot user. `next_batch` is the watermark that makes an outage replay
     rather than skip; `access_token` is cached because Synapse rate-limits `/login`.
+
+    **It is a promise, not a position.** Everything before it has been acted on, so it is only
+    ever written for a batch that is finished with. A batch handed to a session is not that, and
+    the loop reads further ahead than this while one is outstanding — see `MatrixHeldBatch`.
     """
 
     __tablename__ = "matrix_sync_state"
@@ -1280,3 +1284,37 @@ class MatrixConversation(Base):
         PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="SET NULL"), nullable=True
     )
     joined_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MatrixHeldBatch(Base):
+    """A batch already handed to a session, whose `/sync` acknowledgement is being withheld.
+
+    R2.5 says a batch is acknowledged **after its turn completes**, and one watermark cannot say
+    that: `matrix_sync_state.next_batch` used to be written the moment `enqueue_prompt` committed,
+    so a session dying between the enqueue and the turn left the prompt keyed to the dead session
+    — invisible to the replacement's `next_prompt` — while the homeserver had been told the
+    message was handled (<x/../debug/message_drops.md> I3).
+
+    This row is the deferral, and its **existence is the state**: `next_batch` is where the
+    watermark moves once the turn ends, and `message_id` is the transcript row `enqueue_prompt`
+    minted, which is the durable link on to the turn (`session_turn_prompts` → `session_turns`).
+    No second copy of the batch is kept — the homeserver still holds it, exactly as for a refusal.
+
+    **Two positions, one promise.** While this row exists the loop polls from `next_batch` and
+    acknowledges only up to `matrix_sync_state.next_batch`. Polling from the older one instead
+    would re-deliver events a session already has on every pass, and a `/sync` asking for data it
+    already has returns at once rather than long-polling — a turn taking minutes would become a
+    hot loop for its whole length.
+
+    `ON DELETE CASCADE` is load-bearing rather than hygiene: a prompt whose transcript row went
+    with its session is a prompt nothing can answer, and losing this row is exactly right — the
+    watermark never moved, so the next pass re-offers the batch to the replacement session.
+    """
+
+    __tablename__ = "matrix_held_batch"
+
+    user_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    next_batch: Mapped[str] = mapped_column(Text, nullable=False)
+    message_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("session_messages.message_id", ondelete="CASCADE"), nullable=False
+    )

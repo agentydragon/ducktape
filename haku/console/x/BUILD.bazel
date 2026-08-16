@@ -211,6 +211,7 @@ py_test(
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
+        "//haku/console:database_schema",
         "//haku/console/x/testing:synapse_container",
         "//util:net",
         "//util/bazel:runfiles",
@@ -218,6 +219,7 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -352,6 +354,7 @@ py_library(
         ":matrix_outbox",
         ":matrix_pacer",
         ":matrix_session",
+        "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:database_schema",
         "@pypi//sqlalchemy",
@@ -394,6 +397,7 @@ py_test(
     size = "medium",  # provisions a Postgres database per test
     srcs = ["test_matrix_sync.py"],
     deps = [
+        ":claude_chat",
         ":conftest",
         ":matrix_client",
         ":matrix_outbox",
@@ -401,8 +405,10 @@ py_test(
         ":matrix_session",
         ":matrix_sync",
         "//:conftest",
+        "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:conftest",
+        "//haku/console:database_schema",
         "@pypi//pydantic",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",

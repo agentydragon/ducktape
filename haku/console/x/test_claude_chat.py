@@ -23,6 +23,7 @@ from haku.console.chat_models import (
     ChatMessageStatus,
     ChatSurface,
     FrameDirection,
+    PromptFate,
     SessionStatus,
     TurnOutcome,
 )
@@ -1263,6 +1264,63 @@ async def test_a_prompt_from_a_replica_that_wrote_no_queue_row_is_still_answered
         await chat_store.enqueue_prompt(operator_id, view.session_id, "mine")
 
 
+@pytest.fixture
+async def accepted_prompt(chat_store: SessionStore, operator_id: UUID) -> tuple[UUID, UUID]:
+    """A ready session and one prompt it has accepted — where `prompt_fate` starts from."""
+    view, token = await chat_store.create(operator_id, MatrixSession(room_id=MATRIX_ROOM))
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    prompt = await chat_store.enqueue_prompt(operator_id, view.session_id, "what were we doing")
+    return view.session_id, prompt.message_id
+
+
+async def test_a_prompt_still_waiting_for_its_turn_is_in_flight(chat_store, accepted_prompt) -> None:
+    _, message_id = accepted_prompt
+
+    assert await chat_store.prompt_fate(message_id) == PromptFate.IN_FLIGHT
+
+
+@pytest.mark.parametrize("outcome", list(TurnOutcome))
+async def test_a_prompt_is_complete_once_its_turn_ends_however_it_ended(
+    chat_store, accepted_prompt, outcome: TurnOutcome
+) -> None:
+    """The source of an acknowledgement is owed an answer about the turn, not a good one: a batch
+    held until its turn succeeds is a batch held forever the first time one does not."""
+    session_id, message_id = accepted_prompt
+    turn = await chat_store.next_prompt(session_id)
+    assert turn is not None
+    await chat_store.end_turn(turn.turn_id, outcome)
+
+    assert await chat_store.prompt_fate(message_id) == PromptFate.COMPLETED
+
+
+async def test_a_prompt_a_dead_session_never_claimed_is_lost(chat_store, accepted_prompt) -> None:
+    """`message_drops.md` I3, at the layer that can see it. The row is still there and still
+    unclaimed; what makes it unanswerable is that its session is over and the supervisor's
+    replacement has a different `session_id`, so `next_prompt` will never read it."""
+    session_id, message_id = accepted_prompt
+    await chat_store.fail(session_id, "the sandbox went away")
+
+    assert await chat_store.prompt_fate(message_id) == PromptFate.LOST
+
+
+async def test_a_turn_left_open_by_a_dead_session_is_lost_too(chat_store, accepted_prompt) -> None:
+    """An open turn is only in flight while something holds the session that would close it."""
+    session_id, message_id = accepted_prompt
+    assert await chat_store.next_prompt(session_id) is not None
+    await chat_store.fail(session_id, "the runtime failed")
+
+    assert await chat_store.prompt_fate(message_id) == PromptFate.LOST
+
+
+async def test_a_prompt_whose_session_was_deleted_is_lost(chat_store, accepted_prompt, migrated_sessions) -> None:
+    """The transcript row goes with its session, and a fate that cannot be read is not a hold."""
+    session_id, message_id = accepted_prompt
+    async with migrated_sessions.begin() as db:
+        await db.execute(delete(Session).where(Session.session_id == session_id))
+
+    assert await chat_store.prompt_fate(message_id) == PromptFate.LOST
+
+
 async def test_a_matrix_batch_offered_mid_turn_is_still_held(
     chat_store, conversations, migrated_identity_store, operator_id
 ) -> None:
@@ -1284,7 +1342,7 @@ async def test_a_matrix_batch_offered_mid_turn_is_still_held(
         ]
     )
 
-    assert offered is False
+    assert offered is None
 
 
 async def test_a_batch_offered_to_a_session_that_is_gone_is_held_rather_than_raised(
@@ -1309,7 +1367,7 @@ async def test_a_batch_offered_to_a_session_that_is_gone_is_held_rather_than_rai
         [InboundMessage(room_id=MATRIX_ROOM, event_id="$1", sender=MATRIX_OPERATOR, body="hi", origin_server_ts=1)]
     )
 
-    assert offered is False
+    assert offered is None
 
 
 async def test_the_view_says_responding_for_as_long_as_the_turn_is_open(chat_store, operator_id) -> None:

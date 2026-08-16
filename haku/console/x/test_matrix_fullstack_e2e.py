@@ -47,8 +47,11 @@ from uuid import UUID
 
 import pytest
 import pytest_bazel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import SessionStatus
+from haku.console.chat_models import ChatMessageRole, SessionStatus
+from haku.console.database_schema import SessionMessage
 from haku.console.x.claude_chat import ASSISTANT_FRAME_KIND, SessionStore
 from haku.console.x.testing.synapse_container import Account, Synapse, run_synapse
 from util.bazel.runfiles import get_required_path
@@ -118,10 +121,21 @@ class Deployment:
     """
 
     def __init__(
-        self, *, name: str, environment: dict[str, str], bot_user_id: str, port: int, state: Path, store: SessionStore
+        self,
+        *,
+        name: str,
+        environment: dict[str, str],
+        bot_user_id: str,
+        port: int,
+        state: Path,
+        store: SessionStore,
+        sessions: async_sessionmaker[AsyncSession],
     ):
         self.bot_user_id = bot_user_id
         self._name = name
+        self._sessions = sessions
+        # Sandboxes this test killed on purpose, so their exit is not read as one that wedged it.
+        self._abandoned: set[UUID] = set()
         self.stub_state = state / "stub"
         self.stub_state.mkdir()
         self.sessions: list[UUID] = []
@@ -167,6 +181,39 @@ class Deployment:
         console.terminate()  # SIGTERM, which is what Kubernetes sends a pod it is replacing.
         async with asyncio.timeout(120):
             await console.wait()
+
+    async def kill_sandbox(self, session_id: UUID) -> None:
+        """Kill the sandbox behind *session_id* and leave it dead, with the console still running.
+
+        `SIGKILL` so no finalizer runs, which is the sandbox loss `expire_stale_leases` is the only
+        observer of. What it opens is not a race to win: the console reads the dropped socket as a
+        lease handed back, and the session's row stays `ready` and adoptable for a whole
+        `ADOPTION_GRACE` — so a message sent into that window is accepted by a session that will
+        never claim it.
+        """
+        self._abandoned.add(session_id)
+        runner = self._runners[session_id]
+        runner.kill()
+        await runner.wait()
+
+    async def wait_until_queued(self, session_id: UUID, body: str) -> None:
+        """Wait until *body* is a prompt row on *session_id*.
+
+        The premise of the test that kills a sandbox: if the message were merely refused and held
+        by the homeserver it would be answered by the replacement whatever the watermark did, and
+        the test would pass without exercising anything.
+        """
+
+        async def queued() -> bool:
+            async with self._sessions() as db:
+                prompts = await db.scalars(
+                    select(SessionMessage.content).where(
+                        SessionMessage.session_id == session_id, SessionMessage.role == ChatMessageRole.USER
+                    )
+                )
+            return any(body in prompt for prompt in prompts)
+
+        await self.wait_until(f"{body!r} to be queued against session {session_id}", queued)
 
     async def serving(self) -> UUID:
         """Wait until the room has a sandbox behind it with the bridge up, and say which session.
@@ -236,7 +283,7 @@ class Deployment:
         if self._console is not None and self._console.returncode is not None:
             raise WedgedError(f"the console exited with status {self._console.returncode}")
         for session_id, runner in self._runners.items():
-            if runner.returncode is not None:
+            if runner.returncode is not None and session_id not in self._abandoned:
                 raise WedgedError(f"the runner for session {session_id} exited with status {runner.returncode}")
         if self._sandboxes is not None and self._sandboxes.done():
             raise WedgedError(f"nothing is provisioning sandboxes: {self._sandboxes.exception()}")
@@ -268,7 +315,10 @@ class Deployment:
                 )
                 self.sessions.append(session_id)
             for session_id in set(self._runners) - claimed:
-                self._runners.pop(session_id).terminate()
+                # Guarded, not assumed alive: a test may already have killed this one, and
+                # `terminate()` on a reaped process raises and would take this loop with it.
+                if (runner := self._runners.pop(session_id)).returncode is None:
+                    runner.terminate()
             await asyncio.sleep(0.1)
 
     async def aclose(self) -> None:
@@ -318,6 +368,7 @@ async def deployment(
     synapse: Synapse,
     operator: Account,
     migrated_db_url: str,
+    migrated_sessions: async_sessionmaker[AsyncSession],
     chat_store: SessionStore,
     tmp_path: Path,
     request: pytest.FixtureRequest,
@@ -355,6 +406,7 @@ async def deployment(
         port=port,
         state=state,
         store=chat_store,
+        sessions=migrated_sessions,
     )
     try:
         yield deployment
@@ -496,6 +548,40 @@ async def test_every_message_is_answered_exactly_once_across_a_console_roll(depl
     await deployment.wait_for_reply(room, "re: three")
 
     assert room.replies() == ["re: one", "re: two", "re: three"]
+
+
+async def test_a_message_accepted_by_a_dying_session_is_answered_by_its_replacement(
+    deployment: Deployment, room: Room
+) -> None:
+    """The ingress half of the same lie: **accepted** was being treated as **answered**.
+
+    `sync_once` acknowledged a batch the moment `enqueue_prompt` committed, and a prompt row is
+    keyed to the session it was queued against. So a session that ended before claiming it — its
+    sandbox gone, `expire_stale_leases` failing the row, the supervisor minting a *new*
+    `session_id` — left the message acknowledged on the homeserver and queued where nothing would
+    ever look: the replacement's `next_prompt` reads its own session, and the room heard only
+    "session … ended … starting a new one" (<../debug/message_drops.md> I3, R2.5).
+
+    The window needs no timing: a killed sandbox leaves the session `ready` for a whole
+    `ADOPTION_GRACE`, which is why `wait_until_queued` can assert the message really was accepted
+    by the doomed session rather than refused and held by the homeserver — the second of which
+    would have been answered correctly all along and would make this test prove nothing.
+
+    What answers it now is the batch never having been acknowledged: the watermark stayed behind
+    it, the prompt's fate came back `LOST`, and the same messages were offered to the session that
+    replaced the one that died.
+    """
+    await deployment.start_console("console-1")
+    doomed = await deployment.serving()
+    room.say("one")
+    await deployment.wait_for_reply(room, "re: one")
+
+    await deployment.kill_sandbox(doomed)
+    room.say("two")
+    await deployment.wait_until_queued(doomed, "two")
+
+    await deployment.wait_for_reply(room, "re: two")
+    assert room.replies() == ["re: one", "re: two"]
 
 
 if __name__ == "__main__":

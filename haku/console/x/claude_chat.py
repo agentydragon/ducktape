@@ -34,6 +34,7 @@ from haku.console.chat_models import (
     ChatMessageStatus,
     ChatSurface,
     FrameDirection,
+    PromptFate,
     SessionStatus,
     TurnOutcome,
 )
@@ -516,6 +517,39 @@ class SessionStore:
             await notify(db, SessionEventKind.PROMPT, session_id)
             await notify(db, SessionEventKind.UPDATE, session_id)
         return message_view(message, NO_CALLS)
+
+    async def prompt_fate(self, message_id: UUID) -> PromptFate:
+        """Say whether an accepted prompt is still coming, has been through a turn, or is stranded.
+
+        For a surface that has not yet acknowledged the prompt's source — Matrix ingress holds its
+        `/sync` watermark on this (R2.5). What it is asking is the question `enqueue_prompt`
+        returning cannot answer: a session can accept a prompt and then end before anything claims
+        it, and the supervisor's replacement session is a different `session_id`, so the row is
+        left where nothing will ever look.
+
+        The turn is read through `session_turn_prompts`, which is the only durable statement that
+        *this* prompt was what a turn ran; the session's status decides the rest, because an open
+        turn on a session nobody holds is one nothing will close. A prompt whose transcript row
+        has gone (its session was deleted) is stranded by the same reasoning.
+        """
+        async with self._sessions() as db:
+            row = (
+                await db.execute(
+                    select(SessionTurn.ended_at, Session.status)
+                    .select_from(SessionMessage)
+                    .join(Session, Session.session_id == SessionMessage.session_id)
+                    .outerjoin(SessionTurnPrompt, SessionTurnPrompt.message_id == SessionMessage.message_id)
+                    .outerjoin(SessionTurn, SessionTurn.turn_id == SessionTurnPrompt.turn_id)
+                    .where(SessionMessage.message_id == message_id)
+                    .order_by(SessionTurn.ended_at.desc().nullslast())
+                )
+            ).first()
+        if row is None:
+            return PromptFate.LOST
+        ended_at, status = row
+        if ended_at is not None:
+            return PromptFate.COMPLETED
+        return PromptFate.IN_FLIGHT if status in LIVE_SESSION_STATUSES else PromptFate.LOST
 
     async def next_prompt(self, session_id: UUID) -> TurnStart | None:
         """Take the queued prompt and open the turn that will answer it, or None if there is none.

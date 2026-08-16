@@ -90,6 +90,19 @@ Three behaviours worth knowing before reading the code:
   read outside `enqueue_prompt`'s `SELECT … FOR UPDATE` could only agree with a decision that had
   not been made yet. It takes the refusal — `RuntimeError` for a session that cannot take the
   batch, `KeyError` for a session row that has gone — and tells the room it is holding.
+- **An accepted batch is not acknowledged either, until its turn ends** (R2.5). Acceptance is a
+  prompt row, and a session that ends before claiming it leaves that row where its replacement
+  cannot see it, so acknowledging at the enqueue lost the message outright
+  (<../debug/message_drops.md> I3). The deferral is a `matrix_held_batch` row: the `/sync` token
+  the batch ended at, plus the transcript row it became, which is the durable link on to the turn.
+  A turn that **ended** publishes the token — failed and aborted turns included, because holding
+  out for an answer wedges ingress behind the first turn that never produces one — and a prompt
+  whose session ended without it drops the row and leaves the watermark, so the same messages are
+  offered to the replacement session. **The loop reads ahead of what it promises**: while the row
+  exists the poll starts from the held token, so a batch already with a session is not re-delivered
+  every pass (and `/sync` can still block, which it cannot when asked for data it has already
+  sent). There is still no local queue and no message-level dedupe — the homeserver holds the
+  batch, and the delivered events are simply behind the cursor.
 - **An event Haku cannot read is announced, not held.** `m.text` and `m.emote` are prose and are
   serviced; an `m.image`, `m.file`, voice memo, or an msgtype invented after this release is
   carried out of the sync as an `UnmappableEvent`, said out loud in the room, and then

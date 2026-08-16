@@ -146,10 +146,20 @@ a handoff to another pod. How the gap is actually closed lives in
   rendered prompt.
 - **R2.4 [v1]** Each message in a batch carries its provenance into the prompt: sender,
   timestamp, `event_id`, and thread root.
-- **R2.5 [v1]** A batch is acknowledged after its turn completes. **Losing an in-flight
+- **R2.5 [built]** A batch is acknowledged after its turn completes. **Losing an in-flight
   turn to a crash is acceptable** — resuming partial turn state is not required. Losing a
   _message_ is not acceptable: an unacknowledged batch is redelivered, so re-running a
   batch must be safe.
+
+  The acknowledgement is deferred rather than the batch being queued anywhere: a
+  `matrix_held_batch` row carries the `/sync` token and the prompt row the batch became, and the
+  watermark moves only once that prompt's turn has **ended** — including when it failed or was
+  aborted, since a batch held until a turn succeeds is a batch held forever the first time one
+  does not. A prompt whose session ended before any turn ran is the case this exists for: the row
+  is dropped, the watermark is not, and the same messages are offered to the replacement session.
+  Two positions, because the loop must poll from past a batch it is still holding — see
+  <../console/x/README.md> and <../console/debug/message_drops.md> I3.
+
 - **R2.6 [v1]** Batches have a size cap. Overflow splits across consecutive turns
   preserving order; it never truncates.
 - **R2.7 [v1] Debounce.** Batching also applies when the session is **idle**, not only
@@ -998,9 +1008,11 @@ Two of the three items that were still open here have since landed:
 Still Phase 3:
 
 - `event_id` dedupe (R1.2) and startup reconciliation from the last processed event (R1.7).
-  Unbuilt, and unchanged by the above: `matrix_sync_state` holds `next_batch` and nothing else, so
-  duplicate suppression is still the watermark alone and a crash between processing and persisting
-  it replays the batch.
+  Unbuilt: duplicate suppression is still positional, and a crash between processing a batch and
+  persisting where it got to replays it. R2.5's `matrix_held_batch` narrows the window rather than
+  closing it — the batch a session took is remembered, so a crash mid-turn replays that batch and
+  nothing before it, but a crash between `enqueue_prompt` committing and the held row being written
+  still replays a batch the session already has.
 
 ### Phase 4 — Make it pleasant
 
