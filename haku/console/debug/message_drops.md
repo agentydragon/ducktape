@@ -59,17 +59,31 @@ by construction**: given the structural fact above, the Matrix surface reports s
 so this only closes failures the surface can actually see. It removes one of the two layers of the
 lie; E1 is the other.
 
-### E3. Assistant messages arriving during the abort drain are discarded entirely
+### E3. Assistant messages arriving during the abort drain are discarded entirely — FIXED
 
-`claude_chat.py`, the abort drain in `_run_turn` (`if remaining.get("type") == RESULT_FRAME_KIND`). It looks only for `RESULT_FRAME_KIND`; an `assistant` frame
+`claude_chat.py`, the abort drain in `_run_turn` (`if remaining.get("type") == RESULT_FRAME_KIND`). It looked only for `RESULT_FRAME_KIND`; an `assistant` frame
 arriving between the interrupt and the result — the normal case, since the CLI finishes the message
-it is mid-way through — is thrown away. No `update_assistant`, no row, no delivery. The text exists
-only in the rollout (the recorder is at the transport layer, so the frame _is_ in
-`session_frames`) and appears nowhere an operator looks.
+it is mid-way through — was thrown away. No `update_assistant`, no row, no delivery. The text existed
+only in the rollout (the recorder is at the transport layer, so the frame _was_ in
+`session_frames`) and appeared nowhere an operator looks.
 
-Needs an abort, not a reconnection. Nothing logs it. Structurally untested: `_InterruptedCli.frames`
-sets the abort only after its whole script has been yielded, so the drain never sees an `assistant`
-frame. **An outbox does not close this** — the reply never reaches the delivery layer at all.
+Needed an abort, not a reconnection. Nothing logged it. **An outbox did not close this** — the reply
+never reached the delivery layer at all.
+
+Fixed by **deleting the second loop**: the interrupt now sets a flag that stops the one loop racing
+the abort event, and every frame after it is folded in by the same `match` as every frame before it.
+So there is no separate account of what an `assistant` frame means, which is the failure mode that
+produced this one (<../../plans/chat_runtime_projection.md>'s two state machines). A drained message
+counts towards `spoke` and `saw_assistant_message` exactly as a mid-loop one does, so the room is not
+also owed `result.result` (which repeats it) and no second message row is minted for it — leaving
+`ABORTED_NOTICE` to be said on its own, as the single `turn_id`-keyed outbox row the turn writes, so
+`uq_session_outbox_turn` cannot be violated. Abort semantics are unchanged: the turn still ends, the
+notice is still said, the session survives.
+
+It was structurally untested — `_InterruptedCli.frames` sets the abort only after its whole script
+has been yielded, so the drain never saw an `assistant` frame. `_CliFinishingItsMessage` queues one
+ahead of the interrupt's `result`, and
+`test_a_message_the_agent_finished_before_stopping_survives_the_drain` is the regression.
 
 ### E4. A turn that raises after streaming loses what it produced
 
@@ -202,7 +216,8 @@ partial unique indexes (`message_id`, `turn_id`) stop a second row existing for 
 reply — the second of those because writing a turn's last word before closing the turn, which is
 what keeps it from being stranded, is also what lets a replacement replica re-derive it.
 
-**Does not close** E3 (the drain never produces the reply) or I2–I4 (ingress acknowledgement
-semantics). Each needs its own fix: process `assistant` frames in the abort drain, and move
-`save_batch` behind turn completion. E5 and I1 were on this list and have since been fixed in
-their own changes, which is the shape the rest should take.
+**Does not close** E3 (the drain never produced the reply) or I2–I4 (ingress acknowledgement
+semantics). E3 has since been fixed in its own change — the abort drain is the main loop, so it
+processes `assistant` frames like anything else. What is left is moving `save_batch` behind turn
+completion. E5 and I1 were on this list and were likewise fixed in their own changes, which is the
+shape the rest should take.

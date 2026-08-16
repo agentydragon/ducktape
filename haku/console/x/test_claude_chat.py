@@ -703,6 +703,25 @@ class _InterruptedCli(_FakeCli):
             yield frame
 
 
+class _CliFinishingItsMessage(_InterruptedCli):
+    """Interrupted mid-message, and finishes that message before the `result` — which is what a
+    real CLI does, since the interrupt reaches it with a message already part written.
+
+    `_InterruptedCli` on its own cannot reach that: the `result` is the first thing its drain sees,
+    so every frame a drain has to make sense of is one it never receives.
+    """
+
+    def __init__(self, script: list[dict[str, Any]], *, abort_event: asyncio.Event, finishing: dict[str, Any]) -> None:
+        super().__init__(script, abort_event=abort_event)
+        self._finishing = finishing
+
+    async def interrupt(self) -> None:
+        # Queued before `super()` queues the `result`, so the message the CLI was writing arrives
+        # ahead of the frame that ends the turn — which is the order that makes it a drained one.
+        self._queue.put_nowait(self._finishing)
+        await super().interrupt()
+
+
 async def _turn_into_a_room(
     chat_store: SessionStore,
     migrated_sessions: async_sessionmaker[AsyncSession],
@@ -939,6 +958,36 @@ async def test_a_turn_aborted_mid_answer_queues_its_notice_once(
     )
 
     assert queued == [f"because the disk was full\n\n{ABORTED_NOTICE}"]
+
+
+async def test_a_message_the_agent_finished_before_stopping_survives_the_drain(
+    chat_store, migrated_sessions, recording_claims, notifications, operator_id
+) -> None:
+    """<../debug/message_drops.md> E3 — the drop an outbox cannot close, because the reply never
+    reached the delivery layer at all.
+
+    An abort does not land between messages; it lands inside one, and the CLI finishes what it was
+    writing before it stops. Draining only to the `result` discarded that `assistant` frame
+    entirely: no transcript row, no outbox row, not even a log line, the text left in
+    `session_frames` where no operator is looking. It is a message like any other, so the room is
+    owed it like any other — and its arrival is exactly what makes the abort notice a row of its
+    own instead of a suffix on text that no message row carries.
+    """
+    abort_event = asyncio.Event()
+    client = _CliFinishingItsMessage(
+        [_assistant({"type": "text", "text": "Looking at the logs now."})],
+        abort_event=abort_event,
+        finishing=_assistant({"type": "text", "text": "Found it: a bad config."}),
+    )
+
+    queued = await _turn_into_a_room(
+        chat_store, migrated_sessions, recording_claims, notifications, operator_id, client, abort_event=abort_event
+    )
+
+    assert client.interrupted
+    # The drained message once, then the notice on its own — and nothing from the interrupt's own
+    # `result` frame ("stopped"), which the finished message is what makes redundant.
+    assert queued == ["Looking at the logs now.", "Found it: a bad config.", ABORTED_NOTICE]
 
 
 async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(

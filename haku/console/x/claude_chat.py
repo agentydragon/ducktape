@@ -1477,28 +1477,37 @@ class SessionService:
         status = self._turn_status(room_id)
         status.start()
         aborted = asyncio.ensure_future(abort_event.wait())
+        # Set once the abort has been seen and the CLI interrupted, from which point this loop
+        # stops racing the abort event and drains what is left of the turn to its `result`.
+        interrupted = False
         try:
             while True:
-                # Exactly one `anext` in flight, and the abort path consumes the one it finds
-                # rather than starting another: an async generator refuses to be advanced twice at
-                # once, and an abort always arrives while this call is parked here.
+                # Exactly one `anext` in flight, and the drain consumes the one it finds rather
+                # than starting another: an async generator refuses to be advanced twice at once,
+                # and an abort always arrives while this call is parked here.
                 next_frame = asyncio.ensure_future(anext(frames))
-                await asyncio.wait([next_frame, aborted], return_when=asyncio.FIRST_COMPLETED)
-                if abort_event.is_set():
-                    with contextlib.suppress(Exception):
-                        await client.interrupt()
-                    # Drain to this turn's end, beginning with the frame already asked for. The
-                    # stream stays open for the next turn: it is the session's, so an interrupt
-                    # ends a turn rather than the conversation.
-                    while True:
-                        remaining = await next_frame
-                        if remaining.get("type") == RESULT_FRAME_KIND:
-                            result = remaining
-                            break
-                        next_frame = asyncio.ensure_future(anext(frames))
-                    break
-                # Not aborted, so `asyncio.wait` returned because the frame arrived.
-                frame = next_frame.result()
+                if not interrupted:
+                    await asyncio.wait([next_frame, aborted], return_when=asyncio.FIRST_COMPLETED)
+                    if interrupted := abort_event.is_set():
+                        with contextlib.suppress(Exception):
+                            await client.interrupt()
+                # **The drain is this loop, not a second one beside it.** The CLI finishes the
+                # message it is mid-way through, so an `assistant` frame between the interrupt and
+                # the `result` is the normal case — and a drain that looked only for the `result`
+                # threw it away: no row, no outbox row, no delivery, the text surviving only in
+                # `session_frames` where nobody looks (<../debug/message_drops.md> E3). A message
+                # the agent finished before it stopped is a message, so it is folded in by the one
+                # piece of code that knows what folding one in means.
+                #
+                # It therefore counts towards `spoke` and `saw_assistant_message` exactly as it
+                # would have a moment earlier, which is what keeps the tail below honest: the room
+                # is not owed `result.result` as well (it repeats that message), and no second row
+                # is minted for it — leaving `ABORTED_NOTICE` to be said on its own, as the one
+                # `turn_id`-keyed row this turn writes.
+                #
+                # The stream stays open for the next turn: it is the session's, so an interrupt
+                # ends a turn rather than the conversation.
+                frame = await next_frame
                 status.note(frame)
                 match frame.get("type"):
                     case "stream_event":
