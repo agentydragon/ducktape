@@ -39,11 +39,14 @@ redone.
 
 In flight, and treated as in-flight rather than as new work:
 
-| What                                            | Where                             | Note                                                                                                                |
-| ----------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| The projection becomes a reducer                | `claude/haku-projection-reducer2` | Spine item 1. No PR yet at the time of writing                                                                      |
-| `claude_bridge/` → `bridge/`                    | #4141                             | The runtime half of the directory finish; independent of everything else here                                       |
-| Block style where Flux rewrites, plus the guard | #4147                             | Not chat-runtime work, and it matters anyway: it is what stops unrelated PRs going red on a file they never touched |
+| What                                            | Where | Note                                                                                                                              |
+| ----------------------------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------- |
+| The projection becomes a reducer                | #4149 | **Landed.** Spine item 1                                                                                                          |
+| A numbered frame at the console's boundary      | #4164 | **Landed.** Spine item 2 — `_UNNUMBERED_FRAME` deleted                                                                            |
+| The status line reads events, not Claude frames | #4162 | **Landed.** Parallel item A, with the observable status text unchanged                                                            |
+| `claude_bridge/` → `bridge/`                    | #4141 | **Landed.** The runtime half of the directory finish                                                                              |
+| Block style where Flux rewrites, plus the guard | #4147 | **Landed.** Not chat-runtime work, and it matters anyway: it is what stopped unrelated PRs going red on a file they never touched |
+| The runner numbers the frames it sends          | #4166 | In flight. R1 of the numbering the durable cursor reads; § 2b of <chat_runtime_projection.md> holds the schedule                  |
 
 Everything the previous month planned and landed is in `git log` and in the PRs; this document
 does not re-list it. What it does assume, and what a reader should check before trusting the
@@ -51,6 +54,15 @@ ordering below: the outbox is durable and record-first, turn state is on the tur
 columns exist on `session_messages` with the ordering half of their `CHECK`, a stored tool call is
 a `RecordedToolCall` rather than a Claude content block, and `x/` is split into the runtime,
 `channels/matrix/` and `claude_code/`.
+
+**The drift audit is discharged into this document.**
+<../console/debug/2026*08_16_plan_code_drift.md> read every chat-runtime plan against the code and
+found nineteen divergences. Its § Discharged maps each one: most closed on `devel`, and the rest
+are items here rather than a separate list — row 3's provenance `CHECK` and row 4's backfill are
+both inside item 4, row 9 is item C, row 16 is in \_Not this month* with the reason, and row 17 is
+superseded by the splits that have since landed. **That audit is now a dated snapshot, not a
+worklist**; a fresh one is worth running when plan and code have drifted again, but re-deriving
+those rows would only produce a second table saying what this one says.
 
 ## Settle this before writing any of the spine
 

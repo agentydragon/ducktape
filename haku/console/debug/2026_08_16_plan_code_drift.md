@@ -61,3 +61,28 @@ landed against it, so a reader knows which rows are spent without having to re-c
 Projection)`. The durable per-session cursor it exists for is still owed. Rows 3 and 14 have not
 closed; row 3 grew an answer instead, recorded on the plan itself (#4143): the requirement is not
 expressible against `session_messages` and moves to the neutral events.
+
+## Discharged (2026-08-16, later the same day)
+
+**This audit is now a dated snapshot rather than a live worklist.** Every row is either closed on
+`devel` or owned by a named item in <../../plans/next_month.md>, so the place to look for what is
+still owed is the plan, not this table. One further correction to the section above: **row 7 has
+closed** — #4134 merged, so the turn loop reads the projection.
+
+Where the rest went:
+
+| Row                            | Disposition                                                                                                                                                                                                                                                                     |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1, 7                           | Closed (#4149, #4134)                                                                                                                                                                                                                                                           |
+| 2, 5, 6, 8, 12, 13, 15, 18, 19 | Closed, as recorded above                                                                                                                                                                                                                                                       |
+| 3                              | Plan item 4 — the provenance union becomes a `CHECK` on the **event** row, which is the answer #4143 reached. Promoting the existing `session_messages` check to `VALIDATE` is explicitly _not this month_                                                                      |
+| 4                              | Plan item 4 — the reprojection tool **is** the backfill, and is the same tool the drift check wants; written once, used for both                                                                                                                                                |
+| 9                              | Plan item C — the SSE route retires with the `/chat` + `/conversations` merge, which is also the item named as the one to cut if the month runs short                                                                                                                           |
+| 10, 11                         | Corrected in the design docs themselves at the time; nothing owed                                                                                                                                                                                                               |
+| 14                             | Open **by decision**, not by drift — re-marked `[built, minus the marking]`, with the condition that brings it back (a channel with no idempotency key)                                                                                                                         |
+| 16                             | Plan § Not this month, with the reason: an increment cannot be named without a stored event stream (item 4) addressed by a per-consumer position (item 3), so it is a consequence of the spine rather than an item beside it                                                    |
+| 17                             | **Superseded.** The file that was 2,233 lines is now `session_runtime.py` at 1,034 and `session_store.py` at 1,394, after the store split (#4146) and the archaeology prune (#4156). What is left to cut is inside the service, and the plan's item D covers the directory half |
+
+**Do not re-run this audit against these rows.** A fresh audit is worth doing when the plan and the
+code have drifted again — that is what this document is for — but re-deriving these findings would
+produce a second table saying what the plan already says.
