@@ -30,6 +30,12 @@ component checklist rather than being copied here: haku-console's tool/API backl
   floor is visibly marked rather than silently degraded; and restarting a runner is an operator
   action on the session instead of `kubectl delete pod` in a namespace the console's own agent
   identity cannot reach. The restart stays the operator's call, because it ends the live turn.
+  **Deleting the pod is not the restart.** Tried on 2026-08-16: the `Sandbox` owning it recreated
+  it within seconds on the same `devel-20260815044840-88846f1`, because the pod template was
+  rendered from the `SandboxTemplate` when the claim was made and the tag is pinned there, not
+  resolved per pod. So cycling a session onto a newer runner means replacing the `Sandbox` — which
+  ends the session rather than the turn, and is why this wants a real action with a warning rather
+  than an operator reaching for `kubectl`.
 - **Prove retry-safe tool-call admission.** Add fault injection for "the durable admission commit
   succeeded, the HTTP/MCP response was lost, and the caller retried." Specify and implement a
   caller-visible idempotency key scoped by canonical Operator and Agent binding if the current path
