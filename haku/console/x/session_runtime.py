@@ -34,7 +34,7 @@ from haku.console.operator_auth import OperatorActorDep
 
 # As a module: its `RecordedFrame` is a row of the frame log, and `cli_client`'s is where a sink
 # put one frame. Two different things with one name, so neither gets to drop its surname here.
-from haku.console.x import claude_projection
+from haku.console.x.claude_code import projection
 from haku.console.x.conversation_events import (
     ActivityCompleted,
     ActivityStarted,
@@ -559,7 +559,7 @@ class SessionService:
         """Ask *turn*'s question if it has not been asked, then consume the stream until the turn
         completes.
 
-        **Project, then act.** Every frame goes through `claude_projection` and this loop acts on
+        **Project, then act.** Every frame goes through `claude_code.projection` and this loop acts on
         the neutral events that come back, so what it knows about is prose, messages, tool calls
         and a completed turn — not `assistant`, `stream_event` and `result`. That is the seam a
         second backend arrives through: another adapter into the same vocabulary, rather than a
@@ -842,14 +842,14 @@ def _projected(received: ReceivedFrame) -> tuple[ConversationEvent, ...]:
     `FrameRange` is two integers on purpose, since "no frames at all" is `Authored` rather than a
     null range.
     """
-    return claude_projection.project(
+    return projection.project(
         [
-            claude_projection.RecordedFrame(
+            projection.RecordedFrame(
                 frame_seq=received.frame_seq if received.frame_seq is not None else _UNNUMBERED_FRAME,
                 payload=received.payload,
             )
         ],
-        delta_source=claude_projection.DeltaSource.STREAM_EVENTS,
+        delta_source=projection.DeltaSource.STREAM_EVENTS,
     ).events
 
 

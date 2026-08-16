@@ -48,7 +48,7 @@ It costs no latency either — the fold runs inline in the happy path. Two loops
 stack in practice.
 
 **This paragraph is the specification, and the first implementation of it diverged.** The
-`claude_projection.py` arriving with stage 4 (#4134) is `project(frames) -> Projection` — stateless
+`claude_code/projection.py` arriving with stage 4 (#4134) is `project(frames) -> Projection` — stateless
 over a whole frame sequence, with the cross-frame state private to the call and discarded when it
 returns. That shape can be re-run over a session but it cannot be _resumed_ from a cursor, which is
 the property the paragraph above exists for: without it, live and recovery are once again two ways

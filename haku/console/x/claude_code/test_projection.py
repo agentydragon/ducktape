@@ -1,6 +1,6 @@
 """What the projection does with the shapes production actually sends.
 
-Every fixture here is built from <../debug/frame_shape_census.md> — its block combinations, its
+Every fixture here is built from <../../debug/frame_shape_census.md> — its block combinations, its
 verbatim split-message sequence, its `tool_use_result` key sets, its undocumented frame classes —
 rather than from what `protocol.md` says the wire looks like. Where the two disagree the census
 is what the code has to survive, and each test below is named for the hazard it pins.
@@ -11,7 +11,7 @@ from typing import Any
 import pytest_bazel
 
 from haku.console.chat_models import TurnOutcome
-from haku.console.x.claude_projection import DeltaSource, RecordedFrame, project
+from haku.console.x.claude_code.projection import DeltaSource, RecordedFrame, project
 from haku.console.x.conversation_events import (
     ActivityCompleted,
     ActivityStarted,

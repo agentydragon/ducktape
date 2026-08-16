@@ -59,7 +59,8 @@ from haku.console.tools.conversations import (
     TurnCursor,
     TurnRecord,
 )
-from haku.console.x import claude_projection, transcript_entries
+from haku.console.x import transcript_entries
+from haku.console.x.claude_code import projection
 from haku.console.x.session_frames import (
     ASSISTANT_FRAME_KIND,
     DELTA_FRAME_KIND,
@@ -821,7 +822,7 @@ class SessionStore:
         different one — so folding a window instead would let a page boundary close a message the
         whole session does not end there, and the same entry would read differently depending on
         which page it landed on. Determinism is the property the projection exists for
-        (<claude_projection.py>), and it is not a property of a suffix.
+        (<claude_code/projection.py>), and it is not a property of a suffix.
 
         That costs one read of the session's projectable frames per page, the same order of cost
         as `session_views.rollout_calls`, which the SPA's detail view already pays per request.
@@ -842,13 +843,13 @@ class SessionStore:
                     .order_by(SessionFrame.frame_seq)
                 )
             ).all()
-        projection = claude_projection.project(
-            claude_projection.RecordedFrame(frame_seq=row.frame_seq, payload=row.payload) for row in rows
+        projected = projection.project(
+            projection.RecordedFrame(frame_seq=row.frame_seq, payload=row.payload) for row in rows
         )
-        entries = transcript_entries.entries(projection)
+        entries = transcript_entries.entries(projected)
         start = cursor.index if cursor is not None else 0
         return TranscriptSlice(
-            entries=entries[start : start + limit], unreadable=transcript_entries.unreadable(projection)
+            entries=entries[start : start + limit], unreadable=transcript_entries.unreadable(projected)
         )
 
     async def read_operator_frames(

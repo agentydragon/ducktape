@@ -830,7 +830,7 @@ async def test_a_turn_the_cli_ended_badly_fails_even_though_is_error_says_it_did
 ) -> None:
     """`is_error` is false on all 129 production `result` frames — including every one of the 27
     sessions the console recorded as failed — so a loop that read it called every turn fine. The
-    turn's outcome is now the projection's, and that reads `subtype` (<claude_projection.py>).
+    turn's outcome is now the projection's, and that reads `subtype` (<claude_code/projection.py>).
     """
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED

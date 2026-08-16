@@ -1,0 +1,27 @@
+"""Claude Code as one CLI harness: everything that knows its wire format."""
+
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "projection",
+    srcs = ["projection.py"],
+    deps = [
+        "//haku/console:chat_models",
+        "//haku/console/x:conversation_events",
+        "//haku/console/x:session_frames",
+    ],
+)
+
+py_test(
+    name = "test_projection",
+    srcs = ["test_projection.py"],
+    deps = [
+        ":projection",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console/x:conversation_events",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -12,7 +12,7 @@ from more_itertools import one
 
 from haku.console.tools import conversations
 from haku.console.x import transcript_entries
-from haku.console.x.claude_projection import RecordedFrame, project
+from haku.console.x.claude_code.projection import RecordedFrame, project
 
 
 def _assistant(frame_seq: int, message_id: str, block: dict[str, Any]) -> RecordedFrame:

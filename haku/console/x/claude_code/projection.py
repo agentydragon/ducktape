@@ -4,13 +4,13 @@ One pure function, `project`. Determinism is the property the whole design rests
 frames always project to the same events, so re-projecting a stored session reproduces its stored
 rows exactly, drift is detectable by comparing them, and a projection bug is repairable by fixing
 the fold rather than being baked into a row forever
-(<../../plans/chat_runtime_projection.md> § stage 4).
+(<../../../plans/chat_runtime_projection.md> § stage 4).
 
 `claude_chat.py`'s turn loop is the one caller: it projects each frame as it lands and acts on the
 events. Nothing stores them yet — the durable cursor beside them is the other half of stage 4.
 
 **Written against what the wire does, not what it documents.** Every rule below that looks
-defensive is a finding from <../debug/frame_shape_census.md>, which is where the measurements
+defensive is a finding from <../../debug/frame_shape_census.md>, which is where the measurements
 live — a share of production frames is a dated observation and belongs in a dated document, not
 in a docstring that will still claim it a year from now.
 

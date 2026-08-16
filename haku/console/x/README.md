@@ -26,7 +26,11 @@ cannot compile without `matrix-nio` belongs under `channels/matrix/`. `room_stat
 worth knowing: it reads as Matrix and is not — a status line is a channel affordance the console
 surface wants too, and the driver is handed two coroutines and never learns which room it speaks
 to. `sandbox_claims.py` is the mirror case: `claude-`-prefixed claim names, but it is Kubernetes
-provisioning and would serve any harness.
+provisioning and would serve any harness. `session_frames.py` is the one that is genuinely both and
+is deliberately left whole: four of its constants are the CLI's own top-level `type` values, while
+`SETUP_OUTPUT_KIND` and `setup_output_frame` are the bridge's envelope and the console's own
+authored row — the TODO at the top of that file is the same observation, and splitting it is stage 2
+of <../../plans/chat_runtime_projection.md> rather than a placement question.
 
 ## `session_store.py` and `session_runtime.py` — the rows, and the turn loop over them
 
@@ -135,8 +139,14 @@ missing on thousands of production rows, which is why that change exists.
 
 `conversation_events.py` is the provider-neutral vocabulary a conversation is read as — text,
 messages, reasoning, a tool-call lifecycle, harness activity, a completed turn — and
-`claude_projection.py` is the pure function from Claude's frames into it. Together they are the one
-interpreter that <../../plans/chat_runtime_projection.md> § stage 4 replaces four with.
+`claude_code/projection.py` is the pure function from Claude's frames into it. Together they are the
+one interpreter that <../../plans/chat_runtime_projection.md> § stage 4 replaces four with.
+
+**The two halves sit on different levels, which is the placement rule doing its job.** The
+vocabulary names no backend and every surface renders it, so it stays at the runtime level; the
+adapter cannot be written without knowing what `assistant`, `stream_event` and `tool_use_result`
+are, so it lives under the harness directory. A second backend adds a sibling adapter and touches
+neither the vocabulary nor its readers.
 
 **Two readers are on them.** `haku_conversations.read_transcript` reads a stored session:
 `SessionStore.read_transcript` folds it and `transcript_entries.py` maps the result onto the MCP

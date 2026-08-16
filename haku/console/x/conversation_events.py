@@ -2,7 +2,7 @@
 
 The vocabulary every surface renders and every backend adapter produces. Nothing in it is
 Claude-shaped: no `assistant`, no content block, no `msg_…`, no `tool_use_result`. A Claude
-adapter (<claude_projection.py>) is the only producer today, and the point of the layer is that a
+adapter (<claude_code/projection.py>) is the only producer today, and the point of the layer is that a
 second backend is a second adapter rather than a second interpretation of what a message is
 (<../../plans/chat_runtime_projection.md> § stage 4, which counts the four interpreters this
 replaces).

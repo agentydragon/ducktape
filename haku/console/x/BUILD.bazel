@@ -6,7 +6,6 @@ py_library(
     name = "session_runtime",
     srcs = ["session_runtime.py"],
     deps = [
-        ":claude_projection",
         ":conversation_events",
         ":room_status",
         ":sandbox_claims",
@@ -17,6 +16,7 @@ py_library(
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:operator_auth",
+        "//haku/console/x/claude_code:projection",
         "//haku/runtime/x/claude_bridge:cli_client",
         "//haku/runtime/x/claude_bridge:options",
         "//haku/runtime/x/claude_bridge:protocol",
@@ -29,7 +29,6 @@ py_library(
     name = "session_store",
     srcs = ["session_store.py"],
     deps = [
-        ":claude_projection",
         ":session_frames",
         ":session_notifications",
         ":session_views",
@@ -38,6 +37,7 @@ py_library(
         "//haku/console:chat_models",
         "//haku/console:database_schema",
         "//haku/console/tools:conversations",
+        "//haku/console/x/claude_code:projection",
         "//haku/runtime/x/claude_bridge:cli_client",
         "@pypi//sqlalchemy",
     ],
@@ -52,16 +52,6 @@ py_library(
     name = "conversation_events",
     srcs = ["conversation_events.py"],
     deps = ["//haku/console:chat_models"],
-)
-
-py_library(
-    name = "claude_projection",
-    srcs = ["claude_projection.py"],
-    deps = [
-        ":conversation_events",
-        ":session_frames",
-        "//haku/console:chat_models",
-    ],
 )
 
 py_library(
@@ -254,25 +244,13 @@ py_test(
 )
 
 py_test(
-    name = "test_claude_projection",
-    srcs = ["test_claude_projection.py"],
-    deps = [
-        ":claude_projection",
-        ":conversation_events",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_transcript_entries",
     srcs = ["test_transcript_entries.py"],
     deps = [
-        ":claude_projection",
         ":transcript_entries",
         "//:conftest",
         "//haku/console/tools:conversations",
+        "//haku/console/x/claude_code:projection",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
     ],
