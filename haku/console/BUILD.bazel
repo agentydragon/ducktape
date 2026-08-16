@@ -192,6 +192,24 @@ py_library(
     ],
 )
 
+# Keep this test in haku/console rather than beside the files it reads: a BUILD file under
+# migrations/ would make it its own package, and the `glob(["migrations/**"])` here and on
+# :database_migrate would silently stop matching anything.
+py_test(
+    name = "test_migration_graph",
+    srcs = ["test_migration_graph.py"],
+    data = glob(["migrations/**"]),
+    deps = [
+        # Alembic imports every version module to read its `revision`, so what they import is a
+        # runtime dependency of this test.
+        "//haku/state_index:vector_type",
+        "@pypi//alembic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
 py_library(
     name = "capabilities",
     srcs = ["capabilities.py"],
