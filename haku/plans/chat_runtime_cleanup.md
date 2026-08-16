@@ -142,12 +142,6 @@ loop's signatures.
 - **The prompt queue's compatibility half.** The `_legacy_pending` scan is gone — every live
   replica writes a queue row. The transcript row is still minted `pending`, which is now the SPA's
   rendering of a prompt that has not started rather than a compatibility shim.
-- **`session_messages.tool_uses` and `session_turns.usage`.** Three releases, not two: `0047` and
-  `0049` added the replacements and moved the writers, the release after that unmapped both columns,
-  and the `drop_column` waits for **that** release to converge — a replica still running the mapping
-  names the column in every `SELECT` the ORM emits, so dropping it a release earlier breaks a pod
-  that is still serving. Both columns are listed in `database_schema.UNMAPPED_COLUMNS_PENDING_DROP`
-  with the gate beside them.
 
 ## Later
 

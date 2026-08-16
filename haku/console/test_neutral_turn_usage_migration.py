@@ -66,7 +66,10 @@ def test_the_backfill_reads_the_payload_the_columns_replace(db_url: str) -> None
     `cache_read_input_tokens` is the key Claude spells the cached counter with. A counter the
     payload never carried is 0 — the neutral shape's own reading of an unreported one — and a row
     with a cost but no usage object still gets counters, so its cost survives the reader's test for
-    whether an exchange was accounted for at all."""
+    whether an exchange was accounted for at all.
+
+    Run to head rather than to `0049`, which is what makes it also the safety argument for `0056`:
+    the counters are still there after the payload they were read from is dropped."""
     apply_migrations(db_url, "0048")
     engine = create_engine(sync_database_url(db_url))
     try:
@@ -110,8 +113,8 @@ def test_a_turn_closed_by_a_replica_that_never_heard_of_the_columns_is_still_leg
     """The roll's other direction. The previous image writes `usage`, `cost_usd` and `duration_ms`
     and names no counter, so the constraint that keeps the three together must read that as "no
     usage reported" rather than refusing the write — which would fail turns for the length of a
-    roll."""
-    apply_migrations(db_url)
+    roll. Stops at `0049`, the revision it is about: `0056` drops the `usage` this writes."""
+    apply_migrations(db_url, "0049")
     engine = create_engine(sync_database_url(db_url))
     try:
         with engine.begin() as conn:

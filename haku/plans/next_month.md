@@ -70,11 +70,11 @@ and ship the widening now** — the code is a line and the wait is a roll.
 ### 3. The contract halves that are now due
 
 `devel` carries expand/contract tombstones whose gate is a roll converging, each with the query that
-answers it beside the thing it guards. Two are this work's own residue: the pre-cursor adoption
-branch with
-`_recorded_completion` and `RESULT_FRAME_KIND` (#4178's, gated on `session_ttl_seconds`), and
-`session_turns.usage` (#4169's). The rest are `session_messages.tool_uses`, `_write_partial_frame`
-and its `partial` column, `_legacy_pending`, and the `include_in_schema=False` route registrations.
+answers it beside the thing it guards. One is this work's own residue: the pre-cursor adoption
+branch with `_recorded_completion` and `RESULT_FRAME_KIND` (#4178's, gated on `session_ttl_seconds`).
+The rest are `_write_partial_frame` and its `partial` column, `_legacy_pending`, and the
+`include_in_schema=False` route registrations. `session_turns.usage` (#4169's) and
+`session_messages.tool_uses` are done — `0056` dropped both.
 
 **Done when** `rg 'CLEANUP\(added' haku/console` names only tombstones whose gate query does not yet
 return clear.

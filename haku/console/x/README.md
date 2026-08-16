@@ -97,9 +97,8 @@ Two consequences worth knowing before changing it:
   that reported no usage at all.
 - **The payload is evidence, and it is in `session_frames`.** The whole `result` frame is in the
   log verbatim and the turn's range points at it, so any of these numbers can be appealed to what
-  crossed the wire. `session_turns.usage` — a JSONB copy of Claude's own `usage` object — is dead
-  and tombstoned in <../database_schema.py>; it survives this release only because a replica on the
-  previous image still selects it.
+  crossed the wire. That is why `session_turns.usage` — a JSONB copy of Claude's own `usage` object
+  — could be dropped outright in `0056` rather than migrated anywhere.
 
 **The rollout is recorded by `RolloutRecorder`, a `FrameSink` the protocol client calls.** Every
 frame either way, both channels, verbatim — the control channel included, since an interrupt that

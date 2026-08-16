@@ -57,30 +57,6 @@ class Base(DeclarativeBase):
     pass
 
 
-# Columns the database still has and this ORM deliberately does not map: the middle phase of an
-# expand/contract, where the replacement column carries the data and this release names the old one
-# nowhere, so the `drop_column` can wait for *this* release to converge instead of the one that
-# added the replacement. `test_agent_authority_schema` excludes them from its ORM-versus-database
-# comparison, which is otherwise exact.
-UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
-    {
-        # CLEANUP(added 2026-08-16): drop `session_messages.tool_uses` once every haku-console pod
-        #   runs an image at or after this commit —
-        #   `kubectl get pods -n haku-console -o jsonpath='{.items[*].spec.containers[0].image}'`
-        #   reporting a single tag at or after it. Migration 0047 put `tool_calls` beside it and
-        #   moved the writers; this release dropped the mapping, so only a replica on an image
-        #   before it still SELECTs the name. The column is NOT NULL, and an INSERT that does not
-        #   name it is satisfied by the `'[]'::jsonb` server default 0024 gave it.
-        ("session_messages", "tool_uses"),
-        # CLEANUP(added 2026-08-16): drop `session_turns.usage` on the same gate, read the same way.
-        #   Migration 0049 replaced Claude's own `usage` sub-object with the neutral counters beside
-        #   it, and this release dropped the mapping; the payload it copied is in `session_frames`
-        #   whole. Nullable, so an INSERT that omits it was always fine.
-        ("session_turns", "usage"),
-    }
-)
-
-
 class Operator(Base):
     __tablename__ = "operators"
 
