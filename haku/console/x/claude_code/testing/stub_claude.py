@@ -55,7 +55,7 @@ from pathlib import Path
 from typing import Any
 
 from haku.cli_protocol.frame_identity import frame_uid
-from haku.console.x.session_frames import frame_kind
+from haku.console.x.claude_code.frames import frame_kind
 
 _DIRECTIVE = re.compile(r"\s*\[(hold|silent|narrate=\d+)\]")
 

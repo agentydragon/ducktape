@@ -5,12 +5,27 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
+    name = "frames",
+    srcs = ["frames.py"],
+)
+
+py_library(
     name = "projection",
     srcs = ["projection.py"],
     deps = [
+        ":frames",
         "//haku/console:chat_models",
         "//haku/console/x:conversation_events",
-        "//haku/console/x:session_frames",
+    ],
+)
+
+py_test(
+    name = "test_frames",
+    srcs = ["test_frames.py"],
+    deps = [
+        ":frames",
+        "//:conftest",
+        "@pypi//pytest_bazel",
     ],
 )
 

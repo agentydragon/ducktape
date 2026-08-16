@@ -25,15 +25,22 @@ second channel must be able to reuse everything at the runtime level unchanged, 
 cannot compile without `matrix-nio` belongs under `channels/matrix/`. `room_status.py` is the case
 worth knowing: it reads as Matrix and is not — a status line is a channel affordance the console
 surface wants too, and the driver is handed two coroutines and never learns which room it speaks
-to. **Being at the right level is not the same as being neutral**, which is the trap this module
-fell into: it reads `conversation_events.py`, and a version of it matching on Claude's own frame
-`type` would be at the runtime level while still giving a second harness no status line.
-`sandbox_claims.py` is the mirror case: `claude-`-prefixed claim names, but it is Kubernetes
-provisioning and would serve any harness. `session_frames.py` is the one that is genuinely both and
-is deliberately left whole: four of its constants are the CLI's own top-level `type` values, while
-`SETUP_OUTPUT_KIND` and `setup_output_frame` are the bridge's envelope and the console's own
-authored row — the TODO at the top of that file is the same observation, and splitting it is stage 2
-of <../../plans/chat_runtime_projection.md> rather than a placement question.
+to. **Being at the right level is not the same as being neutral, and this module is where that bit:**
+it sat here while still matching on Claude's own frame `type`, its `system` subtypes and its content
+blocks, so a second harness got no status line from the module the rule had already placed above
+harnesses. It reads `conversation_events.py` now. `sandbox_claims.py` is the mirror case: `claude-`-prefixed claim names, but it is Kubernetes
+provisioning and would serve any harness. The frame vocabulary was the case that was genuinely
+both, and it is now two modules: the CLI's own top-level `type` values and the readers that pick a
+value out of one are `claude_code/frames.py`, while `setup_output.py` holds the bridge envelope's
+`kind` and the row the console authors under it.
+
+**One column still carries both**, which no placement fixes: `session_frames.kind` takes the CLI's
+`type` from `RolloutRecorder` and `setup_output` from the progress reporter, so `session_store.py`
+names four of the CLI's kinds in SQL predicates and imports them across that line — the same
+direction `claude_code/projection.py` is already imported in. Stage 2 of
+<../../plans/chat_runtime_projection.md> gives the CLI's type its own column, which is what retires
+those predicates; two of the five uses (`_write_partial_frame`, `_recorded_completion`) are already
+tombstoned on their own gates.
 
 ## `session_store.py` and `session_runtime.py` — the rows, and the turn loop over them
 
@@ -139,11 +146,11 @@ the turn loop kept their shape while the file lost the parts that never needed t
 (<../../plans/chat_runtime_cleanup.md> § Anytime). `session_store.py` is not one of them: the
 service calls it on every path, so that split is a seam and not a leaf.
 
-| Path                | Role                                                                                                                                                                             |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session_frames.py` | The `kind` vocabulary of the frame log, the two frames the console authors itself (`partial` answers and sandbox narration), and the readers that pick a value out of a payload. |
-| `session_views.py`  | The read models the API returns for a session or a conversation, and the projection that assembles one out of the session row, its transcript and its rollout.                   |
-| `room_status.py`    | The per-turn status driver: what the room is shown while a turn runs, and when. It is handed two coroutines and never learns which room it speaks to.                            |
+| Path               | Role                                                                                                                                                           |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setup_output.py`  | The bridge envelope's `kind` and the sandbox-narration row the console authors under it.                                                                       |
+| `session_views.py` | The read models the API returns for a session or a conversation, and the projection that assembles one out of the session row, its transcript and its rollout. |
+| `room_status.py`   | The per-turn status driver: what the room is shown while a turn runs, and when. It is handed two coroutines and never learns which room it speaks to.          |
 
 ### The records a read hands back — `conversation_records.py`
 
@@ -201,8 +208,9 @@ one interpreter that <../../plans/chat_runtime_projection.md> § stage 4 replace
 **The two halves sit on different levels, which is the placement rule doing its job.** The
 vocabulary names no backend and every surface renders it, so it stays at the runtime level; the
 adapter cannot be written without knowing what `assistant`, `stream_event` and `tool_use_result`
-are, so it lives under the harness directory. A second backend adds a sibling adapter and touches
-neither the vocabulary nor its readers.
+are, so it lives under the harness directory beside `claude_code/frames.py`, which is where those
+names are spelled. A second backend adds a sibling adapter and touches neither the vocabulary nor
+its readers.
 
 **The reducer's own contract is in `claude_code/projection.py`** — what `project`, `finish` and
 `project_log` each mean, why a batch boundary is not an ending, and the wire facts every rule in

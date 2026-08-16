@@ -54,6 +54,13 @@ from haku.console.database_schema import (
 )
 from haku.console.x import session_events, transcript_entries
 from haku.console.x.claude_code import projection
+from haku.console.x.claude_code.frames import (
+    ASSISTANT_FRAME_KIND,
+    DELTA_FRAME_KIND,
+    PROMPT_FRAME_KIND,
+    RESULT_FRAME_KIND,
+    assistant_frame,
+)
 from haku.console.x.conversation_events import (
     ConversationEvent,
     MessageCompleted,
@@ -73,14 +80,6 @@ from haku.console.x.conversation_records import (
     TurnRecord,
     TurnUsage,
 )
-from haku.console.x.session_frames import (
-    ASSISTANT_FRAME_KIND,
-    DELTA_FRAME_KIND,
-    PROMPT_FRAME_KIND,
-    RESULT_FRAME_KIND,
-    SETUP_OUTPUT_KIND,
-    assistant_frame,
-)
 from haku.console.x.session_notifications import SessionEventKind, notify
 from haku.console.x.session_views import (
     ConversationSessionSummary,
@@ -95,6 +94,7 @@ from haku.console.x.session_views import (
     tool_calls,
     user_message_view,
 )
+from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 from haku.runtime.x.bridge.cli_client import ReceivedFrame, RecordedFrame
 
 logger = logging.getLogger(__name__)

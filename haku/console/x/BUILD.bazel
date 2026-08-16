@@ -9,13 +9,14 @@ py_library(
         ":conversation_events",
         ":room_status",
         ":sandbox_claims",
-        ":session_frames",
         ":session_notifications",
         ":session_store",
         ":session_views",
+        ":setup_output",
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:operator_auth",
+        "//haku/console/x/claude_code:frames",
         "//haku/console/x/claude_code:projection",
         "//haku/runtime/x/bridge:cli_client",
         "//haku/runtime/x/bridge:options",
@@ -44,13 +45,14 @@ py_library(
         ":conversation_events",
         ":conversation_records",
         ":session_events",
-        ":session_frames",
         ":session_notifications",
         ":session_views",
+        ":setup_output",
         ":transcript_entries",
         "//haku/cli_protocol:frame_identity",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
+        "//haku/console/x/claude_code:frames",
         "//haku/console/x/claude_code:projection",
         "//haku/runtime/x/bridge:cli_client",
         "@pypi//more_itertools",
@@ -59,8 +61,8 @@ py_library(
 )
 
 py_library(
-    name = "session_frames",
-    srcs = ["session_frames.py"],
+    name = "setup_output",
+    srcs = ["setup_output.py"],
 )
 
 py_library(
@@ -98,7 +100,7 @@ py_library(
         ":conversation_records",
         ":sandbox_claims",
         ":session_events",
-        ":session_frames",
+        ":setup_output",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
         "@pypi//pydantic",
@@ -261,16 +263,6 @@ py_test(
 )
 
 py_test(
-    name = "test_session_frames",
-    srcs = ["test_session_frames.py"],
-    deps = [
-        ":session_frames",
-        "//:conftest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_session_events",
     srcs = ["test_session_events.py"],
     deps = [
@@ -302,8 +294,8 @@ py_test(
     srcs = ["test_session_views.py"],
     deps = [
         ":conftest",
-        ":session_frames",
         ":session_store",
+        ":setup_output",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
@@ -339,10 +331,10 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
-        ":session_frames",
         ":session_notifications",
         ":session_runtime",
         ":session_store",
+        ":setup_output",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",

@@ -1,20 +1,16 @@
-"""What goes in the `session_frames` log, and how to read one back out.
+"""The CLI's own frame vocabulary, and the readers that pick a value out of one.
 
-The kinds a row's `kind` column carries, the two frames the console authors itself, and the
-readers that pick a value out of a payload. Everything here is about the wire's own shapes, so
-it holds no session state and touches no table — `session_store.py` and `session_runtime.py`'s
-turn loop are what put these rows in and take them out.
+The `type` values Claude Code puts at the top of a frame, and the shapes underneath them. The
+console stores these in `session_frames.kind` alongside the bridge's own envelope discriminator
+(<../setup_output.py>), which is the two-vocabulary collision stage 2 of
+<../../../plans/chat_runtime_projection.md> resolves by giving the CLI's type its own column.
+
+Everything here is about the wire's shapes, so it holds no session state and touches no table.
 """
 
 from __future__ import annotations
 
 from typing import Any
-
-# TODO(frame-vocabulary): these are not one vocabulary, and there is deliberately no enum over
-# them yet. Five of them are the CLI's own top-level `type`; `SETUP_OUTPUT_KIND` is the *bridge*
-# envelope's `kind` literal, put in the same column by a different sink. An enum over the union
-# would give a name to a concept the schema does not actually have — see `SessionFrame` and
-# stage 2 of <../../plans/chat_runtime_projection.md>, which is where this becomes one thing.
 
 # One token batch of an answer still being written. Hundreds per turn, and the completed
 # `assistant` frame repeats all of it, which is why `read_frames` leaves them out of its default
@@ -31,9 +27,6 @@ PROMPT_FRAME_KIND = "user"
 RESULT_FRAME_KIND = "result"
 ASSISTANT_FRAME_KIND = "assistant"
 
-# The bridge's, not the CLI's — see the TODO above.
-SETUP_OUTPUT_KIND = "setup_output"
-
 
 def assistant_frame(text: str) -> dict[str, Any]:
     """The frame shape the agent will send, for the one the console stands in for meanwhile.
@@ -42,22 +35,6 @@ def assistant_frame(text: str) -> dict[str, Any]:
     what says it was reconstructed rather than observed.
     """
     return {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}}
-
-
-def setup_output_frame(text: str) -> dict[str, Any]:
-    """One line the sandbox printed, as a rollout row.
-
-    **Console-authored, like `partial`, and it says so with its discriminator.** The bridge's
-    own frame is `SetupOutput(data: bytes)` — raw, unsplit, base64 on the wire — and what
-    arrives here is one line the transport has already decoded (`errors="replace"`) and split
-    for the room. So this is a rendering, not the wire, and putting it under `kind` rather than
-    the CLI's `type` is what keeps it from reading as a protocol frame that never existed.
-
-    It lives in the frame log rather than a table of its own because the question a reader asks
-    is "what happened in this session, in order" — and for a session that died before the CLI
-    produced anything, the answer is entirely here.
-    """
-    return {"kind": SETUP_OUTPUT_KIND, "text": text}
 
 
 def frame_kind(payload: dict[str, Any]) -> str:
