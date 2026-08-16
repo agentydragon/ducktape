@@ -80,6 +80,7 @@ from haku.console.x import sandbox_claims, session_runtime
 from haku.console.x.channels.matrix import outbox as matrix_outbox, session as matrix_session, sync as matrix_sync
 from haku.console.x.session_live_updates import SessionLiveUpdates
 from haku.console.x.session_notifications import SessionNotifications
+from haku.console.x.session_store import SessionStore
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.state_index.openai_embedder import OpenAIEmbedder
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
@@ -179,7 +180,7 @@ def create_app(
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     claude_runtime = console_config.claude_runtime
-    session_store = session_runtime.SessionStore(db_sessions)
+    session_store = SessionStore(db_sessions)
     session_notifications = SessionNotifications(database_url)
     # Session changes reach open tabs over the console socket the shell already holds, coalesced
     # per session. Constructed unconditionally: it listens on the session channel and sends on the

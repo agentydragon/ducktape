@@ -23,14 +23,8 @@ from haku.console.x.channels.matrix.session import (
 )
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER, runtime_config
 from haku.console.x.session_notifications import SessionNotifications
-from haku.console.x.session_runtime import (
-    ADOPTION_GRACE,
-    BridgeAuthentication,
-    MatrixSession,
-    SessionService,
-    SessionStore,
-    SpaSession,
-)
+from haku.console.x.session_runtime import SessionService
+from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, MatrixSession, SessionStore, SpaSession
 from haku.console.x.system_prompt import HistoryMessage, SystemPromptTemplate
 
 

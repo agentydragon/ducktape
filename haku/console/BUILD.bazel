@@ -929,6 +929,7 @@ py_library(
         "//haku/console/tools:routine",
         "//haku/console/x:session_live_updates",
         "//haku/console/x:session_runtime",
+        "//haku/console/x:session_store",
         "//haku/console/x/channels/matrix:outbox",
         "//haku/console/x/channels/matrix:session",
         "//haku/console/x/channels/matrix:sync",

@@ -1,25 +1,30 @@
 """Shared setup for the experimental console surfaces' tests.
 
-Two kinds of thing live here: fixtures more than one module needs, and fixtures handing out
-stand-ins for what is genuinely outside the process (the stand-ins themselves live in `testing/`,
-so a non-pytest process can reach them too). Stores are never stood in for — see <README.md>
-§ Tests run against a real database.
+Fixtures more than one module needs, fixtures handing out stand-ins for what is genuinely
+outside the process (the stand-ins themselves live in `testing/`, so a non-pytest process can
+reach them too), and the reads more than one module makes of the test database directly — the
+store's tests and the runtime's both ask what a lease says and what the room is owed. Stores are
+never stood in for — see <README.md> § Tests run against a real database.
 """
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
 from pydantic import SecretStr
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
+from haku.console.database_schema import Session, SessionOutbox
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.channels.matrix.session import MatrixConversationStore
 from haku.console.x.session_notifications import SessionNotifications
-from haku.console.x.session_runtime import SessionService, SessionStore
+from haku.console.x.session_runtime import SessionService
+from haku.console.x.session_store import SessionStore
 from haku.console.x.testing.recording_claims import RecordingClaims
 
 MATRIX_USER = "@haku:allegedly.works"
@@ -97,3 +102,35 @@ async def operator_id(migrated_identity_store: PostgresOperatorIdentityStore) ->
     keys were only ever distinct out of caution.
     """
     return await migrated_identity_store.resolve_configured_external_user_key(OPERATOR_SUBJECT)
+
+
+async def queued_for_the_room(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> list[str]:
+    """What this session put in the room's outbox, oldest first.
+
+    The turn no longer hands its answer to anything: it writes a row with the message the answer
+    is, and `channels/matrix/outbox.py` says it. So the assertion that used to read a delivery sink
+    reads the rows, which is the same question asked of the record that actually survives the
+    process.
+    """
+    async with sessions() as db:
+        return list(
+            await db.scalars(
+                select(SessionOutbox.body)
+                .where(SessionOutbox.session_id == session_id)
+                .order_by(SessionOutbox.created_at, SessionOutbox.outbox_id)
+            )
+        )
+
+
+async def age_lease(sessions: async_sessionmaker[AsyncSession], session_id: UUID, *, seconds_ago: int) -> None:
+    async with sessions.begin() as db:
+        chat = await db.get(Session, session_id)
+        assert chat is not None
+        chat.lease_expires_at = datetime.now(UTC) - timedelta(seconds=seconds_ago)
+
+
+async def lease_of(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> tuple[str | None, datetime]:
+    async with sessions() as db:
+        chat = await db.get(Session, session_id)
+        assert chat is not None
+        return chat.lease_holder, chat.lease_expires_at

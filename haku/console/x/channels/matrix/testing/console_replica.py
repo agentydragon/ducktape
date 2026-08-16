@@ -55,7 +55,8 @@ from haku.console.x.channels.matrix.session import (
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.session_notifications import SessionNotifications
-from haku.console.x.session_runtime import SessionService, SessionStore, internal_router
+from haku.console.x.session_runtime import SessionService, internal_router
+from haku.console.x.session_store import SessionStore
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.console.x.testing.recording_claims import fixed_provisioning_view
 

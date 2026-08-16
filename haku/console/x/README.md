@@ -28,11 +28,20 @@ surface wants too, and the driver is handed two coroutines and never learns whic
 to. `sandbox_claims.py` is the mirror case: `claude-`-prefixed claim names, but it is Kubernetes
 provisioning and would serve any harness.
 
-## `session_runtime.py` — sessions, sandboxes, and the turn loop
+## `session_store.py` and `session_runtime.py` — the rows, and the turn loop over them
 
 The shared substrate: session, message and turn rows, Postgres `LISTEN`/`NOTIFY`, the
 SandboxClaim, the runner WebSocket bridge, and the `handle_runner` turn loop. Also the SPA chat
 surface's own HTTP routes and SSE stream, which is the older of the two experiments.
+
+**The line between the two files is the transaction.** `SessionStore` owns the SQLAlchemy sessions,
+so a method whose job is "these writes commit together or not at all" is in `session_store.py` — the
+outbox write and the turn-state transitions included, because each of those commits beside the
+effect it describes and moving one out would be the drop it exists to prevent. What is left in
+`session_runtime.py` is what drives one turn against a CLI: the client wiring, the room and status
+plumbing, the sandbox lifecycle, the `RoomSurface` port and the SPA's own routes. A second channel
+inherits the store unchanged, which is why it stays at the runtime level and imports nothing under
+`channels/`.
 
 **The tables are `sessions` and `session_*`.** They were `claude_chat_*` — six backend-neutral
 concepts named after the one CLI that fills them, while the design requires a second backend to be
@@ -82,7 +91,8 @@ machinery goes with it.
 
 Three leaves, each a module nothing in `session_runtime.py` reaches into — so the store, the service and
 the turn loop kept their shape while the file lost the parts that never needed to be beside them
-(<../../plans/chat_runtime_cleanup.md> § Anytime).
+(<../../plans/chat_runtime_cleanup.md> § Anytime). `session_store.py` is not one of them: the
+service calls it on every path, so that split is a seam and not a leaf.
 
 | Path                | Role                                                                                                                                                                             |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -136,8 +146,8 @@ missing on thousands of production rows, which is why that change exists.
 - `formatted_body.py` — Haku's Markdown into the HTML subset Matrix clients render.
 
 **The outbox is half here and half at the runtime level, deliberately.** The row is written where
-the reply is produced, by `session_runtime.queue_reply` into the neutral `session_outbox` table, in
-the same transaction as the assistant message; what lives here is the claim-and-send half, which
+the reply is produced, by `session_store.update_assistant` into the neutral `session_outbox` table,
+in the same transaction as the assistant message; what lives here is the claim-and-send half, which
 cannot exist without a homeserver. That split is the shape every outbound channel write has to
 take — recorded first, sent from the record — so a second channel inherits the record and writes
 only its own drain.

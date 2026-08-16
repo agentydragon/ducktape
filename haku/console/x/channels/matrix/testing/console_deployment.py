@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.chat_models import ChatMessageRole, SessionStatus
 from haku.console.database_schema import SessionMessage
 from haku.console.x.session_frames import ASSISTANT_FRAME_KIND
-from haku.console.x.session_runtime import SessionStore
+from haku.console.x.session_store import SessionStore
 from haku.console.x.testing.waiting import BUDGET_SECONDS, WedgedError, wait_until
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port

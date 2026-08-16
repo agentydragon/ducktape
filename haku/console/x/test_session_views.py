@@ -6,7 +6,7 @@ import pytest_bazel
 
 from haku.console.chat_models import FrameDirection
 from haku.console.x.session_frames import SETUP_OUTPUT_KIND, setup_output_frame
-from haku.console.x.session_runtime import SpaSession
+from haku.console.x.session_store import SpaSession
 
 
 async def test_narration_reads_back_in_the_order_the_sandbox_produced_it(chat_store, operator_id) -> None:

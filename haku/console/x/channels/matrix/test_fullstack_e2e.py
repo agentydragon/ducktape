@@ -47,7 +47,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.x.channels.matrix.testing.console_deployment import Deployment
 from haku.console.x.channels.matrix.testing.operator_room import OperatorRoom, sign_in
 from haku.console.x.channels.matrix.testing.synapse_container import Synapse, run_synapse
-from haku.console.x.session_runtime import SessionStore
+from haku.console.x.session_store import SessionStore
 
 PASSWORD = "not-a-secret"
 

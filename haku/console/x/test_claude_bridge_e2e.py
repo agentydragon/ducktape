@@ -32,7 +32,8 @@ from haku.console.chat_models import LIVE_SESSION_STATUSES, ChatMessageRole, Ses
 from haku.console.x.conftest import MCP_TOKEN, runtime_config
 from haku.console.x.session_frames import SETUP_OUTPUT_KIND
 from haku.console.x.session_notifications import SessionNotifications
-from haku.console.x.session_runtime import SessionService, SessionStore, SpaSession, internal_router
+from haku.console.x.session_runtime import SessionService, internal_router
+from haku.console.x.session_store import SessionStore, SpaSession
 from haku.console.x.testing.recording_claims import RecordingClaims
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port

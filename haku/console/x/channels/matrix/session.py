@@ -41,7 +41,8 @@ from haku.console.database_schema import MatrixConversation, Session, SessionMes
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.channels.matrix.client import InboundMessage, RoomEventKind
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
-from haku.console.x.session_runtime import REPLICA, MatrixSession, SessionService, SessionStore
+from haku.console.x.session_runtime import SessionService
+from haku.console.x.session_store import REPLICA, MatrixSession, SessionStore
 from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, SystemPromptTemplate
 
 logger = logging.getLogger(__name__)

@@ -20,7 +20,7 @@ from haku.console.x.channels.matrix.client import MatrixError, RoomEventKind
 from haku.console.x.channels.matrix.outbox import MAX_SEND_ATTEMPTS, PendingReply, RoomOutbox, RoomOutboxDrain
 from haku.console.x.channels.matrix.pacer import RoomPacer
 from haku.console.x.conftest import MATRIX_ROOM
-from haku.console.x.session_runtime import BridgeAuthentication, MatrixSession, SessionStore, SpaSession
+from haku.console.x.session_store import BridgeAuthentication, MatrixSession, SessionStore, SpaSession
 
 
 @pytest.fixture

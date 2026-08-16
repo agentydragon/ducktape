@@ -10,18 +10,31 @@ py_library(
         ":sandbox_claims",
         ":session_frames",
         ":session_notifications",
+        ":session_store",
         ":session_views",
-        "//haku/cli_protocol:frame_identity",
         "//haku/console:chat_models",
         "//haku/console:config",
-        "//haku/console:database_schema",
         "//haku/console:operator_auth",
-        "//haku/console/tools:conversations",
         "//haku/runtime/x/claude_bridge:cli_client",
         "//haku/runtime/x/claude_bridge:options",
         "//haku/runtime/x/claude_bridge:protocol",
         "@pypi//fastapi",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "session_store",
+    srcs = ["session_store.py"],
+    deps = [
+        ":session_frames",
+        ":session_notifications",
+        ":session_views",
+        "//haku/cli_protocol:frame_identity",
+        "//haku/console:chat_models",
+        "//haku/console:database_schema",
+        "//haku/console/tools:conversations",
+        "//haku/runtime/x/claude_bridge:cli_client",
         "@pypi//sqlalchemy",
     ],
 )
@@ -95,7 +108,9 @@ py_library(
     deps = [
         ":session_notifications",
         ":session_runtime",
+        ":session_store",
         "//haku/console:config",
+        "//haku/console:database_schema",
         "//haku/console:operator_identity_store",
         "//haku/console/x/channels/matrix:session",
         "//haku/console/x/testing:recording_claims",
@@ -113,7 +128,7 @@ py_test(
         ":conftest",
         ":session_live_updates",
         ":session_notifications",
-        ":session_runtime",
+        ":session_store",
         "//:conftest",
         "//haku/console:conftest",
         "//haku/console:console_events",
@@ -150,6 +165,7 @@ py_test(
         ":conftest",
         ":session_notifications",
         ":session_runtime",
+        ":session_store",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:config",
@@ -160,6 +176,25 @@ py_test(
         "//haku/console/x/testing:recording_claims",
         "//haku/runtime/x/claude_bridge:protocol",
         "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_session_store",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_session_store.py"],
+    deps = [
+        ":conftest",
+        ":session_notifications",
+        ":session_store",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
@@ -198,7 +233,7 @@ py_test(
     deps = [
         ":conftest",
         ":session_frames",
-        ":session_runtime",
+        ":session_store",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
@@ -234,6 +269,7 @@ py_test(
         ":session_frames",
         ":session_notifications",
         ":session_runtime",
+        ":session_store",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
