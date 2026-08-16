@@ -239,6 +239,34 @@ What survives both, unchanged: frames as per-backend evidence, the outbox as row
 content as neutral markup rendered per channel — `matrix_markdown.py` already does the second half of
 that, so the channels share a source and not a rendering.
 
+#### Does a turn live over frames or over neutral events?
+
+Over the neutral events (operator's question, 2026-08-16) — but the question is worth answering
+carefully, because today the two are indistinguishable and the code picks the wrong one.
+
+`session_turns` opens when a prompt is claimed and closes on Claude's `result` frame, whose payload
+is stored as-is for cost, usage and duration. So the boundary is currently **one CLI invocation**.
+Every consumer, though, is neutral: the room's typing indicator and status line bracket a turn, the
+SPA renders turn boundaries inline in the transcript, the outbox keys a turn's last word by
+`turn_id`, adoption asks whether a turn is open, and I3 wants a batch acknowledged when its turn
+completes. None of them care how a particular CLI spells the end.
+
+**Two concepts coincide today and need not always.** The _harness cycle_ — one prompt in, one result
+out, carrying that invocation's usage — and the _conversational exchange_, which is what a person
+means by a turn and what every surface renders. They are the same thing only because one batch makes
+one prompt which makes one invocation. Three plausible changes separate them: mid-turn steering
+(folding a message into a running exchange, deferred but planned), a backend needing several
+invocations for one exchange (continuation, compaction, an internal retry), and a harness reporting
+usage per invocation across an exchange that spans more than one.
+
+So the turn is neutral, its boundaries are **produced by the backend adapter** (`TurnCompleted`), and
+if the two ever diverge the neutral turn is the conversational one while "which invocations made it"
+becomes frame-level detail — reachable through the same `frame_seq` range as everything else. Two
+consequences: the neutral usage shape should be **aggregatable** rather than one payload, since an
+exchange may sum several invocations; and `end_turn` storing the raw `result` stops being "what the
+turn cost" and becomes evidence, with the cost living in columns that mean the same thing on every
+backend.
+
 #### Two decisions this leaves open
 
 - **The SPA renders messages by default and must let an operator inspect the tool calls underneath**
