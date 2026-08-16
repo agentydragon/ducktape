@@ -47,7 +47,14 @@ DEFAULT_PAGE = 25
 # Bytes of one frame's JSON before it is clipped by `read_rollout`. A row limit alone does not
 # bound a response, because one `tool_result` can be an entire file. `read_frame` does not apply
 # it: one frame is already a bounded response.
-MAX_FRAME_BYTES = 8_000
+#
+# 32 KB because 8 KB was measured to be under the ordinary size of the frames worth reading: a
+# census of 24,859 production frames found 21% of `user` frames — the ones carrying tool results —
+# over the old cap, with 23 KB unremarkable, plus every `control_response` and effectively every
+# `system/init`. A cap that clips the interesting fifth of the log is not bounding a response, it
+# is hiding one. The cost is the worst case of a full page: `MAX_PAGE` × this, which is why the
+# default page stays 25.
+MAX_FRAME_BYTES = 32_000
 
 # What a session's `kind` column actually holds, so a caller can filter for any of it. Every
 # entry was observed in production; four of them are absent from the CLI's `protocol.md`, and
