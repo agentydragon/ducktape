@@ -160,9 +160,9 @@ cursor between them.
 ### 4. The fold, and what it projects **into** — half landed
 
 **What it projects into is built; the fold itself is not.** #4145 landed the neutral vocabulary
-(`x/conversation_events.py`), the Claude adapter into it (`x/claude_projection.py`) and a read
+(`x/conversation_events.py`), the Claude adapter into it (`x/claude_code/projection.py`) and a read
 surface over the result (`read_transcript`). What is still open is the turn loop reading the
-projection instead of Claude's frames (#4134) — so `claude_projection.py`'s own docstring still
+projection instead of Claude's frames (#4134) — so `claude_code/projection.py`'s own docstring still
 says "nothing calls this yet", and **all four interpreters counted below are still present on
 `devel`**. Everything else in this section is still the target; the paragraphs that have landed say
 so where they are.
@@ -197,7 +197,7 @@ has no in-progress display at all.
 #### A message is provider-neutral, and tool calls are in it — **built**
 
 The vocabulary below is `x/conversation_events.py` (#4145), event for event, and
-`x/claude_projection.py` produces it. Two shapes the argument did not anticipate and the wire
+`x/claude_code/projection.py` produces it. Two shapes the argument did not anticipate and the wire
 forced: a tool result's content is a variant (`TextContent | ToolReferences | OpaqueContent`)
 rather than a string, and `Outcome.UNKNOWN` exists because `is_error` is _absent_ rather than false
 on most real results. Both are findings from <../console/debug/frame_shape_census.md>. The

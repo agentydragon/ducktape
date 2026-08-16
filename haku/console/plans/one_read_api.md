@@ -154,7 +154,7 @@ a session that is still running sorts differently under each.
 with `tool_calls` joined to their results out of the rollout and, since #4105,
 `source_first_frame_seq`/`source_last_frame_seq`), the setup narration, and the turn summaries —
 assembled in one call, from `session_messages`. `read_transcript` pages the **projection**: the
-frame log folded through `claude_projection.py` into neutral entries, computed per read and stored
+frame log folded through `claude_code/projection.py` into neutral entries, computed per read and stored
 nowhere.
 
 So they read different sources and answer different questions, and the duplication is not the kind
