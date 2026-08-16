@@ -8,6 +8,12 @@ package(
 )
 
 py_library(
+    name = "wire",
+    srcs = ["wire.py"],
+    deps = ["//haku/console/x/claude_code:projection"],
+)
+
+py_library(
     name = "stub_claude",
     srcs = ["stub_claude.py"],
     deps = [

@@ -412,7 +412,8 @@ tested in `channels/matrix/test_session.py`, beside the module that defines it.
 ### The stand-ins live in `testing/`
 
 Everything a test stands something up _with_ is a module in `testing/` — the claim stand-in
-(`testing/recording_claims.py`), the stub `claude` (`claude_code/testing/stub_claude.py`), the
+(`testing/recording_claims.py`), the stub `claude` (`claude_code/testing/stub_claude.py`), its
+frames (`claude_code/testing/wire.py`), the
 Synapse container (`channels/matrix/testing/synapse_container.py`) and the console replica
 (`channels/matrix/testing/console_replica.py`) — rather than a
 `conftest.py` fixture or a source file in a target's `data`. Each sits under the axis it stands in

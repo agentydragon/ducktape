@@ -54,6 +54,7 @@ py_test(
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console/x:conversation_events",
+        "//haku/console/x/claude_code/testing:wire",
         "@pypi//pytest_bazel",
     ],
 )

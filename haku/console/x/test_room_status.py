@@ -10,6 +10,16 @@ import pytest_bazel
 
 from haku.console.chat_models import TurnOutcome
 from haku.console.x.claude_code.projection import DeltaSource, RecordedFrame, project_log
+from haku.console.x.claude_code.testing.wire import (
+    assistant,
+    result,
+    system,
+    text_block,
+    text_delta,
+    thinking_block,
+    tool_result,
+    tool_use_block,
+)
 from haku.console.x.conversation_events import (
     ActivityCompleted,
     ActivityStarted,
@@ -93,43 +103,13 @@ def test_a_claude_turn_still_reads_the_way_it_did_off_the_frames() -> None:
     exactly the sequence a room sees.
     """
     frames: list[tuple[dict[str, Any], str | None]] = [
-        (
-            {"type": "assistant", "message": {"id": "msg_A", "content": [{"type": "thinking", "thinking": "hm"}]}},
-            "writing",
-        ),
-        (
-            {"type": "assistant", "message": {"id": "msg_A", "content": [{"type": "text", "text": "Looking."}]}},
-            "writing",
-        ),
-        (
-            {
-                "type": "assistant",
-                "message": {
-                    "id": "msg_A",
-                    "content": [{"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": "ls"}}],
-                },
-            },
-            "running Bash",
-        ),
-        (
-            {"type": "system", "subtype": "task_started", "task_id": "task_9", "description": "npm run build"},
-            "npm run build",
-        ),
-        (
-            {
-                "type": "user",
-                "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "ok"}]},
-            },
-            None,
-        ),
-        (
-            {
-                "type": "stream_event",
-                "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "A"}},
-            },
-            "writing",
-        ),
-        ({"type": "result", "subtype": "success"}, None),
+        (assistant(thinking_block("hm"), message_id="msg_A"), "writing"),
+        (assistant(text_block("Looking."), message_id="msg_A"), "writing"),
+        (assistant(tool_use_block("toolu_1", "Bash", {"command": "ls"}), message_id="msg_A"), "running Bash"),
+        (system("task_started", task_id="task_9", description="npm run build"), "npm run build"),
+        (tool_result("toolu_1", "ok"), None),
+        (text_delta("A"), "writing"),
+        (result(), None),
     ]
 
     assert [

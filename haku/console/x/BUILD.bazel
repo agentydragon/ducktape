@@ -216,6 +216,7 @@ py_test(
         "//haku/console:config",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "//haku/console/x/claude_code/testing:wire",
         "//haku/console/x/testing:recording_claims",
         "//haku/runtime/x/bridge:protocol",
         "@pypi//more_itertools",
@@ -240,6 +241,7 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "//haku/console/x/claude_code/testing:wire",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
@@ -283,6 +285,7 @@ py_test(
         ":transcript_entries",
         "//:conftest",
         "//haku/console/x/claude_code:projection",
+        "//haku/console/x/claude_code/testing:wire",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
     ],
@@ -313,6 +316,7 @@ py_test(
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console/x/claude_code:projection",
+        "//haku/console/x/claude_code/testing:wire",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],

@@ -34,6 +34,7 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.database_schema import Session, SessionEvent, SessionMessage, SessionPrompt, SessionTurn
+from haku.console.x.claude_code.testing.wire import assistant, result, text_block, text_delta
 from haku.console.x.conftest import age_lease, lease_of, queued_for_the_room
 from haku.console.x.conversation_events import (
     FrameRange,
@@ -194,7 +195,7 @@ async def test_a_replayed_frame_is_recorded_once(chat_store, operator_id) -> Non
     previous console may not have acknowledged, and the agent's own id is what recognises it —
     the cursor is an optimisation, this is the correctness argument."""
     session, _ = await chat_store.create(operator_id, SpaSession())
-    frame = {"type": "assistant", "message": {"id": "msg_01abc", "content": []}}
+    frame = assistant(message_id="msg_01abc")
 
     assert (await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "assistant", frame)).fresh
     assert not (await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "assistant", frame)).fresh
@@ -235,7 +236,7 @@ async def test_two_sessions_may_hold_the_same_agent_id(chat_store, operator_id) 
     handed the same message ids by an agent with no idea it is a second session."""
     mine, _ = await chat_store.create(operator_id, SpaSession())
     theirs, _ = await chat_store.create(operator_id, SpaSession())
-    frame = {"type": "assistant", "message": {"id": "msg_01abc", "content": []}}
+    frame = assistant(message_id="msg_01abc")
 
     assert (await chat_store.record_frame(mine.session_id, FrameDirection.FROM_AGENT, "assistant", frame)).fresh
     assert (await chat_store.record_frame(theirs.session_id, FrameDirection.FROM_AGENT, "assistant", frame)).fresh
@@ -473,17 +474,9 @@ async def test_the_transcript_reads_the_conversation_rather_than_the_protocol(ch
     it was read off."""
     session, _ = await chat_store.create(operator_id, SpaSession())
     await chat_store.record_frame(
-        session.session_id,
-        FrameDirection.FROM_AGENT,
-        "assistant",
-        {
-            "type": "assistant",
-            "message": {"id": "msg_1", "role": "assistant", "content": [{"type": "text", "text": "hi"}]},
-        },
+        session.session_id, FrameDirection.FROM_AGENT, "assistant", assistant(text_block("hi"), message_id="msg_1")
     )
-    await chat_store.record_frame(
-        session.session_id, FrameDirection.FROM_AGENT, "result", {"type": "result", "subtype": "success", "uuid": "r1"}
-    )
+    await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "result", result(uuid="r1"))
 
     transcript = await chat_store.read_transcript(session.session_id, cursor=None, limit=10)
 
@@ -507,17 +500,9 @@ async def test_a_transcript_page_holds_what_the_whole_session_holds_at_that_posi
             session.session_id,
             FrameDirection.FROM_AGENT,
             "assistant",
-            {
-                "type": "assistant",
-                "message": {"id": "msg_1", "role": "assistant", "content": [{"type": "text", "text": f"{index} "}]},
-            },
+            assistant(text_block(f"{index} "), message_id="msg_1"),
         )
-        await chat_store.record_frame(
-            session.session_id,
-            FrameDirection.FROM_AGENT,
-            "result",
-            {"type": "result", "subtype": "success", "uuid": f"r{index}"},
-        )
+        await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "result", result(uuid=f"r{index}"))
 
     whole = await chat_store.read_transcript(session.session_id, cursor=None, limit=100)
     first = await chat_store.read_transcript(session.session_id, cursor=None, limit=3)
@@ -532,23 +517,9 @@ async def test_deltas_are_not_on_the_transcript_at_all(chat_store, operator_id) 
     arrives again whole in the message that follows, so a reader of a finished conversation would
     get it twice."""
     session, _ = await chat_store.create(operator_id, SpaSession())
+    await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "stream_event", text_delta("h"))
     await chat_store.record_frame(
-        session.session_id,
-        FrameDirection.FROM_AGENT,
-        "stream_event",
-        {
-            "type": "stream_event",
-            "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "h"}},
-        },
-    )
-    await chat_store.record_frame(
-        session.session_id,
-        FrameDirection.FROM_AGENT,
-        "assistant",
-        {
-            "type": "assistant",
-            "message": {"id": "msg_1", "role": "assistant", "content": [{"type": "text", "text": "hi"}]},
-        },
+        session.session_id, FrameDirection.FROM_AGENT, "assistant", assistant(text_block("hi"), message_id="msg_1")
     )
 
     transcript = await chat_store.read_transcript(session.session_id, cursor=None, limit=10)

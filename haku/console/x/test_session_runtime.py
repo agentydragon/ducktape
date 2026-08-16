@@ -34,6 +34,16 @@ from haku.console.chat_models import (
 )
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import SessionFrame, SessionMessage
+from haku.console.x.claude_code.testing.wire import (
+    Accounting,
+    assistant,
+    prompt,
+    result,
+    text_block,
+    text_delta,
+    tool_result,
+    tool_use_block,
+)
 from haku.console.x.conftest import MCP_TOKEN, age_lease, lease_of, queued_for_the_room, runtime_config
 from haku.console.x.conversation_records import TurnUsage
 from haku.console.x.session_notifications import SessionNotifications
@@ -68,22 +78,6 @@ def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:
         "SSL_CERT_FILE": "/ca/bundle.pem",
         "CURL_CA_BUNDLE": "/ca/bundle.pem",
         "REQUESTS_CA_BUNDLE": "/ca/bundle.pem",
-    }
-
-
-def _assistant(*blocks: dict[str, Any]) -> dict[str, Any]:
-    return {"type": "assistant", "message": {"role": "assistant", "content": list(blocks)}}
-
-
-def _result(text: str = "", **fields: Any) -> dict[str, Any]:
-    return {"type": "result", "subtype": "success", "is_error": False, "result": text, **fields}
-
-
-def _tool_result(call_id: str, content: str) -> dict[str, Any]:
-    """What a tool answered, as the CLI sends it: a `user` frame carrying a `tool_result` block."""
-    return {
-        "type": "user",
-        "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": call_id, "content": content}]},
     }
 
 
@@ -170,11 +164,9 @@ class _FakeCli:
 
 
 _TOOL_USE_SCRIPT = [
-    _assistant(
-        {"type": "tool_use", "id": "toolu_01", "name": "mcp__haku-console__haku-console__list_mcp_servers", "input": {}}
-    ),
-    _assistant({"type": "text", "text": "The Haku Console catalog is available."}),
-    _result("The Haku Console catalog is available."),
+    assistant(tool_use_block("toolu_01", "mcp__haku-console__haku-console__list_mcp_servers", {})),
+    assistant(text_block("The Haku Console catalog is available.")),
+    result(text="The Haku Console catalog is available."),
 ]
 
 
@@ -227,9 +219,9 @@ async def test_projected_assistant_message_points_to_the_frames_that_built_it(
     assert turn is not None
 
     # Recorded through the real sink, so the numbers the turn is handed are the rollout's own.
-    script = [_text_delta_frame("hello"), _assistant({"type": "text", "text": "hello"}), _result("hello")]
+    script = [text_delta("hello"), assistant(text_block("hello")), result(text="hello")]
     recorder = RolloutRecorder(chat_store, view.session_id)
-    prompt_frame_seq = await recorder.sent({"type": "user", "message": {"role": "user", "content": "say hello"}})
+    prompt_frame_seq = await recorder.sent(prompt("say hello"))
     frame_seqs = [(await recorder.received(frame, runner_seq=None)).frame_seq for frame in script]
 
     client = _FakeCli(script, frame_seqs=frame_seqs, prompt_frame_seq=prompt_frame_seq)
@@ -437,7 +429,7 @@ async def test_a_turn_that_said_something_the_room_could_not_hear_still_knows_it
     assert resumed is not None
     assert (await chat_store.turn_state(resumed.turn_id)).said_anything
 
-    client = _FakeCli([_result("a bad config")])
+    client = _FakeCli([result(text="a bad config")])
     client.replay()
     async with asyncio.timeout(30):
         await chat_service._run_turn(
@@ -473,14 +465,12 @@ async def test_adoption_closes_a_turn_whose_result_nobody_projected(
         session_id,
         FrameDirection.FROM_AGENT,
         "result",
-        {
-            "type": "result",
-            "uuid": "res-1",
-            "subtype": "success",
-            "total_cost_usd": 0.5,
-            "duration_ms": 1200,
-            "usage": {"input_tokens": 7, "output_tokens": 13, "cache_read_input_tokens": 2},
-        },
+        result(
+            uuid="res-1",
+            accounting=Accounting(
+                input_tokens=7, output_tokens=13, cache_read_input_tokens=2, total_cost_usd=0.5, duration_ms=1200
+            ),
+        ),
     )
 
     resumed = await chat_store.adopt_open_turn(session_id)
@@ -524,10 +514,7 @@ async def test_adoption_reads_a_failed_result_as_a_failed_turn(
     assert await chat_store.next_prompt(session_id) is not None
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
     await chat_store.record_frame(
-        session_id,
-        FrameDirection.FROM_AGENT,
-        "result",
-        {"type": "result", "uuid": "res-1", "subtype": "error_during_execution", "is_error": False},
+        session_id, FrameDirection.FROM_AGENT, "result", result(uuid="res-1", subtype="error_during_execution")
     )
 
     resumed = await chat_store.adopt_open_turn(session_id)
@@ -659,10 +646,10 @@ async def test_startup_reconciliation_retries_terminal_claim_cleanup(
 ROOM = "!room:example.org"
 
 _NARRATED_TURN = [
-    _assistant({"type": "text", "text": "Looking at the logs now."}),
-    _assistant({"type": "tool_use", "id": "toolu_01", "name": "Bash", "input": {"command": "true"}}),
-    _assistant({"type": "text", "text": "Found it: a bad config."}),
-    _result("Found it: a bad config."),
+    assistant(text_block("Looking at the logs now.")),
+    assistant(tool_use_block("toolu_01", "Bash", {"command": "true"})),
+    assistant(text_block("Found it: a bad config.")),
+    result(text="Found it: a bad config."),
 ]
 
 
@@ -715,7 +702,7 @@ class _InterruptedCli(_FakeCli):
 
     async def interrupt(self) -> None:
         await super().interrupt()
-        self.deliver(_result("stopped"))
+        self.deliver(result(text="stopped"))
 
     async def frames(self):
         source = super().frames()
@@ -796,7 +783,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     # What the previous holder got through before its pod went: the prompt written, and half an
     # answer streamed into a message it never closed — applied as the loop applies any frame, so
     # the message row, the turn's pointer at it and the session's cursor all landed together.
-    delta = _text_delta_frame("because the ")
+    delta = text_delta("because the ")
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
     opened_at = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "stream_event", delta)
     state = await chat_store.apply_frame(
@@ -812,7 +799,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     assert resumed.replay == (), "the cursor passed every recorded frame, so none of them is redone"
     # Only what the runner replays: the deltas already seen are not re-sent, so everything
     # before "disk was full" reaches this process solely through the turn's own row.
-    client = _FakeCli([_assistant({"type": "text", "text": "because the disk was full"}), _result("done")])
+    client = _FakeCli([assistant(text_block("because the disk was full")), result(text="done")])
     client.replay()
     async with asyncio.timeout(30):
         await service._run_turn(
@@ -852,8 +839,8 @@ async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
     await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
     started = await chat_store.next_prompt(session_id)
     assert started is not None
-    delta = _text_delta_frame("because the ")
-    answer = _assistant({"type": "text", "text": "because the disk was full"})
+    delta = text_delta("because the ")
+    answer = assistant(text_block("because the disk was full"))
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
     projected = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "stream_event", delta)
     await chat_store.apply_frame(
@@ -869,7 +856,7 @@ async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
     resumed = await chat_store.adopt_open_turn(session_id)
     assert resumed is not None
     assert [frame.frame_seq for frame in resumed.replay] == [unprojected.frame_seq]
-    client = _FakeCli([_result("because the disk was full")])
+    client = _FakeCli([result(text="because the disk was full")])
     client.replay()
     async with asyncio.timeout(30):
         await service._run_turn(
@@ -916,7 +903,7 @@ async def test_a_resumed_turn_does_not_say_again_what_it_had_already_queued(
 
     resumed = await chat_store.adopt_open_turn(session_id)
     assert resumed is not None
-    client = _FakeCli([_result("a bad config")])
+    client = _FakeCli([result(text="a bad config")])
     client.replay()
     async with asyncio.timeout(30):
         await service._run_turn(
@@ -980,7 +967,7 @@ async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
-    client = _FakeCli([*_NARRATED_TURN[:-1], {"type": "result", "is_error": True, "subtype": "error_during_execution"}])
+    client = _FakeCli([*_NARRATED_TURN[:-1], result(subtype="error_during_execution", is_error=True)])
 
     with pytest.raises(RuntimeError):
         async with asyncio.timeout(30):
@@ -1006,7 +993,7 @@ async def test_a_turn_the_cli_ended_badly_fails_even_though_is_error_says_it_did
     await chat_store.enqueue_prompt(operator_id, view.session_id, "keep going")
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
-    client = _FakeCli([{"type": "result", "subtype": "error_max_turns", "is_error": False, "result": ""}])
+    client = _FakeCli([result(subtype="error_max_turns")])
 
     with pytest.raises(RuntimeError, match="error_max_turns"):
         await chat_service._run_turn(
@@ -1028,7 +1015,7 @@ async def test_a_turn_whose_answer_arrived_only_on_the_result_is_still_spoken(
         recording_claims,
         notifications,
         operator_id,
-        _FakeCli([_result("nothing streamed, but an answer")]),
+        _FakeCli([result(text="nothing streamed, but an answer")]),
     )
 
     assert queued == ["nothing streamed, but an answer"]
@@ -1042,7 +1029,13 @@ async def test_a_turn_with_nothing_at_all_to_say_reports_it_rather_than_queueing
     room = _RecordingRoomSurface()
 
     queued = await _turn_into_a_room(
-        chat_store, migrated_sessions, recording_claims, notifications, operator_id, _FakeCli([_result("")]), room=room
+        chat_store,
+        migrated_sessions,
+        recording_claims,
+        notifications,
+        operator_id,
+        _FakeCli([result(text="")]),
+        room=room,
     )
 
     assert (queued, room.silent_turns) == ([], 1)
@@ -1081,9 +1074,7 @@ async def test_a_turn_aborted_mid_answer_queues_its_notice_once(
     carried the answer instead — would show the operator their stop twice.
     """
     abort_event = asyncio.Event()
-    client = _InterruptedCli(
-        [_text_delta_frame("because the "), _text_delta_frame("disk was full")], abort_event=abort_event
-    )
+    client = _InterruptedCli([text_delta("because the "), text_delta("disk was full")], abort_event=abort_event)
 
     queued = await _turn_into_a_room(
         chat_store, migrated_sessions, recording_claims, notifications, operator_id, client, abort_event=abort_event
@@ -1107,9 +1098,9 @@ async def test_a_message_the_agent_finished_before_stopping_survives_the_drain(
     """
     abort_event = asyncio.Event()
     client = _CliFinishingItsMessage(
-        [_assistant({"type": "text", "text": "Looking at the logs now."})],
+        [assistant(text_block("Looking at the logs now."))],
         abort_event=abort_event,
-        finishing=_assistant({"type": "text", "text": "Found it: a bad config."}),
+        finishing=assistant(text_block("Found it: a bad config.")),
     )
 
     queued = await _turn_into_a_room(
@@ -1139,12 +1130,16 @@ async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(
     assert turn is not None
     client = _FakeCli(
         [
-            _assistant({"type": "text", "text": "a bad config"}),
-            _result(
-                "a bad config",
-                total_cost_usd=0.0125,
-                duration_ms=4200,
-                usage={"input_tokens": 12, "output_tokens": 91, "cache_read_input_tokens": 640},
+            assistant(text_block("a bad config")),
+            result(
+                text="a bad config",
+                accounting=Accounting(
+                    input_tokens=12,
+                    output_tokens=91,
+                    cache_read_input_tokens=640,
+                    total_cost_usd=0.0125,
+                    duration_ms=4200,
+                ),
             ),
         ]
     )
@@ -1180,11 +1175,11 @@ async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_s
     assert turn is not None
     client = _FakeCli(
         [
-            _assistant({"type": "tool_use", "id": "toolu_ok", "name": "Bash", "input": {"command": "true"}}),
-            _assistant({"type": "tool_use", "id": "toolu_running", "name": "Bash", "input": {"command": "sleep 1"}}),
+            assistant(tool_use_block("toolu_ok", "Bash", {"command": "true"})),
+            assistant(tool_use_block("toolu_running", "Bash", {"command": "sleep 1"})),
             # As the CLI sends it: an answer is a `user` frame, and one call is left unanswered.
-            _tool_result("toolu_ok", "42"),
-            _result("done"),
+            tool_result("toolu_ok", "42"),
+            result(text="done"),
         ]
     )
     await chat_service._run_turn(
@@ -1217,9 +1212,9 @@ async def test_the_calls_come_from_the_events_and_need_no_id_from_the_agent(
     assert turn is not None
     client = _FakeCli(
         [
-            _assistant({"type": "tool_use", "id": "toolu_ok", "name": "Bash", "input": {"command": "true"}}),
-            _tool_result("toolu_ok", "7"),
-            _result("done"),
+            assistant(tool_use_block("toolu_ok", "Bash", {"command": "true"})),
+            tool_result("toolu_ok", "7"),
+            result(text="done"),
         ]
     )
     await chat_service._run_turn(
@@ -1244,7 +1239,7 @@ class _RealDbClaudeClient(_LifecycleClaudeClient):
 
     def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: object):
         super().__init__(adapter, launch, on_progress, frames_to)
-        self.script = [_assistant({"type": "text", "text": "pong"}), _result("pong")]
+        self.script = [assistant(text_block("pong")), result(text="pong")]
 
 
 async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, chat_service, operator_id) -> None:
@@ -1344,7 +1339,7 @@ async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas
     answer from the log, and an interrupt that did not take is diagnosable from nothing else.
     """
     view, _ = await chat_store.create(operator_id, SpaSession())
-    tool_result = {"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": "42"}]}}
+    answered = tool_result("toolu_1", "42")
     channel = _ScriptedChannel()
     cli = ClaudeCli(channel, RolloutRecorder(chat_store, view.session_id), control_timeout=5)
 
@@ -1357,13 +1352,13 @@ async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas
     await connecting
     await cli.query("what did that return?")
     channel.deliver({"type": "stream_event", "event": {"type": "content_block_delta"}})
-    channel.deliver(tool_result)
+    channel.deliver(answered)
     # Reading is what proves the reader got that far; the recorder runs inside it.
     frames = cli.frames()
     delta_received = await anext(frames)
     assert delta_received.payload["type"] == "stream_event"
     result_received = await anext(frames)
-    assert result_received.payload == tool_result
+    assert result_received.payload == answered
     await cli.aclose()
 
     # Every frame either way and no exceptions left — the delta included, which is what makes
@@ -1377,7 +1372,7 @@ async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas
         (FrameDirection.FROM_AGENT, "user"),
     ]
     # Verbatim: a reader gets the tool result the turn loop never kept.
-    assert recorded[4].payload == tool_result
+    assert recorded[4].payload == answered
     assert all(frame.partial is False for frame in recorded)
     # Each frame reaches its consumer carrying the row it was written to, so a projection built
     # from it can point back at that row and not at whichever frame the reader has since seen.
@@ -1402,7 +1397,7 @@ async def test_the_runners_number_is_recorded_beside_the_rows_own(chat_store, mi
         {"type": "control_response", "response": {"subtype": "success", "request_id": initialize["request_id"]}}, seq=11
     )
     await connecting
-    channel.deliver({"type": "result", "is_error": False, "uuid": "turn-1"}, seq=12)
+    channel.deliver(result(uuid="turn-1"), seq=12)
     assert (await anext(cli.frames())).payload["type"] == "result"
     await cli.aclose()
 
@@ -1415,19 +1410,12 @@ async def test_the_runners_number_is_recorded_beside_the_rows_own(chat_store, mi
     assert await chat_store.highest_runner_seq(view.session_id) == 12
 
 
-def _text_delta_frame(text: str) -> dict[str, Any]:
-    return {
-        "type": "stream_event",
-        "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}},
-    }
-
-
 class _DyingMidStreamClaudeClient(_LifecycleClaudeClient):
     """Streams two deltas, then ends the turn without ever completing the message."""
 
     def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: object):
         super().__init__(adapter, launch, on_progress, frames_to)
-        self.script = [_text_delta_frame("half an "), _text_delta_frame("answer"), _result()]
+        self.script = [text_delta("half an "), text_delta("answer"), result()]
 
 
 class _DisconnectingClaudeClient(_LifecycleClaudeClient):
