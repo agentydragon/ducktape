@@ -452,4 +452,6 @@ The code keeps the invariant; the evidence behind it is linked rather than resta
   like belt and braces.
 - <../../plans/chat_runtime_cleanup.md> and <../../plans/chat_runtime_projection.md> — what is
   still wrong and the order to fix it.
-- `debug/` holds dated findings from one incident and is not maintained.
+- <../debug/2026*08_16_runtime_archaeology.md> — which bug each invariant in
+  `session*{runtime,store}.py` was written against, indexed by the line in the code that keeps it.
+- `debug/` otherwise holds dated findings from one incident and is not maintained.

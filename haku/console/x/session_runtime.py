@@ -3,6 +3,8 @@
 The service half: the turn loop, the runner's websocket bridge, the sandbox lifecycle and the SPA
 chat surface's own routes. The rows underneath it, and every transaction that moves them, are
 `session_store.py`.
+
+The incidents behind this file's invariants are in <../debug/2026_08_16_runtime_archaeology.md>.
 """
 
 from __future__ import annotations
@@ -104,8 +106,7 @@ def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
 
 
 class SessionPromptRequest(BaseModel):
-    """What the SPA posts to send a prompt. Named for the request, since the prompt itself is now
-    a row (`database_schema.SessionPrompt`) rather than a field on the way in."""
+    """What the SPA posts to send a prompt; the prompt itself is a row (`SessionPrompt`)."""
 
     text: str = Field(min_length=1, max_length=100_000)
 
@@ -169,10 +170,10 @@ class RoomSurface(Protocol):
     **The service picks this by reading the session's `surface`**, rather than offering every
     session to every listener and letting each one re-derive whether it is its own.
 
-    **Replies are not here any more.** They are rows in `session_outbox`, written where they are
-    produced and drained into the room by whoever holds the outbox lock, which is what a surface
-    reporting success at enqueue could never be (<../debug/message_drops.md>). What is left is
-    what genuinely describes a moment and is worthless afterwards.
+    **Replies are not here.** They are rows in `session_outbox`, written where they are produced
+    and drained into the room by whoever holds the outbox lock, which is what a surface reporting
+    success at enqueue could never be (<../debug/message_drops.md>). What is left here is what
+    genuinely describes a moment and is worthless afterwards.
     """
 
     async def system_prompt(self, session_id: UUID, room_id: str) -> str: ...
@@ -327,13 +328,12 @@ class SessionService:
     async def handle_runner(self, websocket: WebSocket, session_id: UUID, bearer: str) -> None:
         authentication = await self._store.authenticate_bridge(session_id, bearer)
         if authentication == BridgeAuthentication.HELD:
-            # **A denial response, not a close.** A websocket closed before `accept()` reaches the
-            # client as HTTP 403 whatever code is passed to it (uvicorn renders every one that
-            # way), so a refusal and a "not yet" were indistinguishable — and the runner gives up
-            # on a 4xx, correctly, because a bad credential is not worth redialling. The ASGI
-            # `websocket.http.response` extension is what lets this answer 503 instead, which the
-            # runner already waits out: `_worth_redialling` retries anything 5xx, since that is
-            # also what the Gateway says mid-roll.
+            # **A denial response, not a close.** A websocket closed before `accept()` reaches
+            # the client as HTTP 403 whatever code is passed to it (uvicorn renders every one
+            # that way), and the runner gives up on a 4xx, correctly, because a bad credential is
+            # not worth redialling. The ASGI `websocket.http.response` extension is what lets
+            # this answer 503, which the runner waits out: `_worth_redialling` retries anything
+            # 5xx, since that is also what the Gateway says mid-roll.
             logger.info("session %s is held by another replica; telling the runner to retry", session_id)
             await websocket.send_denial_response(
                 Response(status_code=503, content=b"session is held by another replica")
@@ -460,8 +460,7 @@ class SessionService:
                 keep_sandbox = True
                 await self._store.release_lease(session_id)
             except* Exception as errors:
-                # `fail` records the message; the traceback is what says which call produced
-                # it, and the listener mismatch was three frames below anything it named.
+                # `fail` records the message; the traceback is what says which call produced it.
                 logger.exception("Claude runtime failed for session %s", session_id)
                 await self._store.fail(session_id, f"Claude runtime failed: {_first_message(errors)}")
         except asyncio.CancelledError:
@@ -479,9 +478,8 @@ class SessionService:
         finally:
             # Shielded because everything here is an `await` and this task may already be
             # cancelled, in which case the first one would re-raise and the rest would silently
-            # not happen — which is how `closed()` came to be skipped. Best effort even so: a
-            # SIGKILL runs no finalizer at all, which is why the lease, not this block, is what
-            # actually guarantees the session stops looking alive.
+            # not happen. Best effort even so: a SIGKILL runs no finalizer at all, which is why
+            # the lease, not this block, is what guarantees the session stops looking alive.
             with contextlib.suppress(asyncio.CancelledError, TimeoutError):
                 await asyncio.shield(
                     asyncio.wait_for(self._finalize(session_id, websocket, client, keep_sandbox), timeout=10)
@@ -491,8 +489,8 @@ class SessionService:
         """Let go of one runner connection, and of the session itself unless it outlives us.
 
         `keep_sandbox` is the difference between "this conversation is over" and "this replica
-        is". Deleting the claim on the second is what made a roll destroy the sandbox it was
-        supposed to leave running.
+        is". Never delete the claim on the second: the sandbox is what the adopting replica
+        reconnects to.
         """
         if keep_sandbox:
             # Said with a code rather than by dropping the socket, so the runner reconnects
@@ -509,9 +507,9 @@ class SessionService:
         """Hold *session_id*'s lease for as long as this replica runs it, and keep its sandbox with it.
 
         The same heartbeat slides the SandboxClaim's `shutdownTime` forward, so the sandbox is a
-        renewed lease rather than a `session_ttl_seconds` hard timer that killed a conversation in
-        full flow (`sandbox_claims.renew`). Console lease and sandbox deadline lapse together the
-        moment a replica stops tending the session.
+        renewed lease rather than a `session_ttl_seconds` hard timer (`sandbox_claims.renew`).
+        Console lease and sandbox deadline lapse together the moment a replica stops tending the
+        session.
         """
         while True:
             await self._store.renew_lease(session_id)
@@ -590,24 +588,22 @@ class SessionService:
         # Whether this turn has already queued the room a reply, so the turn's final text is not
         # posted a second time: `result.result` normally repeats the last assistant message. It is
         # the outbox row's existence — recorded on the turn by the transaction that inserts the
-        # row — and neither a report from the delivery layer, which used to be a statement about a
-        # `deque.append`, nor `sent_at`, which is the drain's business and comes later.
+        # row — never a report from the delivery layer, and never `sent_at`, which is the drain's
+        # business and comes later.
         spoke = state.queued_reply
         # Its own fact rather than `spoke` again: a session with no room queues nothing, so a turn
-        # that has completed a message there has `said_anything` and no `queued_reply` — and
-        # minting a second message for `result.result` is exactly what conflating them did.
+        # that has completed a message there has `said_anything` and no `queued_reply`.
         saw_assistant_message = state.said_anything
         # The calls of the message being assembled, from the events that start them to the one
         # that completes it. Not turn state: they are written with their message, and a message
         # never spans two frames here (see `_projected`).
         tool_calls: list[RecordedToolCall] = []
         completed: TurnCompleted | None = None
-        # The frame `completed` was projected from, kept because three things below still read
-        # Claude's own payload out of it — and each is a piece of stage 4 this change leaves for
-        # its successors: the failure's reason (a neutral outcome carries no message), the prose
-        # of a turn that said nothing anywhere else, and the cost, usage and duration `end_turn`
-        # stores verbatim. Appealing an event to the frame behind it is the design's own escape
-        # hatch, so this is the seam working rather than leaking.
+        # The frame `completed` was projected from, kept because the code below still reads
+        # Claude's own payload out of it: the failure's reason (a neutral outcome carries no
+        # message), the prose of a turn that said nothing anywhere else, and the cost, usage and
+        # duration `end_turn` stores verbatim. Appealing an event to the frame behind it is the
+        # design's own escape hatch, so this is the seam working rather than leaking.
         result: dict[str, Any] | None = None
         result_frame_seq: int | None = None
         status = self._turn_status(room_id)
@@ -629,11 +625,9 @@ class SessionService:
                             await client.interrupt()
                 # **The drain is this loop, not a second one beside it.** The CLI finishes the
                 # message it is mid-way through, so an `assistant` frame between the interrupt and
-                # the `result` is the normal case — and a drain that looked only for the `result`
-                # threw it away: no row, no outbox row, no delivery, the text surviving only in
-                # `session_frames` where nobody looks (<../debug/message_drops.md> E3). A message
-                # the agent finished before it stopped is a message, so it is folded in by the one
-                # piece of code that knows what folding one in means.
+                # the `result` is the normal case, and the same `match` below folds it in — a
+                # message the agent finished before it stopped is a message
+                # (<../debug/message_drops.md> E3).
                 #
                 # It therefore counts towards `spoke` and `saw_assistant_message` exactly as it
                 # would have a moment earlier, which is what keeps the tail below honest: the room
@@ -709,8 +703,7 @@ class SessionService:
                             # Projected and deliberately not stored: what the agent thought, what
                             # its calls answered and what the harness narrated are richer than any
                             # surface renders today, and giving them rows is the half of stage 4
-                            # that moves data. Dropping them here changes nothing — the turn loop
-                            # never saw these frames at all.
+                            # that moves data.
                             pass
             if result is None:
                 raise RuntimeError("the Claude stream ended without a result for this turn")
@@ -778,7 +771,7 @@ class SessionService:
             # The outcome is the event's; the payload beside it is still Claude's, because
             # `session_turns` stores that CLI's cost, usage and duration as it arrived.
             # `TurnCompleted.usage` is the neutral shape that replaces it, and giving those
-            # columns their own meaning is a schema change this one does not make.
+            # columns their own meaning is a schema change of its own.
             await self._store.end_turn(
                 turn_id, TurnOutcome.ABORTED if abort_event.is_set() else completed.outcome, result
             )
@@ -826,11 +819,10 @@ class SessionService:
 def _projected(received: ReceivedFrame) -> tuple[ConversationEvent, ...]:
     """What one frame means, in the vocabulary every surface and every backend shares.
 
-    **One frame at a time, and a fresh projection for each**, which is what keeps this a change to
-    how the turn loop decides rather than to what it stores. A projector held across the turn would
-    merge the frames sharing one `message.id` into a single row and defer every completion to the
-    frame after it — real improvements, both, and both changes to the transcript. The fold with a
-    durable cursor beside it is the other half of stage 4.
+    **One frame at a time, and a fresh projection for each.** A projector held across the turn
+    would merge the frames sharing one `message.id` into a single row and defer every completion to
+    the frame after it — real improvements, both, and both changes to the transcript. The fold with
+    a durable cursor beside it is the other half of stage 4.
 
     `Projection.unprojected` is dropped rather than logged: counting the classes this release has
     no meaning for is worth doing where the events are *stored*, and per frame in the hot path it
@@ -973,10 +965,10 @@ async def _sse_stream(
         except KeyError:
             yield f"data: {json.dumps({'type': 'end'})}\n\n"
             return
-        # Serialized once and compared against what was last sent, rather than three times per
-        # wake: the view embeds the whole transcript, so each of those was the entire
-        # conversation. It suppresses little during a turn — every delta really does change the
-        # view — which is the reason not to pay for the comparison twice more.
+        # Serialized once and compared against what was last sent: the view embeds the whole
+        # transcript, so every serialization of it is the entire conversation. It suppresses
+        # little during a turn — every delta really does change the view — which is the reason
+        # not to pay for it more than once per wake.
         if (payload := next_view.model_dump_json()) != last_payload:
             last_status, last_payload = next_view.status, payload
             yield f"data: {payload}\n\n"

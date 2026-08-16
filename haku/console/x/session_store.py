@@ -7,6 +7,8 @@ message, the room's outbox row and the turn's `queued_reply` in one transaction 
 turn losing its answer (<../debug/message_drops.md>).
 
 Neutral runtime: no channel and no harness, so a second channel inherits every row in it.
+
+The incidents behind this file's invariants are in <../debug/2026_08_16_runtime_archaeology.md>.
 """
 
 from __future__ import annotations
@@ -121,13 +123,12 @@ def _frames_of_kinds(query: Select[tuple[SessionFrame]], kinds: Sequence[str] | 
 
 
 class BridgeAuthentication(StrEnum):
-    """What admission has to say to a redialling runner — and there are **three** answers.
+    """What admission has to say to a redialling runner.
 
-    "Not yours" and "not yet" are different, and conflating them is what made a console roll kill
-    the session it was supposed to survive: the runner redials about a second after its socket
-    drops, so it routinely arrives at a new replica while the dying one's lease is still valid,
-    and a refusal it cannot retry costs the sandbox. `session_runtime.handle_runner` gives `HELD` a 5xx handshake
-    response for exactly that reason.
+    **"Not yours" and "not yet" are different.** The runner redials about a second after its
+    socket drops, so it routinely arrives at a new replica while the dying one's lease is still
+    valid, and a refusal it cannot retry costs the sandbox — which is why
+    `session_runtime.handle_runner` answers `HELD` with a 5xx handshake response.
     """
 
     ACCEPTED = "accepted"
@@ -144,9 +145,8 @@ class BridgeAuthentication(StrEnum):
 class SpaSession:
     """A session created by the browser chat view, which has no room."""
 
-    # What the row records for this variant, carried on the variant rather than derived from it
-    # by an `isinstance` chain at the one call site — where the enum and the room had to be
-    # mapped separately, so a third surface would be two arms to remember rather than a field.
+    # What the row records for this variant, carried on the variant rather than derived from it by
+    # an `isinstance` chain at the call site: a third surface is a dataclass, not another arm.
     surface_column: ClassVar[ChatSurface] = ChatSurface.SPA
     room_id: ClassVar[None] = None
 
@@ -182,8 +182,8 @@ class ResumedTurn:
     """A turn a departed holder opened and asked, handed to whoever adopted the session.
 
     It carries nothing but the turn's name. What the departed holder got through is on the turn's
-    own row (`TurnState`), so adoption reads it rather than rebuilding it out of the frame log —
-    which is what stopped the live path and the recovery path being two accounts of one exchange.
+    own row (`TurnState`), so adoption reads it rather than rebuilding it out of the frame log:
+    the live path and the recovery path are one account of one exchange.
     """
 
     turn_id: UUID
@@ -425,9 +425,9 @@ class SessionStore:
            the record; waiting would be forever, since the replay of a recorded frame is refused.
         3. **Still running** — returned for `session_runtime._run_turn` to finish.
 
-        Only *which of the three* is asked of the frames. How far the answer had got is no longer
-        reconstructed here at all: it is on the turn's row, and `_run_turn` reads it the same way
-        whether it opened the turn or inherited it.
+        Only *which of the three* is asked of the frames. How far the answer got is not
+        reconstructed here: it is on the turn's row, and `_run_turn` reads it the same way whether
+        it opened the turn or inherited it.
 
         Leaving a turn open is safe only because `uq_session_turns_open` permits exactly one,
         which is what stops `next_prompt` opening a second beside the inherited one.
@@ -514,8 +514,7 @@ class SessionStore:
             db.add(
                 SessionPrompt(prompt_id=uuid4(), session_id=session_id, message_id=message.message_id, queued_at=now)
             )
-            # No status write: a queued prompt is not a turn in flight. Setting `responding`
-            # here is what let `request_abort` accept an abort for a turn that did not exist.
+            # No status write: a queued prompt is not a turn in flight.
             chat.updated_at = now
             await notify(db, SessionEventKind.PROMPT, session_id)
             await notify(db, SessionEventKind.UPDATE, session_id)
@@ -969,12 +968,10 @@ class SessionStore:
     ) -> bool:
         """Write what this assistant message says so far. True once the room owes it.
 
-        **A completed message queues the room's copy in this same transaction.** Writing it at
-        delivery time instead is what let a turn raising between producing text and speaking it
-        lose the answer entirely (<../debug/message_drops.md> E4): the message row committed, the
-        room was never told, and nothing afterwards knew there had been anything to say. Here the
-        two facts commit together or not at all, and `session_outbox` is what says the room is
-        still owed one.
+        **A completed message queues the room's copy in this same transaction** — the two facts
+        commit together or not at all, and `session_outbox` is what says the room is still owed
+        one. Writing it at delivery time instead loses the answer whenever the turn raises in
+        between (<../debug/message_drops.md> E4).
 
         **And it closes the turn's state in that same transaction** — the turn that this message
         belongs to is the one pointing at it, so no caller has to name it and the three writes
@@ -998,8 +995,8 @@ class SessionStore:
                 message.source_last_frame_seq = source_last_frame_seq
             message.status = ChatMessageStatus.COMPLETE if complete else ChatMessageStatus.STREAMING
             message.updated_at = now
-            # No `chat.status = RESPONDING` here. This runs per stream delta, so it was a
-            # session-row write per delta to hold a flag true that the open turn already states.
+            # No `chat.status = RESPONDING` here: this runs per stream delta, and the open turn
+            # already states it.
             chat.updated_at = now
             await notify(db, SessionEventKind.UPDATE, session_id)
             if not complete:
@@ -1067,9 +1064,7 @@ class SessionStore:
     async def fail(self, session_id: UUID, error: str, message_id: UUID | None = None) -> None:
         # Logged as well as persisted. The column is the operator-facing record, but it is not
         # reachable from `kubectl logs`, and a Matrix session that dies leaves no other trace —
-        # the room just stops answering. Diagnosing the asyncpg/psycopg listener mismatch that
-        # killed every session meant querying this column out of Postgres by hand, purely
-        # because the reason was written where logs are not.
+        # the room just stops answering.
         logger.error("session %s failed: %s", session_id, error)
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -1151,13 +1146,12 @@ class SessionStore:
         distinction. `authenticate_bridge` already admits any runner once the lease has lapsed —
         it refuses only while somebody else's is still valid — so an expired session is adoptable
         without anything having to hand it back. What it is not is *instantly* adopted: the runner
-        redials on a backoff, and failing the row the moment the lease lapses beat that redial
-        every time. Measured 2026-08-15: `release_lease` is a finalizer and did not run on any
-        roll, so every roll took this path and every roll cost the session.
+        redials on a backoff, and failing the row the moment the lease lapses beats that redial
+        every time.
 
         So a session is dead only once it has been adoptable for a whole `ADOPTION_GRACE` and
-        nobody took it. `release_lease` becomes what it should always have been — the fast path
-        that skips the wait, not the thing correctness rests on, which no finalizer can be.
+        nobody took it. `release_lease` is the fast path that skips that wait, not the thing
+        correctness rests on, which no finalizer can be.
 
         Set-based and idempotent, like `node_daemons._expire`: any replica may run it, concurrent
         runners converge, and a merely slow owner renews well before the TTL.
@@ -1172,17 +1166,16 @@ class SessionStore:
                 )
             ).all()
             for session_id in expired:
-                # Row-at-a-time rather than one UPDATE: `notify` is per session, and a room
-                # that is not told its session died is exactly the silence being fixed here.
+                # Row-at-a-time rather than one UPDATE: `notify` is per session, and a room that
+                # is not told its session died simply goes quiet.
                 chat = await db.get(Session, session_id, with_for_update=True)
                 if chat is None or chat.status not in LIVE_SESSION_STATUSES:
                     continue
-                # Say what actually happened, not one hardcoded sentence for three different
-                # events. `lease_holder` set means a replica died without handing it back; cleared
-                # but `bridge_connected_at` set means a runner was here and released/dropped and
-                # nobody re-adopted (a roll, or the sandbox reaching its TTL) — the common case,
-                # and the one the old "no replica (never attached)" got exactly backwards; neither
-                # set means the sandbox never connected. "mid-turn" only if a turn was in fact open.
+                # Say which of the three ended it. `lease_holder` set means a replica died without
+                # handing it back; cleared but `bridge_connected_at` set means a runner was here
+                # and released/dropped and nobody re-adopted (a roll, or the sandbox reaching its
+                # TTL) — the common case; neither set means the sandbox never connected.
+                # "mid-turn" only if a turn was in fact open.
                 mid_turn = " mid-turn" if chat.status == SessionStatus.RESPONDING else ""
                 if chat.lease_holder is not None:
                     detail = f"the console replica holding it ({chat.lease_holder}) went away"

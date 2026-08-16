@@ -134,9 +134,6 @@ loop's signatures.
   connection's lifecycle and `_run_turn` is a frame reducer, and those are two files' worth of
   concern in one class. Each split lands with the change that creates it, never as a standalone
   reshuffle with no acceptance criterion.
-- **Prune the archaeology.** Roughly 150 of `session_{runtime,store}.py`'s lines narrate what the code used to be
-  and which bug that caused; STYLE puts those under Remove. Keep the invariant as one imperative
-  line ("do not gate on session status: admission asks the turn"), move the story to `debug/`.
 - **`bridge_token_fingerprint = b""`** is a cleanup-pending tri-state on a credential column, and the
   zero value STYLE says never to use for absence. It wants to be `claim_cleaned_at`.
 - Smaller: the store imports its read models from the MCP tool that reads it; `message_view`'s
