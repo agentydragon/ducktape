@@ -7,7 +7,7 @@ real CLI emits is pinned separately by the probes in `haku/cli_protocol/probes/`
 
 It answers `re: $body`, so a reply can be matched to the message that earned it — which is what
 `../test_matrix_fullstack_e2e.py` asserts of every message the operator sent. The prompt a Matrix
-turn carries is `[$event_id] $body` per message (`matrix_session._as_prompt`), so the event id is
+turn carries is `[$event_id] $body` per message (`channels/matrix/session.py`'s `_as_prompt`), so the event id is
 stripped first. The body also carries the turn's stage directions, in trailing `[…]` markers the
 test writes and this strips before answering:
 
@@ -15,7 +15,7 @@ test writes and this strips before answering:
   leaves a turn open across a console going away.
 - `[narrate=N]` — write N lines to stderr first. Each becomes a `setup_output` frame and then one
   paced notice in the room, so this is how a test fills the room's outbound queue: past
-  `matrix_pacer.SEND_BURST` the queue drains at `SENDS_PER_SECOND`, and whatever is queued behind
+  `channels/matrix/pacer.py`'s `SEND_BURST` the queue drains at `SENDS_PER_SECOND`, and whatever is queued behind
   that has minutes rather than milliseconds to still be waiting when the console goes away.
 - `[silent]` — answer with the `result` frame alone and no `assistant` message, which is the turn
   whose text exists only at the end (`_run_turn`'s `if not spoke` fallback).

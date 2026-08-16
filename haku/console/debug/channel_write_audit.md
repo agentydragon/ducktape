@@ -14,6 +14,10 @@ Read of `haku/console/x/{matrix_client,matrix_sync,matrix_session,matrix_pacer,r
 and `haku/console/x/claude_chat.py` at `devel`, 2026-08-16. Line numbers are where each call
 stood then; the symbol names are what to grep for once they have drifted.
 
+**Paths below are pre-move.** The runtime is `x/session_runtime.py` and the Matrix modules are
+`x/channels/matrix/{client,sync,session,pacer,outbox}.py` since the layout split; the symbol names
+are unchanged and are what to grep for.
+
 ## The write surface is six calls
 
 `MatrixClient` is the only holder of a Matrix credential, and it exposes exactly six calls that

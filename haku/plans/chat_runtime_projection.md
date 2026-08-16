@@ -26,7 +26,7 @@ The last two are closed: stage 3 below made that state durable, so `_said_anythi
 `_streaming_assistant` and `TurnResumed`'s state fields are gone. The first two are still asked of
 the frames, and stage 4 is what retires them.
 
-Roughly fifty comment sites in `claude_chat.py` reason about "already / twice / replay /
+Roughly fifty comment sites in `session_runtime.py` reason about "already / twice / replay /
 duplicate". That is the tax.
 
 ## The shape
@@ -53,7 +53,7 @@ being a guess and becomes "the cursor passed this frame". Stage 3 has since take
 third, the fourth and the last of those, and made `spoke` a durable fact ahead of the cursor; what
 is left on the list is what stage 4 removes.
 
-Room delivery becomes an outbox drained by `matrix_pacer`, which is already a queue and needs only
+Room delivery becomes an outbox drained by `channels/matrix/pacer.py`, which is already a queue and needs only
 to become durable. Then `spoke` is "the outbox row is marked sent", `EventTag.transaction_id` is
 uniformly the outbox row id with no derive-versus-mint rule left, and `_deliver_reply`'s
 "deliberately not fatal, TODO retry" resolves itself — retrying is what an outbox does.
@@ -226,7 +226,7 @@ differently**: the index embeds conversation and not "provisioning a sandbox", t
 them differently, and a classifier cares about outgoing agent text rather than bootstrap.
 
 `RoomEventKind` — `REPLY`, `NARRATION`, `LIFECYCLE`, `STATUS`, `HOLDING`, `ROOM`, `UNREADABLE` — is
-already that enum, and it lives in `matrix_client.py`: a neutral concept inside a channel-specific
+already that enum, and it lives in `channels/matrix/client.py`: a neutral concept inside a channel-specific
 module, the same smell as `coarse_status` reading Claude's frames from the channel side. It moves
 into the neutral layer, and channels render categories rather than deciding them. That also
 delivers what <../console/plans/session_channels.md> asks for — session-level events recorded rather
@@ -334,7 +334,7 @@ so one neutral message can be several channel messages: "sent" is a property of 
 channel)_ pair that may hold more than one remote id.
 
 What survives both, unchanged: frames as per-backend evidence, the outbox as rows with a cursor, and
-content as neutral markup rendered per channel — `matrix_markdown.py` already does the second half of
+content as neutral markup rendered per channel — `channels/matrix/formatted_body.py` already does the second half of
 that, so the channels share a source and not a rendering.
 
 #### Does a turn live over frames or over neutral events?
@@ -401,8 +401,8 @@ backend.
 ### 5. The room outbox — **done**
 
 `session_outbox` holds each produced reply until the homeserver has taken it;
-`matrix_outbox.RoomOutboxDrain` says it, under an advisory lock, through the pacer, marking it
-sent only after `room_send` returns. `matrix_pacer` kept its deque and its budget: it is still
+`channels/matrix/outbox.py`'s `RoomOutboxDrain` says it, under an advisory lock, through the pacer, marking it
+sent only after `room_send` returns. The pacer kept its deque and its budget: it is still
 what decides _when_, and the console's narration still lives on it. What follows is what the
 stage was written against, kept because the reasoning is still the design's.
 

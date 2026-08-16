@@ -16,11 +16,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.database_schema import SessionOutbox
-from haku.console.x.claude_chat import BridgeAuthentication, MatrixSession, SessionStore, SpaSession
+from haku.console.x.channels.matrix.client import MatrixError, RoomEventKind
+from haku.console.x.channels.matrix.outbox import MAX_SEND_ATTEMPTS, PendingReply, RoomOutbox, RoomOutboxDrain
+from haku.console.x.channels.matrix.pacer import RoomPacer
 from haku.console.x.conftest import MATRIX_ROOM
-from haku.console.x.matrix_client import MatrixError, RoomEventKind
-from haku.console.x.matrix_outbox import MAX_SEND_ATTEMPTS, PendingReply, RoomOutbox, RoomOutboxDrain
-from haku.console.x.matrix_pacer import RoomPacer
+from haku.console.x.session_runtime import BridgeAuthentication, MatrixSession, SessionStore, SpaSession
 
 
 @pytest.fixture
@@ -67,7 +67,7 @@ class _Homeserver:
 def _unpaced(engine: AsyncEngine, outbox: RoomOutbox, homeserver: _Homeserver) -> tuple[RoomPacer, RoomOutboxDrain]:
     """A drain over a pacer with effectively no rate, so a test waits on outcomes not on tokens.
 
-    The rate itself is `matrix_pacer`'s and is asserted there; what is under test here is what
+    The rate itself is `pacer`'s and is asserted there; what is under test here is what
     the rows say afterwards.
     """
     pacer = RoomPacer(sends_per_second=1e6, burst=100)

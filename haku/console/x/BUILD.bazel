@@ -3,8 +3,8 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "claude_chat",
-    srcs = ["claude_chat.py"],
+    name = "session_runtime",
+    srcs = ["session_runtime.py"],
     deps = [
         ":room_status",
         ":sandbox_claims",
@@ -83,15 +83,21 @@ py_library(
 )
 
 py_library(
+    name = "system_prompt",
+    srcs = ["system_prompt.py"],
+    deps = ["@pypi//jinja2"],
+)
+
+py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        ":claude_chat",
-        ":matrix_session",
         ":session_notifications",
+        ":session_runtime",
         "//haku/console:config",
         "//haku/console:operator_identity_store",
+        "//haku/console/x/channels/matrix:session",
         "//haku/console/x/testing:recording_claims",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -104,10 +110,10 @@ py_test(
     size = "medium",  # provisions a Postgres database per test
     srcs = ["test_session_live_updates.py"],
     deps = [
-        ":claude_chat",
         ":conftest",
         ":session_live_updates",
         ":session_notifications",
+        ":session_runtime",
         "//:conftest",
         "//haku/console:conftest",
         "//haku/console:console_events",
@@ -137,17 +143,20 @@ py_test(
 )
 
 py_test(
-    name = "test_claude_chat",
+    name = "test_session_runtime",
     size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_claude_chat.py"],
+    srcs = ["test_session_runtime.py"],
     deps = [
-        ":claude_chat",
         ":conftest",
+        ":session_notifications",
+        ":session_runtime",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "//haku/console/x/channels/matrix:client",
+        "//haku/console/x/channels/matrix:session",
         "//haku/console/x/testing:recording_claims",
         "//haku/runtime/x/claude_bridge:protocol",
         "@pypi//more_itertools",
@@ -187,9 +196,9 @@ py_test(
     size = "medium",  # provisions a Postgres database per test
     srcs = ["test_session_views.py"],
     deps = [
-        ":claude_chat",
         ":conftest",
         ":session_frames",
+        ":session_runtime",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
@@ -214,17 +223,17 @@ py_test(
     size = "large",  # a Postgres database, a uvicorn console and a runner subprocess per test
     srcs = ["test_claude_bridge_e2e.py"],
     data = [
-        "//haku/console/x/testing:stub_claude_bin",
+        "//haku/console/x/claude_code/testing:stub_claude_bin",
         "//haku/runtime/x/claude_bridge:runner_bin",
         "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],
     requires_docker = True,
     deps = [
-        ":claude_chat",
         ":conftest",
         ":session_frames",
         ":session_notifications",
+        ":session_runtime",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
@@ -237,228 +246,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//websockets",  # keep: uvicorn's websocket protocol implementation, not a direct import
-    ],
-)
-
-py_test(
-    name = "test_matrix_fullstack_e2e",
-    size = "large",  # a Synapse, a Postgres, a console process and a runner process per test
-    srcs = ["test_matrix_fullstack_e2e.py"],
-    data = [
-        "//cluster/k8s:haku_console_system_prompt",
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-        "//third_party/containers:synapse",
-    ],
-    requires_docker = True,
-    deps = [
-        ":claude_chat",
-        ":conftest",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console/x/testing:console_deployment",
-        "//haku/console/x/testing:operator_room",
-        "//haku/console/x/testing:synapse_container",
-        "@pypi//matrix_nio",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "matrix_client",
-    srcs = ["matrix_client.py"],
-    deps = [
-        ":matrix_markdown",
-        "@pypi//matrix_nio",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "matrix_markdown",
-    srcs = ["matrix_markdown.py"],
-    deps = [
-        "@pypi//beautifulsoup4",
-        "@pypi//markdown",
-    ],
-)
-
-py_test(
-    name = "test_matrix_markdown",
-    srcs = ["test_matrix_markdown.py"],
-    deps = [
-        ":matrix_markdown",
-        "//:conftest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_matrix_client",
-    srcs = ["test_matrix_client.py"],
-    deps = [
-        ":matrix_client",
-        "//:conftest",
-        "@pypi//matrix_nio",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_matrix_homeserver_e2e",
-    size = "large",  # brings up a real Synapse, then overfills a room past its timeline limit
-    srcs = ["test_matrix_homeserver_e2e.py"],
-    data = [
-        "//third_party/containers:ryuk",
-        "//third_party/containers:synapse",
-    ],
-    requires_docker = True,
-    deps = [
-        ":matrix_client",
-        "//:conftest",
-        "//haku/console/x/testing:operator_room",
-        "//haku/console/x/testing:synapse_container",
-        "@pypi//matrix_nio",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "system_prompt",
-    srcs = ["system_prompt.py"],
-    deps = ["@pypi//jinja2"],
-)
-
-py_library(
-    name = "matrix_session",
-    srcs = ["matrix_session.py"],
-    deps = [
-        ":claude_chat",
-        ":matrix_client",
-        ":session_notifications",
-        ":system_prompt",
-        "//haku/console:chat_models",
-        "//haku/console:config",
-        "//haku/console:database_schema",
-        "//haku/console:operator_identity_store",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_matrix_session",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_matrix_session.py"],
-    deps = [
-        ":claude_chat",
-        ":conftest",
-        ":matrix_client",
-        ":matrix_session",
-        ":system_prompt",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "//haku/console:config",
-        "//haku/console:conftest",
-        "//haku/console:database_schema",
-        "@pypi//pydantic",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "matrix_pacer",
-    srcs = ["matrix_pacer.py"],
-    deps = [":matrix_client"],
-)
-
-py_test(
-    name = "test_matrix_pacer",
-    srcs = ["test_matrix_pacer.py"],
-    deps = [
-        ":matrix_client",
-        ":matrix_pacer",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "matrix_sync",
-    srcs = ["matrix_sync.py"],
-    deps = [
-        ":matrix_client",
-        ":matrix_outbox",
-        ":matrix_pacer",
-        ":matrix_session",
-        ":system_prompt",
-        "//haku/console:chat_models",
-        "//haku/console:config",
-        "//haku/console:database_schema",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "matrix_outbox",
-    srcs = ["matrix_outbox.py"],
-    deps = [
-        ":matrix_client",
-        ":matrix_pacer",
-        "//haku/console:database_schema",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_matrix_outbox",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_matrix_outbox.py"],
-    deps = [
-        ":claude_chat",
-        ":conftest",
-        ":matrix_client",
-        ":matrix_outbox",
-        ":matrix_pacer",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console:database_schema",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_matrix_sync",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_matrix_sync.py"],
-    deps = [
-        ":claude_chat",
-        ":conftest",
-        ":matrix_client",
-        ":matrix_outbox",
-        ":matrix_pacer",
-        ":matrix_session",
-        ":matrix_sync",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "//haku/console:config",
-        "//haku/console:conftest",
-        "//haku/console:database_schema",
-        "@pypi//pydantic",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
     ],
 )
 

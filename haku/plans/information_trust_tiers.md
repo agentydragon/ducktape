@@ -485,7 +485,7 @@ Four properties it needs, and one of them is not obvious:
   stopping that agent stops the source; other agents in the room continuing is a feature, not a
   gap. Widen only if a failure is ever found that is not attributable to one sender.
 - **The queue is the room outbox, and it is not new.**
-  <chat_runtime_projection.md> § stage 5 already turns `matrix_pacer`'s deque into rows for
+  <chat_runtime_projection.md> § stage 5 already turns the Matrix pacer's deque into rows for
   delivery reliability, and <../console/plans/session_channels.md> § 1 wants the same rows for
   channel reconciliation. This makes a third consumer, and the one that changes the priority: an
   outbox is a prerequisite for the classifier rather than a tidy-up, because a classifier needs
@@ -607,7 +607,7 @@ only calibration signal the classifier will ever get.
 - **A withheld message has to be visible as withheld.** Silently dropping one leaves the operator
   unable to tell whether the agent answered, and leaves the other agents waiting on a reply that
   is never coming. It wants its own `RoomEventKind` in the tag vocabulary
-  (<../console/x/matrix_client.py>) so the room shows that something was said and held.
+  (<../console/x/channels/matrix/client.py>) so the room shows that something was said and held.
 - **Loop protection stops being optional.** matrix_chat_runtime puts mention gating, sender
   allowlists and multi-bot loop protection out of scope explicitly **because it is a DM** (R3.5).
   Several bots in a room reinstates all three, and R1.5's "ignore my own sender" is no longer

@@ -15,7 +15,7 @@ reader of provisioning state gets an answer the real implementation would only g
 that is *not there* (`CLAIM_CREATED` is its 404 case). Nothing reads the step today; the
 annotation is the real type so that at least the shape is checked, but a test about provisioning
 steps needs `../test_sandbox_claims.py`, not this. It is shared rather than copied so that the
-stand-in in `matrix_console_replica.py` cannot lie differently.
+stand-in in `channels/matrix/testing/console_replica.py` cannot lie differently.
 """
 
 from __future__ import annotations

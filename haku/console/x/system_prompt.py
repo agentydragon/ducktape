@@ -33,7 +33,7 @@ class HistoryMessage:
     """One thing already said in this conversation, either side of it, as we recorded it.
 
     No event id of its own: this comes from the console's transcript rather than from the room
-    (`matrix_sync.recent_history`), and the ids we hold are the ones ingress wrote into the
+    (`channels/matrix/sync.py`'s `recent_history`), and the ids we hold are the ones ingress wrote into the
     operator's prompts — inline in `body`, exactly as the previous session was shown them. Haku's
     own replies have none, because the room's id for a reply is minted by the homeserver at send
     time and nothing brings it back.

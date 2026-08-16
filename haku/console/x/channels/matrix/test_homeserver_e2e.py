@@ -29,9 +29,16 @@ import pytest
 import pytest_bazel
 from nio import AsyncClient, DevicesResponse
 
-from haku.console.x.matrix_client import HAKU_CONTENT_KEY, TIMELINE_LIMIT, EventTag, Invite, MatrixClient, RoomEventKind
-from haku.console.x.testing.operator_room import Message, MessageKind, OperatorRoom, Redacted, sign_in
-from haku.console.x.testing.synapse_container import Synapse, run_synapse
+from haku.console.x.channels.matrix.client import (
+    HAKU_CONTENT_KEY,
+    TIMELINE_LIMIT,
+    EventTag,
+    Invite,
+    MatrixClient,
+    RoomEventKind,
+)
+from haku.console.x.channels.matrix.testing.operator_room import Message, MessageKind, OperatorRoom, Redacted, sign_in
+from haku.console.x.channels.matrix.testing.synapse_container import Synapse, run_synapse
 
 PASSWORD = "not-a-secret"
 
@@ -254,7 +261,7 @@ async def test_a_redacted_event_is_gone_from_the_room(bot: Bot, joined_room: Ope
     """R6.5 — a retired status line leaves nothing behind, and leaves it nowhere the room reads.
 
     It does still leave something in the console's transcript, which is where a re-awakened
-    session now reads from (`matrix_sync.recent_history`) — a redaction is the one thing the room
+    session now reads from (`sync.recent_history`) — a redaction is the one thing the room
     knows and our record does not. Harmless for what redaction is used for here, since a status
     line was never recorded in the first place.
     """

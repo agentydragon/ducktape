@@ -12,7 +12,7 @@ closes the turn that raises between producing text and speaking it (E4) — and 
 `sent_at` is written only once `room_send` has returned, so every other outcome, including the
 replica disappearing mid-send, leaves the row claimable by whoever comes next.
 
-**`matrix_pacer` is unchanged and still owns when.** The drain does not send; it queues one
+**`pacer` is unchanged and still owns when.** The drain does not send; it queues one
 reply into the pacer and waits for that closure to settle before claiming the next. So replies
 keep the room's rate budget, keep their order among themselves, and keep interleaving with the
 status line and the lifecycle notices — which stay in-process on purpose, since a notice
@@ -38,8 +38,8 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.database_schema import SessionOutbox
-from haku.console.x.matrix_client import EventTag, RoomEventKind
-from haku.console.x.matrix_pacer import MAX_QUEUED_SENDS, SENDS_PER_SECOND, RoomPacer
+from haku.console.x.channels.matrix.client import EventTag, RoomEventKind
+from haku.console.x.channels.matrix.pacer import MAX_QUEUED_SENDS, SENDS_PER_SECOND, RoomPacer
 
 logger = logging.getLogger(__name__)
 
@@ -237,7 +237,7 @@ class RoomOutboxDrain:
                 await self._post(reply)
                 await self._outbox.mark_sent(reply.outbox_id)
             except Exception as error:
-                # Recorded and re-raised rather than handled: `matrix_pacer` logs it and learns a
+                # Recorded and re-raised rather than handled: `pacer` logs it and learns a
                 # 429's `retry_after_ms` from it, and only the row can carry it past this process.
                 await self._outbox.record_failure(reply.outbox_id, str(error))
                 raise

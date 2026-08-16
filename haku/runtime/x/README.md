@@ -6,7 +6,7 @@ convention. Design still under discussion in <../../plans/agent_sdk_sandbox_runt
 `claude_bridge` is the sandbox side of the Claude chat experiment: the wire protocol between
 console and sandbox, the CLI protocol client, the launch construction, the WebSocket transport, and
 the `runner_bin` that runs inside the sandbox image. It moved here with
-`haku/console/x/claude_chat.py`, which is its only production consumer — the two halves of one
+`haku/console/x/session_runtime.py`, which is its only production consumer — the two halves of one
 experiment, on both sides of the WebSocket. It was `agent_sdk_transport` until the console took the
 CLI protocol over and the name stopped being true.
 

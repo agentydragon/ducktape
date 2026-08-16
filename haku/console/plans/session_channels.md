@@ -65,7 +65,7 @@ That is a different primitive from a delivery queue, and it buys three things:
   console holds. No separate post-on-send path, and no enqueue/post ordering judgment to get
   right (§5).
 - **It subsumes the room outbox rather than competing with it.**
-  <../../plans/chat_runtime_projection.md> § stage 5 turns `matrix_pacer`'s deque into rows; that
+  <../../plans/chat_runtime_projection.md> § stage 5 turns the Matrix pacer's deque into rows; that
   is the push half, delivering promptly. The reconciler is the convergence half, delivering
   eventually and at most once. Build the cursor first and the outbox becomes the fast path that
   advances it.
@@ -128,12 +128,12 @@ near-live but is not per-token. Take the regression knowingly:
 Four things get posted to the room today. They are not one kind of thing, and the difference
 decides which become rows:
 
-| What                    | Written by                                   | Recorded today                    |
-| ----------------------- | -------------------------------------------- | --------------------------------- |
-| Lifecycle transitions   | `_SessionStatusAnnouncer` (matrix_session)   | **nowhere**                       |
-| Bootstrap narration     | `_progress_reporter` → `RoomSurface.report`  | **already** — `setup_output` rows |
-| The in-turn status line | `_TurnStatus` → `show_status`/`clear_status` | no, and deliberately              |
-| The typing indicator    | `_TurnStatus` → `set_typing`                 | no, and deliberately              |
+| What                    | Written by                                             | Recorded today                    |
+| ----------------------- | ------------------------------------------------------ | --------------------------------- |
+| Lifecycle transitions   | `_SessionStatusAnnouncer` (channels/matrix/session.py) | **nowhere**                       |
+| Bootstrap narration     | `_progress_reporter` → `RoomSurface.report`            | **already** — `setup_output` rows |
+| The in-turn status line | `_TurnStatus` → `show_status`/`clear_status`           | no, and deliberately              |
+| The typing indicator    | `_TurnStatus` → `set_typing`                           | no, and deliberately              |
 
 **Record what happened; derive what is being shown.** The status line and the typing indicator
 are Matrix _renderings of live state_ — R6.3 already says status is a coarse state the console
@@ -233,7 +233,7 @@ appears under Haku's account.
 
 **Not posting it is ruled out**, because two readers would then see half a conversation: the
 operator's own Element, and any room read tool (R11.3) when it lands. Re-awakening used to be the
-third and is not any more — it reads the transcript (`matrix_session.RoomTranscript`), where a
+third and is not any more — it reads the transcript (`channels/matrix/session.py`'s `RoomTranscript`), where a
 console-originated prompt is a row like any other whether or not the relay ever posted.
 
 **So: a relay message.** `@haku` posts the operator's text under a new `RoomEventKind` — `relay` —
@@ -308,7 +308,7 @@ The richer version, a persistent room-level status, is worth wanting and is not 
 
 - **`m.room.topic` and `m.room.pinned_events` are state events, gated by power level.** The
   operator creates the DM (R3.6), so they hold PL 100 and `@haku` joins at the default 0 —
-  meaning the console most likely **cannot** set either today. `matrix_client.py` sends no state
+  meaning the console most likely **cannot** set either today. `channels/matrix/client.py` sends no state
   events at all, so this is unbuilt capability rather than a switch. The fix is the operator
   granting Haku PL 50 in Element, which is a manual gesture with no place in R3.6b's
   adopt-from-traffic path. Check the actual power levels before designing on top of this.
@@ -321,7 +321,7 @@ So: link in the notice now; topic as a follow-up gated on a power-level check.
 ### Interlinking, now that there is a frontend to link to
 
 Worth doing broadly and in both directions — room notice → console session, console session →
-the room (a `matrix.to` permalink, which `matrix_client.py` already builds for read results,
+the room (a `matrix.to` permalink, which `channels/matrix/client.py` already builds for read results,
 R11.5), session → its tool calls, tool call → the session that made it. The last of those shares
 its mechanism with console/TODO.md's per-tool-call deep link, which is unbuilt for the same
 reason: nothing yet opens _the exact thing_ a URL names.

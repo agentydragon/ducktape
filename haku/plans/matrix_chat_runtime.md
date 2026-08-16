@@ -15,7 +15,7 @@ plugs into. That runtime is not re-specified here.
 
 ## Why
 
-The operator chat surface today is `haku/console/x/claude_chat.py` (sessions, message rows,
+The operator chat surface today is `haku/console/x/session_runtime.py` (sessions, message rows,
 WebSocket streaming, sandbox claims, reconciliation) plus
 `console/frontend/x/claude_chat_page.tsx` and the markdown / scroll / code-block modules
 around it. Routing chat through Matrix buys an existing client ecosystem instead: mobile
@@ -116,7 +116,7 @@ thought to read.
 One thing nio is deliberately not allowed to own: the **sync position**, which lives in
 Postgres because the console is a leader-elected replica set and the position must survive
 a handoff to another pod. How the gap is actually closed lives in
-`haku/console/x/matrix_client.py`, not here.
+`haku/console/x/channels/matrix/client.py`, not here.
 
 ### R2 — Batching
 
@@ -256,7 +256,7 @@ input to a running turn**. Interrupt exists; steer does not.
   the deadline stays and the console renews it while the session is live: the sandbox lives
   as long as something is tending it, and is reclaimed by the controller shortly after
   nothing is. Realized by `_renew_lease` sliding `shutdownTime` forward on the lease
-  heartbeat (`sandbox_claims.py` `renew`, a `test` on `resourceVersion` with a 409 retry —
+  heartbeat (`x/sandbox_claims.py` `renew`, a `test` on `resourceVersion` with a 409 retry —
   the shape `sandbox_mcp`'s `_renew` established).
 - **R3.2b [v1] Nothing may bound the sandbox by a creation-age fence.** A Kyverno
   `CleanupPolicy` reaping by `creationTimestamp` — not by idleness, not by deadline — caps a
@@ -332,7 +332,7 @@ input to a running turn**. Interrupt exists; steer does not.
   ran it backwards — the channel was the source of truth for the conversation, and a second
   channel (Telegram's bot API cannot page a chat's history) could not have reproduced the memory,
   so two channels would have re-awakened from two records that can disagree. The read is now
-  `session_messages` scoped by `sessions.room_id` (`matrix_session.RoomTranscript`).
+  `session_messages` scoped by `sessions.room_id` (`channels/matrix/session.py`'s `RoomTranscript`).
 
   Two things the room knows and our record does not, both accepted: history from before we were
   recording, and a redaction — the operator unsaying a message removes it from the room and not
@@ -427,7 +427,7 @@ input to a running turn**. Interrupt exists; steer does not.
   therefore cannot be shared entries. What made that true was R5.3, and R5.3a relaxes it.
 - **R5.2a** _Rejected: SDK-hosted in-process tools_, which is what this requirement said until
   the read design was worked through. It is the obvious mechanism — the `ClaudeSDKClient` runs
-  in haku-console (`claude_chat.py`), so a `type: "sdk"` server's handlers execute where the
+  in haku-console (`session_runtime.py`), so a `type: "sdk"` server's handlers execute where the
   session, its room binding and the credential already are, and scoping is a closure rather
   than a lookup.
 
@@ -512,7 +512,7 @@ input to a running turn**. Interrupt exists; steer does not.
   reimplementation, and it also fences the agent out of anything not anticipated — threads,
   relations, redactions. Four shapes were weighed:
   - **A console read surface** — **the chosen shape**, for the reason under "What settled it"
-    below. Three read tools on the console's existing `/mcp`, backed by the `matrix_client.py`
+    below. Three read tools on the console's existing `/mcp`, backed by the `channels/matrix/client.py`
     calls that already exist (R5.2).
   - **Credential substitution on `@haku`'s own token** — preferred until the corpus turned out
     to be two corpora. The sandbox carries a placeholder and the egress proxy substitutes the
@@ -861,7 +861,7 @@ both replicas start on scale-up and contend, and a double-take would double ever
 
 What Phase 0 does **not** prove is a gap too large for one sync response to carry (R1.7's
 gotcha) — that needs more messages in the gap than the timeline limit, which no manual test
-is going to type. `//haku/console/x:test_matrix_homeserver_e2e` is that test: it brings up a
+is going to type. `//haku/console/x/channels/matrix:test_homeserver_e2e` is that test: it brings up a
 real Synapse in a container, overfills a room past `TIMELINE_LIMIT` with the sync loop
 stopped, resumes from the watermark, and requires every message back in order and once.
 
@@ -894,7 +894,7 @@ fails on the other's absence.
 
 ### Phase 1 — Wire the existing session machinery to it — **done**
 
-Most of this exists. `claude_chat.py` already has the store (sessions, messages, Postgres
+Most of this exists. `session_runtime.py` already has the store (sessions, messages, Postgres
 `LISTEN/NOTIFY`, `next_prompt` / `wait_for_prompt`), the SandboxClaim, the WebSocket
 bridge, and the `handle_runner` turn loop. The Matrix path replaces the two ends:
 
@@ -1046,7 +1046,7 @@ transcript with every tool result missing (R5.5):
    cannot be folded over; `read_frames` leaves deltas out of its default view instead.
 3. **`room_read_event` / `room_read_around` / `room_read_history`** — still open, and now the only
    unbuilt item in this phase. Thin over the
-   `matrix_client.py` calls that already exist, with `room_id` optional and defaulting to the
+   `channels/matrix/client.py` calls that already exist, with `room_id` optional and defaulting to the
    calling session's room (R5.3a). Closes R11.3, and retires the system prompt's standing
    TODO: it tells the agent event IDs are citable while the harness can only resolve one it
    was already shown.
@@ -1083,7 +1083,7 @@ did.
 
 ### The decision that gates Phase 1
 
-Extend `claude_chat.py` with a second front end, or fork a `matrix_chat.py`? **Extend.**
+Extend `session_runtime.py` with a second front end, or fork a `matrix_chat.py`? **Extend.**
 The store, claim, bridge, and turn loop work and are tested, and Matrix only replaces the
 two ends; forking duplicates several hundred lines of session and sandbox management to
 avoid touching an HTTP route. Whether the SPA chat surface is then deleted is a decision

@@ -1,6 +1,6 @@
-"""Test implementations of the experimental console surfaces' outside-the-process collaborators."""
+"""Test implementations of the session runtime's outside-the-process collaborators."""
 
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_library")
 
 package(
     default_testonly = True,
@@ -14,106 +14,6 @@ py_library(
 )
 
 py_library(
-    name = "stub_claude",
-    srcs = ["stub_claude.py"],
-    deps = [
-        "//haku/cli_protocol:frame_identity",
-        "//haku/console/x:session_frames",
-    ],
-)
-
-# A binary rather than a source file in `data`: the runner execs `HAKU_CLAUDE_PATH` directly, and
-# a source staged in runfiles does not reliably carry its executable bit.
-py_binary(
-    name = "stub_claude_bin",
-    main_module = "haku.console.x.testing.stub_claude",
-    deps = [":stub_claude"],
-)
-
-py_library(
-    name = "synapse_container",
-    srcs = ["synapse_container.py"],
-    # Reaches every target that runs a Synapse through `deps`, so a new one needs no `data` of its own.
-    data = ["synapse_overrides.yaml"],
-    deps = [
-        "//third_party/containers:rlocations",
-        "//util:oci",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
-        "@pypi//docker",
-        "@pypi//httpx",
-        "@pypi//tenacity",
-        "@pypi//testcontainers",
-    ],
-)
-
-py_library(
     name = "waiting",
     srcs = ["waiting.py"],
-)
-
-py_library(
-    name = "operator_room",
-    srcs = ["operator_room.py"],
-    deps = [
-        ":synapse_container",
-        ":waiting",
-        "@pypi//matrix_nio",
-    ],
-)
-
-py_library(
-    name = "console_deployment",
-    srcs = ["console_deployment.py"],
-    # Reaches every target that runs a console replica through `deps`, so a new one needs no
-    # `data` of its own.
-    data = [
-        ":matrix_console_replica_bin",
-        ":stub_claude_bin",
-        "//haku/runtime/x/claude_bridge:runner_bin",
-    ],
-    deps = [
-        ":waiting",
-        "//haku/console:chat_models",
-        "//haku/console:database_schema",
-        "//haku/console/x:claude_chat",
-        "//haku/console/x:session_frames",
-        "//util:net",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "matrix_console_replica",
-    srcs = ["matrix_console_replica.py"],
-    deps = [
-        ":recording_claims",
-        "//haku/console:config",
-        "//haku/console:operator_identity",
-        "//haku/console:operator_identity_store",
-        "//haku/console/x:claude_chat",
-        "//haku/console/x:matrix_client",
-        "//haku/console/x:matrix_outbox",
-        "//haku/console/x:matrix_session",
-        "//haku/console/x:matrix_sync",
-        "//haku/console/x:sandbox_claims",
-        "//haku/console/x:session_notifications",
-        "//haku/console/x:system_prompt",
-        "@pypi//fastapi",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-        "@pypi//uvicorn",
-    ],
-)
-
-py_binary(
-    name = "matrix_console_replica_bin",
-    main_module = "haku.console.x.testing.matrix_console_replica",
-    deps = [
-        ":matrix_console_replica",
-        "@pypi//websockets",  # keep: uvicorn's websocket protocol implementation, not a direct import
-    ],
 )

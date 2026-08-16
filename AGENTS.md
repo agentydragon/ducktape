@@ -165,7 +165,7 @@ landing without a PR), run the relevant validation before hand-off.
 **Gotcha: `bbr test` on a test target does not lint the libraries it depends
 on.** The mypy/ruff aspects only produce their output groups for the targets
 _named on the command line_. On #4116 all 54 tests passed locally and CI still
-failed — on `mypy //haku/console/x:claude_chat`, a library the local
+failed — on `mypy //haku/console/x:session_runtime`, a library the local
 `bbr build` had never named. So when you do run Bazel locally, name the changed
 `py_library` targets too:
 

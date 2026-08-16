@@ -26,7 +26,7 @@ Outside that window the derivation degrades to what a random `txn_id` did, which
 second line of defence and not the first. The first is `frame_uid`: a replayed `assistant` frame is
 dropped before any send happens.
 
-Pinned by `//haku/console/x:test_matrix_homeserver_e2e`, which sends one transaction twice against a
+Pinned by `//haku/console/x/channels/matrix:test_homeserver_e2e`, which sends one transaction twice against a
 real Synapse and requires a single event back. It asks for the behaviour rather than the source, so
 a Synapse that rekeys its cache fails the test instead of quietly invalidating this note.
 
@@ -38,7 +38,7 @@ client-server API talks about pagination tokens. Synapse accepts it, and the bac
 the truncated timeline exactly: nothing is delivered twice and nothing falls in the join. (Gap
 recovery is now the only caller; re-awakening used to be the other, and reads the console's own
 transcript instead.) Checked against Synapse v1.158.0 on 2026-08-15 by
-`//haku/console/x:test_matrix_homeserver_e2e`, which fills a room past `TIMELINE_LIMIT` with the
+`//haku/console/x/channels/matrix:test_homeserver_e2e`, which fills a room past `TIMELINE_LIMIT` with the
 loop stopped — the only way to reach the case at all (R1.7).
 
 ## nio's 429 retry is unlimited by default, not off
@@ -46,7 +46,7 @@ loop stopped — the only way to reach the case at all (R1.7).
 `AsyncClient._send` loops on `M_LIMIT_EXCEEDED`, sleeping the server's `retry_after_ms` or five
 seconds, and `max_limit_exceeded=None` means forever. A rate-limited send therefore never returned
 an error — it stopped returning, with the caller blocked inside `room_send` and nothing in any log.
-`matrix_client.MAX_RATE_LIMIT_RETRIES` bounds it so a 429 can reach `matrix_pacer`, which is the
+`channels/matrix/client.py`'s `MAX_RATE_LIMIT_RETRIES` bounds it so a 429 can reach the pacer, which is the
 only measurement of the room's real budget the console ever receives.
 
 ## A websocket closed before `accept()` is an HTTP 403, not a close code

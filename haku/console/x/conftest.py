@@ -17,9 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.x.claude_chat import SessionService, SessionStore
-from haku.console.x.matrix_session import MatrixConversationStore
+from haku.console.x.channels.matrix.session import MatrixConversationStore
 from haku.console.x.session_notifications import SessionNotifications
+from haku.console.x.session_runtime import SessionService, SessionStore
 from haku.console.x.testing.recording_claims import RecordingClaims
 
 MATRIX_USER = "@haku:allegedly.works"

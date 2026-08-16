@@ -7,7 +7,28 @@ Two chat surfaces live here, deliberately. They are separate experiments over on
 session machinery, not a migration in progress: Matrix is not replacing the SPA view, and
 whether either survives is open (<../../plans/matrix_chat_runtime.md> § Open questions).
 
-## `claude_chat.py` — sessions, sandboxes, and the turn loop
+## The directory says which axis a module varies on
+
+Three things vary independently here, and until they were separated the tree could not tell you
+which was which. _Matrix is just one of pluggable backends — channels_ (operator, 2026-08-16), and
+the harness directory is `claude_code/` rather than `claude/` because the CLI harness and the model
+behind it are different axes (operator, 2026-08-15):
+
+| Where                | What it is                                                                                   |
+| -------------------- | -------------------------------------------------------------------------------------------- |
+| `x/*.py`             | **The runtime.** Sessions, turns, frames, notifications, sandboxes — no channel, no harness. |
+| `x/channels/<name>/` | **One channel.** Matrix today; the SPA is served by the runtime's own routes.                |
+| `x/claude_code/`     | **One CLI harness.** Named for the product whose binary it launches, not for the model.      |
+
+The rule for placing a module is what it would take with it if the other axis were replaced: a
+second channel must be able to reuse everything at the runtime level unchanged, and a module that
+cannot compile without `matrix-nio` belongs under `channels/matrix/`. `room_status.py` is the case
+worth knowing: it reads as Matrix and is not — a status line is a channel affordance the console
+surface wants too, and the driver is handed two coroutines and never learns which room it speaks
+to. `sandbox_claims.py` is the mirror case: `claude-`-prefixed claim names, but it is Kubernetes
+provisioning and would serve any harness.
+
+## `session_runtime.py` — sessions, sandboxes, and the turn loop
 
 The shared substrate: session, message and turn rows, Postgres `LISTEN`/`NOTIFY`, the
 SandboxClaim, the runner WebSocket bridge, and the `handle_runner` turn loop. Also the SPA chat
@@ -15,7 +36,8 @@ surface's own HTTP routes and SSE stream, which is the older of the two experime
 
 **The tables are `sessions` and `session_*`.** They were `claude_chat_*` — six backend-neutral
 concepts named after the one CLI that fills them, while the design requires a second backend to be
-representable. Migrations `0040` and `0041` are the expand and contract of that rename.
+representable. Migrations `0040` and `0041` are the expand and contract of that rename, and this
+module's own name was the last of it: it is the session runtime, not Claude's.
 
 **A turn is a row, and it is a range over the frame log.** `next_prompt` dequeues a prompt and
 opens `session_turns` in one transaction; `_run_turn` is that turn's span and closes it on
@@ -58,7 +80,7 @@ machinery goes with it.
 
 ### What has been lifted out of it
 
-Three leaves, each a module nothing in `claude_chat.py` reaches into — so the store, the service and
+Three leaves, each a module nothing in `session_runtime.py` reaches into — so the store, the service and
 the turn loop kept their shape while the file lost the parts that never needed to be beside them
 (<../../plans/chat_runtime_cleanup.md> § Anytime).
 
@@ -99,18 +121,26 @@ so linking one message to its frames is a filter over this view, not a second re
 deliberately not guessed at here: the join key the transcript has today (`agent_message_id`) is
 missing on thousands of production rows, which is why that change exists.
 
-## Matrix chat surface
+## Matrix chat surface — `channels/matrix/`
 
-- `matrix_client.py` — the client-API calls the loop makes, over `matrix-nio`.
-- `matrix_sync.py` — logs in as `@haku`, long-polls `/sync`, binds the one room Haku
+- `client.py` — the client-API calls the loop makes, over `matrix-nio`.
+- `sync.py` — logs in as `@haku`, long-polls `/sync`, binds the one room Haku
   services, and hands what the operator types to the session behind it. Holds the only
   Matrix credential, so everything that speaks into the room speaks through it.
-- `matrix_session.py` — the room/session binding, ingress (`MatrixTurns`), the surface a
+- `session.py` — the room/session binding, ingress (`MatrixTurns`), the surface a
   room-backed turn reports through (`MatrixSurface`), and the supervisor that keeps a live session
   behind the room.
-- `matrix_pacer.py` — one paced outbound queue per room, over Synapse's `rc_message` budget.
-- `matrix_outbox.py` — the room's outbox: replies as `session_outbox` rows, and the drain that
+- `pacer.py` — one paced outbound queue per room, over Synapse's `rc_message` budget.
+- `outbox.py` — the room's outbox: replies as `session_outbox` rows, and the drain that
   says them.
+- `formatted_body.py` — Haku's Markdown into the HTML subset Matrix clients render.
+
+**The outbox is half here and half at the runtime level, deliberately.** The row is written where
+the reply is produced, by `session_runtime.queue_reply` into the neutral `session_outbox` table, in
+the same transaction as the assistant message; what lives here is the claim-and-send half, which
+cannot exist without a homeserver. That split is the shape every outbound channel write has to
+take — recorded first, sent from the record — so a second channel inherits the record and writes
+only its own drain.
 
 Three behaviours worth knowing before reading the code:
 
@@ -182,17 +212,20 @@ there is no way to ask a healthy Postgres for that.
 ### The stand-ins live in `testing/`
 
 Everything a test stands something up _with_ is a module in `testing/` — the claim stand-in
-(`recording_claims.py`), the stub `claude` (`stub_claude.py`), the Synapse container
-(`synapse_container.py`) and the console replica (`matrix_console_replica.py`) — rather than a
-`conftest.py` fixture or a source file in a target's `data`. Two of them are processes a test
+(`testing/recording_claims.py`), the stub `claude` (`claude_code/testing/stub_claude.py`), the
+Synapse container (`channels/matrix/testing/synapse_container.py`) and the console replica
+(`channels/matrix/testing/console_replica.py`) — rather than a
+`conftest.py` fixture or a source file in a target's `data`. Each sits under the axis it stands in
+for, so a stand-in cannot outlive the thing it fakes. Two of them are processes a test
 starts, and a `py_binary` can import neither a conftest nor a file staged only as data. The
 `test_*.py` files stay beside what they test.
 
 What a test drives them _through_ lives there too, so a second e2e inherits it rather than
-copying it: `operator_room.py` is the operator's side of a room — an `nio.AsyncClient` of its own,
-handing back typed `RoomEvent`s rather than Matrix JSON — `console_deployment.py` is the console
-replicas serving that room, and `waiting.py` is the bounded poll under both. It shares nio with
-`matrix_client.py` and deliberately **nothing else**: nio is third party and is not the subject,
+copying it: `channels/matrix/testing/operator_room.py` is the operator's side of a room — an
+`nio.AsyncClient` of its own, handing back typed `RoomEvent`s rather than Matrix JSON —
+`channels/matrix/testing/console_deployment.py` is the console replicas serving that room, and
+`testing/waiting.py` is the bounded poll under both, at the runtime level because a bounded poll is
+nobody's channel. It shares nio with `channels/matrix/client.py` and deliberately **nothing else**: nio is third party and is not the subject,
 but `EventTag`, `SyncResult` and the event mapping on top of it are exactly what these tests are
 checking, so reading the room back through them would check them against themselves.
 
@@ -203,7 +236,8 @@ directions a prompt carries (`[hold]`, `[narrate=N]`, `[silent]`) and by `HAKU_S
 
 ### The homeserver is a real Synapse as well
 
-`test_matrix_homeserver_e2e.py` brings one up in a container (`testing/synapse_container.py`) and runs
+`channels/matrix/test_homeserver_e2e.py` brings one up in a container
+(`channels/matrix/testing/synapse_container.py`) and runs
 `MatrixClient` against it, with the room's other side driven straight through the client-server
 API rather than through the client under test. It exists for the questions a canned response can
 only agree with: whether a resumed `/sync` across a gap larger than `TIMELINE_LIMIT` really comes
@@ -212,24 +246,25 @@ target exists), whether a sync watermark really is a `/messages` token, whether 
 transaction id really is refused, and whether the `works.allegedly.haku` tag survives the wire on
 both halves of an edit.
 
-`test_matrix_client.py` keeps its canned homeserver, and should. The split is which side of the
+`channels/matrix/test_client.py` keeps its canned homeserver, and should. The split is which side of the
 wire the question is about: what Synapse does belongs in the e2e target, what the parser does with
 what Synapse said belongs in the unit tests — where an unknown tag kind or an exhausted backfill
 budget costs one dict rather than thousands of messages.
 
 ### And the whole surface, as processes
 
-`test_matrix_fullstack_e2e.py` composes those two targets with the bridge one: that Synapse, a
-console replica as its own process (`testing/matrix_console_replica.py`, with the real sync loop
-and supervisor), a runner process per sandbox behind a stub `claude` (`testing/stub_claude.py`),
+`channels/matrix/test_fullstack_e2e.py` composes those two targets with the bridge one: that
+Synapse, a console replica as its own process (`channels/matrix/testing/console_replica.py`, with
+the real sync loop and supervisor), a runner process per sandbox behind a stub `claude`
+(`claude_code/testing/stub_claude.py`),
 and a real Postgres. It asserts one operator-facing property — every message the operator sent has
 exactly one reply in the final room — which is what nothing below the whole stack can answer.
 
 **Three of its four tests were written failing**, because that property did not hold (R11.6, "a
 produced reply must never be lost silently"): a delivery that raised was logged and dropped while
-`spoke` was set anyway, `matrix_pacer` was an in-process queue that died with its replica, and a
-console adopting a session skipped the replayed frame as one already recorded. `matrix_outbox.py`
-is what closes all three. The fourth is quiet-path and passed throughout, which is what made the
+`spoke` was set anyway, the pacer was an in-process queue that died with its replica, and a
+console adopting a session skipped the replayed frame as one already recorded.
+`channels/matrix/outbox.py` is what closes all three. The fourth is quiet-path and passed throughout, which is what made the
 other three attributable to the drop rather than to the harness.
 
 The console is a process, and the sandboxes are started by the test off the claim files that
@@ -331,7 +366,7 @@ dependency:
 - `Session`, `SessionMessage`, `MatrixSyncState`, and `MatrixConversation` in
   <../database_schema.py>, plus their Alembic revisions — migrations are one lineage for the
   whole database.
-- The `RoomSurface` port is defined next to the service that calls it (`claude_chat.py`), and
+- The `RoomSurface` port is defined next to the service that calls it (`session_runtime.py`), and
   the composition in <../app.py> is what ties a surface to a session.
 
 ## Where the reasoning lives

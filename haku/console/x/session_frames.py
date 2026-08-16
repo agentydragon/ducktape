@@ -2,7 +2,7 @@
 
 The kinds a row's `kind` column carries, the two frames the console authors itself, and the
 readers that pick a value out of a payload. Everything here is about the wire's own shapes, so
-it holds no session state and touches no table — `claude_chat.py`'s store and turn loop are
+it holds no session state and touches no table — `session_runtime.py`'s store and turn loop are
 what put these rows in and take them out.
 """
 

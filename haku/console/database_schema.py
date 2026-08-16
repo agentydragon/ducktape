@@ -1171,7 +1171,7 @@ class SessionOutbox(Base):
     it sent only once the send has returned is what makes "answered" mean answered.
 
     **Replies only.** The console's narration — status line, lifecycle notices, holding and
-    bootstrap lines — stays on `matrix_pacer`'s in-process queue: R11.6 is about a reply the
+    bootstrap lines — stays on `channels/matrix/pacer.py`'s in-process queue: R11.6 is about a reply the
     agent produced, and a notice that describes a moment is not worth redelivering minutes
     later. That is also why there is no `kind` column: every row here is a `REPLY`.
 
@@ -1183,7 +1183,7 @@ class SessionOutbox(Base):
     __tablename__ = "session_outbox"
 
     # Also the transaction id the send goes out under, so a redrive is refused by the homeserver
-    # rather than posting twice — see `matrix_outbox.PendingReply.transaction_id`.
+    # rather than posting twice — see `channels/matrix/outbox.py`'s `PendingReply.transaction_id`.
     outbox_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     session_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False

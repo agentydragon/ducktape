@@ -30,7 +30,11 @@ from haku.console.chat_models import (
 )
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import Session, SessionFrame, SessionMessage, SessionOutbox, SessionPrompt
-from haku.console.x.claude_chat import (
+from haku.console.x.channels.matrix.client import InboundMessage
+from haku.console.x.channels.matrix.session import MatrixTurns
+from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER, MCP_TOKEN, runtime_config
+from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
+from haku.console.x.session_runtime import (
     ABORTED_NOTICE,
     ADOPTION_GRACE,
     GOING_AWAY_CODE,
@@ -42,10 +46,6 @@ from haku.console.x.claude_chat import (
     SessionStore,
     SpaSession,
 )
-from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER, MCP_TOKEN, runtime_config
-from haku.console.x.matrix_client import InboundMessage
-from haku.console.x.matrix_session import MatrixTurns
-from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.testing.recording_claims import RecordingClaims
 from haku.runtime.x.claude_bridge.cli_client import ClaudeCli, ReceivedFrame, SentPrompt
 from haku.runtime.x.claude_bridge.protocol import NOT_ADMITTED_CODE
@@ -325,7 +325,7 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
     _ClosingClaudeClient.on_connect = lambda: chat_store.request_close(operator_id, session_id)
-    with patch("haku.console.x.claude_chat.cli_over_websocket", _ClosingClaudeClient):
+    with patch("haku.console.x.session_runtime.cli_over_websocket", _ClosingClaudeClient):
         await chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])
 
     assert recording_claims.created == [session_id]
@@ -374,7 +374,7 @@ async def test_a_rolling_replica_hands_the_session_back_instead_of_ending_it(
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
     with (
-        patch("haku.console.x.claude_chat.cli_over_websocket", _RollingClaudeClient),
+        patch("haku.console.x.session_runtime.cli_over_websocket", _RollingClaudeClient),
         pytest.raises(asyncio.CancelledError),
     ):
         await chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])
@@ -395,7 +395,7 @@ async def test_a_returning_runner_is_admitted_and_takes_the_lease(
     token = recording_claims.tokens[session_id]
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
 
-    with patch("haku.console.x.claude_chat.REPLICA", "haku-console-b"):
+    with patch("haku.console.x.session_runtime.REPLICA", "haku-console-b"):
         assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.HELD, (
             "a replica still renewing its lease keeps the session it is serving — but only until it lapses"
         )
@@ -572,7 +572,7 @@ async def test_a_held_session_tells_the_runner_to_retry_rather_than_refusing_it(
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
     websocket = _LifecycleWebSocket()
 
-    with patch("haku.console.x.claude_chat.REPLICA", "haku-console-b"):
+    with patch("haku.console.x.session_runtime.REPLICA", "haku-console-b"):
         await chat_service.handle_runner(cast(Any, websocket), session_id, token)
 
     assert websocket.denied == 503
@@ -985,7 +985,7 @@ async def _queued_for_the_room(sessions: async_sessionmaker[AsyncSession], sessi
     """What this session put in the room's outbox, oldest first.
 
     The turn no longer hands its answer to anything: it writes a row with the message the answer
-    is, and `matrix_outbox` says it. So the assertion that used to read a delivery sink reads the
+    is, and `channels/matrix/outbox.py` says it. So the assertion that used to read a delivery sink reads the
     rows, which is the same question asked of the record that actually survives the process.
     """
     async with sessions() as db:
@@ -1695,7 +1695,7 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, 
     # ever deletes one on the way out, and Kubernetes is not what this test is about.
     view, token = await chat_store.create(operator_id, SpaSession())
 
-    with patch("haku.console.x.claude_chat.cli_over_websocket", _RealDbClaudeClient):
+    with patch("haku.console.x.session_runtime.cli_over_websocket", _RealDbClaudeClient):
         runner = asyncio.create_task(
             chat_service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token)
         )
@@ -1945,7 +1945,7 @@ async def test_an_idle_session_hands_back_the_instant_its_socket_drops(
     view, token = await chat_store.create(operator_id, SpaSession())
     _DisconnectingClaudeClient.instance = None
 
-    with patch("haku.console.x.claude_chat.cli_over_websocket", _DisconnectingClaudeClient):
+    with patch("haku.console.x.session_runtime.cli_over_websocket", _DisconnectingClaudeClient):
         runner = asyncio.create_task(
             chat_service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token)
         )
@@ -1979,7 +1979,7 @@ async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
     """
     view, token = await chat_store.create(operator_id, SpaSession())
 
-    with patch("haku.console.x.claude_chat.cli_over_websocket", _DyingMidStreamClaudeClient):
+    with patch("haku.console.x.session_runtime.cli_over_websocket", _DyingMidStreamClaudeClient):
         runner = asyncio.create_task(
             chat_service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token)
         )
@@ -2062,7 +2062,7 @@ async def test_a_returning_runner_beats_the_sweep(
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
     await _age_lease(migrated_sessions, session_id, seconds_ago=1)
 
-    with patch("haku.console.x.claude_chat.REPLICA", "haku-console-b"):
+    with patch("haku.console.x.session_runtime.REPLICA", "haku-console-b"):
         assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED, (
             "a lapsed lease is adoptable by whichever replica the runner reaches"
         )
@@ -2098,7 +2098,7 @@ async def test_shutdown_hands_back_every_lease_this_replica_holds(chat_store, mi
 async def test_shutdown_leaves_another_replicas_lease_alone(chat_store, migrated_sessions, operator_id) -> None:
     """One replica going down must not hand back a session another replica is still serving."""
     view, token = await chat_store.create(operator_id, SpaSession())
-    with patch("haku.console.x.claude_chat.REPLICA", "haku-console-b"):
+    with patch("haku.console.x.session_runtime.REPLICA", "haku-console-b"):
         assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
 
     assert await chat_store.release_held_leases() == 0
@@ -2232,7 +2232,7 @@ async def test_a_cancelled_runner_hands_the_session_back_without_stranding_it(
     """
     view, token = await chat_store.create(operator_id, SpaSession())
 
-    with patch("haku.console.x.claude_chat.cli_over_websocket", _RealDbClaudeClient):
+    with patch("haku.console.x.session_runtime.cli_over_websocket", _RealDbClaudeClient):
         runner = asyncio.create_task(
             chat_service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token)
         )
@@ -2244,7 +2244,7 @@ async def test_a_cancelled_runner_hands_the_session_back_without_stranding_it(
             await runner
 
     assert await chat_store.status(view.session_id) == SessionStatus.READY
-    with patch("haku.console.x.claude_chat.REPLICA", "haku-console-b"):
+    with patch("haku.console.x.session_runtime.REPLICA", "haku-console-b"):
         assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
 
     await _age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)

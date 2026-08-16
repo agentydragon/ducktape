@@ -3,7 +3,7 @@
 Driven with `nio.AsyncClient` against the homeserver, so login, sends, edits, redactions,
 `/messages` pagination and typing are the library's problem rather than hand-written HTTP.
 
-**Independent of `matrix_client.py`, deliberately, and nothing here may import from it.** The
+**Independent of `client.py`, deliberately, and nothing here may import from it.** The
 production client is nio plus *our* layer — `EventTag` and the transaction ids derived from it,
 `SyncResult`, the mapping of nio's parse onto `InboundMessage`/`UnmappableEvent`, the pacer, the
 outbox — and that layer is the thing under test. A test that read the room back through it would
@@ -56,7 +56,7 @@ from nio import (
 # `nio`'s package surface omits it; this is where it is defined.
 from nio.api import RelationshipType
 
-from haku.console.x.testing.synapse_container import HomeserverError
+from haku.console.x.channels.matrix.testing.synapse_container import HomeserverError
 from haku.console.x.testing.waiting import WedgedError, wait_until
 
 # How long an ephemeral event may take to reach the other side of the room.

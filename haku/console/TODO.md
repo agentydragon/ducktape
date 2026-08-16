@@ -195,12 +195,12 @@ genuinely operational knobs should move onto the config model:
 
 - `x/room_status.py` — `STATUS_AFTER_SECONDS` (8s before a turn says anything, R6.2),
   `STATUS_EDIT_INTERVAL_SECONDS` (5s edit floor, R6.5), `TYPING_REFRESH_SECONDS`.
-- `x/claude_chat.py` — `LEASE_TTL` / `LEASE_RENEW_INTERVAL`, `PROVISION_LEASE`, `ADOPTION_GRACE`.
-- `x/matrix_pacer.py` — `SENDS_PER_SECOND`, `SEND_BURST`, `MAX_QUEUED_SENDS`, `FLUSH_SECONDS`.
-- `x/matrix_session.py` — `SUPERVISE_INTERVAL`, `LEADER_RETRY`, `PROVISION_BACKOFF`,
+- `x/session_runtime.py` — `LEASE_TTL` / `LEASE_RENEW_INTERVAL`, `PROVISION_LEASE`, `ADOPTION_GRACE`.
+- `x/channels/matrix/pacer.py` — `SENDS_PER_SECOND`, `SEND_BURST`, `MAX_QUEUED_SENDS`, `FLUSH_SECONDS`.
+- `x/channels/matrix/session.py` — `SUPERVISE_INTERVAL`, `LEADER_RETRY`, `PROVISION_BACKOFF`,
   `RE_AWAKENING_MESSAGES` (the N of R3.3a).
-- `x/matrix_sync.py` — `ERROR_BACKOFF`, `REFUSED_BATCH_BACKOFF`, and `MAX_BACKFILL_PAGES` /
-  `TIMELINE_LIMIT` from `x/matrix_client.py`.
+- `x/channels/matrix/sync.py` — `ERROR_BACKOFF`, `REFUSED_BATCH_BACKOFF`, and `MAX_BACKFILL_PAGES` /
+  `TIMELINE_LIMIT` from `x/channels/matrix/client.py`.
 - `runtime/x/claude_bridge/runner.py` — `MAX_DISCONNECTED_SECONDS`, `REPLAY_WINDOW`,
   `RECONNECT_{BASE,MAX}_DELAY`. **These live in the runner**, whose image is pinned at claim
   creation, so they are not console config at all: they reach a running sandbox only through the
@@ -229,9 +229,9 @@ deliberately still holding the old name, each for its own reason.
   deployed bundle names them.
 - **`/internal/claude/runner/{session_id}`.** Left alone on purpose: the runner image dials it, so
   renaming it is a coordinated two-sided roll, not part of a console-only change.
-- **`x/claude_chat.py` itself**, and the SPA's `frontend/x/claude_chat_page.tsx`. The module split is
-  its own item (<../plans/chat_runtime_cleanup.md> § Anytime), and renaming the file now would
-  collide with it.
+- **The SPA's `frontend/x/claude_chat_page.tsx`.** The Python side is done — `x/claude_chat.py` is
+  `x/session_runtime.py` — but the page is the frontend's own rename and wants doing with the
+  `/chat`-and-`/conversations` merge rather than ahead of it.
 
 ## `session_frames` does not map to one concept
 

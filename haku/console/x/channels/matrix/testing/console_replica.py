@@ -16,7 +16,7 @@ fault:
   not reproducible on demand against a healthy Synapse, and what is under test is what the
   console does with a send that failed rather than how it came to fail.
 
-`HOSTNAME` is what `claude_chat.REPLICA` reads, so each replica must be given a distinct one:
+`HOSTNAME` is what `session_runtime.REPLICA` reads, so each replica must be given a distinct one:
 it is what the session lease records as its holder, and two replicas sharing it would make an
 adoption look like the same process reconnecting to itself.
 """
@@ -43,23 +43,23 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.x.claude_chat import SessionService, SessionStore, internal_router
-from haku.console.x.matrix_client import MatrixError
-from haku.console.x.matrix_outbox import PendingReply, RoomOutbox
-from haku.console.x.matrix_session import (
+from haku.console.x.channels.matrix.client import MatrixError
+from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox
+from haku.console.x.channels.matrix.session import (
     MatrixConversationStore,
     MatrixSessionSupervisor,
     MatrixSurface,
     MatrixTurns,
     RoomTranscript,
 )
-from haku.console.x.matrix_sync import MatrixSyncService, MatrixSyncStore
+from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.session_notifications import SessionNotifications
+from haku.console.x.session_runtime import SessionService, SessionStore, internal_router
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.console.x.testing.recording_claims import fixed_provisioning_view
 
-logger = logging.getLogger("haku.console.x.testing.matrix_console_replica")
+logger = logging.getLogger("haku.console.x.channels.matrix.testing.console_replica")
 
 # The one identity namespace this replica resolves the configured operator subject in. Any value
 # works as long as every replica in a run agrees, since it is only ever resolved to a local UUID.

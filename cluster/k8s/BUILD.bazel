@@ -155,7 +155,9 @@ filegroup(
 filegroup(
     name = "haku_console_system_prompt",
     srcs = ["haku/console/matrix_system_prompt.md.j2"],
-    visibility = ["//haku/console/x:__pkg__"],
+    # `__subpackages__`: the template is rendered by the session runtime and read back by
+    # the Matrix channel's full-stack test, which is a package below it.
+    visibility = ["//haku/console/x:__subpackages__"],
 )
 
 # The per-claim sandbox bootstrap, shared with the Console-owned Claude runner image so the

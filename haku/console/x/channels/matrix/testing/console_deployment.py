@@ -25,18 +25,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ChatMessageRole, SessionStatus
 from haku.console.database_schema import SessionMessage
-from haku.console.x.claude_chat import SessionStore
 from haku.console.x.session_frames import ASSISTANT_FRAME_KIND
+from haku.console.x.session_runtime import SessionStore
 from haku.console.x.testing.waiting import BUDGET_SECONDS, WedgedError, wait_until
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-CONSOLE_BIN = "_main/haku/console/x/testing/matrix_console_replica_bin"
+CONSOLE_BIN = "_main/haku/console/x/channels/matrix/testing/console_replica_bin"
 RUNNER_BIN = "_main/haku/runtime/x/claude_bridge/runner_bin"
-STUB_CLAUDE = "_main/haku/console/x/testing/stub_claude_bin"
-# The one runfile a test target has to declare for itself: `//cluster/k8s` is visible to
-# `//haku/console/x` and not to this package, so it cannot ride in on this library's `data`.
+STUB_CLAUDE = "_main/haku/console/x/claude_code/testing/stub_claude_bin"
 SYSTEM_PROMPT_TEMPLATE = "_main/cluster/k8s/haku/console/matrix_system_prompt.md.j2"
 
 
@@ -148,7 +146,7 @@ class Deployment:
 
     async def start_console(self, name: str) -> None:
         assert self._console is None, "a replica is already running on this port"
-        # HOSTNAME is what `claude_chat.REPLICA` reads and what the session lease records as its
+        # HOSTNAME is what `session_runtime.REPLICA` reads and what the session lease records as its
         # holder: two replicas sharing one would make an adoption indistinguishable from the same
         # process reconnecting to itself, which is the thing under test.
         self._console = await self._spawn(name, get_required_path(CONSOLE_BIN), {"HOSTNAME": name})

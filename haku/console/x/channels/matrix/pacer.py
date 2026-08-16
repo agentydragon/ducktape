@@ -22,7 +22,7 @@ the position it was first given rather than jumping the queue on every change.
 lease need not be the same pod, so two of these can exist for one room, each believing it owns
 the whole budget. The bucket is therefore an estimate. The homeserver's own correction is a
 429's `retry_after_ms`, and `_penalise` is where that lands — which is also why nio's
-unlimited in-request 429 retry is bounded (`matrix_client.MAX_RATE_LIMIT_RETRIES`): a 429 has
+unlimited in-request 429 retry is bounded (`client.MAX_RATE_LIMIT_RETRIES`): a 429 has
 to reach this object to be learned from.
 """
 
@@ -37,7 +37,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from haku.console.x.matrix_client import MatrixError
+from haku.console.x.channels.matrix.client import MatrixError
 
 logger = logging.getLogger(__name__)
 

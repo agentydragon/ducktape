@@ -39,14 +39,14 @@ from haku.console.chat_models import (
 from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.database_schema import MatrixConversation, Session, SessionMessage
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.x.claude_chat import REPLICA, MatrixSession, SessionService, SessionStore
-from haku.console.x.matrix_client import InboundMessage, RoomEventKind
+from haku.console.x.channels.matrix.client import InboundMessage, RoomEventKind
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
+from haku.console.x.session_runtime import REPLICA, MatrixSession, SessionService, SessionStore
 from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, SystemPromptTemplate
 
 logger = logging.getLogger(__name__)
 
-# Distinct from the sync loop's lock in matrix_sync and the OAuth refresh lock.
+# Distinct from the sync loop's lock in `sync` and the OAuth refresh lock.
 _SUPERVISOR_ADVISORY_LOCK = 0x4D58_5345  # "MXSE"
 
 # A session is worth keeping while it is in one of these; anything else (including a

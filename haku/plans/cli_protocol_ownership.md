@@ -71,7 +71,7 @@ Two to know about without acting on:
 **Status: built (design B below).** A console replica that dies no longer takes its Claude Code
 session with it: the runner keeps the CLI alive across the dropped socket and redials, and an
 adopting console picks the conversation up mid-flight. The lease
-(<../console/x/claude_chat.py>, `expire_stale_leases`) is what makes that safe — a dropped session is
+(<../console/x/session_runtime.py>, `expire_stale_leases`) is what makes that safe — a dropped session is
 **observable** (another replica notices the holder stopped renewing) and, because an expired lease
 now means unowned rather than dead, **adoptable**: the returning runner takes it over and the sweep
 fails the session only if none does. The design alternatives and the reasoning that chose B are kept

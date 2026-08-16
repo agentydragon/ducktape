@@ -1,5 +1,9 @@
 # Why nearly every session is `failed` while every turn succeeded
 
+**Paths below are pre-move.** The runtime is `x/session_runtime.py` and the Matrix modules are
+`x/channels/matrix/{client,sync,session,pacer,outbox}.py` since the layout split; the symbol names
+are unchanged and are what to grep for.
+
 Follow-up to <frame_shape_census.md>, which observed that `result.subtype` is `success` and
 `result.is_error` is `false` on **129 of 129** `result` frames, across **27 sessions the console
 records as `failed`**, and left the contradiction unexplained. Two readings were possible: the

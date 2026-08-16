@@ -9,6 +9,10 @@ Read of `haku/console/x/{claude_chat,matrix_sync,matrix_pacer,matrix_client,matr
 `devel`, 2026-08-15. Line numbers are where each thing stood then; the symbol names are what to
 grep for once they have drifted.
 
+**Paths below are pre-move.** The runtime is `x/session_runtime.py` and the Matrix modules are
+`x/channels/matrix/{client,sync,session,pacer,outbox}.py` since the layout split; the symbol names
+are unchanged and are what to grep for.
+
 ## The one structural fact everything below follows from
 
 **Delivery is fire-and-forget, and the producer's `await` returns before any HTTP request exists.**

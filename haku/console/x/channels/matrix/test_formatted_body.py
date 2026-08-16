@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from haku.console.x.matrix_markdown import to_formatted_body
+from haku.console.x.channels.matrix.formatted_body import to_formatted_body
 
 
 def test_plain_prose_sends_no_second_copy_of_itself() -> None:

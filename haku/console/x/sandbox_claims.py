@@ -1,6 +1,6 @@
 """The narrow declarative `SandboxClaim` one chat session runs in, and how it is inspected.
 
-Out of `claude_chat.py` because none of it is about chat: it creates a claim, deletes it, and
+Out of `session_runtime.py` because none of it is about chat: it creates a claim, deletes it, and
 turns the CR graph underneath — claim, Sandbox, Pod, runner container — into the one progress
 view the SPA renders. A change to that graph should not read as a change to the turn loop.
 

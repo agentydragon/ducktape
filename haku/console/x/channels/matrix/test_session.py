@@ -13,7 +13,17 @@ from sqlalchemy import delete, select
 
 from haku.console.chat_models import ChatMessageRole, SessionStatus, TurnOutcome
 from haku.console.database_schema import Session
-from haku.console.x.claude_chat import (
+from haku.console.x.channels.matrix.client import RoomEventKind
+from haku.console.x.channels.matrix.session import (
+    NOTHING_SAID,
+    MatrixConversationStore,
+    MatrixSessionSupervisor,
+    MatrixSurface,
+    RoomTranscript,
+)
+from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER, runtime_config
+from haku.console.x.session_notifications import SessionNotifications
+from haku.console.x.session_runtime import (
     ADOPTION_GRACE,
     BridgeAuthentication,
     MatrixSession,
@@ -21,16 +31,6 @@ from haku.console.x.claude_chat import (
     SessionStore,
     SpaSession,
 )
-from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER, runtime_config
-from haku.console.x.matrix_client import RoomEventKind
-from haku.console.x.matrix_session import (
-    NOTHING_SAID,
-    MatrixConversationStore,
-    MatrixSessionSupervisor,
-    MatrixSurface,
-    RoomTranscript,
-)
-from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.system_prompt import HistoryMessage, SystemPromptTemplate
 
 
@@ -335,7 +335,7 @@ async def test_a_turn_with_nothing_to_say_says_so(bound: UUID) -> None:
 
     A notice rather than a reply, because nothing was said — this is the console reporting an
     outcome, not the agent talking. Answers themselves no longer come through this surface at
-    all: they are outbox rows, and `test_matrix_outbox.py` is where what the room hears is
+    all: they are outbox rows, and `test_outbox.py` is where what the room hears is
     asserted.
     """
     del bound

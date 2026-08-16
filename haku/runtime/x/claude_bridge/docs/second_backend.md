@@ -60,7 +60,7 @@ something `resolve` can write and point at without the shape growing a field.
 
 ## What the seam deliberately does not cover
 
-- **The console-side frame→event adapter.** <../../../../console/x/claude_chat.py> reads Claude's
+- **The console-side frame→event adapter.** <../../../../console/x/session_runtime.py> reads Claude's
   `assistant` / `user` / `result` / `system` frames and its `stream_event` deltas directly. A
   second backend needs that behind an adapter too, and it waits on the turn-loop refactor rather
   than being forced through now.

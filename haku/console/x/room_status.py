@@ -1,7 +1,7 @@
 """What a room is shown while one turn runs: the typing indicator and the status line.
 
 The driver alone — it is handed two coroutines and told about frames, and never learns which
-room it is speaking to or how a line is created and edited. `matrix_session.py` owns that half,
+room it is speaking to or how a line is created and edited. `channels/matrix/session.py` owns that half,
 and a session with no room gets the same driver with the no-op sinks below.
 """
 
@@ -21,7 +21,7 @@ from haku.console.x.session_frames import content_blocks
 STATUS_AFTER_SECONDS = 8.0
 
 # How often a running turn re-asserts its typing notice. Comfortably inside the homeserver's
-# expiry (`matrix_client.TYPING_TIMEOUT_MS`, 30s), because the point of that expiry is to retire
+# expiry (`channels/matrix/client.py`'s `TYPING_TIMEOUT_MS`, 30s), because the point of that expiry is to retire
 # the indicator when the console dies — not to blink it off mid-turn while it is still going.
 TYPING_REFRESH_SECONDS = 10.0
 

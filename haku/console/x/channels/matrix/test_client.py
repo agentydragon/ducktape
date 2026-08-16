@@ -9,8 +9,9 @@ from uuid import UUID
 import pytest_bazel
 from nio.responses import RoomMessagesResponse, SyncResponse
 
-from haku.console.x import matrix_client
-from haku.console.x.matrix_client import EventTag, MatrixClient, RoomEventKind
+# Aliased: `client` is the name every test here gives its `MatrixClient` local.
+from haku.console.x.channels.matrix import client as matrix_client
+from haku.console.x.channels.matrix.client import EventTag, MatrixClient, RoomEventKind
 
 USER = "@haku:allegedly.works"
 OPERATOR = "@rai:allegedly.works"

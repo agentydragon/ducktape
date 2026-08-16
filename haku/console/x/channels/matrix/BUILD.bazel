@@ -1,0 +1,221 @@
+"""Matrix as one channel: everything that knows a homeserver exists."""
+
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    deps = [
+        ":formatted_body",
+        "@pypi//matrix_nio",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "formatted_body",
+    srcs = ["formatted_body.py"],
+    deps = [
+        "@pypi//beautifulsoup4",
+        "@pypi//markdown",
+    ],
+)
+
+py_library(
+    name = "pacer",
+    srcs = ["pacer.py"],
+    deps = [":client"],
+)
+
+py_library(
+    name = "outbox",
+    srcs = ["outbox.py"],
+    deps = [
+        ":client",
+        ":pacer",
+        "//haku/console:database_schema",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "session",
+    srcs = ["session.py"],
+    deps = [
+        ":client",
+        "//haku/console:chat_models",
+        "//haku/console:config",
+        "//haku/console:database_schema",
+        "//haku/console:operator_identity_store",
+        "//haku/console/x:session_notifications",
+        "//haku/console/x:session_runtime",
+        "//haku/console/x:system_prompt",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "sync",
+    srcs = ["sync.py"],
+    deps = [
+        ":client",
+        ":outbox",
+        ":pacer",
+        ":session",
+        "//haku/console:chat_models",
+        "//haku/console:config",
+        "//haku/console:database_schema",
+        "//haku/console/x:system_prompt",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_formatted_body",
+    srcs = ["test_formatted_body.py"],
+    deps = [
+        ":formatted_body",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_client",
+    srcs = ["test_client.py"],
+    deps = [
+        ":client",
+        "//:conftest",
+        "@pypi//matrix_nio",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_pacer",
+    srcs = ["test_pacer.py"],
+    deps = [
+        ":client",
+        ":pacer",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_outbox",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_outbox.py"],
+    deps = [
+        ":client",
+        ":outbox",
+        ":pacer",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "//haku/console/x:conftest",
+        "//haku/console/x:session_runtime",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_session",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_session.py"],
+    deps = [
+        ":client",
+        ":session",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console:config",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "//haku/console/x:conftest",
+        "//haku/console/x:session_notifications",
+        "//haku/console/x:session_runtime",
+        "//haku/console/x:system_prompt",
+        "@pypi//pydantic",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_sync",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_sync.py"],
+    deps = [
+        ":client",
+        ":outbox",
+        ":pacer",
+        ":session",
+        ":sync",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console:config",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "//haku/console/x:conftest",
+        "//haku/console/x:session_runtime",
+        "@pypi//pydantic",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_homeserver_e2e",
+    size = "large",  # brings up a real Synapse, then overfills a room past its timeline limit
+    srcs = ["test_homeserver_e2e.py"],
+    data = [
+        "//third_party/containers:ryuk",
+        "//third_party/containers:synapse",
+    ],
+    requires_docker = True,
+    deps = [
+        ":client",
+        "//:conftest",
+        "//haku/console/x/channels/matrix/testing:operator_room",
+        "//haku/console/x/channels/matrix/testing:synapse_container",
+        "@pypi//matrix_nio",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_fullstack_e2e",
+    size = "large",  # a Synapse, a Postgres, a console process and a runner process per test
+    srcs = ["test_fullstack_e2e.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+        "//third_party/containers:synapse",
+    ],
+    requires_docker = True,
+    deps = [
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console/x:conftest",
+        "//haku/console/x:session_runtime",
+        "//haku/console/x/channels/matrix/testing:console_deployment",
+        "//haku/console/x/channels/matrix/testing:operator_room",
+        "//haku/console/x/channels/matrix/testing:synapse_container",
+        "@pypi//matrix_nio",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

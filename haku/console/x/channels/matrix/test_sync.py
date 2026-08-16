@@ -14,9 +14,7 @@ from pydantic import SecretStr
 
 from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, PromptFate
 from haku.console.database_schema import SessionMessage
-from haku.console.x.claude_chat import BridgeAuthentication, MatrixSession, SessionStore, SpaSession
-from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
-from haku.console.x.matrix_client import (
+from haku.console.x.channels.matrix.client import (
     EventTag,
     InboundMessage,
     Invite,
@@ -25,10 +23,12 @@ from haku.console.x.matrix_client import (
     SyncResult,
     UnmappableEvent,
 )
-from haku.console.x.matrix_outbox import PendingReply
-from haku.console.x.matrix_pacer import RoomPacer
-from haku.console.x.matrix_session import RoomTranscript
-from haku.console.x.matrix_sync import MatrixSyncService, MatrixSyncStore
+from haku.console.x.channels.matrix.outbox import PendingReply
+from haku.console.x.channels.matrix.pacer import RoomPacer
+from haku.console.x.channels.matrix.session import RoomTranscript
+from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
+from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
+from haku.console.x.session_runtime import BridgeAuthentication, MatrixSession, SessionStore, SpaSession
 
 
 @dataclass
@@ -158,7 +158,7 @@ def transcript(migrated_sessions) -> RoomTranscript:
 async def service(sync_store, conversations, turns, transcript, matrix):
     """The service with its outbound queue running, because every send goes through it.
 
-    Unthrottled: what the real budget is and how it is spent is `test_matrix_pacer`'s subject,
+    Unthrottled: what the real budget is and how it is spent is `test_pacer`'s subject,
     and giving these tests the room's true rate would make each of them wait five seconds per
     send to assert something that is not about waiting.
     """
@@ -171,7 +171,7 @@ async def service(sync_store, conversations, turns, transcript, matrix):
         turns=cast(Any, turns),
         transcript=transcript,
         # Answers are outbox rows, drained by a task `run()` starts; these tests drive one sync
-        # pass and assert the narration, which never touches the table. `test_matrix_outbox` is
+        # pass and assert the narration, which never touches the table. `test_outbox` is
         # where the drain is exercised.
         outbox=cast(Any, None),
     )

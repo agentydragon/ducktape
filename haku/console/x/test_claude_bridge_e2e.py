@@ -29,10 +29,10 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.chat_models import LIVE_SESSION_STATUSES, ChatMessageRole, SessionStatus, TurnOutcome
-from haku.console.x.claude_chat import SessionService, SessionStore, SpaSession, internal_router
 from haku.console.x.conftest import MCP_TOKEN, runtime_config
 from haku.console.x.session_frames import SETUP_OUTPUT_KIND
 from haku.console.x.session_notifications import SessionNotifications
+from haku.console.x.session_runtime import SessionService, SessionStore, SpaSession, internal_router
 from haku.console.x.testing.recording_claims import RecordingClaims
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
@@ -40,7 +40,7 @@ from util.testing.asgi import serve_app
 
 RUNNER_BIN = "_main/haku/runtime/x/claude_bridge/runner_bin"
 
-STUB_CLAUDE = "_main/haku/console/x/testing/stub_claude_bin"
+STUB_CLAUDE = "_main/haku/console/x/claude_code/testing/stub_claude_bin"
 
 # The line the stub prints to stderr before any turn, which is what the sandbox narration this
 # test reads back out of the rollout is made of.

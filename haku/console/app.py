@@ -73,7 +73,11 @@ from haku.console.state_index_reader import PostgresIndexSearcher
 from haku.console.state_index_sync import StateIndexMaintenance
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 from haku.console.tools.state_index import HAKU_INDEX_SERVER_ID
-from haku.console.x import claude_chat, matrix_outbox, matrix_session, matrix_sync, sandbox_claims
+from haku.console.x import sandbox_claims, session_runtime
+
+# Aliased: bare `session`, `sync` and `outbox` would each collide with something this module
+# already talks about (database sessions, the index sweeps, the push queue).
+from haku.console.x.channels.matrix import outbox as matrix_outbox, session as matrix_session, sync as matrix_sync
 from haku.console.x.session_live_updates import SessionLiveUpdates
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.system_prompt import SystemPromptTemplate
@@ -175,13 +179,13 @@ def create_app(
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     claude_runtime = console_config.claude_runtime
-    session_store = claude_chat.SessionStore(db_sessions)
+    session_store = session_runtime.SessionStore(db_sessions)
     session_notifications = SessionNotifications(database_url)
     # Session changes reach open tabs over the console socket the shell already holds, coalesced
     # per session. Constructed unconditionally: it listens on the session channel and sends on the
     # console one, neither of which depends on this replica running a Claude runtime.
     session_live_updates = SessionLiveUpdates(session_notifications, console_event_hub, db_sessions)
-    session_service: claude_chat.SessionService | None = None
+    session_service: session_runtime.SessionService | None = None
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
         db_sessions,
@@ -314,7 +318,7 @@ def create_app(
         )
         if mcp_agent is None:
             raise RuntimeError(f"Claude runtime references unknown static Agent {claude_runtime.mcp_static_agent_id}")
-        session_service = claude_chat.SessionService(
+        session_service = session_runtime.SessionService(
             claude_runtime,
             session_store,
             sandbox_claims.KubernetesSandboxClaims(claude_runtime),
@@ -576,7 +580,7 @@ def create_app(
     # access to any /api/* route. The same endpoint separately recognizes the Operator session.
     operator_only = [Depends(operator_auth.require_operator), Depends(operator_auth.require_operator_mutation_origin)]
     app.include_router(capabilities.router, dependencies=operator_only)
-    app.include_router(claude_chat.router, dependencies=operator_only)
+    app.include_router(session_runtime.router, dependencies=operator_only)
     app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(mcp_approval.router, dependencies=operator_only)
     app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
@@ -589,7 +593,7 @@ def create_app(
     # browser session or CSRF token.
     app.include_router(node_daemons.machine_router)
     app.include_router(enrollment_routes.entry_router)
-    app.include_router(claude_chat.internal_router)
+    app.include_router(session_runtime.internal_router)
 
     deployment_info = build_deployment_info()
 

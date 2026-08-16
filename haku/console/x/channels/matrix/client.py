@@ -3,7 +3,7 @@
 Three deviations from stock nio:
 
 - **Sync position lives in Postgres**, not nio's on-disk store, because the loop can move
-  to a different pod (`matrix_sync.MatrixSyncStore`). `since` is always passed explicitly
+  to a different pod (`sync.MatrixSyncStore`). `since` is always passed explicitly
   and `store_sync_tokens` stays off.
 - **Failures raise.** nio reports them as result-union values (`SyncError`); the loop needs
   a rejected token to be distinguishable from a transport failure, so every call here
@@ -12,7 +12,7 @@ Three deviations from stock nio:
   console finds out about rather than something it silently waits out.
 
 The first two are forced by the console being a leader-elected replica set rather than a
-single long-lived process; the third by `matrix_pacer` needing to hear the answer.
+single long-lived process; the third by `pacer` needing to hear the answer.
 
 E2EE is off (`haku/plans/matrix_chat_runtime.md` — the room is a plain DM), so no crypto
 store, no `python-olm`.
@@ -44,7 +44,7 @@ from nio.responses import (
 )
 from pydantic import BaseModel, ConfigDict
 
-from haku.console.x.matrix_markdown import to_formatted_body
+from haku.console.x.channels.matrix.formatted_body import to_formatted_body
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ _AUTH_ERRCODES = frozenset({"M_UNKNOWN_TOKEN", "M_MISSING_TOKEN"})
 #
 # **Gotcha: nio's default is unlimited, not off** — a rate-limited send never returned an error,
 # it stopped returning (<../docs/chat_runtime_facts.md>). Two retries keep a single
-# burst invisible while letting a sustained one reach `matrix_pacer`, which is the only place the
+# burst invisible while letting a sustained one reach `pacer`, which is the only place the
 # room's real budget can be learned.
 MAX_RATE_LIMIT_RETRIES = 2
 
@@ -154,7 +154,7 @@ class MatrixError(Exception):
     """The homeserver returned an error for a call we made.
 
     `retry_after_ms` is a 429's own answer to "how long", carried rather than formatted into
-    the message because `matrix_pacer` acts on it: it is the only measurement of the room's
+    the message because `pacer` acts on it: it is the only measurement of the room's
     real budget that this console ever receives.
     """
 
@@ -179,7 +179,7 @@ class InboundMessage:
     It carries no parsed `EventTag`, and cannot usefully: `_read` drops everything Haku sent
     (R1.5) and nothing else in the room tags anything, so the field was structurally always
     absent once the history read — its only consumer — stopped going to the homeserver
-    (`matrix_sync.recent_history`).
+    (`sync.recent_history`).
     """
 
     room_id: str
@@ -196,7 +196,7 @@ class UnmappableEvent:
     A screenshot, a voice memo, a file — anything whose meaning is in an attachment rather than
     in `body`, plus any msgtype invented after this release. Carried out of the sync rather than
     filtered away because R1.6 makes an event that cannot be mapped something the operator has to
-    be told about; `matrix_sync` is what tells them.
+    be told about; `sync` is what tells them.
 
     No body: what a media event's `body` holds is a filename, and repeating it back would read as
     though the thing had been understood.

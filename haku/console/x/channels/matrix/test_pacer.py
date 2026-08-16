@@ -7,8 +7,8 @@ import asyncio
 import pytest
 import pytest_bazel
 
-from haku.console.x.matrix_client import MatrixError
-from haku.console.x.matrix_pacer import MAX_QUEUED_SENDS, RoomPacer, Send
+from haku.console.x.channels.matrix.client import MatrixError
+from haku.console.x.channels.matrix.pacer import MAX_QUEUED_SENDS, RoomPacer, Send
 
 
 def recorder(sent: list[str], label: str) -> Send:

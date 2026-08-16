@@ -17,7 +17,7 @@ the room and then acknowledged (`_report_unreadable`), which is the other half o
 
 It is also the only holder of a Matrix credential, so the session supervisor's lifecycle
 notices go out through `announce` rather than through a second login — and so an answer, which
-lives as a row until it has been said, is drained into the room from here (`matrix_outbox`).
+lives as a row until it has been said, is drained into the room from here (`outbox`).
 
 The one thing it is asked *for* rather than told is this room's recent conversation
 (`recent_history`), and that one is answered out of the console's own transcript. It is still
@@ -43,7 +43,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from haku.console.chat_models import ChatMessageRole, PromptFate
 from haku.console.config import MatrixConfig
 from haku.console.database_schema import MatrixHeldBatch, MatrixSyncState
-from haku.console.x.matrix_client import (
+from haku.console.x.channels.matrix.client import (
     EventTag,
     InboundMessage,
     Invite,
@@ -52,9 +52,9 @@ from haku.console.x.matrix_client import (
     RoomEventKind,
     UnmappableEvent,
 )
-from haku.console.x.matrix_outbox import PendingReply, RoomOutbox, RoomOutboxDrain
-from haku.console.x.matrix_pacer import RoomPacer
-from haku.console.x.matrix_session import MatrixConversationStore, MatrixTurns, RoomTranscript
+from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox, RoomOutboxDrain
+from haku.console.x.channels.matrix.pacer import RoomPacer
+from haku.console.x.channels.matrix.session import MatrixConversationStore, MatrixTurns, RoomTranscript
 from haku.console.x.system_prompt import HistoryMessage
 
 logger = logging.getLogger(__name__)
@@ -270,7 +270,7 @@ class MatrixSyncService:
 
         **Idempotent, and paced by the room rather than by this call.** The floor moved to the
         caller (`room_status.TurnStatus`), because deciding what the line should say and deciding when it
-        may change have to be one decision; the room's own budget is `matrix_pacer`'s, where
+        may change have to be one decision; the room's own budget is `pacer`'s, where
         the status line is the one sender allowed to overwrite what it has not yet said.
 
         Create-or-edit is decided inside the queued send, not here, because the create is what
@@ -383,7 +383,7 @@ class MatrixSyncService:
     async def announce(self, body: str, kind: RoomEventKind = RoomEventKind.LIFECYCLE) -> None:
         """Post a lifecycle notice into the live room, if there is one.
 
-        The supervisor's outbound path (`matrix_session.Announce`): it owns session
+        The supervisor's outbound path (`session.Announce`): it owns session
         lifecycle but never a Matrix credential, so it speaks through the loop that has one.
         A no-op before any room is bound — there is genuinely nowhere to say it.
         """
@@ -593,7 +593,7 @@ class MatrixSyncService:
         The pacer runs on **every** replica, not only the sync leader: the console's narration is
         queued from whichever replica holds the session's lease, which is not generally the one
         holding the sync lock. That is also why the budget it enforces is an estimate — see
-        `matrix_pacer`. The drain contends for a lock of its own, so it runs on one replica while
+        `pacer`. The drain contends for a lock of its own, so it runs on one replica while
         the pacer runs on all of them, which is what keeps replies in order.
         """
         task = asyncio.create_task(self._run(), name="matrix-sync")

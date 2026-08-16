@@ -22,9 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.console_events import ConsoleEvent, ConsoleEventHub
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.x.claude_chat import SessionStore, SpaSession
 from haku.console.x.session_live_updates import SessionLiveUpdates
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications, notify
+from haku.console.x.session_runtime import SessionStore, SpaSession
 
 # Long enough that several notifications land inside one window on a loaded machine, short enough
 # that asserting a flush does not wait out anyone's patience.

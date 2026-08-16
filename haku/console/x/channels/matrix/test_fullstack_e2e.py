@@ -2,7 +2,7 @@
 **did every message I sent get an answer?**
 
 Everything below this runs as itself. A real Synapse in a container, a console replica as its own
-process (`testing/matrix_console_replica.py`) with the real `/sync` loop and session supervisor, a real
+process (`testing/console_replica.py`) with the real `/sync` loop and session supervisor, a real
 runner process per sandbox with a stub `claude` behind it, and a real Postgres under all of it.
 The operator's side is a Matrix client of its own (`testing/operator_room.py`, `nio` against the
 same homeserver), so what a test reads back is the room, not the console's account of the room.
@@ -19,7 +19,7 @@ a closure to an in-process queue:
    so the end-of-turn fallback, the one thing that would have said the same text a second time,
    read "already said" and stayed quiet. One failed send made the whole turn silent. No reconnect
    and no roll involved; the plain case.
-2. `_deliver_reply` only **queued**. `matrix_pacer` is an in-process deque draining at
+2. `_deliver_reply` only **queued**. `pacer` is an in-process deque draining at
    `SENDS_PER_SECOND`, so on a room with anything queued ahead of it "delivered" was minutes away
    from "spoken", and a console that stopped in between took the queue with it.
 3. Across a roll neither was recovered. The frame is in `session_frames`, so the runner's replay
@@ -28,7 +28,7 @@ a closure to an in-process queue:
    delivered. Permanently recorded, permanently unspoken.
 
 R11.6 says the opposite: "a produced reply must never be lost silently". What closes all three is
-the durable room outbox (`matrix_outbox.py`): the reply is a row written with the message it
+the durable room outbox (`outbox.py`): the reply is a row written with the message it
 copies, and a drain says it and marks it sent only once the homeserver has taken it.
 `test_a_quiet_run_replies_once_to_every_message` is the control, and it passed throughout.
 """
@@ -44,10 +44,10 @@ import pytest_bazel
 from nio import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.x.claude_chat import SessionStore
-from haku.console.x.testing.console_deployment import Deployment
-from haku.console.x.testing.operator_room import OperatorRoom, sign_in
-from haku.console.x.testing.synapse_container import Synapse, run_synapse
+from haku.console.x.channels.matrix.testing.console_deployment import Deployment
+from haku.console.x.channels.matrix.testing.operator_room import OperatorRoom, sign_in
+from haku.console.x.channels.matrix.testing.synapse_container import Synapse, run_synapse
+from haku.console.x.session_runtime import SessionStore
 
 PASSWORD = "not-a-secret"
 
@@ -167,7 +167,7 @@ async def test_a_reply_still_queued_when_the_console_stops_is_said_by_its_replac
 ) -> None:
     """A produced reply the console had not yet said used to die with the process.
 
-    `_deliver_reply` handed the answer to `matrix_pacer`, an in-process deque draining at
+    `_deliver_reply` handed the answer to `pacer`, an in-process deque draining at
     `SENDS_PER_SECOND` — so with anything queued ahead of it, "delivered" was minutes from
     "spoken". Here the agent narrates 25 lines first, which is 25 paced notices, and the answer
     queues behind them. The console is then stopped the way a deploy stops it.

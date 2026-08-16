@@ -1,0 +1,25 @@
+"""Stand-ins for the Claude Code CLI itself."""
+
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "stub_claude",
+    srcs = ["stub_claude.py"],
+    deps = [
+        "//haku/cli_protocol:frame_identity",
+        "//haku/console/x:session_frames",
+    ],
+)
+
+# A binary rather than a source file in `data`: the runner execs `HAKU_CLAUDE_PATH` directly, and
+# a source staged in runfiles does not reliably carry its executable bit.
+py_binary(
+    name = "stub_claude_bin",
+    main_module = "haku.console.x.claude_code.testing.stub_claude",
+    deps = [":stub_claude"],
+)
