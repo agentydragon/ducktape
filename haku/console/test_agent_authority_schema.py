@@ -20,7 +20,7 @@ from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 from haku.console.database_migrate import apply_migrations
-from haku.console.database_schema import metadata
+from haku.console.database_schema import UNMAPPED_COLUMNS_PENDING_DROP, metadata
 from third_party.containers.rlocations import PGVECTOR_PG18
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import start_postgres_container
@@ -560,12 +560,24 @@ def _create_static_agent(conn: Connection, *, identity: IdentityIds, label: str,
     return StaticAgent(reservation_id=reservation_id, agent_id=agent_id, binding_id=binding_id)
 
 
+def _not_awaiting_its_drop(name: str | None, type_: str, parent_names: dict[str, str | None]) -> bool:
+    """Hide the columns an expand/contract has unmapped but not yet dropped.
+
+    They exist in the database and in no ORM class, which is exactly the difference this comparison
+    is otherwise for — so each one is named in `UNMAPPED_COLUMNS_PENDING_DROP` beside the tombstone
+    that says when it goes, and everything else still has to match exactly.
+    """
+    return not (type_ == "column" and (parent_names["table_name"], name) in UNMAPPED_COLUMNS_PENDING_DROP)
+
+
 def test_fresh_baseline_matches_sqlalchemy_metadata(db_url: str) -> None:
     apply_migrations(db_url)
     engine = create_engine(db_url)
     try:
         with engine.connect() as conn:
-            context = MigrationContext.configure(conn, opts={"compare_type": True})
+            context = MigrationContext.configure(
+                conn, opts={"compare_type": True, "include_name": _not_awaiting_its_drop}
+            )
             assert compare_metadata(context, metadata) == []
     finally:
         engine.dispose()

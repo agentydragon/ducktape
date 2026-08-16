@@ -47,9 +47,8 @@ def _insert_message(
             """
             INSERT INTO session_messages (
                 message_id, session_id, role, status, content,
-                source_first_frame_seq, source_last_frame_seq, tool_uses, created_at, updated_at
-            ) VALUES (:message_id, :session_id, :role, 'complete', '',
-                      :first, :last, '[]'::jsonb, :n, :n)
+                source_first_frame_seq, source_last_frame_seq, created_at, updated_at
+            ) VALUES (:message_id, :session_id, :role, 'complete', '', :first, :last, :n, :n)
             """
         ),
         {"message_id": message_id, "session_id": session_id, "role": role, "first": first, "last": last, "n": _NOW},
@@ -75,8 +74,8 @@ def test_message_provenance_migration_backfills_observed_assistant_frames(db_url
                 """
                 INSERT INTO session_messages (
                     message_id, session_id, role, status, content, agent_message_id,
-                    tool_uses, created_at, updated_at
-                ) VALUES (:message_id, :session_id, 'assistant', 'complete', '', 'msg_01', '[]'::jsonb, :n, :n)
+                    created_at, updated_at
+                ) VALUES (:message_id, :session_id, 'assistant', 'complete', '', 'msg_01', :n, :n)
                 """
             ),
             {"message_id": message_id, "session_id": session_id, "n": _NOW},

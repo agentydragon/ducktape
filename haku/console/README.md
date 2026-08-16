@@ -614,7 +614,9 @@ Two consequences, both real:
   pod outlived the migration; rolling does not, so old code runs against the new schema for a
   minute. Additive changes are fine. A destructive one (dropping or renaming a column an old
   replica still selects) has to be split expand/contract across two releases — the constraint the
-  previous strategy hid.
+  previous strategy hid. Two is the floor, not the count: an ORM-mapped column is named in every
+  `SELECT` SQLAlchemy emits whether or not any code reads the attribute, so dropping one takes three
+  — add the replacement, unmap the old column, then drop it a release after the unmapping converged.
 
 The server receives both Flux-selected image tags through `HAKU_CONSOLE_{,STATIC_}IMAGE_TAG`.
 `GET /api/deployment` parses their commit suffixes at runtime for the Settings version links. This

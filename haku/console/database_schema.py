@@ -57,6 +57,30 @@ class Base(DeclarativeBase):
     pass
 
 
+# Columns the database still has and this ORM deliberately does not map: the middle phase of an
+# expand/contract, where the replacement column carries the data and this release names the old one
+# nowhere, so the `drop_column` can wait for *this* release to converge instead of the one that
+# added the replacement. `test_agent_authority_schema` excludes them from its ORM-versus-database
+# comparison, which is otherwise exact.
+UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
+    {
+        # CLEANUP(added 2026-08-16): drop `session_messages.tool_uses` once every haku-console pod
+        #   runs an image at or after this commit —
+        #   `kubectl get pods -n haku-console -o jsonpath='{.items[*].spec.containers[0].image}'`
+        #   reporting a single tag at or after it. Migration 0047 put `tool_calls` beside it and
+        #   moved the writers; this release dropped the mapping, so only a replica on an image
+        #   before it still SELECTs the name. The column is NOT NULL, and an INSERT that does not
+        #   name it is satisfied by the `'[]'::jsonb` server default 0024 gave it.
+        ("session_messages", "tool_uses"),
+        # CLEANUP(added 2026-08-16): drop `session_turns.usage` on the same gate, read the same way.
+        #   Migration 0049 replaced Claude's own `usage` sub-object with the neutral counters beside
+        #   it, and this release dropped the mapping; the payload it copied is in `session_frames`
+        #   whole. Nullable, so an INSERT that omits it was always fine.
+        ("session_turns", "usage"),
+    }
+)
+
+
 class Operator(Base):
     __tablename__ = "operators"
 
@@ -977,13 +1001,6 @@ class SessionMessage(Base):
     tool_calls: Mapped[list[RecordedToolCall]] = mapped_column(
         PydanticListColumn(RecordedToolCall), nullable=False, server_default=text("'[]'::jsonb")
     )
-    # CLEANUP(added 2026-08-16): drop `session_messages.tool_uses` in the release after the one
-    #   carrying migration 0047 — the Claude-spelled predecessor of `tool_calls`, now written by
-    #   nothing and read by nothing in this tree. It stays mapped and defaulted for exactly one
-    #   release because a replica on the previous image still SELECTs it by name for the length of
-    #   a roll (README § Perimeter / deploy), and dropping a column out from under a running
-    #   replica is the destructive half of expand/contract.
-    tool_uses: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
     # Why the two columns above are NULL, where somebody has looked. Both NULL and no reason means
     # nothing has scanned this row yet, which is what separates the two meanings the range alone
     # cannot: `x/message_provenance.py` writes a reason exactly where it could not recover a range,
@@ -1126,14 +1143,6 @@ class SessionTurn(Base):
     # own elapsed time is `ended_at - started_at`, which the console measures and no backend has
     # to supply.
     duration_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    # CLEANUP(added 2026-08-16): drop this column once the roll to the release that added
-    #   `input_tokens` has converged — every pod on an image at or after it, which
-    #   `kubectl get pods -n haku-console -o jsonpath='{.items[*].spec.containers[0].image}'`
-    #   answers. It is Claude's own `usage` sub-object; as of this commit nothing writes it and
-    #   nothing reads it, because the numbers are the columns above and the payload it copied is
-    #   in `session_frames` whole. It stays only because a replica on the previous image still
-    #   selects it.
-    usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     # The assistant message this turn is streaming into, set when the message is opened and
     # cleared when it completes — so on an open turn it is non-NULL exactly while an answer is
     # half written, and NULL both before the first delta and between two completed messages.
