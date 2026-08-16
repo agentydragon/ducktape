@@ -25,9 +25,11 @@ reporting green.
 appear on this channel.
 
 `Outcome.UNKNOWN` is the other load-bearing choice, and it is a measured one: `is_error` is
-*absent* rather than false on 56% of real tool results, so "did this go wrong" has three answers
-and a two-valued type would have to guess one of them
-(<../debug/frame_shape_census.md> § What will break a naive fold).
+*absent* rather than false on most real tool results, so "did this go wrong" has three answers and
+a two-valued type would have to guess one of them. That and every other shape claim below was read
+off production frames; the measurements themselves live in
+<../debug/frame_shape_census.md> § What will break a naive fold, which is a dated document, where
+a share of production frames keeps its date.
 """
 
 from __future__ import annotations
@@ -73,8 +75,8 @@ class MessageKey:
     """Which agent message an event belongs to, within one session's projection.
 
     The `frame_seq` the message opened at — ours, deterministic, and a pointer back into the log.
-    Deliberately not the agent's own message id, which 1,417 production rows do not have; that id
-    rides on `MessageCompleted` as provenance, where its absence costs nothing.
+    Deliberately not the agent's own message id, which a great many production rows do not have;
+    that id rides on `MessageCompleted` as provenance, where its absence costs nothing.
     """
 
     opened_at_frame_seq: int
@@ -111,8 +113,8 @@ class MessageCompleted:
 class Reasoning:
     """The agent thought, with a summary where it gave one.
 
-    A state rather than empty prose: 25% of real messages are thinking with nothing else in them,
-    and a transcript that models only text renders them blank.
+    A state rather than empty prose: a substantial share of real messages are thinking with
+    nothing else in them, and a transcript that models only text renders them blank.
     """
 
     message: MessageKey
@@ -151,9 +153,9 @@ class TextContent:
 class ToolReferences:
     """The result named tools and carried no output of its own.
 
-    A real shape rather than a defensive one: 5.6% of production tool results are exactly this,
-    and a renderer that reads them as prose renders them empty. What the call actually produced is
-    in `ToolCallCompleted.structured`.
+    A real shape rather than a defensive one: production tool results take it routinely, and a
+    renderer that reads them as prose renders them empty. What the call actually produced is in
+    `ToolCallCompleted.structured`.
     """
 
     tool_names: tuple[str, ...]

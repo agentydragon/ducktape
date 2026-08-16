@@ -8,35 +8,36 @@ the fold rather than being baked into a row forever
 
 Nothing calls this yet. The fold that makes `_run_turn` use it is a separate change.
 
-**Written against what the wire does, not what it documents.**
-<../debug/frame_shape_census.md> measured 24,859 production frames, and every rule below that
-looks defensive is one of its findings:
+**Written against what the wire does, not what it documents.** Every rule below that looks
+defensive is a finding from <../debug/frame_shape_census.md>, which is where the measurements
+live — a share of production frames is a dated observation and belongs in a dated document, not
+in a docstring that will still claim it a year from now.
 
-| Census fact                                                            | What this does with it                                                                                                                  |
-| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| One block per `assistant` frame; 47% of messages span 2+ frames        | A message is the run of frames sharing `message.id`, closed by a *different* id, a `result`, or the end of the sequence — never by a clock |
-| `stop_reason` is null on 100% of assistant frames                      | Nothing reads it; there is no "the provider said it was done" branch to be wrong                                                          |
-| 13 messages have a `user` frame between two of their own frames        | A `user` frame never closes a message. Its `FrameRange` spans the interruption, which is what a range means                              |
-| `content` is prose 94% of the time and names-only the other 6%         | `content` is a variant, and the real output rides beside it as `structured` (`tool_use_result`, 17+ per-tool shapes)                     |
-| `is_error` absent on 56% of results; `result.is_error` false on 100%   | `Outcome.UNKNOWN` where it is absent, and a turn's outcome comes from `subtype` — `is_error` is read nowhere                             |
-| 73% of the wire is `system`, 15% of it one constant                    | `_IGNORED_KINDS` / `_IGNORED_SYSTEM_SUBTYPES` are frozenset lookups that return before anything is allocated                            |
-| 3 frame classes and 5 `system` subtypes are undocumented               | The default branch counts into `Projection.unprojected` — neither a crash nor a silent drop                                              |
-| `command_lifecycle` is not a clean triple                              | It is not read at all: turn boundaries come from `result`, so no sequence assumption exists to be violated                               |
+| What the wire does                                              | What this does with it                                                                                                                    |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| One block per `assistant` frame, so a message spans several      | A message is the run of frames sharing `message.id`, closed by a *different* id, a `result`, or the end of the sequence — never by a clock |
+| `stop_reason` is never set                                       | Nothing reads it; there is no "the provider said it was done" branch to be wrong                                                           |
+| A `user` frame can land between two frames of one message        | A `user` frame never closes a message. Its `FrameRange` spans the interruption, which is what a range means                                |
+| `content` is usually prose, sometimes tool names and no payload  | `content` is a variant, and the real output rides beside it as `structured` (`tool_use_result`, many per-tool shapes)                      |
+| `is_error` is often absent, and `result.is_error` is never true  | `Outcome.UNKNOWN` where it is absent, and a turn's outcome comes from `subtype` — `is_error` is read nowhere                               |
+| Most of the wire is `system`, and most of that is one constant   | `_IGNORED_KINDS` / `_IGNORED_SYSTEM_SUBTYPES` are frozenset lookups that return before anything is allocated                               |
+| Frame classes and `system` subtypes exist that `protocol.md` omits | The default branch counts into `Projection.unprojected` — neither a crash nor a silent drop                                                |
+| `command_lifecycle` is not a clean triple                        | It is not read at all: turn boundaries come from `result`, so no sequence assumption exists to be violated                                 |
 
 Two decisions worth knowing before reading the code.
 
-**`TextDelta` comes from completed `text` blocks, not from `stream_event` deltas.** Deltas occur
-in 4 of 28 sessions and add ~78% to row count where they occur, they are mostly `input_json_delta`
-— tool arguments rather than prose, 87 of 950 deltas were text — and they carry no identity, so
-`frame_identity.py` deliberately refuses to dedupe them. A consumer built on them would render
-nothing at all on the 86% of sessions that never stream, and a log truncated mid-block would
-re-project to different text than the completed block it precedes. So a delta here is "the prose
-that became visible with this frame", which for this CLI is one content block; a backend that
-streams meaningfully can cut them finer without any consumer changing.
+**`TextDelta` comes from completed `text` blocks, not from `stream_event` deltas.** Most sessions
+emit no deltas at all, so a consumer built on them renders nothing for those; where they do occur
+they are mostly `input_json_delta` — tool arguments rather than prose — and they carry no identity,
+which is why `frame_identity.py` refuses to dedupe them. Decisively, a log truncated mid-block would
+re-project to different text than the completed block it precedes, and determinism is the property
+everything else here rests on. So a delta means "the prose that became visible with this frame",
+which for this CLI is one content block; a backend that streams meaningfully can cut them finer
+without any consumer changing.
 
-**`result.result` is not projected as prose.** It repeats the final message on every one of the
-129 real `result` frames, and minting a message from it would double every answer. A turn that
-produced no `MessageCompleted` said nothing, which is a fact worth being able to see.
+**`result.result` is not projected as prose.** It repeats the final message, so minting one from it
+would double every answer. A turn that produced no `MessageCompleted` said nothing, which is a fact
+worth being able to see.
 """
 
 from __future__ import annotations
@@ -70,24 +71,22 @@ from haku.console.x.conversation_events import (
 )
 
 # Frame classes that say nothing about the conversation, listed rather than discovered so that a
-# class the CLI adds lands in the default branch instead of here. Counts are per the census, over
-# 28 sessions:
+# class the CLI adds lands in the default branch instead of here:
 #
-# - `stream_event` (9,606) — sub-message transport; see the module docstring on `TextDelta`.
-# - `command_lifecycle` (350) — which prompt the CLI is working on. Not a clean triple (no
-#   `cancelled` ever, commands that start without queueing, commands that never complete, and
-#   `command_uuid`s matching no prompt the console sent), and nothing here needs it to be: a turn
-#   ends at `result`.
-# - `control_request` / `control_response` (54 / 155) — the other channel entirely.
-# - `rate_limit_event` (40) — the account's state, not the conversation's.
+# - `stream_event` — sub-message transport; see the module docstring on `TextDelta`.
+# - `command_lifecycle` — which prompt the CLI is working on. Not a clean triple (no `cancelled`
+#   ever, commands that start without queueing, commands that never complete, and `command_uuid`s
+#   matching no prompt the console sent), and nothing here needs it to be: a turn ends at `result`.
+# - `control_request` / `control_response` — the other channel entirely.
+# - `rate_limit_event` — the account's state, not the conversation's.
 _IGNORED_KINDS = frozenset(
     {session_frames.DELTA_FRAME_KIND, "command_lifecycle", "control_request", "control_response", "rate_limit_event"}
 )
 
-# `system` is 73% of the log and almost all of it is these two: 8,512 `thinking_tokens` frames of
-# budget accounting and 2,275 `status` frames carrying one distinct value between them — a
-# heartbeat wearing a discriminator. `init` is session identity, which is a session event rather
-# than a conversation one.
+# The bulk of the log by volume, and none of it conversation: `thinking_tokens` is budget
+# accounting and `status` is a heartbeat wearing a discriminator (one distinct value across the
+# whole corpus). `init` is session identity, which is a session event rather than a conversation
+# one.
 _IGNORED_SYSTEM_SUBTYPES = frozenset({"thinking_tokens", "status", "init"})
 
 
@@ -214,10 +213,10 @@ class _Projector:
         """The message this frame continues, or a new one.
 
         The run is defined by `message.id` and closed by a different one — not by the next
-        non-`assistant` frame, which would split the 13 real messages that have a tool result
-        inside them and attribute their second call to a message that does not exist. A frame
-        with no id cannot be grouped, so it is its own message; the wire supplies one essentially
-        always, and the exceptions are the console's own reconstructions.
+        non-`assistant` frame, which would split a real message that has a tool result inside it
+        and attribute its second call to a message that does not exist. A frame with no id cannot
+        be grouped, so it is its own message; the wire supplies one essentially always, and the
+        exceptions are the console's own reconstructions.
         """
         agent_message_id = session_frames.agent_message_id(frame.payload)
         if (
@@ -239,8 +238,8 @@ class _Projector:
     def _user(self, frame: RecordedFrame) -> None:
         """A tool result coming back, or the console's own prompt going out.
 
-        Direction is what the content type says, absolutely: 121 of 121 outbound prompts carry a
-        string and 1,032 of 1,032 inbound frames carry a list. An outbound prompt projects to
+        Direction is what the content type says, without exception in the corpus: an outbound
+        prompt carries a string, an inbound frame carries a list. An outbound prompt projects to
         nothing here — it is the console's own text, which the console already holds.
         """
         message = frame.payload.get("message")
@@ -251,7 +250,7 @@ class _Projector:
             self._unprojected(session_frames.PROMPT_FRAME_KIND)
             return
         # Top-level and undocumented, and the channel the tool's real output arrives on. One per
-        # frame, against one `tool_result` block per frame in all 910 production results.
+        # frame — as is the `tool_result` block it belongs to, in every production result seen.
         structured: Json = frame.payload.get("tool_use_result")
         where = FrameRange(frame.frame_seq, frame.frame_seq)
         for block in content:
@@ -271,9 +270,9 @@ class _Projector:
 
     def _result(self, frame: RecordedFrame) -> None:
         self.close_message()
-        # From `subtype` alone. `is_error` is false on all 129 production results, including
-        # every one of the 27 sessions the console records as failed, so reading it would report
-        # every turn as fine and one field disagreeing with another as a contradiction.
+        # From `subtype` alone. `is_error` is false on every production result, including those
+        # from sessions the console records as failed, so reading it would report every turn as
+        # fine and one field disagreeing with another as a contradiction.
         subtype = frame.payload.get("subtype")
         self.events.append(
             TurnCompleted(
@@ -315,9 +314,9 @@ class _Projector:
 def _result_content(content: Any) -> ToolResultContent:
     """The renderable half of a tool result.
 
-    A bare string 94% of the time; the rest is a list, and every list in the corpus is
-    `tool_reference` blocks that name a tool and carry nothing else — which is why a renderer
-    reading `content` alone shows them as empty.
+    Usually a bare string; the rest is a list, and every list in the corpus is `tool_reference`
+    blocks that name a tool and carry nothing else — which is why a renderer reading `content`
+    alone shows them as empty.
     """
     if isinstance(content, str):
         return TextContent(text=content)
@@ -338,7 +337,7 @@ def _result_outcome(is_error: Any) -> Outcome:
         case False:
             return Outcome.SUCCEEDED
         case _:
-            # Absent on 507 of 910 production results, so `"is_error" in block` tests nothing.
+            # Routinely absent rather than false, so `"is_error" in block` tests nothing.
             return Outcome.UNKNOWN
 
 
