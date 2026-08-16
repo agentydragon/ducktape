@@ -251,6 +251,22 @@ SPA renders turn boundaries inline in the transcript, the outbox keys a turn's l
 `turn_id`, adoption asks whether a turn is open, and I3 wants a batch acknowledged when its turn
 completes. None of them care how a particular CLI spells the end.
 
+**The concept is three jobs wearing one name**, which is why it is worth being careful before
+moving it. Counted from its readers:
+
+| Job                                                 | Reader                                                                                                                        | Belongs to                                                 |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| **A mutex** — one exchange at a time                | `enqueue_prompt` refuses while a turn is open, which is what makes queue-until-turn-end (R2.2) work                           | the harness cycle: one CLI cannot take two prompts at once |
+| **A recovery marker** — this exchange was abandoned | `adopt_open_turn`; the row already carries `first_frame_seq`, so a turn is quietly a frame range                              | the harness cycle: an invocation can be interrupted        |
+| **An accounting and display unit**                  | `list_turns` for the SPA's inline boundaries, outcome, duration and cost; `uq_session_outbox_turn` for one last word per turn | the conversational exchange                                |
+| **"Is the agent working"**                          | `responding = await _open_turn(...) is not None` — the status column no longer carries this                                   | both, today                                                |
+
+Mid-turn steering is exactly the change that separates them: the mutex relaxes (a second message
+joins a running exchange) while the display unit stays one turn. So when the split comes, the mutex
+and the recovery marker follow the invocation and the accounting unit follows the conversation —
+and "is the agent working" becomes a question about the invocation, since that is what the typing
+indicator is actually reporting.
+
 **Two concepts coincide today and need not always.** The _harness cycle_ — one prompt in, one result
 out, carrying that invocation's usage — and the _conversational exchange_, which is what a person
 means by a turn and what every surface renders. They are the same thing only because one batch makes
