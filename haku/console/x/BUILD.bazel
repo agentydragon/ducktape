@@ -227,6 +227,7 @@ py_test(
         "//haku/console/x/testing:console_deployment",
         "//haku/console/x/testing:operator_room",
         "//haku/console/x/testing:synapse_container",
+        "@pypi//matrix_nio",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
@@ -289,6 +290,7 @@ py_test(
         "//:conftest",
         "//haku/console/x/testing:operator_room",
         "//haku/console/x/testing:synapse_container",
+        "@pypi//matrix_nio",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",

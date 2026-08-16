@@ -58,6 +58,7 @@ py_library(
     deps = [
         ":synapse_container",
         ":waiting",
+        "@pypi//matrix_nio",
     ],
 )
 

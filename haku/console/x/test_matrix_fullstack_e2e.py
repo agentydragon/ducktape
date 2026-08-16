@@ -4,8 +4,8 @@
 Everything below this runs as itself. A real Synapse in a container, a console replica as its own
 process (`testing/matrix_console_replica.py`) with the real `/sync` loop and session supervisor, a real
 runner process per sandbox with a stub `claude` behind it, and a real Postgres under all of it.
-The operator's side is driven straight through the client-server API (`testing/operator_room.py`),
-so what a test reads back is the room, not the console's account of the room.
+The operator's side is a Matrix client of its own (`testing/operator_room.py`, `nio` against the
+same homeserver), so what a test reads back is the room, not the console's account of the room.
 
 The property is one line and it is the same in every test here: the bodies Haku posted, in order,
 are `re: ` and what the operator typed. It fails on a message that was never answered and on one
@@ -41,12 +41,13 @@ from secrets import token_hex
 
 import pytest
 import pytest_bazel
+from nio import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.x.claude_chat import SessionStore
 from haku.console.x.testing.console_deployment import Deployment
-from haku.console.x.testing.operator_room import OperatorRoom
-from haku.console.x.testing.synapse_container import Account, Synapse, run_synapse
+from haku.console.x.testing.operator_room import OperatorRoom, sign_in
+from haku.console.x.testing.synapse_container import Synapse, run_synapse
 
 PASSWORD = "not-a-secret"
 
@@ -58,19 +59,21 @@ def synapse() -> Iterator[Synapse]:
 
 
 @pytest.fixture
-def operator(synapse: Synapse) -> Iterator[Account]:
+def operator_user_id(synapse: Synapse) -> str:
     """A fresh operator per test — the homeserver is shared, so nothing else may be."""
-    account = synapse.sign_in(synapse.create_user(f"operator{token_hex(6)}", PASSWORD), PASSWORD)
-    try:
-        yield account
-    finally:
-        account.close()
+    return synapse.create_user(f"operator{token_hex(6)}", PASSWORD)
+
+
+@pytest.fixture
+async def operator(synapse: Synapse, operator_user_id: str) -> AsyncIterator[AsyncClient]:
+    async with sign_in(synapse.base_url, operator_user_id, PASSWORD) as client:
+        yield client
 
 
 @pytest.fixture
 async def deployment(
     synapse: Synapse,
-    operator: Account,
+    operator_user_id: str,
     migrated_db_url: str,
     migrated_sessions: async_sessionmaker[AsyncSession],
     chat_store: SessionStore,
@@ -82,7 +85,7 @@ async def deployment(
         homeserver=synapse.base_url,
         bot_user_id=synapse.create_user(f"haku{token_hex(6)}", PASSWORD),
         bot_password=PASSWORD,
-        operator_user_id=operator.user_id,
+        operator_user_id=operator_user_id,
         database_url=migrated_db_url,
         sessions=migrated_sessions,
         store=chat_store,
@@ -95,14 +98,8 @@ async def deployment(
 
 
 @pytest.fixture
-def room(operator: Account, deployment: Deployment) -> OperatorRoom:
-    """A room the operator invited Haku into. Haku joins it itself, on its own `/sync` (R3.6)."""
-    return OperatorRoom(
-        operator,
-        bot_user_id=deployment.bot_user_id,
-        room_id=operator.create_room(invite=deployment.bot_user_id),
-        check_alive=deployment.check_alive,
-    )
+async def room(operator: AsyncClient, deployment: Deployment) -> OperatorRoom:
+    return await OperatorRoom.invite(operator, bot_user_id=deployment.bot_user_id, check_alive=deployment.check_alive)
 
 
 async def test_a_quiet_run_replies_once_to_every_message(deployment: Deployment, room: OperatorRoom) -> None:
@@ -116,10 +113,10 @@ async def test_a_quiet_run_replies_once_to_every_message(deployment: Deployment,
     await deployment.start_console("console-1")
     await deployment.serving()
     for body in ("one", "two", "three"):
-        room.say(body)
+        await room.say(body)
         await room.wait_for_reply(f"re: {body}")
 
-    assert room.replies() == ["re: one", "re: two", "re: three"]
+    assert await room.replies() == ["re: one", "re: two", "re: three"]
 
 
 async def test_a_reply_whose_send_is_refused_is_said_on_a_later_attempt(
@@ -144,25 +141,25 @@ async def test_a_reply_whose_send_is_refused_is_said_on_a_later_attempt(
     """
     await deployment.start_console("console-1")
     session_id = await deployment.serving()
-    room.say("one")
+    await room.say("one")
     await room.wait_for_reply("re: one")
 
     deployment.refuse_the_next_reply()
-    room.say("two")
+    await room.say("two")
     await deployment.wait_until_refused()
     await deployment.wait_for_finished_turns(session_id, 2)
 
     deployment.refuse_the_next_reply()
-    room.say("three [silent]")
+    await room.say("three [silent]")
     await deployment.wait_until_refused()
     await deployment.wait_for_finished_turns(session_id, 3)
 
     # A message the room *can* answer, so what is asserted is a settled transcript rather than one
     # still in flight — and evidence that the console kept working after each dropped reply.
-    room.say("four")
+    await room.say("four")
     await room.wait_for_reply("re: four")
 
-    assert room.replies() == ["re: one", "re: two", "re: three", "re: four"]
+    assert await room.replies() == ["re: one", "re: two", "re: three", "re: four"]
 
 
 async def test_a_reply_still_queued_when_the_console_stops_is_said_by_its_replacement(
@@ -183,20 +180,20 @@ async def test_a_reply_still_queued_when_the_console_stops_is_said_by_its_replac
     """
     await deployment.start_console("console-1")
     session_id = await deployment.serving()
-    room.say("one")
+    await room.say("one")
     await room.wait_for_reply("re: one")
 
-    room.say("two [narrate=25]")
+    await room.say("two [narrate=25]")
     await deployment.wait_until_recorded(session_id, "re: two")
-    assert "re: two" not in room.replies(), "the answer reached the room before the gap could be opened"
+    assert "re: two" not in await room.replies(), "the answer reached the room before the gap could be opened"
 
     await deployment.stop()
-    assert "re: two" not in room.replies(), "a room no console is serving gained a message"
+    assert "re: two" not in await room.replies(), "a room no console is serving gained a message"
 
     await deployment.start_console("console-2")
     await room.wait_for_reply("re: two")
 
-    assert room.replies() == ["re: one", "re: two"]
+    assert await room.replies() == ["re: one", "re: two"]
 
 
 async def test_every_message_is_answered_exactly_once_across_a_console_roll(
@@ -220,23 +217,23 @@ async def test_every_message_is_answered_exactly_once_across_a_console_roll(
     """
     await deployment.start_console("console-1")
     session_id = await deployment.serving()
-    room.say("one")
+    await room.say("one")
     await room.wait_for_reply("re: one")
 
-    room.say("two [narrate=25] [hold]")
+    await room.say("two [narrate=25] [hold]")
     await deployment.wait_until_holding()
     await deployment.wait_until_recorded(session_id, "re: two")
-    assert "re: two" not in room.replies(), "the answer reached the room before the roll could be timed"
+    assert "re: two" not in await room.replies(), "the answer reached the room before the roll could be timed"
 
     await deployment.stop()
     await deployment.start_console("console-2")
     deployment.release_the_agent()
     await deployment.wait_for_finished_turns(session_id, 2)
 
-    room.say("three")
+    await room.say("three")
     await room.wait_for_reply("re: three")
 
-    assert room.replies() == ["re: one", "re: two", "re: three"]
+    assert await room.replies() == ["re: one", "re: two", "re: three"]
 
 
 async def test_a_message_accepted_by_a_dying_session_is_answered_by_its_replacement(
@@ -262,15 +259,15 @@ async def test_a_message_accepted_by_a_dying_session_is_answered_by_its_replacem
     """
     await deployment.start_console("console-1")
     doomed = await deployment.serving()
-    room.say("one")
+    await room.say("one")
     await room.wait_for_reply("re: one")
 
     await deployment.kill_sandbox(doomed)
-    room.say("two")
+    await room.say("two")
     await deployment.wait_until_queued(doomed, "two")
 
     await room.wait_for_reply("re: two")
-    assert room.replies() == ["re: one", "re: two"]
+    assert await room.replies() == ["re: one", "re: two"]
 
 
 async def test_a_replacement_session_wakes_from_our_transcript_rather_than_from_the_room(
@@ -292,11 +289,11 @@ async def test_a_replacement_session_wakes_from_our_transcript_rather_than_from_
     """
     await deployment.start_console("console-1")
     doomed = await deployment.serving()
-    one = room.say("one")
+    one = await room.say("one")
     await room.wait_for_reply("re: one")
 
     await deployment.kill_sandbox(doomed)
-    two = room.say("two")
+    two = await room.say("two")
     await deployment.wait_until_queued(doomed, "two")
     await room.wait_for_reply("re: two")
 

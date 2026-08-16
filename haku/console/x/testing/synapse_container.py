@@ -11,9 +11,9 @@ file the container's own user owns.
 Both runs pin `UID`/`GID` to this process's (the image's `start.py` honours them), so everything
 Synapse writes into that directory is still deletable by the test that made it.
 
-`Account` is the other half: the operator's side of every conversation, and the raw read of what
-Haku's client actually put in the room. Deliberately not `MatrixClient` — that is the thing under
-test, and a test that checks it against itself checks nothing.
+Registration stays here rather than moving to nio with everything else a test does to the room
+(`operator_room.py`): it is user-interactive auth even when the only stage is `m.login.dummy`, so
+it is two HTTP calls and no session, and nio models the flow rather than this shortcut through it.
 """
 
 from __future__ import annotations
@@ -28,8 +28,6 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
-from uuid import uuid4
 
 import docker
 import httpx
@@ -85,58 +83,6 @@ def _string(response: httpx.Response, field: str) -> str:
     return value
 
 
-class Account:
-    """One logged-in user, driven straight through the client-server API."""
-
-    def __init__(self, base_url: str, user_id: str, access_token: str):
-        self.user_id = user_id
-        self._http = httpx.Client(base_url=base_url, headers={"Authorization": f"Bearer {access_token}"}, timeout=30)
-
-    def close(self) -> None:
-        self._http.close()
-
-    def create_room(self, *, invite: str) -> str:
-        room = self._http.post("/_matrix/client/v3/createRoom", json={"preset": "private_chat", "invite": [invite]})
-        return _string(room, "room_id")
-
-    def send_text(self, room_id: str, body: str) -> str:
-        return self.send(room_id, {"msgtype": "m.text", "body": body})
-
-    def send(self, room_id: str, content: dict[str, Any]) -> str:
-        """Put an arbitrary `m.room.message` in the room.
-
-        The homeserver does not police `content` beyond requiring a `msgtype`, which is what makes
-        this the way to produce the msgtypes the console has to cope with and cannot send.
-        """
-        path = f"/_matrix/client/v3/rooms/{quote(room_id)}/send/m.room.message/{uuid4().hex}"
-        return _string(self._http.put(path, json=content), "event_id")
-
-    def event(self, room_id: str, event_id: str) -> dict[str, Any]:
-        return _body(self._http.get(f"/_matrix/client/v3/rooms/{quote(room_id)}/event/{quote(event_id)}"))
-
-    def messages(self, room_id: str) -> list[dict[str, Any]]:
-        """The room's timeline, newest first."""
-        path = f"/_matrix/client/v3/rooms/{quote(room_id)}/messages"
-        chunk: list[dict[str, Any]] = _body(self._http.get(path, params={"dir": "b", "limit": 500}))["chunk"]
-        return chunk
-
-    def relations(self, room_id: str, event_id: str, rel_type: str) -> list[dict[str, Any]]:
-        """The events the homeserver has indexed as relating to *event_id* by *rel_type*."""
-        path = f"/_matrix/client/v1/rooms/{quote(room_id)}/relations/{quote(event_id)}/{quote(rel_type)}"
-        chunk: list[dict[str, Any]] = _body(self._http.get(path))["chunk"]
-        return chunk
-
-    def sync(self, since: str | None = None, timeout_ms: int = 0) -> dict[str, Any]:
-        params: dict[str, Any] = {"timeout": timeout_ms}
-        if since is not None:
-            params["since"] = since
-        return _body(self._http.get("/_matrix/client/v3/sync", params=params, timeout=timeout_ms / 1000 + 30))
-
-    def devices(self) -> list[dict[str, Any]]:
-        devices: list[dict[str, Any]] = _body(self._http.get("/_matrix/client/v3/devices"))["devices"]
-        return devices
-
-
 @dataclass(frozen=True)
 class Synapse:
     base_url: str
@@ -144,9 +90,9 @@ class Synapse:
     def create_user(self, localpart: str, password: str) -> str:
         """Register *localpart* without logging it in, returning its MXID.
 
-        No device, on purpose: the caller decides which one it wants, and `MatrixClient` pins its
-        own. Registration is user-interactive auth even when the only stage is `m.login.dummy`, so
-        the first attempt is answered with the session id to complete rather than with a user.
+        No device, on purpose: whoever signs this user in decides which one it wants. Registration
+        is user-interactive auth even when the only stage is `m.login.dummy`, so the first attempt
+        is answered with the session id to complete rather than with a user.
         """
         request = {"username": localpart, "password": password, "inhibit_login": True}
         started = httpx.post(f"{self.base_url}{_REGISTER}", json=request, timeout=30)
@@ -155,15 +101,6 @@ class Synapse:
         auth = {"type": "m.login.dummy", "session": started.json()["session"]}
         completed = httpx.post(f"{self.base_url}{_REGISTER}", json=request | {"auth": auth}, timeout=30)
         return _string(completed, "user_id")
-
-    def sign_in(self, user_id: str, password: str) -> Account:
-        request = {
-            "type": "m.login.password",
-            "identifier": {"type": "m.id.user", "user": user_id},
-            "password": password,
-        }
-        signed_in = _body(httpx.post(f"{self.base_url}/_matrix/client/v3/login", json=request, timeout=30))
-        return Account(self.base_url, signed_in["user_id"], signed_in["access_token"])
 
 
 @contextmanager
