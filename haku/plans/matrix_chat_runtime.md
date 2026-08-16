@@ -106,7 +106,7 @@ homeserver-side retry queue, plus a `@haku_*` ghost-user namespace. Reversed bec
   reach both `matrix` and `haku-console`.
 
 What is genuinely given up: ghost users, which only matter once subagents post under
-distinct identities (`multi_agent.md`, [later]); and immunity to room-membership and
+distinct identities (`2026_08_multi_agent.md`, [later]); and immunity to room-membership and
 read-marker semantics, which is moot in a single DM. Revisit if either stops being true.
 
 **Design note — `matrix-nio`, with the state kept outside it.** The client is

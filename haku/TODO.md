@@ -66,10 +66,12 @@ slices over the deployed schema, not another identity migration:
   history as separate API + UI + audit slices. Distinguish revoking one binding/grant from disabling
   the Agent and all usable bindings. Keep names required, normalized, and globally unique; decide
   whether rename history is a product requirement before adding another reservation/audit table.
-- **Per-Agent approval policy:** store a typed policy keyed by canonical Agent, with the current
-  global policy as inherited/default. Later derive each Agent's tool surface from the verified
-  binding plus policy and emit `tools/list_changed` on policy edits; never authorize by an
-  unverified OAuth `client_id`.
+- **`tools/list_changed` when an Agent's policy changes:** the policy graph is already per-Agent and
+  config-driven (`console/auto_approval.py`'s registry over the `auto_approval_policies` and
+  per-agent `auto_approval_policy:` keys in `cluster/k8s/haku/console/config.yaml`), and an Operator
+  can reassign an OAuth Agent's policy in Settings. What is missing is the notification: a connected
+  client enumerated its tool surface once, so an edit that moves a tool between pass-through and
+  approval-wrapped does not reach it until it reconnects.
 - **Per-tool-call deep link:** make the promise URL open/highlight its exact call rather than merely
   loading the console. Detailed route/UI pointer: <console/TODO.md>.
 
@@ -151,8 +153,8 @@ call queues for operator approval (`haku/console/auto_approval.py`). The Authent
 are auth, not tool filtering, but the approval gate is. PostScanMail is wired this way.
 
 **Grocy is wired** (`base/sources/grocy.md`) — routed through haku-console's `grocy-sf`
-MCP entry (`GROCY_READ_TOOLS` in `console/auto_approval.py` auto-approve; every write
-tool stays approval-gated). Haku's dedicated read-only `haku` Grocy identity
+MCP entry (the `grocy_reads` policy in `cluster/k8s/haku/console/config.yaml` auto-approves the
+read tools; every write tool stays approval-gated). Haku's dedicated read-only `haku` Grocy identity
 (`grocy-mcp-haku-sf` Authentik provider, its JWT rotation, and the ESO reflection into
 `haku-sandbox`) was retired — console-side allowlisting needed no separate credential,
 and unlike the direct read-only path it also lets every runtime reach approval-gated
@@ -161,8 +163,8 @@ Grocy writes.
 **Tana is wired** (`base/sources/tana.md`) — routed through haku-console's `tana-rw`
 MCP entry instead of a dedicated facade: the read tools (`search_nodes`, `read_node`,
 `get_children`, `open_node`, `list_tags`, `list_workspaces`, `get_tag_schema`) plus the
-idempotent `get_or_create_calendar_node` auto-approve under the console's reviewed
-policy (`console/auto_approval.py`); every write tool stays approval-gated. The
+idempotent `get_or_create_calendar_node` auto-approve under the `tana_safe_tools` policy in
+`cluster/k8s/haku/console/config.yaml`; every write tool stays approval-gated. The
 standalone `tana-mcp-ro` facade (`cluster/k8s/agents/tana-mcp-ro/`) was retired —
 console-side allowlisting needed no separate Deployment/secret/route.
 

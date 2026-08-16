@@ -14,11 +14,14 @@ Delete this file once the last phase has landed.
 
 ## What is actually blocking today
 
-Production is at `alembic_version` **`0052`** and the running console image predates `0053`/`0054`/
-`0055`. That single fact gates everything: no column can be dropped, because the replica serving
-right now still maps and selects it.
+**Phase 0 has landed, so nothing is blocking.** Both `haku-console` replicas run
+`devel-20260816225958-b5ad637` (#4198, measured 2026-08-16) — the release carrying `0056` — and the
+console applies its migrations at startup, so production is stamped `0056` and no serving replica
+maps `tool_uses` or `session_turns.usage` any more. Step 1 of § The cutover is how to confirm that
+against the database rather than trusting this line. There is no `0053`: `0054`'s `down_revision` is
+`"0052"` (#4194 rechained it), so the chain runs `0052 → 0054 → 0055 → 0056`.
 
-Two corrections to what the existing tombstones claim, both load-bearing:
+One correction to what the existing tombstones claim, and it is load-bearing:
 
 - **`session_ttl_seconds` no longer bounds anything.** Three tombstones — <../console/x/session_store.py>
   line 479, <../console/x/reprojection.py> line 214, <../runtime/x/bridge/transport.py> line 36 —
@@ -29,9 +32,6 @@ Two corrections to what the existing tombstones claim, both load-bearing:
   when it was measured on 2026-08-16. **Those gates do not self-clear. Ending the session is what
   clears them**, which is phase 1 of this plan. Fix the wording wherever it appears
   (<chat_runtime_projection.md> § 407 and <../console/x/README.md> § 289 repeat it).
-- **Two items in <next_month.md> § 3 are already done.** `_legacy_pending` and the
-  `include_in_schema=False` route registrations are gone from the tree — `rg` finds only the plan's
-  own mention of each. Strike them from that list.
 
 ## What is lost, plainly
 
@@ -83,12 +83,11 @@ yet converged. "Roll" means it needs no data change at all — only the release 
 ### Trivially removable now, no data dependency
 
 - **`adopt_open_turn`'s pre-cursor branch** was gated on `0051`'s release converging. Production is
-  at `0052`, so `0051` converged long ago and the gate is clear on its own terms — the branch is
+  at `0056`, so `0051` converged long ago and the gate is clear on its own terms — the branch is
   reachable only by a session with an open turn and a stale cursor, which the ordinary case cannot
   produce. It is still safest to take it in phase 2, but it is not blocked on the purge.
 - **`transport.py`'s `HELLO_SECONDS` wait** is blocked only on the runner image, not on any row.
-- **`include_in_schema=False` and `_legacy_pending`** are already gone; only <next_month.md> still
-  names them.
+- **`include_in_schema=False` and `_legacy_pending`** are already gone from the tree.
 
 ## The target schema
 
@@ -181,15 +180,13 @@ Five phases. The ordering constraints that force this shape, stated once:
    deleted pod comes back on the same image (measured 2026-08-16, <../TODO.md>). The `runner_seq`
    constraint therefore waits on phase 1, not on a separate operation.
 
-### Phase 0 — roll the console to current `devel`
+### Phase 0 — roll the console to current `devel` — landed
 
-No data change and no new migration. Applies `0054` and `0055`, and puts every replica on an image
-that no longer reads `tool_uses` or `session_turns.usage`. **Nothing else in this plan can start
-until this lands**, because every drop below depends on the currently-serving image being one that
-does not select the column.
-
-Curiosity worth knowing before reading the chain: there is no `0053` — `0054`'s `down_revision` is
-`"0052"` (#4194 rechained it). Applying `0052 → 0054 → 0055` is correct.
+No data change and no new migration: it applied `0054`, `0055` and `0056`, and put every replica on
+an image that no longer reads `tool_uses` or `session_turns.usage`. That was the precondition for
+everything below, since every drop depends on the currently-serving image being one that does not
+select the column. Confirm it against the database with step 1 of § The cutover before running
+phase 1.
 
 ### Phase 1 — quiesce, delete, cycle
 
@@ -212,7 +209,7 @@ One release, no `DROP COLUMN`:
   from here on.
 - Delete `message_view`'s `recorded or message.tool_calls` fallback.
 - Delete `transport.py`'s `HELLO_SECONDS` wait and its fallback.
-- Migration `0056`, additive only: `sessions.surface` `SET NOT NULL`; the surface/room equivalence;
+- Migration `0057`, additive only: `sessions.surface` `SET NOT NULL`; the surface/room equivalence;
   `VALIDATE CONSTRAINT ck_session_messages_source_anchored`;
   `ck_session_messages_assistant_pointed`; both `session_frames` runner-seq checks;
   `projected_frame_seq SET DEFAULT 0` and the `UPDATE … SET 0 WHERE NULL`.
@@ -231,14 +228,14 @@ general:
 
 ### Phase 3 — the drop release
 
-Migration `0057`, once phase 2 has converged: the six `DROP COLUMN`s, `DROP INDEX
+Migration `0058`, once phase 2 has converged: the six `DROP COLUMN`s, `DROP INDEX
 uq_session_frames_partial`, the two `unpointable_*` constraints, and
 `projected_frame_seq SET NOT NULL`.
 
 ### Phase 4 — the `authored` decision, and `session_events`
 
 `EventProvenance.AUTHORED` is the one item that **cannot be specified until it is decided** —
-<next_month.md> § 5 has the two design documents that disagree. What this plan adds is that
+<next_month.md> § 3 has the two design documents that disagree. What this plan adds is that
 **the purge makes the decision free in both directions**: production holds one `session_events` row
 and it is `frame_range`, so after phase 1 there is nothing to migrate whichever way it goes.
 
@@ -249,7 +246,8 @@ schedule. If the arm gets a writer instead, nothing here changes.
 
 ### Phase 5 — `SessionStatus.IDLE`'s writer
 
-Independent of the purge and gated only on phase 0's roll. <next_month.md> § 2 owns it.
+Independent of the purge and gated only on phase 0's roll, which has landed. <next_month.md> § 1
+owns it.
 
 ### Phase 6 — squash the chain, and the tests that exist only to guard it
 
@@ -307,13 +305,14 @@ returns when it worked.
 SELECT version_num FROM alembic_version;
 ```
 
-Must return `0055`. If it returns `0052`, stop — nothing below is safe yet.
+Must return `0056`. Anything earlier means phase 0's roll has not converged after all — stop,
+because nothing below is safe yet.
 
 ```bash
 kubectl get pods -n haku-console -o jsonpath='{.items[*].spec.containers[0].image}'
 ```
 
-Every tag's commit suffix must be at or after the release carrying `0055`.
+Every tag's commit suffix must be at or after the release carrying `0056`.
 
 ### 2. Quiesce
 

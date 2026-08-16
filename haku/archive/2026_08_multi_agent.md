@@ -3,7 +3,7 @@
 **Status: retired** (operator, 2026-08-15). The dispatch plane, the zai/oai/local **zones**, and
 the build order below were an earlier experiment; the plane is archived and not deployed, and the
 remaining steps are not pending work. Read this as history, not as a plan — the live design for
-several agents at different trust levels is <information_trust_tiers.md>, which keys agent kinds
+several agents at different trust levels is <../plans/information_trust_tiers.md>, which keys agent kinds
 on their workspace repo rather than on dispatch zones.
 
 **What survives the retirement**, because it is observation rather than machinery, and is cited
@@ -21,7 +21,7 @@ Archived, documented elsewhere:
 - Cluster wiring (workers-LiteLLM, CNPG, and the three-hop key chain): <../../cluster/k8s/x/haku/dispatch/README.md>
 - Zone perimeters and the trust model: <../../cluster/k8s/x/haku/zones/README.md>
 - Security contract (enforcement inventory): <../docs/security.md>
-- Settled options survey (dispatch plane, Centaur deep-eval, harness): <../archive/2026_07_02_dispatch_plane_options.md>
+- Settled options survey (dispatch plane, Centaur deep-eval, harness): <2026_07_02_dispatch_plane_options.md>
 
 ## Where it stands
 
@@ -59,12 +59,12 @@ New local-inference follow-up: <../x/dispatch/local_dispatch_zone.md>. It adapts
 perimeter to Ollama-hosted models and adds an active-model scheduler so local workers do
 not thrash model residency by running agents across multiple models at once.
 
-New application follow-up: <kitchen_stocking_subagent.md>. Fleshes out the grocery-order
+New application follow-up: <../plans/kitchen_stocking_subagent.md>. Fleshes out the grocery-order
 bounded-write MCP line above into a first design pass for a kitchen/household-stocking
 subagent (operator, 2026-07-11) — a candidate first real workload for the oai or local zone,
 using the existing `grocy_mcp/eval` harness (already model-agnostic) to pick the tier.
 
-Capability-oriented follow-up: <information_trust_tiers.md>. It owns what may flow between
+Capability-oriented follow-up: <../plans/information_trust_tiers.md>. It owns what may flow between
 tiers — where the label lives, why the classifier has to run locally, and why "delegate a
 capability, not a corpus" is the shape that lands first. It replaces a forward reference to a
 `capability_dispatch.md` that was never written; that reference's subject (capability-profile

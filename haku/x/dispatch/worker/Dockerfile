@@ -5,7 +5,7 @@
 # the npm CLI installs need a package manager at build time).
 #
 # The image holds NO credentials: the per-job LiteLLM key and result token
-# arrive via the Job's secret (haku/plans/multi_agent.md → job lifecycle).
+# arrive via the Job's secret (haku/archive/2026_08_multi_agent.md → job lifecycle).
 FROM node:22.14.0-bookworm-slim
 
 RUN apt-get update \

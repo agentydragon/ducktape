@@ -5,7 +5,7 @@ cheaper, lower-trust worker agents running in per-provider **zones**, without ev
 holding a credential for the worker's model provider. Haku can call this plane but not
 modify it, so it structurally cannot bypass its own admission gate.
 
-Design context and the not-yet-built roadmap: <../../plans/multi_agent.md>. Security
+Design context and the not-yet-built roadmap: <../../archive/2026_08_multi_agent.md>. Security
 contract (enforcement inventory rows): <../../docs/security.md>. Cluster wiring:
 <../../../cluster/k8s/x/haku/dispatch/README.md>; zone perimeters:
 <../../../cluster/k8s/x/haku/zones/README.md>.

@@ -1,4 +1,4 @@
-# The dispatch layer for Haku's worker zones (haku/plans/multi_agent.md):
+# The dispatch layer for Haku's worker zones (haku/archive/2026_08_multi_agent.md):
 # dispatcher + workers-LiteLLM + their shared CNPG cluster. Trusted,
 # ducktape-reviewed code — Haku (L0) may call the validator API but holds no
 # credential material from this namespace and cannot modify what runs here.

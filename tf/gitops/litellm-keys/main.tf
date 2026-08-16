@@ -17,7 +17,7 @@ terraform {
   }
 }
 
-# LiteLLM virtual keys for the Haku worker lanes (haku/plans/multi_agent.md).
+# LiteLLM virtual keys for the Haku worker lanes (haku/archive/2026_08_multi_agent.md).
 # Declarative per-key model allowlists + budgets; deleting a resource here is the
 # kill switch for that lane. Auth = the master key managed by ../litellm-api-key
 # (the litellm-keys Terraform CR dependsOn it).

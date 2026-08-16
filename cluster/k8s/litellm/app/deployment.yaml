@@ -6,7 +6,7 @@
 # CNPG cluster (../db/). LiteLLM runs the Prisma schema migration on startup; the
 # Prisma's advisory lock protects schema migration when both pods start together.
 # Keys are minted declaratively by tf/gitops/litellm-keys (see
-# haku/plans/multi_agent.md).
+# haku/archive/2026_08_multi_agent.md).
 # Models deliberately stay in the generated config, NOT the DB — see
 # general_settings.store_model_in_db in proxy-config.yaml.
 apiVersion: apps/v1

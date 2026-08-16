@@ -10,7 +10,7 @@ backstop. What that bet does and does not rest on is § v0 below; the classifier
 here because deferring it is not the same as leaving it unshaped. Git-content classification is
 out of scope and lower priority, with its findings parked for the plan it needs.
 
-**This supersedes the zone experiment.** <multi_agent.md> — the dispatch plane and its
+**This supersedes the zone experiment.** <../archive/2026_08_multi_agent.md> — the dispatch plane and its
 zai/oai/local zones — is retired (operator, 2026-08-15), so it is cited below only for the
 observations that outlived it, never as pending work. It also carried a dangling forward
 reference to a `capability_dispatch.md` that was never written; that reference's subject is this
@@ -47,7 +47,7 @@ Two things it does not do, and both matter:
 
 - **A repo is a label only while its contents are homogeneous.** The moment a lower tier needs to
   touch part of a higher-tier repo, the answer is to split the repo, not to subdivide the label —
-  which is exactly what multi_agent.md already anticipates in wanting `ui/` out of `haku-state`
+  which is exactly what 2026_08_multi_agent.md already anticipates in wanting `ui/` out of `haku-state`
   before frontend chores can be offloaded. Expect the tier boundary to force repo splits, and
   treat that as the design working rather than as friction.
 - **The workspace is not the only inflow.** MCP tool results, room history, and anything another
@@ -534,7 +534,7 @@ before the room send, in reviewed console code the agent cannot reach around.
 
 It covers **outbound** only. A lower tier's messages and results coming back are an **integrity**
 concern, not a confidentiality one, and need no classifier — they need the treatment every
-adversarial source already gets. multi_agent.md made the same point about sensor output, and it
+adversarial source already gets. 2026_08_multi_agent.md made the same point about sensor output, and it
 survives that document's retirement.
 
 ### Git content: its own plan, and lower priority
@@ -638,8 +638,8 @@ corpus.
   (<../../cluster/k8s/agents/agent-rbac-base/README.md>).
 - **ducktape code.** Public, and trusted-by-**review** rather than by author — so a lower-tier
   agent proposing a PR is safe by construction, since the operator's review is the boundary. The
-  prerequisite is plumbing, not trust: multi_agent.md's Forgejo mirror automation plus PR rights.
-- **Kitchen.** <kitchen_stocking_subagent.md>, over the generalization multi_agent.md already
+  prerequisite is plumbing, not trust: 2026_08_multi_agent.md's Forgejo mirror automation plus PR rights.
+- **Kitchen.** <kitchen_stocking_subagent.md>, over the generalization 2026_08_multi_agent.md already
   states: **bounded-write MCP servers are how low-trust agents get safe write capabilities** — the
   credential stays server-side and the operations are bounded, so the caller's tier stops
   mattering.
@@ -651,7 +651,7 @@ on it.
 ## Open questions
 
 - **What exactly the instruction says.** In v0 this **is** the control, not a supporting detail,
-  so the old "oai prompt line" question from multi_agent.md is promoted to the top: which
+  so the old "oai prompt line" question from 2026_08_multi_agent.md is promoted to the top: which
   categories never enter a lower-tier room, stated concretely enough that an agent can follow it
   and the operator can tell when it was not followed. Seed conservatively and widen from
   observation.

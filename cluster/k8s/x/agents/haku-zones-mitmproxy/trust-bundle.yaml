@@ -1,4 +1,4 @@
-# Trust bundle for all Haku worker-zone namespaces (haku/plans/multi_agent.md).
+# Trust bundle for all Haku worker-zone namespaces (haku/archive/2026_08_multi_agent.md).
 # Add each new zone namespace to the matchExpressions values list.
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle

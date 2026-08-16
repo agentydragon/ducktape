@@ -7,7 +7,7 @@ namespace + its egress perimeter + the harness + the Job templates that run ther
 level is a property of the zone — the zone's perimeter is what enforces what may enter a
 worker's context, never agent restraint. Jobs are dispatched _to a zone_.
 
-Design + trust model + the not-yet-built zones: <../../../../haku/plans/multi_agent.md>.
+Design + trust model + the not-yet-built zones: <../../../../haku/archive/2026_08_multi_agent.md>.
 The dispatcher that stamps Jobs into these namespaces:
 <../dispatch/README.md>. Security contract: <../../../../haku/docs/security.md>.
 

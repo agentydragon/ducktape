@@ -14,11 +14,10 @@ it** — is discharged. The projection is a reducer (#4149), a numbered frame re
 `rollout_calls` deleted). The parallel lane went with it: the status line reads events (#4162), a
 turn's cost is columns (#4169), the frame vocabulary is split (#4181).
 
-What is left is a **list**, not a spine. Item 4 depends on item 1; nothing else here blocks anything
-else, so the rest is ordered by what a delay costs. Dispatch in parallel
-(`AGENTS.md` § Splitting Work Into PRs).
+What is left is a **list**, not a spine. Nothing here blocks anything else, so it is ordered by what
+a delay costs. Dispatch in parallel (`AGENTS.md` § Splitting Work Into PRs).
 
-**Items 3, 4 and 5 are now downstream of one decision.** The operator has accepted dropping the
+**Items 2 and 3 are now downstream of one decision.** The operator has accepted dropping the
 early chat data outright — two days of it, nothing worth keeping — rather than carrying the branches
 and nullable columns that exist to accommodate it. [The purge plan](legacy_purge.md) sequences that:
 what dies by migration, what dies by dropping rows, and the constraints that become expressible once
@@ -26,35 +25,7 @@ the rows are gone. Where it disagrees with an item below, it is the later docume
 
 ## The list
 
-### 1. The reprojection tool, which is also the drift check — open as #4183
-
-Item 4 built the table and moved the readers; nothing has yet checked that what it writes is what
-the frames say. The tool re-projects a recorded session, aligns the result against `session_events`
-per frame, and reports where they disagree — the backfill instrument and the standing check, one
-code path.
-
-**Done when** it has run against the production database and its findings are either zero or
-written down.
-
-**What is there to check, measured 2026-08-16.** One row. A `message_completed` over frames
-45129..45129, written by the first turn to run against #4179's image, with `projected_frame_seq`
-advancing to 45134 alongside it — every earlier session predates the writer. That does not argue
-against checking; it argues about shape. A standing operator CLI pointed at a one-row corpus is a
-tool with nothing to read, while the same fold called from item 4's backfill has a job. #4183 is
-held on that question, not on its correctness.
-
-**It contradicts the projection plan and the plan is what moves.** [That
-document](chat_runtime_projection.md) § "What makes it safe" asks for the comparison "over real
-sessions, in CI". CI has no production rows and a fixture compared against itself is a
-change-detector, so this is an operator's tool and a standing check against the live database.
-#4183 amends the text.
-
-**First because it is written**, and because nothing else can say whether the four landed correctly.
-It is also where `Projection.unprojected` becomes cheap to count: the fold produces it and
-`_projected` drops it in the hot path on purpose. The tool does not report it today; adding that is
-a line.
-
-### 2. Stage 6's enum widening — pulled in, because the calendar is its long pole
+### 1. Stage 6's enum widening — pulled in, because the calendar is its long pole
 
 [chat_runtime_cleanup.md](chat_runtime_cleanup.md) § Stage 6 allocates a sandbox because there is
 something to do, instead of holding one indefinitely for a quiet room. It was named as the first
@@ -67,46 +38,21 @@ and ship the widening now** — the code is a line and the wait is a roll.
 
 **Done when** an idle room holds no sandbox and the first message provisions one.
 
-### 3. The contract halves that are now due
+### 2. The contract halves that are now due
 
 `devel` carries expand/contract tombstones whose gate is a roll converging, each with the query that
 answers it beside the thing it guards. One is this work's own residue: the pre-cursor adoption
 branch with `_recorded_completion` and `RESULT_FRAME_KIND` (#4178's, gated on `session_ttl_seconds`).
-The rest are `_write_partial_frame` and its `partial` column, `_legacy_pending`, and the
-`include_in_schema=False` route registrations. `session_turns.usage` (#4169's) and
+The rest are `_write_partial_frame` and its `partial` column. `session_turns.usage` (#4169's) and
 `session_messages.tool_uses` are done — `0056` dropped both.
 
 **Done when** `rg 'CLEANUP\(added' haku/console` names only tombstones whose gate query does not yet
 return clear.
 
-**Third because it is hours of work rather than days**, and because a gate that has cleared does not
-un-clear.
+**Second because it is hours of work rather than days**, and because a gate that has cleared does
+not un-clear.
 
-### 4. The `session_messages` provenance backfill
-
-`source_{first,last}_frame_seq` is how a message finds its tool calls now that `rollout_calls` is
-gone. Migration `0045` filled it for the rows whose `agent_message_id` matched an `assistant` frame;
-the rows with no agent id — 1,417 assistant rows at #4180's count, the population the neutral message
-exists to fix — are still NULL.
-
-**Shipped as #4191, and then overtaken.** The instrument exists — `message_provenance.py` plus
-`unpointable_reason`, the column that records a row it cannot point. But [the purge
-plan](legacy_purge.md) deletes exactly the rows it was built to fill, so running it is now optional
-and the column it added is on that plan's drop list. Keep the code until the purge lands; if the
-purge is abandoned, this becomes live again unchanged.
-
-**Not `session_events`.** That table has nothing to backfill — a row is written in the transaction
-that moves the cursor, and there was no cursor before #4178. The backfill paragraph item 4 carried
-was describing this table all along.
-
-**After item 1, genuinely.** The per-turn `MessageCompleted` events with their ranges are exactly
-this change's input, and it writes where the tool only reads: it needs a dry-run/apply split and its
-own answer for an ambiguous alignment.
-
-**Done when** every `session_messages` row with a projectable range has one, and the rows that do
-not are counted with the reason.
-
-### 5. The session-event category — blocked on a decision, not on work
+### 3. The session-event category — blocked on a decision, not on work
 
 `session_events.provenance` has an `authored` arm and **no writer**, because two design documents
 disagree and both are on `devel`:
@@ -215,9 +161,10 @@ Costed, not scheduled.
   ([session_channels.md](../console/plans/session_channels.md) § 1). The outbox is the push half and
   it works; the convergence half pays off with a **second** channel or the Matrix relay. Pull it in
   the moment either becomes real.
-- **Multi-agent trust tiers** ([the trust-tier plan](information_trust_tiers.md)). Item 4 is what it
-  wants and now exists, so it starts cheaply — but it is a new subsystem, and the list above is
-  what makes it stand on something finished.
+- **Multi-agent trust tiers** ([the trust-tier plan](information_trust_tiers.md)). The message
+  provenance it wants exists now (`source_{first,last}_frame_seq`, recovered by #4191), so it starts
+  cheaply — but it is a new subsystem, and the list above is what makes it stand on something
+  finished.
 - **Mid-turn steering**, which splits the turn's three jobs — mutex, recovery marker, accounting
   unit. Doing it before the neutral turn owns its own boundaries splits them in the wrong layer.
 - **Promoting the provenance `CHECK` on `session_messages` to `VALIDATE`**, and any decision about

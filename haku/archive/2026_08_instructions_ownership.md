@@ -82,7 +82,7 @@ enforces the existing contract rather than renegotiating it.
   first open question in a way neither recorded option managed — not `setting_sources` at the
   clone, not the whole manual rendered by the console, but a small rendered core plus a cloned
   repo that stays authoritative over its own conventions.
-- **Multi-agent survives it.** One state repo per agent (<multi_agent.md>) means per-agent
+- **Multi-agent survives it.** One state repo per agent (<2026_08_multi_agent.md>) means per-agent
   craft over a shared authority core. A wholesale move forks the hard rules per agent, which is
   the opposite of what a shared perimeter wants.
 - **Base-sync mostly disappears.** Step 2 of every run diffs `haku/base` + `haku/run.md`

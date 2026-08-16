@@ -1,7 +1,7 @@
 # Auto-inject the shared haku-zones-mitmproxy proxy config into all pods in the
 # Haku worker-zone namespaces (add each new zone to every rule's namespaces
 # list). Mirrors inject-haku-egress-proxy but points at the zones' shared proxy +
-# CA (haku/plans/multi_agent.md).
+# CA (haku/archive/2026_08_multi_agent.md).
 #
 # Uses RFC 6902 JSON patches (not patchStrategicMerge) to avoid volume merge
 # conflicts with Kyverno autogen + Flux server-side dry-run on Deployments.

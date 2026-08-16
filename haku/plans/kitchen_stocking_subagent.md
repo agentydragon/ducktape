@@ -2,7 +2,7 @@
 
 **Status: undesigned — this doc is the first pass, from the operator's own framing
 (2026-07-11).** Nothing here is built. It fleshes out the "Deferred: grocery-order
-bounded-write MCP" line in [`multi_agent.md`](multi_agent.md) into a fuller shape; that
+bounded-write MCP" line in <../archive/2026_08_multi_agent.md> into a fuller shape; that
 line's intent is a building block of this plan, not a separate thing.
 
 ## Goal
@@ -25,7 +25,7 @@ Haku-initiated only — `POST /jobs` (Haku's own bearer token), with no external
 job creation path. That dispatch plane is now archived; this plan does not assume it is
 deployed.
 Sensors (`changedetection.io` → webhook → `haku-state intake/`) are step 6 in
-`multi_agent.md`'s build order and not built; even once they exist, they land findings in
+`2026_08_multi_agent.md`'s build order and not built; even once they exist, they land findings in
 Haku's own intake for Haku to act on, not a direct dispatch trigger.
 
 Two ways to get the "batch since last run" behavior without waiting on sensor infra:
@@ -55,7 +55,7 @@ sense. Household pantry contents aren't secret, but they're also not obviously
 public-by-construction the way a public-repo doc audit is. Two live options if zai's actual
 classifier turns out to be stricter than this task fits:
 
-- **The oai zone** (moderate trust, described but only partially built per `multi_agent.md`'s
+- **The oai zone** (moderate trust, described but only partially built per `2026_08_multi_agent.md`'s
   step 5) explicitly allows "project/calendar-shaped facts, coarse finances" — household
   stock/shopping data fits comfortably there even if it doesn't clear zai's bar.
 - **A local model** (`../x/dispatch/local_dispatch_zone.md`, fully designed, nothing landed) sidesteps the
@@ -80,7 +80,7 @@ shape to hand directly to a low-trust dispatch-plane worker: the full tool surfa
 allowlist.
 
 This is exactly the "reviewed MCP server holding the credential server-side, exposing only
-bounded ops" pattern `multi_agent.md` already named for grocery-order writes. Concretely, a
+bounded ops" pattern `2026_08_multi_agent.md` already named for grocery-order writes. Concretely, a
 kitchen-stocking-subagent write surface probably wants: `stock_add` / `stock_consume` /
 `stock_set` (for reconciling what changed), `shopping_list_items_add` /
 `shopping_list_item_edit` / `shopping_list_items_remove` — and _not_ `product_delete`,
@@ -147,7 +147,7 @@ Operator's instinct (2026-07-11) is correct: today's "existing litellm level mar
 (`tf/gitops/litellm-keys/main.tf`) — are key-level attribution (which lane/consumer a key
 belongs to), not per-call traces. Actual prompt/completion/tool-call traces need Langfuse, and
 the workers-LiteLLM the zai/oai zones route through doesn't have it wired yet — this is a
-pre-existing gap, not new: see `multi_agent.md`'s "Langfuse `haku-workers` project + viewer
+pre-existing gap, not new: see `2026_08_multi_agent.md`'s "Langfuse `haku-workers` project + viewer
 key" bullet (now fleshed out with what's concretely missing). This subagent shouldn't design
 its own tracing story — it's a consumer of that same fix, and probably the forcing function
 that finally gets it built, given it's a real recurring workload worth actually watching.
@@ -156,7 +156,7 @@ The one kitchen-specific input to that decision: whether it gets a dedicated **"
 Langfuse project (operator's suggestion) rather than sharing one flat `haku-workers` project
 with every other zone workload. A dedicated project makes sense once there's more than one
 real subagent — cleaner filtering, per-domain budget/cost visibility — but is one more thing to
-provision (Langfuse has no Terraform provider today; see `multi_agent.md`). Worth deciding
+provision (Langfuse has no Terraform provider today; see `2026_08_multi_agent.md`). Worth deciding
 alongside whatever workload becomes the second one, not in isolation for this one.
 
 ## Relationship to haku-state

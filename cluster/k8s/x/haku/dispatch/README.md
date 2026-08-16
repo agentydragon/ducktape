@@ -8,7 +8,7 @@ for possible future re-use, but this cluster wiring is not runnable as-is.
 The in-cluster half of the former Haku dispatch plane: the dispatcher service, the shared
 second-layer **workers-LiteLLM**, and the CNPG database they share. Application code:
 <../../../../haku/x/dispatch/README.md>. Zone perimeters (where the workers actually run):
-<../zones/README.md>. Design + roadmap: <../../../../haku/plans/multi_agent.md>.
+<../zones/README.md>. Design + roadmap: <../../../../haku/archive/2026_08_multi_agent.md>.
 
 Everything here is ducktape-reviewed — Haku can reach the dispatcher's API but has no
 write path to any of these manifests.

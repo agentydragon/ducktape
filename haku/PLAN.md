@@ -53,7 +53,7 @@ history holds the original full design rationale. The **actionable build checkli
 - **Several agents at different information trust levels** (operator, 2026-08-15), with Haku
   delegating unsensitive work — k8s diagnostics, ducktape code, kitchen — down to them. Design
   sketch in <plans/information_trust_tiers.md>, which supersedes the retired zone experiment in
-  `plans/multi_agent.md`. The reframing it turns on: the trust level belongs to the
+  `archive/2026_08_multi_agent.md`. The reframing it turns on: the trust level belongs to the
   **model provider**, not the agent, since everything in an agent's context reaches its provider —
   so the thing to label is the corpus, and the enforcement points (mounted workspace, reflected
   credential, LiteLLM route, egress perimeter) are ones this deployment already has per zone. Two
