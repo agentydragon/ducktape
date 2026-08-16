@@ -1,12 +1,18 @@
-# Build and push the OpenClaw derivative to GHCR.
-# Derives from upstream OpenClaw with the proxy preload configured.
+# Build and push the OpenClaw derivative to GHCR with Nix.
+#
+# This is a dockerTools archive rather than a Dockerfile build. The gateway is
+# packaged by nix-openclaw and openclaw/default.nix adds the proxy preload plus
+# the small public-coder command-line toolset. Keeping the existing image name
+# lets Flux roll public-coder-agent without a registry migration.
 name: OpenClaw Image
 
 on:
   push:
-    branches: [main, devel]
+    branches: [devel]
     paths:
       - "openclaw/**"
+      - "flake.nix"
+      - "flake.lock"
       - ".github/workflows/openclaw-image.yml"
   workflow_dispatch:
 
@@ -22,14 +28,52 @@ jobs:
   build-and-push:
     name: Build and Push
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/openclaw
     steps:
       - uses: actions/checkout@v6
 
-      - uses: ./.github/actions/ghcr-build-push
+      - name: Load Attic trusted pubkeys
+        id: attic_keys
+        run: echo "value=$(jq -r 'join(\" \")' nix/attic-pubkeys.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
         with:
-          image: ghcr.io/${{ github.repository_owner }}/openclaw
-          context: .
-          file: openclaw/Dockerfile
-          cache_from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/openclaw:buildcache
-          cache_to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/openclaw:buildcache,mode=max
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes fetch-closure
+            netrc-file = /home/runner/.config/nix/netrc
+            extra-trusted-public-keys = ${{ steps.attic_keys.outputs.value }}
+            extra-substituters = https://cache.allegedly.works/main
+            fallback = true
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Write Nix netrc for cache.allegedly.works
+        run: |
+          mkdir -p /home/runner/.config/nix
+          umask 077
+          printf 'machine cache.allegedly.works password %s\n' "$ATTIC_TOKEN" \
+            > /home/runner/.config/nix/netrc
+
+      - name: Build image
+        run: nix build .#openclaw-image --print-build-logs
+
+      - name: Compute tag
+        id: meta
+        run: |
+          SHA="${{ github.sha }}"
+          echo "pin_tag=${GITHUB_REF_NAME}-$(date -u +%Y%m%d%H%M%S)-${SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Push to GHCR
+        run: |
+          ref="$IMAGE:${{ steps.meta.outputs.pin_tag }}"
+          echo "${{ github.token }}" | skopeo login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+          skopeo copy --insecure-policy \
+            "docker-archive:$(readlink -f result)" "docker://$ref"
+          echo "pushed \`$ref\`" >> "$GITHUB_STEP_SUMMARY"

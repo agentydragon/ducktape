@@ -5,6 +5,13 @@
     # NixOS 26.05 stable release
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
+    # OpenClaw's Nix packaging. The image output below consumes its pinned
+    # gateway derivation and adds the small public-coder runtime toolset.
+    nix-openclaw = {
+      url = "github:openclaw/nix-openclaw";
+      inputs.nixpkgs.follows = "nixpkgs-unstable";
+    };
+
     # Unstable for packages that need frequent updates (e.g., claude-code)
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -60,6 +67,7 @@
       home-manager,
       nix-colors,
       nixGL,
+      nix-openclaw,
       claude-plugins-official,
       siderolabs-docs,
       ...
@@ -485,6 +493,17 @@
               pkgsUnstable
               pkgsMaster
               home-manager
+              ;
+          };
+          # Public coder OpenClaw image (plain Docker archive, no Debian base).
+          # The gateway and its Node dependency closure come from nix-openclaw;
+          # openclaw/default.nix adds the proxy preload and command-line tools.
+          # Build: nix build .#openclaw-image
+          # Load:  docker load < result
+          openclaw-image = import ./openclaw {
+            inherit
+              nix-openclaw
+              pkgs
               ;
           };
           # NixOS-based RBE worker (systemd, envfs, nix-ld).

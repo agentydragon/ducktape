@@ -33,6 +33,7 @@ spec:
     spec:
       securityContext:
         fsGroup: 1000
+      # Both containers use the Flux-pinned image produced by the Nix image workflow.
       initContainers:
         # The gateway reads its config from the state dir, which is the PVC, so
         # the declarative config has to be planted there before startup.
@@ -61,8 +62,8 @@ spec:
               cp /cfg/openclaw.json /state/openclaw.json
               rm -f /state/openclaw.json.last-good /state/openclaw.json.bak*
           volumeMounts:
-            - {name: cfg, mountPath: /cfg}
-            - {name: data, mountPath: /state}
+            - { name: cfg, mountPath: /cfg }
+            - { name: data, mountPath: /state }
       containers:
         - name: openclaw
           image: ghcr.io/agentydragon/openclaw:devel-20260815233250-beeebdd # {"$imagepolicy": "flux-system:openclaw"}
@@ -173,11 +174,11 @@ spec:
             - name: gateway
               containerPort: 18789
           volumeMounts:
-            - {name: data, mountPath: /home/openclaw/.openclaw}
-            - {name: devbox-ssh-secret, mountPath: /run/secrets/public-coder-devbox-ssh, readOnly: true}
+            - { name: data, mountPath: /home/openclaw/.openclaw }
+            - { name: devbox-ssh-secret, mountPath: /run/secrets/public-coder-devbox-ssh, readOnly: true }
             # Kubeconfig with the placeholder token. iron-proxy substitutes the
             # real SA token on requests to kubeapi.allegedly.works.
-            - {name: kubeconfig, mountPath: /home/openclaw/.kube, readOnly: true}
+            - { name: kubeconfig, mountPath: /home/openclaw/.kube, readOnly: true }
             # Over the system trust store, not alongside it. The Bundle is built
             # with useDefaultCAs, so it already contains the public roots plus the
             # cluster root plus this proxy's interception root — replacing the
@@ -186,7 +187,7 @@ spec:
               mountPath: /etc/ssl/certs/ca-certificates.crt
               subPath: ca-certificates.crt
               readOnly: true
-            - {name: tmp, mountPath: /tmp}
+            - { name: tmp, mountPath: /tmp }
           resources:
             requests:
               cpu: 250m
