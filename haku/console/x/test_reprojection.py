@@ -1,8 +1,8 @@
-"""What the drift check says about sessions the write path itself produced.
+"""What `check_session` reports about sessions the write path itself produced.
 
 The round trip is the point: frames recorded and projected exactly as the turn loop does it must
-re-project to the rows that were written, so anything this reports on such a session is a defect in
-the check rather than in the projection.
+re-project to the rows that were written, so anything reported on such a session is a defect in the
+comparison rather than in the projection.
 """
 
 from __future__ import annotations
@@ -71,8 +71,7 @@ async def test_a_session_the_write_path_projected_agrees_with_itself(
         report = await reprojection.check_session(db, session_id)
 
     turn = one(report.turns)
-    assert (turn.turn_id, turn.verdict) == (turn_id, reprojection.Verdict.AGREES)
-    assert turn.findings == ()
+    assert (turn.turn_id, turn.outcome) == (turn_id, reprojection.Agrees())
     # Two rows per `assistant` frame: what the block said, and the message the frame closed —
     # per-frame seeding means a message always ends at its own frame.
     assert turn.stored_rows == 6
@@ -82,7 +81,7 @@ async def test_a_session_the_write_path_projected_agrees_with_itself(
 async def test_a_row_whose_body_was_edited_is_reported_against_its_frame(
     chat_store, migrated_sessions, operator_id
 ) -> None:
-    """The check's whole purpose: a stored row that the frames do not project to any more."""
+    """The comparison's whole purpose: a stored row the frames do not project to any more."""
     session_id, _ = await _turn_through_the_write_path(
         chat_store,
         operator_id,
@@ -97,9 +96,9 @@ async def test_a_row_whose_body_was_edited_is_reported_against_its_frame(
         await db.commit()
         report = await reprojection.check_session(db, session_id)
 
-    turn = one(report.turns)
-    assert turn.verdict is reprojection.Verdict.DRIFTED
-    mismatch = one(turn.findings)
+    outcome = one(report.turns).outcome
+    assert isinstance(outcome, reprojection.Drifted)
+    mismatch = one(outcome.findings)
     assert isinstance(mismatch, reprojection.RowMismatch)
     assert [difference.field for difference in mismatch.differences] == ["body"]
     assert "Bash" in mismatch.differences[0].projected
@@ -128,7 +127,9 @@ async def test_a_row_that_is_gone_is_a_count_mismatch_rather_than_a_silent_pass(
         await db.commit()
         report = await reprojection.check_session(db, session_id)
 
-    finding = one(one(report.turns).findings)
+    outcome = one(report.turns).outcome
+    assert isinstance(outcome, reprojection.Drifted)
+    finding = one(outcome.findings)
     assert isinstance(finding, reprojection.RowCountMismatch)
     assert finding.projected == (ConversationEventKind.TOOL_CALL_STARTED, ConversationEventKind.MESSAGE_COMPLETED)
     assert finding.stored == (ConversationEventKind.MESSAGE_COMPLETED,)
@@ -150,9 +151,7 @@ async def test_a_turn_with_frames_and_no_rows_is_skipped_with_its_reason(
         await db.commit()
         report = await reprojection.check_session(db, session_id)
 
-    turn = one(report.turns)
-    assert (turn.verdict, turn.findings) == (reprojection.Verdict.SKIPPED, ())
-    assert "before the release" in (turn.skipped_because or "")
+    assert one(report.turns).outcome == reprojection.Skipped(reason=reprojection.SkipReason.NO_ROWS_AT_ALL)
 
 
 async def test_a_turn_the_cursor_never_reached_is_skipped_rather_than_re_projected(
@@ -172,9 +171,8 @@ async def test_a_turn_the_cursor_never_reached_is_skipped_rather_than_re_project
         report = await reprojection.check_session(db, session_id)
 
     turn = one(report.turns)
-    assert turn.verdict is reprojection.Verdict.SKIPPED
+    assert turn.outcome == reprojection.Skipped(reason=reprojection.SkipReason.CURSOR_NEVER_REACHED)
     assert turn.checked_frames == 0
-    assert "cursor" in (turn.skipped_because or "")
 
 
 async def test_a_frame_recorded_past_the_cursor_is_counted_and_not_reported(
@@ -182,8 +180,8 @@ async def test_a_frame_recorded_past_the_cursor_is_counted_and_not_reported(
 ) -> None:
     """A replica that died between recording a frame and projecting it is not drift.
 
-    The cursor is what says so, and adoption is what will still redo the frame — so the check
-    counts it and stays quiet.
+    The cursor is what says so, and adoption is what will still redo the frame — so it is counted
+    and reported as coverage rather than as a finding.
     """
     session_id, _ = await _turn_through_the_write_path(
         chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
@@ -199,34 +197,8 @@ async def test_a_frame_recorded_past_the_cursor_is_counted_and_not_reported(
         report = await reprojection.check_session(db, session_id)
 
     turn = one(report.turns)
-    assert (turn.verdict, turn.findings) == (reprojection.Verdict.AGREES, ())
+    assert turn.outcome == reprojection.Agrees()
     assert (turn.checked_frames, turn.unprojected_frames) == (1, 1)
-
-
-async def test_the_rendered_report_names_the_session_and_every_turn(chat_store, migrated_sessions, operator_id) -> None:
-    session_id, turn_id = await _turn_through_the_write_path(
-        chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
-    )
-    async with migrated_sessions() as db:
-        lines = reprojection.rendered(await reprojection.check_session(db, session_id))
-
-    assert str(session_id) in lines[0]
-    assert str(turn_id) in lines[1]
-    assert reprojection.Verdict.AGREES in lines[1]
-
-
-async def test_the_default_range_is_the_newest_sessions_that_ran_a_turn(
-    chat_store, migrated_sessions, operator_id
-) -> None:
-    quiet, _ = await chat_store.create(operator_id, SpaSession())
-    session_id, _ = await _turn_through_the_write_path(
-        chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
-    )
-
-    async with migrated_sessions() as db:
-        chosen = await reprojection.recent_sessions(db, limit=10)
-
-    assert list(chosen) == [session_id], f"{quiet.session_id} never ran a turn, so there is nothing to check"
 
 
 if __name__ == "__main__":

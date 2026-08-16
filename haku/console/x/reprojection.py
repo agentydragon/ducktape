@@ -1,9 +1,10 @@
 """Re-project a recorded session's frames and say where `session_events` disagrees.
 
-The determinism <../../plans/chat_runtime_projection.md> § "What makes it safe" rests on, checked
-rather than asserted: the same frames project to the same events, so re-folding a stored session
-has to reproduce its stored rows exactly, and everywhere it does not is either drift or a
-projection bug worth repairing.
+`check_session` returns findings; it prints nothing and decides nothing. Its caller is the
+`session_messages` provenance backfill (<../../plans/chat_runtime_projection.md> § 4), which needs
+the per-turn `MessageCompleted` events with their frame ranges to fill `source_first_frame_seq` and
+`source_last_frame_seq` for the rows carrying no agent id — and needs to know, per turn, whether
+that alignment is unambiguous enough to write from.
 
 **The fold is the write path's own** (`frame_projection.projected`) and the row is built by the
 write path's own mapping (`session_events.row`), so the only thing added here is the alignment.
@@ -53,7 +54,7 @@ class FieldDifference:
     """One column of one row, as the frames project it and as it is stored.
 
     Rendered to text rather than carried typed: the field set spans an enum, two integers, a string
-    and a JSON body, and the only consumer is a report a person reads.
+    and a JSON body, and a caller acts on *that a column differs*, not on the value.
     """
 
     field: str
@@ -101,26 +102,52 @@ class UnalignableRow:
 type Finding = RowMismatch | RowCountMismatch | RowsBeyondCursor | UnalignableRow
 
 
-class Verdict(StrEnum):
-    AGREES = "agrees"
-    DRIFTED = "drifted"
-    SKIPPED = "skipped"
+class SkipReason(StrEnum):
+    """An era the check cannot speak about, as opposed to a turn that agrees or drifts."""
+
+    # `sessions.projected_frame_seq` is NULL or behind the turn (#4178's era), so nothing in it
+    # claims to have been projected and re-folding would compare against a position no writer took.
+    CURSOR_NEVER_REACHED = "cursor_never_reached"
+    # Frames and no rows at all: what a replica on the image before these rows existed leaves, and
+    # indistinguishable by any column from a projection that has stopped producing.
+    NO_ROWS_AT_ALL = "no_rows_at_all"
+
+
+@dataclass(frozen=True, slots=True)
+class Agrees:
+    """Every compared frame projects to exactly the rows that are stored for it."""
+
+
+@dataclass(frozen=True, slots=True)
+class Drifted:
+    findings: tuple[Finding, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Skipped:
+    reason: SkipReason
+
+
+type Outcome = Agrees | Drifted | Skipped
 
 
 @dataclass(frozen=True, slots=True)
 class TurnReport:
+    """One turn's outcome, plus the coverage that says how much of the turn it speaks for.
+
+    A caller writing anything from an `Agrees` must read the coverage too: a turn with frames past
+    the cursor is one adoption will still project, so its rows are not yet the whole turn.
+    """
+
     turn_id: UUID
     first_frame_seq: int
     last_frame_seq: int | None
-    verdict: Verdict
-    # Recorded frames of this turn at or below the cursor: what the check actually covered.
+    outcome: Outcome
+    # Recorded frames of this turn at or below the cursor: what the check actually compared.
     checked_frames: int
     stored_rows: int
     # Frames of this turn past the cursor: recorded, and their effects never committed.
     unprojected_frames: int
-    # Why a skipped turn was skipped; None on every other verdict.
-    skipped_because: str | None
-    findings: tuple[Finding, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,10 +155,6 @@ class SessionReport:
     session_id: UUID
     projected_frame_seq: int | None
     turns: tuple[TurnReport, ...]
-
-    @property
-    def drifted(self) -> tuple[TurnReport, ...]:
-        return tuple(turn for turn in self.turns if turn.verdict is Verdict.DRIFTED)
 
 
 async def check_session(db: AsyncSession, session_id: UUID) -> SessionReport:
@@ -158,18 +181,6 @@ async def check_session(db: AsyncSession, session_id: UUID) -> SessionReport:
     )
 
 
-async def recent_sessions(db: AsyncSession, *, limit: int) -> Sequence[UUID]:
-    """The most recently created sessions that ran at least one turn — the tool's default range."""
-    return (
-        await db.scalars(
-            select(Session.session_id)
-            .where(Session.session_id.in_(select(SessionTurn.session_id)))
-            .order_by(Session.created_at.desc())
-            .limit(limit)
-        )
-    ).all()
-
-
 async def _check_turn(
     db: AsyncSession, turn: SessionTurn, *, cursor: int | None, ends_before: int | None
 ) -> TurnReport:
@@ -181,35 +192,28 @@ async def _check_turn(
     ).all()
     projected = {frame.frame_seq: _expected(turn.turn_id, frame) for frame in frames}
     within = [seq for seq in projected if cursor is not None and seq <= cursor]
-    verdict, skipped_because, findings = _aligned_turn(projected, within=within, rows=rows, cursor=cursor)
     return TurnReport(
         turn_id=turn.turn_id,
         first_frame_seq=turn.first_frame_seq,
         last_frame_seq=turn.last_frame_seq,
-        verdict=verdict,
+        outcome=_outcome(projected, within=within, rows=rows, cursor=cursor),
         checked_frames=len(within),
         stored_rows=len(rows),
         unprojected_frames=len(projected) - len(within),
-        skipped_because=skipped_because,
-        findings=findings,
     )
 
 
-def _aligned_turn(
+def _outcome(
     projected: dict[int, tuple[SessionEvent, ...]],
     *,
     within: Sequence[int],
     rows: Sequence[SessionEvent],
     cursor: int | None,
-) -> tuple[Verdict, str | None, tuple[Finding, ...]]:
-    """One turn's verdict: the two skips first, because both are eras rather than disagreements."""
+) -> Outcome:
+    """One turn's outcome: the two skips first, because both are eras rather than disagreements."""
     if not within:
-        # The cursor's own era (#4178): a session whose cursor is NULL or behind this turn was
-        # served by a replica that did not advance it, so nothing here is claimed to be projected.
-        return Verdict.SKIPPED, "the cursor names no frame of this turn, so nothing here claims to be projected", ()
+        return Skipped(reason=SkipReason.CURSOR_NEVER_REACHED)
     if not rows and any(projected[seq] for seq in within):
-        # A turn served by a replica whose image had no writer for these rows looks exactly like
-        # one whose projection stopped producing, and no column tells them apart.
         # CLEANUP(added 2026-08-16): delete this arm once no session that can still acquire a
         #   frame predates the release that writes `session_events` — `session_ttl_seconds` (7200)
         #   clears them within two hours of it converging:
@@ -217,11 +221,7 @@ def _aligned_turn(
         #      WHERE NOT EXISTS (SELECT 1 FROM session_events e WHERE e.turn_id = t.turn_id)
         #        AND t.started_at > now() - interval '2 hours';
         #   After that, a turn with frames and no rows is drift and must be reported as one.
-        return (
-            Verdict.SKIPPED,
-            "no rows at all: served before the release that writes them, or a projection that stopped",
-            (),
-        )
+        return Skipped(reason=SkipReason.NO_ROWS_AT_ALL)
     findings: list[Finding] = [
         UnalignableRow(event_seq=row.event_seq, kind=row.kind)
         for row in rows
@@ -238,7 +238,7 @@ def _aligned_turn(
                 findings.append(RowsBeyondCursor(frame_seq=frame_seq, stored=_kinds(kept)))
             continue
         findings.extend(_aligned(frame_seq, projected.get(frame_seq, ()), kept))
-    return (Verdict.DRIFTED if findings else Verdict.AGREES), None, tuple(findings)
+    return Drifted(findings=tuple(findings)) if findings else Agrees()
 
 
 def _aligned(frame_seq: int, projected: Sequence[SessionEvent], stored: Sequence[SessionEvent]) -> list[Finding]:
@@ -305,48 +305,3 @@ async def _turn_frames(db: AsyncSession, turn: SessionTurn, *, ends_before: int 
 
 def _kinds(rows: Sequence[SessionEvent]) -> tuple[ConversationEventKind, ...]:
     return tuple(row.kind for row in rows)
-
-
-def rendered(report: SessionReport) -> list[str]:
-    """The report as lines: one per session, one per turn, one per finding."""
-    counts = {verdict: sum(1 for turn in report.turns if turn.verdict is verdict) for verdict in Verdict}
-    summary = ", ".join(f"{count} {verdict}" for verdict, count in counts.items() if count)
-    lines = [
-        f"session {report.session_id} cursor={report.projected_frame_seq} "
-        f"{len(report.turns)} turn(s): {summary or 'no turns'}"
-    ]
-    for turn in report.turns:
-        upper = turn.last_frame_seq if turn.last_frame_seq is not None else "open"
-        detail = f" — {turn.skipped_because}" if turn.skipped_because is not None else ""
-        lines.append(
-            f"  turn {turn.turn_id} frames {turn.first_frame_seq}-{upper} checked={turn.checked_frames} "
-            f"rows={turn.stored_rows} unprojected={turn.unprojected_frames} {turn.verdict}{detail}"
-        )
-        lines.extend(f"    {_rendered_finding(finding)}" for finding in turn.findings)
-    return lines
-
-
-def _rendered_finding(finding: Finding) -> str:
-    match finding:
-        case RowMismatch():
-            differences = "; ".join(
-                f"{difference.field}: projected={_clipped(difference.projected)} stored={_clipped(difference.stored)}"
-                for difference in finding.differences
-            )
-            return f"frame {finding.frame_seq} row {finding.position} (event_seq {finding.event_seq}): {differences}"
-        case RowCountMismatch():
-            return (
-                f"frame {finding.frame_seq}: projects to {_listed(finding.projected)}, stored {_listed(finding.stored)}"
-            )
-        case RowsBeyondCursor():
-            return f"frame {finding.frame_seq}: stored {_listed(finding.stored)} past the cursor"
-        case UnalignableRow():
-            return f"event_seq {finding.event_seq} ({finding.kind}): authored, so no frame to align it by"
-
-
-def _listed(kinds: tuple[ConversationEventKind, ...]) -> str:
-    return ",".join(kinds) or "nothing"
-
-
-def _clipped(value: str, *, width: int = 200) -> str:
-    return value if len(value) <= width else f"{value[:width]}…"

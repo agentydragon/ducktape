@@ -654,7 +654,7 @@ into it (`x/claude_code/projection.py`) and a read surface over the result (`rea
 durable cursor is `sessions.projected_frame_seq` (§ The shape); and `session_events` stores what
 the fold produces, written inside the cursor's own transaction. **All four interpreters counted
 below are gone.** What is still open is the _second_ category — session events, which cross no wire
-— and the reprojection tool; the paragraphs that have landed say so where they are.
+— and the backfill that re-projection feeds; the paragraphs that have landed say so where they are.
 
 `_run_turn`'s frame `match` became `project`, with the cursor advanced beside its effects. The
 abort path is still to collapse here: an abort becomes an intent the transport writes, and the
@@ -855,10 +855,10 @@ so a `CHECK` can require the range (2026-08-16). Neither, yet — take the middl
   after an `INSERT` and becomes something the frame arrives carrying — which is what makes catch-up
   a replay from the runner's own window rather than a reconciliation against the table.
 
-- **Backfill falls out of the reprojection tool** rather than being its own archaeology: project a
-  session's frames, align the derived sequence against the stored rows, and write the range where the
-  alignment is unambiguous. Where it is not, that is a finding about the projection rather than a gap
-  to guess at.
+- **Backfill falls out of `reprojection.check_session`** rather than being its own archaeology:
+  project a session's frames, align the derived sequence against the stored rows, and write the
+  range where the alignment is unambiguous. Where it is not, that is a finding about the projection
+  rather than a gap to guess at.
 
   `0045` took a cheaper first pass that is consistent with this rather than a substitute for it: it
   filled the range for assistant rows that carry the agent's own message id, by joining that id
@@ -896,16 +896,21 @@ pure function of a frame sequence, then:
 Stage 5's outbox already relies on the fold being single-writer per session (see the closing note);
 reprojection is the other half of that bargain and wants writing at the same time.
 
-**Built, as `x/reprojection.py` and the `reprojection_bin` tool over it** — with three things the
-paragraph above did not anticipate. It must fold **as the write path configures the fold**, per
-frame and under `STREAM_EVENTS`, because `project_log` over a whole session is a different event
-sequence and a checker driving it reports drift everywhere; that is why the fold is now
-`x/frame_projection.py` rather than the turn loop's private function. It must run **per turn and
-skip a turn with no rows at all**, because that is what a replica on the image before these rows
-existed leaves behind, and without the skip every live session reports drift for one
-`session_ttl_seconds` after the release. And it does **not** run in CI: what it needs is production
-rows, so it is an operator's tool and a standing check against the live database, exiting non-zero
-when a turn drifted.
+**Built, as `x/reprojection.py`'s `check_session`** — a function returning findings, with three
+things the paragraph above did not anticipate. It must fold **as the write path configures the
+fold**, per frame and under `STREAM_EVENTS`, because `project_log` over a whole session is a
+different event sequence and a checker driving it reports drift everywhere; that is why the fold is
+now `x/frame_projection.py` rather than the turn loop's private function. It must run **per turn
+and skip a turn with no rows at all**, because that is what a replica on the image before these
+rows existed leaves behind, and without the skip every live session would be reported as drifted
+for one `session_ttl_seconds` after the release.
+
+**No standing check and no CLI over it** (operator, 2026-08-16). It cannot run in CI — what it
+needs is production rows — and production has almost none: `session_events` held **one row** on
+2026-08-16, a `message_completed` over frames 45129..45129, every other session predating the
+writer. A tool pointed at that corpus reads nothing. The caller that does exist is the backfill
+above, so this is a function and the CLI is a decision to revisit only if a drift report ever has a
+population to speak about.
 
 #### Pressure-tested against the two things that would break it
 

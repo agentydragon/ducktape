@@ -80,22 +80,6 @@ py_binary(
 )
 
 py_library(
-    name = "reprojection_main",
-    srcs = ["reprojection_main.py"],
-    deps = [
-        ":reprojection",
-        "@pypi//sqlalchemy",
-        "@pypi//typer",
-    ],
-)
-
-py_binary(
-    name = "reprojection_bin",
-    main_module = "haku.console.x.reprojection_main",
-    deps = [":reprojection_main"],
-)
-
-py_library(
     name = "session_events",
     srcs = ["session_events.py"],
     deps = [

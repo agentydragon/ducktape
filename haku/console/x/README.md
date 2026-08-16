@@ -304,13 +304,14 @@ meaning anything:
 Before changing the adapter, read <../debug/frame_shape_census.md>: every rule in it is a measured
 fact rather than a reading of `protocol.md`, so what looks like belt and braces mostly is not.
 
-### The drift check — `reprojection.py`, and the tool over it
+### Re-projecting a stored session — `reprojection.py`
 
-Determinism only pays if somebody checks it, and `reprojection.py` is that check: it re-projects a
-recorded session's frames and aligns the result against `session_events`, reporting every place the
-two disagree. `bb run //haku/console/x:reprojection_bin -- --session <uuid>` (or `--limit N` for
-the newest sessions that ran a turn) is the operator's way in, and it exits non-zero when anything
-drifted.
+`check_session` re-projects a recorded session's frames and aligns the result against
+`session_events`, returning per turn either `Agrees`, `Drifted` with its findings, or `Skipped`
+with the era it cannot speak about. It is a function, not a command: its caller is the
+`session_messages` provenance backfill (<../../plans/chat_runtime_projection.md> § 4), which fills
+the `source_first_frame_seq`/`source_last_frame_seq` range for rows with no agent id from exactly
+this alignment.
 
 - **It folds through `frame_projection.projected`**, which is why that function is not the turn
   loop's private one. A checker driving `project_log` over a whole session instead would merge the
@@ -319,10 +320,10 @@ drifted.
 - **It aligns by frame.** One frame's rows are written in one transaction and each event's range is
   `(frame_seq, frame_seq)`, so which rows a frame owns is a lookup. A row on the `authored` arm has
   no frame to align by and is reported rather than matched by position.
-- **Two eras bound what it may speak about**, both per turn and both said out loud in the output: a
-  turn whose frames the cursor never reached (#4178's era) and a turn with frames and no rows at
-  all — which is what a replica on the image before these rows existed leaves, and is
-  indistinguishable from a projection that has stopped producing.
+- **Two eras bound what it may speak about**, both per turn and both named by `SkipReason`: a turn
+  whose frames the cursor never reached (#4178's era) and a turn with frames and no rows at all —
+  which is what a replica on the image before these rows existed leaves, and is indistinguishable
+  from a projection that has stopped producing.
 
 The tombstone on the second of those is on the skip itself: once no session that can still acquire
 a frame predates the release that writes `session_events`, a turn with frames and no rows is drift
