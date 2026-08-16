@@ -4,6 +4,14 @@ Investigation of where time and memory go when running augur sim rollouts at a
 "production-ish" scale: a mortgage + nontrivial knob config, 100-year horizon
 (1200 months), and 500–10000 parallel rollouts.
 
+**Reading note.** The NumPy figures below are historical baselines. The JAX-only
+cutover removed the NumPy backend (see
+<jax_sim_review_2026_06_05.md>) — `sim/engine/` now holds `jax_engine.py` alone,
+and the NumPy↔JAX parity tests named here survive as single-backend JAX
+validation tests. The optimization passes and the invariants they established
+(deterministic series order; series indices as traced operands, not jit static
+structure) are still the reason the compiler looks the way it does.
+
 Tooling added for this: `//augur/sim:profile_rollout`
 (<augur/sim/profile_rollout.py>) — builds the spike-1 bench scenario plus a
 financed primary-residence purchase (mortgage origination + monthly

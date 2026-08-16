@@ -68,10 +68,13 @@ In `devinfra/claude/claude_hook/main.rs` (`write_session_bazelrc`):
 - `startup --output_base=<session_dir>/bazel-output-base` — each agent session
   gets its own bazel server, so a wedged session can't affect another session
   or the interactive shell.
-- `common --block_for_lock=false` — when a second `bazelisk` lands while the
+- `startup --noblock_for_lock` — when a second `bazelisk` lands while the
   first is in flight, it exits immediately with "Another command (X) is
   running" instead of silently queueing. Converts the silent failure mode
-  into a loud one.
+  into a loud one. (It is a startup option and takes no value; the
+  `common --block_for_lock=false` spelling this note originally recorded is
+  rejected by Bazel — see the comment above the `lines.push` in
+  `write_session_bazelrc`.)
 
 Neither mitigation **fixes** the root cause. They reduce blast radius and
 surface the failure earlier.
@@ -131,5 +134,18 @@ collected yet.
   mitigations live.
 - `devinfra/claude/config/bazelrc.mako` — historical Python-era template,
   kept for specimens only; not consulted at runtime anymore.
-- Earlier related debug note: `devinfra/claude/debug/stuck_shim_2026_05_18.md`
-  for a different but adjacent "agent process didn't terminate cleanly" case.
+- Earlier related note, now resolved and archived:
+  <../archive/2026_05_18_stuck_shim.md> — a different but adjacent "agent
+  process didn't terminate cleanly" case, from when the PATH shims still
+  called the hook daemon over UDS.
+
+## Adjacent failure mode: local Bazel fetches blocked (2026-08-16)
+
+Distinct from the hang above, but it hits the same commands and is worth ruling
+out first: locally-executing Bazel in an agent session (`bazelisk`, and
+therefore `bb run` — including `bb run //devinfra:gazelle`) currently fails
+fetching `rules_mypy` with a **403 from the egress proxy**. It fails fast and
+loudly; it does not hang. `bbr` is unaffected because its module fetches happen
+on the BuildBuddy runner, not in the session container. So a `bb run` that dies
+on module resolution is this, not a wedged Bazel server — and Gazelle is not
+runnable in-session until it is fixed.

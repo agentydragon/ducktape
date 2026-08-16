@@ -1,10 +1,12 @@
 # Design: Resource Capability Tokens for Agent Collaboration
 
-> **OUTDATED (2025-12):** This document predates the unified `agent_runs` table.
-> The separate `critic_runs`, `grader_runs`, and `prompt_optimization_runs` tables
-> described here have been replaced by a single `agent_runs` table with `type_config` JSONB.
-> Some concepts (capability tokens, RLS patterns) are still relevant but the schema details are outdated.
-> See `docs/agent_loop_inside_container.md` for the current architecture.
+> **Archived — superseded schema.** This document predates the unified
+> `agent_runs` table. The separate `critic_runs`, `grader_runs`, and
+> `prompt_optimization_runs` tables described here were replaced by a single
+> `agent_runs` table with `type_config` JSONB. Some concepts (capability tokens,
+> RLS patterns) are still worth reading; the schema details are not. The current
+> architecture is <../agent_loop_inside_container.md>. Nothing in the repo links
+> here — it is kept as background, not as a plan.
 
 ## Summary
 

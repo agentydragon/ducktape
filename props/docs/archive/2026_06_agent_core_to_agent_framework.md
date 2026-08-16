@@ -1,6 +1,16 @@
 # Replacing `agent_core` with a standard agent interface
 
-**Status:** evaluation / design note (not yet scheduled)
+> **Archived — the evaluation was carried out.** props production agents run on
+> Microsoft Agent Framework today: `props/agents/af/` holds the client, loop,
+> middleware, tools, and exec tool (`client.py` states outright that it replaces
+> `agent_core`'s `create_bound_model_from_env`), and `props/agents/critic/main.py`
+> imports from it. `agent-framework-{core,openai,anthropic}` are pinned in
+> `pyproject.toml`. `agent_core` survives in props only as a test-mock library
+> (`//agent_core/testing:responses`) and outside props under `x/`. Kept for the
+> comparison of alternatives and the middleware-mapping reasoning; it is not a
+> current plan.
+
+**Status:** evaluation / design note, written before the migration
 **Date:** 2026-06-07
 
 ## Goal

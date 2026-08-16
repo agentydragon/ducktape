@@ -634,7 +634,16 @@ Five post-merge PR runs are enough for the qualitative answer:
 - Analysis cache: not flushed wholesale, but not perfectly quiescent either; first `test //...`
   still does incremental analysis/Skyframe work.
 - Slow critical path: remote execution of a small number of long tests, not analysis.
-- Workflow scoping: not changed-file scoped; PRs still request `//...`.
+- Workflow scoping: not changed-file scoped at the time of measurement; PRs still requested `//...`.
+
+**Since acted on.** PR CI is now changed-file scoped: `devinfra/ci/bazel_ci.sh`
+runs `bazel-diff generate-hashes` for the merge base and head and builds/tests
+only `get-impacted-targets`, failing hard rather than falling back to `//...`.
+The instrumentation this investigation added also survives —
+`devinfra/ci/bb_runner_probe.py` and the `bb-remote` action's
+`emit_bb_remote_linkage.py` linkage artifact are still wired into
+`.github/workflows/bazel-ci.yml`. The residual base-hash cost this scoping
+introduced has its own plan: <../ci/plans/bazel_diff_base_hash_caching.md>.
 
 For rates and distributions, collect more:
 

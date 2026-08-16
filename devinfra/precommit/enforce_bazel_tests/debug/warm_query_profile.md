@@ -101,9 +101,11 @@ parsing). Once that's paid, subsequent queries are I/O-bound at ~0.3s
 
 ## Implications for the pre-commit hook
 
-1. **The session start hook's `bazel info` warmup** starts the JVM but does
-   **not** evaluate module extensions — the first real query still pays ~6s.
-   A more effective warmup would run a lightweight query like `tests(//...)`.
+1. **A `bazel info` warmup** starts the JVM but does **not** evaluate module
+   extensions — the first real query still pays ~6s. A more effective warmup
+   would run a lightweight query like `tests(//...)`. (At the time of this
+   profile the session start hook ran such a warmup; it no longer does, so a
+   session's first hook query pays the full ~6s.)
 2. **Subsequent hook invocations** (same server) take ~0.3s for the query
    phase, which is fast enough for interactive use.
 3. **The `getDirtyKeys` I/O cost** (0.25s) is the floor for warm queries.

@@ -298,30 +298,26 @@ a bigger lift than rebuilding the shims would be at that point. So:
 removing the shims **is** safe under the current network-policy
 assumption stated in `README.md` ("egress just works").
 
-## What to do next (suggested)
+## How it was resolved
 
-1. Add the wall-clock ceiling in (1) above and ship a fix-forward.
-2. Capture a reproduction: spin a session, kill the hook daemon, run
-   `bbr build //...`, and `gdb -p <pid>; thread apply all bt` to dump
-   the stack of a stuck shim. That nails H1 vs H2.
-3. Independently of (1) and (2), decide whether the shims are worth
-   keeping. The behaviours they deliver are small, and the cost of
-   keeping them is incidents like this plus per-invocation
-   "[git-shim] daemon unreachable" noise polluting transcripts.
+The "what to do next" queue this note originally carried (add a wall-clock
+ceiling, reproduce under `gdb`, decide whether the shims survive) was overtaken
+by the fix described under **Resolution** above: the shim no longer speaks to the
+daemon at all, so there is no `/shim-exec` call left to wedge on. The shims
+themselves were kept, daemon-free.
 
 ## Files referenced
 
 - `devinfra/claude/claude_hook/shim_runtime.rs` — `run_shim`, `decide`,
-  `call_daemon`.
-- `devinfra/claude/claude_hook/main.rs:753-802` — `post_json_over_uds`
-  with the 300 s timeout.
-- `devinfra/claude/claude_hook/main.rs:868-878` — `#[tokio::main] async
-fn main` dispatcher.
-- `devinfra/claude/claude_hook/daemon_lifecycle.rs:223` — the other
-  place a 2 s timeout exists (daemon HTTP send during `ensure_daemon`).
-- `devinfra/claude/hook_daemon/shim_install.py` — Python (CLI / older
-  install path) that writes the PATH shim wrappers.
-- `devinfra/claude/claude_hook/shim_install.rs` — Rust equivalent.
+  `call_daemon`. Now resolves locally; its module doc records why the
+  daemon-backed path went away.
+- `devinfra/claude/claude_hook/main.rs` — `post_json_over_uds` with the
+  300 s timeout, and the `#[tokio::main] async fn main` dispatcher.
+- `devinfra/claude/claude_hook/daemon_lifecycle.rs` — the other place a
+  2 s timeout exists (daemon HTTP send during `ensure_daemon`).
+- `devinfra/claude/claude_hook/shim_install.rs` — writes the PATH shim
+  wrappers. (The Python `devinfra/claude/hook_daemon/shim_install.py`
+  referenced at the time of the incident has since been deleted.)
 - Session evidence (this session, not persisted):
   - `/tmp/claude-hd/5dfb3626-adf1-48de-805c-23deba728651/daemon.err.log`
   - `/tmp/claude-hd/5dfb3626-adf1-48de-805c-23deba728651/d.sock`

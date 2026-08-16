@@ -1,6 +1,7 @@
 # cross_ref: only one `cross_ref` member resolved per logical module — FIXED
 
-**Status: fixed** (this branch). Root cause and fix below; kept as an RCA.
+**Status: fixed**, landed in #2398 (`28daa5f17`). Root cause and fix below; kept
+as an RCA.
 
 Found while stabilizing the gaffer tana/re `domains/graph/metaNode` spec
 (2026-06-20). Three sibling re-export aliases in one module want `cross_ref`

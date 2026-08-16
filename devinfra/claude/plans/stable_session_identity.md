@@ -1,15 +1,20 @@
 # Plan: Stable Session Identity for Hook State
 
-**Status**: Draft
+**Status**: Draft, unimplemented. Re-checked 2026-08-16: `SessionPaths` still
+keys `~/.claude/session-env/` on the hook's per-transition UUID
+(`session_paths.py`), and `write_session_bazelrc` still points
+`startup --output_base` inside that per-UUID directory, so the goal below is
+still live.
 **Created**: 2026-03-30
 
 ## Problem
 
 Claude Code assigns a new internal session UUID on every resume, compact,
-and clear. Hook daemons key all state (proxy sockets, bazelrc, env files)
+and clear. Hook daemons key all state (bazelrc, output base, env files)
 on this UUID. When the UUID changes:
 
-1. Bazel server's `--remote_proxy=unix:<old-uuid-path>` breaks
+1. The per-session Bazel `--output_base` moves with it, so the resumed session
+   gets a fresh Bazel server and a cold Skyframe cache
 2. Bazel wrapper's RPC target changes → Bazel detects changed startup
    option → kills server → 45-min cold Skyframe reload
 3. No clean handoff mechanism — `SessionStart` hook receives the new UUID
@@ -53,20 +58,19 @@ CLI mode doesn't have `CLAUDE_CODE_SESSION_ID`. Options:
    invalidate.
 
 **Tentative**: CLI mode can keep current behavior (UUID-keyed paths).
-The proxy/bazelrc stability problem is web-only. Two CLI agents sharing
+The bazelrc/output-base stability problem is web-only. Two CLI agents sharing
 a project dir already share the Bazel server (same output base), so
 there's no new clash.
 
 ## Proposed Changes (Web Mode)
 
-### 1. Stable proxy socket path
+### 1. Stable proxy socket path — no longer applicable
 
-**Current**: `/tmp/claude-hd/<session-uuid>/remote-proxy.sock`
-**Proposed**: `/tmp/claude-hd/<CLAUDE_CODE_SESSION_ID>/remote-proxy.sock`
-
-The daemon creates the proxy at this stable path on every SessionStart.
-On resume, the new daemon takes over the same socket path. The Bazel
-server's `--remote_proxy` points here and never changes.
+Dropped. This proposal targeted a `/tmp/claude-hd/<session-uuid>/remote-proxy.sock`
+that the Bazel server reached through `--remote_proxy`. That mechanism has since
+been removed: `--remote_proxy` appears nowhere in the hook code, and
+`/tmp/claude-hd/<sid>/` now holds only the daemon socket and logs. Nothing here
+needs a stable path.
 
 ### 2. Stable bazelrc path
 
@@ -95,8 +99,7 @@ per-UUID subdirs for things that genuinely need per-transition state
 ~/.claude/session-env/
   cse_01ANqoTWWCxF71H5Aq2DqwnT/         (stable, survives resume)
     bazelrc
-    remote-proxy.sock → /tmp/claude-hd/cse_.../remote-proxy.sock
-    auth-proxy/
+    bazel-output-base/
     bin/                                  (bazel wrapper)
     transitions/
       1c9fe809/                           (historical, can be cleaned up)

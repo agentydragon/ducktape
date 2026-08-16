@@ -2,8 +2,8 @@
 
 ## Why
 
-`bazel-ci.yml`'s PR gating regenerates the merge-base's Merkle hashes on every
-PR CI run — `git checkout $BASE && bazel-diff generate-hashes -w "$PWD" -b bazel`.
+The PR gating in `devinfra/ci/bazel_ci.sh` (the script `bazel-ci.yml` hands to
+`bb remote --script`) regenerates the merge-base's Merkle hashes on every PR CI run — `git checkout $BASE && bazel-diff generate-hashes -w "$PWD" -b bazel`.
 The base is always a stable `devel` commit; for a given SHA its hashes never
 change. Measured in the shadow-mode rollout: ~25–35 s per hash-generation call
 on the bb-remote runner (warm snapshot). That's ~30–60 s of redundant work
@@ -135,8 +135,8 @@ jobs:
           APP_TOKEN: ${{ steps.app.outputs.token }}
 ```
 
-**Modified `bazel-ci.yml`** (inside the existing PR gating branch, before the
-current `bazel-diff generate-hashes` for `$BASE`):
+**Modified `devinfra/ci/bazel_ci.sh`** (inside the existing PR gating branch,
+before the current `bazel-diff generate-hashes` for `$BASE`):
 
 ```bash
 if git fetch --depth=1 origin "refs/tags/bazel-diff-hashes/$BASE" 2>/dev/null; then

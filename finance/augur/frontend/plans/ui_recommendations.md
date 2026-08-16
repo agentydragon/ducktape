@@ -1,9 +1,14 @@
 # Augur frontend UI recommendations
 
-Captured 2026-05-28 from a review of `app.jsx`, `forms.jsx`, and the
+Captured 2026-05-28 from a review of the then-`.jsx` `app` and `forms` modules
+(the frontend has since moved to TypeScript — `app.tsx`, `forms.tsx`) and the
 then-checked-in visual-test screenshots (now published per-PR via
 `devinfra/pr_visuals` instead). This file is now only the active UX
 backlog; delete entries as they land and tombstone the file once empty.
+Re-checked 2026-08-16: none of the items below have landed — no confirm/undo on
+reset, no copy-URL affordance, no `localStorage` persistence, no currency
+shorthand parsing, and `MantineProvider defaultColorScheme="auto"` still has no
+in-app override.
 
 ## Form Sidebar
 

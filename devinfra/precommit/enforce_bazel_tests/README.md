@@ -54,7 +54,8 @@ elapsed times, target lists) are saved to `/tmp/enforce_bazel_tests_bench/runs/<
 ## Benchmark results (2026-04-01, Bazel 8.6.0, older web environment)
 
 Target file: `util/bazel/workspace.py` (`//util/bazel:workspace.py`).
-Detailed profile analysis: <debug/warm_query_profile.md>.
+Detailed profile analysis: <debug/warm_query_profile.md> for the warm path,
+<debug/cold_start_profile.md> for the cold-start critical path.
 
 ### Cold start (server shut down before each query)
 

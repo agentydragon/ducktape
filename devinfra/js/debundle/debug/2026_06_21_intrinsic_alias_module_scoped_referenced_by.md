@@ -1,6 +1,7 @@
 # intrinsic_alias: `referenced_by: @Helper` resolved chunk-globally — FIXED
 
-**Status: fixed** (this branch). Root cause and fix below; kept as an RCA.
+**Status: fixed**, landed in #2428 (`8fb90debc`). Root cause and fix below; kept
+as an RCA.
 
 Found while preparing the gaffer decorate-trio conversion (2026-06-21). esbuild
 emits a byte-identical `__decorate` helper copy per module; the readable `name:`

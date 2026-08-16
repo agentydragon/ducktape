@@ -24,32 +24,14 @@ modified or removed — a review pointer, not a merge gate). The remaining
 comparison work is the optional tolerance/noise-model path on top of that
 exact default.
 
-## 1. Exercise the generic path live
+## 1. Exercise the generic path live — done
 
-Create a disposable pull request that affects both
-`//haku/console/frontend:screenshots` and `//aiquota/gnome:test_render` without
-changing publisher configuration.
-
-Verify on its first revision:
-
-- Bazel CI executes both visual tests and the publisher discovers both targets;
-- one sticky comment links to the commit page and separate per-test pages;
-- all declared PNGs are anonymously readable from the public bucket;
-- the linked short SHA resolves to the tested commit;
-- the `PR visual review` check succeeds.
-
-Push a second revision and verify that the publisher updates the existing
-sticky comment rather than adding another. Confirm that a superseded publisher
-run cannot replace the comment for the newer head.
-
-Exercise the error path with an invalid or incomplete manifest, then restore
-it. The sticky comment must identify the affected test and error, the visual
-review check must fail, and the workflow must exit non-zero without advertising
-a partially uploaded index.
-
-Exit criterion: a real pull request demonstrates two independently implemented
-producers, sticky-comment maintenance across revisions, and actionable failure
-reporting.
+The generic path carries real traffic. Producers publishing at HEAD:
+`haku/console/frontend` (two renderers), `aiquota/gnome:test_render`,
+`x/study_casino`, `finance/augur`, and `props/frontend` — all through the shared
+writers `util/visual_review.py` and
+`util/testing/frontend_visual/visual-review-manifest.mjs`, with no
+publisher-side configuration per producer.
 
 ## 2. Tolerance-aware comparison
 
@@ -94,24 +76,13 @@ threshold-tolerated assets.
 Exit criterion: fault-injection tests prove that stale runs and partial
 failures cannot publish a misleading current result.
 
-## 4. Document and expand producer coverage
+## 4. Document and expand producer coverage — done
 
-Write a short producer recipe next to the shared Python and JavaScript manifest
-writers. A new producer should need only to:
-
-1. write PNGs into its undeclared outputs directory;
-2. write one `ducktape.visual-review.v1` manifest using a shared writer;
-3. ensure its Bazel test is selected by the existing affected-target CI path.
-
-Add another repository component only after the baseline/diff path and limits
-are proven. It must opt in without changing workflow or publisher code.
-
-Keep the Python and JavaScript writers behaviorally identical with shared JSON
-fixtures. Reconsider maintaining both implementations once a third producer
-makes the repository's dominant producer language clear.
-
-Exit criterion: a third component publishes visual reviews with producer-only
-changes and the recipe is sufficient for an unfamiliar contributor.
+The producer recipe lives in <../README.md> § "Opting a visual test in", and the
+exit criterion (a third component opting in with producer-only changes) is well
+past: five components publish today across both writers. What remains from this
+section is the maintenance question, tracked as open decision 4 below — whether
+two behaviorally identical writers stay justified now that adoption is broad.
 
 ## Verification matrix
 

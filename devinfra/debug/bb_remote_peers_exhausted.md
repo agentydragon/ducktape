@@ -118,8 +118,7 @@ bb remote --script="bazel build --config=rbe //..."
 remotely and remote cache writes still occur — you just don't get the
 build outputs auto-downloaded to the local `bb-out/` tree. For CI we don't
 need the artifacts back on the GHA runner anyway (`push-images.yml` does its
-own `bb remote build … --remote_download_regex=…` and is potentially affected
-separately — see TODO below).
+own artifact download and is unaffected — see TODO below).
 
 For local `bbr` use (`bbr build //target`), users who want artifacts back can
 either (a) use `--remote_download_regex` and accept the bug for that
@@ -150,7 +149,7 @@ allocation per CI run instead of 2.
 ## TODO
 
 - [ ] File upstream issue at <https://github.com/buildbuddy-io/buildbuddy/issues/new>. Draft body below.
-- [ ] Audit other `bb remote build` consumers (`.github/workflows/push-images.yml` uses `bb remote build … --remote_download_regex=…` — confirm whether it's affected and if so, switch to `--script` + a separate download step).
+- [x] Audit other `bb remote build` consumers. `.github/workflows/push-images.yml` no longer uses `--remote_download_regex`; its four `bb-remote` steps use `args: build … --remote_download_outputs=toplevel` and publish images successfully, so they are not blocked by this bug.
 - [ ] When upstream is fixed, revert the `--script` workaround in `bazel-ci.yml` and remove the `script` input from `bb-remote/action.yml`.
 
 ### Draft upstream issue
