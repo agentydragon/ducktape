@@ -162,7 +162,7 @@ The loss that does exist is upstream: `_serviced` (`matrix_sync.py:282-300`) dro
 messages with a warning and the watermark advances regardless; when it returns `[]` the entire batch
 is discarded and acknowledged. Warned, so not silent — still unrecoverable.
 
-### I3. The batch is acknowledged at enqueue, not at turn completion — FIXED (#4110)
+### I3. The batch is acknowledged at enqueue, not at turn completion — FIXED (#4117)
 
 `save_batch` ran as soon as `offer` returned, which is as soon as `enqueue_prompt` commits. A
 session dying between enqueue and the turn orphaned the prompt: `expire_stale_leases` fails the
@@ -219,7 +219,7 @@ change deleted `offer`'s status pre-check — admission is `enqueue_prompt`'s al
 | ------------------------------------------------- | ------------------------ | ----------------------------------------------------- |
 | R1.6 no inbound message silently dropped          | Fixed (#4087)            | was `matrix_client.py:422,440` + `matrix_sync.py:323` |
 | R1.7 downtime recovery, never skip silently       | Satisfied in spirit      | `matrix_client.py:447` logs loudly, still advances    |
-| R2.5 batch acknowledged after its turn completes  | Fixed (#4110)            | was `matrix_sync.py:318-323`, acked on enqueue        |
+| R2.5 batch acknowledged after its turn completes  | Fixed (#4117)            | was `matrix_sync.py:318-323`, acked on enqueue        |
 | R11.2 every turn speaks                           | Fixed (#4088)            | was `matrix_session.py:247-249`                       |
 | R11.6 produced reply never lost silently, retried | Fixed (`session_outbox`) | was `matrix_pacer.py:152-162`                         |
 
