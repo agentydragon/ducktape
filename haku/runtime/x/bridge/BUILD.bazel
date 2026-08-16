@@ -227,6 +227,7 @@ py_test(
     srcs = ["test_cli_client.py"],
     deps = [
         ":cli_client",
+        ":protocol",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import

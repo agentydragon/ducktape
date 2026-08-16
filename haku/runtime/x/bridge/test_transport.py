@@ -241,7 +241,7 @@ async def test_transport_preserves_fine_grained_tool_input_stream_events() -> No
     for event in partial_events:
         await runner_socket.send_text(ClaudeMessage(payload=event).model_dump_json())
         with anyio.fail_after(1):
-            assert await anext(messages) == event
+            assert (await anext(messages)).payload == event
 
     await transport.end_input()
     assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text()) == EndInput()
@@ -249,6 +249,31 @@ async def test_transport_preserves_fine_grained_tool_input_stream_events() -> No
 
     assert not transport.is_ready()
     assert console_socket.closed
+
+
+async def test_the_cursor_goes_out_on_start_and_the_runners_number_comes_back_on_the_frame() -> None:
+    """The two halves of runner-owned numbering, at the end that reads them.
+
+    `resume_from` rides on `start` because that frame is sent on every connection, and `seq` rides
+    on each frame back — so a read that unwrapped the envelope would drop the one field the next
+    connection's cursor is computed from.
+    """
+    console_socket, runner_socket = memory_websocket_pair()
+    launch = ClaudeLaunch(arguments=(), cwd="/workspace", environment={}, resume_from=41)
+    transport = WebSocketTransport(console_socket, launch)
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(transport.connect)
+        await runner_socket.send_text(Hello().model_dump_json())
+        with anyio.fail_after(5):
+            assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text()) == launch
+
+    answer = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
+    await runner_socket.send_text(ClaudeMessage(payload=answer, seq=42).model_dump_json())
+    with anyio.fail_after(1):
+        message = await anext(transport.read_messages())
+
+    assert (message.payload, message.seq) == (answer, 42)
+    await transport.close()
 
 
 async def test_transport_rejects_non_object_frames() -> None:
@@ -286,7 +311,7 @@ async def test_progress_reaches_the_sink_and_not_the_conversation() -> None:
 
     with anyio.fail_after(1):
         # The progress frame is consumed on the way to this, not yielded before it.
-        assert await anext(messages) == answer
+        assert (await anext(messages)).payload == answer
     assert reported == ["Cloning into '/workspace/haku-state'..."]
 
     await transport.close()
@@ -315,7 +340,7 @@ async def test_setup_output_is_reassembled_across_chunks() -> None:
     await runner_socket.send_text(ClaudeMessage(payload=answer).model_dump_json())
 
     with anyio.fail_after(1):
-        assert await anext(messages) == answer
+        assert (await anext(messages)).payload == answer
     assert reported == ["Cloning into 'haku-state'...", "resolving étape", "workspace ready"]
 
     await transport.close()
@@ -333,7 +358,7 @@ async def test_progress_with_nowhere_to_go_is_dropped_not_fatal() -> None:
     await runner_socket.send_text(ClaudeMessage(payload=answer).model_dump_json())
 
     with anyio.fail_after(1):
-        assert await anext(messages) == answer
+        assert (await anext(messages)).payload == answer
 
     await transport.close()
 
@@ -362,7 +387,7 @@ async def test_a_failing_progress_sink_does_not_end_the_conversation() -> None:
     await runner_socket.send_text(ClaudeMessage(payload=answer).model_dump_json())
 
     with anyio.fail_after(1):
-        assert await anext(messages) == answer
+        assert (await anext(messages)).payload == answer
 
     await transport.close()
 

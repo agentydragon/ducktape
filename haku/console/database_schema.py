@@ -1211,6 +1211,17 @@ class SessionFrame(Base):
     # recorded before this column existed. It means "no identity to compare", not "not yet
     # computed", so a reader must not treat two NULLs as the same frame.
     frame_uid: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The **runner's** number for this frame, off the bridge envelope (`ClaudeMessage.seq`), where
+    # the runner gave one. Dense and monotonic over everything one runner process sent, which
+    # `frame_seq` above is deliberately not — so this is the number a reconnect is computed from:
+    # the console hands back the highest it holds and the runner replays only what is above it
+    # (<plans/chat_runtime_projection.md> § 2b).
+    #
+    # NULL means no runner numbered this row, and there are three ways to mean it: a frame this
+    # console wrote to the CLI, a row the console authored itself (`setup_output`, `partial`), and
+    # every frame from a runner image predating the field. Nothing reads it as the log's ordering
+    # yet — `frame_seq` still is — so this release only writes it down.
+    runner_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -1233,6 +1244,19 @@ class SessionFrame(Base):
         # One in-flight reconstruction per session, as a schema property rather than a rule the
         # turn loop has to keep: there is only ever one assistant message streaming at a time.
         Index("uq_session_frames_partial", "session_id", unique=True, postgresql_where=text("partial")),
+        # What the resume cursor is read off: `max(runner_seq)` for one session, on every runner
+        # connection. Partial because most rows have no runner number, and the reader always
+        # excludes them.
+        #
+        # **Not unique, deliberately, and § 2b's R1 line says otherwise.** Uniqueness is what
+        # position-keyed dedup will be built on, but the insert can infer only one conflict
+        # target and today's is `frame_uid` — so a second index would turn a replayed frame with
+        # no agent-assigned identity (a `control_response`, a `system` without a `task_id`) from
+        # today's known cost, one duplicate row, into a raised `UniqueViolation` that ends the
+        # session. It lands with the dedup that keys on it (R4), not before.
+        Index(
+            "idx_session_frames_runner_seq", "session_id", "runner_seq", postgresql_where=text("runner_seq IS NOT NULL")
+        ),
     )
 
 

@@ -317,6 +317,7 @@ py_test(
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
+        "//haku/console:database_schema",
         "//haku/console/x/testing:recording_claims",
         "//util:net",
         "//util/bazel:runfiles",

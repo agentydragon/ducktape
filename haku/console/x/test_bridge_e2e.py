@@ -26,9 +26,11 @@ from uuid import UUID
 
 import pytest_bazel
 from fastapi import FastAPI
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.chat_models import LIVE_SESSION_STATUSES, ChatMessageRole, SessionStatus, TurnOutcome
+from haku.console.database_schema import SessionFrame
 from haku.console.x.conftest import MCP_TOKEN, runtime_config
 from haku.console.x.session_frames import SETUP_OUTPUT_KIND
 from haku.console.x.session_notifications import SessionNotifications
@@ -75,6 +77,26 @@ def _console_app(database_url: str, workspace: Path) -> FastAPI:
     app = FastAPI(lifespan=lifespan)
     app.include_router(internal_router)
     return app
+
+
+async def _runner_seqs(database_url: str, session_id: UUID) -> list[int]:
+    """The runner's own numbers for one session's frames, in the order the console recorded them.
+
+    Read off the rows rather than through a store method because the question is about the column,
+    and the console's readers deliberately do not expose it yet.
+    """
+    engine = create_async_engine(database_url)
+    try:
+        async with async_sessionmaker(engine)() as db:
+            return list(
+                await db.scalars(
+                    select(SessionFrame.runner_seq)
+                    .where(SessionFrame.session_id == session_id, SessionFrame.runner_seq.is_not(None))
+                    .order_by(SessionFrame.frame_seq)
+                )
+            )
+    finally:
+        await engine.dispose()
 
 
 async def _wait_until(
@@ -184,6 +206,14 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     # forwarding, the `setup_output` frame, and the transport reassembling it into a line.
     narration = await chat_store.read_frames(session_id, cursor=None, limit=10, kinds=[SETUP_OUTPUT_KIND])
     assert [frame.payload for frame in narration] == [{"kind": SETUP_OUTPUT_KIND, "text": GREETING}]
+    # The resume cursor, end to end. The second console computed it from the rows the first left
+    # and sent it on `start`, so the runner replayed only what was above it — which is why each of
+    # these numbers appears once. Without a cursor the whole window comes back, and the classes
+    # with no agent-assigned id (a `control_response`) are recorded a second time, because
+    # `frame_uid` has nothing to recognise them by.
+    numbered = await _runner_seqs(migrated_db_url, session_id)
+    assert numbered == sorted(set(numbered)), "a frame was recorded twice, or out of the order it was sent in"
+    assert await chat_store.highest_runner_seq(session_id) == numbered[-1]
 
 
 if __name__ == "__main__":

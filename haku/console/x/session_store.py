@@ -705,7 +705,13 @@ class SessionStore:
         ]
 
     async def record_frame(
-        self, session_id: UUID, direction: FrameDirection, kind: str, payload: dict[str, Any]
+        self,
+        session_id: UUID,
+        direction: FrameDirection,
+        kind: str,
+        payload: dict[str, Any],
+        *,
+        runner_seq: int | None = None,
     ) -> RecordedFrame:
         """Append one frame to the session's rollout, unless this session already has it.
 
@@ -717,6 +723,11 @@ class SessionStore:
 
         *kind* is passed rather than read out of the payload: a CLI frame keeps its discriminator
         in `type` and the bridge envelope keeps it in `kind`, and this table holds both.
+
+        *runner_seq* is the runner's own number for the frame, where the frame came from a runner
+        that numbers. It is written down and nothing here orders by it; what reads it is
+        `highest_runner_seq`. Default None because most writers have no such number to give — this
+        console's writes to the CLI, and the rows it authors itself.
 
         Failures are not swallowed — a rollout with quiet holes is the record that looks complete
         while being wrong.
@@ -736,6 +747,7 @@ class SessionStore:
                     payload=payload,
                     partial=False,
                     frame_uid=uid,
+                    runner_seq=runner_seq,
                     created_at=now,
                     updated_at=now,
                 )
@@ -762,6 +774,26 @@ class SessionStore:
             if existing_seq is None:
                 raise RuntimeError(f"replayed frame disappeared from the rollout for {uid=}")
         return RecordedFrame(fresh=False, frame_seq=int(existing_seq))
+
+    async def highest_runner_seq(self, session_id: UUID) -> int | None:
+        """The resume cursor for one session: the highest number a runner gave a frame in it.
+
+        **Per session, not per connection**, which is the property the whole scheme rests on: two
+        consoles can be adopting one runner's window during a roll, and both compute this from the
+        same rows, so they agree on what has been recorded. None is a session whose log holds
+        nothing a runner numbered — a fresh session, or one served entirely by a runner image
+        predating the field — and the runner reading it replays its whole window as before.
+
+        It is a **floor**, and the runner treats it as one (`OutboundLog.seed`). A `setup_output`
+        row cannot carry its number here (the runner numbers the frame, the console records the
+        lines it decoded into, and one is not the other), so the cursor can sit below what the
+        console truly holds. That costs a re-sent frame the log already has, which the `frame_uid`
+        dedup refuses — never a frame skipped, which is the direction that would lose one.
+        """
+        async with self._sessions() as db:
+            return await db.scalar(
+                select(func.max(SessionFrame.runner_seq)).where(SessionFrame.session_id == session_id)
+            )
 
     async def list_conversations(self, *, cursor: ConversationCursor | None, limit: int) -> list[Conversation]:
         """Past sessions from *cursor*, newest first, for the `haku_conversations` read tools.

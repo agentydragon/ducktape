@@ -11,6 +11,7 @@ import pytest
 import pytest_bazel
 
 from haku.runtime.x.bridge.cli_client import ClaudeCli, ClaudeCliError, RecordedFrame
+from haku.runtime.x.bridge.protocol import ClaudeMessage
 
 # The gap between one frame's number and the next. Deliberately not 1: the real sink is a Postgres
 # `Identity` column, which skips, so the sequence is an order and never a dense count — and a test
@@ -28,6 +29,9 @@ class CountingSink:
 
     def __init__(self) -> None:
         self.numbered: list[tuple[int, dict[str, Any]]] = []
+        # What the runner said each received frame's number was, which the sink keeps rather than
+        # mints — None where the frame came from nowhere that numbers.
+        self.runner_seqs: list[int | None] = []
         self._next = 1
 
     def _number(self, payload: dict[str, Any]) -> int:
@@ -39,7 +43,8 @@ class CountingSink:
     async def sent(self, payload: dict[str, Any]) -> int:
         return self._number(payload)
 
-    async def received(self, payload: dict[str, Any]) -> RecordedFrame:
+    async def received(self, payload: dict[str, Any], *, runner_seq: int | None) -> RecordedFrame:
+        self.runner_seqs.append(runner_seq)
         return RecordedFrame(fresh=True, frame_seq=self._number(payload))
 
 
@@ -49,12 +54,12 @@ class ScriptedChannel:
     def __init__(self, *frames: dict[str, Any]):
         self.written: list[dict[str, Any]] = []
         self.closed = False
-        self._inbound: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        self._inbound: asyncio.Queue[ClaudeMessage | None] = asyncio.Queue()
         for frame in frames:
-            self._inbound.put_nowait(frame)
+            self._inbound.put_nowait(ClaudeMessage(payload=frame))
 
-    def deliver(self, frame: dict[str, Any] | None) -> None:
-        self._inbound.put_nowait(frame)
+    def deliver(self, frame: dict[str, Any] | None, *, seq: int | None = None) -> None:
+        self._inbound.put_nowait(None if frame is None else ClaudeMessage(payload=frame, seq=seq))
 
     async def connect(self) -> None:
         pass
@@ -62,9 +67,9 @@ class ScriptedChannel:
     async def write(self, data: str) -> None:
         self.written.append(json.loads(data))
 
-    async def read_messages(self) -> AsyncIterator[dict[str, Any]]:
-        while (frame := await self._inbound.get()) is not None:
-            yield frame
+    async def read_messages(self) -> AsyncIterator[ClaudeMessage]:
+        while (message := await self._inbound.get()) is not None:
+            yield message
 
     async def close(self) -> None:
         self.closed = True
@@ -112,6 +117,31 @@ async def test_conversation_frames_are_delivered_verbatim_and_control_is_not() -
     # Each carries the sink's number for it, which is what a reader addresses a frame by. The
     # control response the sink numbered before them is plumbing and reached nobody.
     assert [(first.frame_seq, first.payload), (second.frame_seq, second.payload)] == sink.numbered[-2:]
+    await cli.aclose()
+
+
+async def test_the_number_the_runner_put_on_a_frame_reaches_the_sink() -> None:
+    """The sink's own number orders the log; the runner's is what a reconnect is computed from.
+
+    Both channels, because the sequence is dense over everything the runner sent — a control
+    response left unnumbered would read at the other end as a frame that went missing. A frame
+    from a channel with no runner behind it carries None, which is not zero and not a guess.
+    """
+    channel = ScriptedChannel()
+    sink = CountingSink()
+    cli = ClaudeCli(channel, sink, control_timeout=5)
+    connecting = asyncio.create_task(cli.connect())
+    await asyncio.sleep(0)
+    channel.deliver(_answer(channel.written[0]), seq=7)
+    await connecting
+
+    channel.deliver({"type": "result", "is_error": False}, seq=8)
+    channel.deliver({"type": "stream_event", "event": {"type": "content_block_delta"}})
+    frames = cli.frames()
+    await anext(frames)
+    await anext(frames)
+
+    assert sink.runner_seqs == [7, 8, None]
     await cli.aclose()
 
 
@@ -190,7 +220,7 @@ async def test_wait_closed_resolves_when_the_socket_breaks() -> None:
     cannot hand its failure back — so `wait_closed` is the signal that the stream is over."""
 
     class BreakingChannel(ScriptedChannel):
-        async def read_messages(self) -> AsyncIterator[dict[str, Any]]:
+        async def read_messages(self) -> AsyncIterator[ClaudeMessage]:
             await self._inbound.get()
             raise ConnectionResetError("socket went away")
             yield  # pragma: no cover - marks this an async generator

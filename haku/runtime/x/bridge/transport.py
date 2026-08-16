@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Any
 
 import anyio
 
@@ -106,10 +105,10 @@ class WebSocketTransport:
             raise RuntimeError("WebSocket transport is not connected")
         await self._websocket.send_text(ClaudeMessage(payload=decode_object(data.strip())).model_dump_json())
 
-    def read_messages(self) -> AsyncIterator[dict[str, Any]]:
+    def read_messages(self) -> AsyncIterator[ClaudeMessage]:
         return self._read_messages()
 
-    async def _read_messages(self) -> AsyncIterator[dict[str, Any]]:
+    async def _read_messages(self) -> AsyncIterator[ClaudeMessage]:
         if not self._ready:
             raise RuntimeError("WebSocket transport is not connected")
         try:
@@ -117,8 +116,11 @@ class WebSocketTransport:
                 # Exhaustive over `RunnerToConsole`. A `start` or `end_input` coming back the
                 # wrong way never reaches here — the decoder refuses it.
                 match RUNNER_TO_CONSOLE.validate_json(await self._websocket.receive_text()):
-                    case ClaudeMessage(payload=payload):
-                        yield payload
+                    case ClaudeMessage() as message:
+                        # The whole envelope rather than its payload: `seq` is the runner's number
+                        # for this frame and the console's log is ordered by it, so unwrapping here
+                        # would drop the one field a reconnect is computed from.
+                        yield message
                     case Hello():
                         # `connect` consumed the one hello this connection has. A second is the
                         # runner restarting a handshake mid-conversation, which nothing here can

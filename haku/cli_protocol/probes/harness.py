@@ -46,7 +46,13 @@ InboundHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None]]
 
 
 class SubprocessChannel:
-    """A `FrameChannel` (see `haku.runtime.x.bridge.cli_client`) over a local CLI."""
+    """The CLI's own frames off a local process, for the probes in this directory.
+
+    Shaped like the console's `FrameChannel` (`haku.runtime.x.bridge.cli_client`) and no longer
+    one: that port yields the bridge envelope now, so the frame carries the number the runner put
+    on it. There is no runner here and nothing numbers these frames, and importing the envelope
+    to say so would point this package at one built on top of it.
+    """
 
     def __init__(self, *args: str, env: dict[str, str] | None = None, on_text: Callable[[str], None] | None = None):
         self._args = args

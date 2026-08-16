@@ -41,7 +41,7 @@ from haku.console.x.session_runtime import ABORTED_NOTICE, GOING_AWAY_CODE, Roll
 from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, MatrixSession, SessionStore, SpaSession
 from haku.console.x.testing.recording_claims import RecordingClaims
 from haku.runtime.x.bridge.cli_client import ClaudeCli, ReceivedFrame, SentPrompt
-from haku.runtime.x.bridge.protocol import NOT_ADMITTED_CODE
+from haku.runtime.x.bridge.protocol import NOT_ADMITTED_CODE, ClaudeMessage
 
 
 def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
@@ -215,7 +215,7 @@ async def test_projected_assistant_message_points_to_the_frames_that_built_it(
     script = [_text_delta_frame("hello"), _assistant({"type": "text", "text": "hello"}), _result("hello")]
     recorder = RolloutRecorder(chat_store, view.session_id)
     prompt_frame_seq = await recorder.sent({"type": "user", "message": {"role": "user", "content": "say hello"}})
-    frame_seqs = [(await recorder.received(frame)).frame_seq for frame in script]
+    frame_seqs = [(await recorder.received(frame, runner_seq=None)).frame_seq for frame in script]
 
     client = _FakeCli(script, frame_seqs=frame_seqs, prompt_frame_seq=prompt_frame_seq)
     await chat_service._run_turn(
@@ -1213,10 +1213,10 @@ class _ScriptedChannel:
 
     def __init__(self) -> None:
         self.written: list[dict[str, Any]] = []
-        self._inbound: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        self._inbound: asyncio.Queue[ClaudeMessage | None] = asyncio.Queue()
 
-    def deliver(self, frame: dict[str, Any]) -> None:
-        self._inbound.put_nowait(frame)
+    def deliver(self, frame: dict[str, Any], *, seq: int | None = None) -> None:
+        self._inbound.put_nowait(ClaudeMessage(payload=frame, seq=seq))
 
     async def connect(self) -> None:
         pass
@@ -1225,8 +1225,8 @@ class _ScriptedChannel:
         self.written.append(json.loads(data))
 
     async def read_messages(self):
-        while (frame := await self._inbound.get()) is not None:
-            yield frame
+        while (message := await self._inbound.get()) is not None:
+            yield message
 
     async def close(self) -> None:
         self._inbound.put_nowait(None)
@@ -1291,6 +1291,37 @@ async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas
     # Each frame reaches its consumer carrying the row it was written to, so a projection built
     # from it can point back at that row and not at whichever frame the reader has since seen.
     assert [delta_received.frame_seq, result_received.frame_seq] == [recorded[3].frame_seq, recorded[4].frame_seq]
+
+
+async def test_the_runners_number_is_recorded_beside_the_rows_own(chat_store, migrated_sessions, operator_id) -> None:
+    """Two numbers per row, answering different questions.
+
+    `frame_seq` is Postgres's and stays the log's ordering; `runner_seq` is the peer's, and is the
+    only one a reconnect can hand back — which is what `highest_runner_seq` reads. A write to the
+    CLI carries none: the runner numbers what it sends, not what it forwards.
+    """
+    view, _ = await chat_store.create(operator_id, SpaSession())
+    channel = _ScriptedChannel()
+    cli = ClaudeCli(channel, RolloutRecorder(chat_store, view.session_id), control_timeout=5)
+
+    connecting = asyncio.create_task(cli.connect())
+    await asyncio.sleep(0)
+    initialize = channel.written[0]
+    channel.deliver(
+        {"type": "control_response", "response": {"subtype": "success", "request_id": initialize["request_id"]}}, seq=11
+    )
+    await connecting
+    channel.deliver({"type": "result", "is_error": False, "uuid": "turn-1"}, seq=12)
+    assert (await anext(cli.frames())).payload["type"] == "result"
+    await cli.aclose()
+
+    recorded = await _frames(migrated_sessions, view.session_id)
+    assert [(frame.kind, frame.runner_seq) for frame in recorded] == [
+        ("control_request", None),
+        ("control_response", 11),
+        ("result", 12),
+    ]
+    assert await chat_store.highest_runner_seq(view.session_id) == 12
 
 
 def _text_delta_frame(text: str) -> dict[str, Any]:

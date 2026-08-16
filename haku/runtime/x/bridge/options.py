@@ -73,8 +73,14 @@ class ClaudeSession:
     permission_mode: str = "bypassPermissions"
 
 
-def build_claude_launch(session: ClaudeSession) -> ClaudeLaunch:
-    """The argv, cwd and environment for one CLI process."""
+def build_claude_launch(session: ClaudeSession, *, resume_from: int | None = None) -> ClaudeLaunch:
+    """The argv, cwd and environment for one CLI process, and where its console has got to.
+
+    *resume_from* is not part of the process: it is the highest frame number this console has
+    recorded for the session, which rides on `start` because that frame is sent on every
+    connection (`ClaudeLaunch.resume_from`). None is a console that has recorded nothing yet, and
+    a runner reading one replays its whole window as it always did.
+    """
     arguments = ["--output-format", "stream-json", "--verbose"]
     if session.append_system_prompt is not None:
         arguments += ["--append-system-prompt", session.append_system_prompt]
@@ -96,6 +102,7 @@ def build_claude_launch(session: ClaudeSession) -> ClaudeLaunch:
         arguments=tuple(arguments),
         cwd=str(session.cwd) if session.cwd is not None else ".",
         environment={"CLAUDE_CODE_ENTRYPOINT": ENTRYPOINT, FINE_GRAINED_TOOL_STREAMING_ENV: "1", **session.environment},
+        resume_from=resume_from,
     )
 
 

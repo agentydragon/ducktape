@@ -51,7 +51,7 @@ from haku.cli_protocol.frames import (
     InitializeRequest,
     InterruptRequest,
 )
-from haku.runtime.x.bridge.protocol import ClaudeLaunch, TextWebSocket
+from haku.runtime.x.bridge.protocol import ClaudeLaunch, ClaudeMessage, TextWebSocket
 from haku.runtime.x.bridge.transport import ProgressSink, WebSocketTransport
 
 logger = logging.getLogger(__name__)
@@ -64,16 +64,23 @@ class FrameChannel(Protocol):
     """A bidirectional line channel to a CLI process, however it is reached.
 
     Narrow on purpose: in production the process is in a sandbox pod at the far end of the
-    runner's websocket, and in a test or a probe it is a local subprocess. The client should
-    not be able to tell, which is also what makes it exercisable against a real CLI without
-    standing up the bridge.
+    runner's websocket, and in a test it is a scripted double. The client should not be able to
+    tell, which is also what makes it exercisable against a real CLI without standing up the
+    bridge.
+
+    **A read yields the envelope, not the payload alone**, because the runner puts its own number
+    on each frame (`ClaudeMessage.seq`) and that number has to reach the sink — it is the log's
+    ordering and the cursor a reconnect hands back
+    (<../../../plans/chat_runtime_projection.md> § 2b). A channel with no runner behind it — a
+    scripted double, a local subprocess — leaves `seq` None, which is the honest answer: nobody
+    numbered those frames.
     """
 
     async def connect(self) -> None: ...
 
     async def write(self, data: str) -> None: ...
 
-    def read_messages(self) -> AsyncIterator[dict[str, Any]]: ...
+    def read_messages(self) -> AsyncIterator[ClaudeMessage]: ...
 
     async def close(self) -> None: ...
 
@@ -101,6 +108,12 @@ class FrameSink(Protocol):
     `Identity` column, which leaves gaps — so a reader may compare two of them and may not read a
     gap between them as a frame that went missing.
 
+    *runner_seq* is the other number: the one the **peer** minted for a frame it sent, dense over
+    everything that runner put on the wire, and None for a frame no runner numbered — this end's
+    writes, and anything from a runner image predating the field. It is recorded beside the sink's
+    own number rather than replacing it; what reads it is the resume cursor
+    (<../../../plans/chat_runtime_projection.md> § 2b).
+
     Called from the client's write path and from its reader, so an implementation that raises
     takes the session down — which is the intent where the sink is the rollout: a record with
     quiet holes is the one that looks complete while being wrong.
@@ -108,7 +121,7 @@ class FrameSink(Protocol):
 
     async def sent(self, payload: dict[str, Any]) -> int: ...
 
-    async def received(self, payload: dict[str, Any]) -> RecordedFrame: ...
+    async def received(self, payload: dict[str, Any], *, runner_seq: int | None) -> RecordedFrame: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,7 +260,8 @@ class ClaudeCli:
         # it ends (the next real frame, or the stream doing so).
         skipped = 0
         try:
-            async for frame in self._channel.read_messages():
+            async for message in self._channel.read_messages():
+                frame = message.payload
                 # Before the routing, deliberately: control frames never reach `frames()`, so a
                 # recorder hung off the conversation queue would silently drop the control
                 # channel from the record — invisible until someone tried to debug an interrupt.
@@ -255,7 +269,7 @@ class ClaudeCli:
                 # whatever the previous console may not have acknowledged, and a frame already in
                 # the log must not be routed again — a second `assistant` would post the same
                 # answer into the room twice.
-                recorded = await self._frames_to.received(frame)
+                recorded = await self._frames_to.received(frame, runner_seq=message.seq)
                 if not recorded.fresh:
                     skipped += 1
                     continue

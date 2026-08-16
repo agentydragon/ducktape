@@ -137,18 +137,27 @@ class RolloutRecorder:
         self._session_id = session_id
 
     async def sent(self, payload: dict[str, Any]) -> int:
+        # No `runner_seq`: the runner numbers what *it* puts on the wire, and this is a write to
+        # the CLI that it only forwards.
         return (await self._record(FrameDirection.TO_AGENT, payload)).frame_seq
 
-    async def received(self, payload: dict[str, Any]) -> RecordedFrame:
+    async def received(self, payload: dict[str, Any], *, runner_seq: int | None) -> RecordedFrame:
         """Record the frame, answering whether the caller should act on it and where it landed.
 
         A delta has no agent-assigned identity, so it is always recorded and always fresh — safe
         because the runner never replays one (`runner.DELTA_TYPE`).
-        """
-        return await self._record(FrameDirection.FROM_AGENT, payload)
 
-    async def _record(self, direction: FrameDirection, payload: dict[str, Any]) -> RecordedFrame:
-        return await self._store.record_frame(self._session_id, direction, frame_kind(payload), payload)
+        *runner_seq* is kept beside the row's own `frame_seq` and read back as the session's resume
+        cursor. Nothing orders by it yet.
+        """
+        return await self._record(FrameDirection.FROM_AGENT, payload, runner_seq=runner_seq)
+
+    async def _record(
+        self, direction: FrameDirection, payload: dict[str, Any], *, runner_seq: int | None = None
+    ) -> RecordedFrame:
+        return await self._store.record_frame(
+            self._session_id, direction, frame_kind(payload), payload, runner_seq=runner_seq
+        )
 
 
 class RoomSurface(Protocol):
@@ -369,7 +378,10 @@ class SessionService:
         )
         client = cli_over_websocket(
             StarletteTextWebSocket(websocket),
-            build_claude_launch(session),
+            # The cursor is read here, per connection, off the session's own rows — so a replica
+            # adopting a session mid-turn asks for what it is missing rather than being handed the
+            # runner's whole replay window (<../../plans/chat_runtime_projection.md> § 2b).
+            build_claude_launch(session, resume_from=await self._store.highest_runner_seq(session_id)),
             self._progress_reporter(session_id, room_id),
             RolloutRecorder(self._store, session_id),
         )

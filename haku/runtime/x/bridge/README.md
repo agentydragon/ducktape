@@ -49,9 +49,12 @@ so what the console launches is decided by the console and the runner adds nothi
 
 **The runner numbers every frame it sends** — `seq`, dense and monotonic for the life of the session,
 assigned where the frame goes on the wire so a re-sent one keeps the number it first went out under.
-The console's log takes its ordering from that number rather than from a database sequence
-(<../../../plans/chat_runtime_projection.md> § 2b): it is the peer's fact, so the peer can act on a
-cursor built from it, and it is dense, so a hole in it is evidence of loss.
+It is the peer's fact, so the peer can act on a cursor built from it, and it is dense, so a hole in
+it is evidence of loss — which a database sequence, sparse by design, can never be.
+
+The console **records** that number today (`session_frames.runner_seq`) and computes its cursor from
+it. Making it the log's own ordering is the schema step after, and the reason for the whole scheme
+(<../../../plans/chat_runtime_projection.md> § 2b).
 
 `start` carries the other half, `resume_from`: the highest `seq` the **console** holds for this
 session. The runner replays only what is above it and continues numbering from there. Per session

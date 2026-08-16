@@ -191,6 +191,33 @@ async def test_a_replayed_frame_is_recorded_once(chat_store, operator_id) -> Non
     assert [frame.kind for frame in frames] == ["assistant"]
 
 
+async def test_the_resume_cursor_is_the_highest_number_a_runner_gave_this_session(chat_store, operator_id) -> None:
+    """What a reconnecting console hands back, and it is per session rather than per connection.
+
+    Two consoles can be adopting one runner's window during a roll, so the cursor has to be a fact
+    about the log both can read. It ignores rows no runner numbered — this console's own writes and
+    the frames it authors — and it does not have to be the newest row: a `setup_output` recorded
+    after them carries no number of its own.
+    """
+    session, _ = await chat_store.create(operator_id, SpaSession())
+    other, _ = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.highest_runner_seq(session.session_id) is None
+
+    await chat_store.record_frame(
+        session.session_id, FrameDirection.FROM_AGENT, "assistant", {"type": "assistant"}, runner_seq=4
+    )
+    await chat_store.record_frame(
+        session.session_id, FrameDirection.FROM_AGENT, "result", {"type": "result"}, runner_seq=9
+    )
+    await chat_store.record_frame(session.session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+    # A neighbouring session's numbering is its own runner's and says nothing about this one.
+    await chat_store.record_frame(
+        other.session_id, FrameDirection.FROM_AGENT, "result", {"type": "result"}, runner_seq=99
+    )
+
+    assert await chat_store.highest_runner_seq(session.session_id) == 9
+
+
 async def test_two_sessions_may_hold_the_same_agent_id(chat_store, operator_id) -> None:
     """The index is per session, because a replacement session re-awakened from the room can be
     handed the same message ids by an agent with no idea it is a second session."""

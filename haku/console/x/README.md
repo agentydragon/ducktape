@@ -106,6 +106,27 @@ answered at the read instead: `read_frames` leaves `stream_event` out of its def
 them the store keeps a single rewritten `partial` row for the answer in flight, which is what makes
 an interrupted turn's half-answer survive.
 
+**A row carries two numbers, and only one of them is this end's.** `frame_seq` is Postgres's
+`Identity` and is still the log's ordering, its keyset cursors and every reference to a frame.
+`runner_seq` is the number the **runner** put on the frame as it went on the wire, recorded
+alongside — dense over everything one runner sent, where `frame_seq` is sparse by design. Nothing
+orders or pages by it. What reads it is `highest_runner_seq`, the session's **resume cursor**: the
+console sends it on `start` (`ClaudeLaunch.resume_from`) and the runner replays only what is above
+it, instead of offering its whole window for `frame_uid` to sort out — which the frame classes
+carrying no agent-assigned id escape. Two properties worth knowing before changing it:
+
+- **Per session, not per connection.** Two consoles can be adopting one runner's window during a
+  roll, so both compute the cursor from the same rows and agree. The runner treats it as a floor
+  (`max(next, resume_from + 1)`), never as an assignment.
+- **It can legitimately sit below what the console holds, and never above.** A `setup_output` frame
+  is numbered by the runner and recorded by a different path — one frame decodes into however many
+  complete lines it finished — so its number is not on any row. The cost is a re-sent frame the log
+  already has, which the `frame_uid` dedup refuses. **This is also why there is no gap detection
+  yet**: a hole in the recorded numbers is what narration leaves behind, and the runner's replay
+  window retains only replayable frames, so an adopted connection's own sequence is sparse too.
+  "A hole means loss" becomes true at the release that makes this the log's ordering
+  (<../../plans/chat_runtime_projection.md> § 2b, R3), not before.
+
 Both surfaces run on it at once. They are ordinary separate sessions — separate rows,
 separate sandboxes — so a browser conversation and the Matrix conversation coexist rather
 than contend. **Gotcha:** that also means two live sandboxes, and only the Matrix one
