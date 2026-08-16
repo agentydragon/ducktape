@@ -123,12 +123,138 @@ The cheapest step with most of the benefit, and the one to do next. One additive
 loop keeps its current structure and reads and writes its state instead of holding it. This alone
 kills `TurnResumed`, `_said_anything`, `_streaming_assistant` and the `spoke` guess.
 
-### 4. The fold
+### 4. The fold, and what it projects **into**
 
-`_run_turn`'s frame `match` becomes `project`, with the cursor advanced beside its effects. Mostly
-moving code once stage 3 has made the state durable. The abort path collapses here too: an abort
-becomes an intent the transport writes, and the CLI's answer comes back as frames — which is what
-removes the "exactly one `anext` in flight" dance.
+`_run_turn`'s frame `match` becomes `project`, with the cursor advanced beside its effects. The
+abort path collapses here too: an abort becomes an intent the transport writes, and the CLI's
+answer comes back as frames — which is what removes the "exactly one `anext` in flight" dance.
+
+An earlier draft called this "mostly moving code once stage 3 has made the state durable". That
+undersold it. The fold is not a relocation of the `match`; it is where the system decides **what a
+message is**, and that decision is currently made four times in four places.
+
+#### The four interpreters, counted
+
+Frames are authoritative: they are what the runner protocol plus the inner CLI's protocol put on the
+wire. Everything else is derived — but nothing says so, so four bodies of code read Claude's frame
+vocabulary independently:
+
+| Where                             | Reads                                 | Produces                                        |
+| --------------------------------- | ------------------------------------- | ----------------------------------------------- |
+| `_run_turn`'s `match`             | `assistant`, `stream_event`, `result` | message rows, live                              |
+| `adopt_open_turn` and its helpers | the same, from the log                | the same, reconstructed                         |
+| `session_views.rollout_calls`     | `assistant`, `user`                   | tool calls **and their results**, on every read |
+| `room_status.coarse_status`       | `assistant`, `system`/`task_started`  | the room's status line                          |
+
+The third exists because `session_messages.tool_uses` is a **half copy** — the calls without their
+answers, because the turn loop drops the `tool_result` blocks — so the read path re-derives both and
+prefers its own answer wherever the row can point into the log. The fourth means a backend whose
+frames are spelled differently makes the room go silent while the agent works, and it is why the SPA
+has no in-progress display at all.
+
+#### A message is provider-neutral, and tool calls are in it
+
+The alternative — messages as prose only, tool activity left in frames — was considered and
+rejected, on an argument from what the channels already do (operator, 2026-08-16). **Matrix shows
+tool calls in progress.** If that display is to come from a neutral source rather than from one
+CLI's frame types, then tool calls have to be in the neutral layer, and as a **lifecycle** rather
+than as completed records stapled to a finished message:
+
+- `TextDelta`, `MessageCompleted` — what was said.
+- `ToolCallStarted(call_id, name, input)` → `ToolCallCompleted(call_id, result, is_error)`.
+- `Activity` — the harness's own prose for a step in flight (`task_started`'s `description`), which
+  is the case that has no tool name at all.
+- `Reasoning` — the agent thought, with a summary where it gave one. A distinct state rather than
+  empty text: Claude emits `thinking` blocks and Codex emits reasoning summaries, and a thinking-only
+  message currently renders blank, which is a live bug rather than a hypothetical.
+- `TurnCompleted` — with a **neutral** usage shape. Today `end_turn` stores Claude's `result` payload
+  as it arrived; leave that and "turn completed" quietly means "whatever that one CLI sent".
+
+This is not a second copy of the wire. It is a normalization, and the difference is that a copy
+duplicates a shape while a projection **replaces** one — the harness's content-block encodings,
+thinking signatures, stream-event mechanics and `msg_…` id formats stay in frames as evidence, and
+none of them appear in a message.
+
+**Identity is ours.** `rollout_calls` joins on `agent_message_id`, the agent's own id — and a
+production count found 1,417 assistant rows that have none, which render their tool calls with no
+results and say nothing about it. The neutral message owns `message_id`; the agent's id is optional
+provenance. This is the lesson `EventTag.transaction_id()` taught in stage 5: identity derived from
+the wire fails exactly when the wire does not carry it.
+
+#### The projection is not a one-way door
+
+**From the SPA, an operator must be able to click a message or an event and read the actual
+provider-specific frame JSON behind it** (operator, 2026-08-16). A normalization that cannot be
+appealed is a normalization nobody can debug — and the whole reason for keeping frames authoritative
+is that they are the record the projection can be checked against.
+
+So every projected thing carries its provenance: the frames it came from, addressed by
+`frame_seq`, not by the agent's own ids. That is #4105 (`session_messages`' inclusive frame range),
+which this makes a **product requirement** rather than the diagnostic convenience it was proposed as
+— and it should extend to tool calls and activity, not stop at messages, since those are exactly the
+elements whose neutral form loses the most detail.
+
+Two things fall out of the same pointer. The transcript's join to tool activity becomes a range
+lookup rather than a scan-and-match on `agent_message_id`, which is what lets `rollout_calls` retire.
+And the reprojection check below has a per-row subject: not just "do the rows match" but "does _this_
+row match what _those_ frames project to".
+
+#### What makes it safe: the projection is a pure function, and that is testable
+
+The property that prevents drift is not "do not duplicate" but **determinism**. If `project` is a
+pure function of a frame sequence, then:
+
+- drift is **detectable** — re-project a recorded session's frames and compare against its stored
+  rows, over real sessions, in CI;
+- a projection bug is **repairable** — fix the fold, re-project, and the transcript is corrected,
+  rather than a row written wrong staying wrong forever;
+- and the rows with no agent id stop being permanently degraded, because the rebuild does not depend
+  on the agent having supplied one.
+
+Stage 5's outbox already relies on the fold being single-writer per session (see the closing note);
+reprojection is the other half of that bargain and wants writing at the same time.
+
+#### Pressure-tested against the two things that would break it
+
+Neither is implemented; both are read from documentation rather than measured, in the same spirit as
+<../runtime/x/claude_bridge/docs/second_backend.md>.
+
+**A Codex backend.** Forces the four points above: identity cannot be borrowed; reasoning is a state
+both harnesses have; `TurnCompleted` needs its own usage shape; and the status line has to derive
+from neutral events or the room goes quiet. What it does **not** force is an approval concept —
+approval requests and responses travel over MCP to the console's queue, not over this channel
+(operator, 2026-08-16), and a harness that wants to ask about commands is configured not to in its
+launch spec, which is what `CliBackend.resolve` is already for.
+
+**A Telegram channel.** Breaks something different and sharper: **`sendMessage` has no idempotency
+key.** The outbox's retry is safe against Matrix because a redrive reuses the transaction id and the
+homeserver refuses it; against Telegram an ambiguous timeout genuinely double-posts. So a channel
+port must **declare** whether it has an idempotency key, and R11.6's "possibly duplicated" marking —
+deliberately not implemented in stage 5 because a stable transaction id left it no case to fire on —
+is exactly what a channel without one brings back. Telegram also caps a message at 4096 characters,
+so one neutral message can be several channel messages: "sent" is a property of a _(message,
+channel)_ pair that may hold more than one remote id.
+
+What survives both, unchanged: frames as per-backend evidence, the outbox as rows with a cursor, and
+content as neutral markup rendered per channel — `matrix_markdown.py` already does the second half of
+that, so the channels share a source and not a rendering.
+
+#### Two decisions this leaves open
+
+- **The SPA renders messages by default and must let an operator inspect the tool calls underneath**
+  (operator, 2026-08-16). That is disclosure over one neutral source, not a second query path — but
+  which surface shows what, and whether in-progress calls appear in the SPA the way they do in the
+  room, is unbuilt.
+- **Reasoning and tool activity are not rendered in the channels or the SPA conversation view for
+  now** (operator, 2026-08-16). They are projected and stored; showing them is a later decision. Note
+  what that implies: the neutral layer carries strictly more than any surface currently displays,
+  which is the right direction — a projection that only holds what today's UI renders would have to
+  be re-derived the moment a surface grows.
+- **Durable tool inputs and results widen the read surface.** Commands, file contents and diffs
+  become neutral rows reachable through the `haku_conversations` tools.
+  <information*trust_tiers.md> reasons about who may read past \_conversations*; it will have to
+  reason about who may read past _tool activity_. The index should keep embedding prose only —
+  tool JSON would pollute the vectors — but that is a selection choice, not a boundary.
 
 ### 5. The room outbox — **done**
 
