@@ -91,7 +91,14 @@ heaviest session is stated there. Stage 2 can proceed on that number rather than
 `read_frames` already keeps deltas out of its default view, and the extra write per delta is a wash
 once stage 2 removes the `partial` row it replaces.
 
-### 2. Make the frame log store one thing — recorded, **not scheduled**
+### 2. Make the frame log store one thing — recorded, and numbered by the wire
+
+Two changes, and they are deliberately one stage: the table stops holding two vocabularies in
+`kind`, and it stops taking its ordering from Postgres. They share a cause — the sink sits _above_
+the envelope and structurally cannot see one — and therefore share a fix, which is moving that sink
+down onto the socket. Sequencing them apart would move it twice.
+
+#### 2a. `kind` holds two vocabularies
 
 `session_frames.kind` holds **two different discriminator vocabularies**, because two unrelated
 sinks write to it:
@@ -123,19 +130,192 @@ the design rather than a cost, but it is new rows.
 sends it straight to the socket before launch anyway — so it is never replayed and there is no
 duplicate-row bug here for A to fix.
 
-Three releases, because flipping a column's meaning under a rolling deploy is not additive:
+#### 2b. The number is the runner's, not Postgres's
 
-1. **Add `cli_type`, dual-write, and move every reader onto `coalesce(cli_type, kind)`.** Backfill
-   `cli_type = kind` where `kind <> 'setup_output'`. Additive; old replicas are unaffected.
-2. **Once that roll converges**: writers set `kind` to the envelope discriminator, and the sink
-   moves to the transport. Safe only because step 1 already stopped every reader depending on
-   `kind` — an old replica still filtering `kind = 'assistant'` would otherwise mis-decide a turn's
-   state in `adopt_open_turn`, which is not cosmetic.
-3. **Contract**: drop the coalesce, `kind` NOT NULL. `FrameKind` splits into the closed
-   `BridgeFrameKind` (which _can_ be the column's type, since `protocol.py` owns that vocabulary)
-   and an open CLI type that stays text, because the CLI may send one we have never heard of.
+**Decided, not open** (operator, 2026-08-16): _"I do think we really should do the runner owned
+numbering and use it for existing offsets, it also makes catch up trivial."_ So `frame_seq` is
+minted on the wire and becomes the log's own offset, rather than a second column beside a
+database-assigned one.
 
-**Done when** `kind` answers one question and `BridgeFrameKind` is the column's type.
+Today it is `BigInteger, Identity(always=True), primary_key=True`, travelling back to the client on
+`RecordedFrame.frame_seq` after the `INSERT`.
+
+**The motivating property is catch-up, and nothing else gives it.** A dense counter the runner owns
+turns reconnect into _"send me everything after N"_: the runner answers from its own retained
+window with no database round trip and no reconciliation. An `Identity` cannot be asked that. It is
+sparse, so a hole in it is not evidence of anything; it is unknowable until after the write; and it
+is the console's fact about a row rather than the wire's fact about a frame. Today's adoption
+therefore re-sends the **whole** window every time and leans on `frame_uid` to sort it out — which
+works for the classes that carry an agent-assigned id and cannot work for the ones that do not.
+
+Three secondary properties come with it and are worth keeping in view. The number exists the moment
+the frame is read off the socket. It is true arrival order rather than insert order. And
+`ReceivedFrame.frame_seq: int | None` becomes structurally impossible rather than avoided by
+convention — #4164 deleted the `_UNNUMBERED_FRAME` sentinel, and this is what removes the seam that
+made one necessary.
+
+##### Where the counter lives — a correction to what 2a implies
+
+2a says the sink moves to `WebSocketTransport`, and it is tempting to read that as "so the counter
+lives there too". **It does not, and the reason is the whole design.** `WebSocketTransport` is the
+_console_ side of the bridge socket (`haku/runtime/x/bridge/transport.py`; it sends `start`, reads
+the runner's `Hello`). The console is the end that is replaced mid-conversation — that is what a
+roll is — while the runner process outlives every socket it serves, by construction (`runner.run`
+holds the CLI across reconnects). A cursor a reconnecting console hands back has to be a number its
+_peer_ minted, or the peer cannot act on it.
+
+So: **`runner.py` mints, at the point a frame is put on the wire, and stamps it on the envelope.**
+`WebSocketTransport` is where the number is _read and recorded_, which is the job 2a moves there.
+Two different verbs on the two ends of one socket.
+
+Numbering at send rather than at read also fixes it once: a frame retained in the replay window
+keeps the number it went out under, so the console that adopts the session and the console that
+died see the same integer for the same frame.
+
+##### Seeding across reconnect
+
+A runner's counter is per **process**, which is per sandbox, which is per session — so in the happy
+case it needs no seeding at all. What needs seeding is the case the design exists for: the console
+must be able to say where it has got to, and two consoles may be replaying one runner's window at
+once during a roll. So the cursor must be **per session, not per connection**, and it must be a fact
+about the log rather than about a socket.
+
+`ClaudeLaunch` (`start`) carries it: `resume_from`, computed by the console as the highest
+runner-minted sequence recorded **for that session**. `start` is sent on every connection — the
+runner ignores its launch content on a reconnect but does read the frame — so this needs no new
+frame and no new round trip. The runner takes `next = max(next, resume_from + 1)` and replays only
+its retained frames above `resume_from`.
+
+Two consoles racing therefore compute the same cursor from the same rows, which is the property that
+makes this per session. And a runner whose process really did restart is seeded back above what the
+console holds rather than colliding with it from 1.
+
+**Why this rides as an added field and not a `PROTOCOL_VERSION` bump.** `SUPPORTED_VERSIONS` is a
+single element, so a bump does not negotiate — it _refuses_ the peer on the other number. A runner's
+image is fixed when its SandboxClaim is created and a live session may outlast several console
+releases (`session_ttl_seconds` bounds it at two hours), so a bump kills every session in flight on
+the release that ships it. `protocol.py` already made the opposite trade for exactly this reason:
+`extra="ignore"`, so an unknown _field_ is dropped by a peer that predates it while an unknown
+_kind_ still fails closed. `seq` and `resume_from` are therefore optional fields on frames that
+already exist, and both directions of skew degrade to today's behaviour: an old console sends no
+`resume_from` and gets the whole window; an old runner sends no `seq` and the console records none.
+
+##### What "dense" buys, and what enforces it
+
+Dense means consecutive frames from one runner differ by exactly one, so a hole is evidence rather
+than noise. Two checks fall out, and they are different questions:
+
+- **Live contiguity.** Within one connection, the transport compares each frame's `seq` against the
+  last. A hole means the socket delivered out of order or the runner's buffer overflowed — neither
+  should be possible, so it is a bug report, not a recoverable state.
+- **Resume completeness.** On adoption, the runner replays from `resume_from`. If the oldest frame
+  it can still offer is above `resume_from + 1`, its window has rolled past what the console
+  recorded and those frames are gone for good. That is the case today's design cannot even see.
+
+**What a consumer does with a gap.** Not "carry on quietly", which is what happens now. The
+projection over a gapped log is not trustworthy — a message can be missing the frame that closed
+it — so the gap is recorded as a session event (§ stage 4's second category has the home for it) and
+surfaced in the frame inspector, which is the surface an operator already opens to appeal a
+transcript. Escalating further (failing the turn) is deliberately not proposed: a lost `stream_event`
+is cosmetic while a lost `result` is not, and the log cannot tell which is missing.
+
+**One thing dense numbering buys that `frame_uid` never could.** `frame_identity.py` argues, and it
+is right, that a `stream_event` must not be replayed: it has no agent-assigned id, and
+`streamed += delta` double-appends. A dense sequence is an identity for the frames that have none —
+not of their _content_, which is what the module correctly refuses to invent, but of their
+_position_. Once the console dedupes on `(session_id, frame_seq)` rather than on `frame_uid`, a
+replayed delta is refused by the key before it can reach the loop, and the "never replay a delta"
+rule is a bound on the window's size instead of a correctness argument. That is also the point at
+which `REPLAY_WINDOW = 500` has to be re-sized or given a byte budget, because a delta-heavy turn
+runs to thousands of frames.
+
+##### The primary-key question
+
+`frame_seq` is the primary key, and it is read by `FrameCursor`, both keyset reads
+(`read_frames` forwards, `read_operator_frames` backwards), `session_turns.{first,last}_frame_seq`,
+`session_messages.source_{first,last}_frame_seq`, the `haku_conversations` MCP tools, and the frames
+page. Client-supplied values mean dropping `Identity` and enforcing uniqueness per session instead of
+globally.
+
+**The constraint that shapes it: there are two minters into one space, and there is no way around
+that.** The runner numbers what crosses the socket, but the console writes rows the runner never
+sees — a console→CLI write is recorded before the runner has it (`RolloutRecorder.sent`, whose
+return is the operator prompt's `source_first_frame_seq` via `set_message_source_frames`), and a
+console-origin session event (an ownership change) crosses no wire at all. Two independent minters
+cannot share one dense integer space: either they **partition** it or the key carries a
+**tiebreak**. Partitioning by a reserved stride was considered and rejected — the band between two
+runner frames is bounded by hope, and an overflow is a primary-key collision on the hot path. So:
+
+- **`frame_ord SMALLINT NOT NULL DEFAULT 0`**, and the primary key becomes
+  `(session_id, frame_seq, frame_ord)`. A runner frame is `frame_ord = 0`. A console-origin row
+  recorded while the console's high-water mark is _N_ takes `(N, k)` for the next free _k_, so it
+  sorts strictly after runner frame _N_ and strictly before _N+1_ — the same fidelity insert order
+  gives today, stated rather than implied.
+- **Every cursor still names one integer.** `FrameCursor`, `before_seq`, the MCP tool arguments and
+  the frontend are unchanged: a cursor of _N_ is `(N, 0)` in the composite. Only the `ORDER BY` and
+  the key change. `session_turns.first_frame_seq` is already documented as a _bound_ rather than a
+  pointer, so it is unaffected in kind.
+- **`session_messages.source_*` stays two integers**, and an inclusive range over a composite order
+  is still well defined — the range is over positions, and a position is a `frame_seq`.
+
+**Old rows keep their old numbers, and that is coherent.** Identity values are global and in the
+millions; runner values are per session and start at 1. Uniqueness is per session and ordering is
+per session, so the two never have to be comparable. What must never happen is _mixing them inside
+one session_ — which is why the numbering scheme is a durable per-session fact
+(`sessions.frame_numbering`, `identity | runner`) decided when the session's first frame is
+recorded, rather than a property of whichever replica happens to be serving. A console adopting a
+legacy session keeps writing identity values for its whole life; the population ages out on its own
+within `session_ttl_seconds`.
+
+**Dropping `Identity` is the one step that is not additive**, and the trick that makes it roll-safe
+is that it does not have to be a drop. `ALTER COLUMN frame_seq DROP IDENTITY` followed by
+`SET DEFAULT nextval(...)` on a sequence seeded above the current maximum leaves an old replica —
+which inserts without naming the column — behaving exactly as before, while a new replica may supply
+its own value. `GENERATED ALWAYS` is what refuses a supplied value; a plain default does not.
+
+##### Catch-up, end to end
+
+1. The console's replica goes away mid-turn. The runner's socket drops; its CLI keeps running and
+   its pipes keep draining into the outbound buffer (`_drain_cli` is long-lived on purpose).
+2. A new replica admits the redialing runner (`authenticate_bridge`), and before sending `start`
+   computes `resume_from = max(frame_seq) WHERE session_id = … AND frame_ord = 0` — one indexed
+   lookup on a key that already exists.
+3. The runner seeds its counter above that and re-sends every retained frame with `seq > resume_from`,
+   then continues live from where it left off. Frames the dead console _did_ record are never
+   re-sent, which is the round trip today's design pays on every adoption.
+4. The console records each arrival with `ON CONFLICT (session_id, frame_seq, frame_ord) DO NOTHING`.
+   **Exactly-once falls out of that**, and out of nothing else: the key is the frame's position, so a
+   frame offered twice inserts once whether or not the CLI gave it an id, and `fresh` (which is what
+   stops the turn loop acting on a replay) is still just "the insert happened".
+5. If the runner's oldest retainable frame is above `resume_from + 1`, the window rolled past what
+   was recorded. That is the loss case, and step 4 cannot repair it — it is reported, per _What a
+   consumer does with a gap_ above.
+
+What this does **not** give on its own is exactly-once _effects_. Recording a frame once is the
+prerequisite; a reply produced from it reaching the room once is stage 5's outbox, and the durable
+cursor beside the fold is stage 4's. This stage makes the log's own identity trustworthy so those
+two have something to key on.
+
+#### The release schedule, and which parts are additive
+
+`maxUnavailable: 0` means old replicas run against the new schema for the length of every roll, so
+each step below is gated on the previous roll having **converged** — every pod on an image at or
+after it — rather than on a release having elapsed. A stalled roll leaves the old replica serving,
+which is exactly when "one release later" is the wrong gate (the same discipline `session_notifications.py`
+documents for the channel rename).
+
+| Release | What lands                                                                                                                                                                                                                                                                                                                                                                                                                                            | Additive?                                                                                                                                                                                                      |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **R1**  | The wire and the runner: optional `seq` on the runner→console envelopes, optional `resume_from` on `start`, the runner minting and replaying from the cursor. Separately (no ordering between them): `cli_type` added, dual-written, every reader onto `coalesce(cli_type, kind)`, backfilled where `kind <> 'setup_output'`; and `session_frames.runner_seq` recorded with a partial unique index, plus the console computing `resume_from` from it. | **Yes.** New optional fields, new nullable columns. Old replicas and old runner images unaffected.                                                                                                             |
+| **R2**  | The sink moves to `WebSocketTransport`; `kind` becomes the envelope discriminator. Schema made _capable_ of client-supplied numbers: `frame_ord`, the composite primary key, `Identity` demoted to a plain sequence default, `sessions.frame_numbering` added and written as `identity`.                                                                                                                                                              | Schema yes, behaviour no — the `kind` flip is safe **only** because R1 stopped every reader depending on it. An old replica still filtering `kind = 'assistant'` would mis-decide a turn in `adopt_open_turn`. |
+| **R3**  | New sessions are marked `frame_numbering = 'runner'` and their rows take `frame_seq` from the envelope. Gap detection reports. `kind` contracted to NOT NULL with `BridgeFrameKind` as its type; the coalesce dropped.                                                                                                                                                                                                                                | **No**, and it must not start before R2 has converged: an old replica adopting a runner-numbered session would insert a sequence value into it and mix the two schemes inside one session.                     |
+| **R4**  | Contract: `runner_seq` dropped (for a runner-numbered session it is `frame_seq`), the `partial` row and its two indexes retired, dedup keyed on position rather than `frame_uid`, `REPLAY_WINDOW` re-sized.                                                                                                                                                                                                                                           | Removals, so gated on R3 converging.                                                                                                                                                                           |
+
+R1's two halves are independent and want separate PRs: the `cli_type` half touches only the console,
+the numbering half touches only the bridge, and neither blocks the other.
+
+**Done when** `kind` answers one question, `BridgeFrameKind` is its type, and `frame_seq` is the
+number the frame crossed the wire under.
 
 ### 3. Turn state onto the turn row — **done**
 
@@ -358,48 +538,11 @@ so a `CHECK` can require the range (2026-08-16). Neither, yet — take the middl
   it is the prerequisite `_projected`'s docstring named for threading a `ProjectionState` through
   the turn loop.
 
-  **Who assigns the number is a separate, open question** (operator, 2026-08-16: _"I think frames
-  should come with a monotonic number from the runner already"_). Today Postgres does, at insert:
-  `RolloutRecorder` calls `record_frame`, which `INSERT`s and reads `Identity(always=True)` back.
-  A runner-assigned counter would be better on four counts — it is **dense**, so a gap really would
-  mean a missing frame (today gaps mean nothing, `database_schema.SessionFrame.frame_seq`); it
-  needs **no round trip**, so a frame is placed the moment it is read off the wire; it is the
-  **true wire order** rather than the insert order; and `None` would die structurally, since a
-  runner that always counts leaves the optionality nowhere to come from.
-  It is deliberately **not** part of the numbered-frame change, because it is a stored-shape change
-  with a migration and a protocol version behind it, and this seam is a prerequisite for the
-  durable cursor rather than a place for the cursor to wait. What it costs, so the next attempt
-  starts from here:
-  - **Three of the frame log's writers are not runner frames**, so a runner counter cannot number
-    the table on its own. `RolloutRecorder.sent` records a console→CLI write **before** the runner
-    has seen the bytes — asking the runner for its number turns a local insert into a full sandbox
-    round trip on the write path. `_progress_reporter` writes `setup_output` rows about sandbox
-    provisioning, which is a session's whole account when it dies before its first CLI frame, and
-    sometimes before any runner is connected. And the `partial` row is console-authored, taking its
-    `frame_seq` when the stream opens and being rewritten in place afterwards (itself already
-    tombstoned). So either `frame_seq` stops covering every row — and the cursor's key stops being
-    the table's own order — or two authorities mint into one space, which is where duplicates come
-    from.
-  - **The column is the primary key and is globally allocated.** Client-supplied means dropping
-    `Identity`, making uniqueness per session (`(session_id, frame_seq)`), and revisiting every
-    reader that treats the value as globally unique: `FrameCursor`, the forward and reverse keyset
-    reads, `session_turns.{first,last}_frame_seq`, `session_messages.source_{first,last}_frame_seq`,
-    the `haku_conversations` tools and the operator frames page.
-  - **Reconnect is the design question, not a detail.** The runner outlives a console roll and
-    replays its `REPLAY_WINDOW`; numbered replays would actually be an improvement, since the
-    console could dedup on the number instead of `frame_uid` and so dedup deltas, which it cannot
-    do today. But the runner process itself can restart with the session row intact, and its
-    counter resets — so the console has to seed it at connect from `max(frame_seq)` for that
-    session, which is a new field in the `start` envelope and therefore a `PROTOCOL_VERSION` bump.
-    That bump is not atomic in production: console and runner ship as separate images that roll
-    independently, so sessions fail their first frame for the minutes between the two rollouts
-    (<../runtime/x/bridge/README.md> § Framing). The seed must also be **per session, not per
-    connection** — two consoles can be replaying one runner's buffer at once, which is why
-    `record_frame` inserts with `ON CONFLICT DO NOTHING` — or two connections mint the same numbers.
-  - **Density has to be enforced to be relied on.** A counter is dense at the runner; the log is
-    dense only if every numbered frame reaches a row. That holds today because `RolloutRecorder`
-    excludes nothing, but it is a property the cursor would newly depend on, so it wants a test
-    rather than an assumption.
+  **Who assigns the number is settled, and it is the runner** (operator, 2026-08-16). § 2b holds
+  the design: a dense counter minted where the frame goes on the wire, carried on the envelope, and
+  handed back as `resume_from` on reconnect. The number stops being something a sink reads back
+  after an `INSERT` and becomes something the frame arrives carrying — which is what makes catch-up
+  a replay from the runner's own window rather than a reconciliation against the table.
 
 - **Backfill falls out of the reprojection tool** rather than being its own archaeology: project a
   session's frames, align the derived sequence against the stored rows, and write the range where the

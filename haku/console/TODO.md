@@ -257,9 +257,15 @@ stream deltas removed its reason to exist. What is left after that is the two-vo
 
 `../plans/chat_runtime_projection.md` § stage 2 holds the intended shape — the table becomes the log
 of the bridge, `kind` becomes the envelope discriminator, and the CLI's type gets its own column —
-along with what that costs (the sink has to move down to `WebSocketTransport`, and it is three
-releases because flipping a column's meaning under a rolling deploy is not additive). **Nothing is
-scheduled**, and no other work depends on it.
+along with what that costs (the sink has to move down to `WebSocketTransport`, and it is a
+four-release expand/contract because flipping a column's meaning under a rolling deploy is not
+additive).
+
+**It is scheduled now, and it grew a second half** (operator, 2026-08-16): `frame_seq` stops being
+Postgres's `Identity` and becomes the number the runner minted when the frame crossed the wire, which
+is what makes catch-up on reconnect "send me everything after N". Same stage because it has the same
+cause and the same fix — the sink sits above the envelope and has to move onto the socket — so doing
+the two apart would move it twice. § 2b of that plan holds the schedule.
 
 ## Give `system/compact_boundary` a real branch in the projection
 

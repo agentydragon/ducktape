@@ -12,7 +12,7 @@ import os
 import subprocess
 import sys
 from collections import deque
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -39,6 +39,12 @@ from haku.runtime.x.bridge.protocol import (
 
 logger = logging.getLogger(__name__)
 
+# Where one line of bootstrap output goes. A callable rather than the websocket itself, because a
+# frame has to pass through `OutboundLog` on its way out to be numbered, and the bootstrap has no
+# business knowing that — nor should it be the one place on this side that sends an unnumbered
+# frame, which is what a hole in the console's sequence would look like.
+SetupNarration = Callable[[SetupOutput], Awaitable[None]]
+
 
 @dataclass(frozen=True)
 class Outbound:
@@ -47,9 +53,13 @@ class Outbound:
     `replayable` is decided here, where the payload is already parsed, rather than by re-reading
     the JSON at send time. *Which* frames those are is the backend's to say (`CliBackend`): the
     class that cannot survive being sent twice is a fact about one CLI's protocol.
+
+    The frame is carried as a model rather than serialized text because it is not finished yet:
+    `OutboundLog.stamp` numbers it as it goes out, and that number is the log's ordering at the
+    other end (<../../../plans/chat_runtime_projection.md> § 2b).
     """
 
-    text: str
+    frame: ClaudeMessage | SetupOutput
     replayable: bool
 
 
@@ -70,6 +80,61 @@ MAX_DISCONNECTED_SECONDS = 900.0
 # the rollout — the console's own log is that. Generous enough to cover a turn's worth of
 # assistant messages and tool results, which is what a roll mid-turn can strand.
 REPLAY_WINDOW = 500
+
+
+class OutboundLog:
+    """The runner's numbering of what it has sent, and the window it can still re-send.
+
+    **The number is this end's to mint**, because this end is the one that survives: the console is
+    replaced on every roll, while this process holds the CLI across as many sockets as that takes.
+    A cursor a reconnecting console hands back has to name a number its peer assigned, or the peer
+    cannot answer it — which is what makes catch-up a filter over this deque instead of a
+    reconciliation against the console's database (<../../../plans/chat_runtime_projection.md> § 2b).
+
+    Dense and monotonic over **everything** sent, replayable or not, so a hole the console sees is
+    evidence of loss rather than of a class this end declined to count. Which frames are *retained*
+    is the separate question `Outbound.replayable` answers.
+    """
+
+    def __init__(self, window: int = REPLAY_WINDOW):
+        self._next_seq = 1
+        self._retained: deque[tuple[int, str]] = deque(maxlen=window)
+
+    def seed(self, resume_from: int | None) -> None:
+        """Lift the counter above what the console already holds, if it holds anything.
+
+        `max` rather than assignment: a cursor is a floor, so a runner whose own counter has already
+        passed it keeps going from where it was, and one that restarted is lifted back above what
+        the console holds instead of colliding with it from 1.
+
+        Separate from `missed` and called earlier, because bootstrap narration goes out before a
+        console is served and must not be numbered below what that console already recorded.
+        """
+        if resume_from is not None:
+            self._next_seq = max(self._next_seq, resume_from + 1)
+
+    def missed(self, resume_from: int | None) -> list[str]:
+        """What a console holding *resume_from* has not been given, from the window still here.
+
+        None is a console that does not number — one predating this, or one with nothing recorded —
+        and gets the whole window, which is what every adoption used to get.
+        """
+        if resume_from is None:
+            return [text for _, text in self._retained]
+        return [text for seq, text in self._retained if seq > resume_from]
+
+    def stamp(self, outbound: Outbound) -> str:
+        """Number one frame and serialize it, retaining it if a later console may want it again.
+
+        Numbered at send rather than at build, so the buffer's order is the wire's order and a
+        retained frame re-offered later carries the number it first went out under — two consoles
+        therefore agree on the integer naming one frame.
+        """
+        seq, self._next_seq = self._next_seq, self._next_seq + 1
+        text = outbound.frame.model_copy(update={"seq": seq}).model_dump_json()
+        if outbound.replayable:
+            self._retained.append((seq, text))
+        return text
 
 
 class ClientWebSocketAdapter(TextWebSocket):
@@ -102,9 +167,7 @@ async def _queue_cli_line(outbound: MemoryObjectSendStream[Outbound], backend: C
     if not (stripped := line.strip()).startswith(b"{"):
         return
     payload = decode_object(stripped.decode())
-    await outbound.send(
-        Outbound(text=ClaudeMessage(payload=payload).model_dump_json(), replayable=backend.replayable(payload))
-    )
+    await outbound.send(Outbound(frame=ClaudeMessage(payload=payload), replayable=backend.replayable(payload)))
 
 
 async def _forward_cli_frames(
@@ -156,7 +219,7 @@ async def _forward_cli_errors(outbound: MemoryObjectSendStream[Outbound], stderr
         sys.stdout.buffer.flush()
         # Not retained: narration is recorded as a frame with no identity, so a console cannot
         # tell a replayed line from a repeated one and would show the bootstrap twice.
-        await outbound.send(Outbound(text=SetupOutput(data=chunk).model_dump_json(), replayable=False))
+        await outbound.send(Outbound(frame=SetupOutput(data=chunk), replayable=False))
 
 
 async def _start_cli(backend: CliBackend, launch: ClaudeLaunch) -> anyio.abc.Process:
@@ -225,7 +288,8 @@ async def _serve_console(
     websocket: TextWebSocket,
     process: anyio.abc.Process,
     outbound: MemoryObjectReceiveStream[Outbound],
-    replay: deque[str] | None = None,
+    log: OutboundLog,
+    resume_from: int | None = None,
 ) -> None:
     """Copy frames both ways for one console connection, returning when that connection ends.
 
@@ -240,6 +304,10 @@ async def _serve_console(
     not do is *omit* one, which is why frames are retained as they are sent rather than as they
     are acknowledged: there is no acknowledgement, and inventing one would be a second protocol
     for what the console's own log already answers.
+
+    *resume_from* is the console's own cursor, off its `start` frame, and it narrows that offer to
+    what the console has not recorded — the exactness above turning from optimisation into
+    something the console can also check, since the numbering is dense.
     """
     stdin = process.stdin
     assert stdin is not None
@@ -255,14 +323,13 @@ async def _serve_console(
 
         async def cli_to_console() -> None:
             try:
-                if replay:
-                    logger.info("Re-sending %d frame(s) the previous console may not have", len(replay))
-                    for retained in list(replay):
+                log.seed(resume_from)
+                if missed := log.missed(resume_from):
+                    logger.info("Re-sending %d frame(s) the previous console may not have", len(missed))
+                    for retained in missed:
                         await websocket.send_text(retained)
                 async for frame in outbound:
-                    await websocket.send_text(frame.text)
-                    if frame.replayable and replay is not None:
-                        replay.append(frame.text)
+                    await websocket.send_text(log.stamp(frame))
             except (ConnectionClosed, anyio.BrokenResourceError):
                 pass
             finally:
@@ -283,7 +350,9 @@ async def bridge_websocket_to_cli(websocket: TextWebSocket, *, backend: CliBacke
     try:
         async with anyio.create_task_group() as tasks:
             tasks.start_soon(_drain_cli, process, backend, outbound_sender, tasks.cancel_scope)
-            await _serve_console(websocket, process, outbound_receiver)
+            # No window, since there is no second connection to hand one to — but frames are still
+            # numbered, because the console's log takes its ordering from that number either way.
+            await _serve_console(websocket, process, outbound_receiver, OutboundLog(window=0), launch.resume_from)
             tasks.cancel_scope.cancel()
     finally:
         exited_with = await _shutdown(process)
@@ -292,7 +361,7 @@ async def bridge_websocket_to_cli(websocket: TextWebSocket, *, backend: CliBacke
         raise RuntimeError(f"{backend.name} exited with status {exited_with}")
 
 
-async def prepare_workspace(setup_path: Path, *, cwd: str, websocket: TextWebSocket | None = None) -> None:
+async def prepare_workspace(setup_path: Path, *, cwd: str, narrate: SetupNarration | None = None) -> None:
     """Run the shared sandbox bootstrap: git credentials and Haku's own checkouts.
 
     The same script the haku-sandbox exec target runs — see
@@ -300,8 +369,8 @@ async def prepare_workspace(setup_path: Path, *, cwd: str, websocket: TextWebSoc
     the same `.netrc` and the same haku-state working copy rather than a second
     implementation that drifts from it.
 
-    Run here, in the runner, rather than as an image entrypoint wrapper, so that `websocket`
-    exists to narrate it: a clone is the longest thing between "provisioning" and an answer,
+    Run here, in the runner, rather than as an image entrypoint wrapper, so that *narrate*
+    exists to report it: a clone is the longest thing between "provisioning" and an answer,
     and the console cannot report a step it cannot see.
 
     Its output is forwarded verbatim, in whatever chunks it arrives in, and written unchanged
@@ -322,10 +391,19 @@ async def prepare_workspace(setup_path: Path, *, cwd: str, websocket: TextWebSoc
         # rather than a decoded-and-maybe-replaced rendering of them.
         sys.stdout.buffer.write(chunk)
         sys.stdout.buffer.flush()
-        if websocket is not None:
-            await websocket.send_text(SetupOutput(data=chunk).model_dump_json())
+        if narrate is not None:
+            await narrate(SetupOutput(data=chunk))
     if (status := await process.wait()) != 0:
         raise RuntimeError(f"workspace setup {setup_path} exited with status {status}")
+
+
+def _narrator(websocket: TextWebSocket, log: OutboundLog) -> SetupNarration:
+    """Send bootstrap output down *websocket*, numbered by *log* like everything else this end sends."""
+
+    async def narrate(frame: SetupOutput) -> None:
+        await websocket.send_text(log.stamp(Outbound(frame=frame, replayable=False)))
+
+    return narrate
 
 
 async def _receive_launch(websocket: TextWebSocket) -> ClaudeLaunch:
@@ -393,10 +471,15 @@ async def run(
     admitted a session only once. Six rolls a day made that the normal end of a session.
 
     So this dials, serves, and dials again, holding the process across the gap. What the console
-    sends on a later connection is a `start` frame it built fresh, and it is deliberately
-    **ignored**: the launch decided the argv, the system prompt and the MCP wiring of a process
-    that is already running, and none of those can be re-applied to it. The runner is the honest
-    owner of "the handshake already happened", because it is the end that owns the process.
+    sends on a later connection is a `start` frame it built fresh, and everything describing the
+    process is deliberately **ignored**: the launch decided the argv, the system prompt and the MCP
+    wiring of a process that is already running, and none of those can be re-applied to it. The
+    runner is the honest owner of "the handshake already happened", because it is the end that owns
+    the process.
+
+    The one field that is *not* ignored is `resume_from`, which describes the **console** rather
+    than the process — how much of this session's log it holds — and is what turns the replay
+    window from "everything, deduplicated later" into "exactly what you are missing".
 
     Giving up is bounded. A sandbox held for a console that never returns trades a wedged room
     for a wedged sandbox, so after `MAX_DISCONNECTED_SECONDS` without one this exits and lets the
@@ -409,8 +492,9 @@ async def run(
     outbound_sender, outbound_receiver = anyio.create_memory_object_stream[Outbound](OUTBOUND_BUFFER)
     process: anyio.abc.Process | None = None
     # Retained across connections, which is the whole point: it is what a console that adopts this
-    # session mid-turn is handed before it starts hearing live frames.
-    replay: deque[str] = deque(maxlen=REPLAY_WINDOW)
+    # session mid-turn is handed before it starts hearing live frames. The numbering is retained
+    # with it, so one session's frames are one sequence however many consoles serve it.
+    log = OutboundLog()
 
     try:
         async with anyio.create_task_group() as session:
@@ -427,15 +511,18 @@ async def run(
                 try:
                     websocket = ClientWebSocketAdapter(connection)
                     launch = await _receive_launch(websocket)
+                    # Before the bootstrap, not with the replay: narration is numbered too, and a
+                    # console that already holds frames must not be sent one below its cursor.
+                    log.seed(launch.resume_from)
                     if process is None:
                         if setup_path is not None:
-                            await prepare_workspace(setup_path, cwd=launch.cwd, websocket=websocket)
+                            await prepare_workspace(setup_path, cwd=launch.cwd, narrate=_narrator(websocket, log))
                         process = await _start_cli(backend, launch)
                         # Long-lived, so nothing the CLI writes is lost to a closed socket and its
                         # pipes never fill: they drain into the buffer either way, and the buffer's
                         # backpressure pauses the CLI rather than dropping what it said.
                         session.start_soon(_drain_cli, process, backend, outbound_sender, session.cancel_scope)
-                    await _serve_console(websocket, process, outbound_receiver, replay)
+                    await _serve_console(websocket, process, outbound_receiver, log, launch.resume_from)
                 except ConnectionClosed:
                     # This connection ending says nothing about the session; `_dial` decides
                     # whether there is still a console worth waiting for.

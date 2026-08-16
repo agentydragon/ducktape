@@ -107,6 +107,17 @@ class ClaudeLaunch(_Frame):
     cwd: str = Field(min_length=1)
     environment: dict[str, str]
 
+    # The highest `seq` the console has recorded **for this session**, or None from a console that
+    # does not number (or has recorded nothing yet). The runner replays only what is above it and
+    # continues numbering from there.
+    #
+    # Per session rather than per connection, deliberately: two consoles can be adopting one
+    # runner's window at once during a roll, and each computes this from the same rows, so they
+    # agree. Carried on `start` because that frame is already sent on every connection — a
+    # reconnect included, where the runner ignores the launch itself but does read the frame — so
+    # a cursor costs no new kind and no round trip.
+    resume_from: int | None = None
+
 
 class ClaudeMessage(_Frame):
     """One CLI protocol frame, in either direction, passed through untouched."""
@@ -116,6 +127,24 @@ class ClaudeMessage(_Frame):
     # the whole point of nesting it is that it may contain anything — including keys named
     # after our own.
     payload: dict[str, Any]
+    # **The runner's own number for this frame, dense and monotonic per session.** Set only on the
+    # runner → console direction; None on the console's writes, which the runner does not number.
+    #
+    # The console's log takes its ordering from this rather than from a database sequence, which is
+    # what makes a reconnect "send me everything after N": the number is the peer's, so the peer can
+    # act on a cursor built from it, and it is dense, so a hole in it is evidence of loss rather than
+    # of a gap an `Identity` was always free to leave
+    # (<../../../plans/chat_runtime_projection.md> § 2b).
+    #
+    # Assigned where the frame is put on the wire, not where it is built, so a frame re-sent from
+    # the replay window keeps the number it first went out under.
+    #
+    # Optional rather than a `PROTOCOL_VERSION` bump. `SUPPORTED_VERSIONS` is a single element, so a
+    # bump refuses the peer on the other number instead of negotiating with it — and a runner's image
+    # is fixed when its claim is created, so that would end every session in flight. An added field
+    # costs nothing in both directions of skew: `extra="ignore"` drops it for a peer that predates it,
+    # and None is what a console reading an older runner sees.
+    seq: int | None = None
 
 
 class EndInput(_Frame):
@@ -163,6 +192,12 @@ class SetupOutput(_Frame):
 
     kind: Literal["setup_output"] = "setup_output"
     data: bytes
+    # As `ClaudeMessage.seq`. Numbered like everything else the runner sends, because a sequence
+    # that skipped a kind would leave holes that mean nothing, and "a hole means loss" is the whole
+    # property. It is still never replayed — narration carries no identity, so a console cannot tell
+    # a re-sent line from a repeated one — which is what the replay window's `replayable` decides,
+    # separately from whether a frame is numbered.
+    seq: int | None = None
 
 
 # The two directions carry different frames, and saying so in the types is what keeps the

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-from collections import deque
 from functools import partial
 from http import HTTPStatus
 from pathlib import Path
@@ -24,8 +23,9 @@ from haku.runtime.x.bridge.protocol import (
     SetupOutput,
 )
 from haku.runtime.x.bridge.runner import (
-    REPLAY_WINDOW,
     Outbound,
+    OutboundLog,
+    _narrator,
     _serve_console,
     _shutdown,
     _start_cli,
@@ -146,8 +146,9 @@ async def test_bridge_copies_json_between_websocket_and_cli_stdio(tmp_path: Path
         with anyio.fail_after(5):
             # Unwrapped on the way to the CLI and re-wrapped on the way back, so the echo
             # proves the runner strips and restores the envelope rather than passing it through.
+            # `seq=1`: the runner numbers what it sends, and this is the first frame of the session.
             assert RUNNER_TO_CONSOLE.validate_json(await console_socket.receive_text()) == ClaudeMessage(
-                payload=message
+                payload=message, seq=1
             )
         await console_socket.send_text(EndInput().model_dump_json())
 
@@ -174,7 +175,7 @@ async def test_what_the_cli_writes_to_stderr_reaches_the_console(tmp_path: Path)
         )
         with anyio.fail_after(5):
             assert RUNNER_TO_CONSOLE.validate_json(await console_socket.receive_text()) == SetupOutput(
-                data=b"cannot start: no credential\n"
+                data=b"cannot start: no credential\n", seq=1
             )
 
 
@@ -195,7 +196,7 @@ async def test_the_cli_keeps_running_when_a_console_connection_ends(tmp_path: Pa
     try:
         await console_socket.close()
         with anyio.fail_after(5):
-            await _serve_console(runner_socket, process, outbound_receiver)
+            await _serve_console(runner_socket, process, outbound_receiver, OutboundLog())
         assert process.returncode is None, "the CLI must outlive the connection that was serving it"
     finally:
         outbound_sender.close()
@@ -237,26 +238,77 @@ async def test_a_second_console_is_handed_what_the_first_may_not_have_recorded(t
     console drops what it already has by the agent's own id."""
     process = await _start_cli(claude_backend(executable(tmp_path / "claude", "sleep 30")), _launch(tmp_path))
     sender, receiver = anyio.create_memory_object_stream[Outbound](8)
-    replay: deque[str] = deque(maxlen=REPLAY_WINDOW)
-    answered = ClaudeMessage(payload={"type": "assistant", "message": {"id": "msg_01abc"}}).model_dump_json()
+    log = OutboundLog()
+    payload = {"type": "assistant", "message": {"id": "msg_01abc"}}
+    answered = ClaudeMessage(payload=payload, seq=1).model_dump_json()
     try:
         first_console, first_runner = memory_websocket_pair()
-        await sender.send(Outbound(text=answered, replayable=True))
+        await sender.send(Outbound(frame=ClaudeMessage(payload=payload), replayable=True))
         async with anyio.create_task_group() as tasks:
-            tasks.start_soon(partial(_serve_console, first_runner, process, receiver, replay))
+            tasks.start_soon(partial(_serve_console, first_runner, process, receiver, log))
             with anyio.fail_after(5):
                 assert await first_console.receive_text() == answered
             await first_console.close()
 
         second_console, second_runner = memory_websocket_pair()
         async with anyio.create_task_group() as tasks:
-            tasks.start_soon(partial(_serve_console, second_runner, process, receiver, replay))
+            tasks.start_soon(partial(_serve_console, second_runner, process, receiver, log))
             with anyio.fail_after(5):
+                # The same text, `seq` included: a re-sent frame keeps the number it first went
+                # out under, which is what lets two consoles agree on which frame it is.
                 assert await second_console.receive_text() == answered, "the adopting console got nothing"
             await second_console.close()
     finally:
         sender.close()
         await _shutdown(process)
+
+
+async def test_a_console_that_says_where_it_got_to_is_sent_only_what_it_is_missing(tmp_path: Path) -> None:
+    """Catch-up, which is what the runner's own numbering is for.
+
+    Without a cursor the adopting console is handed the whole window and dedupes it against its
+    log — which works only for the frame classes the CLI gives an id. With one, the runner answers
+    from its own deque and the console is told exactly what it does not have.
+    """
+    process = await _start_cli(claude_backend(executable(tmp_path / "claude", "sleep 30")), _launch(tmp_path))
+    sender, receiver = anyio.create_memory_object_stream[Outbound](8)
+    log = OutboundLog()
+    try:
+        first_console, first_runner = memory_websocket_pair()
+        for message_id in ("msg_01", "msg_02"):
+            payload = {"type": "assistant", "message": {"id": message_id}}
+            await sender.send(Outbound(frame=ClaudeMessage(payload=payload), replayable=True))
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(partial(_serve_console, first_runner, process, receiver, log))
+            with anyio.fail_after(5):
+                first = _claude_frame(await first_console.receive_text())
+                second = _claude_frame(await first_console.receive_text())
+            assert (first.seq, second.seq) == (1, 2), "the numbering must be dense, so a hole means loss"
+            await first_console.close()
+
+        # A console that recorded the first frame and died before the second.
+        second_console, second_runner = memory_websocket_pair()
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(partial(_serve_console, second_runner, process, receiver, log, 1))
+            with anyio.fail_after(5):
+                resumed = _claude_frame(await second_console.receive_text())
+            assert resumed.seq == 2, "a console holding frame 1 must be sent frame 2 and not frame 1"
+            await second_console.close()
+    finally:
+        sender.close()
+        await _shutdown(process)
+
+
+def test_a_cursor_above_the_runners_own_count_lifts_it_rather_than_colliding() -> None:
+    """A runner whose process restarted counts from 1 again, and the console's log does not.
+
+    Seeding from the cursor is what keeps one session's frames one sequence: the next frame is
+    numbered above everything already recorded rather than re-using numbers the log has spent.
+    """
+    log = OutboundLog()
+    log.seed(41)
+    stamped = log.stamp(Outbound(frame=SetupOutput(data=b"x"), replayable=False))
+    assert RUNNER_TO_CONSOLE.validate_json(stamped) == SetupOutput(data=b"x", seq=42)
 
 
 async def test_a_delta_is_sent_but_never_replayed(tmp_path: Path) -> None:
@@ -265,18 +317,21 @@ async def test_a_delta_is_sent_but_never_replayed(tmp_path: Path) -> None:
     whatever it built is superseded by the completed `assistant` frame behind it."""
     process = await _start_cli(claude_backend(executable(tmp_path / "claude", "sleep 30")), _launch(tmp_path))
     sender, receiver = anyio.create_memory_object_stream[Outbound](8)
-    replay: deque[str] = deque(maxlen=REPLAY_WINDOW)
-    delta = ClaudeMessage(payload={"type": "stream_event", "event": {}}).model_dump_json()
+    log = OutboundLog()
+    payload = {"type": "stream_event", "event": {}}
+    delta = ClaudeMessage(payload=payload, seq=1).model_dump_json()
     try:
         console, runner = memory_websocket_pair()
-        await sender.send(Outbound(text=delta, replayable=False))
+        await sender.send(Outbound(frame=ClaudeMessage(payload=payload), replayable=False))
         async with anyio.create_task_group() as tasks:
-            tasks.start_soon(partial(_serve_console, runner, process, receiver, replay))
+            tasks.start_soon(partial(_serve_console, runner, process, receiver, log))
             with anyio.fail_after(5):
                 assert await console.receive_text() == delta, "a delta must still reach the console live"
             await console.close()
 
-        assert not replay, "a delta must not be retained for the next console"
+        # Numbered like everything else — a sequence that skipped a class would have holes meaning
+        # nothing — but not kept: the next console is offered what it can recognise.
+        assert not log.missed(None), "a delta must not be retained for the next console"
     finally:
         sender.close()
         await _shutdown(process)
@@ -290,6 +345,12 @@ def executable(path: Path, body: str) -> Path:
 
 def _launch(cwd: Path) -> ClaudeLaunch:
     return ClaudeLaunch(arguments=(), cwd=str(cwd), environment={})
+
+
+def _claude_frame(text: str) -> ClaudeMessage:
+    frame = RUNNER_TO_CONSOLE.validate_json(text)
+    assert isinstance(frame, ClaudeMessage)
+    return frame
 
 
 async def test_workspace_setup_runs_in_the_launch_directory(tmp_path: Path) -> None:
@@ -309,16 +370,21 @@ async def test_workspace_setup_streams_its_output_verbatim(tmp_path: Path) -> No
     # U+FFFD before the console ever saw it; nothing here is allowed to touch it.
     setup = executable(tmp_path / "setup.sh", r"printf 'cloning\n\xff\n'" + "\necho 'trouble' >&2")
 
-    await prepare_workspace(setup, cwd=str(tmp_path), websocket=runner_socket)
+    await prepare_workspace(setup, cwd=str(tmp_path), narrate=_narrator(runner_socket, OutboundLog()))
     await runner_socket.close()
 
     forwarded = b""
+    seqs: list[int | None] = []
     with contextlib.suppress(EOFError):
         while True:
             frame = RUNNER_TO_CONSOLE.validate_json(await console_socket.receive_text())
             assert isinstance(frame, SetupOutput)
             forwarded += frame.data
+            seqs.append(frame.seq)
     assert forwarded == b"cloning\n\xff\ntrouble\n"
+    # Narration is numbered too, and from the same counter: it is the whole account of a session
+    # that died before its first CLI frame, so leaving it out would put a hole at the very start.
+    assert seqs == list(range(1, len(seqs) + 1))
 
 
 async def test_workspace_setup_failure_is_fatal(tmp_path: Path) -> None:

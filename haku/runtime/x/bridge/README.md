@@ -45,6 +45,29 @@ value — and leaves nowhere to put a frame belonging to neither protocol.
 The `start` payload carries the argv, working directory and explicit environment `options.py` built,
 so what the console launches is decided by the console and the runner adds nothing to it.
 
+## Numbering, and what it makes catch-up
+
+**The runner numbers every frame it sends** — `seq`, dense and monotonic for the life of the session,
+assigned where the frame goes on the wire so a re-sent one keeps the number it first went out under.
+The console's log takes its ordering from that number rather than from a database sequence
+(<../../../plans/chat_runtime_projection.md> § 2b): it is the peer's fact, so the peer can act on a
+cursor built from it, and it is dense, so a hole in it is evidence of loss.
+
+`start` carries the other half, `resume_from`: the highest `seq` the **console** holds for this
+session. The runner replays only what is above it and continues numbering from there. Per session
+rather than per connection, since two consoles can be adopting one runner's window at once during a
+roll and each computes the same cursor from the same rows. Without it — an older console, or one
+with nothing recorded — the whole window is offered and deduplicated at the far end, which is what
+every adoption used to get.
+
+The counter lives in the runner and not in `WebSocketTransport` because the runner is the end that
+survives: the console is replaced on every roll, while `run()` holds the CLI across as many sockets
+as that takes.
+
+**Deviation worth knowing: both fields are optional additions rather than a `PROTOCOL_VERSION`
+bump**, for the reason the gotcha below gives. `extra="ignore"` means a peer predating them drops
+them and behaves exactly as it did, in both directions of skew.
+
 **Gotcha: the two ends are separate images that roll independently.** The console ships in
 `haku-console`; the runner ships in `haku-claude-runner`, whose tag the SandboxTemplate carries
 under its own Flux image policy. A `PROTOCOL_VERSION` bump is therefore not atomic in production —
