@@ -30,6 +30,13 @@ code path.
 **Done when** it has run against the production database and its findings are either zero or
 written down.
 
+**What is there to check, measured 2026-08-16.** One row. A `message_completed` over frames
+45129..45129, written by the first turn to run against #4179's image, with `projected_frame_seq`
+advancing to 45134 alongside it — every earlier session predates the writer. That does not argue
+against checking; it argues about shape. A standing operator CLI pointed at a one-row corpus is a
+tool with nothing to read, while the same fold called from item 4's backfill has a job. #4183 is
+held on that question, not on its correctness.
+
 **It contradicts the projection plan and the plan is what moves.** [That
 document](chat_runtime_projection.md) § "What makes it safe" asks for the comparison "over real
 sessions, in CI". CI has no production rows and a fixture compared against itself is a
@@ -74,8 +81,7 @@ un-clear.
 `source_{first,last}_frame_seq` is how a message finds its tool calls now that `rollout_calls` is
 gone. Migration `0045` filled it for the rows whose `agent_message_id` matched an `assistant` frame;
 the rows with no agent id — 1,417 assistant rows at #4180's count, the population the neutral message
-exists to fix — are still NULL. Row 4 of [the drift
-audit](../console/debug/2026_08_16_plan_code_drift.md).
+exists to fix — are still NULL.
 
 **Not `session_events`.** That table has nothing to backfill — a row is written in the transaction
 that moves the cursor, and there was no cursor before #4178. The backfill paragraph item 4 carried
@@ -120,7 +126,7 @@ it should not survive a second release in that state.
 paths. Merging them deletes `claude_chat_page.tsx`, unmounts `/api/sessions/{session_id}/stream`,
 and makes the `asyncio.wait` abort dance in `_run_turn` removable
 ([session_channels.md](../console/plans/session_channels.md) § 2, [the read-API
-plan](../console/plans/one_read_api.md) § Stage 3). Row 9 of the drift audit.
+plan](../console/plans/one_read_api.md) § Stage 3).
 
 **Done when** `claude_chat_page.tsx` is deleted, the SSE route is unmounted, and the console has one
 live-update mechanism.
@@ -179,7 +185,7 @@ Costed, not scheduled.
 ## Not now
 
 - **Stream the increment to the frontend** ([session_channels.md](../console/plans/session_channels.md)
-  § 4, drift-audit row 16). Its two preconditions are half met: the ordered stream and its address
+  § 4). Its two preconditions are half met: the ordered stream and its address
   exist, the per-consumer position does not. It is the thing item C should be judged against; see
   there.
 - **Projection stage 2 — the frame table's two `kind` vocabularies**, and with it releases R2–R5 of
