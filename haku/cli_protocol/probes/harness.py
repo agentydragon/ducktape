@@ -31,9 +31,15 @@ import sys
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
+from pathlib import Path
 from typing import Any
 
 CLI = os.environ.get("CLAUDE_BIN", "claude")
+
+# The child must not inherit the *capturing* session's identity. A probe run from inside a Claude
+# Code session leaves these set and the CLI adopts them, so every frame reports the parent's
+# `session_id` and the capture reads as though the two sessions were one.
+INHERITED_SESSION_VARS = ("CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_CHILD_SESSION")
 
 # Answers an inbound control request, or returns None to have it refused.
 InboundHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None]]
@@ -42,8 +48,10 @@ InboundHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None]]
 class SubprocessChannel:
     """A `FrameChannel` (see `haku.runtime.x.bridge.cli_client`) over a local CLI."""
 
-    def __init__(self, *args: str):
+    def __init__(self, *args: str, env: dict[str, str] | None = None, on_text: Callable[[str], None] | None = None):
         self._args = args
+        self._env = env
+        self._on_text = on_text
         self._process: asyncio.subprocess.Process | None = None
 
     async def connect(self) -> None:
@@ -59,6 +67,7 @@ class SubprocessChannel:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=sys.stderr,
+            env={k: v for k, v in os.environ.items() if k not in INHERITED_SESSION_VARS} | (self._env or {}),
         )
 
     @property
@@ -75,10 +84,18 @@ class SubprocessChannel:
     async def read_messages(self) -> AsyncIterator[dict[str, Any]]:
         assert self.process.stdout is not None
         while line := await self.process.stdout.readline():
+            # The CLI writes plain prose to the same stdout as the frames — `Warning: no stdin
+            # data received in 3s`, `[SandboxDebug] …`. A reader that assumes every line parses
+            # raises on them, so they are surfaced rather than swallowed.
             try:
-                yield json.loads(line)
+                frame = json.loads(line)
             except json.JSONDecodeError:
-                print(f"[non-json] {line!r}", flush=True)
+                text = line.decode(errors="replace").rstrip("\n")
+                print(f"[non-json] {text!r}", flush=True)
+                if self._on_text is not None:
+                    self._on_text(text)
+                continue
+            yield frame
 
     async def close(self) -> None:
         if self._process is None:
@@ -89,23 +106,48 @@ class SubprocessChannel:
 
 
 class Probe:
-    """One CLI process, with the whole conversation on stdout."""
+    """One CLI process, with the whole conversation on stdout.
 
-    def __init__(self, *args: str):
-        self.channel = SubprocessChannel(*args)
+    `capture` additionally appends every frame, in both directions, to a JSONL file — one record
+    per line, `{"at_s", "direction", "frame"}`, or `{"at_s", "direction", "stdout_line"}` for the
+    prose the CLI interleaves with the frames. Printing alone leaves nothing a test can read.
+    """
+
+    def __init__(self, *args: str, capture: Path | None = None, env: dict[str, str] | None = None):
+        self.channel = SubprocessChannel(*args, env=env, on_text=self._record_text)
         self.frames: list[dict[str, Any]] = []
         self.inbound: InboundHandler | None = None
+        self._capture_path = capture
+        self._capture: Any = None
         self._pending: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._answering: set[asyncio.Task[None]] = set()
         self._started = 0.0
 
     async def start(self) -> None:
+        if self._capture_path is not None:
+            self._capture = self._capture_path.open("w", encoding="utf-8")
         await self.channel.connect()
         self._started = time.monotonic()
         self._reader = asyncio.create_task(self._read())
 
+    def _record(self, record: dict[str, Any]) -> None:
+        if self._capture is None:
+            return
+        self._capture.write(json.dumps(record) + "\n")
+        self._capture.flush()
+
+    def _record_text(self, line: str) -> None:
+        self._record({"at_s": round(time.monotonic() - self._started, 3), "direction": "in", "stdout_line": line})
+
     def _log(self, arrow: str, payload: dict[str, Any]) -> None:
         print(f"[{time.monotonic() - self._started:6.2f}s] {arrow} {json.dumps(payload)}", flush=True)
+        self._record(
+            {
+                "at_s": round(time.monotonic() - self._started, 3),
+                "direction": "out" if arrow == ">>" else "in",
+                "frame": payload,
+            }
+        )
 
     async def _write(self, payload: dict[str, Any]) -> None:
         await self.channel.write(json.dumps(payload) + "\n")
@@ -162,10 +204,15 @@ class Probe:
         )
         await self._write({"type": "control_response", "response": response})
 
-    async def wait_for(self, kind: str, *, seconds: float = 180.0) -> dict[str, Any]:
+    async def wait_for(self, kind: str, *, seconds: float = 180.0, after: int = 0) -> dict[str, Any]:
+        """The first `kind` frame at or past `after` in `frames`.
+
+        A multi-turn probe must pass `after`: without it the second turn matches the first turn's
+        frame, which is already in the list, and returns immediately.
+        """
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
-            for frame in self.frames:
+            for frame in self.frames[after:]:
                 if frame.get("type") == kind:
                     return frame
             await asyncio.sleep(0.1)
@@ -180,6 +227,8 @@ class Probe:
     async def stop(self) -> None:
         self._reader.cancel()
         await self.channel.close()
+        if self._capture is not None:
+            self._capture.close()
 
 
 async def allow_every_tool(frame: dict[str, Any]) -> dict[str, Any] | None:

@@ -261,30 +261,23 @@ along with what that costs (the sink has to move down to `WebSocketTransport`, a
 releases because flipping a column's meaning under a rolling deploy is not additive). **Nothing is
 scheduled**, and no other work depends on it.
 
-## Capture what hooks and compaction look like on the wire
+## Give `system/compact_boundary` a real branch in the projection
 
-The 2026-08-16 direct capture (<debug/frame_shape_census.md> § A direct capture of one session,
-fixture at <x/claude_code/testdata/diverse_session.jsonl>) exercised text, extended thinking, four
-tool calls and a failing command. Two things it did **not** exercise, and both matter to the
-projection rather than being curiosities:
+Both are now captured — `haku/cli_protocol/probes/compaction.py` drove a session with hooks, an
+in-process tool and a forced compaction; see <../cli_protocol/protocol.md> § Compaction. What that
+leaves is work here rather than a question.
 
-- **Hooks.** A session with `SessionStart`, `PreToolUse` or `PostToolUse` hooks configured emits
-  something for them, and nobody here has seen what. Production Haku runs with hooks, so whatever
-  it is, is already in `session_frames` and already landing in `unprojected` unrecognised.
-- **Compaction.** The capture contains an `autocompact_state` frame announcing thresholds
-  (`effective_window`, `threshold`, `enforced`) but the session never reached one. An actual
-  compaction is the interesting case because it is the one event that **rewrites what the
-  conversation is** — and the projection's whole contract is that a prefix of the frame log
-  determines the transcript. If compaction replaces earlier context, either the frame log still
-  holds the pre-compaction frames and the transcript is unaffected, or it does not and
-  `project_log` over an old cursor no longer reproduces what the model actually saw. Which of
-  those is true decides whether the durable cursor (<../plans/next_month.md> § The spine, item 3)
-  has a hazard nobody has costed.
+The cursor is safe: nothing is retracted, so `project` from an old cursor replays exactly what it
+replayed before. What is not safe is the default branch. A compaction emits `system/compact_boundary`
+and then an inbound `user` frame carrying the summary, marked only by `isSynthetic: true` — so a
+projection that ignores the boundary and renders `user` frames produces the pre-compaction turns
+**plus** a summary of them, attributed to a user who never sent it. Both frames land in
+`unprojected` today.
 
-Capture both the same way: drive `claude` with `--output-format stream-json --verbose
---include-partial-messages`, timestamp each line, redact by the rules the census records, and
-extend the fixture rather than replacing it. Compaction needs a long enough session to trip the
-threshold, or `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` to lower it.
+The rule to implement is positional (everything before the boundary's offset is out of the model's
+context); `logical_parent_uuid` looks like the relink for it and names a message the wire never
+carries. A **partial** compaction — `compact_metadata.preserved_segment`, documented by the CLI's
+schema — is still unobserved, so leave it unimplemented rather than guessed.
 
 ## Scope conversation reads to the reader's trust tier
 

@@ -1,9 +1,10 @@
 # The Claude Code CLI stream protocol
 
 Reference for the newline-delimited JSON protocol Haku's console speaks to `claude`, written
-against **claude-code 2.1.220** as bundled in `claude_agent_sdk` 0.2.128. It covers what the
-console needs, not the CLI's whole surface: fields the CLI defines for host UIs (VS Code, Claude
-Desktop, Remote Control) are named where they explain a frame and otherwise left out.
+against **claude-code 2.1.220** as bundled in `claude_agent_sdk` 0.2.128, with
+[Compaction](#compaction) and the corrections it names measured against **2.1.233**. It covers what
+the console needs, not the CLI's whole surface: fields the CLI defines for host UIs (VS Code,
+Claude Desktop, Remote Control) are named where they explain a frame and otherwise left out.
 
 Two sources back it. Structure and field semantics come from the zod schemas in the bundled
 binary, which carry their own `.describe()` text. Behaviour comes from live runs in <probes/>,
@@ -45,6 +46,7 @@ share a stream.
 | `rate_limit_event`  | Current rate-limit window and overage state                               |
 | `command_lifecycle` | State of one submitted prompt (see [Prompt lifecycle](#prompt-lifecycle)) |
 | `active_goal`       | The session's current goal, `null` when none                              |
+| `autocompact_state` | When this session will compact (see [Compaction](#compaction))            |
 
 A nested frame — one produced by a subagent rather than the main thread — carries
 `parent_tool_use_id` naming the `Task` tool use it belongs to.
@@ -61,16 +63,19 @@ A nested frame — one produced by a subagent rather than the main thread — ca
 | `task_notification` | Terminal `status`, `output_file`, and a prose `summary`                                        |
 | `post_turn_summary` | `status_category` (`review_ready` / `blocked` / `need_input`), `status_detail`, `needs_action` |
 | `thinking_tokens`   | Thinking-budget accounting                                                                     |
-| `compact_boundary`  | Where the context was compacted                                                                |
+| `status`            | A phase word (`compacting`), and `compact_result` when one ends                                |
+| `compact_boundary`  | That the context was compacted (see [Compaction](#compaction))                                 |
 
 `task_type` distinguishes `local_agent` (a subagent) from `local_bash` (a backgrounded shell).
 The `task_*` and `post_turn_summary` frames are the CLI's own answer to "what is this session
 doing right now", which is why they matter to Haku's room status line rather than only to a
 terminal UI.
 
-**`system/init` arrives with the first turn, not with `initialize`.** A session that completes the
-handshake and sends no prompt never sees one; the handshake's own answer is the `initialize`
-control response.
+**`system/init` arrives once per turn, not once per session.** Measured over a six-turn session:
+six `init` frames, one before each turn's work, each with its own `uuid`. A session that completes
+the handshake and sends no prompt never sees one — the handshake's own answer is the `initialize`
+control response — but "the init frame" is not a thing a reader may key on. Anything that treats
+the second one as a reconnect will see a session restart every turn.
 
 ## Control channel
 
@@ -248,7 +253,22 @@ produces a `tool_result` with `is_error: true`, the reason as its content, and
 `tool_result_meta[].non_execution_kind: "permission-rule"`. A `PreToolUse` hook runs **before**
 the permission check, so denying there means no `can_use_tool` is ever asked.
 
-`SessionStart` does not fire for a session the client initializes this way.
+`PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop` and `PreCompact` all reach the client this
+way; the whole set is measured in `probes/compaction.py`, whose capture is the fixture behind
+<test_compaction_capture.py>. `PreCompact` carries `trigger` (`auto`) and `custom_instructions`,
+and arrives **before** the compaction runs — early enough for a client to record what is about to
+be discarded.
+
+**`SessionStart` fires exactly once, and not at the start.** It does not fire for a session the
+client initializes this way; it fires when the session is _compacted_, carrying `source:
+"compact"`. So a client that hangs its startup work on `SessionStart` runs that work only in the
+middle of the session, at the one moment the context was just thrown away.
+
+**`--include-hook-events` adds nothing on this transport.** The flag advertises "all hook lifecycle
+events in the output stream", and the CLI's schema does define `system/hook_{started,progress,
+response}` frames — none of which appeared in a session whose hooks all came from `initialize`.
+Presumably they cover settings-file hooks the CLI runs itself; a client that registers its hooks
+over the control channel already sees each one as a `hook_callback` it answers.
 
 ## Permission prompts
 
@@ -305,13 +325,111 @@ it.
 the `task_progress` frames arrive either way — so it is presumably for host UIs that render their
 own summary.
 
+## Compaction
+
+The one event that changes what the conversation **is** rather than adding to it. Measured with
+`probes/compaction.py`; the capture is <testdata/compaction_session.jsonl> and the properties a
+reader may rely on are asserted in <test_compaction_capture.py>. The frame sequence below
+reproduced across independent runs, including one at a different threshold that compacted after
+twelve turns instead of four — so it is the shape of a compaction, not of one session.
+
+### When it fires
+
+`autocompact_state` is the CLI's own answer, pushed at boot and whenever the resolution changes:
+
+```json
+{ "enabled": true, "effective_window": 80000, "threshold": 48000, "enforced": true, "source": "settings" }
+```
+
+`--autocompact <tokens>` sets the window (its floor is 100k, from which the CLI subtracts 20k of
+headroom, so `100000` resolves to `effective_window: 80000`) and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`
+sets the fraction of it that trips. `CLAUDE_CODE_MAX_CONTEXT_TOKENS` is **not** this knob: setting
+it left `effective_window` at 180000 with `source: "auto"`.
+
+**Gotcha: `get_context_usage` reports a different threshold, and it is the wrong one.** In the same
+session `autocompact_state` said 48000 while `get_context_usage` said `autoCompactThreshold:
+67000` — window minus its own "Autocompact buffer" category, which does not see the percentage
+override. The compaction fired at `pre_tokens: 49773`, so `autocompact_state` is the one that
+governs. A "% until compaction" indicator built on `get_context_usage` will be wrong whenever the
+two disagree.
+
+### What arrives, in order
+
+```text
+control_request  hook_callback cb_PreCompact   { trigger: "auto", custom_instructions: null }
+system/status    { status: "compacting" }
+control_request  hook_callback cb_SessionStart { source: "compact" }
+system/status    { status: null, compact_result: "success" }
+system/compact_boundary
+user             isSynthetic: true — one text block, the summary
+```
+
+`compact_boundary` is a **marker carrying accounting, not content**:
+
+```json
+{
+  "compact_metadata": {
+    "trigger": "auto",
+    "pre_tokens": 49773,
+    "post_tokens": 1718,
+    "cumulative_dropped_tokens": 48055,
+    "duration_ms": 19484,
+    "pre_compact_discovered_tools": ["mcp__probe__haku_filler"]
+  },
+  "logical_parent_uuid": "…"
+}
+```
+
+**The frame that rewrites the conversation is the next one**, and it looks exactly like a prompt: a
+`user` frame whose single `text` block opens "This session is being continued from a previous
+conversation that ran out of context." Its only distinguishing mark is `isSynthetic: true`, which
+is not in the CLI's documented field set. A renderer that draws `user` frames as user turns will
+attribute a page of summary to the operator, and the census's lone `isSynthetic` frame — filed
+there as "the CLI speaking as the user" — is almost certainly this.
+
+The bundled schema documents a `preserved_segment` (`head_uuid`, `anchor_uuid`, `tail_uuid`,
+`uuids`, `all_uuids`) for a compaction that keeps a suffix of the conversation. **It is absent
+here**, which is how a reader tells that this compaction summarised everything. The partial shape
+is unobserved.
+
+### Does a compaction invalidate a stored cursor?
+
+**No — but it invalidates folding the whole log into "the conversation", and the two are easy to
+confuse.**
+
+- **Nothing is retracted.** All 123 frames before the boundary are still in the log, unedited, and
+  no uuid is reused. A cursor at any offset replays exactly the frames it replayed before, so the
+  durable cursor of <../plans/chat_runtime_projection.md> — "project from the stored cursor, which
+  happens to be behind" — keeps its guarantee, and so does the `project(state, frame)` fold it
+  advances in the same transaction.
+- **What changes is what the _model_ holds.** After the boundary its context is the summary plus
+  what follows. A consumer that folds every frame gets the pre-compaction turns **and** their
+  summary — the content twice over, with the second copy attributed to the user. That is a
+  rendering and re-prompting bug, not a cursor bug.
+- **The cut is positional, and only positional.** `logical_parent_uuid` reads like the relink for
+  it and is not usable as one: the uuid it names occurs exactly once in the whole capture — in this
+  frame — and belongs to no frame the CLI ever sent. It points into the CLI's own on-disk
+  transcript, which holds the compaction's internal turns that the wire never carries. So the rule
+  a reader can implement is "everything before this frame's index is out of context", which is
+  what a cursor already records.
+
+The practical consequence for a projection: `system/compact_boundary` must be a real branch, not a
+default case. Falling through it costs a duplicated transcript and a fabricated user message.
+
 ## What the Agent SDK's typed layer does with all this
 
 The SDK's `Message` union has variants for `user`, `assistant`, `system`, `result`,
 `stream_event` and `rate_limit_event`. `system` keeps its raw payload in a generic
 `SystemMessage.data`, so subtypes survive; **top-level types with no variant do not**.
-`command_lifecycle` and `active_goal` hit the parser's forward-compatible default case and are
-dropped with a debug log.
+`command_lifecycle`, `active_goal` and `autocompact_state` hit the parser's forward-compatible
+default case and are dropped with a debug log — the last of those being the frame that says when
+this session is about to compact.
 
 That is the practical reason the console keeps raw frames as its record and parses separately:
 the typed layer is lossy in exactly the places the newer protocol features live.
+
+The probes measure this wire directly rather than through the SDK, which is also why they can:
+`hooks` with `hookCallbackIds` and `sdkMcpServers` are the `initialize` fields the SDK's own
+`hooks=` and in-process-server options populate, so a Python hook and a Python-hosted tool look on
+the wire exactly as they do below. The probes stay standard-library only (see <probes/harness.py>),
+and nothing above was taken from an SDK run.

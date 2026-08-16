@@ -110,7 +110,7 @@ frames) as replicas reattached.
 | `subtype`                  | Frames | Sessions | In `protocol.md`? |
 | -------------------------- | ------ | -------- | ----------------- |
 | `thinking_tokens`          | 8,512  | 14       | yes               |
-| `status`                   | 2,275  | 14       | **no**            |
+| `status`                   | 2,275  | 14       | yes               |
 | `vcs_state_changed`        | 62     | 7        | **no**            |
 | `task_started`             | 25     | 8        | yes               |
 | `task_notification`        | 25     | 8        | yes               |
@@ -119,8 +119,9 @@ frames) as replicas reattached.
 | `task_updated`             | 1      | 1        | yes               |
 
 Never observed in this corpus: `commands_changed`, `task_progress`, `post_turn_summary`,
-`compact_boundary`. The direct capture below caught `commands_changed` and `post_turn_summary`,
-plus a `task_summary` subtype absent from both this table and `protocol.md`.
+`compact_boundary`. The direct captures below caught `commands_changed` and `post_turn_summary`,
+plus a `task_summary` subtype absent from both this table and `protocol.md`; the compaction capture
+caught `compact_boundary`. Only `task_progress` remains unseen by any route.
 
 **`init`'s count of 1 is an artefact of clipping, not of the CLI.** Reading each session's first
 sixteen frames shows the same prefix everywhere: `control_request`, the clipped `initialize`
@@ -444,6 +445,8 @@ In rough order of how much damage each does.
 - `error` results of any kind: `subtype: success` was universal, so the whole error surface of
   `result` is unobserved.
 - Anything older than 2026-08-10, since `list_conversations` has no cursor.
+- What a **partial** compaction looks like: the compaction section below summarised everything, so
+  `compact_metadata.preserved_segment` is documented by the CLI's schema and observed by nobody.
 
 ## A direct capture of one session (2026-08-16)
 
@@ -483,7 +486,7 @@ default branch and lands in `Projection.unprojected` today.
 | Frame                      | n   | In `protocol.md`? | What it carries                                                                            |
 | -------------------------- | --- | ----------------- | ------------------------------------------------------------------------------------------ |
 | `active_goal`              | 1   | yes               | `value`, `null` throughout — the class the census above never saw                          |
-| `autocompact_state`        | 1   | **no**            | `{enabled, effective_window, threshold, enforced, source}`                                 |
+| `autocompact_state`        | 1   | yes               | `{enabled, effective_window, threshold, enforced, source}`                                 |
 | `system/commands_changed`  | 1   | yes               | the slash-command/skill catalog, once at startup                                           |
 | `system/task_summary`      | 2   | **no**            | `detail` — a live status line, `null` again when the turn ends                             |
 | `system/post_turn_summary` | 1   | yes               | `status_category`, `status_detail`, `needs_action`, plus an undocumented `summarizes_uuid` |
@@ -546,3 +549,46 @@ two parallel `Bash` calls were answered in the reverse of the order they were as
 pairing results to calls by position would put this turn's error on the call that succeeded; and
 `result` reported `subtype: success` for a turn containing a deliberately failing command, which
 is the census's point 3 reproduced on a session whose failure was intentional.
+
+## A second direct capture: hooks, an in-process tool, and a compaction (2026-08-16)
+
+Same route as the section above and the same CLI build (**2.1.233**, against
+**claude-haiku-4-5-20251001**), but driven at a different target:
+`haku/cli_protocol/probes/compaction.py` registers hooks over `initialize`, hosts an MCP tool
+in-process, and forces an auto-compaction. Six turns, 214 records, checked in as
+<../../cli_protocol/testdata/compaction_session.jsonl> and asserted by
+<../../cli_protocol/test_compaction_capture.py>. Same redaction rules, plus the probe's own filler
+elided by shape. The protocol reading is <../../cli_protocol/protocol.md> § Compaction; here is
+only what it adds to the inventory above.
+
+It reproduces `active_goal`, `autocompact_state`, `system/commands_changed` and
+`system/post_turn_summary` from that capture — a second independent sighting each, so those are no
+longer single-session anecdotes. What is new:
+
+| Class                     | n   | Note                                                                 |
+| ------------------------- | --- | -------------------------------------------------------------------- |
+| `system/compact_boundary` | 1   | first ever observed; `compact_metadata` plus a `logical_parent_uuid` |
+| `system/status`           | 2   | `compacting`, then `{status: null, compact_result: "success"}`       |
+| `user` with `isSynthetic` | 1   | the compaction summary — a `text` block, not a `tool_result`         |
+
+Four corrections neither route could have made alone:
+
+- **`system/init` is once per turn, not once per session.** Six prompts, six `init` frames, each
+  with its own `uuid`. The census read `init`'s count of 1 as a clipping artefact — the clipping is
+  real, but the frame is far commoner than one per session, and a fold treating a second `init` as
+  a reconnect will see one every turn.
+- **`system/status` is not a one-valued heartbeat.** Whatever the 2,275 production frames carried,
+  the subtype does discriminate: it names the phase, and reports `compact_result` when one ends.
+- **The lone `isSynthetic: true` frame in the production corpus is very likely a compaction
+  summary.** The census filed it as "the CLI speaking as the user"; a compaction emits exactly
+  that — a `user` frame, one `text` block, opening "This session is being continued from a previous
+  conversation that ran out of context." It is the frame that replaces the conversation, and the
+  `compact_boundary` before it carries no text at all.
+- **A `tool_result` can contain `text` blocks.** The census found `content` a bare string 94.4% of
+  the time and a list of `tool_reference` blocks otherwise, and said no `text` block ever appeared
+  inside one. An MCP tool's result is a list of `text` blocks — 4 of the 5 results here — with
+  `tool_use_result` a bare list rather than any of the 17 dict shapes. Production had no MCP tool
+  calls to show it; a fold that special-cases `content: str` mis-renders every one.
+
+One shape confirmed rather than corrected: every `assistant` frame carried exactly one content
+block, 22 of 22, so "a message is a run of frames" holds on this route too.

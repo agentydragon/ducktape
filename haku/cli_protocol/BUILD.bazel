@@ -30,3 +30,13 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_compaction_capture",
+    srcs = ["test_compaction_capture.py"],
+    data = ["testdata/compaction_session.jsonl"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

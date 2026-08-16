@@ -35,3 +35,14 @@ py_library(
     srcs = ["steering.py"],
     deps = [":harness"],
 )
+
+py_library(
+    name = "compaction",
+    srcs = ["compaction.py"],
+    deps = [":harness"],
+)
+
+py_library(
+    name = "redact_capture",
+    srcs = ["redact_capture.py"],
+)

@@ -14,6 +14,7 @@ running it, and much of it the CLI marks `@internal`. Treat it as pinned to a CL
 | <protocol.md> | The reference: channels, frames, control requests, `initialize`    |
 | <frames.py>   | Pydantic models for the slice the console acts on                  |
 | <probes/>     | Runnable experiments, each printing every frame in both directions |
+| <testdata/>   | One scrubbed capture of a real session, kept as evidence           |
 
 The client that uses all this is `haku/runtime/x/bridge/cli_client.py`.
 
@@ -32,15 +33,41 @@ python3 -m haku.cli_protocol.probes.client_hosted_mcp
 python3 -m haku.cli_protocol.probes.steering                     # mid-turn fold
 python3 -m haku.cli_protocol.probes.steering interrupt           # abort leaves the queue running
 python3 -m haku.cli_protocol.probes.steering interrupt cancel-queued
+python3 -m haku.cli_protocol.probes.compaction /tmp/capture.jsonl  # hooks + an in-process tool + a forced compaction
 ```
+
+Run each from a **throwaway working directory**: the CLI reads the cwd's `CLAUDE.md` and settings,
+and a probe run inside this repo measures this repo's configuration rather than the protocol.
 
 `CLAUDE_BIN` picks the binary; it defaults to `claude` on `PATH`. The SDK wheel bundles one at
 `claude_agent_sdk/_bundled/claude`, which is the copy the sandbox runs and therefore the one to
 probe when the question is "what will production see".
 
+## Committing a capture
+
+`probes/compaction.py` is the one probe that leaves a file behind. Everything it writes is a real
+session on the machine that ran it, so it is scrubbed and then **checked structurally** before it
+goes anywhere:
+
+```bash
+python3 -m haku.cli_protocol.probes.redact_capture /tmp/capture.jsonl testdata/compaction_session.jsonl
+```
+
+That renumbers every UUID, rewrites paths to `/workspace`, elides the operator's skill/agent/MCP/
+plugin catalogs and the opaque `signature` on every `thinking` block, then refuses to finish while
+any long opaque token, absolute path, email, credential or this machine's own identity survives. It
+exits non-zero rather than writing something unsafe. Grepping for the obvious is what missed the
+thinking signatures last time; the shape check is what catches them.
+
+<test_compaction_capture.py> reads the result, so a CLI repin that changes how compaction reaches
+the wire fails a test rather than going unnoticed.
+
 ## Testing after a CLI repin
 
-`bbr test //haku/cli_protocol:test_frames` checks the models still parse the corpus of captured
-frames, which catches a renamed or retyped field but not a changed behaviour. For behaviour,
-re-run the probes and reconcile <protocol.md> — the fields it calls silently-ignored or
-fail-closed are the ones where a regression is invisible.
+`bbr test //haku/cli_protocol:...` runs two checks with different reach. `test_frames` checks the
+models still parse the corpus of captured frames, which catches a renamed or retyped field.
+`test_compaction_capture` checks the captured session still holds the properties a reader relies on
+across a compaction — that nothing is retracted, that the summary arrives as a synthetic `user`
+frame, that `PreCompact` runs in time to matter. Neither catches a changed behaviour, because both
+read a recording. For behaviour, re-run the probes and reconcile <protocol.md> — the fields it
+calls silently-ignored or fail-closed are the ones where a regression is invisible.
