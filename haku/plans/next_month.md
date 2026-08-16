@@ -51,7 +51,8 @@ In flight, and treated as in-flight rather than as new work:
 | A turn's cost is columns, not a CLI payload     | #4169 | **Landed.** Parallel item B                                                                                                       |
 | The console records the runner's number         | #4172 | **Landed.** R1's console half: `runner_seq` recorded, `resume_from` computed from it                                              |
 | The durable projection cursor                   | #4178 | **Landed.** Spine item 3 — `sessions.projected_frame_seq`, migration `0051`                                                       |
-| R5 renumbers historical frames                  | #4170 | In flight. Revises R5's disposition of the rows that predate the cutover                                                          |
+| R5 renumbers historical frames                  | #4170 | **Landed.** R5 renumbers where every reference has an image and drops the sessions where one does not                             |
+| Docs concision across `haku/console/x/`         | #4171 | **Landed.** No executable line changed; AST-identical to `devel` with docstrings stripped                                         |
 
 Everything the previous month planned and landed is in `git log` and in the PRs; this document
 does not re-list it. What it does assume, and what a reader should check before trusting the
