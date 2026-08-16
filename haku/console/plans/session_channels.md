@@ -10,18 +10,18 @@ This supersedes nothing; it is the frame the pieces below belong to.
 
 ## Where the parity actually stands
 
-| Capability            | Matrix                         | Console                       |
-| --------------------- | ------------------------------ | ----------------------------- |
-| Read the transcript   | native                         | yes, read-only                |
-| Live updates          | native                         | **no** — one fetch on mount   |
-| Send a prompt         | yes                            | **only on `/chat`**           |
-| Start a session       | no — the supervisor owns it    | yes, on `/chat`               |
-| Abort a turn          | **no**                         | yes, on `/chat`               |
-| Close a session       | no                             | yes, on `/chat`               |
-| A turn is in progress | typing indicator + status line | **no**                        |
-| Lifecycle transitions | `m.notice`, unrecorded         | **no**                        |
-| Bootstrap narration   | `m.notice`, one line each      | yes, at the transcript's head |
-| Formatted replies     | yes (R11.7)                    | yes (Markdown renderer)       |
+| Capability            | Matrix                         | Console                        |
+| --------------------- | ------------------------------ | ------------------------------ |
+| Read the transcript   | native                         | yes, read-only                 |
+| Live updates          | native                         | yes — invalidate, then refetch |
+| Send a prompt         | yes                            | **only on `/chat`**            |
+| Start a session       | no — the supervisor owns it    | yes, on `/chat`                |
+| Abort a turn          | **no**                         | yes, on `/chat`                |
+| Close a session       | no                             | yes, on `/chat`                |
+| A turn is in progress | typing indicator + status line | **no**                         |
+| Lifecycle transitions | `m.notice`, unrecorded         | **no**                         |
+| Bootstrap narration   | `m.notice`, one line each      | yes, at the transcript's head  |
+| Formatted replies     | yes (R11.7)                    | yes (Markdown renderer)        |
 
 **Parity is not symmetry.** Some gaps are load-bearing and stay: Matrix does not start sessions
 because the supervisor owns provisioning (R3.1, R3.2), and the console does not bind or unbind
@@ -209,6 +209,18 @@ hears, and `ConsoleEventHub.deliver_locally` sends without republishing), a 500m
 window per session, an owner lookup resolved once per session and cached, and the conversations
 list on the same event as the detail. The SPA chat page's SSE stream is untouched — §2 retires it,
 not this.
+
+**Later, and deliberately not now: the backend streams the increment.** The operator wants the
+server to push what changed rather than have the page re-read a whole conversation on every
+invalidation (2026-08-16). Invalidate-then-refetch was the right first move — it is idempotent, so
+a reconnect that missed events still lands correct, which is the property §1 turns on — but it
+leaves the O(session)-per-update read <../../plans/chat_runtime_cleanup.md> § Anytime describes,
+now paid per open tab as well as per delta. Two things have to exist before an increment is
+sendable at all, and both are on the way: an ordered neutral event stream to name the increment in
+(<../../plans/chat_runtime_projection.md> § stage 4), and a per-consumer position in it — which is
+§1's cursor with a socket at the far end instead of a room. So this is a **consequence of the
+neutral layer, not an optimization to schedule against it**, and until it exists the refetch is the
+honest implementation. Recorded here rather than built.
 
 ## 5. Sending from the console
 

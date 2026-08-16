@@ -780,9 +780,14 @@ that.
 - **R11.5 [v1] Citable like any other source.** Matrix is a source in the sense
   `haku/base/sources/` means it: a finding drawn from a room message cites the message, and
   the operator-facing form of that citation is clickable.
-- **R11.6 [v1] Forwarding failure is visible.** A reply that was produced but not delivered
-  is retried and, if it lands late, marked as possibly duplicated. A produced reply must
-  never be lost silently.
+- **R11.6 [built, minus the marking] Forwarding failure is visible.** A reply that was produced but
+  not delivered is retried; a produced reply must never be lost silently. The durable outbox
+  (#4104) is what implements it — the reply is a row from the moment it is produced, and the drain
+  retries until the homeserver takes it. The "marked as possibly duplicated" clause is
+  **deliberately not implemented**: every outbox row is sent under its own stable transaction id,
+  so a late redelivery inside Synapse's dedup window is refused rather than duplicated and the
+  marking has no case to fire on. It comes back for a channel with no idempotency key — see
+  <chat_runtime_projection.md> § 5.
 - **R11.7 [v1] A reply arrives formatted.** Emphasis, code, lists, tables and links display
   as themselves in the room, not as their source. The event carries both forms — `body` stays
   the Markdown, which is the spec's fallback and what a plain-text client should show, and
@@ -1050,7 +1055,11 @@ transcript with every tool result missing (R5.5):
    calling session's room (R5.3a). Closes R11.3, and retires the system prompt's standing
    TODO: it tells the agent event IDs are citable while the harness can only resolve one it
    was already shown.
-4. **`list_conversations` / `read_rollout`** (R11.3a) — **built**. A **drilldown, not a dump** — find the
+4. **The `haku_conversations` read tools** (R11.3a) — **built**, and now four rather than the two
+   this specified: `list_conversations`, `read_rollout`, `list_turns`, and `read_frame` (#4116),
+   which is the bottom of the drilldown — one frame whole, however large. It exists because the
+   page budget moved from a per-frame cap to a per-page one: a frame bigger than a whole page can
+   then only be reached by naming it. A **drilldown, not a dump** — find the
    conversation, skim it, read the part that matters — so no tool can return a whole session's
    rollout and each call's payload stays bounded. Context is the scarce resource here, not rows.
 
@@ -1068,8 +1077,9 @@ limit, kinds)` pages `session_frames` by its `frame_seq`, and skimming is a `kin
 
    Hosted as an in-process MCP server on the console's existing `/mcp` (`haku_conversations`),
    the same pattern as `gmail` and `haku_routine`: credential-free, since the corpus is the
-   console's own database, and both tools in the Haku agent's unconditional auto-approval set
-   so a read is a pass-through rather than an approval prompt. `sdkMcpServers` would have
+   console's own database, and every one of its tools in the Haku agent's unconditional
+   auto-approval set (`haku_recall_reads`) so a read is a pass-through rather than an approval
+   prompt. `sdkMcpServers` would have
    worked and was the other candidate; `/mcp` reuses the audit ledger and the policy that
    already governs every other read tool.
 
@@ -1077,9 +1087,10 @@ limit, kinds)` pages `session_frames` by its `frame_seq`, and skimming is a `kin
 same frame rows, which is why the frames are the granularity to store.
 
 The payoff worth naming: this is what makes R3.3's "compaction that crossed a process
-boundary" reachable. A replacement session today gets the last N messages of its own transcript
-(R3.3a) and nothing else; with the rollout readable it can consult what its predecessor actually
-did.
+boundary" reachable. A replacement session gets the last N messages **of the room**, read out of
+our own record across every session that has served it and excluding its own (#4136, R3.3a) — and
+nothing else; with the rollout readable it can consult what its predecessor actually did, tool
+calls and results included, which no transcript holds.
 
 ### The decision that gates Phase 1
 

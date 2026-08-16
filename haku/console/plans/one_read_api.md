@@ -137,13 +137,15 @@ and if it does not, that is a cheap and decisive answer (§7, Stage 1).
 |         | REST                                            | MCP                                              |
 | ------- | ----------------------------------------------- | ------------------------------------------------ |
 | scope   | `WHERE Session.operator_id = actor.operator_id` | none — every session, every room, every Operator |
-| order   | `updated_at DESC, session_id DESC`              | newest first                                     |
+| order   | `updated_at DESC, session_id DESC`              | `created_at DESC`                                |
 | paging  | `limit` 1–100, no cursor                        | `limit` 1–100, keyset on `(created_at, id)`      |
-| payload | `+ updated_at, message_count, last_message_at`  | `+ error`, no aggregates                         |
+| payload | `+ updated_at, message_count, last_message_at`  | no aggregates                                    |
 
 Two gaps, and only one is closable. The aggregates are a `COUNT`/`MAX` join the agent surface has
 no use for; adding them is a React page shaping an LLM-facing tool. The scope gap is structural
-(§4).
+(§4). `error` is on **both** payloads and is not a difference. The ordering columns differ, which
+is a real one: "newest" means last touched on the REST side and first created on the MCP side, and
+a session that is still running sorts differently under each.
 
 ### `GET /api/conversations/{id}` vs — nothing
 
@@ -324,12 +326,15 @@ Drop `ConversationTurnView` and return the frame range that `TurnRecord` already
 detail view's turns link to the frame inspector. One store method, one model, both surfaces.
 This is the actual duplication, and removing it needs no transport decision.
 
-### Stage 3 — the socket/read split
+### Stage 3 — the socket/read split — half landed
 
-Add `SessionChangedEvent {session_id}` to the `ConsoleEvent` union in <../console_events.py>;
-have the conversations list and detail pages re-read on it; then retire
-`/api/sessions/{id}/stream` into the socket. Valuable whatever §7's later stages decide, and it
-removes a whole mechanism rather than adding one.
+`SessionChangedEvent {session_id}` is in the `ConsoleEvent` union and the conversations list and
+detail pages re-read on it (#4132, `x/session_live_updates.py`, coalesced per session). **What is
+left is the deletion**: `/api/sessions/{id}/stream` is still mounted and `/chat` still holds it, so
+the console has two live-update mechanisms rather than one. Retiring it is gated on the page merge
+(<session_channels.md> § 2), which is where a coalesced refetch has to prove itself against the SSE
+path it replaces — and it is what makes the `asyncio.wait` abort dance in `_run_turn` removable.
+The split itself was valuable whatever §7's later stages decide, and it still is.
 
 ### Stage 4 — one page, one tool, on purpose
 

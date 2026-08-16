@@ -117,9 +117,11 @@ loop's signatures.
   `_sse_stream` wakes → `store.get` → `_rollout_calls` selects every `assistant`/`user` frame and
   re-parses its content blocks. O(session) per token batch, paid only while the SPA is streaming.
   Fix by indexing incrementally on the agent message id, or by scoping the read to the messages
-  asked about. A live console session view multiplies it: refetching the whole transcript per delta
-  pays this once per open tab, which is why that design coalesces per session rather than treating
-  the debounce as polish (<../console/plans/session_channels.md> § 3).
+  asked about. **Still open, and now paid on a second path**: live session updates landed (#4132)
+  as invalidate-then-refetch, so an open tab reads the whole conversation again on every
+  invalidation. Coalescing (500 ms per session) is what makes that affordable rather than what
+  makes it cheap — the operator's eventual direction is for the backend to stream the increment
+  instead, recorded in <../console/plans/session_channels.md> § 4.
 - **Split `session_runtime.py`** further. `KubernetesSandboxClaims`, the view models and their
   projection, the frame vocabulary, the status driver and now the store have left; what remains is
   the recorder, the service, the turn loop, the port and the routes. The store went out whole —

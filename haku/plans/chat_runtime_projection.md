@@ -47,6 +47,14 @@ which happens to be behind". There is no second implementation left to disagree 
 It costs no latency either — the fold runs inline in the happy path. Two loops logically, one call
 stack in practice.
 
+**This paragraph is the specification, and the first implementation of it diverged.** The
+`claude_projection.py` arriving with stage 4 (#4134) is `project(frames) -> Projection` — stateless
+over a whole frame sequence, with the cross-frame state private to the call and discarded when it
+returns. That shape can be re-run over a session but it cannot be _resumed_ from a cursor, which is
+the property the paragraph above exists for: without it, live and recovery are once again two ways
+of getting to the same answer. Being fixed on `claude/haku-projection-reducer`, stacked on #4134;
+the plan is right and the code is what moves.
+
 What that deletes: `TurnResumed`, `adopt_open_turn`'s three-way case analysis, `_recorded_result`,
 `_said_anything`, `_streaming_assistant`, `_prompt_left`, `saw_assistant_message`. `spoke` stops
 being a guess and becomes "the cursor passed this frame". Stage 3 has since taken the first, the
@@ -71,11 +79,14 @@ each is independently useful and reversible.
 
 Stage 1 — a log with no hole for the fold to trip over — is the foundation the rest needs and is in
 place: every frame class is recorded, deltas included, where before the delta gap was precisely what
-forced `streamed` to be carried by hand. One thing it leaves owed: **measure the delta cost** against
-a real session's `count(*) where kind = 'stream_event'` before stage 2 commits to a row per delta. A
-long turn streams a few hundred, tens of kilobytes each; `read_frames` already keeps them out of its
-default view, and the extra write per delta is a wash once stage 2 removes the `partial` row it
-replaces.
+forced `streamed` to be carried by hand.
+
+The one thing it left owed — **measure the delta cost** before stage 2 commits to a row per delta —
+was paid by the production census (#4114, <../console/debug/frame_shape_census.md>): deltas occur in
+a minority of sessions, are heavy where they occur, and the row-count increase they impose on the
+heaviest session is stated there. Stage 2 can proceed on that number rather than on an estimate.
+`read_frames` already keeps deltas out of its default view, and the extra write per delta is a wash
+once stage 2 removes the `partial` row it replaces.
 
 ### 2. Make the frame log store one thing — recorded, **not scheduled**
 
@@ -146,7 +157,11 @@ state. The row is now both halves of what the fold needs — `first_frame_seq` s
 frames begin, the three columns say what projecting them has produced — so what stage 4 adds is the
 cursor between them.
 
-### 4. The fold, and what it projects **into**
+### 4. The fold, and what it projects **into** — in flight
+
+Two branches are building it: #4127 (the neutral vocabulary and the Claude adapter into it) and
+#4134 (the turn loop reading the projection rather than Claude's frames). Everything below is still
+the target; all four interpreters counted here are still present on `devel`.
 
 `_run_turn`'s frame `match` becomes `project`, with the cursor advanced beside its effects. The
 abort path collapses here too: an abort becomes an intent the transport writes, and the CLI's
@@ -266,10 +281,12 @@ appealed is a normalization nobody can debug — and the whole reason for keepin
 is that they are the record the projection can be checked against.
 
 So every projected thing carries its provenance: the frames it came from, addressed by
-`frame_seq`, not by the agent's own ids. That is #4105 (`session_messages`' inclusive frame range),
-which this makes a **product requirement** rather than the diagnostic convenience it was proposed as
-— and it should extend to tool calls and activity, not stop at messages, since those are exactly the
-elements whose neutral form loses the most detail.
+`frame_seq`, not by the agent's own ids. That is #4105, **landed**:
+`session_messages.source_first_frame_seq`/`source_last_frame_seq` (migration `0045`), surfaced on
+`SessionMessageView`. This plan makes it a **product requirement** rather than the diagnostic
+convenience it was proposed as — and it should extend to tool calls and activity, not stop at
+messages, since those are exactly the elements whose neutral form loses the most detail. That
+extension is still owed, and it is the half stage 4 has to build.
 
 **Making the range required, without dropping history.** A nullable range that sometimes means
 "unknown" is the weak version of this, and the operator asked whether to recover history or drop it
@@ -309,6 +326,13 @@ so a `CHECK` can require the range (2026-08-16). Neither, yet — take the middl
   session's frames, align the derived sequence against the stored rows, and write the range where the
   alignment is unambiguous. Where it is not, that is a finding about the projection rather than a gap
   to guess at.
+
+  `0045` took a cheaper first pass that is consistent with this rather than a substitute for it: it
+  filled the range for assistant rows that carry the agent's own message id, by joining that id
+  against the `assistant` frames. That is precisely the unambiguous case, and it is bounded by the
+  same defect the neutral message exists to remove — a row with no agent id gets nothing, which is
+  the population the reprojection backfill still has to reach.
+
 - **Bounded by frame completeness.** Stage 1 is what made every frame class recorded; before it the
   log has holes, so no range is recoverable there at all. The boundary is checkable rather than
   guessable, and the full `VALIDATE` can only ever cover the post-stage-1 era.
@@ -485,12 +509,14 @@ text and speaking it, which is a real path today (audit E4) and would quietly st
 server-side, so a redrive sweep is safe to write on day one rather than needing a dedup design
 first.
 
-**What it does not close, so nobody expects it to.** An abort drain that discards the assistant
-frame before delivery ever sees it (E3), and the ingress side, where a batch is acknowledged at
-enqueue rather than at turn completion (I3) and a message for an unserviced room is dropped once
-the watermark advances past it (I2). Each is its own fix, and the audit lists them with the
-requirement each one violates. Two that were on this list have since had theirs: the unmappable
-event is announced rather than dropped (I1, #4087) and an empty turn says so (E5, #4088).
+**What it did not close, and what has closed since.** The outbox was never going to fix the abort
+drain discarding a produced reply (E3) or the ingress side's acknowledgement semantics (I2–I3);
+each wanted its own change, and each has had one. E3 is fixed — an aborted turn keeps the message
+it had already finished (#4109); I3 is fixed — a batch is acknowledged after its turn rather than
+at its enqueue (#4117); and before those, the unmappable event is announced rather than dropped
+(I1, #4087) and an empty turn says so (E5, #4088). The audit
+(<../console/debug/message_drops.md>) is clear apart from I2's residual windows, which it records
+as re-deliveries rather than skips.
 
 ## The one thing to keep in view
 
