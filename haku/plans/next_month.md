@@ -55,6 +55,7 @@ In flight, and treated as in-flight rather than as new work:
 | Docs concision across `haku/console/x/`         | #4171 | **Landed.** No executable line changed; AST-identical to `devel` with docstrings stripped                                         |
 | The neutral events get rows                     | #4179 | In flight. Spine item 4's write half — `session_events`, migration `0052`, written inside `apply_frame`                           |
 | The transcript reads calls from rows            | #4180 | In flight, stacked on #4179. `rollout_calls` deleted — the last Claude frame parser on the read path                              |
+| The frame vocabulary splits                     | #4181 | In flight, stacked on #4180. Parallel item D — `session_frames.py` gone; the residue is content, not location                     |
 
 Everything the previous month planned and landed is in `git log` and in the PRs; this document
 does not re-list it. What it does assume, and what a reader should check before trusting the
@@ -300,13 +301,23 @@ console's own authored row. Its own TODO already says these are not one vocabula
 
 **Done when** no module at `x/`'s top level is named for or specific to one CLI harness.
 
-**Sequenced after item 4** for the reason the previous plan already learned: moving a file while it
-is being rewritten is the worst version of a move, and items 1–4 rewrite exactly these files. Two
-hazards the previous plan recorded that a mechanical rename still does not catch: a dotted-string
-`patch("haku.console.x.…")` is a string, so a moved symbol makes it fail at call time or, worse,
-patch nothing; and `bb run //devinfra:gazelle` is unavailable in agent sessions (403 from the
-egress proxy on `rules_mypy`), so every `BUILD.bazel` `deps` edit is by hand and wants a
-`bbr build` on the named library to prove it.
+> **The move is done (#4181) and the done-when is not met — because it measures the wrong thing.**
+> `session_frames.py` split along the seam its own TODO named: the four CLI `type` values and every
+> reader that parses a Claude frame shape went to `x/claude_code/frames.py`, and `SETUP_OUTPUT_KIND`
+> with `setup_output_frame` to `x/setup_output.py`. No top-level module is now _named_ for a
+> harness. But two still **speak** one: `session_store.py` names CLI kinds in SQL predicates and
+> imports them across the runtime/harness line, and `session_runtime.py` constructs
+> `ClaudeCli`/`ClaudeSession`/`build_claude_launch`. The first is `session_frames.kind` carrying two
+> vocabularies in one column — projection stage 2, deliberately _not this month_ — and the second is
+> a backend-adapter port, which is spine work. **So the residue is content, not location, and no
+> further move reaches it.** Both are recorded in <../console/x/README.md> rather than left to be
+> rediscovered.
+> is being rewritten is the worst version of a move, and items 1–4 rewrite exactly these files. Two
+> hazards the previous plan recorded that a mechanical rename still does not catch: a dotted-string
+> `patch("haku.console.x.…")` is a string, so a moved symbol makes it fail at call time or, worse,
+> patch nothing; and `bb run //devinfra:gazelle` is unavailable in agent sessions (403 from the
+> egress proxy on `rules_mypy`), so every `BUILD.bazel` `deps` edit is by hand and wants a
+> `bbr build` on the named library to prove it.
 
 ## The rule the outbox was a special case of
 
