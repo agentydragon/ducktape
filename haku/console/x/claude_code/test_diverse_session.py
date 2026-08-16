@@ -30,7 +30,7 @@ from more_itertools import one
 
 from haku.console.chat_models import TurnOutcome
 from haku.console.tools.conversations import MAX_PAGE_BYTES
-from haku.console.x.claude_code.projection import RecordedFrame, project
+from haku.console.x.claude_code.projection import RecordedFrame, project_log
 from haku.console.x.conversation_events import (
     FrameRange,
     MessageCompleted,
@@ -61,8 +61,12 @@ _FRAMES = [
 @pytest.fixture(scope="module")
 def projection() -> Projection:
     """The whole capture folded once. Folding at all is the first thing under test: a frame class
-    the adapter has never seen must land in `unprojected`, never raise."""
-    return project(_FRAMES)
+    the adapter has never seen must land in `unprojected`, never raise.
+
+    `project_log` rather than `project`: this fixture is a whole session with nothing after it, and
+    since #4149 that is the reader's shape of the reducer — `project` returns the state beside the
+    projection, for a caller with more frames coming."""
+    return project_log(_FRAMES)
 
 
 def test_the_capture_folds_to_the_session_it_recorded(projection: Projection):
