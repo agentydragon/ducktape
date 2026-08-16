@@ -188,6 +188,13 @@ Everything a test stands something up _with_ is a module in `testing/` — the c
 starts, and a `py_binary` can import neither a conftest nor a file staged only as data. The
 `test_*.py` files stay beside what they test.
 
+What a test drives them _through_ lives there too, so a second e2e inherits it rather than
+copying it: `operator_room.py` is the operator's side of a room — what a person sitting in it can
+do, and what they see, as typed `RoomEvent`s rather than Matrix JSON — `console_deployment.py` is
+the console replicas serving that room, and `waiting.py` is the bounded poll under both.
+`OperatorRoom` deliberately does **not** use `MatrixClient`: that client is what the console says
+the room with, so reading the room back through it would check it against itself.
+
 The stub `claude` is a `py_binary` for one further reason: the runner execs `HAKU_CLAUDE_PATH`
 directly, and a source file staged in runfiles does not reliably carry its executable bit — which
 is why both tests used to copy it out and `chmod` it. One stub serves both, parameterised by the
