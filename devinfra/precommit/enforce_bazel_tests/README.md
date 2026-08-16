@@ -28,7 +28,9 @@ the benchmark use it.
 ## Environment variable guard
 
 The hook is guarded by `DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=1` (default off).
-The session start hook exports this variable for Claude Code sessions.
+The Claude Code hook profiles pin it to `0`, so agent sessions never gate a
+commit on a local test run — they open the PR and let CI run the tests
+(<../../../AGENTS.md> § Before Hand-off).
 
 ## Components
 
