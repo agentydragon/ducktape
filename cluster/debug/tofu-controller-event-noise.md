@@ -1,6 +1,12 @@
 # tofu-controller Event Noise
 
 **Date**: 2026-04-01
+**Status**: still live, smaller. Re-measured 2026-08-16: 3,611 events cluster-wide,
+1,065 of them (~29%) `tf-runner`. All 15 `Terraform` CRs now run at `interval: 15m`
+rather than the 10m default, and `haku/cloud-agent-tf` is suspended — the first two
+options below, partly taken. tf-runner is no longer the majority of the event store,
+so the remaining question is whether to push low-churn roots (`dns-records`,
+`sso-providers`) out to 1h+.
 
 ## Observation
 

@@ -1,2 +1,0 @@
-NAME                     STATUS     ROLES           AGE   VERSION   INTERNAL-IP   EXTERNAL-IP   OS-IMAGE          KERNEL-VERSION   CONTAINER-RUNTIME
-talos-kimsufi-worker-1   NotReady   control-plane   15d   v1.35.1   10.42.0.14    <none>        Talos (v1.12.3)   6.18.8-talos     containerd://2.1.6

@@ -1,8 +1,8 @@
 # Forgejo → GitLab migration considerations
 
-Pre-think for replacing the in-cluster Forgejo with GitLab. Motivated by the git-write
-latency + HA investigation (<../../../debug/git*storage_latency_and_ha.md>): GitLab's
-**Gitaly Cluster (Praefect)** gives fast git writes \_and* no single-node dependency,
+Pre-think for replacing the in-cluster Forgejo with GitLab. Motivated by
+[the git-write latency + HA investigation](../../../debug/git_storage_latency_and_ha.md):
+GitLab's **Gitaly Cluster (Praefect)** gives fast git writes **and** no single-node dependency,
 which the Forgejo multi-replica RWX share cannot. This note scopes what a migration
 touches and — importantly — what is actually in **Free/CE** vs paid tiers.
 

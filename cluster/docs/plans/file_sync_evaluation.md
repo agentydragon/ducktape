@@ -245,6 +245,10 @@ enough storage for full replication. Simplest to deploy, most reliable offline.
 
 ## Next Steps
 
+> Storage target needs re-picking before step 1: since this was written, app PVCs
+> default to `seaweedfs-ovh`, and `lvm-proxmox-*` pins the workload to Proxmox
+> (<../../AGENTS.md> § Storage Selection).
+
 1. Deploy Seafile CE on the cluster (official Helm chart on `lvm-proxmox-hdd`)
 2. Test SeaDrive on Linux (FUSE mount, cache behavior, offline resilience)
 3. Test selective sync granularity and cache eviction behavior

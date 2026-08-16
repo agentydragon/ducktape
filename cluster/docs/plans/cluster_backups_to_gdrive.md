@@ -147,7 +147,7 @@ write — acceptable for crash-consistent restore.
 **Airlock is already an OAuth token broker**, so it — not a hand-minted SOPS
 secret — owns the Drive credential. Its `oauth.providers` list
 (<../../k8s/agents/airlock/config.yaml>) declares providers (oura, google, bsc);
-a background `token_refresh_loop` (<../../../../airlock/oauth/refresh.py>) keeps
+a background `token_refresh_loop` (<../../../airlock/oauth/refresh.py>) keeps
 each access token fresh and writes two k8s Secrets per provider:
 
 - `refresh_secret` — **all** fields incl. `refresh_token` (the durable credential).

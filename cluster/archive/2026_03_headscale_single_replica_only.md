@@ -1,7 +1,14 @@
 # Headscale: Single Replica Only (No HA)
 
+**Archived — the cluster no longer runs Headscale.** Tailscale/Headscale was the
+first of three mesh iterations; the mesh is Nebula now
+(<../docs/roaming_laptop_worker.md> § Historical Notes, `nebula-mesh.json`), and
+no Headscale namespace or manifest exists. Kept because the upstream analysis
+below is what you would need if a Tailscale/Headscale control plane is ever
+reconsidered — e.g. option B of <../docs/plans/vm_ssh_exposure.md>.
+
 **Date**: 2026-03-07
-**Status**: Permanent architectural constraint
+**Status**: Permanent architectural constraint of Headscale upstream
 
 ## Summary
 

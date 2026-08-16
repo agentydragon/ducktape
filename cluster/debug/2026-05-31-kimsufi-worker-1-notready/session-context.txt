@@ -1,9 +1,0 @@
-Sun May 31 13:10:48 UTC 2026
-563f2f959dd8682ee22e1677a269d33f46b39c58
-
-Relevant working tree state at capture:
-
-?? cluster/debug/2026-05-31-kimsufi-worker-1-notready/
-
-Other unrelated local changes and untracked files were present but are omitted
-from this incident bundle.

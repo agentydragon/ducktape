@@ -1,7 +1,11 @@
 # Rugged Nebula handshakes stuck after network reconfiguration
 
 **Date:** 2026-05-18
-**Status:** failure mechanism established; durable mitigation implemented, activation pending
+**Status:** resolved — failure mechanism established and both halves of the
+mitigation are live: the shared Nebula module binds `listen.host = "::"`
+(<../../nix/nixos/modules/nebula.nix>) and Rugged imports the underlay-refresh
+dispatcher (<../../nix/nixos/hosts/rugged/nebula-underlay-refresh.nix>, covered
+by <../../nix/nixos/tests/rugged-nebula-underlay-refresh.nix>).
 
 ## 2026-07-14 recurrence
 

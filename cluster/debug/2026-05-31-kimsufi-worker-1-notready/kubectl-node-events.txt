@@ -1,3 +1,0 @@
-NAMESPACE   LAST SEEN   TYPE     REASON           OBJECT                        MESSAGE
-default     87m         Normal   RegisteredNode   node/talos-kimsufi-worker-1   Node talos-kimsufi-worker-1 event: Registered Node talos-kimsufi-worker-1 in Controller
-default     86m         Normal   NodeNotReady     node/talos-kimsufi-worker-1   Node talos-kimsufi-worker-1 status is now: NodeNotReady

@@ -1,5 +1,11 @@
 # AXFR Zone Transfer Failures: Cilium DNS Proxy, Docker Networking, PMTUD
 
+**Archived — there is no in-cluster DNS authority any more.** All zones are
+served by Route 53 (<../../tf/gitops/dns-records/main.tf>), so cluster PowerDNS,
+the VPS secondary, and the zone transfer between them are all gone. The Cilium
+transparent-DNS-proxy interference below (issue 1) is the part that would still
+bite if an authoritative DNS server is ever run in-cluster again.
+
 **Date**: 2025-11-20 (resolved 2025-11-22)
 **Status**: Resolved
 

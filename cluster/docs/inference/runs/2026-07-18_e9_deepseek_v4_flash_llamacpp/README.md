@@ -5,7 +5,7 @@
 - **Date:** 2026-07-18
 - **Plan:** E8 follow-up — get DSV4-Flash (79 SWE, 13B active) _running_ on wyrm2,
   where vLLM couldn't fit it (E8) and KTransformers needs 256 GB RAM
-  (<../ktransformers_dsv4_notes.md>).
+  (<../../ktransformers_dsv4_notes.md>).
 
 ## Goal
 

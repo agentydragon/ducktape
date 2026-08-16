@@ -16,7 +16,7 @@ cluster's fast 128K-class default endpoint should move off Ollama.
 - **vLLM:** `openai/gpt-oss-20b`, vLLM 0.25.1, `quantization=gpt_oss_mxfp4`
   (native MXFP4, Marlin MoE kernels), single GPU (TP1), max-model-len 131072,
   gpu-mem-util 0.90. Manifest: <deployment.yaml>.
-- **Ollama:** live cluster deployment (<../../../k8s/ollama/app/deployment.yaml>),
+- **Ollama:** live cluster deployment (<../../../../k8s/ollama/app/deployment.yaml>),
   `gpt-oss:20b` GGUF, `OLLAMA_KV_CACHE_TYPE=q8_0`, `OLLAMA_NUM_CTX=131072`,
   `NUM_PARALLEL=1` (default). Both benched through the same harness
   (<../2026-07-17_e1_qwen3coder_awq/bench.py>). Raw: <summary_vllm.json>,

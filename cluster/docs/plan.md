@@ -1,8 +1,8 @@
 # Cluster Roadmap
 
 **Status**: OVH/Kimsufi Talos control-plane and worker nodes, plus NixOS/Proxmox
-workers and roaming laptops. Cilium Gateway API, DNS automation, Authentik SSO.
-PowerDNS and Authentik run on CloudNativePG `local-path`.
+workers and roaming laptops. Cilium Gateway API, Route 53 DNS automation,
+Authentik SSO. Authentik runs on CloudNativePG `local-path`.
 
 ## TODO: external dead-man's switch for the paging path
 
@@ -526,7 +526,7 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       workaround: `disableWait: true` on the affected HelmReleases (monitoring-stack,
       promtail) — unsatisfying because it suppresses all readiness checking. Full
       options, analysis, and the long-term fix (auto-remove stale NotReady nodes):
-      <docs/plans/offline_node_daemonset_health.md>.
+      <plans/offline_node_daemonset_health.md>.
 - [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `scanner`,
       `proxmox-proxy`, `props`/`props-registry`)
 - [ ] Cilium Gateway `Programmed: False` (upstream bug `cilium/cilium#42786`):
@@ -537,9 +537,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       normal external exposure layer: provider-managed load balancer, routed/floating
       OVH VIPs with Cilium LB-IPAM plus BGP/L2 advertisement, or an external LB
       targeting NodePorts.
-- [ ] File upstream: powerdns-operator "stuck Failed" bug — once a ClusterRRset
-      reaches Failed, it never retries unless spec changes. Should retry with backoff.
-      See <lessons_learned/2026_04_07_powerdns_operator_stuck_failed_rrsets.md>.
 - [ ] Tandoor: verify deployment works end-to-end (DB migration, Authentik
       proxy auth, recipe import)
 - [ ] Fix Goldilocks VPA over-requesting memory on HIL pods. VPA `updateMode: Auto`

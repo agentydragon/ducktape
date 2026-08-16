@@ -1,9 +1,11 @@
 # Tofu apply hangs from rugged over Cilium/Nebula — Path MTU mismatch
 
 **Date**: 2026-06-02
-**Status**: Confirmed root cause. WiFi underlay fixes the apply hangs. No
-permanent roaming fix has been applied; the original generic `nebula1` MSS
-clamp needs revalidation against the current outer Fi path.
+**Status**: Root cause confirmed here; the permanent fix landed later. Rugged
+now declares `destination_mtu: 1100` in `nebula-mesh.json`, which consumers turn
+into symmetric per-peer routes instead of a generic `nebula1` clamp — see
+<../docs/network.md> § "Caveat: roaming nodes". This note is kept for the
+measurements that produced that number.
 **Triggering work**: OVH node renames (2026-06).
 
 ## Symptom (the headline behavior)

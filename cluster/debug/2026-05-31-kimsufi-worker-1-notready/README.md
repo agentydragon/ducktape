@@ -6,9 +6,11 @@ Captured on 2026-05-31 before rebooting `talos-kimsufi-worker-1`
 > **Root cause (identified 2026-06-08):** this was the first symptom capture of a
 > recurring syndrome — promtail page-cache eviction starving etcd of IO, which
 > surfaced as node-lease misses and `NotReady` flaps. Full RCA + fix in
-> <../2026-06-10-etcd-io-contention/promtail-page-cache-etcd-starvation.md>. This
-> directory remains the symptom capture; the CNPG `pg_create_restore_point()`
-> recovery recipe below is still current.
+> <../2026-06-10-etcd-io-contention/promtail-page-cache-etcd-starvation.md>. The
+> raw capture files (kubectl/talosctl dumps, Loki and Mimir query responses,
+> node-exporter scrapes) were dropped once the RCA landed; what is kept below is
+> the narrative, the visibility gap that still needs closing, and the CNPG
+> `pg_create_restore_point()` recovery recipe, which is still current.
 
 ## Summary
 
@@ -28,31 +30,6 @@ paths on the node were wedged:
   `https://127.0.0.1:7445` at `2026-05-31T11:40:43Z`.
 - Loki shows on-node kube-apiserver handler timeouts and etcd-client context
   cancellations around `2026-05-31T11:41:41Z` to `2026-05-31T11:41:50Z`.
-
-## Files
-
-- `kubectl-*.txt` / `kubectl-*.yaml`: Kubernetes node, lease, events, pods,
-  Cilium, Gateway, and EndpointSlice state.
-- `talosctl-version-all.txt`: `talosctl version` against all public Talos nodes.
-- `talosctl-affected-node-failures.txt`: failed Talos service/log/dmesg attempts
-  against `147.135.39.176`.
-- `talosctl-dmesg-after-ovh-reboot.txt`: current-boot dmesg captured after the
-  OVH hard reboot. This does not contain the lost pre-reboot ring buffer.
-- `network-and-http-checks.txt`: public and internal TCP/HTTP reachability checks.
-- `public-ingress-checks.txt`: DNS and forced-IP ingress checks for
-  `plaid-mcp.allegedly.works`.
-- `node-exporter-public-9100.metrics`: full live node-exporter scrape over the
-  public IP.
-- `node-exporter-summary.txt`: compact subset of node-exporter state.
-- `loki-query-range-2026-05-31T1130Z-1150Z.json`: raw Loki query responses for
-  the failure window.
-- `loki-summary-2026-05-31T1130Z-1150Z.txt`: readable Loki excerpts.
-- `mimir-query-range-2026-05-31T1130Z-1150Z.json`: raw Mimir query-range
-  responses for the failure window.
-- `mimir-summary-2026-05-31T1130Z-1150Z.txt`: readable Mimir summaries.
-- `ovh-server-and-tasks-sanitized.json`: sanitized OVH server and recent task
-  state. No API credentials are stored.
-- `session-context.txt`: capture time, repo commit, and dirty tree snapshot.
 
 ## Visibility gap
 

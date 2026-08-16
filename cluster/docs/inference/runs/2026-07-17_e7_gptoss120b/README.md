@@ -82,6 +82,6 @@ latency}` trade is explicit: pay ~16× latency for the bigger model.
 - The download+load hit an **infrastructure incident** (the `lvm-proxmox-ssd`
   thin pool filled to 100% → PVC `emergency_ro`), fixed by recreating `hf-cache`
   at 400Gi so openebs provisioned a 400 GB pool. Full write-up:
-  <../../lessons_learned/2026_07_17_lvm_thinpool_exhaustion_emergency_ro.md>.
+  <../../../lessons_learned/2026_07_17_lvm_thinpool_exhaustion_emergency_ro.md>.
 - ollama's Flux Kustomization was suspended (PR #3389) so it stops re-grabbing
   the GPUs during the bench pods' restart gaps.

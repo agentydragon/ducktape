@@ -4,6 +4,13 @@ Sketch for replacing the bespoke `WebSocketStreamAdapter` with standard
 components (unwebsockify + an off-the-shelf VNC MCP server) for full desktop
 control. Not scheduled for implementation.
 
+The adapter it replaces is still in `../vnc_screenshot.py`, so the sketch is
+live, but the cluster is no longer a consumer: its Hetzner Cloud fleet was
+retired in 2026-05 (<../../../archive/2026_05_28_hcloud_retirement.md>). Weigh
+the work against whatever non-cluster Hetzner use remains. The MCP-server
+comparison below is a 2026-07 market snapshot and should be re-checked before
+being acted on.
+
 ---
 
 ## Current State

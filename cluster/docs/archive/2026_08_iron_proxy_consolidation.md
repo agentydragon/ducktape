@@ -1,5 +1,9 @@
 # Consolidating the iron-proxy deployments
 
+**Archived decision record.** The consolidation was declined on 2026-08-10 (see
+"Outcome" below) and the hardening gap it found was fixed in #3890; nothing here
+is outstanding work.
+
 Probe note, 2026-08-09. Question: the cluster runs three iron-proxy Deployments
 and would gain a fourth if `haku-sandbox` moves off mitmproxy — should they
 share one definition instead of being copies?
@@ -76,7 +80,7 @@ contact. The only benefit left was drift prevention.
 **The premise expired.** This note assumed a small, stable set of hand-written
 proxy Deployments, growing to a fourth copy with the `haku-sandbox` migration.
 The direction is now **one Squid per agent, provisioned by haku-console**
-(<agent_egress_proxy_options.md>), where per-instance config is generated at
+(<../plans/agent_egress_proxy_options.md>), where per-instance config is generated at
 provision time rather than committed. There is no growing set of copy-pasted
 manifests for a shared patch to single-source — the generator is the
 single-sourcing.

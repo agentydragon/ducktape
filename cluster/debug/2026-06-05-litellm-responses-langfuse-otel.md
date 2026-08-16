@@ -2,8 +2,10 @@
 
 **Date**: 2026-06-05
 **Status**: Open upstream/LiteLLM issue. Cluster wiring is good for
-chat-completions, but LiteLLM's Responses-to-chat bridge does not currently
-produce Langfuse traces for the z.ai model path.
+chat-completions, but LiteLLM's Responses-to-chat bridge did not produce
+Langfuse traces for the z.ai model path. Measured against `litellm:1.86.3`; the
+cluster runs `1.90.2` today (<../k8s/litellm/app/deployment.yaml>) and the
+finding has not been re-verified against it.
 
 ## Symptom
 
