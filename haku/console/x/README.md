@@ -328,6 +328,31 @@ The tombstone on the second of those is on the skip itself: once no session that
 a frame predates the release that writes `session_events`, a turn with frames and no rows is drift
 and must be reported as one.
 
+### The provenance backfill — `message_provenance.py`
+
+The same fold, writing instead of comparing. `session_messages.source_{first,last}_frame_seq` is how
+a message finds its tool calls, migration `0045` filled it only where the row's `agent_message_id`
+named an `assistant` frame, and the rows with no agent id have nothing left to join by. So the
+frames are re-projected into the message rows the write path _would have written_ — where each
+opened, where it closed, what it says — and a stored row is matched to one of those by the prose
+both carry. `bb run //haku/console/x:message_provenance_bin -- --limit N` reports; `--apply` writes.
+
+- **Ambiguity is arithmetic, not preference.** The unpointed rows carrying a text and the unclaimed
+  candidates carrying it are paired in order only when there are equally many; a candidate a pointed
+  row already claims is not available at all. Anything else records a `MessageUnpointable` on the
+  row rather than choosing. Identical prose is ordinary — a turn's `result` repeats its last
+  message — so a rule that picked one would be wrong routinely and silently.
+- **A row that cannot be pointed says so, in a column.** `unpointable_reason` is what separates "no
+  range because nobody looked" from "no range because looking failed", which is the distinction
+  `0046`'s docstring says the two frame columns cannot make on their own. It is also what makes
+  the backfill's own completeness a query rather than a re-derivation, and what keeps a second run
+  from re-examining rows already found unrecoverable.
+- **It is not in the migration.** `0053` adds the column and writes no rows: startup applies
+  migrations before serving under `maxUnavailable: 0`, so a fold over the frame log inside
+  `upgrade()` would hold every replacement replica out of Ready for its duration.
+- **A session with a turn still running is left alone**, since those rows are the runtime's to
+  point and it is still projecting frames into them.
+
 ## Matrix chat surface — `channels/matrix/`
 
 - `client.py` — the client-API calls the loop makes, over `matrix-nio`.

@@ -35,7 +35,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.chat_models import ConversationEventKind, EventProvenance
@@ -275,24 +275,32 @@ def _expected(turn_id: UUID, frame: SessionFrame) -> tuple[SessionEvent, ...]:
     )
 
 
-async def _turn_frames(db: AsyncSession, turn: SessionTurn, *, ends_before: int | None) -> Sequence[SessionFrame]:
-    """This turn's recorded frames, less the two rows the console authored rather than received.
+def foldable_frames(session_id: UUID) -> Select[tuple[SessionFrame]]:
+    """One session's recorded frames in order, less the two rows the console authored.
 
     `setup_output` carries no protocol `type` for the fold to read and a `partial` row is the
     console's own reconstruction of an answer in flight — the same exclusions adoption replays
-    under (`session_store._unprojected_frames`).
+    under (`session_store._unprojected_frames`). Returned as a query so a caller can bound it
+    further; `message_provenance` re-projects the same frames to recover a message's own range.
     """
-    query = select(SessionFrame).where(
-        SessionFrame.session_id == turn.session_id,
-        SessionFrame.frame_seq >= turn.first_frame_seq,
-        SessionFrame.partial.is_(False),
-        SessionFrame.kind != SETUP_OUTPUT_KIND,
+    return (
+        select(SessionFrame)
+        .where(
+            SessionFrame.session_id == session_id,
+            SessionFrame.partial.is_(False),
+            SessionFrame.kind != SETUP_OUTPUT_KIND,
+        )
+        .order_by(SessionFrame.frame_seq)
     )
+
+
+async def _turn_frames(db: AsyncSession, turn: SessionTurn, *, ends_before: int | None) -> Sequence[SessionFrame]:
+    query = foldable_frames(turn.session_id).where(SessionFrame.frame_seq >= turn.first_frame_seq)
     if (upper := turn.last_frame_seq) is not None:
         query = query.where(SessionFrame.frame_seq <= upper)
     elif ends_before is not None:
         query = query.where(SessionFrame.frame_seq < ends_before)
-    return (await db.scalars(query.order_by(SessionFrame.frame_seq))).all()
+    return (await db.scalars(query)).all()
 
 
 def _kinds(rows: Sequence[SessionEvent]) -> tuple[ConversationEventKind, ...]:

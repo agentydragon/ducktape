@@ -41,6 +41,7 @@ from haku.console.chat_models import (
     ConversationEventKind,
     EventProvenance,
     FrameDirection,
+    MessageUnpointable,
     RecordedToolCall,
     SessionStatus,
     TurnOutcome,
@@ -982,6 +983,13 @@ class SessionMessage(Base):
     #   a roll (README § Perimeter / deploy), and dropping a column out from under a running
     #   replica is the destructive half of expand/contract.
     tool_uses: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    # Why the two columns above are NULL, where somebody has looked. Both NULL and no reason means
+    # nothing has scanned this row yet, which is what separates the two meanings the range alone
+    # cannot: `x/message_provenance.py` writes a reason exactly where it could not recover a range,
+    # so "every row has a range or a reason" is a query rather than an archaeology.
+    unpointable_reason: Mapped[MessageUnpointable | None] = mapped_column(
+        TextBackedStrEnumColumn(MessageUnpointable), nullable=True
+    )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -1000,6 +1008,17 @@ class SessionMessage(Base):
         CheckConstraint(
             "source_last_frame_seq IS NULL OR source_first_frame_seq IS NOT NULL",
             name="ck_session_messages_source_anchored",
+        ),
+        CheckConstraint(
+            "unpointable_reason IS NULL "
+            "OR unpointable_reason IN ('no_matching_projection','ambiguous_text','out_of_order')",
+            name="ck_session_messages_unpointable_reason",
+        ),
+        # A reason is why there is no range, so carrying both says two contradictory things. Its own
+        # rule rather than an arm of the one above, because it fails for a different reason.
+        CheckConstraint(
+            "unpointable_reason IS NULL OR source_first_frame_seq IS NULL",
+            name="ck_session_messages_unpointable_exclusive",
         ),
         Index("idx_session_messages_session_created", "session_id", "created_at"),
     )
