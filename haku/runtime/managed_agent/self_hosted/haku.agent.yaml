@@ -32,7 +32,7 @@ system: |
 # reference it) — the pod never sees a token. Toolset set is identical to the cloud
 # agent; keep it that way (test_agent_config_ssot).
 tools:
-  # Fixed built-in toolset, supplied by the `ant` worker in the pod. The Pod is
+  # Fixed built-in toolset, supplied by `worker.py` in the pod. The Pod is
   # the trust boundary (Ember posture), so everything is auto-allowed.
   - type: agent_toolset_20260401
     default_config:

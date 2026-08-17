@@ -1,4 +1,4 @@
-"""Tests for the Console-side WebSocket-backed Agent SDK transport."""
+"""Tests for the console-side WebSocket frame channel: version handshake, launch, and framing."""
 
 from __future__ import annotations
 

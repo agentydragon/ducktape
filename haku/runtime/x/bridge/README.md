@@ -8,7 +8,7 @@ package is everything between them.
 | file            |                                                                                      |
 | --------------- | ------------------------------------------------------------------------------------ |
 | `protocol.py`   | the Haku envelope, its version, and the `TextWebSocket` port                         |
-| `transport.py`  | `WebSocketTransport` — the console end: launch, then frames both ways                |
+| `transport.py`  | `WebSocketTransport` — the console end: negotiate, launch, then frames both ways     |
 | `cli_client.py` | `ClaudeCli` — the protocol client, both channels, and the `FrameSink` numbering them |
 | `backend.py`    | `CliBackend` — which CLI is being run, and the `ProcessLaunch` that starts it        |
 | `options.py`    | Claude as a backend: `ClaudeSession` → argv, and `ClaudeBackend` → the binary        |
@@ -25,22 +25,23 @@ implementation. What a second one would have to provide is <docs/second_backend.
 Each backend names its own executable variable rather than sharing one: `HAKU_CLAUDE_PATH` is
 Claude's, set by `runner_image` below, and a second CLI ships in its own image with its own.
 
-**Named for what it is.** It was `agent_sdk_transport`, after the Agent SDK whose `Transport`
-interface `WebSocketTransport` used to implement. The SDK is gone from the code — the console drives
-the CLI protocol itself — and what remained of the dependency was a build-time source for the
-`claude` binary. Nothing here is an SDK transport, so nothing here is named after one.
+**The Agent SDK is not in this runtime.** The console drives the CLI protocol itself; the SDK
+survives only as a build-time source for the `claude` binary, which `extract_claude.py` pulls out of
+the repository-pinned wheel.
 
 ## Framing
 
-Every WebSocket frame is a **Haku envelope** — `{"kind": ..., "payload": {...}}` — and one CLI
-protocol frame travels as one envelope's payload. Three kinds: `start` (console → runner, once,
-first), `claude` (either direction), and `end_input` (console → runner). `protocol.py` is the whole
+Every WebSocket frame is a **Haku envelope**, discriminated on `kind`, and one CLI protocol frame
+travels as one `claude` envelope's `payload`. Five kinds: `hello` (runner → console, first on every
+connection, carrying the versions it speaks), `start` (console → runner, its reply to `hello` and
+its own first frame), `claude` (either direction), `end_input` (console → runner), and
+`setup_output` (runner → console, the sandbox bootstrap's raw bytes). `protocol.py` is the whole
 definition.
 
 The envelope exists so that Haku's control protocol and the CLI's conversation protocol do not share
-a key namespace. They used to: Haku's frames were marked by `"type": "haku_transport"`, a reserved
-value inside the _CLI's_ own `type` key, which holds only for as long as the CLI never emits that
-value — and leaves nowhere to put a frame belonging to neither protocol.
+a key namespace. Marking Haku's frames inside the _CLI's_ own `type` key would hold only for as long
+as the CLI never emits the reserved value, and would leave nowhere to put a frame belonging to
+neither protocol — which `setup_output` is.
 
 The `start` payload carries the argv, working directory and explicit environment `options.py` built,
 so what the console launches is decided by the console and the runner adds nothing to it.
@@ -82,10 +83,11 @@ The launch enables both partial messages and fine-grained tool streaming, so the
 incremental text and `input_json_delta` tool-argument events as well as the completed `assistant`
 frames it writes down.
 
-The runner accepts `--websocket-url`, `--backend` and `--cli-path`, and optionally sends the
-`HAKU_AGENT_SDK_RUNNER_TOKEN` environment value as a bearer credential — a name this rename
-deliberately left alone, because it is a deploy contract shared with a SandboxTemplate, and a live
-session's runner pod keeps its image until the session ends — `_renew_lease` slides the sandbox's
-`shutdownTime` on every heartbeat, so it does not age out — which makes "new console, old runner"
-outlive any console roll. That bridge credential is removed from the child CLI's environment. The
-sandbox image must make its backend's executable available at the path that backend's variable names.
+The runner accepts `--websocket-url`, `--session-id`, `--backend`, `--cli-path` and `--setup-path`,
+and optionally sends the `HAKU_AGENT_SDK_RUNNER_TOKEN` environment value as a bearer credential.
+That variable keeps its Agent-SDK-era name because it is a deploy contract shared with a
+SandboxTemplate, and a live session's runner pod keeps its image until the session ends —
+`_renew_lease` slides the sandbox's `shutdownTime` on every heartbeat, so it does not age out —
+which makes "new console, old runner" outlive any console roll. That bridge credential is removed
+from the child CLI's environment. The sandbox image must make its backend's executable available at
+the path that backend's variable names.

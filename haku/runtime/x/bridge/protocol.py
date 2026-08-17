@@ -6,13 +6,11 @@ to launch, when input ends, and what the sandbox is doing before Claude exists t
 Every frame on the wire is one of the models below, discriminated on ``kind``; a CLI frame
 travels as `ClaudeMessage.payload`, the one field whose contents this module does not interpret.
 
-**Deviation from what this used to be.** Both protocols shared one JSON namespace, with
-Haku's frames marked by ``"type": "haku_transport"`` — a reserved value inside the *CLI's*
-own ``type`` key. That holds only for as long as the CLI never emits that value, which is a
-promise nobody made; it makes "is this ours?" a guess about someone else's vocabulary rather
-than a property of the frame; and it leaves nowhere to put a frame that is neither side's
-conversation — which ``SetupOutput`` is. Nesting the CLI's blob in a named field makes the
-demultiplex explicit, so its payload can be anything at all without colliding.
+**Why the CLI's blob is nested rather than marked in place.** Reserving a value inside the *CLI's*
+own ``type`` key would make "is this ours?" a guess about someone else's vocabulary, holding only
+for as long as the CLI never emits that value; and it leaves nowhere to put a frame that is neither
+side's conversation — which ``SetupOutput`` is. A named field makes the demultiplex explicit, so
+the payload can be anything at all without colliding.
 """
 
 from __future__ import annotations
@@ -69,12 +67,11 @@ class _Frame(BaseModel):
     # peer that ignores it behaves as its own version correctly did, which is the whole point of
     # an optional addition.
     #
-    # This was `forbid`, on the reasoning that silently dropping a field lets the two ends
-    # disagree about what was said. True, and the wrong trade here: the console and the runner
-    # are separate images that roll independently, a live session's runner keeps its image for
-    # hours, so `forbid` made every additive field a fleet-wide break — every live session dying
-    # on the release that added one. Additive changes now cost nothing; must-understand changes
-    # arrive as new kinds, where the refusal still happens.
+    # `forbid` is not an option here: the console and the runner are separate images that roll
+    # independently and a live session's runner keeps its image for hours, so refusing an unknown
+    # field would kill every live session on the release that added one. Must-understand changes
+    # arrive as new kinds instead, where the refusal still happens.
+    #
     # base64 for `bytes` fields, so raw program output crosses a JSON text frame without a
     # decode step that could mangle it. Only `SetupOutput` carries bytes, and it is a handful
     # of short lines per session, so the ~33% is nothing here.
@@ -148,7 +145,7 @@ class ClaudeMessage(_Frame):
 
 
 class EndInput(_Frame):
-    """Console → runner: `Transport.end_input()`, i.e. close the CLI's stdin."""
+    """Console → runner: `WebSocketTransport.end_input()`, i.e. close the CLI's stdin."""
 
     kind: Literal["end_input"] = "end_input"
 
@@ -156,12 +153,10 @@ class EndInput(_Frame):
 class Hello(_Frame):
     """Runner → console, once, before anything else: the versions this runner can speak.
 
-    **The runner speaks first, and this shape is frozen forever.** Negotiation needs a fixed
-    point. The version used to ride on the console's first frame, which put the choice at the end
-    that cannot adapt — the console had to pick before hearing anything, and the runner could not
-    state its range until it had decoded a frame whose shape was the very thing in question. So
-    the first frame is the runner's, and it carries only a list of integers: anything richer would
-    be a shape that itself needs agreeing on, which is the regress this exists to stop.
+    **The runner speaks first, and this shape is frozen forever.** Negotiation needs a fixed point,
+    and the runner is the end that cannot adapt — its image is fixed when its claim is created. It
+    carries only a list of integers: anything richer would be a shape that itself needs agreeing
+    on, which is the regress this exists to stop.
 
     The console replies with the highest version both ends have, on its `start`.
     """
@@ -203,8 +198,8 @@ class SetupOutput(_Frame):
 # The two directions carry different frames, and saying so in the types is what keeps the
 # difference enforced. It is *not* request/response — this is a duplex stream where both ends
 # speak unprompted, and nothing at this layer pairs a reply with a call. (The CLI's own
-# control_request/control_response do correlate, by an id inside `ClaudeMessage.payload`,
-# which rides inside `ClaudeMessage.payload` and is deliberately opaque here.)
+# control_request/control_response do correlate, by an id that rides inside
+# `ClaudeMessage.payload` and is deliberately opaque here.)
 ConsoleToRunner = ClaudeLaunch | ClaudeMessage | EndInput
 RunnerToConsole = ClaudeMessage | Hello | SetupOutput
 
@@ -230,7 +225,7 @@ def decode_object(data: str) -> dict[str, Any]:
     """One JSON object, or a `ValueError`.
 
     The raw protocol lines either end reads — the CLI's stdout and the string the client
-    hands `Transport.write`. Same shape as a frame's `payload`, but not a frame: it arrives
+    hands `FrameChannel.write`. Same shape as a frame's `payload`, but not a frame: it arrives
     outside this protocol and is only ever wrapped into one.
     """
     value = json.loads(data)

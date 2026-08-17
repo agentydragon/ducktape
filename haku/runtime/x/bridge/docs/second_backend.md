@@ -60,10 +60,12 @@ something `resolve` can write and point at without the shape growing a field.
 
 ## What the seam deliberately does not cover
 
-- **The console-side frame→event adapter.** <../../../../console/x/session_runtime.py> reads Claude's
-  `assistant` / `user` / `result` / `system` frames and its `stream_event` deltas directly. A
-  second backend needs that behind an adapter too, and it waits on the turn-loop refactor rather
-  than being forced through now.
+- **Choosing which frame→event adapter runs.** The adapter itself now exists:
+  <../../../../console/x/claude_code/projection.py> folds Claude's frames into the neutral
+  `ConversationEvent` vocabulary, and the turn loop acts on those rather than on `assistant` /
+  `stream_event` / `result`. What is still Claude-only is the wiring —
+  <../../../../console/x/frame_projection.py> imports that one module — so a Codex backend needs a
+  second projection and a way to select it per session, not a refactor of the loop.
 - **The control channel.** `cli_client.ClaudeCli` owns `initialize` and `interrupt` in Claude's
   `control_request` / `control_response` spelling. Codex correlates its own requests differently;
   that is a second seam, in the same place as the adapter above.
@@ -79,11 +81,12 @@ so Claude keeps the name its image already sets and Codex gets `HAKU_CODEX_PATH`
 shared `HAKU_CLI_PATH` to rename anything to.
 
 Worth recording because the brief for this change assumed otherwise: `HAKU_CLAUDE_PATH` is set in
-exactly one place, the `runner_image` `env` in <../BUILD.bazel>, and read in exactly one, the
+one place in production, the `runner_image` `env` in <../BUILD.bazel>, and read in one, the
 backend. The SandboxTemplate at
 <../../../../../cluster/k8s/haku/workspaces/app/sandboxtemplate-haku-claude.yaml> does **not**
 set it, so a rename would never have been the cross-image flag day it looked like — but it would
-still have broken `haku/console/x/test_bridge_e2e.py`, which sets it, and bought nothing.
+still have broken the two test harnesses that set it, `haku/console/x/test_bridge_e2e.py` and
+`haku/console/x/channels/matrix/testing/console_deployment.py`, and bought nothing.
 
 `HAKU_CLAUDE_SETUP` is the one genuine misnomer left: the bootstrap it points at checks
 haku-state out and knows nothing about which CLI follows it, so it is backend-neutral and its

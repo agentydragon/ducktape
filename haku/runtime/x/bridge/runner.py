@@ -202,17 +202,16 @@ async def _send_websocket_input(websocket: TextWebSocket, stdin: anyio.abc.ByteS
 async def _forward_cli_errors(outbound: MemoryObjectSendStream[Outbound], stderr: anyio.abc.ByteReceiveStream) -> None:
     """Forward what the CLI wrote to stderr, to this log and to the console.
 
-    It used to go to `DEVNULL`, which is the one place a failure to start is explained: the
-    console sees the exit status and nothing else, so `Claude Code exited with status 1` was the
-    whole account of a rejected credential or a bad flag.
+    stderr is the one place a failure to start is explained; without it the console sees the exit
+    status and nothing else, so `Claude Code exited with status 1` is the whole account of a
+    rejected credential or a bad flag.
 
-    Sent as `SetupOutput` because that frame is already "bytes the sandbox wrote" and adding a
-    kind of its own would be a `PROTOCOL_VERSION` bump. The two ends do negotiate now — the
-    runner's `Hello` carries its range and both take the `max` of the common one — but
-    `SUPPORTED_VERSIONS` is still a single element, so a bump refuses a peer on the old version
-    rather than degrading to it, and it would still break every session in flight on release.
-    The console narrates and records it like any other sandbox output; telling the two apart is
-    worth a frame kind once the supported range is wide enough to make one affordable.
+    Sent as `SetupOutput` because that frame is already "bytes the sandbox wrote" and adding a kind
+    of its own would be a `PROTOCOL_VERSION` bump. The two ends negotiate, but `SUPPORTED_VERSIONS`
+    is a single element, so a bump refuses a peer on the old version rather than degrading to it and
+    would break every session in flight on release. The console narrates and records this like any
+    other sandbox output; telling the two apart is worth a frame kind once the supported range is
+    wide enough to make one affordable.
     """
     async for chunk in stderr:
         sys.stdout.buffer.write(chunk)
@@ -293,11 +292,10 @@ async def _serve_console(
 ) -> None:
     """Copy frames both ways for one console connection, returning when that connection ends.
 
-    **The replay window is what makes a lost socket lossless.** A frame taken from the buffer and
-    handed to a dying socket used to be gone: the console may have recorded it, or the send may
-    have died in flight, and nothing could tell the two apart. So every retained frame is offered
-    again to whichever console adopts the session next, and the console drops the ones it already
-    has by their agent-assigned identity (<../../../cli_protocol/frame_identity.py>).
+    **The replay window is what makes a lost socket lossless.** A frame handed to a dying socket may
+    or may not have been recorded, and nothing here can tell the two apart — so every retained frame
+    is offered again to whichever console adopts the session next, and the console drops the ones it
+    already has by their agent-assigned identity (<../../../cli_protocol/frame_identity.py>).
 
     That makes the exactness of the window an optimisation rather than a correctness argument —
     re-sending a frame the console already holds costs one `ON CONFLICT DO NOTHING`. What it must
@@ -426,8 +424,8 @@ def _worth_redialling(error: BaseException) -> bool:
     See `NOT_ADMITTED_CODE` for why a refusal arrives as a 4xx handshake response instead of a
     close code. A 5xx is the Gateway with no ready backend — which is exactly what a console roll
     looks like from in here — and an `OSError` is the connection itself failing; both are worth
-    waiting out, and neither used to be: `InvalidStatus` is not an `OSError`, so a single 503
-    mid-roll escaped the loop and took the sandbox with it.
+    waiting out. They need separate arms because `InvalidStatus` is not an `OSError`, so a 503
+    mid-roll would otherwise escape the loop and take the sandbox with it.
 
     **The 5xx arm is load-bearing beyond the Gateway, so do not tighten it to a status list.** A
     console that is up but whose session is still leased by a replica shutting down answers 503
@@ -465,14 +463,10 @@ async def run(
 ) -> None:
     """Serve one CLI to whichever console is up, across as many connections as that takes.
 
-    **The CLI outlives the connection.** It used to die with it — one socket, one process, and
-    `bridge_websocket_to_cli` terminating the CLI in its `finally` — so a console roll ended
-    the conversation, and the reconnect Kubernetes then forced was refused by a console that
-    admitted a session only once. Six rolls a day made that the normal end of a session.
-
-    So this dials, serves, and dials again, holding the process across the gap. What the console
-    sends on a later connection is a `start` frame it built fresh, and everything describing the
-    process is deliberately **ignored**: the launch decided the argv, the system prompt and the MCP
+    **The CLI outlives the connection**, which is what keeps a console roll from ending the
+    conversation: this dials, serves, and dials again, holding the process across the gap. What the
+    console sends on a later connection is a `start` frame it built fresh, and everything describing
+    the process is deliberately **ignored**: the launch decided the argv, the system prompt and MCP
     wiring of a process that is already running, and none of those can be re-applied to it. The
     runner is the honest owner of "the handshake already happened", because it is the end that owns
     the process.

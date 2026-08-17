@@ -1,9 +1,8 @@
 """The exact CLI launch the console asks for.
 
-Pinned argv rather than spot-checked flags. This is the one place a session's behaviour is
-chosen, it is invisible at runtime until something misbehaves in a sandbox, and it used to be
-computed by a private SDK method — so the point of the test is that changing what we launch
-shows up as a diff here.
+Pinned argv rather than spot-checked flags. This is the one place a session's behaviour is chosen
+and it is invisible at runtime until something misbehaves in a sandbox, so the point of the test is
+that changing what we launch shows up as a diff here.
 """
 
 from __future__ import annotations

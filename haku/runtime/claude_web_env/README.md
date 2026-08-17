@@ -49,7 +49,7 @@ here (on Anthropic infra) and drives the cluster over `kubectl`; the
   forgejo-token-rotation output (`haku-sandbox/haku-forgejo-tea`). Smoke test:
   `tea whoami`.
 - `run.md` — the web entrypoint: bootstrap recap + concrete paths, then defers
-  to the environment-neutral `haku/run.md` for the run procedure.
+  to the run procedure in Haku's own state, `memory/procedures/run.md`.
 
 ## How a session boots
 

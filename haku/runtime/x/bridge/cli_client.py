@@ -1,10 +1,8 @@
 """A client for Claude Code's newline-delimited JSON protocol.
 
-Replaces `ClaudeSDKClient` for the console's session runtime, because the SDK's typed layer was
-not what the rollout records, its `receive_response()` was request-scoped in a runtime where turns
-are not requests, and it never stamped a prompt with the `uuid` that makes the CLI report that
-prompt's lifecycle. `options.py` took the launch arguments that were left of it, so nothing here
-imports the SDK. The protocol itself is described in <../../../cli_protocol/README.md>.
+The console's session runtime speaks the protocol itself: nothing here imports the Agent SDK, and
+`options.py` owns the launch arguments. The protocol is described in
+<../../../cli_protocol/README.md>.
 
 Two channels are multiplexed on one stream, distinguished by the top-level `type`:
 
@@ -15,21 +13,15 @@ Two channels are multiplexed on one stream, distinguished by the top-level `type
   `initialize`, `interrupt` and the rest.
 
 **The record is taken here**, by the `FrameSink` every client is built with, because this is where
-each frame is already parsed and where both channels are still visible. It used to be taken by a
-decorator around the socket, one layer down, which re-decoded every frame's envelope to see what
-had crossed — a second `json.loads` of the whole session, and a place that had to know the
-envelope in order to look inside it.
+each frame is already parsed and where both channels are still visible.
 
 **Every frame the client hands on carries the sink's number for it**, which is what lets a reader
 address one. The sink is therefore not optional: a client with nowhere to record is a client whose
 frames cannot be pointed at, and the console's projection has to point at them.
 
-**Gotcha this exists to avoid.** The SDK's message channel is a *blocking* 100-slot buffer, and
-its reader routes control responses. A consumer that stops draining conversation frames
-therefore stalls the reader and takes `interrupt` down with it — which also means the stream
-cannot be tee'd, and is why owning the reader and owning the control channel is one change
-rather than two. Here the two are separated: control responses are resolved by the reader
-itself, and conversation frames go to an unbounded queue that cannot back-pressure onto it.
+**The conversation queue must stay unbounded.** The reader that routes control responses is the
+same task that fills it, so a bounded queue plus a consumer that stops draining stalls the reader
+and takes `interrupt` down with it — the one call an operator makes when a turn has gone wrong.
 """
 
 from __future__ import annotations

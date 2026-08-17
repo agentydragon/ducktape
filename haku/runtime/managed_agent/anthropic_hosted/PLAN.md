@@ -125,7 +125,8 @@ deployment's v0 initial event lists `haku-sandbox` pods — a connectivity test.
 - The pod clones `haku-state` (git creds via mounted secret), scans **one** source
   (e.g. the Gmail token + a simple query), writes a finding, commits + pushes
   `haku-state`, exits.
-- Author the **cloud run procedure** (haku/base + run.md variant, or a Skill):
+- Author the **cloud run procedure** (a variant of haku-state's `memory/procedures/run.md`,
+  or a Skill):
   "create pod → exec scan → commit haku-state → delete." Mind the cloud-sandbox vs
   in-pod **filesystem split** — do real work in the pod via `exec`.
 - Decide **memory**: managed Memory (cloud-only) vs git `haku-state` in-pod.
@@ -142,7 +143,7 @@ deployment's v0 initial event lists `haku-sandbox` pods — a connectivity test.
 - The agent's `system` prompt + `mcp_servers`/`tools` evolve in
   <../../../../tf/gitops/haku-cloud-agent/main.tf> (no imperative `ant` YAMLs).
 - A tools image (or reuse) + the pod template.
-- Cloud run procedure (haku/base + run.md edits, or a Skill).
+- Cloud run procedure (edits to haku-state's `memory/procedures/run.md`, or a Skill).
 
 ## Open unknowns / risks
 

@@ -41,10 +41,9 @@ HELLO_TIMEOUT_SECONDS = 30.0
 class WebSocketTransport:
     """A `cli_client.FrameChannel` backed by an already-authenticated WebSocket.
 
-    Structural rather than declared: `FrameChannel` is a Protocol, so this satisfies it by
-    shape. It used to subclass the Agent SDK's `Transport` ABC, which is what `end_input` and
-    `is_ready` were for — they stay because the bridge protocol has an `EndInput` frame the
-    runner answers, not because a base class demands them.
+    Structural rather than declared: `FrameChannel` is a Protocol, so this satisfies it by shape.
+    `end_input` and `is_ready` are wider than that Protocol — they exist because the bridge has an
+    `EndInput` frame the runner answers, and today only the tests reach them.
     """
 
     def __init__(

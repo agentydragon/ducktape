@@ -4,21 +4,10 @@ Both halves of what `backend.CliBackend` calls a backend, kept in one module bec
 to agree: the flags below only mean anything to the executable `ClaudeBackend` starts. Everything
 generic about running *an* agent CLI is <backend.py>.
 
-Replaces `ClaudeAgentOptions` plus `SubprocessCLITransport._build_command()`. That pairing was
-the last of the Agent SDK the console used, and it was reached through a private method on a
-transport we never let connect — we constructed one purely to borrow its argv builder, because a
-custom `Transport` never sees the arguments it would have assembled.
-
-**Why owning it is smaller than borrowing it.** `_build_command` translates ~40 options; the
-console sets seven. Everything else was branches we never took, on a private API, pinned to an
-exact SDK version, reached by assigning `transport._cli_path` from outside. What replaces it is
-one function over a frozen dataclass of the seven, and `test_options.py` pins the exact argv —
-so a change to what we launch is a visible diff rather than a consequence of someone else's
-refactor.
-
-The flag spellings and their order match what the SDK emitted for these options at 0.2.128,
-verified against its source, so this is not a behavioural change to the launch — only to who
-computes it. The CLI's own protocol reference is <../../../cli_protocol/README.md>.
+`build_claude_launch` is the one place a session's argv is decided, and `test_options.py` pins it
+exactly — so a change to what we launch shows up as a diff there. The flag spellings and their
+order match what the Agent SDK emitted for these options at 0.2.128, verified against its source.
+The CLI's own protocol reference is <../../../cli_protocol/README.md>.
 """
 
 from __future__ import annotations

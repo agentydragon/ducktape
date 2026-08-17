@@ -51,7 +51,8 @@ identical to the cloud agent's — kept in step by
 ## The worker is `worker.py` on the anthropic Python SDK (not `ant`)
 
 The poll loop is `worker.py`, built on the official `anthropic` Python SDK's
-`EnvironmentWorker`. It replaced `ant beta:worker poll` (the Go CLI) because the
+environment-worker helper (`client.beta.environments.work.worker`). It replaced
+`ant beta:worker poll` (the Go CLI) because the
 Go SDK's session tool runner posts an **empty text block** for empty tool output,
 which the API 400s — deadlocking the session
 ([anthropic-sdk-go#377](https://github.com/anthropics/anthropic-sdk-go/issues/377)).
@@ -80,11 +81,11 @@ durable memory, so a cold session just re-orients.
 | File                    | Role                                                                                 | Runs on              |
 | ----------------------- | ------------------------------------------------------------------------------------ | -------------------- |
 | `haku.environment.yaml` | self-hosted environment (`ant beta:environments create`)                             | control plane        |
-| `haku.agent.yaml`       | agent: thin `system` pointer, fixed toolset + 4 MCP `mcp_toolset`s (= cloud agent)   | control plane        |
+| `haku.agent.yaml`       | agent: thin `system` pointer, fixed toolset + 2 MCP `mcp_toolset`s (= cloud agent)   | control plane        |
 | `haku.deployment.yaml`  | scheduled-deployment wake trigger                                                    | control plane        |
 | `provision.sh`          | one-shot: create environment/agent/deployment via `ant` (vault is the shared TF one) | operator / CI        |
 | `entrypoint.sh`         | clone ducktape + haku-state, then exec `haku-managed-agent`                          | `haku-managed-agent` |
-| `worker.py`             | the poll loop (anthropic Python SDK `EnvironmentWorker`)                             | `haku-managed-agent` |
+| `worker.py`             | the poll loop (anthropic Python SDK environment worker)                              | `haku-managed-agent` |
 | `nixos.nix`             | full-NixOS worker image (`nix build .#haku-managed-agent-image`)                     | CI / build           |
 
 ## Trust split — keep the org key off the worker
@@ -231,6 +232,8 @@ The worker-side view is the pod logs (`kubectl logs deploy/haku-managed-agent
 
 `ANTHROPIC_ENVIRONMENT_ID`, `ANTHROPIC_ENVIRONMENT_KEY`, `HAKU_DUCKTAPE_REPO_URL`,
 `HAKU_STATE_REPO_URL`, `HAKU_GIT_HOST`, `HAKU_GIT_USERNAME`, `HAKU_GIT_PASSWORD`.
+`ANTHROPIC_WORKDIR` is optional and left unset — `worker.py` defaults it to `/workspace`, the
+shared `emptyDir`.
 
 The pod runs the closure directly (no systemd), so the Deployment's `env` lands
 straight in the entry process — plus the `HTTP(S)_PROXY`/`SSL_CERT_FILE` the

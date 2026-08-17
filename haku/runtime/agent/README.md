@@ -13,9 +13,11 @@ different image, dependencies, and git write identity.
   <../../PLAN.md>) plus haku-console's aggregated MCP catalog (Tana reads to
   start). Bearer auth rides a pre-built `http_client` because `MCPStreamableHTTPTool`
   ignores `headers=`.
-- **Behavior** is `haku/base/` + `haku/run.md` from the **ducktape clone** (the agent
-  clones ducktape + haku-state at startup via pygit2; see `bootstrap.py`), read at
-  runtime — so it stays single-sourced and live-editable, no image rebuild to change it.
+- **Behavior** is the **haku-state clone**: its root `AGENTS.md` / `SOUL.md` / `MEMORY.md`
+  plus the run procedure at `memory/procedures/run.md` (the agent clones ducktape +
+  haku-state at startup via pygit2; see `bootstrap.py`), read at runtime — so it stays
+  single-sourced and live-editable, no image rebuild to change it. The ducktape clone is a
+  source to read, not the manual.
 - **Persistent threads + compaction**: history persists across restarts in
   **Valkey/Redis** via `RedisHistoryProvider` (keyed by `HAKU_SESSION_ID`) when
   `HAKU_REDIS_URL` is set — otherwise in-memory. `SummarizationStrategy` keeps the

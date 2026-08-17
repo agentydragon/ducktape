@@ -159,7 +159,7 @@ One local quirk worth knowing: this harness sets **`MCP_TOOL_TIMEOUT=60000`**, w
 60s ceiling on every `exec_sandbox` call — it is a Claude Code client-side cutoff, nothing to
 do with the sandbox. The repo's `.claude/settings.json` raises it to 300000 to match
 `exec_sandbox`'s own maximum; if you are in a session that predates that (or another harness
-with its own default), fall back to `nohup … &` + poll as `haku/run.md` describes.
+with its own default), fall back to `nohup … &` + poll as `memory/procedures/run.md` describes.
 
 ## Then run
 

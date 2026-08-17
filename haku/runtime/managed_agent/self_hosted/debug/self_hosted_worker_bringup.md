@@ -97,8 +97,9 @@ empty-output command, masked by the agent's `2>/dev/null | head`.
 ## Diagnostic recipes
 
 - **Worker debug logs:** the Python `worker.py` logs to stderr at `INFO`
-  (`kubectl logs deploy/haku-worker -n haku-sandbox`); the SDK's
-  `EnvironmentWorker` logs poll/claim/dispatch under the `anthropic` logger.
+  (`kubectl logs deploy/haku-managed-agent -n haku-sandbox` — the Deployment was
+  renamed from `haku-worker`); the SDK's worker logs poll/claim/dispatch under the
+  `anthropic` logger.
   (Historical, on the old `ant` worker: `ANT_DEBUG=1` → `ant --debug`, whose
   `tool result send hit permanent 4xx` line was the empty-output tell.)
 - **Session timeline (control plane, org key):**
@@ -110,7 +111,9 @@ empty-output command, masked by the agent's `2>/dev/null | head`.
   `org:external_poll_sessions`; a plain `ant auth` OAuth token 400s/403s these.
   Terminating a session does **not** drain its queued work item.
 - **`kubectl exec` into the worker:** PATH isn't set (no activation) — use
-  absolute `/sw/bin/...` or `export PATH=/sw/bin`.
+  absolute `/sw/bin/...` or `export PATH=/sw/bin`. The launcher the pod runs is
+  `/sw/bin/haku-managed-agent-run`; the `haku-worker-*` names in the table above are
+  the ones in use at the time and no longer exist.
 
 ## Temporary settings to revert
 
@@ -192,10 +195,10 @@ relative-path prompt, `--shallow-since="1 week ago"`). Agent updated to v2
 - Deploy + verify the `--shallow-since` image (commit `1ac0930196`) — confirm
   base-sync's `git log <pin>..HEAD` now returns non-empty and the session
   completes (commits `haku-state`).
-- **Empty-result→400 deadlock is unfixed** (upstream `ant`/SDK gap). Mitigated by
-  the week-of-history clone; still bites any empty-output tool call. Filed as
-  [anthropic-sdk-go#377](https://github.com/anthropics/anthropic-sdk-go/issues/377)
-  — await a fix; until then, keep triggers down.
+- ~~**Empty-result→400 deadlock is unfixed**~~ — superseded two days later by the
+  Python-SDK switch above; the Go-side fix is still open upstream as
+  [anthropic-sdk-go#377](https://github.com/anthropics/anthropic-sdk-go/issues/377),
+  which only matters if a Go worker is ever revisited.
 - Manual, non-turnkey prereq: bump the Forgejo `agentydragon/ducktape` mirror.
   The `haku` read-collaborator grants are Terraform-managed in
   `tf/gitops/forgejo-agentydragon-repos`.
