@@ -155,12 +155,11 @@ async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(
 ) -> None:
     """The failure that took the room down on 2026-08-11.
 
-    The session stayed `responding` because the replica running it went away without
-    recording anything, and a live status was taken at face value here — so this method kept
-    reporting "is responding" at a session that no longer existed anywhere but in a row.
-    Supervision has to reclaim it, not believe it — but only once the lease has been adoptable
-    for a whole `ADOPTION_GRACE` and no runner took it, which is what makes a console roll
-    survivable rather than fatal.
+    The replica running the session went away without recording anything, and the live status it
+    left was taken at face value here — so this method kept reporting a session that no longer
+    existed anywhere but in a row. Supervision has to reclaim it, not believe it — but only once
+    the lease has been adoptable for a whole `ADOPTION_GRACE` and no runner took it, which is what
+    makes a console roll survivable rather than fatal.
     """
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
     await supervisor.supervise_once()
@@ -168,7 +167,6 @@ async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(
     async with migrated_sessions.begin() as db:
         chat = await db.get(Session, orphan)
         assert chat is not None
-        chat.status = SessionStatus.RESPONDING
         chat.lease_expires_at = datetime.datetime.now(datetime.UTC) - ADOPTION_GRACE - datetime.timedelta(seconds=1)
 
     await supervisor.supervise_once()

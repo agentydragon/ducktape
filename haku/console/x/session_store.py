@@ -552,7 +552,6 @@ class SessionStore:
                     session_id=session_id, message_id=message.message_id, text=prompt_text, now=now
                 )
             )
-            # No status write: a queued prompt is not a turn in flight.
             chat.updated_at = now
             await notify(db, SessionEventKind.PROMPT, session_id)
             await notify(db, SessionEventKind.UPDATE, session_id)
@@ -724,12 +723,8 @@ class SessionStore:
                 turn.duration_ms = usage.duration_ms
             chat = await db.get(Session, turn.session_id)
             if chat is not None:
-                # `responding` is derived from this turn being open, so closing it is what
-                # retires the state — and what the SPA has to be told about. The column is only
-                # written back when it still carries the old meaning, which a replica on the
-                # previous image is what would have put there.
-                if chat.status == SessionStatus.RESPONDING:
-                    chat.status = SessionStatus.READY
+                # `responding` is derived from this turn being open, so closing it is what retires
+                # the state — and what the SPA has to be told about.
                 _advance_cursor(chat, projected_frame_seq)
                 chat.updated_at = now
                 await notify(db, SessionEventKind.UPDATE, turn.session_id)
@@ -1151,8 +1146,6 @@ class SessionStore:
                 message.source_last_frame_seq = source_last_frame_seq
             message.status = ChatMessageStatus.COMPLETE if complete else ChatMessageStatus.STREAMING
             message.updated_at = now
-            # No `chat.status = RESPONDING` here: this runs per stream delta, and the open turn
-            # already states it.
             chat.updated_at = now
             await notify(db, SessionEventKind.UPDATE, session_id)
             if not complete:
@@ -1326,8 +1319,7 @@ class SessionStore:
                     continue
                 # Which of the three ended it is read off two columns that the failure itself then
                 # leaves behind, so it is recorded as an event rather than only rendered into the
-                # error prose the operator sees. "mid-turn" only if a turn was in fact open.
-                mid_turn = " mid-turn" if chat.status == SessionStatus.RESPONDING else ""
+                # error prose the operator sees.
                 if chat.lease_holder is not None:
                     reason = LeaseExpiryReason.HOLDER_GONE
                 elif chat.bridge_connected_at is not None:
@@ -1345,7 +1337,7 @@ class SessionStore:
                     )
                 )
                 chat.status = SessionStatus.FAILED
-                chat.error = f"console session ended{mid_turn}: {detail}"
+                chat.error = f"console session ended: {detail}"
                 chat.updated_at = now
                 await notify(db, SessionEventKind.UPDATE, session_id)
             return len(expired)

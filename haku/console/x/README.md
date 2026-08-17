@@ -64,7 +64,7 @@ opens `session_turns` in one transaction; `_run_turn` is that turn's span and cl
 every exit, keeping what the exchange cost. At most one
 turn per session is open (a partial unique index), and that is the single question behind three
 answers: whether a prompt may be admitted, whether there is anything to abort, and whether the
-SPA is shown `responding` — which the session view now derives rather than reading off a column.
+SPA is shown `responding` — which the session view derives rather than reading off a column.
 So an open turn on a session nothing is renewing is not a leak; it is the record of an exchange
 whose replica went away before anything could close it.
 

@@ -23,6 +23,8 @@ class SessionStatus(StrEnum):
     IDLE = "idle"
     PROVISIONING = "provisioning"
     READY = "ready"
+    # Derived, never stored: `session_views.session_view` reports it for a live session with an
+    # open `session_turns` row, and no path writes it to `sessions.status`.
     RESPONDING = "responding"
     CLOSING = "closing"
     CLOSED = "closed"

@@ -1046,9 +1046,9 @@ async def test_a_live_session_whose_holder_stopped_renewing_is_failed(
 ) -> None:
     """The wedge this exists for: a live status nobody is working on.
 
-    A replica that dies without running its finalizer leaves `responding` behind, and every
-    other observer used to treat that as healthy — so the room was never answered and never
-    told why. The expired lease is the evidence that makes it reclaimable by anyone.
+    A replica that dies without running its finalizer corrects nothing, and every other observer
+    reads the live status it left as healthy — so the room is never answered and never told why.
+    The expired lease is the evidence that makes it reclaimable by anyone.
     """
     view, _ = await chat_store.create(operator_id, SpaSession())
     await chat_store.renew_lease(view.session_id)

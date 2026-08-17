@@ -369,21 +369,13 @@ def session_view(
 ) -> SessionView:
     """The session as the SPA reads it, with `responding` derived from an open turn.
 
-    `status` is the frontend's contract (`frontend/x/claude_chat_page.tsx` switches on it), so the
-    column underneath can stop carrying turn state without a frontend release. A live session with
-    a turn in flight reports `responding`; the session's own lifecycle — provisioning, closing,
-    closed, failed — always wins, because a turn left open by a dead replica says nothing about a
-    session the sweep has since failed.
-
-    **Roll compatibility:** the `record.status == RESPONDING` arm is for replicas still on the
-    previous image, which write that column and whose sessions have no turn rows to derive from.
+    `status` is the frontend's contract (`frontend/x/claude_chat_page.tsx` switches on it); the
+    column underneath does not carry turn state. A live session with a turn in flight reports
+    `responding`; the session's own lifecycle — provisioning, closing, closed, failed — always
+    wins, because a turn left open by a dead replica says nothing about a session the sweep has
+    since failed.
     """
-    live = record.status in {SessionStatus.READY, SessionStatus.RESPONDING}
-    status = (
-        SessionStatus.RESPONDING
-        if live and (responding or record.status == SessionStatus.RESPONDING)
-        else record.status
-    )
+    status = SessionStatus.RESPONDING if responding and record.status == SessionStatus.READY else record.status
     return SessionView(
         session_id=record.session_id,
         status=status,
