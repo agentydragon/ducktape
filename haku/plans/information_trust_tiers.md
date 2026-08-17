@@ -248,7 +248,7 @@ migration:
 
 **The cheap increment is two rooms on one bot account**, which is what the operator asked for. The
 sync loop needs no change at all: `/sync` on one account already returns events for every joined
-room, so one loop and one `MXSY` lock serve N rooms. `matrix_sync_state` is keyed by `user_id`
+room, so one loop and one `MXSY` lock serve N rooms. `matrix_sync_watermark` is keyed by `user_id`
 already, so even the two-bot-accounts version — which distinct agent kinds eventually need, since
 the room-tier policy keys on membership and membership needs distinct MXIDs — costs a second
 credential and a per-account sync lock rather than a schema change.
@@ -268,7 +268,7 @@ already shows one conversation per agent.
 
 What it costs, given what the singleton audit above found:
 
-- **Nothing schema-side for the watermark.** `matrix_sync_state` is already keyed by `user_id`, so
+- **Nothing schema-side for the watermark.** `matrix_sync_watermark` is already keyed by `user_id`, so
   N accounts are N rows today.
 - **A sync loop per account, and `MXSY` stops being a constant.** The lock has to derive from the
   account, or one loop has to serve several accounts; the former is closer to what exists.

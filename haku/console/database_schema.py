@@ -1488,22 +1488,48 @@ class PushSubscription(Base):
 metadata = Base.metadata
 
 
-class MatrixSyncState(Base):
-    """Where the Matrix sync loop got to, and the token it got there with.
+# Tables that exist in the database and in no ORM class. Dropping one takes the release after the
+# one that stopped naming it, because `maxUnavailable: 0` keeps the previous image serving through
+# the roll and that image selects every table it maps. `test_agent_authority_schema` excludes these
+# from its ORM-versus-database comparison, which is otherwise exact.
+#
+# CLEANUP(added 2026-08-17): `DROP TABLE matrix_sync_state` once every haku-console pod runs an
+#   image at or after this commit — `kubectl get pods -n haku-console -o
+#   jsonpath='{.items[*].spec.containers[0].image}'` reporting a single tag at or after it.
+#   Migration 0060 copied its two columns into `matrix_access_token` and `matrix_sync_watermark`
+#   and this release stopped mapping it, so only a replica on an earlier image still selects it.
+UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset({"matrix_sync_state"})
 
-    One row per bot user. `next_batch` is the watermark that makes an outage replay
-    rather than skip; `access_token` is cached because Synapse rate-limits `/login`.
 
-    **It is a promise, not a position.** Everything before it has been acted on, so it is only
-    ever written for a batch that is finished with. A batch handed to a session is not that, and
-    the loop reads further ahead than this while one is outstanding — see `MatrixHeldBatch`.
+class MatrixAccessToken(Base):
+    """The bot's access token, cached because Synapse rate-limits `/login`.
+
+    One row per bot user, written from the pacer's queued send on whichever replica is speaking
+    into the room. Losing it costs one login, which is the whole of what this table promises;
+    absence means no token cached, so invalidating one is a `DELETE` rather than a NULL.
     """
 
-    __tablename__ = "matrix_sync_state"
+    __tablename__ = "matrix_access_token"
 
     user_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
-    next_batch: Mapped[str | None] = mapped_column(Text, nullable=True)
+    access_token: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class MatrixSyncWatermark(Base):
+    """Where the Matrix sync loop got to: everything before this has been acted on.
+
+    One row per bot user, written by the sync pass on whichever replica holds the `MXSY` lock.
+
+    **It is a promise, not a position.** It is only ever written for a batch that is finished
+    with. A batch handed to a session is not that, and the loop reads further ahead than this
+    while one is outstanding — see `MatrixHeldBatch`. No row is the honest first state: nothing
+    has been finished with, so the loop reads from the beginning of the bot's timeline.
+    """
+
+    __tablename__ = "matrix_sync_watermark"
+
+    user_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    next_batch: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class MatrixConversation(Base):
@@ -1513,7 +1539,7 @@ class MatrixConversation(Base):
     (R3.6a) a property of the schema instead of a rule the code has to remember: a second
     room cannot be recorded without displacing the first.
 
-    Deliberately separate from `matrix_sync_state` even though both are singletons keyed
+    Deliberately separate from `matrix_sync_watermark` even though both are singletons keyed
     the same way. The sync loop and the session supervisor run as independent tasks under
     one advisory lock, and giving them separate rows keeps a slow session claim from
     contending with the watermark write on every pass.
@@ -1549,7 +1575,7 @@ class MatrixHeldBatch(Base):
     """A batch already handed to a session, whose `/sync` acknowledgement is being withheld.
 
     R2.5 says a batch is acknowledged **after its turn completes**, and one watermark cannot say
-    that: `matrix_sync_state.next_batch` used to be written the moment `enqueue_prompt` committed,
+    that: the watermark used to be written the moment `enqueue_prompt` committed,
     so a session dying between the enqueue and the turn left the prompt keyed to the dead session
     — invisible to the replacement's `next_prompt` — while the homeserver had been told the
     message was handled (<x/../debug/message_drops.md> I3).
@@ -1560,7 +1586,7 @@ class MatrixHeldBatch(Base):
     No second copy of the batch is kept — the homeserver still holds it, exactly as for a refusal.
 
     **Two positions, one promise.** While this row exists the loop polls from `next_batch` and
-    acknowledges only up to `matrix_sync_state.next_batch`. Polling from the older one instead
+    acknowledges only up to `matrix_sync_watermark.next_batch`. Polling from the older one instead
     would re-deliver events a session already has on every pass, and a `/sync` asking for data it
     already has returns at once rather than long-polling — a turn taking minutes would become a
     hot loop for its whole length.

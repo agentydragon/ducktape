@@ -41,7 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ChatMessageRole, PromptFate
 from haku.console.config import MatrixConfig
-from haku.console.database_schema import MatrixHeldBatch, MatrixSyncState
+from haku.console.database_schema import MatrixAccessToken, MatrixHeldBatch, MatrixSyncWatermark
 from haku.console.x.channels.matrix.client import (
     EventTag,
     InboundMessage,
@@ -103,48 +103,51 @@ class SyncPosition:
 
 
 class MatrixSyncStore:
-    """Durable sync state: the token we cached, the watermark we reached, and the batch we owe."""
+    """Durable sync state, a table per owner: the token we cached, the watermark we reached, and
+    the batch we owe.
+
+    Each has one writer and a `NOT NULL` value, so an absent row says one definite thing —
+    nothing cached, nothing finished with, nothing owed.
+    """
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]):
         self._sessions = sessions
 
-    async def load(self, user_id: str) -> MatrixSyncState | None:
+    async def cached_token(self, user_id: str) -> str | None:
         async with self._sessions() as db:
-            row: MatrixSyncState | None = await db.scalar(
-                select(MatrixSyncState).where(MatrixSyncState.user_id == user_id)
-            )
-            return row
+            return await db.scalar(select(MatrixAccessToken.access_token).where(MatrixAccessToken.user_id == user_id))
 
     async def save_token(self, user_id: str, token: str) -> None:
-        """Cache the access token, leaving the watermark beside it alone.
+        """Cache the access token.
 
-        Upserted rather than read-then-inserted because this row has two concurrent writers: this
-        one runs inside the pacer's queue, on whichever replica is speaking into the room, and
-        `_advance` runs in the sync pass. A read-then-insert lets both try to create it, and the
-        loser fails on the primary key — which on the pacer's side is the queued send lost.
+        Upserted rather than read-then-inserted because the pacer's queue runs on every replica,
+        so two of them can log in and first-write this row at once; the loser of a read-then-insert
+        fails on the primary key, and on the pacer's side that is a queued send lost.
         """
         async with self._sessions() as db, db.begin():
             await db.execute(
-                insert(MatrixSyncState)
-                .values(user_id=user_id, access_token=token, next_batch=None)
+                insert(MatrixAccessToken)
+                .values(user_id=user_id, access_token=token)
                 .on_conflict_do_update(index_elements=["user_id"], set_={"access_token": token})
             )
 
     async def position(self, user_id: str) -> SyncPosition:
         async with self._sessions() as db:
-            state = await db.scalar(select(MatrixSyncState).where(MatrixSyncState.user_id == user_id))
+            watermark = await db.scalar(
+                select(MatrixSyncWatermark.next_batch).where(MatrixSyncWatermark.user_id == user_id)
+            )
             held = await db.scalar(select(MatrixHeldBatch).where(MatrixHeldBatch.user_id == user_id))
         return SyncPosition(
-            watermark=state.next_batch if state is not None else None,
+            watermark=watermark,
             held=None if held is None else HeldBatch(next_batch=held.next_batch, message_id=held.message_id),
         )
 
     async def save_batch(self, user_id: str, next_batch: str) -> None:
         """Advance the watermark.
 
-        Written only for a batch that is finished with: the token is what makes an outage replay
-        rather than skip (R1.7), so persisting it early loses messages. A batch that has been
-        handed to a session is not finished with — that one goes through `hold`.
+        Written only for a batch that is finished with: the watermark is what makes an outage
+        replay rather than skip (R1.7), so persisting it early loses messages. A batch that has
+        been handed to a session is not finished with — that one goes through `hold`.
         """
         async with self._sessions() as db, db.begin():
             await self._advance(db, user_id, next_batch)
@@ -175,10 +178,10 @@ class MatrixSyncStore:
 
     @staticmethod
     async def _advance(db: AsyncSession, user_id: str, next_batch: str) -> None:
-        """Move the watermark, leaving the cached token alone — see `save_token` for why."""
+        """Move the watermark, creating the row on the first batch ever finished with."""
         await db.execute(
-            insert(MatrixSyncState)
-            .values(user_id=user_id, access_token=None, next_batch=next_batch)
+            insert(MatrixSyncWatermark)
+            .values(user_id=user_id, next_batch=next_batch)
             .on_conflict_do_update(index_elements=["user_id"], set_={"next_batch": next_batch})
         )
 
@@ -224,9 +227,9 @@ class MatrixSyncService:
         Synapse rate-limits `/login`, so re-authenticating on every pass would get the
         console throttled — hence the cache (R10.3a).
         """
-        state = await self._store.load(self._config.user_id)
-        if state is not None and state.access_token and await self._client.whoami(state.access_token):
-            return state.access_token
+        cached = await self._store.cached_token(self._config.user_id)
+        if cached is not None and await self._client.whoami(cached):
+            return cached
         token = await self._client.login(self._password.get_secret_value())
         await self._store.save_token(self._config.user_id, token)
         logger.info("Matrix: logged in as %s", self._config.user_id)

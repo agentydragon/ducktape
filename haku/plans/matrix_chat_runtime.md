@@ -880,8 +880,8 @@ nothing is repeated between them and nothing falls in the join.
 
 The code lives under `haku/console/x/` — experimental, no stable API. Three pieces
 necessarily sit outside it because the stable modules own them: `MatrixConfig` on
-`Settings`, the `MatrixSyncState` table, and its Alembic revision (migrations are one
-lineage for the whole database).
+`Settings`, the `matrix_access_token` and `matrix_sync_watermark` tables, and their Alembic
+revisions (migrations are one lineage for the whole database).
 
 Two properties of this phase worth keeping in view, both consequences of dropping the
 appservice: **no Synapse configuration changes at all**, and **no new listener on

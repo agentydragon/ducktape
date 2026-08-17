@@ -627,7 +627,7 @@ dependency:
 - `MatrixConfig` and `Settings.matrix` in <../config.py>. Absent config, or a config whose
   reflected bot password has not landed yet, means the surface does not start and the
   console does (R10.3b).
-- `Session`, `SessionMessage`, `MatrixSyncState`, and `MatrixConversation` in
+- `Session`, `SessionMessage`, `MatrixAccessToken`, `MatrixSyncWatermark`, and `MatrixConversation` in
   <../database_schema.py>, plus their Alembic revisions — migrations are one lineage for the
   whole database.
 - The `ChatFrontend` port is defined next to the service that calls it (`session_runtime.py`);
