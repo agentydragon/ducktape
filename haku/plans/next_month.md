@@ -17,93 +17,168 @@ turn's cost is columns (#4169), the frame vocabulary is split (#4181).
 What is left is a **list**, not a spine. Nothing here blocks anything else, so it is ordered by what
 a delay costs. Dispatch in parallel (`AGENTS.md` § Splitting Work Into PRs).
 
-**Items 2 and 3 are now downstream of one decision.** The operator has accepted dropping the
-early chat data outright — two days of it, nothing worth keeping — rather than carrying the branches
-and nullable columns that exist to accommodate it. [The purge plan](legacy_purge.md) sequences that:
-what dies by migration, what dies by dropping rows, and the constraints that become expressible once
-the rows are gone. Where it disagrees with an item below, it is the later document and it wins.
-
 ## The list
 
-### 1. Stage 6's enum widening — pulled in, because the calendar is its long pole
+### 1. Finish the legacy purge
+
+The operator accepted dropping the early chat data outright rather than carrying the branches and
+nullable columns that accommodated it:
+
+> you messed up the first implementation, but I only used it for like 2 days and for nothing serious
+> that I'd mind losing. I'm happy to drop old data including the derived index if it helps us make
+> the code clean and correct going forward. I expect it should be possible to have constraints that
+> actually express the requirements we will have met in production data once we get all the old
+> legacy out.
+
+**The rows are gone.** Phase 1 ran on 2026-08-16: 302 sessions deleted, 35,795 frames and 2,506
+messages with them, the sandbox cycled, a replacement session provisioned. What it deleted, what made
+it safe, and which gates it cleared are in
+<../console/debug/2026_08_16_legacy_purge.md> — including the correction that the frame log is
+**not** permanently empty, because `frame_seq` is still `Identity(always=True)` until the numbering
+cutover.
+
+What is left is three releases.
+
+#### The ordering constraints, stated once
+
+1. **The console rolls `maxUnavailable: 0` with migrations at startup**, so a replica on the previous
+   image runs against the new schema for the length of the roll. SQLAlchemy names every _mapped_
+   column in every `SELECT`, so **every `DROP COLUMN` is two releases**: one that unmaps and deletes
+   the readers, one that drops.
+2. **Adding a `CHECK` needs no split** when the tables are empty and the previous image's writers
+   already satisfy it — true after phase 1, verified per constraint below. So the tightening rides
+   along with the code-only release rather than waiting for a third.
+3. **`SET NOT NULL` on `projected_frame_seq` does need the split**, because the previous image can
+   still insert a session with no cursor. `SET DEFAULT 0` first, `SET NOT NULL` a release later.
+
+#### Phase 2 — the code-only release, plus the additive tightening
+
+Unmap `session_messages.{unpointable_reason,tool_calls}` and `session_frames.partial` and delete
+every reader; delete `message_view`'s `recorded or message.tool_calls` fallback; and one additive
+migration: `sessions.surface SET NOT NULL`, the surface/room equivalence,
+`VALIDATE CONSTRAINT ck_session_messages_source_anchored`, `ck_session_messages_assistant_pointed`,
+both `session_frames` runner-seq checks, and `projected_frame_seq SET DEFAULT 0`.
+
+Each addition is safe against the previous image for a specific reason, not a general one:
+
+| Addition                                       | Why the previous image cannot violate it                                                                                                                              |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `surface NOT NULL`                             | `SessionStore.create` always sets `surface` from the variant's `surface_column`                                                                                       |
+| `(surface = 'matrix') = (room_id IS NOT NULL)` | Same call site sets `room_id` from the same variant                                                                                                                   |
+| `ck_session_messages_assistant_pointed`        | Both `_open_assistant` call sites pass a `frame_seq`; there is no third writer                                                                                        |
+| `VALIDATE … source_anchored`                   | The table is empty, and `update_assistant` only widens a range `begin_assistant` set                                                                                  |
+| `ck_session_frames_wire_numbered`              | Holds only because phase 1 cycled the runner — **verify the gate query first**                                                                                        |
+| `projected_frame_seq SET DEFAULT 0`            | `create()` never sets the attribute, so the ORM omits it and the default applies — **measured** on the replacement session, which came up `NULL` under the old schema |
+
+Prove each before writing it. Every query returns 0:
+
+```sql
+SELECT count(*) FROM sessions WHERE surface IS NULL;
+SELECT count(*) FROM sessions WHERE (surface = 'matrix') <> (room_id IS NOT NULL);
+SELECT count(*) FROM session_messages WHERE role = 'assistant' AND source_first_frame_seq IS NULL;
+SELECT count(*) FROM session_messages
+  WHERE source_last_frame_seq IS NOT NULL AND source_first_frame_seq IS NULL;
+SELECT count(*) FROM session_frames WHERE runner_seq IS NOT NULL AND direction <> 'from_agent';
+```
+
+#### Phase 3 — the drop release
+
+Once phase 2 has converged: the remaining `DROP COLUMN`s, `DROP INDEX uq_session_frames_partial`, the
+two `unpointable_*` constraints, and `projected_frame_seq SET NOT NULL`. Afterwards:
+
+```sql
+SELECT column_name FROM information_schema.columns
+ WHERE table_name IN ('sessions','session_messages','session_turns','session_frames','session_events')
+   AND column_name IN ('unpointable_reason','tool_calls','partial','provenance');
+```
+
+Zero rows, and `ck_session_messages_source_anchored` must be `convalidated = true`.
+
+#### Phase 4 — squash the chain, and the tests that exist only to guard it
+
+The purge's own reward, asked for by the operator: _"once we've migrated prod to proper schema shape
+and constraints without weird legacy or wrong data I'd want to drop the load of keeping around all
+the migration tests."_ Last, because a chain can only be squashed once the only database that will
+ever replay it is stamped past the end of it — **gate:** production stamped at phase 3's head with
+every replica on an image at or after it.
+
+**A squash here is not a new technique.** `0010` is one, and its docstring records how: the revision
+id of the deployed head is retained, so a database already stamped at it is a no-op while a fresh
+database creates the frozen schema directly.
+
+The six dedicated migration tests split three ways, and the split is the point — "drop the migration
+tests" would otherwise delete two things that are not about migration at all:
+
+| Test                                         | Rev    | After the squash                                                                                                                                                                            |
+| -------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test_message_tool_calls_migration.py`       | `0047` | **Goes.** Already moot — `0056` dropped the column it backfills from                                                                                                                        |
+| `test_neutral_turn_usage_migration.py`       | `0049` | **Goes.** Same: `0056` dropped `session_turns.usage`                                                                                                                                        |
+| `test_session_claim_cleaned_at_migration.py` | `0048` | **Goes.** A backfill of rows phase 1 deleted                                                                                                                                                |
+| `test_frame_runner_seq_migration.py`         | `0050` | **Goes.** Asserts a nullable column an old writer could omit; phase 2 makes it not-nullable                                                                                                 |
+| `test_session_idle_status_migration.py`      | `0054` | **Becomes a constraint test** — both assertions are about what `ck_sessions_status` admits. Not before item 2 ships, since until then the widening is the live half of a two-release change |
+| `test_state_index_migration.py`              | `0037` | **Stays, rebased.** Not a migration test: it compares <../state_index/schema.py> against what the deployed database gets, and nothing else does                                             |
+
+That is 473 of the six files' 624 lines, and no coverage lost — the two tests that assert the
+property a squash actually endangers already exist in `test_agent_authority_schema.py`:
+`test_fresh_baseline_matches_sqlalchemy_metadata` and `test_database_already_at_head_is_unchanged`.
+Those are what <../../STYLE.md> § Testing asks for in place of per-migration change-detectors, and
+both must pass **before** the squash lands as well as after — a baseline disagreeing with the ORM is
+a console that cannot boot.
+
+**What the squash does not buy.** Every migration written after it is a migration again, so this
+collects a debt once rather than changing policy.
+
+#### Deliberately out of scope
+
+- **`session_messages.agent_message_id` stays nullable.** Not a legacy accommodation: a synthesised
+  assistant row (text that arrived only on the `result` frame) legitimately has none, and a second
+  backend need not supply one. The purge removed the _population_, not the case. Retiring the column
+  belongs to <chat_runtime_cleanup.md> § The backend seam.
+- **`capabilities.py`** is legacy in a different sense (the haku-ui launch migration), with its own
+  tombstone and gate.
+- **Promoting anything on `session_frames.kind`.** That two-vocabulary defect is
+  <chat_runtime_projection.md> § 2's; dropping `partial` removed the **third** meaning and nothing
+  more.
+
+### 2. `SessionStatus.IDLE`'s writer
 
 [chat_runtime_cleanup.md](chat_runtime_cleanup.md) § Stage 6 allocates a sandbox because there is
-something to do, instead of holding one indefinitely for a quiet room. It was named as the first
-thing to pull in if the schedule ran ahead. It has.
-
-Its first step is not the behaviour: `TextBackedStrEnumColumn` parses the status column, so a
-replica on the previous image reading `idle` fails rather than degrading. The member and the
-`CHECK` widen in one release and the first `idle` row is written in the next. **Split it that way
-and ship the widening now** — the code is a line and the wait is a roll.
+something to do, instead of holding one indefinitely for a quiet room. The widening shipped a release
+early (#4190) because `TextBackedStrEnumColumn` parses the column, so a replica on the previous image
+reading `idle` fails rather than degrading; the writer is the second half.
 
 **Done when** an idle room holds no sandbox and the first message provisions one.
 
-### 2. The contract halves that are now due
+### 3. The session-event category — decided
 
-`devel` carries expand/contract tombstones whose gate is a roll converging, each with the query that
-answers it beside the thing it guards. One is this work's own residue: the pre-cursor adoption
-branch with `_recorded_completion` and `RESULT_FRAME_KIND` (#4178's, gated on `session_ttl_seconds`).
-The rest are `_write_partial_frame` and its `partial` column. `session_turns.usage` (#4169's) and
-`session_messages.tool_uses` are done — `0056` dropped both.
+`session_events.provenance` had an `authored` arm with no writer, and two design documents disagreed.
+**The operator settled it (2026-08-16):**
 
-**Done when** `rg 'CLEANUP\(added' haku/console` names only tombstones whose gate query does not yet
-return clear.
+> frames only come from actual runner<->console communication. events like "session taken over by
+> this replica of console" are not that. so they would probably arrive as a different sort of event.
 
-**Second because it is hours of work rather than days**, and because a gate that has cleared does
-not un-clear.
+So [chat_runtime_projection.md](chat_runtime_projection.md) § stage 4 wins on a principle
+[session_channels.md](../console/plans/session_channels.md) § 3 did not weigh: **the frame log is the
+record of runner↔console traffic and nothing else may enter it.** A lease changing hands crosses no
+wire, so it is not a frame. `turn_id` becomes nullable — a session that died before its first turn
+has none — which the purge makes free, since production held one `session_events` row.
 
-### 3. The session-event category — blocked on a decision, not on work
+**Done when** `EventProvenance.AUTHORED` has a writer and both design documents record the ruling.
 
-`session_events.provenance` has an `authored` arm and **no writer**, because two design documents
-disagree and both are on `devel`:
-
-- [chat_runtime_projection.md](chat_runtime_projection.md) § stage 4 wants one ordered stream in two
-  categories — conversation, and what happened _to_ the session. The `authored` arm exists to carry
-  the second, which crosses no wire.
-- [session_channels.md](../console/plans/session_channels.md) § 3 ruled a table out: lifecycle
-  events become frame-log rows under their own bridge-side `kind`, "**not a new table** — which also
-  makes § 1's cursor a position in one ordered log rather than a join across several".
-
-Neither is obviously wrong. § 3's argument still bites: a session that died before the CLI produced
-anything has its whole story in the frame log, and `session_events` holds nothing for a session that
-never reached a turn — `turn_id` is `NOT NULL`, so the second category needs a migration whichever
-way the argument goes. § 4's argument is that a lease changing hands is a console-side fact with no
-frame and never will have one, so a frame-log row for it is an envelope invented to fit.
-
-**This is the one item that cannot be specified until it is decided**, which is the only legitimate
-reason to hold work (`AGENTS.md` § Splitting Work Into PRs). Everything else here is dispatchable
-today.
-
-**Done when** one of the two documents says the other is wrong, and `EventProvenance.AUTHORED` has a
-writer or is deleted. An arm with no writer is a column with no reader (`STYLE.md` § General), and
-it should not survive a second release in that state.
-
-### C. One sessions surface, and the SSE stream — the operator's call
+### C. One sessions surface, and the SSE stream
 
 `/chat` and `/conversations` are the same object behind two routes, two nav entries and two data
-paths. Merging them deletes `claude_chat_page.tsx`, unmounts `/api/sessions/{session_id}/stream`,
-and makes the `asyncio.wait` abort dance in `_run_turn` removable
+paths. Merging them deletes `claude_chat_page.tsx`, unmounts `/api/sessions/{session_id}/stream`, and
+makes the `asyncio.wait` abort dance in `_run_turn` removable
 ([session_channels.md](../console/plans/session_channels.md) § 2, [the read-API
 plan](../console/plans/one_read_api.md) § Stage 3).
 
+**The operator chose: build the increment first, then merge onto it** — no regression at any point,
+rather than taking the refetch regression for however long the increment takes. The design is in
+`session_channels.md` § 4.
+
 **Done when** `claude_chat_page.tsx` is deleted, the SSE route is unmounted, and the console has one
 live-update mechanism.
-
-**The decision, framed rather than made.** The merge trades per-token streaming for near-live
-refetch, and nobody has compared the two on the real page. The trade need not be permanent: § Not
-now's "stream the increment" was blocked on an ordered neutral event stream and an address within
-it, and `session_events` with its `event_seq` is both — only the per-consumer position is still
-missing. So the question is whether refetch is good enough for the releases between the merge and
-the increment, not whether it is good enough forever. Three shapes:
-
-- **Merge now, take the regression, build the increment after.** One live path immediately; the page
-  is worse for however long the increment takes.
-- **Build the increment first and merge onto it.** No regression at any point, at the cost of
-  designing it against a page that is about to be replaced and keeping `/chat` alive meanwhile.
-- **Neither.** C blocks nothing and is the only item here that is features rather than structure.
-
-**If something has to give, give C.** Nothing on this list depends on it, and neither does the
-increment it is judged against.
 
 ## The rule the outbox was a special case of
 
@@ -142,10 +217,6 @@ Costed, not scheduled.
 
 ## Not now
 
-- **Stream the increment to the frontend** ([session_channels.md](../console/plans/session_channels.md)
-  § 4). Its two preconditions are half met: the ordered stream and its address
-  exist, the per-consumer position does not. It is the thing item C should be judged against; see
-  there.
 - **Projection stage 2 — the frame table's two `kind` vocabularies**, and with it R2 and R3 of the
   numbering schedule ([chat_runtime_projection.md](chat_runtime_projection.md) § 2b). R1 landed; what
   is left is a cutover and a contract release, the second gated on the first converging, and nothing
@@ -163,14 +234,10 @@ Costed, not scheduled.
   it works; the convergence half pays off with a **second** channel or the Matrix relay. Pull it in
   the moment either becomes real.
 - **Multi-agent trust tiers** ([the trust-tier plan](information_trust_tiers.md)). The message
-  provenance it wants exists now (`source_{first,last}_frame_seq`, recovered by #4191), so it starts
-  cheaply — but it is a new subsystem, and the list above is what makes it stand on something
-  finished.
+  provenance it wants exists now (`source_{first,last}_frame_seq`), so it starts cheaply — but it is
+  a new subsystem, and the list above is what makes it stand on something finished.
 - **Mid-turn steering**, which splits the turn's three jobs — mutex, recovery marker, accounting
   unit. Doing it before the neutral turn owns its own boundaries splits them in the wrong layer.
-- **Promoting the provenance `CHECK` on `session_messages` to `VALIDATE`**, and any decision about
-  dropping history to get it. `session_messages` is the `haku_index` chat corpus, so dropping it
-  deletes Haku's memory.
 - **Sourcing the CLI from npm** ([the protocol-ownership plan](cli_protocol_ownership.md)).
   Unrelated to all of the above and independently dispatchable whenever someone wants it.
 
@@ -179,8 +246,8 @@ of which want C's route settled first because a posted Matrix event is permanent
 
 ## What is uncertain
 
-- **Whether a coalesced refetch feels as good as the SSE stream.** Item C takes that regression
-  knowingly and nobody has compared them on the real page.
+- **Whether a coalesced refetch feels as good as the SSE stream.** C's ordering makes this moot if
+  the increment lands first, and nobody has compared them on the real page.
 - **Whether the neutral turn's usage shape survives a second backend.** #4169 designed an
   aggregatable shape from one example, which is the failure mode the neutral vocabulary exists to
   avoid, and nothing can check it until there is a second backend or a second stub.

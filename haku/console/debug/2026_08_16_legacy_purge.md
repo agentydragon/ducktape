@@ -1,6 +1,6 @@
 # Purge phase 1 — what was deleted, and what it cleared
 
-<../../plans/legacy_purge.md> phase 1, run against production on 2026-08-16 between 23:52 and
+Phase 1 of the legacy purge (<../../plans/next_month.md> § 1), run against production on 2026-08-16 between 23:52 and
 23:57 UTC through the approval-gated `kubectl-passthrough-mcp` exec. This is the record of the run:
 what the tables held, what made it safe to delete them, and which gates the deletion cleared.
 
