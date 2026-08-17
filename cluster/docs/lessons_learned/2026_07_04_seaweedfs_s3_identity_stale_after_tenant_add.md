@@ -4,6 +4,11 @@
 the oci-cache Zot mirror). Symptom is `InvalidAccessKeyId` on S3 **writes** for a
 newly added tenant.
 
+**Superseded for operator-managed buckets (2026-08-17).** The installed operator
+does provide `S3Identity` and `S3Credentials` CRDs backed by filer IAM. Use those
+with the `Bucket.spec.access` policy instead of adding new identities to the
+static JSON. The restart behavior below still applies to legacy static identities.
+
 ## Symptom
 
 A new SeaweedFS S3 tenant (identity added under
@@ -66,8 +71,8 @@ kubectl -n seaweedfs delete pod -l app.kubernetes.io/component=s3
 restart's `restartedAt` annotation has survived operator reconciliation), but pod deletion
 is the surest bet given the revert behavior above.
 
-**This restart is a required manual step whenever adding/rotating a SeaweedFS S3 tenant**
-until one of the durable fixes below lands.
+**This restart is a required manual step whenever adding/rotating a legacy static
+SeaweedFS S3 tenant.** Operator-managed filer IAM identities hot-reload instead.
 
 ## Durable options (none is a drop-in)
 
@@ -91,20 +96,14 @@ fix. The static-`configSecret` model is the constraint.
    `seaweedfs-s3-config` and, on change, runs `kubectl delete pod -l
 app.kubernetes.io/component=s3` — pod deletion is _not_ reverted by the operator. Isolated
    to seaweedfs; costs a new moving part + up to one poll-interval of lag.
-3. **Filer-backed dynamic identities** (the "proper" fix, biggest lift). SeaweedFS
-   hot-reloads identities stored in the filer (`weed shell s3.configure` / the embedded IAM
-   API / credential manager) with no restart. But: the operator has **no identity CRD** (only
-   `Seaweed` + `Bucket`), so identities would be provisioned _outside_ it — a `provisioners/`
-   Job upserting each tenant into the filer from the SOPS `s3-identity-*` secrets. The
-   **load-bearing unknown** is whether `weed s3` can be pointed at the filer credential store
-   under this operator (the CR wires `configSecret → -config` with no obvious knob; may need
-   `additionalArgs`/a patch). Go **fully** filer-backed, not half — mixing static + dynamic
-   auth has upstream footguns
-   ([#8331](https://github.com/seaweedfs/seaweedfs/issues/8331),
-   [#6442](https://github.com/seaweedfs/seaweedfs/issues/6442),
-   [#6130](https://github.com/seaweedfs/seaweedfs/issues/6130)). Only worth it if S3-tenant
-   churn becomes frequent.
+3. **Filer-backed dynamic identities** — now the preferred path for operator-managed
+   buckets. The installed operator exposes `S3Identity`, `S3Credentials`, `S3Policy`,
+   and `S3PolicyBinding`; `Bucket.spec.access` supplies the bucket-scoped actions.
+   A 2026-08-17 `wayback-archive` canary proved that credentials remain valid after
+   restarting the internal S3 gateway and are accepted by both internal and public
+   gateways. Public reachability is therefore an authentication boundary, not a
+   credential-isolation boundary: keep every key confidential and rely on bucket policy
+   for authorization.
 
-**Recommended order:** try (1) — one line, evidence-backed; fall back to (2) — guaranteed —
-if the operator strips annotations too; reach for (3) only if tenant churn makes the manual
-restart a real tax.
+**Recommended order:** migrate operator-managed buckets to (3). Keep (1)/(2) only for
+legacy identities that still require the assembled static JSON.

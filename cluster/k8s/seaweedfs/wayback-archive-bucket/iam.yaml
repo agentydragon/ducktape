@@ -1,0 +1,23 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: wayback-archive
+  namespace: seaweedfs
+spec:
+  seaweedRef:
+    name: seaweedfs
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: wayback-archive
+  namespace: seaweedfs
+spec:
+  seaweedRef:
+    name: seaweedfs
+  identityRef:
+    name: wayback-archive
+  secretRef:
+    name: s3-identity-wayback-archive
+  reclaimPolicy: Retain

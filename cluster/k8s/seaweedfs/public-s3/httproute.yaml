@@ -8,9 +8,9 @@ spec:
     - name: cluster-gateway
       namespace: gateway-system
   hostnames:
-    # Single consolidated public S3 endpoint. Backed by the `public-s3`
-    # deployment, which mounts only the curated multi-identity config — never
-    # point this at the operator-managed all-tenant `seaweedfs-s3` Service.
+    # Single consolidated public S3 endpoint. Its gateway merges the mounted
+    # static config with filer-backed IAM, so possession of any valid S3 key
+    # can authenticate here; bucket policy still limits what that key can do.
     - "s3.allegedly.works"
   rules:
     - timeouts:

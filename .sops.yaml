@@ -100,11 +100,11 @@ creation_rules:
           - *atlas-agentydragon
           - *iguana-agentydragon
 
-  # SeaweedFS per-tenant s3 identities. Only the credential values
-  # (accessKey/secretKey) are encrypted; identity name, allowed actions,
-  # and the per-tenant ExternalSecret template stay plaintext so PRs
-  # adding/rotating tenants are reviewable. More specific than the
-  # generic cluster/k8s/* rule below, so this match wins.
+  # SeaweedFS per-tenant S3 credentials. Only accessKey/secretKey are
+  # encrypted. Legacy files may also carry plaintext identity metadata and
+  # ExternalSecret templates; operator-managed identities keep policy in the
+  # Bucket/S3Identity resources instead. More specific than the generic
+  # cluster/k8s/* rule below, so this match wins.
   - path_regex: cluster/k8s/seaweedfs/secrets/identities/.*\.sops\.yaml$
     encrypted_regex: ^(accessKey|secretKey)$
     key_groups:

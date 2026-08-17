@@ -1,7 +1,8 @@
 # SeaweedFS s3-config restructure to per-tenant SOPS + ESO assembly
 
 **Date**: 2026-05-27
-**Status**: Migrated. Phase 1 (existing tenants) + Phase 2 (augur-assets) both live.
+**Status**: Legacy static-identity path. Existing tenants remain live; new
+operator-managed buckets should use native filer IAM.
 
 ## What changed
 
@@ -106,7 +107,13 @@ any file-managed config. If the filer's persistent metadata is ever
 wiped, attic auth breaks until manually re-created. Tracked alongside
 the bucket-adoption work.
 
-## Adding a new tenant going forward
+## Adding a legacy static tenant
+
+For a bucket managed by the SeaweedFS operator, prefer a SOPS-encrypted Secret
+containing only `accessKey`/`secretKey`, plus `S3Identity` and `S3Credentials`
+resources beside the `Bucket`. Put authorization in `Bucket.spec.access`. This
+avoids JSON templating and gateway restarts. Use the older flow below only when
+the tenant cannot yet move to the operator-managed bucket/IAM path.
 
 One file:
 

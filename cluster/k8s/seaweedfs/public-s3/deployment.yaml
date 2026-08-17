@@ -11,10 +11,9 @@ metadata:
     reloader.stakater.com/auto: "true"
     description: >-
       Single public-facing SeaweedFS S3 gateway (s3.allegedly.works). Mounts a
-      curated multi-identity config (drivefs-artifacts writer/reader, vm-images
-      ci-writer/cdi-reader, read-only claude-reader) — deliberately NOT the
-      operator-managed all-tenant seaweedfs-s3 config, which contains admin and
-      every write key and must never be reachable from outside the cluster.
+      static config for bootstrap and public-specific identities. Filer-backed
+      IAM identities are also valid here, so every credential must remain a
+      confidential Secret even when its usual consumer is cluster-internal.
 spec:
   replicas: 2
   selector:
