@@ -395,6 +395,7 @@ const conversationDetailForScene = scene?.startsWith("conversation-bootstrap")
 // The rollout behind that conversation, as the frame inspector reads it: one exchange in wire
 // order, with a tool call and the result it got — the pair `session_messages` cannot show.
 const conversationFrames = {
+  conversation_id: conversationId,
   frames: [
     {
       frame_seq: 412,

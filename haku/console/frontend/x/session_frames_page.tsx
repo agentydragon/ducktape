@@ -123,10 +123,13 @@ export function SessionFramesPage({ sessionId }: { sessionId: string }) {
       <header className="haku-page-header">
         <div className="haku-page-bar haku-conversation-detail-header">
           <div>
+            {/* The inspector is addressed by session and a conversation has several, so the way
+                back is whichever thread this session ran — which only the response knows. */}
             <Button
               variant="subtle"
               size="compact-sm"
-              onClick={() => navigateToConsolePath(conversationPath(sessionId))}
+              disabled={!loaded}
+              onClick={() => loaded && navigateToConsolePath(conversationPath(loaded.conversation_id))}
             >
               ← Conversation
             </Button>

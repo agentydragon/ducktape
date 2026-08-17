@@ -274,6 +274,10 @@ class SessionFramePage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     frames: list[SessionFrameView]
+    conversation_id: UUID = Field(
+        description="The thread this session ran. The inspector is addressed by session, so this is what its reader "
+        "needs to get back to the conversation the session belongs to."
+    )
     next_before_seq: int | None = Field(
         description="Pass back as `before_seq` for the page of earlier frames, or absent at the start of the log."
     )
@@ -298,7 +302,7 @@ def _unprojected(row: SessionFrame) -> dict[str, int] | None:
     return dict(folded.unprojected) or None
 
 
-def frame_page(rows: Sequence[SessionFrame], *, limit: int) -> SessionFramePage:
+def frame_page(rows: Sequence[SessionFrame], *, limit: int, conversation_id: UUID) -> SessionFramePage:
     """One page of rollout rows in wire order, with the cursor for the page before it.
 
     A short page is the first one, the same rule the MCP reader uses in the other direction:
@@ -315,7 +319,11 @@ def frame_page(rows: Sequence[SessionFrame], *, limit: int) -> SessionFramePage:
         )
         for row in rows
     ]
-    return SessionFramePage(frames=frames, next_before_seq=frames[0].frame_seq if len(frames) == limit else None)
+    return SessionFramePage(
+        frames=frames,
+        conversation_id=conversation_id,
+        next_before_seq=frames[0].frame_seq if len(frames) == limit else None,
+    )
 
 
 @dataclass(frozen=True, slots=True)

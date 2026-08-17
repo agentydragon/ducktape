@@ -30,7 +30,11 @@ export function prependEarlierPage(page: SessionFramePage, loaded: SessionFrameP
   if (!loaded) return page;
   const known = new Set(loaded.frames.map((frame) => frame.frame_seq));
   const earlier = page.frames.filter((frame) => !known.has(frame.frame_seq));
-  return { frames: [...earlier, ...loaded.frames], next_before_seq: page.next_before_seq };
+  return {
+    frames: [...earlier, ...loaded.frames],
+    conversation_id: loaded.conversation_id,
+    next_before_seq: page.next_before_seq,
+  };
 }
 
 /** What the adapter's fold read nothing from in this frame, in one line, or "" when it read it all.

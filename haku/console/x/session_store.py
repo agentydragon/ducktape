@@ -1106,12 +1106,12 @@ class SessionStore:
             query = query.where(SessionFrame.frame_seq < before_seq)
         async with self._sessions() as db:
             owned = await db.scalar(
-                select(Session.session_id).where(Session.session_id == session_id, Session.operator_id == operator_id)
+                select(Session).where(Session.session_id == session_id, Session.operator_id == operator_id)
             )
             if owned is None:
                 raise KeyError(session_id)
             rows = (await db.scalars(query.order_by(SessionFrame.frame_seq.desc()).limit(limit))).all()
-        return frame_page(list(reversed(rows)), limit=limit)
+        return frame_page(list(reversed(rows)), limit=limit, conversation_id=_thread_of(owned))
 
     async def apply_frame(
         self, session_id: UUID, turn_id: UUID, frame_seq: int, events: Sequence[ConversationEvent]
