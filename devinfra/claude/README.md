@@ -256,10 +256,12 @@ https://cache.allegedly.works/main` (+ trusted pubkeys from
    The shims inject the session bazelrc without `--nohome_rc`, so Bazel still reads this
    home rc.
 
-It also reclaims ~90% of the root ext4's `nobody:nogroup`-reserved blocks (the container
-ships with ~84% reserved; we run as root) via `tune2fs -r`, freeing most of the 256 GiB
-disk that is otherwise inaccessible — idempotent and skipped once the reservation is low.
-See <web_env/docs/container_spec.md>.
+**Usable disk is ~14 GiB, not ~235 GiB.** The root ext4 reserves ~85% of its blocks for
+`nobody:nogroup` and a session cannot reclaim them: the `devices:` cgroup denies opening
+`/dev/vda` even to root, so `tune2fs` cannot run, and `resv_strict` makes the mount-option
+route ineffective. Reclaim space by deleting — usually stale agent worktrees under
+`.claude/worktrees/`. Measurements and both dead workarounds:
+<web_env/docs/container_spec.md> § Reserved blocks.
 
 #### Install mode
 

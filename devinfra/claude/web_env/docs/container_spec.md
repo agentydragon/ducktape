@@ -31,23 +31,37 @@ parts that aren't captured there.
 | `/opt/env-runner`  | `/dev/vdc` | squashfs | 17.5M | —      | Environment manager (ro) |
 | `/dev/shm`         | tmpfs      | tmpfs    | 7.9G  | 7.9G   | Shared memory            |
 
-#### Reserved blocks workaround
+#### Reserved blocks — not reclaimable, as of 2026-08-17
 
-The root ext4 filesystem ships with **84% of blocks reserved** (56.3M of 67.1M
-blocks reserved for UID/GID 65534 — `nobody:nogroup`). Since the container runs
-as root (UID 0), these reserved blocks are inaccessible, leaving only ~41 GiB of
-the 256 GiB disk usable by default.
+The root ext4 filesystem ships with **~85% of blocks reserved** for UID/GID 65534
+(`nobody:nogroup`), and the container runs as root, so a session sees ~14 GiB of
+the 256 GiB disk however much is actually free. Measured on 2026-08-17: 214.92
+GiB reserved of 251.97 GiB total, `bfree` 228.59 GiB against `bavail` 13.66 GiB.
 
-**Fix**: `tune2fs -m 1 /dev/vda` reduces the reservation to 1%, freeing ~194 GiB.
-This is safe — the reservation is for `nobody:nogroup` which no process in the
-container uses. Verified: a 50 GiB sequential write to `/tmp` succeeded after
-the change, and `df` correctly reports ~235 GiB available.
+**`tune2fs -m`/`-r` no longer works, and neither does the mount-option route.**
+Both were measured, not inferred:
 
-`web_setup.sh` (Step 0) performs this on startup — it frees ~90% of the
-reservation via `tune2fs -r` (keeping a 10% margin rather than dropping to 1%),
-idempotently skipping once the reservation is already low. The change is
-persistent for the lifetime of the VM (survives across sessions on the same
-container, but not container recreation).
+- **The device cannot be opened at all.** `open("/dev/vda")` returns `EPERM` for
+  UID 0 with a full capability set and `Seccomp: 0` — as do `/dev/vdc` and
+  `/dev/vdd`. The `devices:` cgroup is what denies it. So `tune2fs -l` fails
+  before it can read the superblock, and every `tune2fs` recipe below it is dead.
+- **`mount -o remount,resuid=0 /` is accepted and changes nothing.** The mount
+  table shows `resuid=0` afterwards, but `fallocate` still stops at exactly
+  14,671,716,352 bytes (13.66 GiB) with `ENOSPC`. `resv_strict` is in the mount
+  options and it does what its name says.
+- `/sys/fs/ext4/vda/reserved_clusters` is a red herring — 4096 clusters (16 MiB),
+  a separate small delalloc reserve, not `s_r_blocks_count`.
+
+So **treat the usable disk as ~14 GiB**, not ~235 GiB, and reclaim space by
+deleting rather than by enlarging the pool. In practice the thing that fills it
+is agent worktrees under `.claude/worktrees/` (41 of them held 14 GiB in one
+session) and Bazel caches — see Typical Disk Usage below. Deletes still succeed
+while writes fail with `ENOSPC`, and freed space is immediately writable.
+
+The `tune2fs -r` reclaim that used to live in `web_setup.sh` Step 0 has been
+removed: every path through it reached its "could not read `tune2fs -l`" warning,
+so it produced a warning line per session and nothing else. `git log` has it if
+device access ever returns.
 
 The Bazel cache (`~/.claude/session-env/<id>/bazel-cache`) lives on the ext4
 root disk. There are **no tmpfs mounts** for Bazel cache or container storage.
