@@ -51,17 +51,13 @@ from haku.console.x.conversation_events import (
 
 
 class ResultShape(StrEnum):
-    """Which spelling of a result's content a stored row carries."""
+    """Which spelling of a result's content a stored row carries.
+
+    One member, and it stays an enum because every stored row carries the discriminator and
+    `TextResultBody` forbids extras. `0068` rewrote the two older spellings into this one.
+    """
 
     TEXT = "text"
-    # CLEANUP(added 2026-08-17): drop both members and their bodies once no `session_events` row
-    #   carries either shape. A tool result's content is a string now, so nothing writes them — but
-    #   they are history the SPA still renders, so what gets there is a migration rewriting each
-    #   row to `{shape: text}`, not a delete that would blank an old session's results. Until then
-    #   both stay readable: `ToolResultBody` is parsed on every SPA read of a stored result, so an
-    #   arm removed while its rows survive makes reading one raise rather than degrade.
-    TOOL_REFERENCES = "tool_references"
-    OPAQUE = "opaque"
 
 
 class TextResultBody(BaseModel):
@@ -69,27 +65,6 @@ class TextResultBody(BaseModel):
 
     shape: Literal[ResultShape.TEXT] = ResultShape.TEXT
     text: str
-
-
-class ToolReferencesResultBody(BaseModel):
-    """Rows written while a result that named tools was its own shape; read, never written."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    shape: Literal[ResultShape.TOOL_REFERENCES] = ResultShape.TOOL_REFERENCES
-    tool_names: list[str]
-
-
-class OpaqueResultBody(BaseModel):
-    """Rows written while content with no prose reading was its own shape; read, never written."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    shape: Literal[ResultShape.OPAQUE] = ResultShape.OPAQUE
-    payload: Json
-
-
-type ResultContentBody = TextResultBody | ToolReferencesResultBody | OpaqueResultBody
 
 
 class MessageBody(BaseModel):
@@ -115,7 +90,7 @@ class ToolCallBody(BaseModel):
 class ToolResultBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    content: ResultContentBody = Field(discriminator="shape", description="The part a transcript prints.")
+    content: TextResultBody = Field(description="The part a transcript prints.")
     structured: Json = Field(description="The exit code, the patch, the MCP structuredContent — an open set.")
     outcome: Outcome
 

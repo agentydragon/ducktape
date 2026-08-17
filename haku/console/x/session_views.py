@@ -8,7 +8,6 @@ routes hand back.
 
 from __future__ import annotations
 
-import json
 from bisect import bisect_left, bisect_right
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -307,23 +306,7 @@ def _answered(row: SessionEvent) -> tuple[str, SessionToolResultView]:
     if row.call_id is None:
         raise ValueError(f"a tool result carries no call id: {row.event_seq=}")
     body = session_events.ToolResultBody.model_validate(row.body)
-    return row.call_id, SessionToolResultView(content=_rendered(body.content), is_error=body.outcome is Outcome.FAILED)
-
-
-def _rendered(content: session_events.ResultContentBody) -> str:
-    """The half of a result a transcript prints, out of the spelling the event stored it as.
-
-    Everything written from now on takes the first arm. The other two are rows older than the
-    collapse to a string, and they are rendered here rather than passed through: a stored shape
-    this release no longer writes is not a reason for the SPA's contract to be wider than a string.
-    """
-    match content:
-        case session_events.TextResultBody():
-            return content.text
-        case session_events.ToolReferencesResultBody():
-            return json.dumps(content.tool_names)
-        case session_events.OpaqueResultBody():
-            return json.dumps(content.payload)
+    return row.call_id, SessionToolResultView(content=body.content.text, is_error=body.outcome is Outcome.FAILED)
 
 
 async def setup_narration(db: AsyncSession, session_id: UUID) -> list[SetupNarrationView]:

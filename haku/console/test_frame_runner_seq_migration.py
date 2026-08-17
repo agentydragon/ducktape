@@ -38,8 +38,8 @@ def _frame(conn: Connection, session_id: UUID, kind: str, **extra: object) -> No
     named = ", ".join(columns)
     conn.execute(
         text(
-            f"INSERT INTO session_frames ({named}, partial, created_at, updated_at) "
-            f"VALUES ({', '.join(f':{name}' for name in columns)}, false, :n, :n)"
+            f"INSERT INTO session_frames ({named}, created_at, updated_at) "
+            f"VALUES ({', '.join(f':{name}' for name in columns)}, :n, :n)"
         ),
         columns | {"n": _NOW},
     )

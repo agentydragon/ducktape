@@ -77,9 +77,7 @@ default**, so an image that does not map it emits an `INSERT` naming no `partial
 `record_frame` fails on the first frame of the roll. `0062` (#4274) gave the column
 `DEFAULT false`; the unmapping (#4277) then took the `uq_session_frames_partial` index and the
 readers with it — `reprojection.foldable_frames`, `session_store._unprojected_frames`, `SessionFrameView.partial`,
-`RolloutFrame.partial`, and the frontend's frame inspector badge.
-`database_schema.UNMAPPED_COLUMNS_PENDING_DROP` carries the tombstone; what is left is the `DROP`,
-in phase 3.
+`RolloutFrame.partial`, and the frontend's frame inspector badge. `0068` did the `DROP`.
 
 **`ck_session_frames_wire_numbered` is not in phase 2**, and the reason is rows rather than old data:
 `_write_partial_frame` wrote a `from_agent`/`assistant` row carrying no runner number on every stream
@@ -112,11 +110,22 @@ SELECT count(*) FROM session_frames WHERE runner_seq IS NOT NULL AND direction <
 
 #### Phase 3 — the drop release
 
-Once each column's unmapping has converged — separately, since `partial` was unmapped a release
-behind the other two: `DROP COLUMN session_messages.{unpointable_reason,tool_calls}` with the two
-`unpointable_*` constraints, then `DROP COLUMN session_frames.partial` with
-`DROP INDEX uq_session_frames_partial`, `DELETE FROM session_frames WHERE partial`, and
-`ck_session_frames_wire_numbered` — which needs those rows gone, not just the writer. Afterwards:
+**Landed as `0068`.** Both unmappings had converged by the time it was written — #4266's and
+#4277's, read off one deployment rather than assumed from the gap between them — so the two drops
+the plan expected to sequence went in one migration: `DROP COLUMN
+session_messages.{unpointable_reason,tool_calls}` with the two `unpointable_*` constraints, and
+`DROP COLUMN session_frames.partial` with `DROP INDEX uq_session_frames_partial` and
+`DELETE FROM session_frames WHERE partial`.
+
+**`ck_session_frames_wire_numbered` is not in it** and is what phase 3 has left. Its rows are gone
+now, so the only thing between it and the database is declaring it — in the ORM as well as the
+migration, which the drops needed no part of. Verify before adding it:
+
+```sql
+SELECT count(*) FROM session_frames WHERE runner_seq IS NULL AND direction = 'from_agent';
+```
+
+Then, and after the drops:
 
 ```sql
 SELECT column_name FROM information_schema.columns

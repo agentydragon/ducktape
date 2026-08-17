@@ -1,7 +1,9 @@
 """The tool-call migration re-spells history, and leaves the column an old replica still reads.
 
-The two tests about `tool_uses` stop at `0047`, the revision they are about: `0056` drops that
-column, and a migration is a statement about the database at its own revision.
+Both tests stop at `0047`, the revision they are about, rather than running the chain to head: a
+migration is a statement about the database at its own revision, and neither column survives to
+head anyway — `0056` dropped `tool_uses` and `0068` dropped `tool_calls`, whose readers had already
+moved to `session_events`.
 """
 
 from __future__ import annotations
@@ -92,28 +94,6 @@ def test_the_backfill_rewrites_stored_calls_without_disturbing_the_column_it_rea
                     text("SELECT tool_calls FROM session_messages WHERE message_id = :id"), {"id": said_nothing}
                 ).scalar_one()
                 == []
-            )
-    finally:
-        engine.dispose()
-
-
-def test_the_respelled_calls_outlive_the_column_they_were_read_from(db_url: str) -> None:
-    """`0056` drops `tool_uses`, and this is what makes that safe to do: the rows it destroys were
-    already carried across into `tool_calls`, so running the whole chain leaves the calls intact."""
-    apply_migrations(db_url, "0046")
-    engine = create_engine(sync_database_url(db_url))
-    try:
-        with engine.begin() as conn:
-            asked = _message_with_tool_uses(conn, _session(conn), _CLAUDE_SHAPED)
-
-        apply_migrations(db_url)
-
-        with engine.connect() as conn:
-            assert (
-                conn.execute(
-                    text("SELECT tool_calls FROM session_messages WHERE message_id = :id"), {"id": asked}
-                ).scalar_one()
-                == _RESPELLED
             )
     finally:
         engine.dispose()
