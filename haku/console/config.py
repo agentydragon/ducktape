@@ -140,7 +140,7 @@ class OperatorOidcConfig(BaseModel):
 
     Authorization is delegated to Authentik: the application's access-policy binding (a single-user
     group in the deploy) decides *who* may complete the flow — the console only requires a valid
-    session, exactly as the proxy outpost does today (no in-app username allowlist).
+    session, with no in-app username allowlist.
     """
 
     issuer: str  # per-provider issuer, e.g. https://auth.allegedly.works/application/o/haku-console/

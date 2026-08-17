@@ -5,12 +5,13 @@ trusted namespace's logs (which Haku has no RBAC to read), and a small **PR-gate
 Today the one capability is `launch-routine`: firing the Haku "claude-code-web routine" with
 the bearer from the `haku-routine-launch-token` secret. The fire itself lives in
 `haku.console.tools.routine.RoutineLauncher` (shared with the `haku_routine` in-process MCP
-server); the bearer never leaves this process. See `haku/docs/security.md` → enforcement #11.
+server); the bearer never leaves this process. See `haku/docs/security.md` → enforcement inventory,
+"Console privileged-action tier".
 
 CLEANUP(added 2026-07-11): Retire this whole launch-routine capability path (the endpoint +
 `LaunchRoutineRequest` + the `requestLaunch` bridge verb + the shell launch confirm) once
 haku-ui submits `launch_routine` through its backend to the standard approval queue (the
-`haku_routine` MCP server, `tools/routine.py`) and the `requestLaunch` verb is dropped. The
+`haku_routine` MCP server, `tools/routine.py`) and the `requestLaunch` verb is dropped.
 """
 
 from __future__ import annotations

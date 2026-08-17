@@ -112,8 +112,8 @@ class RecordedToolCall(BaseModel):
     arguments, and an id to answer against.
 
     **What the call answered is deliberately not here.** `call_id` is the correlation key and the
-    only half of the pair this row holds; the answer is joined at read time out of the frame log
-    (`x/session_views.SessionToolCallView`).
+    only half of the pair this row holds; the answer is joined at read time out of the stored
+    events (`x/session_views.tool_calls`).
     """
 
     model_config = ConfigDict(extra="forbid")

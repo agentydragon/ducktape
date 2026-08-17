@@ -83,7 +83,7 @@ HAKU_CONVERSATIONS_SERVER_ID = "haku_conversations"
 
 # Rows per page. Small on purpose: a frame carries a whole tool result, and the console's
 # past-tool-calls page already learned that asking for hundreds of such rows means a
-# multi-megabyte response (haku/console/debug/past_tool_calls_perf.md).
+# multi-megabyte response (<../README.md> § Past tool calls).
 MAX_PAGE = 100
 DEFAULT_PAGE = 25
 
@@ -105,7 +105,7 @@ DEFAULT_PAGE = 25
 MAX_PAGE_BYTES = 200_000
 
 # What a session's `kind` column actually holds, so a caller can filter for any of it. Every
-# entry was observed in production; four of them are absent from the CLI's `protocol.md`, and
+# entry was observed in production; `tool_progress` is absent from the CLI's `protocol.md`, and
 # `setup_output` is the console's own (`haku/console/x/setup_output.py`). Spelled here because
 # it is this tool's argument vocabulary — an enum in the generated schema — rather than anything
 # the store constrains: `read_frames` takes whatever strings it is handed.

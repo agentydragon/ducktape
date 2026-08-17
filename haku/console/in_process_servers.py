@@ -2,8 +2,8 @@
 
 The registry holds *builders* (`InProcessServers`): the gmail/google_calendar servers are
 built per execution from the acting Operator's Google access token, hostexec from the acting
-Operator's Authentik access token (bound by argument, no ambient state), while routine is
-credential-free. See `mcp_config.InProcessServerBuilder`.
+Operator's Authentik access token (bound by argument, no ambient state), while routine,
+conversations and index are credential-free. See `mcp_config.InProcessServerBuilder`.
 """
 
 from __future__ import annotations

@@ -888,7 +888,7 @@ class Session(Base):
     # committed. It is written in the same transaction as those effects, which is the whole of what
     # makes them exactly-once — a replica that dies leaves this naming the last frame that landed,
     # and whoever adopts the session re-projects from here, redoing exactly the frames whose
-    # effects did not commit (<plans/chat_runtime_projection.md> § The shape).
+    # effects did not commit (<../plans/chat_runtime_projection.md> § The shape).
     #
     # A bound like `session_turns.first_frame_seq`, not a pointer: `Identity` leaves gaps, and
     # `next_prompt` anchors it at the frame before the turn it opens, which is a value no row has.
@@ -966,7 +966,7 @@ class SessionMessage(Base):
     # never pointed at all if no turn claims it (`PromptFate.LOST`). That is a live state rather
     # than an era, so the range is required by role in the constraint below rather than on these
     # columns.
-    # See <plans/chat_runtime_projection.md> § "The projection is not a one-way door".
+    # See <../plans/chat_runtime_projection.md> § "The projection is not a one-way door".
     source_first_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     source_last_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # What this message asked its tools to do, in the conversation vocabulary rather than in one
@@ -1208,12 +1208,12 @@ class SessionEvent(Base):
     crosses any wire (`x/session_store.enqueue_prompt`), so it takes the `authored` arm and names
     no turn. Without it `event_seq` addresses only the half of a transcript the agent wrote.
 
-    **One ordered stream, two categories.** Beside the conversation are the facts the console
-    authors about the session itself — a lease changing hands, a lease lapsing — which cross no
-    wire and so are their own evidence (`AuthoredEventKind`). They are here rather than in the
-    frame log because the frame log is the record of runner↔console traffic and nothing else
-    (operator, 2026-08-16), and they are here rather than in a table of their own because ordering
-    against the conversation is the point.
+    **One ordered stream, two categories, split by where a row came from rather than by what it is
+    about.** `ConversationEventKind` is what folding a recorded frame produced; `AuthoredEventKind`
+    is what no frame carries and the console alone witnessed — a lease changing hands, a lease
+    lapsing, and the prompt above. They are here rather than in the frame log because the frame log
+    is the record of runner↔console traffic and nothing else (operator, 2026-08-16), and here
+    rather than in a table of their own because ordering against the conversation is the point.
     """
 
     __tablename__ = "session_events"
@@ -1329,7 +1329,7 @@ class SessionFrame(Base):
     # the runner gave one. Dense and monotonic over everything one runner process sent, which
     # `frame_seq` above is deliberately not — so this is the number a reconnect is computed from:
     # the console hands back the highest it holds and the runner replays only what is above it
-    # (<plans/chat_runtime_projection.md> § 2b).
+    # (<../plans/chat_runtime_projection.md> § 2b).
     #
     # NULL means no runner numbered this row, and there are three ways to mean it: a frame this
     # console wrote to the CLI, a row the console authored itself (`setup_output`, `partial`), and
@@ -1392,9 +1392,9 @@ class SessionOutbox(Base):
     it sent only once the send has returned is what makes "answered" mean answered.
 
     **Replies only.** The console's narration — status line, lifecycle notices, holding and
-    bootstrap lines — stays on `channels/matrix/pacer.py`'s in-process queue: R11.6 is about a reply the
-    agent produced, and a notice that describes a moment is not worth redelivering minutes
-    later. That is also why there is no `kind` column: every row here is a `REPLY`.
+    bootstrap lines — stays on `x/channels/matrix/pacer.py`'s in-process queue: R11.6 is about a
+    reply the agent produced, and a notice that describes a moment is not worth redelivering
+    minutes later. That is also why there is no `kind` column: every row here is a `REPLY`.
 
     **One target, one channel.** `room_id` is a Matrix room because that is the only channel
     there is; a second one joins by adding a discriminator beside it rather than by overloading
@@ -1404,25 +1404,26 @@ class SessionOutbox(Base):
     __tablename__ = "session_outbox"
 
     # Also the transaction id the send goes out under, so a redrive is refused by the homeserver
-    # rather than posting twice — see `channels/matrix/outbox.py`'s `PendingReply.transaction_id`.
+    # rather than posting twice — see `x/channels/matrix/outbox.py`'s `PendingReply.transaction_id`.
     outbox_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     session_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False
     )
     room_id: Mapped[str] = mapped_column(Text, nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
-    # The transcript row this reply is, which the room event states as its tag. NULL for the two
-    # replies that correspond to no row: a turn's abort notice, and text that arrived only on a
-    # `result` frame after the turn's last assistant message said nothing.
+    # The transcript row this reply is, which the room event states as its tag. NULL for a turn's
+    # last word, which belongs to no message row and is keyed by `turn_id` below instead — an abort
+    # notice. Text that arrived only on a `result` frame is not one of those: `_run_turn` mints a
+    # message row for it when the turn said nothing else.
     message_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("session_messages.message_id", ondelete="SET NULL"), nullable=True
     )
     agent_message_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     # The idempotence key for the one reply a turn can produce that no transcript row holds: its
-    # last word, which is either an answer that arrived on the `result` frame alone or the notice
-    # an abort leaves. `_run_turn` writes at most one of those per turn and writes it *before*
-    # closing the turn, so a replica dying in that window leaves the turn open and its replacement
-    # re-derives the same reply — which this makes a no-op rather than a second copy in the room.
+    # last word: the notice an abort leaves, or final text its completed messages did not already
+    # queue. `_run_turn` writes at most one of those per turn and writes it *before* closing the
+    # turn, so a replica dying in that window leaves the turn open and its replacement re-derives
+    # the same reply — which this makes a no-op rather than a second copy in the room.
     #
     # NULL wherever `message_id` carries the identity instead. Not turn *state*: nothing reads it
     # to decide anything about the turn, and the drain never looks at it.
@@ -1578,7 +1579,7 @@ class MatrixHeldBatch(Base):
     that: the watermark used to be written the moment `enqueue_prompt` committed,
     so a session dying between the enqueue and the turn left the prompt keyed to the dead session
     — invisible to the replacement's `next_prompt` — while the homeserver had been told the
-    message was handled (<x/../debug/message_drops.md> I3).
+    message was handled (<debug/message_drops.md> I3).
 
     This row is the deferral, and its **existence is the state**: `next_batch` is where the
     watermark moves once the turn ends, and `message_id` is the transcript row `enqueue_prompt`
