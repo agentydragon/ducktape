@@ -424,6 +424,27 @@ down — the provider shape is living in a `NOT NULL` and a unique index, which 
 load-bearing position that rule forbids. **Do not build the append-only path ahead of step 9**;
 nothing today is a teletype, and a second mechanism invented now is one to delete later.
 
+**Most of what it stores is write-only, which is the sharper form of the same finding** (operator,
+2026-08-17, after #4307 merged: _"it felt to me like a strange thing that's trying to implement a
+conversation updates cursor before we actually have it implemented"_). `PendingReply.subject()`
+mints three kinds — `message:{message_id}`, `turn:{turn_id}` and the single `status` — so the table
+takes one permanent row per assistant message per attachment. But the only reads anywhere are
+`sync.py`'s two `live(attachment_id, STATUS_SUBJECT)` calls: **every `message:` and `turn:` row is
+written and never read**, against <../../../STYLE.md> § Every field needs a reader.
+
+For those rows the table adds exactly one fact over `session_outbox.sent_at`, which the drain
+already writes in the same transaction: the room's `event_id`. Nothing edits a message, so nothing
+wants that id — it is there for the reconciler that replaces the outbox, which does not exist. That
+is what makes the objection right: the growing set of `(attachment, subject)` rows is a flushed-up-to
+position materialised as a map, one row at a time, ahead of the cursor that will hold it properly.
+
+**What genuinely earns a table is the one revisable subject.** `status` is edited in place and
+retired; it is the only row whose `sent_ref` is read, and one live row per attachment is bounded.
+So the narrowing to consider is not a rename alone: restrict what may be written to subjects the
+channel can actually revise, and let the outbox stay the record of what has been sent until step 9's
+cursor takes it. Doing that before more callers arrive is cheaper than after — today there are two
+readers and one writer.
+
 ### A session has no frontend, and the port is per attachment
 
 **"The frontend this session is attached to" is not a thing** (operator, 2026-08-17: _"what is a
