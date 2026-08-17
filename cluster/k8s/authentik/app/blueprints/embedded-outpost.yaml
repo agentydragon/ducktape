@@ -34,7 +34,6 @@ entries:
         - !Find [authentik_providers_proxy.proxyprovider, [name, goldilocks]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, google-workspace-mcp]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, plaid-link]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, browsertrix]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, archivebox]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, sdr]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, adsb]]

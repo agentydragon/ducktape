@@ -23,7 +23,7 @@ configMapGenerator:
       - blueprints/goldilocks-sso.yaml
       - blueprints/google-workspace-mcp-sso.yaml
       - blueprints/plaid-link-sso.yaml
-      - blueprints/browsertrix-sso.yaml
+      - blueprints/browsertrix-sso-retire.yaml
       - blueprints/archivebox-sso.yaml
       - blueprints/embedded-outpost.yaml
       - blueprints/airlock-sso.yaml

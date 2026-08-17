@@ -4,6 +4,7 @@ metadata:
   name: browsertrix
   namespace: ducktape-flux
 spec:
+  suspend: true
   interval: 10m
   retryInterval: 1m
   timeout: 25m
