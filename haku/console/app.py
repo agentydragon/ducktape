@@ -70,7 +70,7 @@ from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.recall_index_reader import PostgresIndexSearcher
-from haku.console.recall_index_sync import StateIndexMaintenance
+from haku.console.recall_index_sync import RecallIndexMaintenance
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import sandbox_claims, session_runtime
@@ -378,8 +378,8 @@ def create_app(
     # `launch_routine` config/secret; independent of the Google connection above.
     routine_launcher = routine_tools.RoutineLauncher(settings.launch_routine) if settings.launch_routine else None
     # Built alongside the index's search tools below, and None when a test injects its own
-    # in-process servers: a test that wants the sweeps drives `StateIndexMaintenance` itself.
-    index_maintenance: StateIndexMaintenance | None = None
+    # in-process servers: a test that wants the sweeps drives `RecallIndexMaintenance` itself.
+    index_maintenance: RecallIndexMaintenance | None = None
     if in_process_servers is None:
         # hostexec being configured implies a real Authentik operator OIDC, so deriving the token
         # endpoint here (only in this branch) is safe.
@@ -411,7 +411,7 @@ def create_app(
                 _embedder(settings.embedder, timeout=settings.embedder.timeout_seconds),
                 budget=index_budget,
             )
-            index_maintenance = StateIndexMaintenance(
+            index_maintenance = RecallIndexMaintenance(
                 db_engine,
                 db_sessions,
                 embedder=_embedder(settings.embedder, timeout=settings.embedder.sync_timeout_seconds),

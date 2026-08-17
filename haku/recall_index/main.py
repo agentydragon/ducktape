@@ -106,7 +106,7 @@ def index_git(
     repo_url: Annotated[str, typer.Argument()],
     database_url: DatabaseUrl,
     branch: str = "main",
-    mirror: Path = Path("/var/lib/haku-state-index/mirror.git"),
+    mirror: Path = Path("/var/lib/haku-recall-index/mirror.git"),
     username: Annotated[str | None, typer.Option(envvar="HAKU_STATE_INDEX_GIT_USERNAME")] = None,
     password: Annotated[str | None, typer.Option(envvar="HAKU_STATE_INDEX_GIT_PASSWORD")] = None,
 ) -> None:

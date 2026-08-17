@@ -64,7 +64,7 @@ def _fetch(repository: pygit2.Repository, git: HakuStateGitConfig) -> str:
     return fetch_branch(repository, git.branch, username=git.username, password=password)
 
 
-class StateIndexMaintenance:
+class RecallIndexMaintenance:
     """Sync sweeps for the index's two corpora, one leader replica at a time."""
 
     def __init__(

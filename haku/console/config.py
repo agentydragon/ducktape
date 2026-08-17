@@ -118,7 +118,7 @@ class HakuStateGitConfig(BaseModel):
     password: SecretStr | None = None
     # A bare mirror, on ephemeral pod storage by default: losing it costs a clone, not an
     # embedding, since the chunk cache is content-addressed and lives in Postgres.
-    mirror_path: Path = Path("/tmp/haku-state-index/mirror.git")
+    mirror_path: Path = Path("/tmp/haku-recall-index/mirror.git")
 
 
 class LaunchRoutineConfig(BaseModel):

@@ -24,7 +24,7 @@ from haku.console.config import HakuStateGitConfig, RecallIndexConfig
 from haku.console.database_schema import Operator, Session, SessionMessage
 from haku.console.operator_identity import OperatorStatus
 from haku.console.recall_index_reader import PostgresIndexSearcher
-from haku.console.recall_index_sync import CHAT_ADVISORY_LOCK, StateIndexMaintenance
+from haku.console.recall_index_sync import CHAT_ADVISORY_LOCK, RecallIndexMaintenance
 from haku.console.tools.recall_index import ConversationSource, HakuStateSource, SearchCorpus
 from haku.recall_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
 
@@ -103,7 +103,7 @@ async def test_a_chat_sweep_makes_a_session_searchable(
 ) -> None:
     session_id = await say(migrated_sessions, operator_id, "we decided to keep the egress fence")
 
-    await StateIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=None).sync_chat_once()
+    await RecallIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=None).sync_chat_once()
 
     results = await PostgresIndexSearcher(migrated_sessions, embedder).search(
         "egress", corpus=SearchCorpus.CONVERSATIONS, limit=5, path_prefix=None, session_id=None
@@ -119,7 +119,7 @@ async def test_a_git_sweep_makes_the_tip_searchable(
     haku_state: HakuStateGitConfig,
     embedder: FakeEmbedder,
 ) -> None:
-    await StateIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=haku_state).sync_git_once()
+    await RecallIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=haku_state).sync_git_once()
 
     results = await PostgresIndexSearcher(migrated_sessions, embedder).search(
         "egress", corpus=SearchCorpus.HAKU_STATE, limit=5, path_prefix=None, session_id=None
@@ -136,7 +136,7 @@ async def test_an_unmoved_remote_is_never_fetched(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The point of the `ls-remote` gate: polling often must not mean pulling objects often."""
-    maintenance = StateIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=haku_state)
+    maintenance = RecallIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=haku_state)
     await maintenance.sync_git_once()
 
     def never(*args: object, **kwargs: object) -> str:
@@ -154,7 +154,7 @@ async def test_status_reports_the_remote_before_anything_is_indexed(
 ) -> None:
     """A sweep that cannot finish still has to leave evidence that it looked."""
     with pytest.raises(RuntimeError):
-        await StateIndexMaintenance(
+        await RecallIndexMaintenance(
             migrated_engine, migrated_sessions, embedder=ExplodingEmbedder(), git=haku_state
         ).sync_git_once()
 
@@ -172,7 +172,7 @@ async def test_a_search_against_a_corpus_that_is_behind_carries_its_status(
 ) -> None:
     """The reason the field exists: this search returns nothing, and that is not an answer."""
     with pytest.raises(RuntimeError):
-        await StateIndexMaintenance(
+        await RecallIndexMaintenance(
             migrated_engine, migrated_sessions, embedder=ExplodingEmbedder(), git=haku_state
         ).sync_git_once()
 
@@ -192,7 +192,7 @@ async def test_status_reports_the_indexed_commit_once_a_sync_lands(
     haku_state: HakuStateGitConfig,
     embedder: FakeEmbedder,
 ) -> None:
-    await StateIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=haku_state).sync_git_once()
+    await RecallIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=haku_state).sync_git_once()
 
     status = (await PostgresIndexSearcher(migrated_sessions, embedder).status()).haku_state
     assert status.indexed_commit == status.remote_commit
@@ -203,7 +203,7 @@ async def test_without_git_configured_the_git_sweep_is_a_no_op(
     migrated_engine: AsyncEngine, migrated_sessions: async_sessionmaker[AsyncSession], embedder: FakeEmbedder
 ) -> None:
     """The console serves the chat corpus alone until it is given a way to read haku-state."""
-    await StateIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=None).sync_git_once()
+    await RecallIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=None).sync_git_once()
 
     # Reported as empty rather than absent: a caller cannot tell "unconfigured" from "not yet
     # indexed" from the corpus's own status, and `remote_commit` is what says nothing has looked.
@@ -222,7 +222,7 @@ async def test_a_replica_that_loses_the_lock_leaves_the_work_alone(
 
     async with migrated_engine.connect() as leader:
         assert await leader.scalar(text("SELECT pg_try_advisory_lock(:lock)"), {"lock": CHAT_ADVISORY_LOCK})
-        await StateIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=None).sync_chat_once()
+        await RecallIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=None).sync_chat_once()
 
     assert (await PostgresIndexSearcher(migrated_sessions, embedder).status()).conversations.sessions == 0
 
