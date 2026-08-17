@@ -976,7 +976,12 @@ class Session(Base):
     conversation_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("conversation.conversation_id", ondelete="CASCADE"), nullable=False
     )
-    surface: Mapped[ChatSurface] = mapped_column(TextBackedStrEnumColumn(ChatSurface), nullable=False)
+    # Every writer names this column, so the server default supplies nothing today. It is what an
+    # `INSERT` that stops naming it gets instead of a `NOT NULL` violation, which is the state the
+    # attachment leaves this column in (`0073`).
+    surface: Mapped[ChatSurface] = mapped_column(
+        TextBackedStrEnumColumn(ChatSurface), nullable=False, server_default=text("'spa'")
+    )
     # The Matrix room this session serves — the *history* half of the binding, where
     # `matrix_conversation.session_id` is the live pointer. Written once at creation and never
     # updated, which is what keeps a replaced Matrix session distinguishable from an SPA one.
@@ -1021,8 +1026,6 @@ class Session(Base):
             name="ck_sessions_status",
         ),
         CheckConstraint("surface IN ('spa','matrix')", name="ck_sessions_surface"),
-        # A session serving a room is what `matrix` means, so surface and room are one fact.
-        CheckConstraint("(surface = 'matrix') = (room_id IS NOT NULL)", name="ck_sessions_matrix_room"),
         Index("idx_sessions_operator", "operator_id", "created_at"),
         Index("idx_sessions_conversation", "conversation_id", "created_at"),
         Index(

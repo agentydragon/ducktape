@@ -249,8 +249,8 @@ class MatrixSession:
 
     A variant rather than a `surface` enum beside an optional `room_id`, because the two
     combinations that pair would also admit — a Matrix session with no room, a room on an SPA
-    session — are states no caller could act on. The table repeats the rule as a pair of check
-    constraints, since the columns outlive this call signature.
+    session — are states no caller could act on. Nothing in the table enforces the pairing, so
+    this union is the whole of where the rule lives.
     """
 
     surface_column: ClassVar[ChatSurface] = ChatSurface.MATRIX
