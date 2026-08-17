@@ -606,8 +606,7 @@ input to a running turn**. Interrupt exists; steer does not.
   interrupted turn does not reach: a replica losing its pod raises `CancelledError` past any
   finalizer, and that is the turn most worth having. It costs one write per delta beside the
   one the message row already does. The row is not overwritten with the harness's final text
-  either — that carries `[aborted by operator]`, and the frame records what the agent produced,
-  not what the room was told.
+  either — the frame records what the agent produced, not what the room was told.
 
 - **R5.5c Bound the reader, not the record.** A tool result can be megabytes, and the frame
   stores it whole: truncating at write time discards the one copy of what happened, to save
@@ -758,8 +757,8 @@ that.
   mechanics, not a substitute for what the agent said.
   Two consequences of forwarding as it goes: the turn's `result` frame repeats its last
   assistant text, so it is delivered only when nothing was said along the way (a turn whose
-  answer arrived only there), and the abort notice is spoken on its own rather than appended,
-  because the text it would have been appended to is already in the room.
+  answer arrived only there), and the abort notice is spoken on its own rather than appended: it
+  is the projection of a `turn_aborted` event, not part of what the agent said.
 - **R11.2 [built] Every turn speaks.** There is no silence token. A turn that finishes with no
   text says so, as a notice rather than a reply — the console reporting an outcome, not the agent
   talking. The empty string used to be a silence token by accident: delivery returned early on it,

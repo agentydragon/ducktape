@@ -171,11 +171,16 @@ class AuthoredEventKind(StrEnum):
     it to, and a session that ends before the prompt is claimed never sends it at all
     (`PromptFate.LOST`). The frame that eventually carries it, if one does, projects to nothing —
     the console already holds the text (`x/claude_code/projection._user`), so it is recorded once.
+
+    `TURN_ABORTED` is the one member that **names its turn**: the operator stopping an exchange is
+    a fact about that exchange, and a channel's "this was aborted" notice derives from the row's
+    place in the stream. So a reader of this arm cannot assume `turn_id IS NULL`.
     """
 
     PROMPT_ENQUEUED = "prompt_enqueued"
     SESSION_ADOPTED = "session_adopted"
     LEASE_EXPIRED = "lease_expired"
+    TURN_ABORTED = "turn_aborted"
 
 
 # What `session_events.kind` holds, over both categories of the one ordered stream.

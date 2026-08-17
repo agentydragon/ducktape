@@ -960,6 +960,44 @@ async def test_an_accepted_prompt_is_a_row_in_the_stream_as_well_as_in_the_trans
     assert (asked.turn_id, asked.source_first_frame_seq) == (None, None)
 
 
+async def test_an_aborted_turn_is_a_row_in_the_stream_and_names_its_turn(
+    chat_store, migrated_sessions, accepted_prompt
+) -> None:
+    """The operator's stop, in the ordered stream a channel reads rather than only in a column.
+
+    It is the one authored kind that names a turn: what was stopped is the exchange, so a reader
+    folding the stream knows which one, and the room's "aborted" line is this row rendered.
+    """
+    session_id, _ = accepted_prompt
+    turn = await chat_store.next_prompt(session_id)
+    assert turn is not None
+
+    await chat_store.end_turn(turn.turn_id, TurnOutcome.ABORTED)
+
+    stopped = one(
+        event
+        for event in await authored_events(migrated_sessions, session_id)
+        if event.kind == AuthoredEventKind.TURN_ABORTED
+    )
+    assert (stopped.turn_id, stopped.body) == (turn.turn_id, {})
+
+
+async def test_a_turn_that_ended_any_other_way_leaves_no_abort_row(
+    chat_store, migrated_sessions, accepted_prompt
+) -> None:
+    """A turn that answered was not stopped, and a second close cannot re-decide that — the same
+    early return that keeps the first outcome keeps this row from being minted after it."""
+    session_id, _ = accepted_prompt
+    turn = await chat_store.next_prompt(session_id)
+    assert turn is not None
+
+    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
+    await chat_store.end_turn(turn.turn_id, TurnOutcome.ABORTED)
+
+    kinds = [event.kind for event in await authored_events(migrated_sessions, session_id)]
+    assert kinds == [AuthoredEventKind.PROMPT_ENQUEUED]
+
+
 async def test_a_refused_prompt_is_not_in_the_stream(chat_store, migrated_sessions, operator_id) -> None:
     """The row and the event commit together, so what is not accepted is not recorded."""
     view, token = await chat_store.create(operator_id, SpaSession())

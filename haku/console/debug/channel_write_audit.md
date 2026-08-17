@@ -48,6 +48,7 @@ half of the surface is empty here, and the whole audit is the six calls above.
 | 12  | `send_notice` — unreadable     | `matrix_sync.py:518` `_report_unreadable`     | `unreadable` | **bypassing**         |
 | 13  | `send_notice` — lifecycle      | `matrix_session.py:362,403` → `announce`      | `lifecycle`  | **bypassing** (worst) |
 | 14  | `send_notice` — silent turn    | `matrix_session.py:274` → `announce`          | `narration`  | **bypassing**         |
+| 15  | `send_notice` — turn aborted   | `session.py` `MatrixSurface.report_abort`     | `narration`  | **recorded** (§ 1)    |
 
 **Eight bypassing writes.** Rows 8–14 are all one code path — `MatrixSyncService._queue_notice`
 (`matrix_sync.py:370-376`), which builds an `EventTag`, closes over a `send_notice`, and hands the
@@ -55,7 +56,7 @@ closure to `matrix_pacer`. Nothing durable is touched anywhere along it. They ar
 separately because they are seven different facts with seven different homes, and lumping them
 would hide that some are session events and some are channel-binding events.
 
-## 1. The two recorded writes
+## 1. The three recorded writes
 
 **Row 1, a reply, is the pattern and the only thing that fully satisfies the invariant.** `#4104`
 put it there: `update_assistant` writes the transcript row and the `session_outbox` row in one
@@ -70,6 +71,13 @@ the fact is durable and the delivery is not: a replica dying between the two los
 with nothing to notice it is missing. It is the right classification — the fact is in our store —
 but it is fan-out, not projection, and it is the shape §1 of
 <../plans/session_channels.md> exists to replace.
+
+**Row 15, the abort notice, is the only one that is a projection.** `end_turn` writes a
+`turn_aborted` row into `session_events` under the lock that closes the turn, and the surface
+announces afterwards — so the fact is in the record, the room's copy is a rendering of it, and a
+reconciler re-derives that rendering from the row rather than from a queue. It used to be a
+`turn_id`-keyed `session_outbox` row, which made it the one durable non-reply artifact the console
+kept and kept it in the channel's table.
 
 ## 2. The three ephemeral writes, and why the claim is defensible here
 

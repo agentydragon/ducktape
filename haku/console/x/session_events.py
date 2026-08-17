@@ -14,8 +14,9 @@ is the body, and it is per kind.
 survives it is the frame range, which is also what `session_messages` records its own span in and
 so what joins the two tables.
 
-**An authored row names no turn**, which is what keeps `reprojection.check_session` from having to
-know about anything but the fold's output: it reads a turn's rows, and these belong to none.
+**An authored row may name a turn**, and one kind does: an abort is the operator stopping an
+exchange. `reprojection.check_session` therefore filters the arm out rather than relying on its
+per-turn read never seeing one.
 """
 
 from __future__ import annotations
@@ -185,6 +186,33 @@ def prompt_enqueued(*, session_id: UUID, message_id: UUID, text: str, now: datet
         source_last_frame_seq=None,
         call_id=None,
         body=PromptBody(message_id=message_id, text=text).model_dump(mode="json"),
+        created_at=now,
+    )
+
+
+def turn_aborted(*, session_id: UUID, turn_id: UUID, now: datetime) -> SessionEvent:
+    """The row the operator's stop is stored as, written in `end_turn`'s own transaction.
+
+    Authored because no frame carries it: the console interrupts the CLI, and the `result` frame
+    that comes back says a turn ended without saying who ended it.
+
+    **Written where the turn closes rather than where the abort is asked for**, so it lands after
+    the turn's own events and a channel folding the stream in order renders the notice after the
+    prose it interrupted.
+
+    The kind and the turn are the whole fact, so the body is empty: who asked is not carried
+    (`request_abort` reaches the running replica as a NOTIFY), and when it took effect is
+    `created_at`.
+    """
+    return SessionEvent(
+        session_id=session_id,
+        turn_id=turn_id,
+        kind=AuthoredEventKind.TURN_ABORTED,
+        provenance=EventProvenance.AUTHORED,
+        source_first_frame_seq=None,
+        source_last_frame_seq=None,
+        call_id=None,
+        body={},
         created_at=now,
     )
 

@@ -23,6 +23,7 @@ from haku.console.database_schema import ChatAttachment, Session
 from haku.console.x.channels.matrix.client import InboundMessage, RoomEventKind
 from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
 from haku.console.x.channels.matrix.session import (
+    ABORTED_BY_OPERATOR,
     NOTHING_SAID,
     MatrixConversationStore,
     MatrixSessionSupervisor,
@@ -382,6 +383,17 @@ async def test_a_turn_with_nothing_to_say_says_so(bound: UUID) -> None:
     await reporting.report_silent_turn()
 
     assert room.announced == [(NOTHING_SAID, RoomEventKind.NARRATION)]
+
+
+async def test_an_abort_reaches_the_room_as_a_notice(bound: UUID) -> None:
+    """The projection of the `turn_aborted` event the closing transaction wrote. A notice, and
+    nothing durable of the channel's own: the record already says the turn was stopped."""
+    del bound
+    reporting, room = surface_and_room(served())
+
+    await reporting.report_abort()
+
+    assert room.announced == [(ABORTED_BY_OPERATOR, RoomEventKind.NARRATION)]
 
 
 @pytest.fixture

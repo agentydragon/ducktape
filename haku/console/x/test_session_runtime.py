@@ -46,7 +46,7 @@ from haku.console.x.claude_code.testing.wire import (
 from haku.console.x.conftest import MCP_TOKEN, age_lease, lease_of, queued_for_the_room, runtime_config
 from haku.console.x.frame_projection import projected
 from haku.console.x.session_notifications import SessionNotifications
-from haku.console.x.session_runtime import ABORTED_NOTICE, GOING_AWAY_CODE, RolloutRecorder, SessionService, _replaying
+from haku.console.x.session_runtime import GOING_AWAY_CODE, RolloutRecorder, SessionService, _replaying
 from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, MatrixSession, SessionStore, SpaSession
 from haku.console.x.testing.recording_claims import RecordingClaims
 from haku.runtime.x.bridge.cli_client import ClaudeCli, FrameSink, ReceivedFrame, SentPrompt
@@ -684,12 +684,16 @@ class _RecordingFrontend:
 
     def __init__(self) -> None:
         self.silent_turns = 0
+        self.aborts = 0
 
     async def system_prompt(self, session_id: UUID) -> str:
         return "you are Haku"
 
     async def report_silent_turn(self) -> None:
         self.silent_turns += 1
+
+    async def report_abort(self) -> None:
+        self.aborts += 1
 
     async def report(self, detail: str) -> None:
         return None
@@ -1069,46 +1073,59 @@ async def test_a_turn_with_nothing_at_all_to_say_reports_it_rather_than_queueing
     assert (queued, frontend.silent_turns) == ([], 1)
 
 
-async def test_an_aborted_turn_says_so_on_its_own(
+async def test_an_aborted_turn_leaves_a_notice_and_no_reply(
     chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
-    """Two things this pins down. The abort notice rides on `final_text`, which a turn that has
-    already queued its answer no longer sends, so it has to be said on its own or an operator's
-    stop is invisible in the room. And the turn has to *survive* the abort at all: draining to the
-    interrupt's `result` used to open a second `anext` on the session's generator, which an async
-    generator refuses — so an abort landing where they land, between frames, raised out of the
-    turn and failed the whole session instead of ending its turn.
+    """Two things this pins down. The operator's stop reaches the room as a notice and nothing
+    else — no `session_outbox` row, because the fact is a `session_events` row and the notice is
+    its projection. And the turn has to *survive* the abort at all: draining to the interrupt's
+    `result` used to open a second `anext` on the session's generator, which an async generator
+    refuses — so an abort landing where they land, between frames, raised out of the turn and
+    failed the whole session instead of ending its turn.
     """
     abort_event = asyncio.Event()
     client = _InterruptedCli(_NARRATED_TURN[:-1], abort_event=abort_event)
+    frontend = _RecordingFrontend()
 
     queued = await _turn_into_a_room(
-        chat_store, migrated_sessions, recording_claims, notifications, operator_id, client, abort_event=abort_event
+        chat_store,
+        migrated_sessions,
+        recording_claims,
+        notifications,
+        operator_id,
+        client,
+        abort_event=abort_event,
+        frontend=frontend,
     )
 
     assert client.interrupted
-    # The notice on its own, and nothing from the interrupt's own `result` frame ("stopped").
-    assert queued == ["Looking at the logs now.", "Found it: a bad config.", ABORTED_NOTICE]
+    # The two messages, and nothing from the interrupt's own `result` frame ("stopped").
+    assert (queued, frontend.aborts) == (["Looking at the logs now.", "Found it: a bad config."], 1)
 
 
-async def test_a_turn_aborted_mid_answer_queues_its_notice_once(
+async def test_an_abort_mid_answer_leaves_the_half_answer_unmarked(
     chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
-    """The other side of the same rule, and the one a delivery-time queue could not get wrong.
-
-    Stopped between deltas, so no assistant message ever completed: `final_text` is the half
-    answer plus the notice, and the message row that closes the stream is what carries it into
-    the outbox. Saying the notice again on its own — which is right when a completed message
-    carried the answer instead — would show the operator their stop twice.
+    """Stopped between deltas, so no assistant message ever completed: the message row that closes
+    the stream carries the half answer and only that. The stop is the console's fact, not part of
+    what the agent said, so it does not get written into the agent's words.
     """
     abort_event = asyncio.Event()
     client = _InterruptedCli([text_delta("because the "), text_delta("disk was full")], abort_event=abort_event)
+    frontend = _RecordingFrontend()
 
     queued = await _turn_into_a_room(
-        chat_store, migrated_sessions, recording_claims, notifications, operator_id, client, abort_event=abort_event
+        chat_store,
+        migrated_sessions,
+        recording_claims,
+        notifications,
+        operator_id,
+        client,
+        abort_event=abort_event,
+        frontend=frontend,
     )
 
-    assert queued == [f"because the disk was full\n\n{ABORTED_NOTICE}"]
+    assert (queued, frontend.aborts) == (["because the disk was full"], 1)
 
 
 async def test_a_message_the_agent_finished_before_stopping_survives_the_drain(
@@ -1121,8 +1138,7 @@ async def test_a_message_the_agent_finished_before_stopping_survives_the_drain(
     writing before it stops. Draining only to the `result` discarded that `assistant` frame
     entirely: no transcript row, no outbox row, not even a log line, the text left in
     `session_frames` where no operator is looking. It is a message like any other, so the room is
-    owed it like any other — and its arrival is exactly what makes the abort notice a row of its
-    own instead of a suffix on text that no message row carries.
+    owed it like any other.
     """
     abort_event = asyncio.Event()
     client = _CliFinishingItsMessage(
@@ -1136,9 +1152,9 @@ async def test_a_message_the_agent_finished_before_stopping_survives_the_drain(
     )
 
     assert client.interrupted
-    # The drained message once, then the notice on its own — and nothing from the interrupt's own
-    # `result` frame ("stopped"), which the finished message is what makes redundant.
-    assert queued == ["Looking at the logs now.", "Found it: a bad config.", ABORTED_NOTICE]
+    # The drained message once, and nothing from the interrupt's own `result` frame ("stopped"),
+    # which the finished message is what makes redundant.
+    assert queued == ["Looking at the logs now.", "Found it: a bad config."]
 
 
 async def test_a_turn_brackets_the_frames_it_produced(chat_store, chat_service, operator_id) -> None:

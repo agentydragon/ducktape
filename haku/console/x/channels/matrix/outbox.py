@@ -104,10 +104,10 @@ class PendingReply:
 
         **The row's own id, not `EventTag.transaction_id`'s.** That derives from the transcript row
         where there is one and *mints a fresh uuid4 otherwise* — correct for a status edit or a
-        lifecycle notice, but it would make a redrive of the two replies naming no transcript row
-        (a turn's abort notice, and `result.result` on a turn whose completed messages were all
-        empty) post a second message instead of being refused. The row id is stable for exactly as
-        long as redelivery can happen.
+        lifecycle notice, but it would make a redrive of the one reply naming no transcript row
+        (`result.result` on a turn whose completed messages were all empty) post a second message
+        instead of being refused. The row id is stable for exactly as long as redelivery can
+        happen.
         """
         return self.outbox_id.hex
 

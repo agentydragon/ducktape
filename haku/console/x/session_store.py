@@ -699,6 +699,10 @@ class SessionStore:
         to come. A turn ending any other way passes none and leaves the cursor where it is; the
         next `next_prompt` re-anchors it.
 
+        An `ABORTED` outcome also writes the `turn_aborted` event, so the operator stopping an
+        exchange is in the ordered stream a channel reads and not only in this row's `outcome`
+        column. The same lock and the same early return make it exactly once.
+
         Idempotent on an already-closed turn: a second close must not overwrite the first
         outcome, because the first one is the one that happened.
         """
@@ -707,6 +711,8 @@ class SessionStore:
             turn = await db.get(SessionTurn, turn_id, with_for_update=True)
             if turn is None or turn.ended_at is not None:
                 return
+            if outcome is TurnOutcome.ABORTED:
+                db.add(session_events.turn_aborted(session_id=turn.session_id, turn_id=turn_id, now=now))
             turn.last_frame_seq = (
                 last_frame_seq
                 if last_frame_seq is not None
@@ -1168,11 +1174,10 @@ class SessionStore:
     async def enqueue_turn_reply(self, session_id: UUID, turn_id: UUID, text: str) -> bool:
         """Queue a turn's last word, the one reply no transcript row holds. True if it is owed.
 
-        Two callers, and at most one of them per turn: `result.result` on a turn whose completed
-        assistant messages were all empty — a turn that completed none at all has a row minted for
-        it instead — and the notice an aborted turn leaves. `turn_id` is the idempotence key that
-        makes re-derivation by a replacement replica a no-op rather than a second copy in the
-        room — see `session_outbox.turn_id`.
+        One caller, at most once per turn: `result.result` on a turn whose completed assistant
+        messages were all empty — a turn that completed none at all has a row minted for it
+        instead. `turn_id` is the idempotence key that makes re-derivation by a replacement replica
+        a no-op rather than a second copy in the room — see `session_outbox.turn_id`.
 
         False for an empty body and for a session serving no room; the SPA reads the message rows
         this turn already wrote, so it is owed nothing here.

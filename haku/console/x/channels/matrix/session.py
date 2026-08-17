@@ -55,6 +55,10 @@ _SUPERVISOR_ADVISORY_LOCK = 0x4D58_5345  # "MXSE"
 # thing to have happened — it just must not look like the console lost the answer.
 NOTHING_SAID = "the turn finished without saying anything"
 
+# How this room renders a `turn_aborted` event. The words are the channel's own: what is recorded
+# is that the turn was aborted, and every channel gets to say so differently.
+ABORTED_BY_OPERATOR = "[aborted by operator]"
+
 SUPERVISE_INTERVAL = datetime.timedelta(seconds=10)
 # How long a replica that lost the election waits before contending again.
 LEADER_RETRY = datetime.timedelta(seconds=30)
@@ -399,6 +403,15 @@ class MatrixSurface:
         """
         logger.warning("Matrix: a turn finished with no text to send")
         await self._room.announce(NOTHING_SAID, RoomEventKind.NARRATION)
+
+    async def report_abort(self) -> None:
+        """Show the `turn_aborted` event the closing transaction just wrote.
+
+        A notice and no outbox row: the record already holds the fact, so the room's copy is a
+        rendering a reconciler re-derives rather than a delivery anything owes
+        (<../../../plans/session_channels.md> § 1).
+        """
+        await self._room.announce(ABORTED_BY_OPERATOR, RoomEventKind.NARRATION)
 
     async def report(self, detail: str) -> None:
         """Narrate the sandbox's setup into the room (R7.1)."""

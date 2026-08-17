@@ -62,10 +62,6 @@ router = APIRouter(tags=["sessions"])
 internal_router = APIRouter(tags=["claude-chat-internal"])
 logger = logging.getLogger(__name__)
 
-# Appended to a turn's stored answer when the operator stopped it, and sent on its own when the
-# room has already heard the turn's prose — so an abort is visible either way.
-ABORTED_NOTICE = "[aborted by operator]"
-
 
 def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
     """The message of the first leaf in *errors*, for the operator-facing `error` column.
@@ -161,12 +157,15 @@ class ChatFrontend(StatusFrontend, Protocol):
 
     **Replies are not here.** They are rows in `session_outbox`, written where they are produced
     and drained into the room by whoever holds the outbox lock (<../debug/message_drops.md>). What
-    is left here is what describes a moment and is worthless afterwards.
+    is left here is what a channel *shows*: a notice, whose fact the record already holds
+    elsewhere — the turn row, the session's event stream, the frame log.
     """
 
     async def system_prompt(self, session_id: UUID) -> str: ...
 
     async def report_silent_turn(self) -> None: ...
+
+    async def report_abort(self) -> None: ...
 
     async def report(self, detail: str) -> None: ...
 
@@ -602,8 +601,7 @@ class SessionService:
                 # It therefore moves `said_anything` and `queued_reply` exactly as it would have a
                 # moment earlier, which is what keeps the tail below honest: the room is not owed
                 # the turn's final text as well (it repeats that message), and no second row is
-                # minted for it — leaving `ABORTED_NOTICE` to be said on its own, as the one
-                # `turn_id`-keyed row this turn writes.
+                # minted for it.
                 #
                 # The stream stays open for the next turn: it is the session's, so an interrupt
                 # ends a turn rather than the conversation.
@@ -636,8 +634,6 @@ class SessionService:
             # the fallback for the one case that is not a repeat: a turn whose text arrived nowhere
             # else.
             final_text = state.streamed.strip() or str(result.get("result") or "").strip()
-            if abort_event.is_set():
-                final_text += f"\n\n{ABORTED_NOTICE}"
             if assistant_id is not None:
                 # A stream no completed frame closed.
                 # No frame range is passed: the deltas that produced this text already recorded
@@ -658,21 +654,17 @@ class SessionService:
                 # `final_text` — which is `result.result` repeating the last of them — belongs to
                 # no row of its own.
                 carried_final = False
-            spoke = carried_final or state.queued_reply
             # Only what the room is not already owed. Each assistant message queued its own row as
             # it finished and `result.result` normally repeats the last of them, so queueing
-            # `final_text` unconditionally would post the answer twice. Two cases still need it: a
-            # turn whose text belongs to no completed message, and an abort, whose notice rides on
-            # `final_text` and therefore on no message row.
+            # `final_text` unconditionally would post the answer twice — what is left is a turn
+            # whose text belongs to no completed message.
             #
             # **Before the turn is closed, not after.** Closing it makes it unadoptable, so a
             # replica dying between the two would strand this reply with nothing left to re-derive
             # it. This way the window leaves the turn open, and what the replacement re-derives
             # collides with the row already there (`session_outbox.turn_id`).
-            if not spoke:
+            if not (carried_final or state.queued_reply):
                 await self._speak(session_id, frontend, turn_id, final_text)
-            elif abort_event.is_set() and not carried_final:
-                await self._speak(session_id, frontend, turn_id, ABORTED_NOTICE)
             await self._store.end_turn(
                 turn_id,
                 TurnOutcome.ABORTED if abort_event.is_set() else completed.event.outcome,
@@ -681,6 +673,11 @@ class SessionService:
                 last_frame_seq=completed.frame.frame_seq,
                 projected_frame_seq=completed.frame.frame_seq,
             )
+            # After the record, never before it: `end_turn` writes the `turn_aborted` row, and this
+            # is that row projected into the room. Announcing first would leave a crash in the
+            # window showing the operator a notice nothing recorded.
+            if abort_event.is_set() and frontend is not None:
+                await frontend.report_abort()
         except Exception as error:
             # Bounded only where the failure was diagnosed from the `result` frame; otherwise this
             # turn ended on no frame of its own and `end_turn` bounds it by what it recorded.
@@ -702,8 +699,8 @@ class SessionService:
 
         Only ever the end of a turn: a completed assistant message queues its own copy in the same
         transaction, and a turn that completed none at all has one minted for it above. What is
-        left over belongs to no message row — an abort notice, or `result.result` on a turn whose
-        completed messages were all empty.
+        left over belongs to no message row — `result.result` on a turn whose completed messages
+        were all empty.
 
         A session attached to no frontend needs nothing here; the SPA reads the message rows the
         turn already wrote. An empty body is not a silence token (R11.2): the room is told the turn

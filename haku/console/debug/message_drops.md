@@ -79,10 +79,8 @@ the abort event, and every frame after it is folded in by the same `match` as ev
 So there is no separate account of what an `assistant` frame means, which is the failure mode that
 produced this one (<../../plans/chat_runtime_projection.md>'s two state machines). A drained message
 counts towards `spoke` and `saw_assistant_message` exactly as a mid-loop one does, so the room is not
-also owed `result.result` (which repeats it) and no second message row is minted for it — leaving
-`ABORTED_NOTICE` to be said on its own, as the single `turn_id`-keyed outbox row the turn writes, so
-`uq_session_outbox_turn` cannot be violated. Abort semantics are unchanged: the turn still ends, the
-notice is still said, the session survives.
+also owed `result.result` (which repeats it) and no second message row is minted for it. Abort
+semantics are unchanged: the turn still ends, the notice is still said, the session survives.
 
 It was structurally untested — `_InterruptedCli.frames` sets the abort only after its whole script
 has been yielded, so the drain never saw an `assistant` frame. `_CliFinishingItsMessage` queues one
@@ -237,8 +235,8 @@ called for held: the row is written **in the same transaction as `update_assista
 **One claim above was wrong, and it is worth reading before trusting the rest.**
 `EventTag.transaction_id()` (`matrix_client.py:126-138`) does _not_ make every redelivery
 idempotent: it derives from the transcript row where there is one and **mints a fresh `uuid4()`
-otherwise**, so a redrive of a turn's abort notice, or of text that arrived only on a `result`
-frame, would have posted a second message. Every outbox row is now sent under its own id, and two
+otherwise**, so a redrive of text that arrived only on a `result` frame would have posted a second
+message. Every outbox row is now sent under its own id, and two
 partial unique indexes (`message_id`, `turn_id`) stop a second row existing for one logical
 reply — the second of those because writing a turn's last word before closing the turn, which is
 what keeps it from being stranded, is also what lets a replacement replica re-derive it.

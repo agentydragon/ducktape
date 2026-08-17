@@ -1262,9 +1262,10 @@ class SessionEvent(Base):
     **One ordered stream, two categories, split by where a row came from rather than by what it is
     about.** `ConversationEventKind` is what folding a recorded frame produced; `AuthoredEventKind`
     is what no frame carries and the console alone witnessed — a lease changing hands, a lease
-    lapsing, and the prompt above. They are here rather than in the frame log because the frame log
-    is the record of runner↔console traffic and nothing else (operator, 2026-08-16), and here
-    rather than in a table of their own because ordering against the conversation is the point.
+    lapsing, an operator stopping a turn, and the prompt above. They are here rather than in the
+    frame log because the frame log is the record of runner↔console traffic and nothing else
+    (operator, 2026-08-16), and here rather than in a table of their own because ordering against
+    the conversation is the point.
     """
 
     __tablename__ = "session_events"
@@ -1277,7 +1278,8 @@ class SessionEvent(Base):
     )
     # A projected event belongs to an exchange, because the fold only runs while a turn is open. An
     # authored one need not: a lease changing hands is a fact about the session, and a session that
-    # died before it ever reached a turn is the case the second category exists to record.
+    # died before it ever reached a turn is the case the second category exists to record. It may
+    # still name one — `turn_aborted` does, because what the operator stopped was the exchange.
     turn_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("session_turns.turn_id", ondelete="CASCADE"), nullable=True
     )
@@ -1306,7 +1308,7 @@ class SessionEvent(Base):
         CheckConstraint(
             "kind IN ('message_completed','reasoning','tool_call_started',"
             "'tool_call_completed','activity_started','activity_completed',"
-            "'prompt_enqueued','session_adopted','lease_expired')",
+            "'prompt_enqueued','session_adopted','lease_expired','turn_aborted')",
             name="ck_session_events_kind",
         ),
         CheckConstraint("provenance IN ('frame_range','authored')", name="ck_session_events_provenance"),
@@ -1457,16 +1459,16 @@ class SessionOutbox(Base):
     room_id: Mapped[str] = mapped_column(Text, nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     # The transcript row this reply is, which the room event states as its tag. NULL for a turn's
-    # last word, which belongs to no message row and is keyed by `turn_id` below instead — an abort
-    # notice. Text that arrived only on a `result` frame is not one of those: `_run_turn` mints a
-    # message row for it when the turn said nothing else.
+    # last word, which belongs to no message row and is keyed by `turn_id` below instead —
+    # `result.result` on a turn whose completed messages were all empty. Text that arrived only on
+    # a `result` frame is otherwise not one of those: `_run_turn` mints a message row for it when
+    # the turn said nothing else.
     message_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("session_messages.message_id", ondelete="SET NULL"), nullable=True
     )
     agent_message_id: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # The idempotence key for the one reply a turn can produce that no transcript row holds: its
-    # last word: the notice an abort leaves, or final text its completed messages did not already
-    # queue. `_run_turn` writes at most one of those per turn and writes it *before* closing the
+    # The idempotence key for the one reply a turn can produce that no transcript row holds: final
+    # text its completed messages did not already queue. `_run_turn` writes it *before* closing the
     # turn, so a replica dying in that window leaves the turn open and its replacement re-derives
     # the same reply — which this makes a no-op rather than a second copy in the room.
     #

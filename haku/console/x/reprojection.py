@@ -82,21 +82,7 @@ class RowsBeyondCursor:
     stored: tuple[StoredEventKind, ...]
 
 
-@dataclass(frozen=True, slots=True)
-class UnalignableRow:
-    """A row with no frame range to align by — the `authored` arm, naming a turn.
-
-    The console's own session events take that arm and are written turn-less
-    (`session_events.authored`), so the per-turn read below does not see one and re-projection
-    cannot delete what it never re-derives. This finding is for an authored row that *does* name a
-    turn, which nothing writes today.
-    """
-
-    event_seq: int
-    kind: StoredEventKind
-
-
-type Finding = RowMismatch | RowCountMismatch | RowsBeyondCursor | UnalignableRow
+type Finding = RowMismatch | RowCountMismatch | RowsBeyondCursor
 
 
 class SkipReason(StrEnum):
@@ -179,9 +165,14 @@ async def _check_turn(
     db: AsyncSession, turn: SessionTurn, *, cursor: int | None, ends_before: int | None
 ) -> TurnReport:
     frames = await _turn_frames(db, turn, ends_before=ends_before)
+    # The fold's own output and nothing else. An authored row may name a turn (`turn_aborted`
+    # does), and re-projecting frames can never re-derive one — so comparing it against the fold
+    # would report drift on every aborted turn.
     rows = (
         await db.scalars(
-            select(SessionEvent).where(SessionEvent.turn_id == turn.turn_id).order_by(SessionEvent.event_seq)
+            select(SessionEvent)
+            .where(SessionEvent.turn_id == turn.turn_id, SessionEvent.provenance == EventProvenance.FRAME_RANGE)
+            .order_by(SessionEvent.event_seq)
         )
     ).all()
     projected = {frame.frame_seq: _expected(turn.turn_id, frame) for frame in frames}
@@ -207,15 +198,12 @@ def _outcome(
     """One turn's outcome: the skip first, because an era is not a disagreement."""
     if not within:
         return Skipped(reason=SkipReason.CURSOR_NEVER_REACHED)
-    findings: list[Finding] = [
-        UnalignableRow(event_seq=row.event_seq, kind=row.kind)
-        for row in rows
-        if row.provenance is EventProvenance.AUTHORED or row.source_first_frame_seq is None
-    ]
+    findings: list[Finding] = []
     stored: defaultdict[int, list[SessionEvent]] = defaultdict(list)
     for row in rows:
-        if row.source_first_frame_seq is not None:
-            stored[row.source_first_frame_seq].append(row)
+        # `ck_session_events_provenance_frames` puts a range on exactly the arm this query selects.
+        assert row.source_first_frame_seq is not None
+        stored[row.source_first_frame_seq].append(row)
     for frame_seq in sorted(set(projected) | set(stored)):
         kept = tuple(stored.get(frame_seq, ()))
         if cursor is None or frame_seq > cursor:

@@ -557,7 +557,7 @@ So the neutral stream carries two categories:
 - **Conversation** — what participants said: operator messages, agent messages, tool activity,
   reasoning.
 - **Session events** — what happened _to_ the session: provisioning, bootstrap narration, a session
-  ending and being replaced, a held batch, an aborted turn's notice.
+  ending and being replaced, a held batch, an operator stopping a turn.
 
 **One stream, because ordering is the point**: narration interleaves with messages in the room, and
 the debug view above reads in sequence. **Two categories, because every consumer filters
@@ -602,13 +602,13 @@ such a row is an envelope invented to fit, and a reader of `session_frames` woul
 which of its rows are not evidence of anything said. Bootstrap narration is not that case and keeps
 its frame — a `SetupOutput` envelope is runner→console traffic.
 
-**Two facts have a writer**, each in the transaction that makes it true: a replica taking a session
-over (`session_store.authenticate_bridge`) and a lease lapsing past the adoption grace
-(`expire_stale_leases`, which also records _which_ of its three cases ended the session).
-`session_events.turn_id` became nullable for them — a session that died before it ever reached a
-turn is exactly what this category exists to record, and it has no turn to name. The rest is
-unbuilt: `_SessionStatusAnnouncer`'s transitions, the held batch, the unreadable inbound event, an
-aborted turn's notice.
+**Three facts have a writer**, each in the transaction that makes it true: a replica taking a
+session over (`session_store.authenticate_bridge`), a lease lapsing past the adoption grace
+(`expire_stale_leases`, which also records _which_ of its three cases ended the session), and the
+operator stopping a turn (`end_turn`, whose room notice is that row projected). `session_events.turn_id`
+became nullable for the first two — a session that died before it ever reached a turn is exactly
+what this category exists to record, and it has no turn to name; the abort does name one. The rest
+is unbuilt: `_SessionStatusAnnouncer`'s transitions, the held batch, the unreadable inbound event.
 
 Worth recording because it is cheap and would already have paid: three hypotheses in the
 2026-08-15 drop investigation turned on whether a console had rolled, and the available evidence was

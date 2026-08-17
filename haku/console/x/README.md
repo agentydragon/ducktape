@@ -248,8 +248,12 @@ used to exist only as frames that `session_views.rollout_calls` re-parsed on eve
   frame range; `AuthoredEventKind` is what no frame carries and the console alone witnessed. The
   frame log is the record of runner↔console traffic and nothing else (operator, 2026-08-16), so a
   fact that crossed no wire has to be named on the authored arm however conversational it reads.
-  Such a row names no turn either: a session that died before reaching one is exactly the case the
-  arm exists to record.
+  Such a row need not name a turn — a session that died before reaching one is exactly the case the
+  arm exists to record — but it may: `turn_aborted` does, because what the operator stopped was the
+  exchange.
+- **An abort is one of those rows, and the room's "aborted" line is its projection.** `end_turn`
+  writes the event under the same lock that closes the turn and the channel announces afterwards —
+  record, then show, so a crash in that window cannot leave a notice nothing recorded.
 - **So the operator's prompt is an `AuthoredEventKind`, not a lifecycle claim about it.** A prompt
   is conversation — half of what a transcript renders — but it is accepted before it is asked: a
   session holds no sandbox until a prompt buys one, so at acceptance there is no runner to send it
@@ -340,9 +344,10 @@ the tree: the backfill it was written for pointed the rows the purge deleted.
   frames sharing one `message.id` and cut its deltas from completed blocks — a different, equally
   correct, event sequence, and it would report drift everywhere.
 - **It aligns by frame.** One frame's rows are written in one transaction and each event's range is
-  `(frame_seq, frame_seq)`, so which rows a frame owns is a lookup. It reads a turn's rows, and an
-  authored row names no turn, so the second category is out of scope by construction rather than by
-  a filter — which is what stops a rebuild from deleting what it cannot re-derive.
+  `(frame_seq, frame_seq)`, so which rows a frame owns is a lookup. It reads a turn's rows on the
+  `frame_range` arm only, so the authored category is out of scope — which is what stops a rebuild
+  from deleting what it cannot re-derive. That filter is load-bearing now that `turn_aborted` names
+  a turn.
 - **One era bounds what it may speak about**, per turn and named by `SkipReason`: a turn whose
   frames the cursor never reached (#4178's era). A turn with frames and no rows at all is not that
   — nothing writes a projected frame without its rows — so it is drift, and is reported as drift.

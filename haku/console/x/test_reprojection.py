@@ -14,7 +14,7 @@ import pytest_bazel
 from more_itertools import one
 from sqlalchemy import delete, update
 
-from haku.console.chat_models import ConversationEventKind, FrameDirection
+from haku.console.chat_models import ConversationEventKind, FrameDirection, TurnOutcome
 from haku.console.database_schema import Session, SessionEvent
 from haku.console.x import reprojection
 from haku.console.x.frame_projection import projected
@@ -76,6 +76,22 @@ async def test_a_session_the_write_path_projected_agrees_with_itself(
     # per-frame seeding means a message always ends at its own frame.
     assert turn.stored_rows == 6
     assert turn.unprojected_frames == 0
+
+
+async def test_an_aborted_turn_still_agrees_with_its_frames(chat_store, migrated_sessions, operator_id) -> None:
+    """The authored arm is out of scope, and `turn_aborted` is the first member of it to name a
+    turn — so the per-turn read has to exclude it. Comparing it against a re-fold would report
+    drift on every turn the operator stopped, since no frame projects to a row nothing sent.
+    """
+    session_id, turn_id = await _turn_through_the_write_path(
+        chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
+    )
+    await chat_store.end_turn(turn_id, TurnOutcome.ABORTED)
+
+    async with migrated_sessions() as db:
+        report = await reprojection.check_session(db, session_id)
+
+    assert one(report.turns).outcome == reprojection.Agrees()
 
 
 async def test_a_row_whose_body_was_edited_is_reported_against_its_frame(

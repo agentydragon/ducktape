@@ -112,8 +112,8 @@ the last assistant message. Every SPA answer was stored twice.
 
 Hence two columns on `session_turns` and two locals: `queued_reply` is a debt to a channel,
 `said_anything` is about the transcript, and each covers the other's blind spot. The one remaining
-consumer of the difference is the abort notice, which rides on `final_text` and so on no message
-row.
+consumer of the difference is `result.result` on a turn whose completed messages were all empty,
+which belongs to no message row.
 
 ## Small ones
 
