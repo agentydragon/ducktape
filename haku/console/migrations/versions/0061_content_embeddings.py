@@ -1,8 +1,8 @@
 """Normalize the derived semantic index around globally-addressed content.
 
-The old ``state_index.chunks`` table joined two incompatible identities: Git blob addresses and
-the hash of rendered chat windows.  It consequently scoped vectors to a corpus and a chunker
-regime, even when the exact input string had already been embedded elsewhere.
+The old ``state_index.chunks`` table joined two incompatible identities: Git blob addresses and the
+hash of rendered chat windows, so it scoped vectors to a corpus and a chunker regime even when the
+exact input string had already been embedded elsewhere.
 
 The replacement has three layers:
 
@@ -10,15 +10,13 @@ The replacement has three layers:
 - ``content_embeddings``: one vector for that input under one model key; and
 - Git/chat occurrence tables that retain source-specific provenance and refer to content.
 
-The index is entirely derived from the configured Git source and the console's conversation
-tables.  Dropping it is intentional: attempting an in-place conversion cannot reconstruct a
-global content identity from the old Git blob-oriented rows without re-reading every source, and
-would preserve a layout this migration is specifically replacing.  The first regular sync rebuilds
-it under the new model.
+The index is dropped rather than converted in place: a global content identity cannot be
+reconstructed from the old Git blob-oriented rows without re-reading every source. The first regular
+sync rebuilds it under the new model.
 
-This is deliberately incompatible for the duration of a rolling deploy, as was migration 0038:
-an old replica may issue an index query while the schema is being replaced, but the index is an
-optional, self-healing derived projection and has no writers outside this service.
+Deliberately incompatible for the duration of a rolling deploy, as 0038 was: an old replica may
+issue an index query while the schema is being replaced, but the index is an optional, self-healing
+derived projection and has no writers outside this service.
 
 Revision ID: 0061
 Revises: 0060

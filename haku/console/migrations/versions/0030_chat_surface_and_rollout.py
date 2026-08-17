@@ -28,9 +28,7 @@ def upgrade() -> None:
 
 def _add_session_surface() -> None:
     # Nullable and undefaulted, so rows written by the previous image read as "predates
-    # attribution". Defaulting `surface` to 'spa' would have been the tidier-looking choice and
-    # is the wrong one — it would label those rows confidently and wrongly, and nothing
-    # downstream could tell an assumption from an observation afterwards.
+    # attribution". Defaulting `surface` to 'spa' would label those rows confidently and wrongly.
     op.add_column("claude_chat_sessions", sa.Column("surface", sa.Text(), nullable=True))
     op.add_column("claude_chat_sessions", sa.Column("room_id", sa.Text(), nullable=True))
     op.create_check_constraint(

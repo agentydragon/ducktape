@@ -20,10 +20,9 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     # Two new tables and nothing touched, so this is safe for the length of a roll: a replica on
-    # the previous image opens no turns and reads none, which reads as a session with no turn
-    # history rather than as a schema disagreement. Nothing is backfilled — a turn that ran
-    # before this migration has no bracket to recover, and inventing one would put a guess in
-    # the record.
+    # the previous image opens no turns and reads none. Nothing is backfilled — a turn that ran
+    # before this migration has no bracket to recover, and inventing one would put a guess in the
+    # record.
     op.create_table(
         "claude_chat_turns",
         sa.Column("turn_id", postgresql.UUID(as_uuid=True), primary_key=True),

@@ -1,27 +1,24 @@
 """Export the console's advertised MCP input and output schemas for frontend validation.
 
 The MCP ``tools/list`` response is the source of truth for JSON-Schema-expressible argument
-*and* result structure. This exporter builds the FastMCP servers whose tools the console
-renders and reflects them through an in-memory ``Client`` so FastMCP's normal protocol
-middleware runs before the schemas reach the generated frontend catalogs. Execution-only
-Python validators can impose stricter cross-field rules. Two catalogs are emitted, selected
-by ``main()``'s ``--results`` flag: the argument schemas (``McpToolArguments``) and the
-result schemas (``McpToolResults``).
+*and* result structure. This exporter builds the FastMCP servers whose tools the console renders
+and reflects them through an in-memory ``Client``, so FastMCP's normal protocol middleware runs
+before the schemas reach the generated frontend catalogs; execution-only Python validators can
+still impose stricter cross-field rules. Two catalogs are emitted, selected by ``main()``'s
+``--results`` flag: ``McpToolArguments`` and ``McpToolResults``.
 
 Beyond the console's own in-process servers (gmail, google_calendar, haku_routine, hostexec), the
 result catalog includes the console-native reflection tools directly from their Python response
-models.
-This keeps the trusted frontend's runtime validators identical to the MCP output contract without
-building a database-backed console application or adding an HTTP status endpoint. The exporter
-also reflects the **remote** ``grocy-sf`` server's custom batch tools. grocy-sf runs
+models, which keeps the trusted frontend's runtime validators identical to the MCP output contract
+without a database-backed console application or an HTTP status endpoint.
+
+The exporter also reflects the **remote** ``grocy-sf`` server's custom batch tools. grocy-sf runs
 elsewhere, but its batch tools are ordinary Python (``grocy_mcp.batch_tools``): building a
-batch-tools-only FastMCP registers them without an OpenAPI spec or a Grocy connection, so
-their argument schemas are generated from ``grocy_mcp``'s Pydantic models rather than
-hand-authored in the frontend. Only the tools the console previews are emitted for it
-(``_SERVER_TOOL_ALLOWLIST``); nested-model ``$ref``s are inlined first (``_dereference``).
-The same allowlist contributes both argument and result schemas; the frontend validates the
-Operator-session MCP responses before a renderer consumes them. ``grocy-sf``'s OpenAPI tools
-remain outside the reflected catalog, so their result widgets stay hand-authored.
+batch-tools-only FastMCP registers them without an OpenAPI spec or a Grocy connection, so their
+schemas come from ``grocy_mcp``'s Pydantic models rather than being hand-authored in the frontend.
+Only the tools the console previews are emitted (``_SERVER_TOOL_ALLOWLIST``), with nested-model
+``$ref``s inlined first (``_dereference``). ``grocy-sf``'s OpenAPI tools remain outside the
+reflected catalog, so their result widgets stay hand-authored.
 """
 
 from __future__ import annotations

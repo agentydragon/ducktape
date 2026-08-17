@@ -2,9 +2,8 @@
 
 A linked Google connection whose refresh token stops working fails **silently**: the console keeps
 serving, the connector keeps appearing in the settings list, and only an agent that happens to call
-``get_mcp_server_status`` finds out. Three such outages in July/August 2026 were each caught by
-Haku noticing mid-run rather than by anything alerting — the state lives in Postgres
-(``OAuthTokenState.refresh_failure_*``) and nothing scraped it.
+``get_mcp_server_status`` finds out. The state lives in Postgres
+(``OAuthTokenState.refresh_failure_*``), where nothing scraped it.
 
 Deliberately an **age**, not a counter of attempts. The failure mode is *continuous* failure, and a
 counter tells you a refresh failed at some point, not whether the connection is dead right now. Age

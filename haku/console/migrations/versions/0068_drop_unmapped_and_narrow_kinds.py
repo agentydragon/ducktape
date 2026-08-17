@@ -1,18 +1,17 @@
 """Drop what the last three releases stopped writing. **Destructive.**
 
-The contract half of four separate unmappings, which converged together. Each is gated on every
-pod running an image at or after the release that stopped writing the thing — not on a release
-having elapsed — because an ORM-mapped column is named in every `SELECT` SQLAlchemy emits for it,
-so a replica still on the mapping image would fail on every statement the moment this runs. All
-four gates were read off one deployment (`devel-20260817092449-3da90ff`, both replicas on one tag):
+The contract half of four separate unmappings, which converged together. Each is gated on every pod
+running an image at or after the release that stopped writing the thing — not on a release having
+elapsed — because an ORM-mapped column is named in every `SELECT` SQLAlchemy emits for it, so a
+replica still on the mapping image would fail on every statement the moment this runs. All four
+gates were read off one deployment (`devel-20260817092449-3da90ff`, both replicas on one tag):
 
 - `session_messages.{tool_calls,unpointable_reason}` and the two `unpointable_*` constraints,
   unmapped by #4266 (<../../debug/2026_08_16_legacy_purge.md>).
-- `session_frames.partial` and `uq_session_frames_partial`, unmapped by #4277, a release behind the
-  other two. The rows it marked go with it: they outlived their writer (#4230), and until they are
-  deleted the fold reads them as ordinary `assistant` frames.
-- `ConversationEventKind.ACTIVITY_{STARTED,COMPLETED}`, whose last writer went in #4279, still on
-  its own branch.
+- `session_frames.partial` and `uq_session_frames_partial`, unmapped by #4277. The rows it marked go
+  with it: they outlived their writer (#4230), and until they are deleted the fold reads them as
+  ordinary `assistant` frames.
+- `ConversationEventKind.ACTIVITY_{STARTED,COMPLETED}`, whose last writer went in #4279.
 - The `tool_references` and `opaque` spellings of a stored tool result's content, whose writer went
   in #4284.
 
@@ -20,15 +19,13 @@ four gates were read off one deployment (`devel-20260817092449-3da90ff`, both re
 narrows, and the `partial` rows before the column goes — a CHECK cannot be added over rows that
 violate it, and a `WHERE partial` cannot be run once the column is gone.
 
-**The result bodies are rewritten, not deleted.** Destroying conversation data is authorized
-(operator, 2026-08-17), but a delete here would blank an old session's tool results for no gain:
-`ToolResultBody` is parsed on every SPA read, so the arms have to go, and rewriting each row to the
-`text` shape it would carry today costs one statement and keeps the transcript readable. What the
-rewrite stores is exactly what `session_views._rendered` used to compute at read time.
+**The result bodies are rewritten, not deleted.** `ToolResultBody` is parsed on every SPA read, so
+the arms have to go, and rewriting each row to the `text` shape it would carry today costs one
+statement and keeps the transcript readable. What the rewrite stores is exactly what
+`session_views._rendered` used to compute at read time.
 
 The column types are spelled out below rather than imported from `0030`/`0047`/`0055`, for the
-reason `0041` gives: a migration is a point-in-time statement about the database, and reaching into
-another revision would make an already-applied migration change meaning when that one is edited.
+reason `0041` gives.
 
 Revision ID: 0068
 Revises: 0067

@@ -1,6 +1,6 @@
 """Drop the turn usage columns the ORM stopped mapping. **Destructive.**
 
-The contract half of #4306, and the third step of the three the README's Perimeter / deploy section
+The contract half of #4306, and the third of the three steps the README's Perimeter / deploy section
 requires: #4278 stopped writing `session_turns.{input_tokens,output_tokens,cached_input_tokens,
 cost_usd,duration_ms}`, #4306 stopped mapping them, and this drops them. An ORM-mapped column is
 named in every `SELECT` SQLAlchemy emits for it whether or not any code reads the attribute, so the
@@ -9,18 +9,16 @@ release having elapsed, because `maxUnavailable: 0` lets a stalled roll keep an 
 Checked before this landed: both `haku-console` pods on `devel-20260817104540-3d909fb`, one tag, and
 #4306 (`dcd847ae48`) an ancestor of `3d909fb`.
 
-`ck_session_turns_usage_counters` goes with them. It tied the three counters together so that a row
-counting input tokens and not output ones was unrepresentable; with no counters there is nothing
+`ck_session_turns_usage_counters` goes with them: it tied the three counters together so that a row
+counting input tokens and not output ones was unrepresentable, and with no counters there is nothing
 left for it to tie. Postgres would drop it along with the first column anyway — naming it is so the
 migration says what it does.
 
 The numbers are not lost with the columns: they were read off the `result` frame's payload, which
-stays whole in `session_frames`, and the turn's frame range points at it (console `x/README.md`
-§ The payload is evidence).
+stays whole in `session_frames`, and the turn's frame range points at it.
 
 The column types are spelled out here rather than imported from `0032`/`0049`, for the reason `0041`
-gives: a migration is a point-in-time statement about the database, so it must not change meaning
-when another file is edited.
+gives.
 
 Revision ID: 0069
 Revises: 0068

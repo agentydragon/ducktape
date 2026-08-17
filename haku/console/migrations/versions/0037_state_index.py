@@ -1,8 +1,8 @@
 """Give the haku index a home in the console's database.
 
 Additive and in its own `state_index` schema: nothing the console already serves reads these
-tables, so an old replica running through the roll is unaffected, and the index is derived state
-that can be dropped and rebuilt from git and `claude_chat_messages` at any time.
+tables, and the index is derived state that can be dropped and rebuilt from git and
+`claude_chat_messages` at any time.
 
 **The `vector` extension is a precondition, not something this migration installs.** pgvector is
 untrusted, so creating it needs superuser and this runs as `approval_store`. CNPG's `Database` CR

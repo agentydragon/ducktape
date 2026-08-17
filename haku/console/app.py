@@ -284,7 +284,8 @@ def create_app(
 
         return tuple([await resolve_agent(agent) for agent in loaded_static_agents])
 
-    # Matrix chat surface, absent when unconfigured. Split around the Claude runtime below:
+    # Matrix chat surface, absent when unconfigured: the console serves its approval queue
+    # without it and simply does not run the sync loop. Split around the Claude runtime below:
     # ingress has to exist before the service, which takes the reply sink, and the
     # supervisor has to come after it.
     matrix_sync_service: matrix_sync.MatrixSyncService | None = None

@@ -9,11 +9,10 @@ Each request exposes only servers connected by that principal's canonical Operat
 Operator-specific surface, the authenticated Agent's auto-approval policy divides tools into two
 buckets:
 
-Every proxied tool is named ``<server>__<tool>`` (one uniform format — operator decision
-2026-07-13; bare upstream names hid which server a tool belonged to). An upstream tool's
-human-readable ``annotations.title`` is likewise re-prefixed with the server id (operator decision
-2026-07-20; same rationale, same fix) into the proxy's own display ``title``, which takes
-precedence over ``annotations.title`` for clients:
+Every proxied tool is named ``<server>__<tool>``, so a bare upstream name never hides which
+server a tool belongs to. An upstream tool's human-readable ``annotations.title`` is likewise
+re-prefixed with the server id into the proxy's own display ``title``, which takes precedence over
+``annotations.title`` for clients:
 
 - **Pass-through** — tools the policy unconditionally auto-approves (gmail reads): the upstream
   schema and description unchanged, so they behave like the real tool and return the real result.

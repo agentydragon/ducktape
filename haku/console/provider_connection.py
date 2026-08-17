@@ -1,11 +1,10 @@
 """Per-Operator OAuth connections to well-known external providers (Google today).
 
-This is the console's own replacement for Airlock's brokered ``haku_console_google`` token:
-each Operator links deploy-named, scope-specific Google connections through authorization-code +
+Each Operator links deploy-named, scope-specific Google connections through authorization-code +
 PKCE flows, and the console stores and self-refreshes each refresh token independently in Postgres.
-``ToolCallApplicationService`` reads the fresh access token via
-``access_token_for`` before executing a gmail/google_calendar call; the ``gmail`` and
-``google_calendar`` in-process servers are built per call from it.
+``ToolCallApplicationService`` reads the fresh access token via ``access_token_for`` before
+executing a gmail/google_calendar call; the ``gmail`` and ``google_calendar`` in-process servers
+are built per call from it.
 
 Parallel to ``mcp_operator_oauth`` (per-Operator, Postgres-backed, self-refreshing), but for
 fixed pre-registered clients: no Dynamic Client Registration and no authorization-server

@@ -1,19 +1,16 @@
 """Web Push delivery of pending-approval notifications to the Operator's own browsers.
 
-The console already tells open tabs about a queued call over its event socket. That only reaches
-a browser that is running with the console loaded, which is exactly not the case when the
-operator is away from the desk — the moment a pending call most needs to reach them. Web Push
-covers that gap: the browser's push service holds the message and wakes the console's service
-worker, which renders an OS notification carrying Approve/Deny.
+The console's event socket only reaches a browser already running with the console loaded, which
+is exactly not the case when the operator is away from the desk — the moment a pending call most
+needs to reach them. Web Push covers that gap: the browser's push service holds the message and
+wakes the console's service worker, which renders an OS notification carrying Approve/Deny.
 
-**Why this, and not a notification service (ntfy, Telegram, …) with action buttons.** Those would
-have to carry a credential that decides a tool call inside a message on a third-party server,
-which contradicts `haku/docs/security.md` invariant #4 — consent happens on trusted console
-surfaces. Here the notification is rendered by the OS from console-authored content, its buttons
-are defined by console code, and acting on one is a same-origin `fetch` from the console's own
-service worker carrying the operator's ordinary Authentik session. No new authority exists: a
-push message is a prompt to decide, never the decision, and someone who intercepted one still
-could not approve anything.
+**A push message is a prompt to decide, never the decision.** The notification is rendered by the
+OS from console-authored content, its buttons are defined by console code, and acting on one is a
+same-origin `fetch` from the console's own service worker carrying the operator's ordinary
+Authentik session. No new authority exists, and someone who intercepted a push still could not
+approve anything — `haku/docs/security.md` invariant #4, consent happens on trusted console
+surfaces.
 
 Two RFCs are in play, both handled by `pywebpush`/`py_vapid`: RFC 8292 (VAPID — the console
 signs each push with the keypair the browser bound to the subscription) and RFC 8291 (payload
@@ -24,16 +21,14 @@ read). This module keeps their *transport* on the console's async httpx rather t
 **The payload below is a compatibility boundary, not an internal type.** The console deploys
 atomically; the code that *reads* these messages does not. A service worker updates only when the
 browser decides to check — on a navigation to the console, or after handling a push once the
-registration has gone stale (>24h since its last check) — so an installed worker can be a day or
-more behind this file, and the push that triggers an update is still handled by the old code.
-
+registration has gone stale (>24h) — so an installed worker can be a day or more behind this file.
 Consequences for editing `PushShow`/`PushRetract`:
 
 - **Adding a field is safe**; an old worker ignores what it does not read.
 - **Renaming or removing one is not.** The old worker reads `undefined` and renders a broken
-  notification — an empty title, a missing deep link — with no error anywhere the operator sees.
-- A change that genuinely cannot be additive needs a `kind` variant, so old workers fall through
-  their existing branches rather than misreading a familiar one.
+  notification with no error anywhere the operator sees.
+- A change that cannot be additive needs a `kind` variant, so old workers fall through their
+  existing branches rather than misreading a familiar one.
 
 Mirrored in `frontend/sw.ts`, which declares the reading half.
 """

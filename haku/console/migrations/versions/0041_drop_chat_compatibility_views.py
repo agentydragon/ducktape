@@ -7,9 +7,9 @@ image able to read and write; dropping them makes every one of its statements fa
 release having elapsed. `maxUnavailable: 0` means a bad image stalls the roll with the old replica
 still serving, so "the previous release shipped" does not imply "the previous code is gone".
 
-The six names are spelled out here rather than imported from `0040`, for the reason `0028` gives
-about the lease TTL: a migration is a point-in-time statement about the database, and reaching into
-another revision would make an already-applied migration change meaning when that one is edited.
+The six names are spelled out here rather than imported from `0040`: a migration is a point-in-time
+statement about the database, and reaching into another revision would make an already-applied
+migration change meaning when that one is edited.
 
 Revision ID: 0041
 Revises: 0040

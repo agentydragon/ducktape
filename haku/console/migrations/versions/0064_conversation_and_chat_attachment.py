@@ -3,27 +3,24 @@
 `conversation(conversation_id, operator_id, created_at)` is identity and nothing else: every fact
 stays where it already is — what was said on the session, delivery on the attachment, rendering on
 the channel. What it buys is that a channel's attachment stops moving when the sandbox dies and the
-session is replaced. Re-pointing every live attachment at the successor works mechanically, but
-afterwards "this thread" is recoverable only as a transitive closure over "sessions that ever shared
-an attachment", which is not a join and is no handle to link to.
+session is replaced.
 
 `chat_attachment` is keyed on the conversation rather than on the session for that same reason, and
 it is for **copy-holding channels only**: an attachment row exists to hold a cursor, a cursor exists
 because a channel holds a copy the console owes work against, and a browser tab holds none. So the
-SPA gets no row and no synthetic address, and "the browser is looking at this" is an absence.
+SPA gets no row and no synthetic address.
 
 **The backfill is one conversation per session, except Matrix sessions grouped by `room_id`** and
 ordered by `created_at`, which share one — the successive sessions that served a room always were
 one conversation, and `sessions.room_id` is where that was written down. Each room's live
 `chat_attachment` row comes from the same grouping.
 
-**Additive, and safe for the length of a roll** (console README § Perimeter / deploy). Nothing here
-is read by the previous image, `matrix_conversation` and `sessions.{room_id,surface}` are untouched,
-and `sessions.conversation_id` is **nullable**: the previous image's `INSERT INTO sessions` does not
-name the column, so a `NOT NULL` would reject the first session of the roll — the same trap
-`session_frames.partial` walked into from the other side. It is filled by every session this release
+**Additive, and safe for the length of a roll.** Nothing here is read by the previous image,
+`matrix_conversation` and `sessions.{room_id,surface}` are untouched, and `sessions.conversation_id`
+is **nullable**: the previous image's `INSERT INTO sessions` does not name the column, so a
+`NOT NULL` would reject the first session of the roll. It is filled by every session this release
 creates and takes its `NOT NULL` in the release after this one has converged, which is also when a
-reader may key on it: until then a session created by the previous image has none.
+reader may key on it.
 
 Revision ID: 0064
 Revises: 0063

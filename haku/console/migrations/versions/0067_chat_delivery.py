@@ -3,12 +3,13 @@
 No table held a Matrix `event_id`: `post_reply` discarded the one the homeserver returned and the
 status line's id was an instance attribute, so which room event shows which recorded thing could
 only be recovered by reading the room back and parsing the tag off every event. `chat_delivery`
-stores that correspondence beside the attachment whose channel wrote it — one row per `(attachment, subject)` the channel still shows,
-with the subject and the reference both opaque outside that channel.
+stores that correspondence beside the attachment whose channel wrote it — one row per
+`(attachment, subject)` the channel still shows, with the subject and the reference both opaque
+outside that channel.
 
-**Additive, and safe for the length of a roll** (<../../README.md> § Perimeter / deploy). A new
-table nothing else references: the previous image neither writes it nor joins through it, and the
-`chat_attachment` rows it hangs off already exist.
+**Additive, and safe for the length of a roll.** A new table nothing else references: the previous
+image neither writes it nor joins through it, and the `chat_attachment` rows it hangs off already
+exist.
 
 Revision ID: 0067
 Revises: 0066

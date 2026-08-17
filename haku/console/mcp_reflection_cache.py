@@ -1,16 +1,13 @@
 """Short-lived reuse of reflected upstream MCP tool catalogs.
 
-Every `tools/list` against the console fans out to each configured server and reflects it
-live, and each reflection is a fresh MCP connect: transport, `initialize`, `tools/list`,
-teardown. The fan-out runs concurrently, so the cost of a listing is its slowest upstream --
-and an upstream reached over its public URL costs several times one reached in-cluster.
-`stateless_http=True` means the whole thing is paid again on every request, with no session
-to amortize it over.
+Every `tools/list` against the console fans out to each configured server and reflects it live,
+and each reflection is a fresh MCP connect: transport, `initialize`, `tools/list`, teardown. The
+fan-out runs concurrently, so the cost of a listing is its slowest upstream, and `stateless_http=
+True` means the whole thing is paid again on every request.
 
-Two separate wins, and the second is the larger one in practice: a TTL lets a burst of
-listings reuse one reflection, and single-flight collapses *concurrent* listings of the same
-server into a single upstream call. An MCP client opening several connections during one
-handshake is the normal case, not an edge case.
+Two wins, the second larger in practice: a TTL lets a burst of listings reuse one reflection, and
+single-flight collapses *concurrent* listings of the same server into a single upstream call — an
+MCP client opening several connections during one handshake is the normal case.
 
 **Only successful reflections are stored.** A failure propagates to the caller, which turns it
 into a `DegradedReflection` -- so a server that has recovered is retried on the very next

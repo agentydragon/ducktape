@@ -2,11 +2,11 @@
 
 The room's position in <../../x/subscription.py>'s stream, kept in the channel's own table rather
 than in a shared one: a browser tab's position vanishes with the tab and is a request parameter, so
-only a channel holding a durable copy has anything to persist (operator, 2026-08-17).
+only a channel holding a durable copy has anything to persist.
 
-**Additive, and safe for the length of a roll** (<../../README.md> § Perimeter / deploy). A new
-table nothing else references: the previous image neither writes it nor joins through it, and an
-absent row is the state the reader seeds from.
+**Additive, and safe for the length of a roll.** A new table nothing else references: the previous
+image neither writes it nor joins through it, and an absent row is the state the reader seeds
+from.
 
 Revision ID: 0071
 Revises: 0070

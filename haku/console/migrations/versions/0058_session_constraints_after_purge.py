@@ -1,17 +1,16 @@
 """Say what the runtime already guarantees, now that the rows written otherwise are gone.
 
-Every `sessions` row was deleted on 2026-08-16 (<../../debug/2026_08_16_legacy_purge.md>),
-taking `session_{messages,frames,turns,events,prompts,outbox}` with it by cascade. What is left is
-what the current writers put there, so four accommodations for older shapes become statements the
-schema can make:
+Every `sessions` row was deleted on 2026-08-16 (<../../debug/2026_08_16_legacy_purge.md>), taking
+`session_{messages,frames,turns,events,prompts,outbox}` with it by cascade. What is left is what the
+current writers put there, so four accommodations for older shapes become statements the schema can
+make:
 
 - **`sessions.projected_frame_seq` is a number, not a maybe.** "Nothing has projected yet" is `0`.
   The default is what carries a writer that never names the column — `SessionStore.create` does not
   set the attribute, so the ORM omits it from the `INSERT` — and the `UPDATE` is for the one row
   the replacement session left NULL before this ran.
 - **`sessions.surface` is known**, and the room/surface pairing becomes one equivalence rather than
-  two one-way rules. The pair said the same thing already; splitting it was for a legacy row that
-  had neither, and there is no such row now.
+  two one-way rules.
 - **`ck_session_messages_source_anchored` is validated.** `0046` added it `NOT VALID` so unpointed
   history could stay; that history is deleted.
 - **An assistant message says where it came from.** A user row stays unpointed while its prompt is

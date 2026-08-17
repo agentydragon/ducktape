@@ -1,17 +1,14 @@
 """One row per owner: the cached Matrix token and the sync watermark stop sharing a row.
 
 `matrix_sync_state` held a credential cache and a durable watermark in one row, both nullable, so
-"the row exists" said nothing and each of its two writers — `save_token` from inside the pacer's
-queued send, `_advance` from the sync pass — had to be able to create it. `matrix_access_token` and
-`matrix_sync_watermark` give each writer its own row with a `NOT NULL` value, so an absent row means
-one definite thing: no token cached, nothing finished with yet.
+"the row exists" said nothing and each of its two writers had to be able to create it.
+`matrix_access_token` and `matrix_sync_watermark` give each writer its own row with a `NOT NULL`
+value, so an absent row means one definite thing: no token cached, nothing finished with yet. Both
+existing values are carried across; a NULL column becomes no row.
 
-Both existing values are carried across; a NULL column becomes no row, which is the same state
-said in the new vocabulary.
-
-**Additive, and safe for the length of a roll** (console README § Perimeter / deploy). A replica on
-the previous image keeps reading and writing `matrix_sync_state`, which is untouched here. The two
-images do diverge while both are up, in the direction that costs rather than loses:
+**Additive, and safe for the length of a roll.** A replica on the previous image keeps reading and
+writing `matrix_sync_state`, which is untouched here. The two images do diverge while both are up,
+in the direction that costs rather than loses:
 
 - **The watermark.** Only the `MXSY` lock holder advances one, so during the roll that is still the
   old replica, writing the old table; the new leader resumes from the copy taken here. That copy is

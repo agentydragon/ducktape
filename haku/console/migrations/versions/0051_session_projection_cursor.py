@@ -5,19 +5,15 @@
 the turn's state — are committed. It is written in the same transaction as those effects, which is
 what makes them exactly-once.
 
-**Additive, and safe for the length of a roll.** A replica on the previous image (README §
-Perimeter / deploy) neither selects nor writes this column, so its INSERTs and UPDATEs are
-unaffected; the column is nullable with no default, so nothing it writes has to fill it.
+**Additive, and safe for the length of a roll.** A replica on the previous image neither selects nor
+writes this column, and it is nullable with no default, so nothing that image writes has to fill it.
 
 **Deliberately not backfilled.** A value would be a claim about how far a *previous* holder's
-projection got, and no query can answer that: the effects it left behind are message rows and
-outbox rows, which say what was projected but not that nothing after them was. Backfilling
-`max(frame_seq)` would assert every recorded frame had landed and lose a turn's ending; backfilling
-`0` would assert none had and re-project frames whose effects are already durable, duplicating a
-message and a room reply. So NULL means "no cursor here", and `adopt_open_turn` reads the frames
-itself for such a session — which is exactly what it did before this column existed. Every session
-predating this release is in that population, and it empties on its own: `session_ttl_seconds` is
-7200, so no session that can still acquire a frame is cursor-less two hours after this ships.
+projection got, and no query can answer that. Backfilling `max(frame_seq)` would assert every
+recorded frame had landed and lose a turn's ending; backfilling `0` would re-project frames whose
+effects are already durable, duplicating a message and a room reply. So NULL means "no cursor here",
+and `adopt_open_turn` reads the frames itself for such a session. That population empties on its
+own: `session_ttl_seconds` is 7200.
 
 Revision ID: 0051
 Revises: 0050

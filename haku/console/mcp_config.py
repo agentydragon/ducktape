@@ -516,10 +516,9 @@ def _credential_token(server_id: str, bearer_token_secret: str) -> str:
 
 
 # A server reached over an in-process FastMCP instance instead of a remote URL (see
-# McpServerEntry.backend). `fastmcp.client.Client` accepts a `FastMCP` instance
-# directly and opens an in-memory `FastMCPTransport` — so both `McpServerDispatcher` and
-# `McpServerDispatcher` run the exact same `Client(...)` calls either way; only this
-# lookup differs.
+# McpServerEntry.backend). `fastmcp.client.Client` accepts a `FastMCP` instance directly and opens
+# an in-memory `FastMCPTransport`, so a dispatcher runs the exact same `Client(...)` calls either
+# way; only this lookup differs.
 #
 # The registry holds *builders*, not prebuilt instances: a provider-backed server (gmail,
 # google_calendar) is built per execution from the acting Operator's access token, so the

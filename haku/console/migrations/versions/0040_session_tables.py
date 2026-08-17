@@ -1,23 +1,22 @@
 """The chat runtime's tables are named for a session, not for one backend.
 
-`claude_chat_*` named six backend-neutral concepts after the one CLI that happens to fill them,
-while the design requires a second backend to be representable. The tables become `sessions` and
-`session_*`; `matrix_*` is untouched, and so is everything that genuinely names a Claude runner.
+`claude_chat_*` named six backend-neutral concepts after the one CLI that happens to fill them. The
+tables become `sessions` and `session_*`; `matrix_*` is untouched, and so is everything that
+genuinely names a Claude runner.
 
-**Expand half of an expand/contract.** The Deployment rolls with `maxUnavailable: 0`, so a replica
-on the previous image keeps selecting and inserting `claude_chat_*` for the length of the roll. A
-bare `ALTER TABLE … RENAME` would break every one of those statements. Each old name is therefore
-re-created as an **auto-updatable view** over its renamed table: one table in the `FROM`, no
-aggregate, no `DISTINCT`, so Postgres rewrites the old code's `INSERT`/`UPDATE`/`DELETE` — and its
-`ON CONFLICT` inference and `SELECT … FOR UPDATE` — onto the base table. Old and new code read and
-write the same rows for the length of the roll. `test_session_table_compatibility.py` is what
-proves that rather than assuming it. The views are dropped in the contract migration.
+**Expand half of an expand/contract.** `maxUnavailable: 0` keeps a replica on the previous image
+selecting and inserting `claude_chat_*` for the length of the roll, which a bare `ALTER TABLE …
+RENAME` would break. Each old name is therefore re-created as an **auto-updatable view** over its
+renamed table: one table in the `FROM`, no aggregate, no `DISTINCT`, so Postgres rewrites the old
+code's `INSERT`/`UPDATE`/`DELETE` — and its `ON CONFLICT` inference and `SELECT … FOR UPDATE` —
+onto the base table. `test_session_table_compatibility.py` is what proves that rather than assuming
+it. The views are dropped in the contract migration.
 
-Only the constraints and indexes the ORM *declares* are renamed. The names Postgres assigned
-itself (`claude_chat_sessions_pkey`, `…_session_id_fkey`, the frame sequence) follow their table
-and are left alone: nothing in the codebase names them, `compare_metadata` does not compare them,
-and every extra rename here is another statement that can fail against a production database whose
-auto-names are assumed rather than declared.
+Only the constraints and indexes the ORM *declares* are renamed. The names Postgres assigned itself
+(`claude_chat_sessions_pkey`, `…_session_id_fkey`, the frame sequence) follow their table and are
+left alone: nothing in the codebase names them, `compare_metadata` does not compare them, and every
+extra rename here is another statement that can fail against a production database whose auto-names
+are assumed rather than declared.
 
 Revision ID: 0040
 Revises: 0039

@@ -1,16 +1,14 @@
 """A reply the room has not been told yet is a row, not a closure.
 
-`session_outbox` holds each reply a turn produced until the homeserver has accepted it. Written
-in the same transaction as the assistant message it copies, so a turn that dies between producing
-text and speaking it leaves the reply somewhere a later replica can find it.
+`session_outbox` holds each reply a turn produced until the homeserver has accepted it. Written in
+the same transaction as the assistant message it copies, so a turn that dies between producing text
+and speaking it leaves the reply somewhere a later replica can find it.
 
-**Additive, and safe for the length of a roll in both directions.** A replica on the previous
-image never selects or inserts this table, so the migration is invisible to it; it keeps
-delivering through `matrix_pacer`'s in-process queue exactly as before. A replica on the new
-image writes rows and drains them under an advisory lock the old one does not contend for. The
-overlap therefore has one writer per reply — whichever image ran the turn — and neither speaks
-the other's, so nothing is delivered twice and nothing is stranded past the roll: a reply the
-old replica had queued and lost is the drop this fixes, not one this introduces.
+**Additive, and safe for the length of a roll in both directions.** A replica on the previous image
+never selects or inserts this table and keeps delivering through `matrix_pacer`'s in-process queue;
+a replica on the new image writes rows and drains them under an advisory lock the old one does not
+contend for. The overlap therefore has one writer per reply — whichever image ran the turn — so
+nothing is delivered twice and nothing is stranded past the roll.
 
 Revision ID: 0042
 Revises: 0041

@@ -4,12 +4,11 @@
 would have had to impersonate Claude to record a call its agent made. `tool_calls` stores
 `{call_id, tool_name, arguments}` instead.
 
-**Additive on purpose.** The Deployment rolls with `maxUnavailable: 0`, so a replica on the
-previous image keeps SELECTing `tool_uses` for the length of the roll (README § Perimeter /
-deploy). Both columns therefore exist through one release: this one copies the old rows forward
-and leaves the originals exactly as they were, and `tool_uses` is dropped in the release after.
-The new column carries a server default so that an old replica's INSERT, which does not name it,
-still satisfies NOT NULL.
+**Additive on purpose.** `maxUnavailable: 0` keeps a replica on the previous image SELECTing
+`tool_uses` for the length of the roll, so both columns exist through one release: this one copies
+the old rows forward and leaves the originals exactly as they were, and `tool_uses` is dropped in
+the release after. The new column carries a server default so that an old replica's INSERT, which
+does not name it, still satisfies NOT NULL.
 
 Revision ID: 0047
 Revises: 0046
@@ -34,10 +33,9 @@ def upgrade() -> None:
             "tool_calls", postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'[]'::jsonb"), nullable=False
         ),
     )
-    # Rewritten key by key rather than copied: the point of the column is the vocabulary, so a
-    # backfill that carried the old keys across would leave every historical row unreadable by the
-    # model that validates the new ones. Rows whose calls are already empty are skipped, which is
-    # most of them.
+    # Rewritten key by key rather than copied: a backfill carrying the old keys across would leave
+    # every historical row unreadable by the model that validates the new ones. Rows whose calls
+    # are already empty are skipped.
     op.execute(
         sa.text(
             """

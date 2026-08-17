@@ -2,18 +2,18 @@
 
 The operator stopping a turn was durable only as a `turn_id`-keyed `session_outbox` row — the one
 non-reply artifact the console kept, kept in the channel's table rather than in the record.
-`turn_aborted` puts it in the ordered stream beside the lease facts, and the room's "aborted" line becomes a projection of that row.
+`turn_aborted` puts it in the ordered stream beside the lease facts, and the room's "aborted" line
+becomes a projection of that row.
 
 **No column change.** `session_events.turn_id` is already nullable and
 `ck_session_events_provenance_frames` already permits an authored row that names a turn — it
 requires one only on the `frame_range` arm. So this is the CHECK on `kind` and nothing else.
 
-**Additive, and safe for the length of a roll** (<../../README.md> § Perimeter / deploy). A widened
-CHECK forbids nothing the previous image writes, and that image never *reads* one of these rows:
-its two queries against this table are the transcript's tool-call view, which filters to
-`tool_call_started`/`tool_call_completed` in SQL, and `reprojection`'s per-turn read, which has no
-caller in the tree. Both matter, because `TextBackedStrEnumUnionColumn` parses the column: a row of
-an unknown kind reaching either would raise rather than degrade.
+**Additive, and safe for the length of a roll.** A widened CHECK forbids nothing the previous image
+writes, and that image never *reads* one of these rows: its two queries against this table are the
+transcript's tool-call view, which filters to `tool_call_started`/`tool_call_completed` in SQL, and
+`reprojection`'s per-turn read. Both matter, because `TextBackedStrEnumUnionColumn` parses the
+column: a row of an unknown kind reaching either would raise rather than degrade.
 
 Revision ID: 0065
 Revises: 0064
@@ -33,8 +33,7 @@ _TABLE = "session_events"
 _KIND = "ck_session_events_kind"
 
 # Spelled out rather than imported from the ORM, for the reason `0041` gives: a migration is a
-# point-in-time statement about the database and must not change meaning when another file is
-# edited.
+# point-in-time statement about the database.
 _CONVERSATION_KINDS = (
     "'message_completed','reasoning','tool_call_started','tool_call_completed','activity_started','activity_completed'"
 )

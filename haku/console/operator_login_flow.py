@@ -1,19 +1,17 @@
 """Server-side state for pending operator browser logins.
 
 authlib keeps a pending authorization request in the Starlette session cookie, and its Starlette
-integration deliberately clears every prior ``_state_<name>_*`` entry each time it stores a new one
-("clear old state data to avoid session size growing"). One browser therefore holds exactly one
-pending login: as soon as a second console tab starts one, the first tab's callback fails with
-``mismatching_state``. That is routine here — the operator session has an absolute one-hour
-deadline, so every open tab bounces to ``/auth/login`` at about the same time.
+integration clears every prior ``_state_<name>_*`` entry each time it stores a new one. One browser
+therefore holds exactly one pending login: as soon as a second console tab starts one, the first
+tab's callback fails with ``mismatching_state`` — routine here, since the operator session has an
+absolute one-hour deadline and every open tab bounces to ``/auth/login`` at about the same time.
 
-So the console keeps each attempt in its own ``operator_login_flows`` row instead, the same shape
-the account-link flows already use (`mcp_operator_oauth.py`, `provider_connection.py`). Concurrent
-attempts no longer interact. The user-agent binding RFC 6749 §10.12 wants is preserved explicitly:
+The console keeps each attempt in its own ``operator_login_flows`` row instead, the same shape the
+account-link flows already use (`mcp_operator_oauth.py`, `provider_connection.py`), so concurrent
+attempts do not interact. The user-agent binding RFC 6749 §10.12 wants is preserved explicitly:
 each flow mints a secret, hands it to the browser in a cookie **named after that flow's state**, and
 the callback refuses a flow whose secret the browser cannot produce. Per-flow cookie names are the
-point — one shared cookie would re-create exactly the eviction this table exists to avoid, since
-concurrent tabs would each overwrite the last one's value.
+point — one shared cookie would re-create the eviction this table exists to avoid.
 """
 
 from __future__ import annotations

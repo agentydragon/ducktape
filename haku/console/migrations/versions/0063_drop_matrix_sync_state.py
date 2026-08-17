@@ -9,10 +9,9 @@ whether or not any code reads the attribute, so a replica still on the mapping i
 every statement the moment this runs.
 
 The column types are spelled out below rather than imported from `0025`, for the reason `0041`
-gives: a migration is a point-in-time statement about the database, and reaching into another
-revision would make an already-applied migration change meaning when that one is edited.
+gives.
 
-Revision ID: 0062
+Revision ID: 0063
 Revises: 0062
 """
 

@@ -2,13 +2,13 @@
 
 `rollout_calls` reads every `assistant` and `user` frame of a session and re-parses their content
 blocks, and it runs **per stream delta** — `update_assistant` NOTIFYs, `_sse_stream` wakes, and the
-whole session view is rebuilt. That was already O(session) per token batch. Recording the deltas
-multiplies the rows it has to scan past by roughly the length of an answer, which turns a known
-inefficiency into a quadratic one while the SPA is streaming.
+whole session view is rebuilt. Recording the deltas multiplies the rows it has to scan past by
+roughly the length of an answer, which turns a known O(session) inefficiency into a quadratic one
+while the SPA is streaming.
 
-This does not fix the O(session) re-read — that wants incremental indexing on the agent's message
-id. It removes the growth, by letting the read touch only the rows it wants instead of filtering
-the session's whole log.
+This removes the growth, not the O(session) re-read, by letting the read touch only the rows it
+wants instead of filtering the session's whole log. Fixing the re-read wants incremental indexing
+on the agent's message id.
 
 Revision ID: 0036
 Revises: 0035

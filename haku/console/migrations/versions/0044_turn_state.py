@@ -6,12 +6,10 @@ the same transaction as the effect each describes. A replacement replica reads t
 reconstructing them from the frame log.
 
 **Additive, and safe for the length of a roll.** A replica on the previous image never selects or
-writes these columns, and their defaults are exactly the state it leaves behind, so it keeps
-running turns as before. The backfill covers the turns that are *open when this runs*, which is
-the population that would otherwise be adopted onto empty state; a turn opened by an old replica
-after this point and adopted by a new one resumes with the defaults, and the cost of that is the
-one it always was — the turn's last word is queued a second time, which the room sees as the final
-answer repeated rather than as a message lost.
+writes these columns, and their defaults are exactly the state it leaves behind. The backfill covers
+the turns that are *open when this runs*, which is the population that would otherwise be adopted
+onto empty state; a turn opened by an old replica afterwards and adopted by a new one resumes with
+the defaults, costing at most the turn's last word queued a second time.
 
 Revision ID: 0044
 Revises: 0043

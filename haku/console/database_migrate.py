@@ -35,12 +35,10 @@ def run_migrations_for_connection(conn: Any, revision: str = "head") -> None:
         # require columns that are absent. Compile and execute a zero-row read for every owned table
         # so that schema-incompatible processes fail during startup instead of serving as Ready.
         #
-        # Both metadatas, because the index declares its own `Base` and its tables are just as much
-        # this database's as the console's own: on 2026-08-15 a rename edited into an already-applied
-        # 0037 shipped exactly this way, and the guard did not see it because it only knew about one
-        # of the two. `.tables` rather than `.sorted_tables`: creation order is meaningless for a
-        # zero-row read, and sorting warns about the mutually dependent foreign keys in the Agent
-        # graph, which are deliberate.
+        # Both metadatas, because the index declares its own `Base` and its tables are just as
+        # much this database's as the console's own. `.tables` rather than `.sorted_tables`:
+        # creation order is meaningless for a zero-row read, and sorting warns about the mutually
+        # dependent foreign keys in the Agent graph, which are deliberate.
         for owned in (metadata, RecallIndexBase.metadata):
             for table in owned.tables.values():
                 conn.execute(select(table).limit(0))

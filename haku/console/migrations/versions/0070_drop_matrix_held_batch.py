@@ -1,10 +1,9 @@
 """Drop `matrix_held_batch`, which nothing maps any more. **Destructive.**
 
-The third step of the three the README's Perimeter / deploy section requires. `0043` created the
+The third of the three steps the README's Perimeter / deploy section requires. `0043` created the
 table so a batch handed to a session could stay unacknowledged until the turn answering it ended;
 #4291 reversed that position — a prompt the session will not take is rejected rather than held, so
-acceptance is the acknowledgement — and with the hold gone nothing writes or maps the table. This
-drops it.
+acceptance is the acknowledgement — and with the hold gone nothing writes or maps the table.
 
 **Gated on the unmapping having converged, not on a release having elapsed.** An ORM-mapped table is
 named in every `SELECT` SQLAlchemy emits for it whether or not any code reads the attribute, so a
@@ -13,8 +12,7 @@ stalled roll keep one serving indefinitely. Checked before this landed: both `ha
 `devel-20260817104540-3d909fb`, one tag, and #4291 (`d1640f79df`) an ancestor of `3d909fb`.
 
 The column types are spelled out in `downgrade` rather than imported from `0043`, for the reason
-`0041` gives: a migration is a point-in-time statement about the database, so it must not change
-meaning when another file is edited.
+`0041` gives.
 
 Revision ID: 0070
 Revises: 0069

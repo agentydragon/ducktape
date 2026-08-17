@@ -331,8 +331,7 @@ class Agent(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     activated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_seen_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # Null is intentionally fail-closed and lets the migration distinguish existing Agents whose
-    # deploy-time static assignment still needs to be seeded at the next reconciliation.
+    # NULL is fail-closed: this Agent's deploy-time static assignment has not been seeded yet.
     auto_approval_policy: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
@@ -795,12 +794,9 @@ class OAuthConnectionResult(Base):
 class OperatorLoginFlow(Base):
     """Short-lived authorization-code flow state for one pending operator browser login.
 
-    Pre-authentication, so unlike every other flow table this one has no Operator: the row exists
-    before any identity is known. It lives here rather than in the session cookie because authlib's
-    session-backed state keeps exactly **one** pending login per browser — it clears every prior
-    ``_state_<name>_*`` entry whenever it stores a new one — so a second console tab starting a
-    login would strand the first one on "expired or was superseded". One row per attempt lets any
-    number of tabs authenticate independently.
+    Pre-authentication, so unlike every other flow table this one has no Operator. One row per
+    attempt rather than session-cookie state, which authlib keeps exactly **one** of per browser —
+    so a second console tab starting a login would strand the first on "expired or was superseded".
 
     ``browser_binding`` is the user-agent binding RFC 6749 §10.12 asks for: a secret handed to the
     browser in a cookie named after this flow's ``state``, so concurrent attempts cannot overwrite
@@ -825,10 +821,9 @@ class OperatorLoginFlow(Base):
 class OperatorAuthentikToken(Base):
     """The acting Operator's own Authentik OAuth token, captured at browser login (offline_access).
 
-    One row per Operator. The console self-refreshes the associated token state using
-    the operator-OIDC client (injected from Settings, never stored here); the ``hostexec`` server
-    then exchanges that access token for a short-lived per-host token, so the operator acts under
-    their own Authentik identity with no bespoke console key. The shared token state's revision
+    One row per Operator. The console self-refreshes the associated token state using the
+    operator-OIDC client (injected from Settings, never stored here); the ``hostexec`` server then
+    exchanges that access token for a short-lived per-host token. The shared token state's revision
     guards a concurrent refresh/re-login.
     """
 
@@ -853,21 +848,14 @@ class OperatorAuthentikToken(Base):
 class Conversation(Base):
     """A thread that outlives the sessions running it — identity, and nothing else.
 
-    Sessions come and go under it and channels attach to it; every fact stays where it already is.
-    What forces it is neither multiplicity on its own but their combination: when the sandbox dies
-    and session A is replaced by B, what has to move is *the set of attachments*, and a set has no
-    name. Re-pointing each of A's live attachments at B works, but afterwards "this thread" is
-    recoverable only as a transitive closure over "sessions that ever shared an attachment" — not a
-    join, and no handle to link to. Replacement is instead "a new session with the same
-    `conversation_id`", and the attachments are not touched because they were never the session's.
-
-    The same call this codebase already made for `agents` against `credential_bindings`, where the
-    Agent is identity and rotation creates a successor binding rather than mutating the Agent.
+    Sessions come and go under it and channels attach to it. Replacing a dead session is creating a
+    new one with the same `conversation_id`; its attachments are not touched, because they were
+    never the session's.
 
     **A conversation never ends.** No `ended_at` and no terminal state: it is an id. "Start this room
     over" is detaching the address and attaching it to a new conversation, which
     `uq_chat_attachment_live_address` already permits — so a surface listing these needs keyset
-    paging from the day it ships, since the list only grows.
+    paging, since the list only grows.
 
     **A session attached to nothing stays expressible**: a conversation with one session and no
     attachment row, which is what an SPA session is.
@@ -893,13 +881,10 @@ class ChatAttachment(Base):
     and "the browser is looking at this conversation" is an absence rather than a row.
 
     Attach and detach are the row's whole lifecycle: `detached_at IS NULL` is the live binding, and
-    the history of past ones stays readable beside it — the pointer/history distinction
-    `matrix_conversation` and `sessions.room_id` described in prose, said once by a column.
+    past ones stay readable beside it.
 
-    Which session serves an address needs no agreement between two rows here: it is the live session
-    of the conversation this attachment names. `matrix_conversation.session_id` had no constraint
-    tying it to a session whose room matched because SQL cannot state an agreement between rows;
-    there is nothing to agree about once both sides hang off one id.
+    Which session serves an address needs no agreement between two rows: it is the live session of
+    the conversation this attachment names.
     """
 
     __tablename__ = "chat_attachment"
@@ -935,26 +920,21 @@ class ChatAttachment(Base):
 class ChatDelivery(Base):
     """What one channel put in its own copy of a conversation, and where it put it.
 
-    Correspondence, stored rather than re-read: a channel that holds a copy has to know whether it
-    has already shown a thing before it shows it again, and the alternative — reading the room back
-    and parsing the tag off every event — is a round trip per pass. The room read stays the repair
-    path for a copy that drifted; this is the cheap one (<plans/conversation_layers.md> § 5).
+    Correspondence, stored rather than re-read: a channel holding a copy has to know whether it has
+    already shown a thing before it shows it again. Reading the room back and parsing the tag off
+    every event stays the repair path for a copy that drifted; this is the cheap one
+    (<plans/conversation_layers.md> § 5).
 
-    **Both columns are opaque outside the channel that wrote them**, and for the same reason
-    `chat_attachment.address` is: `sent_ref` is where the channel put it — a Matrix `event_id`
-    today — and `subject` is what the channel decided to show there. Only the channel that minted a
-    pair may look inside one; everything else compares, and never interprets.
-
-    **The subject is the channel's, not the record's**, because how much of the record one event
-    shows is a rendering decision: a room folds a run of tool calls into one notice where a browser
-    lists them. A conversation-layer key for it would put that decision in shared schema. What the
-    conversation layer does own is the pairing being per attachment, which is what makes two rooms
-    holding one conversation two independent copies.
+    **Both columns are opaque outside the channel that wrote them**, as `chat_attachment.address`
+    is: `sent_ref` is where the channel put it — a Matrix `event_id` today — and `subject` is what
+    the channel decided to show there. Only the channel that minted a pair may look inside one;
+    everything else compares, and never interprets. The pairing is per attachment, which is what
+    makes two rooms holding one conversation two independent copies.
 
     **Live means the channel still shows it.** `retired_at` is set when the channel takes it back —
     a redacted status line — and `uq_chat_delivery_live_subject` is what makes re-deriving a subject
     find the event already showing it instead of sending a second one. A retired row stays: the
-    channel's copy cannot be asked what it used to show, so this is the only place that survives.
+    channel's copy cannot be asked what it used to show.
     """
 
     __tablename__ = "chat_delivery"
@@ -998,52 +978,39 @@ class Session(Base):
     )
     surface: Mapped[ChatSurface] = mapped_column(TextBackedStrEnumColumn(ChatSurface), nullable=False)
     # The Matrix room this session serves — the *history* half of the binding, where
-    # `matrix_conversation.session_id` is the current pointer. Denormalized from that table
-    # because it keeps only the live session, so without this column a replaced Matrix session
-    # became indistinguishable from an SPA one the moment the supervisor moved on. Written once at
-    # creation and never updated.
+    # `matrix_conversation.session_id` is the live pointer. Written once at creation and never
+    # updated, which is what keeps a replaced Matrix session distinguishable from an SPA one.
     room_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[SessionStatus] = mapped_column(TextBackedStrEnumColumn(SessionStatus), nullable=False)
     # The verifier for this session's rendezvous credential — SHA-256 of a bearer minted once at
-    # creation and never stored — and it keeps that one meaning for the whole life of the row. It
-    # answers only "does this redialling runner hold this session's token"; whether the session is
-    # still admissible is the status's business, and whether its sandbox claim is gone is
-    # `claim_cleaned_at`'s.
+    # creation and never stored. It answers only "does this redialling runner hold this session's
+    # token"; admissibility is the status's business, and the sandbox claim is `claim_cleaned_at`'s.
     bridge_token_fingerprint: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     bridge_connected_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # When this session's Agent Sandbox claim was deleted, and NULL until it has been — which is
     # what puts an ended session in `SessionStore.claim_cleanup_candidates` and what takes it back
-    # out. Only ever stamped on a session whose status is already ended, so a non-NULL value reads
-    # as "terminal, and its sandbox is gone" rather than as a second opinion about liveness.
+    # out. Only ever stamped on a session whose status is already ended.
     claim_cleaned_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # How far the fold has got: the `frame_seq` of the last frame whose projected effects are
-    # committed. It is written in the same transaction as those effects, which is the whole of what
-    # makes them exactly-once — a replica that dies leaves this naming the last frame that landed,
-    # and whoever adopts the session re-projects from here, redoing exactly the frames whose
-    # effects did not commit.
+    # committed. Written in the same transaction as those effects, which is what makes them
+    # exactly-once — whoever adopts the session re-projects from here, redoing exactly the frames
+    # whose effects did not commit.
     #
     # A bound like `session_turns.first_frame_seq`, not a pointer: `Identity` leaves gaps, and
     # `next_prompt` anchors it at the frame before the turn it opens, which is a value no row has.
-    #
     # **`0` is "nothing here has ever projected"**, which no frame's `frame_seq` can be, so the
-    # bound needs no absent state. It arrives by the server default rather than from `create`,
-    # which never names the column.
+    # bound needs no absent state; it arrives by the server default.
     projected_frame_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("0"))
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Renewed by whichever replica currently holds this session's runner websocket. A live
-    # status is otherwise only ever corrected in-process, so a replica that dies mid-turn
-    # leaves the row claiming a turn is in flight forever; the lease is what lets any other
-    # replica notice. Required, because a live session without one is unreclaimable: the sweep
-    # looks for a lease that has passed, and an absent lease never does.
+    # Renewed by whichever replica currently holds this session's runner websocket: a replica that
+    # dies mid-turn otherwise leaves the row claiming a turn is in flight forever. Required, because
+    # the sweep looks for a lease that has passed and an absent lease never does.
     lease_expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     # Which replica is asserting the lease, and — by being NULL or not — which of the lease's two
     # meanings is running. NULL is the creator's provisioning grant: nobody holds this session
     # yet, it is merely budgeted until a runner attaches. Set means that pod's heartbeat, so an
-    # expired lease names the process to go read; `HOSTNAME` is the pod name, which is what
-    # `kubectl logs` takes as an argument.
-    #
-    # Stays nullable, and not just for the roll that adds it: "no holder yet" is a real state,
-    # so a NOT NULL here would have to be filled with a lie.
+    # expired lease names the process to go read; `HOSTNAME` is the pod name `kubectl logs` takes.
+    # Permanently nullable: "no holder yet" is a real state.
     lease_holder: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -1054,9 +1021,7 @@ class Session(Base):
             name="ck_sessions_status",
         ),
         CheckConstraint("surface IN ('spa','matrix')", name="ck_sessions_surface"),
-        # A room without a Matrix surface, or a Matrix session with no room, are both states
-        # nothing could act on sensibly — and a session serving a room is what `matrix` means, so
-        # the two are one fact rather than two rules.
+        # A session serving a room is what `matrix` means, so surface and room are one fact.
         CheckConstraint("(surface = 'matrix') = (room_id IS NOT NULL)", name="ck_sessions_matrix_room"),
         Index("idx_sessions_operator", "operator_id", "created_at"),
         Index("idx_sessions_conversation", "conversation_id", "created_at"),
@@ -1080,25 +1045,20 @@ class SessionMessage(Base):
     role: Mapped[ChatMessageRole] = mapped_column(TextBackedStrEnumColumn(ChatMessageRole), nullable=False)
     status: Mapped[ChatMessageStatus] = mapped_column(TextBackedStrEnumColumn(ChatMessageStatus), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    # The agent's own id for the message this row records (`msg_…`), which is the pointer from the
-    # transcript into the frame log: an `assistant` frame carries the same id, so a reader can find
-    # exactly the tool calls that message made instead of guessing by position.
+    # The agent's own id for the message this row records (`msg_…`): an `assistant` frame carries
+    # the same id, so a reader can find exactly the tool calls that message made.
     #
     # NULL where there is nothing to point at: a user row, a row written before this column, or an
-    # assistant row the console synthesized rather than observed — a turn whose text arrived only
-    # on the `result` frame. Nothing keys on it: a message finds its calls through its frame range
-    # (`x/session_views.message_view`), which every assistant row has.
+    # assistant row the console synthesized rather than observed. Nothing keys on it — a message
+    # finds its calls through its frame range (`x/session_views.message_view`).
     agent_message_id: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Inclusive range in the session's raw frame log from which this projection was built. These
-    # are deliberately sequence pointers rather than copied payloads: the frame log remains the
-    # authoritative, lossless record, while this row says where its lossy rendering came from.
-    # The two values are session-scoped; frame_seq is globally allocated and is not a foreign key
-    # by itself.
+    # Inclusive range in the session's raw frame log this projection was built from — sequence
+    # pointers rather than copied payloads, the frame log remaining the authoritative, lossless
+    # record. Session-scoped; frame_seq is globally allocated and is not a foreign key by itself.
     #
     # **NULL is the operator's own prompt**, written before the frame it goes out as exists and
-    # never pointed at all if no turn claims it — the session ended first. That is a live state rather
-    # than an era, so the range is required by role in the constraint below rather than on these
-    # columns.
+    # never pointed at all if no turn claims it. A live state rather than an era, so the range is
+    # required by role in the constraint below rather than on these columns.
     # The range is what makes the rendering appealable: a projection nobody can read back to the
     # frames it came from is a projection nobody can debug.
     source_first_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
@@ -1115,16 +1075,14 @@ class SessionMessage(Base):
             "OR source_first_frame_seq <= source_last_frame_seq",
             name="ck_session_messages_source_frames",
         ),
-        # A separate rule from the ordering above, because it fails for a different reason and a
-        # reader should be told which: a far end with no near end is neither a range nor the
-        # absence of one.
+        # Separate from the ordering rule above so a failure names its own cause: a far end with
+        # no near end is neither a range nor the absence of one.
         CheckConstraint(
             "source_last_frame_seq IS NULL OR source_first_frame_seq IS NOT NULL",
             name="ck_session_messages_source_anchored",
         ),
-        # Every writer of an assistant row names the frame that opened it, so an unpointed one is
-        # a row nothing can appeal to the log. A user row is unpointed exactly while its prompt is
-        # unclaimed, which is why this is by role and not on the column.
+        # Every writer of an assistant row names the frame that opened it. A user row is unpointed
+        # exactly while its prompt is unclaimed, which is why this is by role and not on the column.
         CheckConstraint(
             "role <> 'assistant' OR source_first_frame_seq IS NOT NULL", name="ck_session_messages_assistant_pointed"
         ),
@@ -1135,15 +1093,9 @@ class SessionMessage(Base):
 class SessionPrompt(Base):
     """One prompt waiting to be handed to the model, or the record that it was.
 
-    Split out of `session_messages` because that row was doing two jobs. `COMPLETE` on a user
-    row meant "handed to the model" and on an assistant row "the answer finished" — one enum with
-    opposite meanings, disambiguated only by `role` — and "one prompt in flight" was a scan of the
-    transcript for a `pending` row plus the rule that only one exists. Here the queue is its own
-    table, the transcript is what was said, and that rule is the partial unique index below.
-
-    Holds no copy of the prompt's text: `message_id` is the transcript row minted with it, which is
-    where the text lives, so the queue and the transcript cannot come to disagree about what was
-    asked.
+    Holds no copy of the prompt's text: `message_id` is the transcript row minted with it, so the
+    queue and the transcript cannot come to disagree about what was asked. "One prompt in flight"
+    is the partial unique index below.
     """
 
     __tablename__ = "session_prompts"
@@ -1169,23 +1121,15 @@ class SessionPrompt(Base):
 class SessionTurn(Base):
     """One exchange, recorded as a range over the session's frame log.
 
-    `_run_turn`'s stack frame used to be the only place a turn existed, so everything that
-    needed to name one named something else instead: session `status` carried `responding`
-    beside the session's own lifecycle, and an abort was addressed to a session and so could be
-    accepted when no turn was running.
-
     **A range, not a `turn_id` stamped on each frame.** The frame log is the record of the wire
     and the wire does not agree with our bracketing: the CLI folds a prompt sent mid-turn into
     the running one, so a single `result` can answer two prompts (measured,
     <../cli_protocol/probes/steering.py>). Keeping the bracket here means re-bracketing later is
     an update to this table rather than a rewrite of the record.
 
-    **And the state of the exchange, not only its extent.** The last three columns
-    are what `_run_turn` used to hold in locals and a second body of code used to reconstruct out
-    of the frames when the process holding them died. They are written in the same transaction as
-    the effect each one describes, so a turn adopted by another replica is *read* rather than
-    guessed at. Together with `first_frame_seq` the row is now both halves of what the fold needs —
-    where the turn's frames start, and what projecting them has produced so far.
+    **And the state of the exchange, not only its extent.** The last three columns are written in
+    the same transaction as the effect each one describes, so a turn adopted by another replica is
+    *read* rather than guessed at.
     """
 
     __tablename__ = "session_turns"
@@ -1196,8 +1140,7 @@ class SessionTurn(Base):
     )
     # Lower bound, taken when the turn opens: every frame of this turn has
     # `frame_seq >= first_frame_seq`. Not the seq of an actual frame — `Identity` leaves gaps and
-    # the turn is opened before its first frame is written — which is why it is a bound rather
-    # than a pointer.
+    # the turn is opened before its first frame is written.
     first_frame_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
     # Inclusive upper bound, taken when the turn closes. NULL on an open turn, and also on a
     # closed one that recorded nothing at all; `ended_at` is what says which.
@@ -1207,9 +1150,8 @@ class SessionTurn(Base):
     outcome: Mapped[TurnOutcome | None] = mapped_column(TextBackedStrEnumColumn(TurnOutcome), nullable=True)
     # The assistant message this turn is streaming into, set when the message is opened and
     # cleared when it completes — so on an open turn it is non-NULL exactly while an answer is
-    # half written, and NULL both before the first delta and between two completed messages.
-    # Whoever adopts the turn continues that message instead of forking a second one beside it.
-    # On a closed turn it is left as it was, which names the message a failed turn stopped in.
+    # half written. Whoever adopts the turn continues that message instead of forking a second one
+    # beside it. On a closed turn it is left as it was, naming the message a failed turn stopped in.
     assistant_message_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("session_messages.message_id", ondelete="SET NULL"), nullable=True
     )
@@ -1219,8 +1161,8 @@ class SessionTurn(Base):
     said_anything: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Whether this turn has put a row in the room's outbox. Written in the same transaction as
     # that row, so it cannot claim a reply the outbox does not hold. It is **not** delivery —
-    # `session_outbox.sent_at` is the only thing that says the room heard it — and deliberately
-    # not "a send was attempted" either, which is what made a turn believe a `deque.append`.
+    # `session_outbox.sent_at` is the only thing that says the room heard it — and not "a send was
+    # attempted" either.
     queued_reply: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
@@ -1231,8 +1173,8 @@ class SessionTurn(Base):
         CheckConstraint("(ended_at IS NULL) = (outcome IS NULL)", name="ck_session_turns_ended_has_outcome"),
         Index("idx_session_turns_session", "session_id", "started_at"),
         # One open turn per session, as a schema property rather than a rule the turn loop has to
-        # keep. It is also what `responding` is derived from, and what makes "an abort names a
-        # turn" a lookup rather than a guess.
+        # keep. Also what `responding` is derived from, and what makes "an abort names a turn" a
+        # lookup rather than a guess.
         Index("uq_session_turns_open", "session_id", unique=True, postgresql_where=text("ended_at IS NULL")),
     )
 
@@ -1242,8 +1184,7 @@ class SessionTurnPrompt(Base):
 
     Many-to-one on purpose: a prompt written to the CLI while a turn is running is absorbed at
     the next tool boundary, and one `result` then covers both. Nothing sends a second prompt
-    mid-turn yet; the shape is here so that when it does, the record does not have to lie about
-    which exchange answered what.
+    mid-turn yet.
     """
 
     __tablename__ = "session_turn_prompts"
@@ -1261,30 +1202,25 @@ class SessionEvent(Base):
 
     The vocabulary is `x/conversation_events.py` — what the agent said, what it thought, the
     activity the harness narrated, and the tool calls it made **with their answers**, which no
-    other row has ever held. Written inside `SessionStore.apply_frame`'s transaction, beside the
-    message row and `sessions.projected_frame_seq`, so a row exists here exactly when the cursor
-    says its frame was projected.
+    other row holds. Written inside `SessionStore.apply_frame`'s transaction, beside the message
+    row and `sessions.projected_frame_seq`, so a row exists here exactly when the cursor says its
+    frame was projected.
 
     **A row is found by frame range, not by the agent's id for a message.** `session_messages`
     records the inclusive span it was built from and an event's own span falls inside it, so the
-    join that used to run over `agent_message_id` — absent on thousands of production rows, which
-    rendered their tool calls with no results — is a range lookup that needs nothing from the wire.
+    lookup needs nothing from the wire — `agent_message_id` is absent on thousands of production
+    rows.
 
     **Deliberately not one row per `TextDelta`.** A delta is an increment of prose that the
     message's own row carries whole, at hundreds per turn; the `stream_event` frames it was cut
     from are in `session_frames`, which is where an operator appeals the joined text to the wire.
 
-    **The operator's own prompt is a row here and is not the fold's**: it is accepted before it
-    crosses any wire (`x/session_store.enqueue_prompt`), so it takes the `authored` arm and names
-    no turn. Without it `event_seq` addresses only the half of a transcript the agent wrote.
-
     **One ordered stream, two categories, split by where a row came from rather than by what it is
     about.** `ConversationEventKind` is what folding a recorded frame produced; `AuthoredEventKind`
     is what no frame carries and the console alone witnessed — a lease changing hands, a lease
-    lapsing, an operator stopping a turn, and the prompt above. They are here rather than in the
-    frame log because the frame log is the record of runner↔console traffic and nothing else
-    (operator, 2026-08-16), and here rather than in a table of their own because ordering against
-    the conversation is the point.
+    lapsing, an operator stopping a turn, and the operator's own prompt, which is accepted before
+    it crosses any wire (`x/session_store.enqueue_prompt`) and so takes the `authored` arm and
+    names no turn.
     """
 
     __tablename__ = "session_events"
@@ -1296,9 +1232,8 @@ class SessionEvent(Base):
         PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False
     )
     # A projected event belongs to an exchange, because the fold only runs while a turn is open. An
-    # authored one need not: a lease changing hands is a fact about the session, and a session that
-    # died before it ever reached a turn is the case the second category exists to record. It may
-    # still name one — `turn_aborted` does, because what the operator stopped was the exchange.
+    # authored one need not: a session that died before it ever reached a turn is the case that
+    # category exists to record. It may still name one — `turn_aborted` does.
     turn_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("session_turns.turn_id", ondelete="CASCADE"), nullable=True
     )
@@ -1331,10 +1266,9 @@ class SessionEvent(Base):
         CheckConstraint("provenance IN ('frame_range','authored')", name="ck_session_events_provenance"),
         # The union, as the table states it: frames are present on exactly the `frame_range` arm, a
         # range has two ends or none, and an event projected from frames names the turn whose fold
-        # produced it. Written as one constraint because the clauses are one rule — that the
-        # discriminator and the columns it discriminates cannot disagree. The turn is required only
-        # on the `frame_range` arm: an authored event may name one and need not, since the console
-        # authors facts about sessions that have no turn to name.
+        # produced it. One constraint because the clauses are one rule — the discriminator and the
+        # columns it discriminates cannot disagree. The turn is required only on the `frame_range`
+        # arm: the console authors facts about sessions that have no turn to name.
         CheckConstraint(
             "(provenance = 'frame_range') = (source_first_frame_seq IS NOT NULL) "
             "AND (source_first_frame_seq IS NULL) = (source_last_frame_seq IS NULL) "
@@ -1355,8 +1289,8 @@ class SessionFrame(Base):
     that, which is a defect.
 
     The rollout — what the agent *did*, tool calls with their results — exists nowhere else.
-    `session_messages` keeps an assistant message's `tool_use` blocks and not the frames
-    carrying the results, so on its own it records every question and no answer.
+    `session_messages` keeps an assistant message's `tool_use` blocks and not the frames carrying
+    the results, so on its own it records every question and no answer.
 
     **The payload is the wire, not our parse of it.** Storing the SDK's dataclasses instead
     would silently inherit whatever the reader unpacks — thinking blocks are on the wire and
@@ -1385,22 +1319,18 @@ class SessionFrame(Base):
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     # The agent's own identity for this frame, where it has one — see
-    # <../cli_protocol/frame_identity.py> for which kinds do and why deltas must not.
-    #
-    # NULL is the common case and always will be: a delta, a console-authored row, and every row
-    # recorded before this column existed. It means "no identity to compare", not "not yet
+    # <../cli_protocol/frame_identity.py> for which kinds do and why deltas must not. NULL is the
+    # common case and always will be, and means "no identity to compare" rather than "not yet
     # computed", so a reader must not treat two NULLs as the same frame.
     frame_uid: Mapped[str | None] = mapped_column(Text, nullable=True)
     # The **runner's** number for this frame, off the bridge envelope (`ClaudeMessage.seq`), where
     # the runner gave one. Dense and monotonic over everything one runner process sent, which
     # `frame_seq` above is deliberately not — so this is the number a reconnect is computed from:
-    # the console hands back the highest it holds and the runner replays only what is above it
-    # (<plans/conversation_layers.md> § 13).
+    # the console hands back the highest it holds and the runner replays only what is above it.
     #
-    # NULL means no runner numbered this row, and there are three ways to mean it: a frame this
-    # console wrote to the CLI, a `setup_output` row the console authored itself, and every frame
-    # from a runner image predating the field. Nothing reads it as the log's ordering yet —
-    # `frame_seq` still is — so this release only writes it down.
+    # NULL means no runner numbered this row: a frame this console wrote to the CLI, a
+    # `setup_output` row the console authored itself, or a frame from a runner image predating the
+    # field. Nothing reads it as the log's ordering — `frame_seq` still is.
     runner_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -1413,10 +1343,9 @@ class SessionFrame(Base):
             "runner_seq IS NULL OR direction = 'from_agent'", name="ck_session_frames_runner_seq_direction"
         ),
         Index("idx_session_frames_session", "session_id", "frame_seq"),
-        # Reading a session by kind is otherwise a filter over its whole log, which is affordable
-        # only while the log holds no deltas. It holds them now, and the readers that select by
-        # kind — the frame inspector, the narration read, the MCP transcript fold — would each
-        # scan past them.
+        # Reading a session by kind is otherwise a filter over its whole log, and the log holds
+        # deltas — so the frame inspector, the narration read, and the MCP transcript fold would
+        # each scan past them.
         Index("idx_session_frames_kind", "session_id", "kind", "frame_seq"),
         # What makes a replayed frame a no-op rather than a second line in the rollout. Partial
         # because most rows have no identity; a plain unique index would be almost all nulls.
@@ -1431,12 +1360,11 @@ class SessionFrame(Base):
         # connection. Partial because most rows have no runner number, and the reader always
         # excludes them.
         #
-        # **Not unique, deliberately, though the design it serves calls for uniqueness.**
-        # Uniqueness is what position-keyed dedup will be built on, but the insert can infer only
-        # one conflict target and today's is `frame_uid` — so a second index would turn a replayed
-        # frame with no agent-assigned identity (a `control_response`, a `system` without a
-        # `task_id`) from today's known cost, one duplicate row, into a raised `UniqueViolation`
-        # that ends the session. It lands with the release that moves the dedup onto position, not before.
+        # **Not unique, deliberately.** The insert can infer only one conflict target and today's
+        # is `frame_uid`, so a second unique index would turn a replayed frame with no
+        # agent-assigned identity (a `control_response`, a `system` without a `task_id`) from one
+        # duplicate row into a raised `UniqueViolation` that ends the session. Uniqueness lands with
+        # the release that moves the dedup onto position, not before.
         Index(
             "idx_session_frames_runner_seq", "session_id", "runner_seq", postgresql_where=text("runner_seq IS NOT NULL")
         ),
@@ -1446,18 +1374,15 @@ class SessionFrame(Base):
 class SessionOutbox(Base):
     """One reply a session produced, waiting for the room to be told it.
 
-    **The row is the delivery**, and it is written in the same transaction as the assistant
-    message it is a copy of. Before this, a produced reply existed only as a closure on an
-    in-process queue: `MatrixSyncService.reply` appended to a deque and returned, so the turn
-    recorded "the room heard this" about a `deque.append`, a send that raised was discarded with
-    a log line and no retry, and a queue still holding an answer died with its replica
-    (<debug/message_drops.md> E1, E4, E6, E7). A row survives all four, and a drain that marks
-    it sent only once the send has returned is what makes "answered" mean answered.
+    **The row is the delivery**, written in the same transaction as the assistant message it is a
+    copy of, and marked sent by the drain only once the send has returned — so a send that raises,
+    or a replica that dies still holding a reply, is redriven rather than lost.
 
     **Replies only.** The console's narration — status line, lifecycle notices, holding and
     bootstrap lines — stays on `x/channels/matrix/pacer.py`'s in-process queue: what must never be
     lost silently is a reply the agent produced, and a notice that describes a moment is not worth
-    redelivering minutes later. That is also why there is no `kind` column: every row here is a `REPLY`.
+    redelivering minutes later. That is also why there is no `kind` column: every row here is a
+    `REPLY`.
 
     **One target, one channel.** `room_id` is a Matrix room because that is the only channel
     there is; a second one joins by adding a discriminator beside it rather than by overloading
@@ -1476,9 +1401,8 @@ class SessionOutbox(Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     # The transcript row this reply is, which the room event states as its tag. NULL for a turn's
     # last word, which belongs to no message row and is keyed by `turn_id` below instead —
-    # `result.result` on a turn whose completed messages were all empty. Text that arrived only on
-    # a `result` frame is otherwise not one of those: `_run_turn` mints a message row for it when
-    # the turn said nothing else.
+    # `result.result` on a turn whose completed messages were all empty. `_run_turn` otherwise
+    # mints a message row for text that arrived only on a `result` frame.
     message_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("session_messages.message_id", ondelete="SET NULL"), nullable=True
     )
@@ -1486,17 +1410,15 @@ class SessionOutbox(Base):
     # The idempotence key for the one reply a turn can produce that no transcript row holds: final
     # text its completed messages did not already queue. `_run_turn` writes it *before* closing the
     # turn, so a replica dying in that window leaves the turn open and its replacement re-derives
-    # the same reply — which this makes a no-op rather than a second copy in the room.
-    #
-    # NULL wherever `message_id` carries the identity instead. Not turn *state*: nothing reads it
-    # to decide anything about the turn, and the drain never looks at it.
+    # the same reply — which this makes a no-op rather than a second copy in the room. NULL
+    # wherever `message_id` carries the identity instead.
     turn_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("session_turns.turn_id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    # Set once the homeserver has accepted the send, and never before it returns. Everything else
-    # — claimed, in flight, refused, dropped with its replica — leaves this NULL, which is what
-    # makes redrive the default rather than a case anyone has to detect.
+    # Set once the homeserver has accepted the send, and never before it returns. Claimed, in
+    # flight, refused, and dropped with its replica all leave this NULL, which is what makes
+    # redrive the default rather than a case anyone has to detect.
     sent_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     attempts: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     # When this row may be claimed again. Moved into the future by every claim, so a homeserver
@@ -1522,14 +1444,13 @@ class PushSubscription(Base):
     """One browser Push API subscription an Operator has granted this console.
 
     The ``endpoint`` a push service issues is both the address and the capability to push to that
-    browser, so it is the natural identity: re-subscribing the same device (permission re-grant,
-    key rotation, browser-initiated refresh) overwrites its row rather than accumulating dead
-    ones. ``p256dh`` and ``auth`` are that subscription's own RFC 8291 encryption inputs — the
-    console encrypts each payload to them, so the push service relays ciphertext it cannot read.
+    browser, so it is the identity: re-subscribing the same device overwrites its row rather than
+    accumulating dead ones. ``p256dh`` and ``auth`` are that subscription's own RFC 8291 encryption
+    inputs — the console encrypts each payload to them, so the push service relays ciphertext it
+    cannot read.
 
-    Subscriptions die silently and often (permission revoked, browser profile cleared, endpoint
-    expired). A push service reports that as 404/410, which prunes the row; ``last_failure_at``
-    records the transient failures that do not.
+    Subscriptions die silently and often. A push service reports that as 404/410, which prunes the
+    row; ``last_failure_at`` records the transient failures that do not.
     """
 
     __tablename__ = "push_subscriptions"
@@ -1558,9 +1479,9 @@ metadata = Base.metadata
 # from its ORM-versus-database comparison, which is otherwise exact.
 UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset()
 
-# The same, one level down: `(table, column)` pairs the database has and no ORM class maps, in
-# tables that stay. A separate set rather than an entry in the one above, which hides a whole
-# table — naming `session_messages` there would stop the comparison noticing any drift in it.
+# The same for `(table, column)` pairs in tables that stay. A separate set rather than an entry
+# in the one above, which hides a whole table — naming `session_messages` there would stop the
+# comparison noticing any drift in it.
 UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset()
 
 # Indexes the database has and no ORM class declares. Reachable only through a column above: an
@@ -1572,8 +1493,7 @@ class MatrixAccessToken(Base):
     """The bot's access token, cached because Synapse rate-limits `/login`.
 
     One row per bot user, written from the pacer's queued send on whichever replica is speaking
-    into the room. Losing it costs one login, which is the whole of what this table promises;
-    absence means no token cached, so invalidating one is a `DELETE` rather than a NULL.
+    into the room. Absence means no token cached, so invalidating one is a `DELETE`, not a NULL.
     """
 
     __tablename__ = "matrix_access_token"
@@ -1586,10 +1506,9 @@ class MatrixSyncWatermark(Base):
     """Where the Matrix sync loop got to: everything before this has been acted on.
 
     One row per bot user, written by the sync pass on whichever replica holds the `MXSY` lock.
-
-    Every pass writes it, because every pass finishes with what it read: a batch is handed to
-    the session, or rejected and said so. No row is the honest first state — nothing has been
-    finished with, so the loop reads from the beginning of the bot's timeline.
+    Every pass writes it, because every pass finishes with what it read: a batch is handed to the
+    session, or rejected and said so. No row means nothing has been finished with, so the loop
+    reads from the beginning of the bot's timeline.
     """
 
     __tablename__ = "matrix_sync_watermark"
@@ -1612,26 +1531,23 @@ class MatrixConversation(Base):
     one bot serving several rooms is where this goes, and `ChatAttachment`'s partial unique index is
     the form of the rule that survives it.
 
-    Deliberately separate from `matrix_sync_watermark` even though both are singletons keyed
-    the same way. The sync loop and the session supervisor run as independent tasks under
-    one advisory lock, and giving them separate rows keeps a slow session claim from
-    contending with the watermark write on every pass.
+    Separate from `matrix_sync_watermark` though both are singletons keyed the same way: separate
+    rows keep a slow session claim from contending with the watermark write on every pass.
     """
 
     __tablename__ = "matrix_conversation"
 
     user_id: Mapped[str] = mapped_column(Text, primary_key=True)
     room_id: Mapped[str] = mapped_column(Text, nullable=False)
-    # The chat session currently serving the room. Null between a session dying and the
+    # The chat session currently serving the room. NULL between a session dying and the
     # supervisor replacing it — an expected state, not a broken one.
     #
-    # **This is the pointer; `sessions.room_id` is the history.** The same binding appears in
-    # both places on purpose and they answer different questions: this column says
-    # which session the room is talking to *now* and moves every time the supervisor replaces
-    # one, while the session's own `room_id` says which room that session served and never
-    # changes — which is what makes a past Matrix conversation findable after its successor has
-    # taken over. Asking this column "was this session mine?" answers about the room's present
-    # instead, and reads as no for every session but the live one.
+    # **This is the pointer; `sessions.room_id` is the history.** This column says which session
+    # the room is talking to *now* and moves every time the supervisor replaces one, while the
+    # session's own `room_id` says which room that session served and never changes — which is
+    # what keeps a past Matrix conversation findable after its successor has taken over. Asking
+    # this column "was this session mine?" answers about the room's present instead, and reads as
+    # no for every session but the live one.
     #
     # No constraint enforces that this points at a session whose `room_id` is this room: it is
     # an agreement between two rows, which SQL cannot state (a CHECK sees one row, and a
@@ -1646,17 +1562,15 @@ class MatrixConversation(Base):
 class MatrixRoomCursor(Base):
     """How far this room has been brought up to date with the conversation it holds a copy of.
 
-    **The Matrix channel's own storage, and named after it** — below the channel boundary, beside
-    the outbox, because durability here is Matrix's problem and nobody else's. The room holds a
-    federated copy that outlives every console process, so after a restart the channel has to know
-    what it already put there. A browser tab holds no such copy: several tabs can watch one
-    conversation at different points and none of those positions should survive a refresh, so the
-    SPA's position is a request parameter and there is deliberately no shared cursor table for the
-    two to share (operator, 2026-08-17).
+    **The Matrix channel's own storage**, below the channel boundary and beside the outbox: the
+    room holds a federated copy that outlives every console process, so after a restart the channel
+    has to know what it already put there. A browser tab holds no such copy — several tabs can watch
+    one conversation at different points and none of those positions should survive a refresh — so
+    the SPA's position is a request parameter and there is deliberately no shared cursor table.
 
-    Keyed by room, which is this channel's own address for a conversation — the same opacity
-    `chat_attachment.address` records. It is not keyed by conversation, because that would put the
-    conversation layer's identity in the channel's private table for no reader.
+    Keyed by room, this channel's own address for a conversation — the same opacity
+    `chat_attachment.address` records — and not by conversation, which would put the conversation
+    layer's identity in the channel's private table for no reader.
 
     `event_seq` is a position in <x/subscription.py>'s stream, and an absent row is a room that has
     never read it — which is why the reader seeds it at the stream's head rather than at zero: a

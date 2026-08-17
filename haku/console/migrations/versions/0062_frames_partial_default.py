@@ -2,20 +2,18 @@
 
 `0030` created the column `NOT NULL` with no default, which was right while every writer named it.
 The last one, `_write_partial_frame`, is gone (#4230), and the column is on its way out — unmapped
-by #4277 and dropped by `0068` (<../../debug/2026_08_16_legacy_purge.md>). SQLAlchemy names
-only *mapped* columns in an `INSERT`, so the release that unmaps it would omit `partial` from every
-`INSERT INTO session_frames` and Postgres would reject the first frame of the roll. That is the step
-the three-release sequence was missing: a `NOT NULL` column an expand/contract is about to unmap
-needs a default before it stops being named, not after.
+by #4277 and dropped by `0068` (<../../debug/2026_08_16_legacy_purge.md>). SQLAlchemy names only
+*mapped* columns in an `INSERT`, so the release that unmaps it would omit `partial` from every
+`INSERT INTO session_frames` and Postgres would reject the first frame of the roll: a `NOT NULL`
+column an expand/contract is about to unmap needs a default **before** it stops being named, not
+after.
 
 **Additive, and safe for the length of a roll.** A default supplies a value only for a statement
 that names no column, and the previous image names this one on every insert — writing an explicit
 `false`, which a default does not contradict.
 
 `false` is spelled out rather than taken from the ORM's `default=False`, for the reason `0041`
-gives: a migration is a point-in-time statement about the database, and reaching into code that
-moves would make an already-applied migration change meaning. Here the code it would reach into is
-deleted one revision later.
+gives — and here the code it would reach into is deleted one revision later.
 
 Revision ID: 0062
 Revises: 0061

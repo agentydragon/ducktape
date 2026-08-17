@@ -11,11 +11,10 @@ the first. On `session_messages` the same question is two NULLs meaning two thin
 can separate them (#4143); here an event that crossed no wire says so, and one that did cannot be
 written without saying where from.
 
-**Additive, and safe for the length of a roll.** A new table with no other table referencing it: a
-replica on the previous image (README § Perimeter / deploy) neither selects nor inserts it, and
-every existing statement is untouched, so an old replica keeps serving exactly as before. It is
-also not backfilled — a row here is written in the same transaction as the projection cursor that
-makes it exactly-once, and there is no cursor for a session that predates one.
+**Additive, and safe for the length of a roll.** A new table with no other table referencing it, so
+a replica on the previous image is untouched. It is also not backfilled — a row here is written in
+the same transaction as the projection cursor that makes it exactly-once, and there is no cursor for
+a session that predates one.
 
 Revision ID: 0052
 Revises: 0051

@@ -2,24 +2,22 @@
 
 `session_turns.usage` held Claude's own `usage` sub-object verbatim, so "this exchange used X
 tokens" meant "whatever that one CLI called it". These three columns are the neutral shape the
-backend adapter produced, beside `cost_usd` and `duration_ms`, which the store used to mine out of
-the same payload by key name.
+backend adapter produced, beside `cost_usd` and `duration_ms`.
 
 **They are counters, and counters sum**, which is what a turn spanning several invocations will
 need: a session's token total is a `SUM` over rows rather than a fold over JSON. `cost_usd` sums
 too. `duration_ms` deliberately does not — wall clock of invocations that may overlap is not their
 sum — so an exchange's elapsed time stays `ended_at - started_at`.
 
-The backfill reads the JSONB the columns replace, which is why it can be exact rather than
-archaeological: `cache_read_input_tokens` is the key Claude spells the cached counter with, and a
-key the payload never carried is 0, which is what an unreported counter meant. Rows carrying
-a cost or a duration but no usage object get zeros rather than NULLs, so no historical exchange
-loses its cost to the reader's "usage present" test.
+The backfill reads the JSONB the columns replace, which is why it can be exact:
+`cache_read_input_tokens` is the key Claude spells the cached counter with, and a key the payload
+never carried is 0, which is what an unreported counter meant. Rows carrying a cost or a duration
+but no usage object get zeros rather than NULLs, so no historical exchange loses its cost to the
+reader's "usage present" test.
 
-**Additive on purpose.** A replica on the previous image (README § Perimeter / deploy) neither
-selects nor writes these columns and keeps writing `usage`, which this release leaves in place and
-stops reading; the check constraint it cannot violate, since it never names a counter. Dropping
-`usage` is the contract half, tombstoned on the column in `database_schema.py`.
+**Additive on purpose.** A replica on the previous image neither selects nor writes these columns
+and keeps writing `usage`, which this release leaves in place and stops reading. Dropping `usage` is
+the contract half, tombstoned on the column in `database_schema.py`.
 
 Revision ID: 0049
 Revises: 0048

@@ -5,10 +5,9 @@ paying for one. This migration is only the schema half: the member and the `CHEC
 writer lands next release.
 
 **The split is what makes it safe.** `TextBackedStrEnumColumn` parses `sessions.status`, so a
-replica on the previous image raises on a value it cannot name rather than degrading, and the
-console rolls with `maxUnavailable: 0` — old and new replicas share the schema for the length of a
-roll (<../../README.md> § Perimeter / deploy). Widening admits a value nothing writes; writing it
-before every replica parses it is an outage.
+replica on the previous image raises on a value it cannot name rather than degrading, and old and
+new replicas share the schema for the length of a `maxUnavailable: 0` roll. Widening admits a value
+nothing writes; writing it before every replica parses it is an outage.
 
 The reverse direction needs nothing: every status the previous image writes is still admitted, and
 no row holds `idle` for it to read.

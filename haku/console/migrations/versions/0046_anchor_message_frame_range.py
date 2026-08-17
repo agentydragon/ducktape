@@ -8,11 +8,13 @@ known, and the operator's own prompt, which crosses no wire and legitimately has
 that can state it is `session_events`, whose provenance is `NOT NULL` and whose CHECK makes a frame
 range and an authored row the only two possibilities.
 
-A far end with no near end is nonsense in either direction that `frame_range | authored` union
-allows: it is neither a range nor the absence of one. Every writer already satisfies it —
-`begin_assistant` writes the near end at insert and `update_assistant` only ever widens from
-there, and `set_message_source_frames` writes both ends in one statement — so adding it under a
-`maxUnavailable: 0` roll cannot reject a write from the image still serving.
+A far end with no near end is nonsense in either direction the `frame_range | authored` union
+allows: it is neither a range nor the absence of one.
+
+Every writer already satisfies it — `begin_assistant` writes the near end at insert and
+`update_assistant` only ever widens from there, and `set_message_source_frames` writes both ends in
+one statement — so adding it under a `maxUnavailable: 0` roll cannot reject a write from the image
+still serving.
 
 `NOT VALID` because the pre-#4105 rows are unpointed and this ships without first deciding whether
 to recover or drop them; `VALIDATE CONSTRAINT` promotes it later without rewriting the table.

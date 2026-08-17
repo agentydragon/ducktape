@@ -144,8 +144,7 @@ class OperatorOidcConfig(BaseModel):
     """Authentik OIDC relying-party config for operator **browser** login.
 
     The console authenticates the operator's browser itself (Authentik authorization-code flow →
-    signed session cookie), replacing the retired Authentik proxy outpost. Agent access to `/mcp`
-    uses its own MultiAuth and is unaffected.
+    signed session cookie). Agent access to `/mcp` uses its own MultiAuth and is unaffected.
     Reads `HAKU_CONSOLE_OPERATOR_OIDC__{ISSUER,CLIENT_ID,CLIENT_SECRET,SESSION_SECRET}`. The redirect
     URI is built from the top-level `public_base_url` + `/auth/callback`.
 

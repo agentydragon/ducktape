@@ -751,14 +751,10 @@ async def _refresh_operator_oauth_token(token_client: _OperatorOAuthTokenClient,
         #                                       RECONNECT below and stops the retries with a
         #                                       definitive answer instead of a guessed one
         #
-        # 2026_07_20_tana_refresh_rotation_timeout.md made this RECONNECT, but the failure it was
-        # reacting to was *unbounded* replay of an already-consumed token against a facade that
-        # answered `invalid_grant` forever. One retry that halts on that answer is a different
-        # thing. The cost when the token really was consumed is one rejected request plus the
-        # authorization server's own reuse-detection event; a server that also revoked the token
-        # family on reuse would only be cutting short an access token we were about to lose to a
-        # forced reconnect anyway. Authentik, which issues every association the console currently
-        # holds, rejects the single reused token and does not touch the family.
+        # The cost when the token really was consumed is one rejected request plus the
+        # authorization server's own reuse-detection event; Authentik, which issues every
+        # association the console currently holds, rejects the single reused token and does not
+        # touch the family.
         #
         # Retries are bounded by the shared backoff in `oauth_token_state._store_failure`
         # (30s doubling to a 15min cap) and end the moment any attempt returns a definitive answer.

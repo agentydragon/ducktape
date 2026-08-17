@@ -1,13 +1,10 @@
 """Record the branch's own tip beside what is indexed from it.
 
-`git_sync_state` only had a row once a sync had completed, so before the first one `index_status`
-could say nothing about the haku-state corpus — "never configured", "cannot reach the remote",
-"indexing right now" and "behind by a commit" were one absent object. A sweep now writes what it
-saw on every tick, into the same row, and the indexed columns become nullable because they only
-become true later.
-
-The check keeps that half all-or-nothing, so the relaxation cannot turn into a commit recorded
-without the regime it was indexed under.
+`git_sync_state` only had a row once a sync had completed, so before the first one "never
+configured", "cannot reach the remote", "indexing right now" and "behind by a commit" were one
+absent object. A sweep now writes what it saw on every tick, into the same row, and the indexed
+columns become nullable because they only become true later. The check keeps that half
+all-or-nothing, so a commit cannot be recorded without the regime it was indexed under.
 
 Additive for the length of a roll: the previous release only ever writes all four indexed columns
 together, and only reads a row it wrote.

@@ -104,10 +104,8 @@ class RecordedToolCall(BaseModel):
     """One tool call, as a transcript row records it: which tool, with what, under which id.
 
     Spelled in the conversation vocabulary (`x/conversation_events.ToolCallStarted`) rather than in
-    a backend's. `tool_use_id`/`name`/`input` — the shape this replaces — are Anthropic's wire
-    words, so a second backend had to pretend to be Claude in order to record a call its agent
-    made. Nothing here is provider-specific: every tool protocol worth storing has a name, some
-    arguments, and an id to answer against.
+    a backend's, so nothing here is provider-specific: every tool protocol worth storing has a name,
+    some arguments, and an id to answer against.
 
     **What the call answered is deliberately not here.** `call_id` is the correlation key and the
     only half of the pair this row holds; the answer is joined at read time out of the stored
@@ -149,19 +147,16 @@ class AuthoredEventKind(StrEnum):
 
     **The console is the only witness**, so these carry `EventProvenance.AUTHORED` and no frame
     range. That is the whole membership test: not whether the fact is about the session rather than
-    the conversation, but whether it reached the console over the wire. A session that never had a runner at all is exactly the case this
-    category exists to record.
+    the conversation, but whether it reached the console over the wire.
 
-    `PROMPT_ENQUEUED` is here for that reason and not because a prompt is a lifecycle fact. It is
-    conversation — half of what a transcript renders — but a prompt is accepted before it is asked:
-    a session holds no sandbox until a prompt buys one, so at acceptance there is no runner to send
-    it to, and a session that ends before the prompt is claimed never sends it at all. The frame
-    that eventually carries it, if one does, projects to nothing —
-    the console already holds the text (`x/claude_code/projection._user`), so it is recorded once.
+    `PROMPT_ENQUEUED` is here for that reason and not because a prompt is a lifecycle fact. A prompt
+    is accepted before it is asked: a session holds no sandbox until a prompt buys one, so at
+    acceptance there is no runner to send it to, and a session that ends before the prompt is
+    claimed never sends it at all. The frame that eventually carries it, if one does, projects to
+    nothing — the console already holds the text (`x/claude_code/projection._user`).
 
     `TURN_ABORTED` is the one member that **names its turn**: the operator stopping an exchange is
-    a fact about that exchange, and a channel's "this was aborted" notice derives from the row's
-    place in the stream. So a reader of this arm cannot assume `turn_id IS NULL`.
+    a fact about that exchange. So a reader of this arm cannot assume `turn_id IS NULL`.
     """
 
     PROMPT_ENQUEUED = "prompt_enqueued"
