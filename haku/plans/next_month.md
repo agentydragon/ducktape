@@ -75,8 +75,8 @@ know were still there — `apply_frame`'s `message.tool_calls = tool_calls` and 
 rather than a discovery about the deploy. `0030` created the column `NOT NULL` **with no server
 default**, so an image that does not map it emits an `INSERT` naming no `partial` and
 `record_frame` fails on the first frame of the roll. `0062` (#4274) gave the column
-`DEFAULT false`; the unmapping then took the `uq_session_frames_partial` index and the readers with
-it — `reprojection.foldable_frames`, `session_store._unprojected_frames`, `SessionFrameView.partial`,
+`DEFAULT false`; the unmapping (#4277) then took the `uq_session_frames_partial` index and the
+readers with it — `reprojection.foldable_frames`, `session_store._unprojected_frames`, `SessionFrameView.partial`,
 `RolloutFrame.partial`, and the frontend's frame inspector badge.
 `database_schema.UNMAPPED_COLUMNS_PENDING_DROP` carries the tombstone; what is left is the `DROP`,
 in phase 3.
