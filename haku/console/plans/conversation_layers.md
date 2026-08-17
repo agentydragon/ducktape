@@ -545,12 +545,38 @@ These are the acceptance criteria, and each names something that is false today:
   is no fact whose only copy is a stack frame and no notice that a SIGKILL can silently swallow.
 - **A replica death costs latency and nothing else.** No orphaned status line, no second status
   line, no acknowledged-but-unreported message.
+- **No channel knows a provider's frame shape.** Not Claude's `type` strings, not its content
+  blocks, not its `result` envelope. A channel is written against `ConversationEvent` and the
+  transcript, and it cannot tell which backend produced them. See below for the one carve-out.
 - **Adding a channel is implementing two things** — how to render the stream, and where to keep a
   cursor if it holds a copy. Nothing else in the console changes.
 - **Adding a backend is implementing one thing** — an adapter producing `ConversationEvent`.
 
 The last two are what "N backends × M channels, additively" actually means, and they are the reason
 for the whole exercise.
+
+### The one thing a channel may know about a backend
+
+**A debug surface may show the raw wire, and nothing else may.** The frame inspector already is
+this: `/api/conversations/{session_id}/frames` serves `SessionFrameView.payload` as
+`dict[str, Any]` — the frame whole, deliberately unclipped, because `session_messages` is a lossy
+projection of it and clipping there would reintroduce the loss one level down.
+
+Three conditions keep that from becoming a hole:
+
+- **It is addressed separately.** A provider payload never rides inside the conversation stream, so
+  a channel cannot consume one by accident — it has to go and ask a different route for it.
+- **It is never load-bearing.** No rendering decision, no notice body, no delivery decision reads
+  it. A channel that cannot reach the inspector must lose nothing but a debugging affordance.
+- **It is labelled as one backend's wire**, not as the conversation. A reader of that surface is
+  looking at Claude's frames and should be told so.
+
+**What enforces the rule does not exist yet.** `x/frame_projection.py` imports
+`x/claude_code/projection` directly, so there is no seam at which a second backend's adapter could
+be selected — the fold is spelled in terms of one provider by construction
+(<../../runtime/x/bridge/docs/second_backend.md>). Until `CliBackend` grows that member, the
+invariant is a convention held by review rather than by the type system, which is the same shape of
+gap that let the turn loop become a frame interpreter in the first place.
 
 ### What disappears
 
