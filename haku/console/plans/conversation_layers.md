@@ -361,6 +361,12 @@ reading.
 
 - **The conversation becomes a real table**, identity only, with `chat_attachment` keyed on it.
   § 6 gives the case that forces it and what it costs.
+- **The SPA is not an attachment, and is allowed to be special.** It may open any session, and
+  nothing about it is recorded. That follows from § 2's test rather than excepting it: an
+  attachment row exists to hold a cursor, a cursor exists because a channel holds a copy the
+  console owes work against, and a tab holds no copy. So `chat_attachment` is for copy-holding
+  channels only, and "the browser is looking at this conversation" is an absence — no row to key by
+  an address a tab does not have, and nothing to close when it goes away.
 - **Channel state lives in Postgres, not in the room.** The watermark stays a row; `m.fully_read`
   and per-room `account_data` are not pursued. The reason given was preference for the known
   quantity — "postgres is known, state in matrix, who knows" — and it is reinforced by the
@@ -376,10 +382,6 @@ reading.
 
 **Still open.**
 
-- **Is a live attachment per surface, or per surface _instance_?** One room is one attachment. Two
-  browser tabs on one conversation are not two attachments — a tab holds no copy and needs no
-  cursor (§ 2) — so the SPA is either one attachment per conversation or none at all. Deciding it
-  decides whether "the SPA is attached" is a row or an absence.
 - **Which notices exist, and what does each summarise?** § 4 proposes one per turn and one per
   session and leaves the set open, along with retire-or-seal for each.
 - **Does `sessions.status` survive?** § 10.
