@@ -1545,16 +1545,16 @@ async def _open_turn(db: AsyncSession, session_id: UUID) -> UUID | None:
 async def _prompt_left(db: AsyncSession, session_id: UUID, first_frame_seq: int) -> bool:
     """Whether the turn starting at *first_frame_seq* ever wrote its prompt to the agent.
 
-    **The console's own write is the evidence, not the CLI's acknowledgement.** `sent()` records
-    the frame after `channel.write` returns, so its absence means the bytes did not go out; its
-    presence means they did, and from then on the CLI's `command_lifecycle` — the only thing that
-    would say whether the *CLI* has the prompt — may still be sitting in the runner's replay
-    window, unrecorded, because replay does not begin until the socket is accepted and this runs
-    before that. Asking a question the record cannot yet answer would re-ask a prompt the agent
-    already has, which is the worse of the two failures: a duplicate turn instead of a lost one.
+    **The console's own record is the evidence, not the CLI's acknowledgement.** `sent()` records
+    the frame before `channel.write` (`cli_client._write`), so a row here means this end committed
+    to sending the prompt, and the CLI's `command_lifecycle` — the only thing that would say
+    whether the *CLI* has it — may still be sitting in the runner's replay window, unrecorded,
+    because replay does not begin until the socket is accepted and this runs before that. Asking a
+    question the record cannot yet answer would re-ask a prompt the agent already has, which is the
+    worse of the two failures: a duplicate turn instead of a lost one.
 
-    So the ambiguous middle — written to a socket that then died — is deliberately treated as
-    delivered, and what this closes is the window where nothing was written at all.
+    So the ambiguous middle — recorded, and then the write or the replica died — is deliberately
+    treated as delivered, and what this closes is the window where nothing was recorded at all.
     """
     written = await db.scalar(
         select(SessionFrame.frame_seq)

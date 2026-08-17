@@ -145,6 +145,38 @@ async def test_the_number_the_runner_put_on_a_frame_reaches_the_sink() -> None:
     await cli.aclose()
 
 
+async def test_a_written_frame_is_numbered_before_it_can_be_answered() -> None:
+    """The log is the ordered record of the conversation, so a request has to precede its response
+    in it. The two are numbered by two tasks — this one for the write, the reader for the answer —
+    against a sink that serialises nothing, so a frame numbered only once it is on the wire leaves
+    that order to a race the peer can win.
+    """
+
+    class RecordingCosts(CountingSink):
+        """A sink whose write side takes a turn of the loop, as the console's does — it is a
+        Postgres round trip and not a counter."""
+
+        async def sent(self, payload: dict[str, Any]) -> int:
+            await asyncio.sleep(0)
+            return self._number(payload)
+
+    class AnsweringChannel(ScriptedChannel):
+        """A peer that answers as the request lands. A real one takes a round trip, which is the
+        margin this race is decided by; removing it makes the outcome deterministic."""
+
+        async def write(self, data: str) -> None:
+            await super().write(data)
+            self.deliver(_answer(self.written[-1]))
+
+    channel, sink = AnsweringChannel(), RecordingCosts()
+    cli = ClaudeCli(channel, sink, control_timeout=5)
+    await cli.connect()
+
+    numbered = {payload["type"]: seq for seq, payload in sink.numbered}
+    assert numbered["control_request"] < numbered["control_response"]
+    await cli.aclose()
+
+
 async def test_a_prompt_carries_the_id_its_lifecycle_will_be_reported_under() -> None:
     """Without a `uuid` the CLI reports no `command_lifecycle` for the prompt at all, and
     `interrupt`'s `cancel_queued` cannot reach it."""

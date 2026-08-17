@@ -250,8 +250,21 @@ class ClaudeCli:
         await self._channel.close()
 
     async def _write(self, payload: dict[str, Any]) -> int:
+        """Record the frame, then put it on the wire — in that order, deliberately.
+
+        A written frame is answerable at once, and its answer is numbered by `_read`, a separate
+        task calling the same sink, which serialises nothing. Numbering after the write would
+        therefore leave "a request precedes its response in the log" to a race between this end's
+        sink — a Postgres `Identity` taken at the INSERT — and the peer's turnaround.
+
+        The cost is which way an interrupted write falls: this end can now hold a frame it never
+        sent. `session_store._prompt_left` reads that record as evidence the prompt was delivered,
+        so it lands there as a turn never re-asked rather than one asked twice, which is the
+        direction that function already prefers.
+        """
+        frame_seq = await self._frames_to.sent(payload)
         await self._channel.write(json.dumps(payload) + "\n")
-        return await self._frames_to.sent(payload)
+        return frame_seq
 
     async def _read(self) -> None:
         """Route the stream: control responses to their waiter, everything else to the queue."""
