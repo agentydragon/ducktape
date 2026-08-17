@@ -2,20 +2,16 @@
 
 Three deviations from stock nio:
 
-- **Sync position lives in Postgres**, not nio's on-disk store, because the loop can move
-  to a different pod (`sync.MatrixSyncStore`). `since` is always passed explicitly
-  and `store_sync_tokens` stays off.
-- **Failures raise.** nio reports them as result-union values (`SyncError`); the loop needs
-  a rejected token to be distinguishable from a transport failure, so every call here
-  converts errors to exceptions.
-- **429s are bounded** (`MAX_RATE_LIMIT_RETRIES`), so being rate-limited is something the
-  console finds out about rather than something it silently waits out.
+- **Sync position lives in Postgres**, not nio's on-disk store, because the loop can move to a
+  different pod (`sync.MatrixSyncStore`). `since` is always passed explicitly and
+  `store_sync_tokens` stays off.
+- **Failures raise.** nio reports them as result-union values (`SyncError`), and a rejected token
+  has to be distinguishable from a transport failure.
+- **429s are bounded** (`MAX_RATE_LIMIT_RETRIES`), so `pacer` hears the answer rather than nio
+  silently waiting it out.
 
-The first two are forced by the console being a leader-elected replica set rather than a
-single long-lived process; the third by `pacer` needing to hear the answer.
-
-E2EE is off — the room is a plain DM and encryption is out of scope for this channel
-(<SPEC.md>) — so no crypto store, no `python-olm`.
+E2EE is off — the room is a plain DM and encryption is out of scope for this channel (<SPEC.md>) —
+so there is no crypto store and no `python-olm`.
 """
 
 from __future__ import annotations
@@ -48,29 +44,27 @@ from haku.console.x.channels.matrix.formatted_body import to_formatted_body
 
 logger = logging.getLogger(__name__)
 
-# How long the homeserver keeps Haku's typing notice alive without being told again. Short
-# enough that a console dying mid-turn leaves an indicator that retires itself, long enough that
-# the turn's status driver refreshes it a handful of times rather than constantly.
+# How long the homeserver keeps Haku's typing notice alive without being told again. Short enough
+# that a console dying mid-turn leaves an indicator that retires itself.
 TYPING_TIMEOUT_MS = 30_000
 
 # Long-poll ceiling. Synapse returns as soon as anything arrives, so this only bounds how
 # long a quiet connection stays open before it is re-established.
 SYNC_TIMEOUT_MS = 30_000
 
-# Events per room per `/sync`, and per backfill page. Above this a room's timeline comes
-# back truncated and the gap has to be paginated — see `_backfill`. Raising it makes that
-# rare rather than making it impossible.
+# Events per room per `/sync`, and per backfill page. Above this a room's timeline comes back
+# truncated and the gap has to be paginated (`_backfill`).
 TIMELINE_LIMIT = 100
 
-# Ceiling on backfill pagination for one room in one pass, so a room that was busy for a
-# week cannot stall the loop indefinitely. Hitting it loses messages, so it is logged.
+# Ceiling on backfill pagination for one room in one pass, so a room that was busy for a week
+# cannot stall the loop. Hitting it loses messages, so it is logged.
 MAX_BACKFILL_PAGES = 20
 
 _STEADY_FILTER = {"room": {"timeline": {"limit": TIMELINE_LIMIT}}}
 
-# The first sync has no watermark, so there is no missed range to replay — only a position
-# to establish. Pulling backlog here would make the console answer messages that predate
-# it. Invites arrive in `invite_state` rather than the timeline, so they still come through.
+# The first sync has no watermark, so there is no missed range to replay — only a position to
+# establish. Pulling backlog here would answer messages that predate the console. Invites arrive
+# in `invite_state` rather than the timeline, so they still come through.
 _INITIAL_FILTER = {"room": {"timeline": {"limit": 0}}}
 
 # Errcodes that mean "this token is no longer good", as opposed to a transport failure.
@@ -78,10 +72,9 @@ _AUTH_ERRCODES = frozenset({"M_UNKNOWN_TOKEN", "M_MISSING_TOKEN"})
 
 # How many times nio may absorb a 429 inside one request before the error reaches us.
 #
-# **Gotcha: nio's default is unlimited, not off** — a rate-limited send never returned an error,
-# it stopped returning (<../../../docs/chat_runtime_facts.md>). Two retries keep a single
-# burst invisible while letting a sustained one reach `pacer`, which is the only place the
-# room's real budget can be learned.
+# **Gotcha: nio's default is unlimited, not off** — a rate-limited send stopped returning rather
+# than erroring (<../../../docs/chat_runtime_facts.md>). Two retries keep a single burst invisible
+# while letting a sustained one reach `pacer`, the only place the room's real budget is learned.
 MAX_RATE_LIMIT_RETRIES = 2
 
 
@@ -109,17 +102,13 @@ class RoomEventKind(StrEnum):
 class EventTag(BaseModel):
     """What the console states about an event it is sending.
 
-    **Write-only, for now.** Nothing here reads a tag back off an event: ingress excludes Haku's
-    own sender and re-awakening reads the console's transcript rather than the room, so
-    what the tag is for is a reader in the room — Element showing which session answered, and the
-    room-read tools when they land, which is what brings a parser back with it.
+    **Write-only.** Nothing reads a tag back off an event — ingress excludes Haku's own sender, and
+    re-awakening reads the console's transcript — so the reader it is for is in the room.
 
-    **Ids and kinds only.** This room is public and federated, so the content travels to every
-    server in it and is not ours to take back; a tag that carried text would be publishing the
-    same thing twice, in a field nobody renders. Redaction strips it along with the rest of
-    `content`, which is the behaviour a status line's retirement wants anyway.
+    **Ids and kinds only.** The room is public and federated, so a tag carrying text would publish
+    the same thing twice, in a field nobody renders.
 
-    `message_id` is the transcript row and `agent_message_id` is the agent's own `msg_…`. Both are
+    `message_id` is the transcript row and `agent_message_id` the agent's own `msg_…`; both are
     absent on everything that is not a reply, because nothing else corresponds to a row.
     """
 
@@ -131,21 +120,19 @@ class EventTag(BaseModel):
     agent_message_id: str | None = None
 
     def content(self) -> dict[str, Any]:
-        """The tag as it goes on the wire: `mode="json"` for the UUIDs, `exclude_none` so an
-        absent field is absent rather than null."""
+        """The tag as it goes on the wire, with an absent field absent rather than null."""
         return self.model_dump(mode="json", exclude_none=True)
 
     def transaction_id(self) -> str:
         """What to send this event under, so a re-send of the same thing is not a second event.
 
-        **Derived where the event names a transcript row, fresh where it does not.** Re-posting a
-        row is always a mistake, so its id is the transaction and the homeserver refuses the
-        duplicate; a status edit and a lifecycle notice name no row, and deriving one would be a
-        way to lose the event rather than to deduplicate it.
+        Derived where the event names a transcript row — re-posting a row is always a mistake, so
+        its id is the transaction and the homeserver refuses the duplicate — and fresh where it
+        does not: a status edit and a lifecycle notice name no row, and deriving one would lose the
+        event rather than deduplicate it. **Impure**: each call for a row-less event mints a new id.
 
-        Second line of defence, not first — `frame_uid` drops a replayed frame before any send —
-        and it rests on how Synapse keys and expires its transaction cache
-        (<../../../docs/chat_runtime_facts.md>). Impure, and called once per send.
+        Rests on how Synapse keys and expires its transaction cache
+        (<../../../docs/chat_runtime_facts.md>).
         """
         return self.message_id.hex if self.message_id is not None else uuid4().hex
 
@@ -167,20 +154,13 @@ class MatrixAuthError(MatrixError):
     """The homeserver rejected our access token.
 
     Distinct so the caller can re-login rather than back off: Synapse invalidates tokens on
-    password set and on restore from an older backup, and the console is expected to
-    recover by logging in again.
+    password set and on restore from an older backup.
     """
 
 
 @dataclass(frozen=True)
 class InboundMessage:
-    """One `m.room.message` addressed to us.
-
-    It carries no parsed `EventTag`, and cannot usefully: `_read` drops everything Haku sent
-    and nothing else in the room tags anything, so the field was structurally always
-    absent once the history read — its only consumer — stopped going to the homeserver
-    (`sync.recent_history`).
-    """
+    """One `m.room.message` addressed to us."""
 
     room_id: str
     event_id: str
@@ -193,13 +173,12 @@ class InboundMessage:
 class UnmappableEvent:
     """An `m.room.message` this console has no way to read as prose.
 
-    A screenshot, a voice memo, a file — anything whose meaning is in an attachment rather than
-    in `body`, plus any msgtype invented after this release. Carried out of the sync rather than
-    filtered away because an event that cannot be mapped is still something the operator has to be
-    told about rather than something that vanishes; `sync` is what tells them.
+    A screenshot, a voice memo, a file, plus any msgtype invented after this release. Carried out
+    of the sync rather than filtered away because the operator has to be told about it; `sync` is
+    what tells them.
 
-    No body: what a media event's `body` holds is a filename, and repeating it back would read as
-    though the thing had been understood.
+    No body: a media event's `body` is a filename, and repeating it back would read as though the
+    thing had been understood.
     """
 
     room_id: str
@@ -221,22 +200,19 @@ class SyncResult:
     next_batch: str
     messages: tuple[InboundMessage, ...]
     invites: tuple[Invite, ...]
-    # Defaulted because a sync with nothing unreadable in it is the ordinary case, and every
-    # caller that constructs one by hand means exactly that.
     unmappable: tuple[UnmappableEvent, ...] = ()
 
 
 def _msgtype(event: Event | BadEvent) -> str | None:
     """The `msgtype` of an `m.room.message`, or None for anything else in a timeline.
 
-    Read off the raw source rather than off nio's parsed class, because the events this exists to
-    catch are the ones nio models least: an msgtype it does not know becomes `RoomMessageUnknown`
-    with no shared base to check, and content that fails its schema becomes a `BadEvent` with no
-    msgtype attribute at all — while both carry it right there in `source`.
+    Read off the raw source rather than nio's parsed class, because the events this exists to catch
+    are the ones nio models least: an msgtype it does not know becomes `RoomMessageUnknown` with no
+    shared base to check, and content that fails its schema becomes a `BadEvent` with no msgtype
+    attribute — while both carry it in `source`.
 
-    None covers three cases that all mean "not a message": a state event (membership, topic), a
-    non-message event (a reaction), and a redaction — which keeps its type and loses its content,
-    so there is nothing left to read and nothing the operator wants told back to them.
+    None means "not a message": a state event, a non-message event such as a reaction, and a
+    redaction, which keeps its type and loses its content.
     """
     match event.source:
         case {"type": "m.room.message", "content": {"msgtype": str(msgtype)}}:
@@ -311,30 +287,26 @@ class MatrixClient:
         """Send Haku's reply, rendering its Markdown for clients that display HTML.
 
         `body` stays the Markdown source: it is the spec's fallback for clients that show no
-        formatting, and it is what a plain-text reader should see.
-
-        `txn_id` makes the send idempotent: a retry with the same value is deduplicated by
-        the homeserver rather than posting twice. `EventTag.transaction_id` is where a caller
-        gets one, and says which events have a value worth repeating.
+        formatting. `txn_id` makes the send idempotent — a retry with the same value is
+        deduplicated by the homeserver; `EventTag.transaction_id` is where a caller gets one.
         """
         return await self._send(token, room_id, "m.text", body, txn_id, tag, formatted=to_formatted_body(body))
 
     async def send_notice(self, token: str, room_id: str, body: str, txn_id: str, tag: EventTag) -> str:
         """Send an `m.notice`, returning its event ID.
 
-        Lifecycle and status messages are notices rather than plain text so clients
-        style them apart from Haku's answers and bots ignore them by convention.
+        Lifecycle and status messages are notices rather than plain text so clients style them
+        apart from Haku's answers and bots ignore them by convention.
         """
         return await self._send(token, room_id, NOTICE_MSGTYPE, body, txn_id, tag)
 
     async def edit_notice(self, token: str, room_id: str, event_id: str, body: str, txn_id: str, tag: EventTag) -> None:
         """Replace an earlier notice in place, rather than posting a second one.
 
-        This is what lets a turn have **one** status line instead of a line per step.
-        The edit is its own event carrying `m.replace`: clients that understand it re-render
-        the original, and clients that do not show the fallback body — which is why the
-        top-level `body` is the new text prefixed with `*`, per the spec's convention, rather
-        than the new text alone.
+        This is what lets a turn have **one** status line instead of a line per step. The edit is
+        its own event carrying `m.replace`: clients that understand it re-render the original, and
+        clients that do not show the fallback body — which is why the top-level `body` is the new
+        text prefixed with `*`, per the spec's convention.
         """
         self._client.access_token = token
         # The tag rides on both halves: `m.new_content` is what a client that understands the
@@ -358,10 +330,9 @@ class MatrixClient:
     async def set_typing(self, token: str, room_id: str, *, active: bool) -> None:
         """Start or stop Haku's typing notification in *room_id*.
 
-        The homeserver expires a typing notice by itself after `TYPING_TIMEOUT_MS`, which is what
-        makes this safe: a console that dies mid-turn leaves an indicator that goes away on its
-        own rather than one stuck on forever. The cost is that a live turn has to say it again
-        before that expiry, which the turn's status driver does.
+        The homeserver expires the notice by itself after `TYPING_TIMEOUT_MS`, so a console that
+        dies mid-turn leaves an indicator that goes away on its own. The cost is that a live turn
+        has to say it again before that expiry, which the turn's status driver does.
         """
         self._client.access_token = token
         _unwrap(await self._client.room_typing(room_id, active, timeout=TYPING_TIMEOUT_MS), RoomTypingResponse)
@@ -369,9 +340,8 @@ class MatrixClient:
     async def redact(self, token: str, room_id: str, event_id: str, reason: str) -> None:
         """Remove an event. Used to retire a status line once its answer has posted.
 
-        A redaction rather than a final edit: the status described work in progress, and once
-        the answer is in the room the line is not stale so much as spent — leaving one edited
-        to "done" behind on every turn is the clutter the single status line exists to avoid.
+        A redaction rather than a final edit: once the answer is in the room the line is spent, and
+        one edited to "done" on every turn is the clutter the single status line exists to avoid.
         """
         self._client.access_token = token
         _unwrap(await self._client.room_redact(room_id, event_id, reason=reason), RoomRedactResponse)
@@ -401,22 +371,17 @@ class MatrixClient:
     ) -> tuple[list[InboundMessage], list[UnmappableEvent]]:
         """Split a room's timeline into what Haku can read and what it can only report.
 
-        The decisions that live here, each load-bearing:
-
-        - **Our own events are dropped first.** Doing it here rather than over the result
-          is what keeps a notice about an unreadable event from being an unreadable event's worth
-          of notice: everything this console posts is excluded before anything is classified.
-        - **`m.emote` is prose and is serviced.** It is `m.text` phrased in the third person —
-          "/me is looking at the logs" — with the words in `body` where they can be read.
+        - **Our own events are dropped first**, before anything is classified, which is what keeps
+          a notice about an unreadable event from itself being an unreadable event.
+        - **`m.emote` is prose and is serviced.** It is `m.text` in the third person, with the
+          words in `body`.
         - **`m.notice` is ignored rather than reported.** It is the msgtype for automated clients,
           which is what Haku's own status, lifecycle and unreadable-event lines go out under. The
-          sender rule above already excludes ours; this excludes anything else's, so no notice in
-          this room can ever produce a notice about it, from any sender. That is the second of the
-          two independent guards against a self-feeding loop, and the reason there is a second one
-          is that this is the failure whose cost is unbounded.
+          sender rule above excludes ours; this excludes anything else's, so no notice in this room
+          can produce a notice about it — the second of two independent guards against a
+          self-feeding loop.
 
-        Everything else that is an `m.room.message` is unmappable: the meaning is in an attachment
-        or in an msgtype invented after this release, and either way the operator gets told rather
+        Everything else that is an `m.room.message` is unmappable: the operator gets told rather
         than nothing happening.
         """
         messages: list[InboundMessage] = []
@@ -449,10 +414,8 @@ class MatrixClient:
         messages: list[InboundMessage] = []
         unmappable: list[UnmappableEvent] = []
         for room_id, room in response.rooms.join.items():
-            # A truncated timeline is the gap that would otherwise silently swallow whatever
-            # arrived while the console was down — the very thing the watermark exists to
-            # prevent. On the first sync there is no range to recover, only a
-            # position to take.
+            # A truncated timeline is a gap that would otherwise silently swallow what arrived
+            # while the console was down. On the first sync there is no range to recover.
             if room.timeline.limited and since is not None and room.timeline.prev_batch is not None:
                 recovered, unreadable = await self._backfill(room_id, room.timeline.prev_batch, since)
                 messages.extend(recovered)

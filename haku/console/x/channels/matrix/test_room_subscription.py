@@ -1,8 +1,7 @@
 """Contracts of the room's own position, and of what it says from it.
 
 The durable half of <../../subscription.py>: this is the only place a position outlives the process
-reading it, which is why the restart is asserted here and the client-held resume is asserted next to
-the abstraction instead.
+reading it, which is why the restart is asserted here rather than beside the abstraction.
 """
 
 from __future__ import annotations
@@ -100,7 +99,7 @@ async def test_a_room_that_has_never_read_takes_the_head_and_says_nothing(
 async def test_an_abort_recorded_after_the_room_started_reading_becomes_a_notice(
     chat_store, operator_id, served, notices, room
 ) -> None:
-    """The push the turn loop used to make, now read from the record instead."""
+    """An abort recorded while the room was reading becomes a notice."""
     await notices.reconcile_once()
 
     await abort_a_turn(chat_store, operator_id, served)

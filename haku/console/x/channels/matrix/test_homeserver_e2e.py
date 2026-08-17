@@ -1,17 +1,16 @@
 """`MatrixClient` against a real Synapse, rather than against canned responses.
 
-What a hand-written homeserver cannot answer is what is here. Every one of these is a property
-of Synapse that the Matrix surface is built on and that a fake would agree with whatever the
-code did:
+Every one of these is a property of Synapse that the Matrix surface is built on and that a fake
+would agree with whatever the code did:
 
-- a `/sync` resumed across a gap larger than `TIMELINE_LIMIT` really does come back truncated,
-  and the pagination that closes it really does land on every missed message, once, in order
-  (downtime recovery — the property this whole module exists for);
+- a `/sync` resumed across a gap larger than `TIMELINE_LIMIT` really does come back truncated, and
+  the pagination that closes it really does land on every missed message, once, in order (downtime
+  recovery — the property this module exists for);
 - a `/sync` watermark really is accepted as a `/messages` pagination token, at both ends;
 - a repeated transaction id really is refused as a second event
   (<../../../docs/chat_runtime_facts.md>);
-- `works.allegedly.haku` really does survive a round trip through the homeserver, including
-  the copy that rides inside `m.new_content`.
+- `works.allegedly.haku` really does survive a round trip through the homeserver, including the
+  copy that rides inside `m.new_content`.
 
 The room's other side is driven through the operator-side API (`testing/operator_room.py`), a
 second nio client that shares no code with `MatrixClient` — a test that checks the client against
@@ -95,10 +94,10 @@ async def joined_room(bot: Bot, operator: AsyncClient) -> OperatorRoom:
 async def test_login_lands_on_the_pinned_device_and_whoami_rejects_a_stale_token(bot: Bot, synapse: Synapse) -> None:
     """The console caches its token and re-logs in only when it stops working.
 
-    `whoami` is what decides between the two, so it has to answer no for a token the homeserver
-    has never heard of rather than raising, and yes for one it issued. The device is pinned
-    because Synapse keys its transaction dedup on the device rather than on the token: a login
-    per restart would quietly cost the guarantee `EventTag.transaction_id` rests on.
+    `whoami` is what decides between the two, so it has to answer no for a token the homeserver has
+    never heard of rather than raising, and yes for one it issued. The device is pinned because
+    Synapse keys its transaction dedup on the device rather than on the token: a login per restart
+    would quietly cost the guarantee `EventTag.transaction_id` rests on.
     """
     again = await bot.client.login(PASSWORD)
 
@@ -141,10 +140,9 @@ async def test_a_gap_larger_than_the_timeline_limit_delivers_every_message_once(
 ) -> None:
     """No message is lost across console downtime, however long the gap.
 
-    This is the one property a fake homeserver cannot be trusted about, and its gotcha is the
-    reason: past `TIMELINE_LIMIT` events, a resumed `/sync` answers with a
-    **truncated** view and flags it rather than erroring, so a reader that does not check the flag
-    skips the difference silently. Nothing about the response looks wrong.
+    Past `TIMELINE_LIMIT` events a resumed `/sync` answers with a **truncated** view and flags it
+    rather than erroring, so a reader that does not check the flag skips the difference silently
+    and nothing about the response looks wrong.
 
     So: stop syncing, overfill the room, resume from the stored watermark, and require the whole
     gap back in order. The backfill warning is asserted too — without it a change that stopped
@@ -170,10 +168,9 @@ async def test_a_gap_larger_than_the_timeline_limit_delivers_every_message_once(
 async def test_an_unreadable_event_is_reported_and_the_report_cannot_become_one(
     bot: Bot, operator_user_id: str, joined_room: OperatorRoom
 ) -> None:
-    """An unreadable event is reported against the real thing, and the loop that would follow if
-    the guard were wrong.
+    """The loop an unreadable-event notice would create if the guard were wrong.
 
-    The notice Haku posts about an event it cannot read is itself an event in the room, and comes
+    The notice Haku posts about an event it cannot read is itself an event in the room and comes
     back on the very next `/sync`. If a notice were reportable, one screenshot would produce a
     notice, which would produce a notice, until the room's send budget was the only thing left
     stopping it — so the round trip through the homeserver is the test, not the classification in
@@ -218,8 +215,8 @@ async def test_a_tag_and_its_rendering_survive_the_homeserver(bot: Bot, joined_r
         body="**bold** answer",  # the Markdown source stays the fallback
         formatted_body="<p><strong>bold</strong> answer</p>",
     )
-    # Off the raw content, because nothing in the console reads a tag back any more and a person
-    # in the room does not see one: the readers this is for are in the room (`EventTag`).
+    # Off the raw content, because nothing in the console reads a tag back and a person in the room
+    # does not see one (`EventTag`).
     assert (await joined_room.content_of(event_id))[HAKU_CONTENT_KEY] == tag.content()
 
 
@@ -261,10 +258,8 @@ async def test_an_edit_replaces_the_status_line_rather_than_adding_one(bot: Bot,
 async def test_a_redacted_event_is_gone_from_the_room(bot: Bot, joined_room: OperatorRoom) -> None:
     """A retired status line leaves nothing behind, and leaves it nowhere the room reads.
 
-    It does still leave something in the console's transcript, which is where a re-awakened
-    session now reads from (`sync.recent_history`) — a redaction is the one thing the room
-    knows and our record does not. Harmless for what redaction is used for here, since a status
-    line was never recorded in the first place.
+    A redaction is the one thing the room knows and our record does not — harmless for what
+    redaction is used for here, since a status line was never recorded in the first place.
     """
     room = joined_room.room_id
     tag = EventTag(kind=RoomEventKind.REPLY, message_id=uuid4())

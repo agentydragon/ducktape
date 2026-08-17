@@ -1,8 +1,7 @@
 """One console replica at a time, its sandboxes, and the database under them.
 
 The console is a process rather than an in-test app because the tests this serves are about a
-console that goes away: `stop()` is the roll a deploy performs, and what a rolling replica does
-with what it had not finished saying is the whole subject.
+console that goes away: `stop()` is the roll a deploy performs.
 
 Sandboxes are started **here**, off the claim files the console writes, which is what a
 `SandboxClaim` controller does in production. It is also what makes a sandbox outlive the console
@@ -133,10 +132,9 @@ class Deployment:
     async def _spawn(self, name: str, program: Path, environment: dict[str, str]) -> asyncio.subprocess.Process:
         """Run *program*, with its output in the undeclared outputs rather than in this test's.
 
-        Both processes narrate continuously — every sync pass, every frame, every paced send — and
-        a wedged test's explanation is in there, which pytest's captured output would lose when
-        Bazel kills the target. Named per test, because every test using this starts a `console-1`
-        and one target's outputs are one directory.
+        Both processes narrate continuously, and a wedged test's explanation is in there — which
+        pytest's captured output would lose when Bazel kills the target. Named per test, because
+        every test using this starts a `console-1` and one target's outputs are one directory.
         """
         log = (undeclared_outputs_dir() / f"{self._name}.{name}.log").open("wb")
         self._logs.append(log)
@@ -166,10 +164,9 @@ class Deployment:
         """Kill the sandbox behind *session_id* and leave it dead, with the console still running.
 
         `SIGKILL` so no finalizer runs, which is the sandbox loss `expire_stale_leases` is the only
-        observer of. What it opens is not a race to win: the console reads the dropped socket as a
-        lease handed back, and the session's row stays `ready` and adoptable for a whole
-        `ADOPTION_GRACE` — so a message sent into that window is accepted by a session that will
-        never claim it.
+        observer of. The console reads the dropped socket as a lease handed back, so the session's
+        row stays `ready` and adoptable for a whole `ADOPTION_GRACE` — and a message sent into that
+        window is accepted by a session that will never claim it.
         """
         self._abandoned.add(session_id)
         runner = self._runners[session_id]
@@ -189,9 +186,9 @@ class Deployment:
     async def wait_until_queued(self, session_id: UUID, body: str) -> None:
         """Wait until *body* is a prompt row on *session_id*.
 
-        The premise of the test that kills a sandbox: if the message were merely refused and held
-        by the homeserver it would be answered by the replacement whatever the watermark did, and
-        the test would pass without exercising anything.
+        The premise of the test that kills a sandbox: a message merely refused and held by the
+        homeserver would be answered by the replacement whatever the watermark did, and the test
+        would pass without exercising anything.
         """
 
         async def queued() -> bool:
@@ -209,8 +206,8 @@ class Deployment:
         """Wait until the room has a sandbox behind it with the bridge up, and say which session.
 
         Also the barrier every test needs before its first message: a first `/sync` establishes a
-        position rather than replaying backlog, so a message sent before the console has
-        joined the room is one it is entitled never to see.
+        position rather than replaying backlog, so a message sent before the console has joined the
+        room is one it is entitled never to see.
 
         `after` names a session being replaced. The supervisor mints the replacement only once the
         dead one's lease has lapsed, so without it a test that has just killed a sandbox reads its
@@ -222,10 +219,8 @@ class Deployment:
         return session_id
 
     async def wait_until_recorded(self, session_id: UUID, text: str) -> None:
-        """Wait until *text* is an `assistant` frame in the session's rollout.
-
-        This is the moment the console has the answer and has written it down — which every path
-        downstream treats as interchangeable with the room having heard it.
+        """Wait until *text* is an `assistant` frame in the session's rollout: the moment the
+        console has the answer and has written it down.
         """
 
         async def recorded() -> bool:
@@ -248,7 +243,7 @@ class Deployment:
 
         A rate limit past `MAX_RATE_LIMIT_RETRIES`, a transient 5xx, a room state that briefly
         forbids the send: none is reproducible on demand against a healthy Synapse, and what is
-        under test is what the console does with a send that failed rather than how it failed.
+        under test is what the console does with a failed send rather than how it failed.
         """
         self._refusal.write_text("")
 

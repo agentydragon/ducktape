@@ -20,15 +20,15 @@ listeners:
       - names: [client]
         compress: false
 
-# Rate limits, lifted only where a test measurably reaches one. Measured on 2026-08-15 against
-# Synapse v1.158.0 by removing each group and rerunning `//haku/console/x:test_matrix_homeserver_e2e`
-# — so this list is only as good as that test set, and a new test that reaches a further limit will
-# have to add its group back with its own reason.
+# Rate limits, lifted only where a test measurably reaches one. Measured against Synapse v1.158.0
+# by removing each group and rerunning `//haku/console/x/channels/matrix:test_homeserver_e2e`, so
+# this list is only as good as that test set: a new test reaching a further limit has to add its
+# group back with its own reason.
 #
-# `rc_joins`, `rc_joins_per_room` and `rc_invites` were removed because the target stays green
-# without them: Synapse keys those per user and per room, and `operator`, `bot` and `joined_room`
-# are function-scoped, so each key sees one join or one invite and never approaches its burst.
-# What survives is keyed by something every test shares — the sender, or the client IP.
+# `rc_joins`, `rc_joins_per_room` and `rc_invites` are absent because the target stays green without
+# them — Synapse keys those per user and per room, and `operator`, `bot` and `joined_room` are
+# function-scoped. What survives is keyed by something every test shares: the sender or the client
+# IP.
 
 rc_message:
   # Keyed per sender. Without it `…_gap_larger_than_the_timeline_limit…` fails on `PUT /send`

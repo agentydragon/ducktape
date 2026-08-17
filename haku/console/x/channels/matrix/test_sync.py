@@ -1,8 +1,8 @@
 """One sync pass: what gets joined, what reaches the session, and what is recorded about it.
 
 The watermark moves on every pass, so what these assert is the other half: a batch the session
-would not take is rejected, said so in the room, and written down — in the transaction that
-acknowledges it, which is what stops a crash losing the message and the notice together.
+would not take is rejected, said so in the room, and written down in the transaction that
+acknowledges it.
 """
 
 from __future__ import annotations
@@ -98,9 +98,8 @@ class _FakeTurns:
     """Ingress as the loop sees it: it accepts or rejects a batch, and says what to record.
 
     The rows it hands back are the real ones (`session_events.authored`), keyed to a real session,
-    because what the loop does with them is insert them — a fake row would test the call and not
-    the write. `session_id = None` is the room with nothing behind it, where there is no row to
-    key a fact to and the notice is all there is.
+    because what the loop does with them is insert them. `session_id = None` is the room with
+    nothing behind it, where there is no row to key a fact to and the notice is all there is.
     """
 
     session_id: UUID | None
@@ -153,9 +152,8 @@ def transcript(migrated_sessions) -> RoomTranscript:
 def _replica(sync_store, conversations, turns, transcript, matrix, migrated_sessions) -> MatrixSyncService:
     """One console replica's sync service, unthrottled.
 
-    What the real budget is and how it is spent is `test_pacer`'s subject; giving these tests the
-    room's true rate would make each of them wait five seconds per send to assert something that
-    is not about waiting.
+    The real budget is `test_pacer`'s subject; at the room's true rate each of these would wait
+    five seconds per send to assert something that is not about waiting.
     """
     service = MatrixSyncService(
         MATRIX_CONFIG,
@@ -166,8 +164,7 @@ def _replica(sync_store, conversations, turns, transcript, matrix, migrated_sess
         turns=cast(Any, turns),
         transcript=transcript,
         # Answers are outbox rows, drained by a task `run()` starts; these tests drive one sync
-        # pass and assert the narration, which never touches the table. `test_outbox` is
-        # where the drain is exercised.
+        # pass and assert the narration, which never touches the table (`test_outbox` does).
         outbox=cast(Any, None),
         deliveries=DeliveryLog(migrated_sessions),
     )
@@ -193,8 +190,8 @@ async def settled(service: MatrixSyncService) -> None:
 async def bound_room(conversations, operator_id: UUID) -> str:
     """Most tests start from a room already bound; the adoption/invite ones do not use this.
 
-    Attached as well as bound, because that is what the supervisor leaves behind once the room has
-    a session — and it is the row the status line's own event id hangs off.
+    Attached as well as bound, which is what the supervisor leaves behind once the room has a
+    session, and is the row the status line's own event id hangs off.
     """
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
     await conversations.conversation_for_room(MATRIX_ROOM, operator_id)
@@ -257,10 +254,10 @@ async def test_a_batch_is_offered_as_one_prompt(service, matrix, turns, bound_ro
 async def test_a_rejected_batch_is_acknowledged_and_recorded_in_one_go(
     service, matrix, turns, sync_store, migrated_sessions, bound_room
 ):
-    """The ruling this file was rewritten for: a prompt the session will not take is rejected.
+    """A prompt the session will not take is rejected, not held.
 
-    Nothing is held anywhere — the watermark covers the batch, so the homeserver will not offer it
-    again — and the only surviving copy of what was said is the row written beside that watermark.
+    The watermark covers the batch, so the homeserver will not offer it again, and the only
+    surviving copy of what was said is the row written beside that watermark.
     """
     matrix.result = SyncResult("s2", (_message("hello"),), ())
     turns.accepts = False
@@ -281,8 +278,7 @@ async def test_a_recording_that_cannot_be_written_takes_the_watermark_with_it(sy
     violates the foreign key, and what must not survive that is the acknowledgement.
 
     Advancing separately would leave the homeserver told the message was handled with nothing
-    written about it and nothing said — which is the failure the one transaction exists to rule
-    out, and the shape `_report_unreadable` had before this."""
+    written about it and nothing said."""
     orphan = session_events.authored(
         UnreadableInputBody(media_type="m.image"), session_id=uuid4(), now=datetime.datetime.now(datetime.UTC)
     )
@@ -323,8 +319,7 @@ async def test_a_pass_with_nothing_to_reject_says_nothing(service, matrix, turns
 
 
 async def test_a_message_arriving_mid_turn_is_told_it_was_not_delivered(service, matrix, turns, bound_room):
-    """A batch that arrives mid-turn is rejected, not held. Holding it until the turn ended answered
-    it a turn late and needed a second ingress position to do it; rejecting it costs the operator a
+    """A batch arriving while a turn runs is rejected rather than held, which costs the operator a
     re-send and nothing else."""
     matrix.result = SyncResult("s2", (_message("hello"),), ())
     await service.sync_once("tok")
@@ -363,9 +358,9 @@ async def test_a_rejection_with_no_session_is_announced_and_not_recorded(
 async def test_an_unreadable_event_is_announced_recorded_and_the_batch_moves_on(
     service, matrix, turns, sync_store, migrated_sessions, bound_room
 ):
-    """The half a refusal cannot serve. Nothing about a sent `m.image` will ever change, so
-    holding the batch for it would wedge ingress on one screenshot forever; the operator is told in
-    the room they sent it to, the fact is written down, and the watermark advances."""
+    """The half a refusal cannot serve: nothing about a sent `m.image` will ever change, so holding
+    the batch for it would wedge ingress on one screenshot forever. The operator is told in the
+    room they sent it to, the fact is written down, and the watermark advances."""
     matrix.result = SyncResult("s2", (), (), (_unreadable(),))
 
     await service.sync_once("tok")
@@ -410,8 +405,7 @@ async def test_the_text_of_a_mixed_batch_is_serviced_and_the_rest_announced(serv
 
 
 async def test_an_unreadable_event_from_an_unserviced_room_is_not_announced(service, matrix, bound_room):
-    """The notice goes to the room the operator sent it to, and only the bound room is that
-    room."""
+    """The notice goes to the room the operator sent it to, and only the bound room is that one."""
     matrix.result = SyncResult("s2", (), (), (_unreadable(room_id="!stray:allegedly.works"),))
 
     await service.sync_once("tok")
@@ -522,10 +516,9 @@ async def test_a_quiet_batch_advances_the_watermark(service, matrix, sync_store,
 
 
 async def test_a_batch_handed_over_is_acknowledged_at_once(service, matrix, turns, sync_store, bound_room):
-    """Acceptance is the acknowledgement now. What it costs is the recovery the held batch bought:
-    a prompt whose session ends before claiming it is not offered again, and what answers it is the
-    replacement session being handed the transcript it is already in
-    (`session.RoomTranscript.recent`)."""
+    """Acceptance is the acknowledgement, and what it costs is that a prompt whose session ends
+    before claiming it is not offered again — what answers it is the replacement session being
+    handed the transcript it is already in (`session.RoomTranscript.recent`)."""
     matrix.result = SyncResult("s2", (_message("hi"),), ())
 
     await service.sync_once("tok")
@@ -621,11 +614,8 @@ async def test_a_repeated_state_is_not_resent(service, matrix, bound_room) -> No
 
 async def test_every_state_it_is_given_reaches_the_line(service, matrix, bound_room) -> None:
     """Idempotent, not paced: what the line should say and when it may change are one decision,
-    and they belong to the caller (`room_status.TurnStatus`).
-
-    Declining here used to lose the update outright — the driver had already recorded it as
-    shown, so it never offered it again and the room read the older state for the rest of the
-    turn. The floor is still there; it is just where the deferral can be remembered.
+    and they belong to the caller (`room_status.TurnStatus`). Declining here would lose the update
+    outright, since the driver has already recorded it as shown.
     """
     await service.show_status("running Bash")
     await settled(service)
@@ -689,9 +679,8 @@ async def test_clearing_a_turn_that_never_showed_anything_does_nothing(service, 
 
 
 async def test_a_reply_says_which_transcript_row_it_is(service, matrix, sync_store, bound_room) -> None:
-    """The statement that replaces a guess. Which message an event shows used to be answerable
-    only by matching order and timing against the transcript; stage 4's dedupe needs it to be a
-    lookup, and that is cheap only if the event said so when it was sent."""
+    """Which message an event shows is a lookup rather than a match on order and timing, which is
+    cheap only if the event said so when it was sent."""
     message_id = UUID("99999999-8888-7777-6666-555555555555")
 
     await service.post_reply(_queued("the answer", message_id=message_id, agent_message_id="msg_01abc"))
@@ -728,8 +717,8 @@ async def test_a_status_edit_is_a_new_transaction_every_time(service, matrix, bo
 
 
 async def test_each_kind_of_notice_says_which_it_is(service, matrix, turns, bound_room) -> None:
-    """Msgtype answered "is this conversational" only because everything worth excluding happened
-    to be a notice. These are four different things and now say so."""
+    """Four different things, each saying which it is — where msgtype answered "is this
+    conversational" only because everything worth excluding happened to be a notice."""
     matrix.result = SyncResult("s2", (_message("hello"),), ())
     turns.accepts = False
     await service.sync_once("tok")
@@ -749,12 +738,12 @@ async def test_each_kind_of_notice_says_which_it_is(service, matrix, turns, boun
 async def test_history_is_read_from_our_record_and_not_from_the_homeserver(
     service, matrix, chat_store, operator_id, bound_room
 ) -> None:
-    """The whole of this change, at the seam: what a replacement session is told it said.
+    """What a replacement session is told it said, at the seam.
 
-    A role becomes an MXID here because that is the per-channel half of the answer — the record
+    A role becomes an MXID here because that is the per-channel half of the answer: the record
     knows who spoke, and only the channel knows what to call them. `matrix` is asserted untouched
-    because "we asked the homeserver" and "we asked ourselves" are otherwise indistinguishable
-    from the outside, and the difference is the point.
+    because "we asked the homeserver" and "we asked ourselves" are otherwise indistinguishable from
+    the outside.
     """
     view, token = await chat_store.create(operator_id, MatrixSession(room_id=MATRIX_ROOM))
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED

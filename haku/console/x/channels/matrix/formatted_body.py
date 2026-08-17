@@ -1,14 +1,14 @@
 """Render Haku's Markdown into the HTML subset Matrix clients will actually display.
 
-Haku writes Markdown because that is what models write well; Element shows `body` verbatim,
-so without this a reply arrives with its asterisks and backticks intact. The conversion lives
-here rather than in the prompt because formatting is a property of the surface, not a choice the
-agent makes: telling the model to emit Matrix's HTML subset would make every reply a chance to emit
-a tag that is silently dropped, and would cost the tag list in prompt budget on every turn.
+Haku writes Markdown because that is what models write well; Element shows `body` verbatim, so
+without this a reply arrives with its asterisks and backticks intact. The conversion lives here
+rather than in the prompt because formatting is a property of the surface, not a choice the agent
+makes: telling the model to emit Matrix's HTML subset would make every reply a chance to emit a tag
+that is silently dropped, and would cost the tag list prompt budget on every turn.
 
-Everything not on the spec's allowlist is dropped, and the dropping is the point — a tag
-Element would strip anyway is better removed here, where the fallback is deliberate, than
-silently at the far end.
+Everything not on the spec's allowlist is dropped, and the dropping is the point — a tag Element
+would strip anyway is better removed here, where the fallback is deliberate, than silently at the
+far end.
 """
 
 from __future__ import annotations
@@ -77,8 +77,7 @@ _ALLOWED_ATTRIBUTES = {
 _ALLOWED_SCHEMES = ("https:", "http:", "ftp:", "mailto:", "magnet:", "matrix:")
 
 # GitHub-flavoured task lists have no Matrix equivalent: `<input type="checkbox">` is not on the
-# allowlist, so a checklist would arrive as bare bullets with the boxes silently gone. Haku
-# writes checklists often enough that losing their state is worse than losing the widget.
+# allowlist, so a checklist would arrive as bare bullets with the boxes silently gone.
 _TASK_ITEM = re.compile(r"^(\s*[-*+]\s+)\[([ xX])\]\s+", re.MULTILINE)
 
 
@@ -111,10 +110,9 @@ def _permitted_attributes(tag: Tag) -> dict[str, str]:
 def _sanitize(soup: BeautifulSoup) -> None:
     """Strip what Matrix does not allow, keeping the text inside it.
 
-    `unwrap` rather than `decompose`: an unknown tag is a formatting failure, not a reason to
-    lose the words. Raw HTML the agent typed reaches here as real tags — Markdown passes it
-    through — which is exactly why the allowlist is applied to the output rather than trusted
-    from the input.
+    `unwrap` rather than `decompose`: an unknown tag is a formatting failure, not a reason to lose
+    the words. Raw HTML the agent typed reaches here as real tags, since Markdown passes it through
+    — which is why the allowlist is applied to the output rather than trusted from the input.
     """
     for tag in soup.find_all(True):
         if tag.name == "img" and not str(tag.get("src", "")).startswith("mxc://"):

@@ -1,29 +1,26 @@
 """One paced outbound queue per Matrix room.
 
 Synapse limits how fast a user may send events into a room (`rc_message`), and
-<../../../../../cluster/k8s/matrix/app/helmrelease.yaml> does not override it — so the upstream
-defaults are the whole budget: a burst of ten sends, refilling at one every five seconds.
-Every sender the console has shares that one budget: a turn's answer, the status line's
-edits, lifecycle notices, and the bootstrap narration, which is the loudest of them at one
-notice per line.
+<../../../../../cluster/k8s/matrix/app/helmrelease.yaml> does not override it, so the upstream
+defaults are the whole budget: a burst of ten sends, refilling at one every five seconds. Every
+sender the console has shares it — a turn's answer, the status line's edits, lifecycle notices, and
+the bootstrap narration, which is the loudest at one notice per line.
 
-**A queue, not a rate limiter.** A limiter makes the caller wait, and the loudest caller is
-the sandbox's progress reporter — which runs inside the loop draining the runner's output,
-so blocking it five seconds a line stalls the socket carrying Claude's own frames. Queueing
-decouples the two: the room falls behind, the conversation does not.
+**A queue, not a rate limiter.** A limiter makes the caller wait, and the loudest caller is the
+sandbox's progress reporter, which runs inside the loop draining the runner's output — blocking it
+five seconds a line stalls the socket carrying Claude's own frames. The room falls behind; the
+conversation does not.
 
-**FIFO, with one collapsing slot.** A debounce is only correct for latest-wins state. An
-answer, a bootstrap line and a `holding N message(s)` each lose information when dropped, so
-they queue. The status line is the one thing that genuinely is state — nobody needs the tool
-call it showed four edits ago — so it takes a single slot that is rewritten in place, keeping
-the position it was first given rather than jumping the queue on every change.
+**FIFO, with one collapsing slot.** An answer, a bootstrap line and a rejection notice each lose
+information when dropped, so they queue. The status line genuinely is state — nobody needs the tool
+call it showed four edits ago — so it takes a single slot rewritten in place, keeping the position
+it was first given rather than jumping the queue on every change.
 
-**Per replica, not per room globally.** The sync leader and the replica holding a session's
-lease need not be the same pod, so two of these can exist for one room, each believing it owns
-the whole budget. The bucket is therefore an estimate. The homeserver's own correction is a
-429's `retry_after_ms`, and `_penalise` is where that lands — which is also why nio's
-unlimited in-request 429 retry is bounded (`client.MAX_RATE_LIMIT_RETRIES`): a 429 has
-to reach this object to be learned from.
+**Per replica, not per room globally.** The sync leader and the replica holding a session's lease
+need not be the same pod, so two of these can exist for one room, each believing it owns the whole
+budget. The bucket is therefore an estimate; the homeserver's own correction is a 429's
+`retry_after_ms`, and `_penalise` is where that lands — which is also why nio's unlimited
+in-request 429 retry is bounded (`client.MAX_RATE_LIMIT_RETRIES`).
 """
 
 from __future__ import annotations
@@ -45,20 +42,20 @@ logger = logging.getLogger(__name__)
 SENDS_PER_SECOND = 0.2
 SEND_BURST = 10
 
-# A backstop against a room nobody is draining — a homeserver that is down, or a bot whose
-# token was revoked — rather than a tuning knob. It is far above a turn's worth of narration,
-# so reaching it means something is wrong and the log says so.
+# A backstop against a room nobody is draining — a homeserver that is down, or a bot whose token
+# was revoked — rather than a tuning knob. Far above a turn's worth of narration, so reaching it
+# means something is wrong and the log says so.
 MAX_QUEUED_SENDS = 200
 
 # How long a shutdown waits for the queue before dropping what is left. A rolling replica has
-# usually just queued the answer it spent a turn producing and the redaction retiring its
-# status line, and losing those is the roll being visible in the room. Bounded because at one
-# send per five seconds a full queue cannot drain, and a pod that will not exit is worse.
+# usually just queued the answer it spent a turn producing, and losing that is the roll being
+# visible in the room. Bounded because at one send per five seconds a full queue cannot drain, and
+# a pod that will not exit is worse.
 FLUSH_SECONDS = 5.0
 
-# What the queue holds: a send, deferred. A callable rather than a message type because the
-# only thing this object decides is *when* — every sender already knows how to say its own
-# thing, and giving the queue a vocabulary would mean teaching it all of them.
+# What the queue holds: a send, deferred. A callable rather than a message type because the only
+# thing this object decides is *when*; giving the queue a vocabulary would mean teaching it every
+# sender's.
 Send = Callable[[], Awaitable[None]]
 
 
@@ -105,10 +102,9 @@ class RoomPacer:
     def drop_status(self) -> None:
         """Forget a status change still waiting to be sent.
 
-        For retiring the line: a create-then-immediately-redact costs two of the room's ten
-        sends to show something for a fraction of a second. A change already being sent is
-        past this — it has left the queue — which is why retiring is queued behind it rather
-        than replacing it.
+        For retiring the line: a create-then-immediately-redact costs two of the room's ten sends
+        to show something for a fraction of a second. A change already being sent has left the
+        queue, which is why retiring is queued behind it rather than replacing it.
         """
         if self._status is None:
             return
@@ -171,8 +167,6 @@ class RoomPacer:
         try:
             yield
         finally:
-            # A replica shutting down has usually just queued the thing a whole turn produced,
-            # so it is given a bounded chance to arrive before the task carrying it is cancelled.
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self.flush(), FLUSH_SECONDS)
             task.cancel()

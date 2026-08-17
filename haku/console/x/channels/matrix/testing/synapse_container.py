@@ -2,11 +2,11 @@
 
 **Deviation from the other testcontainer fixtures** (<../../../../../../util/testing/postgres_fixtures.py>):
 Synapse does not serve until it holds a config it generated itself — a signing key and a macaroon
-secret are part of that config — so bring-up is two container runs over one host directory. The
-first is the image's `generate` mode; the second serves, reading the generated `homeserver.yaml`
-**and** `synapse_overrides.yaml`, which this module copies in before generating. Synapse merges
-several `--config-path` files by top-level key, so the test's settings land without rewriting a
-file the container's own user owns.
+secret are part of it — so bring-up is two container runs over one host directory. The first is the
+image's `generate` mode; the second serves, reading the generated `homeserver.yaml` **and**
+`synapse_overrides.yaml`, which this module copies in before generating. Synapse merges several
+`--config-path` files by top-level key, so the test's settings land without rewriting a file the
+container's own user owns.
 
 Both runs pin `UID`/`GID` to this process's (the image's `start.py` honours them), so everything
 Synapse writes into that directory is still deletable by the test that made it.
@@ -67,7 +67,7 @@ def _body(response: httpx.Response) -> dict[str, Any]:
     """The JSON of a call that worked, or an error carrying Synapse's own explanation.
 
     `raise_for_status` drops the body, which for Matrix is where the errcode lives — and an
-    `M_LIMIT_EXCEEDED` that reads as a bare 429 is the one failure here nobody would guess.
+    `M_LIMIT_EXCEEDED` reading as a bare 429 is the one failure here nobody would guess.
     """
     if response.is_error:
         raise HomeserverError(
@@ -92,7 +92,7 @@ class Synapse:
 
         No device, on purpose: whoever signs this user in decides which one it wants. Registration
         is user-interactive auth even when the only stage is `m.login.dummy`, so the first attempt
-        is answered with the session id to complete rather than with a user.
+        is answered with a session id to complete rather than with a user.
         """
         request = {"username": localpart, "password": password, "inhibit_login": True}
         started = httpx.post(f"{self.base_url}{_REGISTER}", json=request, timeout=30)
@@ -109,7 +109,7 @@ def _progress_to_disk() -> Iterator[None]:
 
     Same reason as `util/testing/postgres_fixtures.py`: this runs in session fixture setup, before
     pytest has emitted a line, and pytest's captured output dies with the process when Bazel kills
-    a wedged target. A file handler flushes per record, so what was written survives.
+    a wedged target.
     """
     handler = logging.FileHandler(undeclared_outputs_dir() / "synapse_setup.log")
     handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(message)s"))
@@ -131,8 +131,7 @@ def _generate_config(data: Path) -> None:
     """Run the image's `generate` mode over *data*: a `homeserver.yaml`, a signing key, a log config.
 
     Blocking and one-shot — the server cannot start until it has finished — so a non-zero exit
-    raises `docker.errors.ContainerError` carrying the reason rather than leaving the next step to
-    fail obscurely.
+    raises `docker.errors.ContainerError` rather than leaving the next step to fail obscurely.
     """
     logger.info("Generating the Synapse config in %s", data)
     logs = docker.from_env().containers.run(

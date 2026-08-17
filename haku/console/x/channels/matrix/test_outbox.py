@@ -42,8 +42,7 @@ async def attachment_id(conversations: MatrixConversationStore, operator_id: UUI
 async def session_id(chat_store: SessionStore, conversations: MatrixConversationStore, operator_id: UUID) -> UUID:
     """A live Matrix session for `MATRIX_ROOM`, since an outbox row is one of its children.
 
-    Started on the conversation the room is attached to, the way the supervisor starts one, so the
-    replies it produces have somewhere to be recorded.
+    Started on the conversation the room is attached to, the way the supervisor starts one.
     """
     view, token = await chat_store.create(
         operator_id,
@@ -86,8 +85,7 @@ class _Homeserver:
 def _unpaced(engine: AsyncEngine, outbox: RoomOutbox, homeserver: _Homeserver) -> tuple[RoomPacer, RoomOutboxDrain]:
     """A drain over a pacer with effectively no rate, so a test waits on outcomes not on tokens.
 
-    The rate itself is `pacer`'s and is asserted there; what is under test here is what
-    the rows say afterwards.
+    The rate itself is `pacer`'s and is asserted there.
     """
     pacer = RoomPacer(sends_per_second=1e6, burst=100)
     return pacer, RoomOutboxDrain(engine, outbox, pacer, homeserver.post, _room)
@@ -118,8 +116,8 @@ async def _enqueue(chat_store: SessionStore, session_id: UUID, turn_id: UUID, *b
 async def test_a_reply_is_said_once_and_then_never_again(
     chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id
 ) -> None:
-    """The ordinary path, and the half of `exactly once` that a redrive could break: a row the
-    homeserver accepted is `sent_at` and never claimed again."""
+    """The half of `exactly once` a redrive could break: a row the homeserver accepted is `sent_at`
+    and never claimed again."""
     homeserver = _Homeserver()
     pacer, drain = _unpaced(migrated_engine, outbox, homeserver)
     await _enqueue(chat_store, session_id, turn_id, "the answer")
@@ -203,11 +201,9 @@ async def test_replies_are_said_in_the_order_they_were_produced(
 async def test_a_refused_send_leaves_the_row_for_the_next_attempt(
     chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id
 ) -> None:
-    """The drop this table exists for (<../../../debug/message_drops.md> E1).
-
-    A queued send that raised used to be popped and discarded with a log line, and the turn had
-    already recorded the room as having heard it. Here the failure is the row's: unsent, one
-    attempt spent, the homeserver's own words kept, and claimable again once its backoff passes.
+    """The drop this table exists for (<../../../debug/message_drops.md> E1): the failure is the
+    row's — unsent, one attempt spent, the homeserver's own words kept, and claimable again once
+    its backoff passes.
     """
     homeserver = _Homeserver(refuses={"the answer"})
     pacer, drain = _unpaced(migrated_engine, outbox, homeserver)
@@ -226,8 +222,8 @@ async def test_a_refused_send_leaves_the_row_for_the_next_attempt(
 async def test_a_reply_the_room_refused_is_said_once_the_homeserver_relents(
     chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id
 ) -> None:
-    """A produced reply is retried rather than lost. The wait is skipped by hand, because
-    what is under test is that the row comes back at all and not how long it waits first."""
+    """A produced reply is retried rather than lost. The wait is skipped by hand: what is under
+    test is that the row comes back at all, not how long it waits first."""
     homeserver = _Homeserver(refuses={"the answer"})
     pacer, drain = _unpaced(migrated_engine, outbox, homeserver)
     await _enqueue(chat_store, session_id, turn_id, "the answer")
@@ -273,9 +269,8 @@ async def test_a_reply_out_of_attempts_is_left_alone_rather_than_retried_forever
 ) -> None:
     """A room that has refused the same message eight times is not going to take the ninth.
 
-    So this is the one row the ordered queue steps over: kept, unsent, with the reason on it —
-    a message nobody could say is still one an operator can find — while the reply behind it,
-    which the head-of-line rule would otherwise strand forever, goes out.
+    So this is the one row the ordered queue steps over — kept, unsent, with the reason on it —
+    while the reply behind it, which the head-of-line rule would otherwise strand forever, goes out.
     """
     homeserver = _Homeserver(refuses={"the answer"})
     pacer, drain = _unpaced(migrated_engine, outbox, homeserver)
@@ -318,10 +313,9 @@ async def test_a_turns_last_word_is_queued_once_however_often_the_turn_is_adopte
     """The duplicate the `message_id` index cannot catch, because these rows have none.
 
     A turn's last word — `result.result` on a turn whose completed messages were all empty — is
-    written *before* the turn is closed, so a replica dying in that window
-    leaves the turn open and its replacement re-derives the same reply. `turn_id` is what makes the
-    second derivation a no-op; without it the fix for a lost reply would have introduced a
-    duplicated one.
+    written *before* the turn is closed, so a replica dying in that window leaves the turn open and
+    its replacement re-derives the same reply. `turn_id` is what makes the second derivation a
+    no-op.
     """
     for _ in range(3):
         assert await chat_store.enqueue_turn_reply(session_id, turn_id, "[stopped by the operator]")

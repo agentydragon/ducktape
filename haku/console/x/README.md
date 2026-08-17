@@ -9,10 +9,9 @@ headed for one subscription off one record (<../plans/conversation_layers.md>).
 
 ## The directory says which axis a module varies on
 
-Three things vary independently here, and until they were separated the tree could not tell you
-which was which. _Matrix is just one of pluggable backends — channels_ (operator, 2026-08-16), and
-the harness directory is `claude_code/` rather than `claude/` because the CLI harness and the model
-behind it are different axes (operator, 2026-08-15):
+Three things vary independently here. _Matrix is just one of pluggable backends — channels_
+(operator, 2026-08-16), and the harness directory is `claude_code/` rather than `claude/` because
+the CLI harness and the model behind it are different axes (operator, 2026-08-15):
 
 | Where                | What it is                                                                                   |
 | -------------------- | -------------------------------------------------------------------------------------------- |
@@ -25,20 +24,18 @@ second channel must be able to reuse everything at the runtime level unchanged, 
 cannot compile without `matrix-nio` belongs under `channels/matrix/`. `room_status.py` is the case
 worth knowing: it reads as Matrix and is not — a status line is a channel affordance the console
 surface wants too, and the driver is handed two coroutines and never learns which room it speaks
-to. **Being at the right level is not the same as being neutral, and this module is where that bit:**
-it sat here while still matching on Claude's own frame `type`, its `system` subtypes and its content
-blocks, so a second harness got no status line from the module the rule had already placed above
-harnesses. It reads `conversation_events.py` now. `sandbox_claims.py` is the mirror case: `claude-`-prefixed claim names, but it is Kubernetes
-provisioning and would serve any harness. The frame vocabulary was the case that was genuinely
-both, and it is now two modules: the CLI's own top-level `type` values and the readers that pick a
-value out of one are `claude_code/frames.py`, while `setup_output.py` holds the bridge envelope's
-`kind` and the row the console authors under it.
+to. **Being at the right level is not the same as being neutral**: it reads `conversation_events.py`
+rather than Claude's own frame `type`, which is what lets a second harness get a status line from a
+module placed above harnesses. `sandbox_claims.py` is the mirror case: `claude-`-prefixed claim
+names, but it is Kubernetes provisioning and would serve any harness. The frame vocabulary is
+genuinely both, so it is two modules: the CLI's own top-level `type` values and the readers that
+pick a value out of one are `claude_code/frames.py`, while `setup_output.py` holds the bridge
+envelope's `kind` and the row the console authors under it.
 
 **One column still carries both**, which no placement fixes: `session_frames.kind` takes the CLI's
 `type` from `RolloutRecorder` and `setup_output` from the progress reporter, so `session_store.py`
-names two of the CLI's kinds in SQL predicates and imports them across that line — the same
-direction `claude_code/projection.py` is already imported in. Giving the CLI's type its own column
-is what retires those predicates (<../plans/conversation_layers.md> § 13).
+names two of the CLI's kinds in SQL predicates and imports them across that line. Giving the CLI's
+type its own column is what retires those predicates (<../plans/conversation_layers.md> § 13).
 
 ## `session_store.py` and `session_runtime.py` — the rows, and the turn loop over them
 
@@ -48,8 +45,8 @@ surface's own HTTP routes and SSE stream, which is the older of the two experime
 
 **The line between the two files is the transaction.** `SessionStore` owns the SQLAlchemy sessions,
 so a method whose job is "these writes commit together or not at all" is in `session_store.py` — the
-outbox write and the turn-state transitions included, because each of those commits beside the
-effect it describes and moving one out would be the drop it exists to prevent. What is left in
+outbox write and the turn-state transitions included, because each commits beside the effect it
+describes and moving one out would be the drop it exists to prevent. What is left in
 `session_runtime.py` is what drives one turn against a CLI: the client wiring, the room and status
 plumbing, the sandbox lifecycle, the `ChatFrontend` port and the SPA's own routes. A second channel
 inherits the store unchanged, which is why it stays at the runtime level and imports nothing under
@@ -58,25 +55,24 @@ inherits the store unchanged, which is why it stays at the runtime level and imp
 **The tables are `sessions` and `session_*`.** Migrations `0040` and `0041` are the expand and
 contract of the rename off `claude_chat_*`, which is why the lineage has two revisions for it.
 
-**A turn is a row, and it is a range over the frame log.** `next_prompt` dequeues a prompt and
-opens `session_turns` in one transaction; `_run_turn` is that turn's span and closes it on
-every exit, keeping what the exchange cost. At most one
-turn per session is open (a partial unique index), and that is the single question behind three
-answers: whether a prompt may be admitted, whether there is anything to abort, and whether the
-SPA is shown `responding` — which the session view derives rather than reading off a column.
-So an open turn on a session nothing is renewing is not a leak; it is the record of an exchange
-whose replica went away before anything could close it.
+**A turn is a row, and it is a range over the frame log.** `next_prompt` dequeues a prompt and opens
+`session_turns` in one transaction; `_run_turn` is that turn's span and closes it on every exit. At
+most one turn per session is open (a partial unique index), and that is the single question behind
+three answers: whether a prompt may be admitted, whether there is anything to abort, and whether the
+SPA is shown `responding` — which the session view derives rather than reading off a column. So an
+open turn on a session nothing is renewing is not a leak; it is the record of an exchange whose
+replica went away before anything could close it.
 
 **And the row carries the turn's state, not only its extent.** `assistant_message_id` is the
 message being streamed into, `said_anything` whether one has completed, `queued_reply` whether the
 room's outbox holds a reply from this turn — each written in the same transaction as the effect it
-describes, so none of them can claim something that did not commit. `_run_turn` reads them at the
-top of every turn (`turn_state`), which is why adopting a half-finished exchange is a read rather
-than a reconstruction: `adopt_open_turn` says _which_ turn, and the row says how far it got.
-**Gotcha:** `queued_reply` is the outbox row
-existing, deliberately not `sent_at` — an unsent row still means the room is owed that text, so a
-turn that re-queued it would post the answer twice — and `said_anything` is a separate column
-rather than the same one read twice, because a session with no room queues nothing.
+describes, so none can claim something that did not commit. `_run_turn` reads them at the top of
+every turn (`turn_state`), which is why adopting a half-finished exchange is a read rather than a
+reconstruction: `adopt_open_turn` says _which_ turn, and the row says how far it got. **Gotcha:**
+`queued_reply` is the outbox row existing, deliberately not `sent_at` — an unsent row still means
+the room is owed that text, so a turn that re-queued it would post the answer twice — and
+`said_anything` is a separate column rather than the same one read twice, because a session with no
+room queues nothing.
 
 **What the exchange cost is not recorded at all.** `session_turns` still has
 `input_tokens`, `output_tokens`, `cached_input_tokens`, `cost_usd` and `duration_ms`, and nothing
@@ -87,11 +83,11 @@ turn's own frame range.
 
 **The rollout is recorded by `RolloutRecorder`, a `FrameSink` the protocol client calls.** Every
 frame either way, both channels, verbatim — the control channel included, since an interrupt that
-did not take is diagnosable from nothing else. **Deltas included** — a log with a hole in it cannot
-be folded over, so "do not bury the reader" is
-answered at the read instead: `read_frames` leaves `stream_event` out of its default view. They are
-also what makes an interrupted turn's half-answer survive: an answer no `assistant` frame ever
-completed is in the log as the deltas that wrote it.
+did not take is diagnosable from nothing else. **Deltas included**, because a log with a hole in it
+cannot be folded over; not burying the reader is answered at the read instead, where `read_frames`
+leaves `stream_event` out of its default view. They are also what makes an interrupted turn's
+half-answer survive: an answer no `assistant` frame ever completed is in the log as the deltas that
+wrote it.
 
 **A row carries two numbers, and only one of them is this end's.** `frame_seq` is Postgres's
 `Identity` and is still the log's ordering, its keyset cursors and every reference to a frame.
@@ -119,16 +115,14 @@ separate sandboxes — so a browser conversation and the Matrix conversation coe
 than contend. **Gotcha:** that also means two live sandboxes, and only the Matrix one
 announces itself, so the browser one is the easy one to forget you are paying for.
 
-Delta streaming (`StreamEvent`) exists for the SPA alone. The Matrix path forwards whole
-assistant messages, each as it completes, so if the SPA view is ever retired that
-machinery goes with it.
+Delta streaming (`StreamEvent`) exists for the SPA alone. The Matrix path forwards whole assistant
+messages, each as it completes, so if the SPA view is ever retired that machinery goes with it.
 
 ### What has been lifted out of it
 
-Each is a module nothing in `session_runtime.py` reaches into — so the store, the service and
-the turn loop kept their shape while the file lost the parts that never needed to be beside them
-(<../plans/conversation_layers.md> § 9). `session_store.py` is not one of them: the
-service calls it on every path, so that split is a seam and not a leaf.
+Each is a module nothing in `session_runtime.py` reaches into
+(<../plans/conversation_layers.md> § 9). `session_store.py` is not one of them: the service calls it
+on every path, so that split is a seam and not a leaf.
 
 | Path               | Role                                                                                                                                                           |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -138,18 +132,17 @@ service calls it on every path, so that split is a seam and not a leaf.
 
 ### The records a read hands back — `conversation_records.py`
 
-What a conversation read produces: a session row, a rollout frame, a turn, a transcript entry,
-and the cursors that page them. Here because the store is what produces them — the store used to
-import them from <../tools/conversations.py>, the MCP server that reads it, which is the
-dependency running backwards. The line the split draws is **record versus page**: what one read
-produced is here, and how it is handed out — the `Page` envelope, the byte budget a page spends,
-and the clipping that budget forces — stays with the tool.
+What a conversation read produces: a session row, a rollout frame, a turn, a transcript entry, and
+the cursors that page them. Here rather than in <../tools/conversations.py>, the MCP server that
+reads it, because the store is what produces them. The line the split draws is **record versus
+page**: what one read produced is here, and how it is handed out — the `Page` envelope, the byte
+budget a page spends, and the clipping that budget forces — stays with the tool.
 
-**It is the one edge that runs stable → experimental**, so it is worth knowing before it
-surprises: everything else outside `x/` that names a module inside it is the composition root
-(<../app.py>). This module is a leaf of Pydantic models with no dependency of its own, so naming
-it drags in no runtime — but if the tools catalog ever has to build without `x/`, moving this
-module to the console level is the fix, not reinstating the models on the tool.
+**It is the one edge that runs stable → experimental**, so it is worth knowing before it surprises:
+everything else outside `x/` that names a module inside it is the composition root (<../app.py>).
+This module is a leaf of Pydantic models with no dependency of its own, so naming it drags in no
+runtime — but if the tools catalog ever has to build without `x/`, moving this module to the console
+level is the fix, not reinstating the models on the tool.
 
 ## Prompting a session the browser did not create
 
@@ -168,11 +161,10 @@ operator's text, because until the console accepts a prompt its only copy is in 
 
 ## The frame inspector — reading the record the transcript is a projection of
 
-`session_messages` is a **lossy projection** of `session_frames`, and a projection nobody can
-appeal is a
-projection nobody can debug. So a conversation in the console carries a **Raw frames** button, and
-`GET /api/sessions/{session_id}/frames` is what it reads: one page of the rollout, in wire
-order, each frame's payload whole. Frontend: `frontend/x/session_frames_page.tsx`, at its own route
+`session_messages` is a **lossy projection** of `session_frames`, and a projection nobody can appeal
+is a projection nobody can debug. So a conversation in the console carries a **Raw frames** button,
+and `GET /api/sessions/{session_id}/frames` is what it reads: one page of the rollout, in wire order,
+each frame's payload whole. Frontend: `frontend/x/session_frames_page.tsx`, at its own route
 (`/_console/sessions/<id>/frames`) so a frame is something an operator can link to — under the
 session rather than the conversation, because a conversation outlives its sessions and has several
 while the frames belong to exactly one.
@@ -183,8 +175,7 @@ consume a provider payload by accident; it is never load-bearing, so a reader th
 loses a debugging affordance and nothing else; and it is **labelled as one backend's wire** rather
 than as the conversation. The third is the one a surface can quietly drop, so the label is written
 where each reader is — the route's description, `SessionFrameView`, the page's own subtitle, and
-`haku_conversations`' `read_rollout` / `read_frame`. A second backend makes "the agent protocol" an
-outright lie, but it is already misleading with one: every other read the console serves is the
+`haku_conversations`' `read_rollout` / `read_frame`. Every other read the console serves is the
 neutral vocabulary, so an unlabelled frame reads as the conversation itself.
 
 Decisions worth knowing before changing it:
@@ -261,20 +252,19 @@ it answers. It is not restated here; what follows is who reads it and what is no
 `SessionStore.read_transcript` calls `project_log` and `transcript_entries.py` maps the result
 onto the read models in `conversation_records.py`. And the live path reads them too.
 
-**All four interpreters are gone.** `_run_turn` projects each frame as it lands and acts on the
-events, so the live path no longer knows that `assistant`, `stream_event` and `result` exist;
-`coarse_status` reads a run of events rather than a frame, which is what stops the status driver
-being one of the interpreters it is supposed to sit above; adoption replays from the cursor rather
-than reconstructing; and the read path's own parser — `rollout_calls`, which re-derived every tool
-call and every result on every request — is deleted, because the events are rows.
+**One interpreter, not four.** `_run_turn` projects each frame as it lands and acts on the events,
+so the live path does not know that `assistant`, `stream_event` and `result` exist; `coarse_status`
+reads a run of events rather than a frame, which is what keeps the status driver above the
+interpreters; adoption replays from the cursor rather than reconstructing; and the read path has no
+parser of its own, because the events are rows.
 
 ### The events, stored — `session_events`
 
 `session_events.py` maps a `ConversationEvent` onto a row and `apply_frame` writes it inside the
 transaction that moves the cursor, so a row exists exactly when the cursor says its frame was
 projected. The same module maps the console's own facts about a session onto rows, written in the
-transaction that makes each true, and the operator's prompt onto one written in `enqueue_prompt`'s. What the table holds that nothing else does is a **tool call's answer**, which
-used to exist only as frames that `session_views.rollout_calls` re-parsed on every read.
+transaction that makes each true, and the operator's prompt onto one written in `enqueue_prompt`'s.
+What the table holds that nothing else does is a **tool call's answer**.
 
 - **A message is found by frame range**, not by the agent's id for it — `session_messages` records
   the span it was built from and an event's own span falls inside it, so the join needs nothing the
@@ -294,26 +284,21 @@ used to exist only as frames that `session_views.rollout_calls` re-parsed on eve
   writes the event under the same lock that closes the turn and the channel announces afterwards —
   record, then show, so a crash in that window cannot leave a notice nothing recorded.
 - **So the operator's prompt is an `AuthoredEventKind`, not a lifecycle claim about it.** A prompt
-  is conversation — half of what a transcript renders — but it is accepted before it is asked: a
-  session holds no sandbox until a prompt buys one, so at acceptance there is no runner to send it
-  to, and a session that ends before the prompt is claimed never sends it (`PromptFate.LOST`). It
-  is turn-less because admission refuses a prompt while a turn is open. Recording it once here
-  costs no duplicate when it does go out, because the fold projects an outbound prompt to nothing —
-  the console already holds the text. Without the row, `event_seq` addresses only the agent's half
-  of a transcript.
+  is conversation, but it is accepted before it is asked: a session holds no sandbox until a prompt
+  buys one, so at acceptance there is no runner to send it to, and a session that ends before the
+  prompt is claimed never sends it (`PromptFate.LOST`). It is turn-less because admission refuses a
+  prompt while a turn is open. Recording it here costs no duplicate when it does go out, because
+  the fold projects an outbound prompt to nothing. Without the row, `event_seq` addresses only the
+  agent's half of a transcript.
 - **Two members of the vocabulary have no row.** A `TextDelta` is an increment of prose the
   completed message carries whole; a `TurnCompleted` is the `session_turns` row, which already
   holds the exchange's outcome and its bracket.
 
-**A status source did not survive the neutral vocabulary, and it is worth knowing before it is
-missed.** `coarse_status` used to render the prose the CLI writes on `system/task_started` — a
-background command's own command line, better than anything the console could reconstruct. That
-prose is Claude's concept keyed by Claude's identifiers, so nothing in the vocabulary carries it and
-`task_started` now lands in `Projection.unprojected`. A turn that would have shown it shows
-`writing` instead, and the frames stay in `session_frames` for a reader that wants the detail.
-
-The two `session_events` kinds that recorded it are gone with it: `0068` deleted the rows and
-narrowed `ck_session_events_kind`.
+**One status source the neutral vocabulary does not carry**, worth knowing before it is missed: the
+prose the CLI writes on `system/task_started`, a background command's own command line. It is
+Claude's concept keyed by Claude's identifiers, so `task_started` lands in `Projection.unprojected`
+and a turn that would have shown it shows `writing` instead. The frames stay in `session_frames` for
+a reader that wants the detail.
 
 ### The cursor — where the fold resumes, and what makes its effects exactly-once
 
@@ -323,22 +308,20 @@ the room's outbox row, the turn's state and the cursor land together or not at a
 that dies leaves the session naming the last frame that took, and its replacement redoes exactly
 the frames whose effects did not.
 
-**The payoff is that adoption stops being a second reading of the log.** `adopt_open_turn` hands
-back the recorded frames past the cursor and `handle_runner` feeds them to the turn loop ahead of
-the live stream (`_replaying`), so a turn's remaining frames go through the same call whether they
-have just arrived or arrived at a replica that is gone. A turn whose ending is among them closes
-without the socket being consulted, which is what "the `result` is logged but `end_turn` never ran"
-used to be a separate question about.
+**So adoption is not a second reading of the log.** `adopt_open_turn` hands back the recorded frames
+past the cursor and `handle_runner` feeds them to the turn loop ahead of the live stream
+(`_replaying`), so a turn's remaining frames go through the same call whether they have just arrived
+or arrived at a replica that is gone. A turn whose ending is among them closes without the socket
+being consulted.
 
 Four things to know before changing it:
 
-- **The turn loop still seeds a fresh state per frame** (`frame_projection.projected` calls
-  `project_log`), which is also what the cursor currently rests on: the fold carries nothing across
-  a frame boundary, so the state at any cursor position is the empty one and a position is the
-  whole of what resuming needs. Threading one state across the turn — a two-line change that was
-  tried and breaks two things in the _loop_, both written up in `projected`'s docstring — is what
-  would make that false, and `session_turns.first_frame_seq` is the answer waiting for it:
-  re-project one turn.
+- **The turn loop seeds a fresh state per frame** (`frame_projection.projected` calls
+  `project_log`), which is what the cursor rests on: the fold carries nothing across a frame
+  boundary, so the state at any cursor position is the empty one and a position is the whole of
+  what resuming needs. Threading one state across the turn would make that false — it breaks two
+  things in the _loop_, both written up in `projected`'s docstring — and
+  `session_turns.first_frame_seq` is the answer waiting for it: re-project one turn.
 - **`next_prompt` anchors the cursor** at the frame before the turn it opens, in that same
   transaction. That is what lets adoption tell a position inside this turn from one left behind by
   a writer that does not advance it — a replica on the previous image, for the length of a roll —
@@ -371,9 +354,9 @@ fact rather than a reading of `protocol.md`, so what looks like belt and braces 
 ### Re-projecting a stored session — `reprojection.py`
 
 `check_session` re-projects a recorded session's frames and aligns the result against
-`session_events`, returning per turn either `Agrees`, `Drifted` with its findings, or `Skipped`
-with the era it cannot speak about. It is a function rather than a command, and has no caller in
-the tree: the backfill it was written for pointed the rows the purge deleted.
+`session_events`, returning per turn either `Agrees`, `Drifted` with its findings, or `Skipped` with
+the era it cannot speak about. It is a function rather than a command, and has no caller in the
+tree.
 
 - **It folds through `frame_projection.projected`**, which is why that function is not the turn
   loop's private one. A checker driving `project_log` over a whole session instead would merge the
@@ -419,12 +402,11 @@ the test that reads it, as `test_diverse_session` has.
 ## Matrix chat surface — `channels/matrix/`
 
 - `client.py` — the client-API calls the loop makes, over `matrix-nio`.
-- `sync.py` — logs in as `@haku`, long-polls `/sync`, binds the one room Haku
-  services, and hands what the operator types to the session behind it. Holds the only
-  Matrix credential, so everything that speaks into the room speaks through it.
-- `session.py` — the room/session binding, ingress (`MatrixTurns`), the surface a
-  room-backed turn reports through (`MatrixSurface`), and the supervisor that keeps a live session
-  behind the room.
+- `sync.py` — logs in as `@haku`, long-polls `/sync`, binds the one room Haku services, and hands
+  what the operator types to the session behind it. Holds the only Matrix credential, so everything
+  that speaks into the room speaks through it.
+- `session.py` — the room/session binding, ingress (`MatrixTurns`), the surface a room-backed turn
+  reports through (`MatrixSurface`), and the supervisor that keeps a live session behind the room.
 - `pacer.py` — one paced outbound queue per room, over Synapse's `rc_message` budget.
 - `outbox.py` — the room's outbox: replies as `session_outbox` rows, and the drain that
   says them, recording which room event each became.
@@ -433,11 +415,11 @@ the test that reads it, as `test_diverse_session` has.
 - `formatted_body.py` — Haku's Markdown into the HTML subset Matrix clients render.
 
 **The room reads the record; it is not pushed at.** A fact with a `session_events` row reaches the
-room through `room_subscription.py` — `turn_aborted` is the one that does today, and the turn loop
-no longer calls the channel about it. What is still pushed is what no row carries: the turn that
-produced nothing to record, and the sandbox's setup narration. The position is kept after the
-notice has been queued, so what a crash costs is a repeat rather than a silence; the window it
-leaves is the pacer's in-process queue, the same one every other notice already lives in.
+room through `room_subscription.py`; `turn_aborted` is the one that does today. What is still pushed
+is what no row carries: the turn that produced nothing to record, and the sandbox's setup narration.
+The position is kept after the notice has been queued, so what a crash costs is a repeat rather than
+a silence; the window it leaves is the pacer's in-process queue, the same one every other notice
+already lives in.
 
 **The outbox is half here and half at the runtime level, deliberately.** The row is written where
 the reply is produced, by `session_store.update_assistant` into the neutral `session_outbox` table,
@@ -449,15 +431,14 @@ only its own drain.
 Behaviours worth knowing before reading the code:
 
 - **A produced reply is a row, not a call.** A turn writes it in the same transaction as the
-  assistant message it copies, and `RoomOutboxDrain` — one replica, under the `MXOB` advisory
-  lock — claims the oldest, queues it into the pacer, and marks it `sent_at` only once
-  `room_send` has returned (the drops this closes:
-  <../debug/message_drops.md>). Everything else the console says — the
-  status line, lifecycle and rejection notices, bootstrap narration — stays on the pacer's
+  assistant message it copies, and `RoomOutboxDrain` — one replica, under the `MXOB` advisory lock —
+  claims the oldest, queues it into the pacer, and marks it `sent_at` only once `room_send` has
+  returned (the drops this closes: <../debug/message_drops.md>). Everything else the console says —
+  the status line, lifecycle and rejection notices, bootstrap narration — stays on the pacer's
   in-process queue, because a notice describing a moment is not worth redelivering ten minutes
-  later. Two rules the drain is deliberate about: a failed reply **halts** the queue for its
-  backoff rather than being overtaken, and the one row stepped over is one out of
-  `MAX_SEND_ATTEMPTS`, kept unsent with its `last_error` and logged loudly rather than deleted.
+  later. Two rules the drain is deliberate about: a failed reply **halts** the queue for its backoff
+  rather than being overtaken, and the one row stepped over is one out of `MAX_SEND_ATTEMPTS`, kept
+  unsent with its `last_error` and logged loudly rather than deleted.
 
 - **What was sent is written down, in the transaction that says it was sent.** `chat_delivery`
   pairs a subject the channel decided to show with the room event it became, per attachment, so
@@ -471,15 +452,15 @@ Behaviours worth knowing before reading the code:
   want of a subject — they have no conversation-side identity to be keyed by until every fact
   behind one is a row.
 
-- **A rejected batch is not queued anywhere.** `enqueue_prompt` only accepts on a ready session
-  with no turn open and nothing pending, and a refusal is the answer: the room is told the messages
-  were not delivered and what to wait for, and the watermark advances past them so the homeserver
-  does not offer them again. Nothing queues behind a running turn, and there is one sync position
-  rather than two. **Admission is that one transaction's alone**: `MatrixTurns.offer` asks no
+- **A rejected batch is not queued anywhere.** `enqueue_prompt` only accepts on a ready session with
+  no turn open and nothing pending, and a refusal is the answer: the room is told the messages were
+  not delivered and what to wait for, and the watermark advances past them so the homeserver does
+  not offer them again. **Admission is that one transaction's alone**: `MatrixTurns.offer` asks no
   status question of its own, because an answer read outside `enqueue_prompt`'s
   `SELECT … FOR UPDATE` could only agree with a decision that had not been made yet. It turns the
-  refusal into a `PromptRejected` carrying the reason and the row that records it — `PromptRefusedError`
-  for a session that cannot take the batch, `KeyError` for a session row that has gone.
+  refusal into a `PromptRejected` carrying the reason and the row that records it —
+  `PromptRefusedError` for a session that cannot take the batch, `KeyError` for a session row that
+  has gone.
 - **The rejection is a row, written with the watermark.** `AuthoredEventKind.PROMPT_REJECTED`
   carries the reason and the text, and `MatrixSyncStore.advance` inserts it in the transaction
   that acknowledges the batch — so a crash cannot acknowledge a message while losing both the
@@ -489,33 +470,30 @@ Behaviours worth knowing before reading the code:
 - **An accepted batch is acknowledged at once, and that has a cost.** A prompt is a row on the
   session that took it, so a session ending before it claims that prompt leaves the message
   unanswered by anything (<../debug/message_drops.md> I3). What carries it forward is the
-  replacement session's waking context: `RoomTranscript.recent` reads every session that served
-  the room, so an accepted-and-unanswered prompt is in the history the replacement is handed.
-  Holding the acknowledgement until the turn ended is what used to close that window, and it is
-  what the rejection ruling removed.
+  replacement session's waking context: `RoomTranscript.recent` reads every session that served the
+  room, so an accepted-and-unanswered prompt is in the history the replacement is handed.
 - **An event Haku cannot read is announced, not held.** `m.text` and `m.emote` are prose and are
   serviced; an `m.image`, `m.file`, voice memo, or an msgtype invented after this release is
   carried out of the sync as an `UnmappableEvent`, said out loud in the room, and then
   acknowledged. Refusing the batch instead would never converge — nothing about an already-sent
   screenshot changes, so it would wedge ingress against every later message. It is recorded the
   same way a rejection is, one `AuthoredEventKind.UNREADABLE_INPUT` row per event.
-  `m.notice` is neither serviced nor announced: it is the
-  msgtype Haku's own status, lifecycle and unreadable-event lines go out under, and excluding it
-  from any sender is the second of two independent guards (the first is the sender rule)
-  against a notice about an event that is itself an event.
+  `m.notice` is neither serviced nor announced: it is the msgtype Haku's own status, lifecycle and
+  unreadable-event lines go out under, and excluding it from any sender is the second of two
+  independent guards — the first being the sender rule — against a notice about an event being
+  itself an event.
 - **One replica syncs.** The loop holds a Postgres advisory lock (`MXSY`) for its lifetime —
-  `/sync` is a long poll, so releasing between passes would let two replicas double-process a
-  batch. The supervisor is a sibling task holding a **second** lock (`MXSE`), so provisioning
-  is single too, while a stalled claim cannot wedge ingress. Two locks, not one: they
-  are elected independently and can land on different replicas.
+  `/sync` is a long poll, so releasing between passes would let two replicas double-process a batch.
+  The supervisor is a sibling task holding a **second** lock (`MXSE`), so provisioning is single too
+  while a stalled claim cannot wedge ingress. Two locks, not one: they are elected independently and
+  can land on different replicas.
 
 ## Tests run against a real database
 
-Every store here is exercised through Postgres (the `migrated_*` testcontainer fixtures),
-never a stand-in. What stays faked is what is genuinely outside: Kubernetes and the Agent SDK
-client — the homeserver used to be on that list and is not any more (below). The rule is not
-tidiness — a fake store answers from the shape the test author imagined, so it agrees with
-whatever the code does:
+Every store here is exercised through Postgres (the `migrated_*` testcontainer fixtures), never a
+stand-in. What stays faked is what is genuinely outside: Kubernetes and the Agent SDK client. The
+rule is not tidiness — a fake store answers from the shape the test author imagined, so it agrees
+with whatever the code does:
 
 - A fake `_listen` passed against a fake engine while the real one raised on **every** call
   in production, because it was written against psycopg3's API on an asyncpg engine.
@@ -534,16 +512,16 @@ The placement rule above applies to the fixtures too, and it is the one place it
 channel unaddable without dragging Matrix along. So `x/conftest.py` holds the stores, the service,
 the claim stand-in and the operator's identity — and nothing a room knows — while the homeserver
 identities (`MATRIX_*`), the config they compose into, and the room/session binding
-(`conversations`) live in `channels/matrix/conftest.py`. The dependency runs channel → runtime and
-never back: `OPERATOR_SUBJECT` is imported down rather than restated, because
-`MATRIX_CONFIG.operator_subject` and the `operator_id` fixture have to name the same operator.
+(`conversations`) live in `channels/matrix/conftest.py`. `OPERATOR_SUBJECT` is imported down rather
+than restated, because `MATRIX_CONFIG.operator_subject` and the `operator_id` fixture have to name
+the same operator.
 
 The test files divide on the same seam. `test_session_runtime.py` and `test_session_store.py` reach
 a room only through the `ChatFrontend` port and the `room_id` string a session records — never
 `matrix-nio` — so what they cover (the turn loop, the outbox row, provenance, adoption, the abort
 drain, prompt fate) is what a second channel inherits. A message _arriving_ from a room and becoming
-a turn is the crossing itself and cannot be written without both halves, so `MatrixTurns.offer` is
-tested in `channels/matrix/test_session.py`, beside the module that defines it.
+a turn is the crossing itself, so `MatrixTurns.offer` is tested in
+`channels/matrix/test_session.py`, beside the module that defines it.
 
 ### The stand-ins live in `testing/`
 
@@ -557,56 +535,54 @@ for, so a stand-in cannot outlive the thing it fakes. Two of them are processes 
 starts, and a `py_binary` can import neither a conftest nor a file staged only as data. The
 `test_*.py` files stay beside what they test.
 
-What a test drives them _through_ lives there too, so a second e2e inherits it rather than
-copying it: `channels/matrix/testing/operator_room.py` is the operator's side of a room — an
+What a test drives them _through_ lives there too, so a second e2e inherits it rather than copying
+it: `channels/matrix/testing/operator_room.py` is the operator's side of a room — an
 `nio.AsyncClient` of its own, handing back typed `RoomEvent`s rather than Matrix JSON —
 `channels/matrix/testing/console_deployment.py` is the console replicas serving that room, and
 `testing/waiting.py` is the bounded poll under both, at the runtime level because a bounded poll is
-nobody's channel. It shares nio with `channels/matrix/client.py` and deliberately **nothing else**: nio is third party and is not the subject,
-but `EventTag`, `SyncResult` and the event mapping on top of it are exactly what these tests are
-checking, so reading the room back through them would check them against themselves.
+nobody's channel. It shares nio with `channels/matrix/client.py` and deliberately **nothing else**:
+nio is third party and is not the subject, but `EventTag`, `SyncResult` and the event mapping on top
+of it are exactly what these tests are checking, so reading the room back through them would check
+them against themselves.
 
 The stub `claude` is a `py_binary` for one further reason: the runner execs `HAKU_CLAUDE_PATH`
-directly, and a source file staged in runfiles does not reliably carry its executable bit — which
-is why both tests used to copy it out and `chmod` it. One stub serves both, parameterised by the
-directions a prompt carries (`[hold]`, `[narrate=N]`, `[silent]`) and by `HAKU_STUB_GREETING`.
+directly, and a source file staged in runfiles does not reliably carry its executable bit. One stub
+serves both tests, parameterised by the directions a prompt carries (`[hold]`, `[narrate=N]`,
+`[silent]`) and by `HAKU_STUB_GREETING`.
 
 ### The homeserver is a real Synapse as well
 
 `channels/matrix/test_homeserver_e2e.py` brings one up in a container
-(`channels/matrix/testing/synapse_container.py`) and runs
-`MatrixClient` against it, with the room's other side driven straight through the client-server
-API rather than through the client under test. It exists for the questions a canned response can
-only agree with: whether a resumed `/sync` across a gap larger than `TIMELINE_LIMIT` really comes
-back truncated and really paginates back to every missed message once (downtime recovery — the
-reason the target exists), whether a sync watermark really is a `/messages` token, whether a repeated
+(`channels/matrix/testing/synapse_container.py`) and runs `MatrixClient` against it, with the room's
+other side driven straight through the client-server API rather than through the client under test.
+It exists for the questions a canned response can only agree with: whether a resumed `/sync` across
+a gap larger than `TIMELINE_LIMIT` really comes back truncated and really paginates back to every
+missed message once (downtime recovery — the reason the target exists), whether a sync watermark
+really is a `/messages` token, whether a repeated
 transaction id really is refused, and whether the `works.allegedly.haku` tag survives the wire on
 both halves of an edit.
 
-`channels/matrix/test_client.py` keeps its canned homeserver, and should. The split is which side of the
-wire the question is about: what Synapse does belongs in the e2e target, what the parser does with
-what Synapse said belongs in the unit tests — where an unknown tag kind or an exhausted backfill
-budget costs one dict rather than thousands of messages.
+`channels/matrix/test_client.py` keeps its canned homeserver, and should. The split is which side of
+the wire the question is about: what Synapse does belongs in the e2e target, what the parser does
+with what Synapse said belongs in the unit tests — where an unknown tag kind or an exhausted
+backfill budget costs one dict rather than thousands of messages.
 
 ### And the whole surface, as processes
 
 `channels/matrix/test_fullstack_e2e.py` composes those two targets with the bridge one: that
 Synapse, a console replica as its own process (`channels/matrix/testing/console_replica.py`, with
 the real sync loop and supervisor), a runner process per sandbox behind a stub `claude`
-(`claude_code/testing/stub_claude.py`),
-and a real Postgres. It asserts one operator-facing property — every message the operator sent has
-exactly one reply in the final room — which is what nothing below the whole stack can answer.
+(`claude_code/testing/stub_claude.py`), and a real Postgres. It asserts one operator-facing property
+— every message the operator sent has exactly one reply in the final room — which is what nothing
+below the whole stack can answer.
 
-**Three of its four tests were written failing**, because that property did not hold — a produced
-reply must never be lost silently: a delivery that raised was logged and dropped while
-`spoke` was set anyway, the pacer was an in-process queue that died with its replica, and a
-console adopting a session skipped the replayed frame as one already recorded.
-`channels/matrix/outbox.py` is what closes all three. The fourth is quiet-path and passed throughout, which is what made the
-other three attributable to the drop rather than to the harness.
+Three of its tests take that property through the ways a produced reply can be lost: a refused send,
+a reply still queued when the replica stops, and a console roll across the gap between recording an
+answer and saying it. `channels/matrix/outbox.py` is what closes all three, and the fourth is the
+quiet-path control.
 
-The console is a process, and the sandboxes are started by the test off the claim files that
-console writes, for one reason: a sandbox has to outlive the console for there to be an adoption
-at all.
+The console is a process, and the sandboxes are started by the test off the claim files that console
+writes, for one reason: a sandbox has to outlive the console for there to be an adoption at all.
 
 ## `session_notifications.py` — the wake channel
 
@@ -614,13 +590,10 @@ at all.
 repository answers questions about rows, and this wakes tasks. Merging the two is what let
 the listener be written against psycopg3's API while running on an asyncpg engine.
 
-**One channel, `session_events`, carrying a `SessionEvent`** — `{kind, session_id}`, where `kind`
-is `prompt`, `update`, or `abort`. It used to be three channels each carrying a bare session
-id, which left the event kind implicit in the channel name and every new kind costing
-another `LISTEN`. Waiters register on `(kind, session_id)`, so the fan-out is unchanged.
-`console_events.py` stays a separate channel and a separate connection: it is a different
-subsystem with a different payload and its own lifecycle, and the only thing the two share
-is the mechanism.
+**One channel, `session_events`, carrying a `SessionEvent`** — `{kind, session_id}`, where `kind` is
+`prompt`, `update`, or `abort`; waiters register on `(kind, session_id)`. `console_events.py` stays a
+separate channel and a separate connection: it is a different subsystem with a different payload and
+its own lifecycle, and the only thing the two share is the mechanism.
 
 **Waiters name a session; watchers cannot.** `wait`/`subscribe` register on `(kind, session_id)`,
 which is what the turn loop and the supervisor want. `watch` is the other shape — every event of a
@@ -630,30 +603,26 @@ can be replayed to a waiter (`_wake_everyone` tells it to re-read the session it
 about) and cannot be replayed to a watcher, so a watcher must be something a missed event only
 delays.
 
-`test_notify_puts_a_readable_event_on_the_channel` is the one that pins the wire format —
-channel name and envelope, read off a raw connection. Nothing else would notice if either
-drifted, because every other test has the same code on both ends.
+`test_notify_puts_a_readable_event_on_the_channel` pins the wire format — channel name and
+envelope, read off a raw connection. Nothing else would notice if either drifted, because every
+other test has the same code on both ends.
 
-One long-lived connection with a reconnect loop, matching <../console_events.py>, the
-console's other LISTEN consumer. The notify half stays inside the caller's transaction,
-because `pg_notify` delivers on commit.
+One long-lived connection with a reconnect loop, matching <../console_events.py>, the console's
+other LISTEN consumer. The notify half stays inside the caller's transaction, because `pg_notify`
+delivers on commit.
 
 **Gotcha for anyone changing the channel name or payload:** the Deployment rolls with
-`maxUnavailable: 0`, so old and new replicas run together for the length of a roll. A
-renamed channel means the new replica notifies where the old one is not listening, and the
-wakes are lost for that window — the same expand/contract discipline a destructive
-migration needs. Notify on both names for one release, then drop the old — and gate that
-second release on the roll having **converged** (every pod on an image at or after the
-first), not on a release having elapsed, since `maxUnavailable: 0` means a bad image stalls
-the roll with the old replica still serving. The channel merge was done exactly that way, and so
-was `claude_chat` → `session_events`.
+`maxUnavailable: 0`, so old and new replicas run together for the length of a roll. A renamed
+channel means the new replica notifies where the old one is not listening, and the wakes are lost
+for that window — the same expand/contract discipline a destructive migration needs. Notify on both
+names for one release, then drop the old, and gate that second release on the roll having
+**converged** (every pod on an image at or after the first) rather than on a release having elapsed,
+since `maxUnavailable: 0` means a bad image stalls the roll with the old replica still serving.
 
-The trap in the overlap phase, worth knowing before staging the next one: while both names
-are being notified, every wake is delivered twice, so a woken waiter proves nothing about
-which name woke it. Tests and production alike will look healthy with the new path entirely
-broken, right up until the old one is deleted. Cover the new path end to end on its own
-before contracting — for the session rename that meant a test driving `pg_notify` on exactly
-one channel, since `notify` was firing both and so could not answer the question.
+The trap in the overlap phase: while both names are being notified, every wake is delivered twice,
+so a woken waiter proves nothing about which name woke it. Tests and production alike will look
+healthy with the new path entirely broken, right up until the old one is deleted. Cover the new path
+end to end on its own before contracting — a test driving `pg_notify` on exactly one channel.
 
 ## `session_live_updates.py` — telling open tabs, over the socket they already hold
 
@@ -718,11 +687,10 @@ The consumers today are the Matrix room's notices (below) and, once #4257 lands,
 
 `replicas: 2` means any given HTTP request reaches an arbitrary pod, while a session's live
 objects — the runner's bridge websocket, its `ClaudeSDKClient`, its abort event — belong to
-exactly one. **Anything that has to reach a running turn therefore goes through Postgres
-`NOTIFY`, never an in-process registry**; a dict keyed by session id looks correct in tests
-and single-replica dev, and silently answers "no such session" in production about half the
-time. That is what the `abort` event is for, and it is the same mistake the supervisor's
-missing lock was.
+exactly one. **Anything that has to reach a running turn therefore goes through Postgres `NOTIFY`,
+never an in-process registry**: a dict keyed by session id looks correct in tests and
+single-replica dev, and silently answers "no such session" in production about half the time. That
+is what the `abort` event is for.
 
 ## What necessarily lives outside this directory
 
@@ -730,8 +698,8 @@ The stable modules own these, so moving them here is not possible without invert
 dependency:
 
 - `MatrixConfig` and `Settings.matrix` in <../config.py>. Absent config, or a config whose
-  reflected bot password has not landed yet, means the surface does not start and the
-  console does.
+  reflected bot password has not landed yet, means the surface does not start and the console
+  does.
 - `Session`, `SessionMessage`, `MatrixAccessToken`, `MatrixSyncWatermark`, and `MatrixConversation` in
   <../database_schema.py>, plus their Alembic revisions — migrations are one lineage for the
   whole database.

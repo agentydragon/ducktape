@@ -1,11 +1,9 @@
 """One console replica, as its own process, for the Matrix full-stack end-to-end test.
 
-`../test_matrix_fullstack_e2e.py` is about what the room ends up containing across a console
-going away, so the console has to be something that can *go away* — a process the test starts,
-stops and starts again, on one port, against one database. Everything it composes is the
-production wiring from `haku.console.app`: the runner websocket route, the Claude chat service
-with the Matrix surface bound to it, the `/sync` loop, the session supervisor and the room
-outbox's drain. What is replaced is what would otherwise be Kubernetes, plus one deliberate
+<../test_fullstack_e2e.py> is about what the room ends up containing across a console going away,
+so the console has to be something that can *go away* — a process the test starts, stops and starts
+again, on one port, against one database. Everything it composes is the production wiring from
+`haku.console.app`. What is replaced is what would otherwise be Kubernetes, plus one deliberate
 fault:
 
 - **`FileSandboxClaims`** writes the claim a `SandboxClaim` controller would have acted on. The
@@ -13,8 +11,8 @@ fault:
   runner is started by the *test*, which watches that directory, rather than as a child here.
 - **`HAKU_E2E_REFUSE_NEXT_REPLY`** arms a single refused send. A homeserver that refuses one
   (a 429 past `MAX_RATE_LIMIT_RETRIES`, a transient 5xx, a room state that briefly forbids it) is
-  not reproducible on demand against a healthy Synapse, and what is under test is what the
-  console does with a send that failed rather than how it came to fail.
+  not reproducible on demand against a healthy Synapse, and what is under test is what the console
+  does with a failed send rather than how it came to fail.
 
 `HOSTNAME` is what `session_runtime.REPLICA` reads, so each replica must be given a distinct one:
 it is what the session lease records as its holder, and two replicas sharing it would make an
@@ -74,9 +72,8 @@ MCP_TOKEN = SecretStr("haku-static-bearer")
 class FileSandboxClaims:
     """The `SandboxClaims` surface, writing what Kubernetes would have been asked to run.
 
-    One file per live claim, named by session, holding the bridge credential the runner needs —
-    which the store mints and `SessionService.create` does not hand back. Written by rename so
-    a watcher never reads a half-written claim.
+    One file per live claim, named by session, holding the bridge credential the runner needs.
+    Written by rename so a watcher never reads a half-written claim.
     """
 
     def __init__(self, directory: Path):
@@ -109,10 +106,8 @@ class FileSandboxClaims:
 class RefusingSyncService(MatrixSyncService):
     """The sync service, with one refused send the test arms by creating a file.
 
-    The refusal lands on `post_reply` because that is where a homeserver refusal lands: the
-    outbox drain calls it from inside the pacer's queue, and its raising is the whole input to
-    what the console does next. The file is consumed rather than only read, so the test can both
-    arm the fault and observe that it fired.
+    The refusal lands on `post_reply` because that is where a homeserver refusal lands. The file is
+    consumed rather than only read, so the test can both arm the fault and observe that it fired.
     """
 
     def __init__(self, *args: Any, armed: Path, **kwargs: Any):

@@ -1,9 +1,8 @@
 """What `session.py` does with a room: keep a session behind it, build the prompt that starts one,
 read back what the room has been told, and take what is said in it into a turn.
 
-Ingress is here rather than beside the turn loop it feeds. `MatrixTurns.offer` takes homeserver
-events and hands them to `enqueue_prompt`, so a test of it is a test of the crossing — the
-rejections it turns into a row and a notice cannot be expressed without both sides. The turn
+Ingress is here rather than beside the turn loop it feeds: `MatrixTurns.offer` takes homeserver
+events and hands them to `enqueue_prompt`, so a test of it is a test of the crossing. The turn
 loop's own admission rules are <../../test_session_runtime.py>, where no channel appears at all.
 """
 
@@ -132,11 +131,10 @@ async def test_the_pointer_moves_while_each_session_keeps_the_room_it_served(
     """The binding lives in two places and they answer different questions.
 
     `matrix_conversation.session_id` is the pointer — which session the room talks to *now* — and
-    `sessions.room_id` is the history, written once and never moved. No SQL constraint
-    can state the agreement between them (a CHECK sees one row; a composite foreign key would need
-    `room_id` in this table's key), so the supervisor is its only maintainer and this is where that
-    is checked. Without the history half, a replaced Matrix session became indistinguishable from
-    an SPA one the moment the supervisor moved on.
+    `sessions.room_id` is the history, written once and never moved. No SQL constraint can state
+    the agreement between them (a CHECK sees one row; a composite foreign key would need `room_id`
+    in this table's key), so the supervisor is its only maintainer and this is where that is
+    checked.
     """
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
     await supervisor.supervise_once()
@@ -155,9 +153,8 @@ async def test_the_pointer_moves_while_each_session_keeps_the_room_it_served(
 async def test_a_replacement_session_joins_the_room_s_conversation_and_the_attachment_stays_put(
     supervisor, conversations, chat_store, recording_claims, migrated_sessions
 ) -> None:
-    """What the conversation is for: session replacement is the supervisor's normal job, and the
-    room's attachment is not touched by it — the successor joins the thread the attachment names,
-    where re-pointing every live attachment would leave the thread itself unnamed afterwards."""
+    """Session replacement is the supervisor's normal job, and the room's attachment is not touched
+    by it: the successor joins the thread the attachment names."""
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
     await supervisor.supervise_once()
     [first] = recording_claims.created
@@ -178,13 +175,10 @@ async def test_a_replacement_session_joins_the_room_s_conversation_and_the_attac
 async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(
     supervisor, conversations, chat_store, recording_claims, migrated_sessions, announced
 ) -> None:
-    """The failure that took the room down on 2026-08-11.
-
-    The replica running the session went away without recording anything, and the live status it
-    left was taken at face value here — so this method kept reporting a session that no longer
-    existed anywhere but in a row. Supervision has to reclaim it, not believe it — but only once
-    the lease has been adoptable for a whole `ADOPTION_GRACE` and no runner took it, which is what
-    makes a console roll survivable rather than fatal.
+    """A replica that went away without recording anything leaves a live status nothing is working
+    on, and supervision has to reclaim it rather than believe it — but only once the lease has been
+    adoptable for a whole `ADOPTION_GRACE` and no runner took it, which is what makes a console
+    roll survivable rather than fatal.
     """
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
     await supervisor.supervise_once()
@@ -206,11 +200,9 @@ async def test_replaces_a_session_whose_row_is_gone(
 ) -> None:
     """A deleted session leaves the room bound but unserved, and the next pass re-provisions.
 
-    The fake store this replaced pointed the binding at a session id that had never existed.
-    Postgres refuses that: `matrix_conversation.session_id` is a foreign key, so a bound
-    session always references a real row. What the schema does allow — and what this now
-    covers — is the row being deleted underneath the binding, which `ondelete="SET NULL"`
-    turns into an unbound-session state rather than a dangling reference.
+    `matrix_conversation.session_id` is a foreign key, so a bound session always references a real
+    row; what the schema allows is that row being deleted underneath the binding, which
+    `ondelete="SET NULL"` turns into an unbound-session state rather than a dangling reference.
     """
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
     await supervisor.supervise_once()
@@ -255,8 +247,7 @@ async def bound(conversations: MatrixConversationStore, chat_store: SessionStore
     return view.session_id
 
 
-# What `RoomChannel.recent_history` is, as a callable the fake room can be handed. Lives here
-# rather than in the module now that the port declares the method itself.
+# What `RoomChannel.recent_history` is, as a callable the fake room can be handed.
 RecentHistory = Callable[[UUID, int], Awaitable[Sequence[HistoryMessage]]]
 
 
@@ -313,7 +304,7 @@ def said(sender: str, body: str) -> HistoryMessage:
 
 
 async def test_prompt_describes_the_room_the_channel_is_bound_to(bound: UUID) -> None:
-    """No session filtering here any more: being called at all says this session serves it.
+    """No session filtering: being called at all says this session serves the room.
 
     The console selects this surface from the session's own `surface` column, and the room the
     prompt names comes from the channel, which is the object that knows which room this is.
@@ -369,15 +360,12 @@ async def test_building_a_prompt_says_nothing_into_the_room(bound: UUID) -> None
 
 
 async def test_a_turn_with_nothing_to_say_says_so(bound: UUID) -> None:
-    """Every turn speaks and there is no silence token, but the empty string was quietly working as
-    one: a turn that
-    produced no text left the room with nothing at all, which from the operator's side is
-    indistinguishable from an answer the console lost.
+    """Every turn speaks and there is no silence token: a turn that produced no text would otherwise
+    leave the room with nothing at all, which from the operator's side is indistinguishable from a
+    lost answer.
 
-    A notice rather than a reply, because nothing was said — this is the console reporting an
-    outcome, not the agent talking. Answers themselves no longer come through this surface at
-    all: they are outbox rows, and `test_outbox.py` is where what the room hears is
-    asserted.
+    A notice rather than a reply, because nothing was said. Answers do not come through this
+    surface at all — they are outbox rows, asserted in `test_outbox.py`.
     """
     del bound
     reporting, room = surface_and_room(served())
@@ -402,9 +390,9 @@ async def serving_session(chat_store: SessionStore, operator_id: UUID, room_id: 
 async def exchange(chat_store: SessionStore, operator_id: UUID, session_id: UUID, asked: str, answered: str) -> None:
     """One question and its answer, written by the paths that write them in production.
 
-    Not hand-inserted rows: what this whole read depends on is the status and content the real
-    writers leave behind — a prompt row that is `pending` until a turn claims it, an assistant row
-    that is `complete` in the same transaction that queues the room's copy.
+    Not hand-inserted rows: this read depends on the status and content the real writers leave
+    behind — a prompt row `pending` until a turn claims it, an assistant row `complete` in the same
+    transaction that queues the room's copy.
     """
     await chat_store.enqueue_prompt(operator_id, session_id, asked)
     start = await chat_store.next_prompt(session_id)
@@ -444,8 +432,8 @@ async def test_the_transcript_spans_every_session_that_served_the_room(
 ) -> None:
     """The point of reading by room: the session that holds the context is the one that is gone.
 
-    `sessions.room_id` is what makes the chain readable — it is written once and never moves,
-    where `matrix_conversation.session_id` only ever names the live session.
+    `sessions.room_id` is what makes the chain readable — written once and never moved, where
+    `matrix_conversation.session_id` only ever names the live session.
     """
     first = await serving_session(chat_store, operator_id)
     await exchange(chat_store, operator_id, first, "[$a] hi", "hello")
@@ -626,10 +614,9 @@ async def test_a_batch_offered_to_a_session_that_is_gone_is_rejected_rather_than
 ) -> None:
     """The supervisor is between sessions, which the room must survive.
 
-    `enqueue_prompt` answers a vanished session with `KeyError`, and `offer` used to catch only
-    `RuntimeError` — so this raised into the sync loop, which logged something generic and slept.
-    Rejecting is what gets the operator an answer instead, and it reads as the case above: the row
-    that would carry it is the one that has gone.
+    `enqueue_prompt` answers a vanished session with `KeyError`; raising that into the sync loop
+    would cost the operator an answer, and it reads as the case above — the row that would carry
+    it is the one that has gone.
     """
     session_id = await serving_session(chat_store, operator_id)
     await serving_room(conversations, session_id)
@@ -644,9 +631,8 @@ async def test_a_batch_offered_to_a_session_that_is_gone_is_rejected_rather_than
 async def test_an_unreadable_event_is_a_row_per_event_on_the_live_session(
     turns: MatrixTurns, conversations: MatrixConversationStore, chat_store: SessionStore, operator_id: UUID
 ) -> None:
-    """The second fact that used to exist only in the stack frame that announced it
-    (<../../../debug/channel_write_audit.md> row 12). What the notice says is a count and a set of
-    types; what is kept is the events themselves."""
+    """What the notice says is a count and a set of types; what is kept is the events themselves
+    (<../../../debug/channel_write_audit.md> row 12)."""
     session_id = await serving_session(chat_store, operator_id)
     await serving_room(conversations, session_id)
 

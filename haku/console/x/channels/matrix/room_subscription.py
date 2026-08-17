@@ -1,14 +1,12 @@
 """The room's position in the conversation, and the notices it owes from it.
 
-This is the Matrix half of <../../subscription.py>: the channel reads the record from a position of
-its own instead of being handed events by whoever happens to be running the turn. Two things live
-here, and they are the two halves the ruling separates —
+The Matrix half of <../../subscription.py>: the channel reads the record from a position of its own
+instead of being handed events by whoever happens to be running the turn.
 
 - **`RoomCursor`** is the durable position, in `matrix_room_cursor`. The room holds a federated copy
   that outlives every console process, so after a restart the channel has to know what it already
-  put there. That durability is Matrix's own problem: it is kept in Matrix's own table, below the
-  channel boundary and beside the outbox, and the conversation layer has no cursor table at all
-  (operator, 2026-08-17).
+  put there. That durability is Matrix's own problem, kept in Matrix's own table below the channel
+  boundary and beside the outbox; the conversation layer has no cursor table at all.
 - **`RoomNotices`** is the subscriber. It wakes on `session_changed`, reads what the room has not
   been told, says it, and keeps the position it reached.
 
@@ -18,10 +16,9 @@ a rendering of a recorded fact and needs none of that. Moving the outbox is the 
 (<../../../plans/conversation_layers.md> § 5) and is deliberately not this.
 
 **The position is kept after the notice, never before.** A crash in that window says the notice
-again on the next pass, which is the same trade `delivery_log.retire` takes and the right way round:
-a room told twice is odd, a room silently never told is the failure that matters. What is left unguarded is
-the pacer's in-process queue — a notice queued and not yet sent is lost with the replica, exactly as
-every other notice is today.
+again on the next pass — the same trade `delivery_log.retire` takes, and the right way round: a
+room told twice is odd, a room never told is a message silently dropped. What is left unguarded is
+the pacer's in-process queue, exactly as every other notice already is.
 """
 
 from __future__ import annotations
@@ -59,7 +56,7 @@ NOTICE_BATCH = 50
 
 # The backstop for what no notification reaches us with: `SessionNotifications.watch` cannot replay
 # the ids that arrived while its listener was reconnecting, so a woken reader still has to look on
-# its own. A notice is not latency-critical — the wake is what makes it prompt.
+# its own.
 POLL_INTERVAL = datetime.timedelta(seconds=10)
 
 # How long a replica that lost the election waits before contending again.
@@ -108,12 +105,9 @@ def notice(event: StreamedEvent) -> str | None:
     """What this room says about *event*, or nothing where it says nothing.
 
     A match on the event's body rather than on its kind, so a shape added to the stream lands here
-    as a type error instead of being silently ignored.
-
-    **One arm, because one push moved.** `turn_aborted` used to be announced by the turn loop the
-    moment `end_turn` had written it; everything else this room says about a recorded fact is either
-    a reply (the outbox's) or is announced by ingress in the transaction that recorded it, and
-    moving those is the reconciler's work rather than this change's.
+    as a type error instead of being silently ignored. One arm today: everything else this room
+    says about a recorded fact is either a reply (the outbox's) or is announced by ingress in the
+    transaction that recorded it.
     """
     match event.body:
         case TurnAbortedBody():
@@ -155,9 +149,8 @@ class RoomNotices:
         subscription = Subscription(self._stream, RoomCursor(self._sessions, room_id), conversation_id)
         read = await subscription.read(limit=NOTICE_BATCH)
         if isinstance(read, Unstarted):
-            # Taken silently. The room has been serviced for as long as it has been bound and
-            # already shows what was said in it; rendering the stream from the start would repeat
-            # all of it.
+            # Taken silently: the room already shows what was said in it for as long as it has been
+            # bound, so rendering the stream from the start would repeat all of it.
             await subscription.keep(read.head)
             return False
         for event in read.events:

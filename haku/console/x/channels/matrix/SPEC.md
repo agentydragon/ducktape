@@ -2,8 +2,8 @@
 
 Matrix is one channel onto a chat session: a transport for prose, plus the notices that make a run
 legible from a phone. The console remains the session owner, the credential holder and the approval
-authority; nothing here is a store of record. Where this channel is going —
-one subscription, one reconciler per attachment — is <../../../plans/conversation_layers.md>.
+authority; nothing here is a store of record. Where this channel is going — one subscription, one
+reconciler per attachment — is <../../../plans/conversation_layers.md>.
 
 Out of scope by decision, so it is not re-litigated: end-to-end encryption, federation, approvals
 over Matrix, and any write surface for the agent beyond its own replies.
@@ -27,8 +27,7 @@ over Matrix, and any write surface for the agent beyond its own replies.
 
   Both are **recorded** as `session_events` rows written in the transaction that advances the
   watermark, so the room's line is a rendering of a fact the console kept rather than the only copy
-  of it. Announcing after acknowledging is what let one crash lose the message and the notice
-  together.
+  of it.
 
 - **No message is lost across console downtime**, however long the gap: messages that arrive while
   the console is down are processed once it returns, in order. If recovery cannot close a gap it
@@ -51,9 +50,9 @@ over Matrix, and any write surface for the agent beyond its own replies.
 - **Batch order follows the homeserver's stream order** and is preserved in the rendered prompt.
 - **A batch that arrives mid-turn is rejected, not held.** The room is told it was not delivered and
   the operator sends it again; nothing queues behind a running turn. Acceptance is the
-  acknowledgement, so the watermark advances every pass. The cost is deliberate and recorded in
-  <../../../plans/conversation_layers.md> § 7, along with the two richer answers (mid-turn steering,
-  a conversation-layer queue) that would take it back.
+  acknowledgement, so the watermark advances every pass. The cost, and the two richer answers that
+  would take it back — mid-turn steering, a conversation-layer queue — are in
+  <../../../plans/conversation_layers.md> § 7.
 - **Unsettled, and tracked in <../../../TODO.md>:** the batch size cap and its overflow split, the
   ingress debounce window, and the age fence that makes a very old message context rather than work.
   Provenance in the rendered prompt is thinner than intended: `_as_prompt` renders one line per
@@ -81,11 +80,11 @@ over Matrix, and any write surface for the agent beyond its own replies.
   sandbox, so the leave path has to dispose the session as part of unbinding or accept a leak.
 - **A replacement session is re-awakened, not started blank**, and **the console's own transcript is
   the source, not the homeserver's copy of the room**. Matrix is one pluggable channel among
-  several, and nothing may reach a channel except through our record; re-awakening from the room ran
-  that backwards, and a second channel whose API cannot page history could not have reproduced the
-  memory. The first prompt of a replacement session carries the last N conversational messages plus
-  how to read further back, with no summarisation step — a rotation mid-topic loses the thread's
-  earlier reasoning, and the operator can say so and be answered from the room.
+  several, and nothing may reach a channel except through our record; a second channel whose API
+  cannot page history could not reproduce a memory read back out of the room. The first prompt of a
+  replacement session carries the last N conversational messages plus how to read further back, with
+  no summarisation step — a rotation mid-topic loses the thread's earlier reasoning, and the
+  operator can say so and be answered from the room.
 
   Two things the room knows and our record does not, both accepted: history from before we were
   recording, and a redaction — the operator unsaying a message removes it from the room and not from
@@ -119,7 +118,7 @@ over Matrix, and any write surface for the agent beyond its own replies.
 - **The agent's reply is forwarded by the harness; the agent calls no tool to speak.** **Every**
   assistant message of the turn is forwarded as it finishes, not only the final one — a turn that
   says what it is about to do, works, and reports back is three messages, and forwarding only the
-  last made the room watch a long turn in silence. The turn's `result` frame repeats its last
+  last makes the room watch a long turn in silence. The turn's `result` frame repeats its last
   assistant text, so it is delivered only when nothing was said along the way.
 - **Every turn speaks.** There is no silence token: a turn that finishes with no text says so, as a
   notice rather than a reply — the console reporting an outcome, not the agent talking.
@@ -156,8 +155,7 @@ over Matrix, and any write surface for the agent beyond its own replies.
   being handed a token, so it can replace the token itself the moment Synapse stops accepting one —
   which Synapse does whenever the account's password is set again. It pins a `device_id` so repeated
   logins reuse one device and caches the token rather than logging in per request, because Synapse
-  rate-limits `/login` and a crash-looping console that re-authenticated every time would be
-  throttled.
+  rate-limits `/login`.
 - **The password Secret is a soft dependency.** The console starts, serves and stays up without it;
   the Matrix loop reports itself unconfigured rather than crash-looping. It is genuinely absent
   between first deploy and the reflector copying it, and a crash-loop there would take the approval
@@ -186,8 +184,8 @@ over Matrix, and any write surface for the agent beyond its own replies.
 
 - **Reads are unscoped across rooms and past conversations**, deliberately and for now. The fence
   that replaces this is the information tier, not the room
-  (<../../../../plans/information_trust_tiers.md>) — a decision function at one console call site, not
-  scoping smeared through the transport, which is a second reason to keep the tools plain HTTP
+  (<../../../../plans/information_trust_tiers.md>) — a decision function at one console call site,
+  not scoping smeared through the transport, which is a second reason to keep the tools plain HTTP
   entries rather than closures over a session.
 - **IDs are given, not guessed.** Every message the agent sees carries its event ID in the form the
   read tools accept, and a permalink is accepted as input since that is what a client produces on

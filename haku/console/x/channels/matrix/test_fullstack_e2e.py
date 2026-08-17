@@ -7,30 +7,16 @@ runner process per sandbox with a stub `claude` behind it, and a real Postgres u
 The operator's side is a Matrix client of its own (`testing/operator_room.py`, `nio` against the
 same homeserver), so what a test reads back is the room, not the console's account of the room.
 
-The property is one line and it is the same in every test here: the bodies Haku posted, in order,
-are `re: ` and what the operator typed. It fails on a message that was never answered and on one
-answered twice, which are the two ways an outbound path can be wrong.
+The property is the same in every test here: the bodies Haku posted, in order, are `re: ` and what
+the operator typed. It fails on a message that was never answered and on one answered twice, which
+are the two ways an outbound path can be wrong.
 
-**Three ways a produced reply used to be lost**, none of which the console noticed. Each is a
-test here, and each failed when this file was written against a console that delivered by handing
-a closure to an in-process queue:
-
-1. A delivery that raised was logged and dropped (`_deliver_reply`), and `spoke` was set anyway —
-   so the end-of-turn fallback, the one thing that would have said the same text a second time,
-   read "already said" and stayed quiet. One failed send made the whole turn silent. No reconnect
-   and no roll involved; the plain case.
-2. `_deliver_reply` only **queued**. `pacer` is an in-process deque draining at
-   `SENDS_PER_SECOND`, so on a room with anything queued ahead of it "delivered" was minutes away
-   from "spoken", and a console that stopped in between took the queue with it.
-3. Across a roll neither was recovered. The frame is in `session_frames`, so the runner's replay
-   is refused as one this session already has (`RolloutRecorder.received`), and `adopt_open_turn`
-   read the same row as `spoke=True` — which its own docstring admits it cannot tell from
-   delivered. Permanently recorded, permanently unspoken.
-
-The property says the opposite: a produced reply must never be lost silently. What closes all three is
-the durable room outbox (`outbox.py`): the reply is a row written with the message it
-copies, and a drain says it and marks it sent only once the homeserver has taken it.
-`test_a_quiet_run_replies_once_to_every_message` is the control, and it passed throughout.
+Three of these are the ways a produced reply could be lost without the console noticing — a
+delivery that raised, a reply still on an in-process queue when the replica stopped, and a roll
+across the gap between recording an answer and saying it. What closes all three is the durable room
+outbox (`outbox.py`): the reply is a row written with the message it copies, and a drain says it
+and marks it sent only once the homeserver has taken it.
+`test_a_quiet_run_replies_once_to_every_message` is the control.
 """
 
 from __future__ import annotations
@@ -103,10 +89,8 @@ async def room(operator: AsyncClient, deployment: Deployment) -> OperatorRoom:
 
 
 async def test_a_quiet_run_replies_once_to_every_message(deployment: Deployment, room: OperatorRoom) -> None:
-    """The property the rest of this module asserts against a broken path, on an unbroken one.
-
-    It is the control: same homeserver, same console process, same runner, same stub, so a failure
-    in any of the others is the condition that test introduced rather than this harness. It also
+    """The control: same homeserver, same console process, same runner, same stub, so a failure in
+    any of the others is the condition that test introduced rather than this harness. It also
     covers the other half of "answered exactly once" — a replayed frame or a re-sent answer would
     show up here as a duplicate.
     """
@@ -122,18 +106,12 @@ async def test_a_quiet_run_replies_once_to_every_message(deployment: Deployment,
 async def test_a_reply_whose_send_is_refused_is_said_on_a_later_attempt(
     deployment: Deployment, room: OperatorRoom
 ) -> None:
-    """A refused send used to make a whole turn silent, with the console still running.
+    """A refused send, with the console still running and nothing else going wrong.
 
-    No reconnect, no roll, nothing queued: the delivery raised, `_deliver_reply` logged it and
-    returned, `spoke = True` ran anyway, and the end-of-turn fallback that would have posted the
-    same text off the `result` frame read "already said". The transcript row was written, so every
-    surface except the room looked correct.
-
-    Now the reply is a `session_outbox` row and the refusal is the row's: unsent, one attempt
-    spent, retried after its backoff. Two refusals are armed rather than one, so both kinds of
-    reply are covered — `two` is an ordinary assistant message, and `three`, which the agent
-    answers with a `result` frame and no assistant message at all, is the row `_run_turn` mints
-    off that frame.
+    The refusal is the row's: unsent, one attempt spent, retried after its backoff. Two refusals
+    are armed rather than one, so both kinds of reply are covered — `two` is an ordinary assistant
+    message, and `three`, which the agent answers with a `result` frame and no assistant message at
+    all, is the row `_run_turn` mints off that frame.
 
     **Order is part of the assertion.** A refused reply holds the queue rather than being
     overtaken, so `four` — produced while the earlier two were still waiting out their backoff —
@@ -165,18 +143,16 @@ async def test_a_reply_whose_send_is_refused_is_said_on_a_later_attempt(
 async def test_a_reply_still_queued_when_the_console_stops_is_said_by_its_replacement(
     deployment: Deployment, room: OperatorRoom
 ) -> None:
-    """A produced reply the console had not yet said used to die with the process.
+    """A produced reply the console has not yet said, when the process goes away.
 
-    `_deliver_reply` handed the answer to `pacer`, an in-process deque draining at
-    `SENDS_PER_SECOND` — so with anything queued ahead of it, "delivered" was minutes from
-    "spoken". Here the agent narrates 25 lines first, which is 25 paced notices, and the answer
-    queues behind them. The console is then stopped the way a deploy stops it.
+    The agent narrates 25 lines first, which is 25 paced notices, and the answer queues behind them
+    at `SENDS_PER_SECOND`; the console is then stopped the way a deploy stops it.
 
-    What the answer is now is a row, so the assertion is in two halves and both matter: with the
-    process *gone* the room still does not have it — a queue that had somehow flushed would make
-    the second half vacuous — and a replacement console says it without the agent, the runner or
-    the operator doing anything. The pacer's own shutdown flush is bounded at `FLUSH_SECONDS`,
-    which at this rate is one send, so the gap is not luck.
+    Both halves of the assertion matter: with the process *gone* the room still does not have the
+    answer — a queue that had somehow flushed would make the second half vacuous — and a
+    replacement console says it without the agent, the runner or the operator doing anything. The
+    pacer's shutdown flush is bounded at `FLUSH_SECONDS`, which at this rate is one send, so the
+    gap is not luck.
     """
     await deployment.start_console("console-1")
     session_id = await deployment.serving()
@@ -202,15 +178,12 @@ async def test_every_message_is_answered_exactly_once_across_a_console_roll(
     """The headline: three messages, a console roll in the middle of the second, one reply each.
 
     The roll happens in the gap this module is about — the answer recorded, the room not yet told.
-    The console that took over used not to close it: the runner replays the frame and
-    `RolloutRecorder.received` refuses it as one this session already has, and `adopt_open_turn`
-    read the same row and resumed the turn with `spoke=True`, which its own docstring admits it
-    cannot tell from delivered. So the `result` frame's copy of the text was suppressed too, and
-    the answer ended up permanently recorded and permanently unspoken.
+    The runner replays the frame, which `RolloutRecorder.received` refuses as one this session
+    already has, so nothing but the row carries the answer across.
 
-    **Exactly once, so this fails on a duplicate as well as on a drop** — which is the assertion
-    the redrive has to survive. The row the first console wrote is the same row the second one
-    drains, and re-deriving the same reply collides with it rather than adding a second copy.
+    **Exactly once, so this fails on a duplicate as well as on a drop.** The row the first console
+    wrote is the same row the second one drains, and re-deriving the same reply collides with it
+    rather than adding a second copy.
 
     The agent holds its `result` across the roll on purpose: that leaves the turn open, so the
     second console adopts an exchange in flight rather than finding a finished one.
@@ -239,7 +212,7 @@ async def test_every_message_is_answered_exactly_once_across_a_console_roll(
 async def test_a_message_sent_mid_turn_is_rejected_in_the_room_rather_than_answered_late(
     deployment: Deployment, room: OperatorRoom
 ) -> None:
-    """The ruling, end to end: nothing queues behind a running turn.
+    """Nothing queues behind a running turn, end to end.
 
     The agent holds its answer to `two`, so `three` arrives while that turn is open. It is not
     delivered and not held — the room is told so while the turn is still running, and the operator
@@ -267,15 +240,13 @@ async def test_a_message_sent_mid_turn_is_rejected_in_the_room_rather_than_answe
 async def test_a_message_accepted_by_a_dying_session_is_not_offered_to_its_replacement(
     deployment: Deployment, room: OperatorRoom
 ) -> None:
-    """The cost the rejection ruling accepts, pinned so it is a decision rather than a surprise.
+    """The cost rejecting rather than holding accepts, pinned so it is a decision and not a surprise.
 
     A killed sandbox leaves the session `ready` for a whole `ADOPTION_GRACE`, so `two` is
     **accepted** by a session that will never claim it. Its batch is acknowledged at that moment,
     so nothing offers it again: the replacement session answers the next thing said, and `two`
-    survives only as a transcript row it is woken with (the test below).
-
-    This is `message_drops.md` I3's window, deliberately reopened — holding the batch until its turn
-    ended is what used to close it, and holding is what the rejection ruling removes.
+    survives only as a transcript row it is woken with (the test below). This is
+    `message_drops.md` I3's window, deliberately left open.
     """
     await deployment.start_console("console-1")
     doomed = await deployment.serving()
@@ -296,13 +267,13 @@ async def test_a_message_accepted_by_a_dying_session_is_not_offered_to_its_repla
 async def test_a_replacement_session_wakes_from_our_transcript_rather_than_from_the_room(
     deployment: Deployment, room: OperatorRoom
 ) -> None:
-    """Answered out of the console's own record: **which copy of the conversation is this?**
+    """**Which copy of the conversation is this?**
 
     The two copies are distinguishable here, which is why this can assert provenance rather than
-    only content. Our transcript holds the operator's message as the wakeup ingress wrote —
-    `[$event] one`, event id inline — while the homeserver holds an event whose body is `one` and
-    whose id is a field beside it. So a prompt containing the first form was built from the
-    transcript, and one built by paginating `/messages` could not contain it.
+    only content: our transcript holds the operator's message as ingress wrote it — `[$event] one`,
+    event id inline — while the homeserver holds an event whose body is `one` and whose id is a
+    field beside it. So a prompt containing the first form was built from the transcript, and one
+    built by paginating `/messages` could not contain it.
 
     The killed sandbox is how a replacement session gets made at all, and it also puts the
     load-bearing case in the same test: `two` is accepted by the dying session and never answered

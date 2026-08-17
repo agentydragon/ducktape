@@ -1,17 +1,16 @@
 """The console's Matrix sync loop.
 
-Logs in as the bot, long-polls `/sync`, binds the one room Haku services, and
-hands what the operator types to the session behind that room.
+Logs in as the bot, long-polls `/sync`, binds the one room Haku services, and hands what the
+operator types to the session behind that room.
 
-**Every pass acknowledges what it read.** A batch the session will not take is rejected rather
-than held: the operator is told so and sends it again, so nothing queues behind a running turn and
-the loop keeps one position instead of two. An event Haku has no way to read — a screenshot, a
-voice memo — is the same shape, and always was, because re-offering one could never converge.
+**Every pass acknowledges what it read.** A batch the session will not take is rejected rather than
+held: the operator is told so and sends it again, so nothing queues behind a running turn and the
+loop keeps one position instead of two. An event Haku has no way to read — a screenshot, a voice
+memo — is the same shape, because re-offering one could never converge.
 
 Both are **recorded in the transaction that advances the watermark**, as `session_events` rows the
 room notice is a rendering of. Advancing first and announcing afterwards would let one crash lose
-the message and the notice together, which is the whole of what "nothing is silently dropped"
-rules out.
+the message and the notice together.
 
 It is also the only holder of a Matrix credential, so the supervisor's lifecycle notices go out
 through `announce` rather than a second login, and an answer — a row until it has been said — is
@@ -19,7 +18,7 @@ drained into the room from here (`outbox`).
 
 The one thing it is asked *for* rather than told is this room's recent conversation
 (`recent_history`), answered out of the console's own transcript. Still this object's to answer
-because it knows which room is bound; the credential has nothing to do with it.
+because it knows which room is bound.
 """
 
 from __future__ import annotations
@@ -79,9 +78,8 @@ ERROR_BACKOFF = datetime.timedelta(seconds=10)
 def _why_not(reason: PromptRejection) -> str:
     """What a rejection notice says the operator is waiting for.
 
-    The channel's own rendering of `PromptRejection`, which is why it is here and not beside the
-    enum — and a match rather than a lookup, so a member added later fails the type check instead
-    of the send.
+    The channel's own rendering of `PromptRejection`, hence here rather than beside the enum. A
+    match rather than a lookup, so a member added later fails the type check instead of the send.
     """
     match reason:
         case PromptRejection.NO_SESSION:
@@ -115,9 +113,9 @@ class MatrixSyncStore:
     async def save_token(self, user_id: str, token: str) -> None:
         """Cache the access token.
 
-        Upserted rather than read-then-inserted because the pacer's queue runs on every replica,
-        so two of them can log in and first-write this row at once; the loser of a read-then-insert
-        fails on the primary key, and on the pacer's side that is a queued send lost.
+        Upserted rather than read-then-inserted because the pacer's queue runs on every replica, so
+        two of them can log in and first-write this row at once; the loser of a read-then-insert
+        fails on the primary key, which on the pacer's side is a queued send lost.
         """
         async with self._sessions() as db, db.begin():
             await db.execute(
@@ -137,14 +135,14 @@ class MatrixSyncStore:
     async def advance(self, user_id: str, next_batch: str, events: Sequence[SessionEvent] = ()) -> None:
         """Acknowledge everything up to *next_batch*, recording what the pass decided about it.
 
-        **One transaction, and that is the point.** `events` are the facts about the batch that
-        exist nowhere else — a prompt this pass rejected, an attachment it could not read — and
-        each is the durable half of a notice the room is about to be told. Committing the
-        watermark first would let a crash acknowledge a message to the homeserver while losing
-        both the record of it and the operator's only account of what happened to it.
+        **One transaction.** `events` are the facts about the batch that exist nowhere else — a
+        prompt this pass rejected, an attachment it could not read — and each is the durable half
+        of a notice the room is about to be told. Committing the watermark first would let a crash
+        acknowledge a message to the homeserver while losing both the record of it and the
+        operator's only account of what happened to it.
 
-        The watermark is what makes an outage replay rather than skip, so what is written
-        here must be a position genuinely finished with.
+        The watermark is what makes an outage replay rather than skip, so what is written here must
+        be a position genuinely finished with.
         """
         async with self._sessions() as db, db.begin():
             db.add_all(events)
@@ -170,8 +168,8 @@ class MatrixSyncService:
         outbox: RoomOutbox,
         deliveries: DeliveryLog,
     ):
-        # Taken separately from `config`, which carries it as optional: the service is
-        # only ever constructed once the password is known to be there.
+        # Taken separately from `config`, which carries it as optional: the service is only ever
+        # constructed once the password is known to be there.
         self._config = config
         self._password = password
         self._engine = engine
@@ -181,20 +179,19 @@ class MatrixSyncService:
         self._transcript = transcript
         self._deliveries = deliveries
         self._client = MatrixClient(config.homeserver, config.user_id, config.device_id)
-        # Public because it has a lifecycle, and this object's owner is the one that drives it:
-        # everything the console says into the room goes through here, so it outlives no
-        # individual send and belongs to whoever is running the service.
+        # Public because its lifecycle is the owner's to drive: everything the console says into
+        # the room goes through here, so it outlives no individual send.
         self.pacer = RoomPacer()
-        # Held here rather than by the composition root because it needs the two things only this
-        # object has: the credential that can speak into the room, and the pacer that decides when.
+        # Held here rather than by the composition root: it needs the credential that can speak
+        # into the room and the pacer that decides when, which only this object has.
         self._outbox = RoomOutboxDrain(engine, outbox, self.pacer, self.post_reply, self.bound_room)
         self._status_body: str | None = None
 
     async def _token(self) -> str:
         """A working access token, logging in only when the cached one is not.
 
-        Synapse rate-limits `/login`, so re-authenticating on every pass would get the
-        console throttled — hence the cache.
+        Synapse rate-limits `/login`, so re-authenticating on every pass would get the console
+        throttled — hence the cache.
         """
         cached = await self._store.cached_token(self._config.user_id)
         if cached is not None and await self._client.whoami(cached):
@@ -212,8 +209,8 @@ class MatrixSyncService:
             )
             return
         if (live_room := await self._conversations.claim_room(self._config.user_id, invite.room_id)) != invite.room_id:
-            # Joining would put Haku in a room nothing services, which reads as listening.
-            # Say so where we can actually speak: the room already bound.
+            # Joining would put Haku in a room nothing services, which reads as listening. Say
+            # so where we can actually speak: the room already bound.
             logger.warning("Matrix: refusing invite to %s — already serving %s", invite.room_id, live_room)
             self._queue_notice(
                 live_room, f"invited to another room; still serving this one ({live_room})", RoomEventKind.ROOM
@@ -226,10 +223,10 @@ class MatrixSyncService:
     async def post_reply(self, reply: PendingReply) -> str:
         """Post one queued answer into the room as ordinary text.
 
-        Called by `RoomOutboxDrain`, from inside the pacer's queue, so this is the send itself —
-        it raises when the homeserver refuses, and that is what leaves the row unsent and
-        claimable again. The tag is what makes the event say which transcript row it is showing,
-        and the transaction id is the row's own, so a redrive is refused rather than doubled.
+        Called by `RoomOutboxDrain` from inside the pacer's queue, so this is the send itself: it
+        raises when the homeserver refuses, which is what leaves the row unsent and claimable
+        again. The tag says which transcript row the event is showing, and the transaction id is
+        the row's own, so a redrive is refused rather than doubled.
         """
         return await self._client.send_text(
             await self._token(), reply.room_id, reply.body, txn_id=reply.transaction_id(), tag=reply.tag()
@@ -243,23 +240,22 @@ class MatrixSyncService:
     async def show_status(self, body: str, session_id: UUID | None = None) -> None:
         """Make the room's single status line say *body*, creating or editing it.
 
-        One line per turn rather than a notice per step: a room where every tool call is a
-        message is a room nobody reads. The turn loop says what the state is and never learns how
-        it is shown.
+        One line per turn rather than a notice per step: a room where every tool call is a message
+        is a room nobody reads. The turn loop says what the state is and never learns how it is
+        shown.
 
-        **Idempotent, and paced by the room rather than by this call.** The floor moved to the
-        caller (`room_status.TurnStatus`), because deciding what the line should say and deciding when it
-        may change have to be one decision; the room's own budget is `pacer`'s, where
-        the status line is the one sender allowed to overwrite what it has not yet said.
+        **Idempotent, and paced by the room rather than by this call.** The floor belongs to the
+        caller (`room_status.TurnStatus`), because what the line should say and when it may change
+        are one decision; the room's budget is `pacer`'s, where the status line is the one sender
+        allowed to overwrite what it has not yet said.
 
-        Create-or-edit is decided inside the queued send, not here, because the create is what
-        produces the event id the edit needs — and between queueing and sending, it may not
-        have happened yet. The pacer is serial, so by the time an edit runs its create has.
+        Create-or-edit is decided inside the queued send, because the create is what produces the
+        event id the edit needs and may not have happened at queue time. The pacer is serial, so by
+        the time an edit runs its create has.
 
         **Which event to edit comes from `chat_delivery`, not from this process.** The line
         outlives the replica that posted it: whichever replica holds the session's lease drives the
-        status, and an adopting one would otherwise have nothing to edit and would post a second
-        line beside its predecessor's.
+        status, and an adopting one would otherwise post a second line beside its predecessor's.
         """
         if body == self._status_body:
             return
@@ -287,10 +283,9 @@ class MatrixSyncService:
     async def set_typing(self, active: bool) -> None:
         """Show or hide Haku's typing indicator in the live room.
 
-        Best effort by construction: a failed typing notice is cosmetic, and a turn that died
-        because the room could not be told it was thinking would be a strictly worse outcome
-        than an indicator that is briefly wrong. The homeserver expires the notice on its own,
-        so the failure mode of a lost `False` is a stale indicator for seconds, not forever.
+        Best effort by construction: a failed typing notice is cosmetic, where a turn that died
+        because the room could not be told it was thinking would not be. The homeserver expires the
+        notice on its own, so a lost `False` is a stale indicator for seconds, not forever.
         """
         conversation = await self._conversations.load(self._config.user_id)
         if conversation is None:
@@ -303,13 +298,12 @@ class MatrixSyncService:
     async def clear_status(self) -> None:
         """Retire the status line, if one was ever created.
 
-        Called on every terminal path, including failure — a status line left saying "running
-        Bash" after the turn died is the stuck-typing-indicator bug in another costume.
+        Called on every terminal path, including failure — a status line left saying "running Bash"
+        after the turn died is the stuck-typing-indicator bug in another costume.
 
-        A change still waiting to go out is dropped rather than sent and then redacted, which
-        would spend two of the room's ten sends showing something for a fraction of a second.
-        Reading the event id is left to the queued send for the same reason `show_status`
-        does: a create queued a moment ago has not necessarily happened yet.
+        A change still waiting to go out is dropped rather than sent and then redacted, which would
+        spend two of the room's ten sends showing something for a fraction of a second. Reading the
+        event id is left to the queued send for the same reason `show_status` does.
         """
         self._status_body = None
         self.pacer.drop_status()
@@ -333,20 +327,16 @@ class MatrixSyncService:
 
         **Answered from our own transcript, not from the homeserver's copy of the room.** Matrix is
         one channel among several, so what a replacement session believes happened has to come from
-        the record every channel writes into; reading it back out of `/messages` made the channel
-        the source of truth for its own conversation, and a second channel — Telegram's bot API
-        cannot page a chat's history — could not have reproduced that memory
+        the record every channel writes into; a second channel whose API cannot page a chat's
+        history could not have reproduced a memory read back out of `/messages`
         (<../../../debug/channel_write_audit.md> § "What a second channel would need", #4130).
 
         **A message the previous session never answered is still in here**, which is what a
         replacement is for: ingress writes the prompt row when it accepts a batch, and a session
-        that ended before claiming that row leaves it recorded and unanswered. Reading the room
-        would find the same event; reading our own transcript finds it whether or not the channel
-        that carried it still has it.
+        that ended before claiming that row leaves it recorded and unanswered.
 
-        Empty until something has been recorded for this room, which is honestly what a room with
-        no transcript has: a first-ever session and a session whose room only just bound both read
-        the same, and both are correct.
+        Empty until something has been recorded for this room: a first-ever session and a session
+        whose room only just bound read the same, and both are correct.
         """
         conversation = await self._conversations.load(self._config.user_id)
         if conversation is None:
@@ -365,9 +355,9 @@ class MatrixSyncService:
     async def announce(self, body: str, kind: RoomEventKind = RoomEventKind.LIFECYCLE) -> None:
         """Post a lifecycle notice into the live room, if there is one.
 
-        The supervisor's outbound path (`session.Announce`): it owns session
-        lifecycle but never a Matrix credential, so it speaks through the loop that has one.
-        A no-op before any room is bound — there is genuinely nowhere to say it.
+        The supervisor's outbound path (`session.Announce`): it owns session lifecycle but never a
+        Matrix credential, so it speaks through the loop that has one. A no-op before any room is
+        bound — there is genuinely nowhere to say it.
         """
         conversation = await self._conversations.load(self._config.user_id)
         if conversation is None:
@@ -386,18 +376,13 @@ class MatrixSyncService:
     def _serviced[T: (InboundMessage, UnmappableEvent)](self, events: tuple[T, ...], live_room: str | None) -> list[T]:
         """The events of a batch that are ours to act on — read or report.
 
-        Haku's own posts are not among them, and are already gone: `MatrixClient._read`
-        drops everything the bot sent. This used to check them again against a set of
-        every event id this process had ever sent — a filter that could not match, since every
-        entry in it was excluded one layer down, and that cost memory for as long as the replica
-        lived and was empty again the moment it restarted.
+        Haku's own posts are already gone: `MatrixClient._read` drops everything the bot sent.
         """
         serviced = []
         for event in events:
             if event.room_id != live_room:
-                # Only the bound room is serviced. Reachable for a room joined
-                # before the binding existed, and for anything that gets Haku into a room
-                # by a path other than an invite.
+                # Only the bound room is serviced. Reachable for a room joined before the
+                # binding existed, and for anything that gets Haku into a room without an invite.
                 logger.warning("Matrix: ignoring %s from unserviced room %s", event.event_id, event.room_id)
                 continue
             serviced.append(event)
@@ -406,13 +391,13 @@ class MatrixSyncService:
     async def sync_once(self, token: str) -> None:
         """One `/sync` pass: act on what came back, and acknowledge it.
 
-        The watermark always moves, because everything this pass read has been answered one way
-        or the other — handed to the session, or rejected and said so. What it decided is written
-        with the watermark rather than after it, so the two cannot come apart.
+        The watermark always moves, because everything this pass read has been answered one way or
+        the other — handed to the session, or rejected and said so — and what it decided is written
+        with the watermark rather than after it.
 
-        **The room is told once that is committed**, since the notice is a rendering of a row and
-        the pacer's queue is in-process: a crash before the commit re-delivers the batch and says
-        nothing, and one after it leaves a recorded fact whose notice can be posted again.
+        **The room is told once that is committed**: a crash before the commit re-delivers the
+        batch and says nothing, and one after it leaves a recorded fact whose notice can be posted
+        again.
         """
         result = await self._client.sync(token, await self._store.watermark(self._config.user_id))
         for invite in result.invites:
@@ -439,10 +424,10 @@ class MatrixSyncService:
     async def _live_room(self, token: str, messages: tuple[InboundMessage, ...]) -> str | None:
         """The room being serviced, adopting one from traffic when nothing is bound.
 
-        Membership already required an operator invite, so a room Haku is joined to
-        and being spoken to in is one the operator put it in — adopting it is recovering a
-        binding, not granting access. Without this, a room joined before the binding existed
-        goes quiet forever with no way for the operator to revive it from a Matrix client.
+        Membership already required an operator invite, so a room Haku is joined to and being
+        spoken to in is one the operator put it in — adopting it recovers a binding rather than
+        granting access. Without this, a room joined before the binding existed goes quiet forever
+        with no way for the operator to revive it from a Matrix client.
         """
         if (conversation := await self._conversations.load(self._config.user_id)) is not None:
             return conversation.room_id
@@ -457,12 +442,10 @@ class MatrixSyncService:
     def _report_rejected(self, live_room: str | None, count: int, reason: PromptRejection) -> None:
         """Tell the room its messages were not delivered, and what to wait for.
 
-        Every pass that rejects says so, because every rejection is a different message: nothing
-        is re-offered, so there is no repetition to suppress.
-
-        The reason is named, which the holding notice it replaces could not do — a hold covered a
-        turn in flight, a sandbox still provisioning and no session at all with one sentence, and
-        the operator's next move differs in each.
+        Every pass that rejects says so, because every rejection is a different message: nothing is
+        re-offered, so there is no repetition to suppress. The reason is named because the
+        operator's next move differs between a turn in flight, a sandbox still provisioning and no
+        session at all.
         """
         if live_room is None:
             return
@@ -474,7 +457,7 @@ class MatrixSyncService:
         """Say in the room that something arrived which Haku has no way to read.
 
         Said in the room and not only logged, because the room is where the operator is: a
-        screenshot that disappears with a line in a pod's stdout is the drop this exists to prevent.
+        screenshot that disappears with a line in a pod's stdout is a message silently dropped.
         """
         if not events or live_room is None:
             return
@@ -502,9 +485,9 @@ class MatrixSyncService:
     async def _run(self) -> None:
         """Contend for leadership, and sync for as long as we hold it.
 
-        Unlike the OAuth refresh sweep, which takes the lock per pass, this holds it for
-        the lifetime of the loop: `/sync` is a long poll, so releasing between passes
-        would let two replicas interleave and double-process every batch.
+        Unlike the OAuth refresh sweep, which takes the lock per pass, this holds it for the
+        lifetime of the loop: `/sync` is a long poll, so releasing between passes would let two
+        replicas interleave and double-process every batch.
         """
         while True:
             async with self._engine.connect() as leader:
@@ -529,9 +512,9 @@ class MatrixSyncService:
 
         The pacer runs on **every** replica, not only the sync leader: the console's narration is
         queued from whichever replica holds the session's lease, which is not generally the one
-        holding the sync lock. That is also why the budget it enforces is an estimate — see
-        `pacer`. The drain contends for a lock of its own, so it runs on one replica while
-        the pacer runs on all of them, which is what keeps replies in order.
+        holding the sync lock — which is also why the budget it enforces is an estimate. The drain
+        contends for a lock of its own, so it runs on one replica while the pacer runs on all of
+        them, which is what keeps replies in order.
         """
         task = asyncio.create_task(self._run(), name="matrix-sync")
         try:

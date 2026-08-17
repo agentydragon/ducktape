@@ -1,20 +1,20 @@
 """The room's outbox: replies as rows, and the one task that says them.
 
-A turn writes the row in the same transaction as the assistant message it copies — which is also
-what covers a turn raising between producing text and speaking it — and this drains it. `sent_at`
-is written only once `room_send` has returned, so every other outcome, the replica disappearing
-mid-send included, leaves the row claimable by whoever comes next. The drops this closes are
-written up in <../../../debug/message_drops.md> (E1, E4, E6, E7).
+A turn writes the row in the same transaction as the assistant message it copies — which also
+covers a turn raising between producing text and speaking it — and this drains it. `sent_at` is
+written only once `room_send` has returned, so every other outcome, the replica disappearing
+mid-send included, leaves the row claimable by whoever comes next
+(<../../../debug/message_drops.md> E1, E4, E6, E7).
 
 **`pacer` owns when.** The drain does not send; it queues one reply into the pacer and waits for
-that closure to settle before claiming the next. So replies keep the room's rate budget, keep
-their order among themselves, and keep interleaving with the status line and the lifecycle notices
-— which stay in-process on purpose, since a notice describing a moment is not worth redelivering
-ten minutes later.
+that closure to settle before claiming the next. So replies keep the room's rate budget, their
+order among themselves, and their interleaving with the status line and the lifecycle notices —
+which stay in-process on purpose, since a notice describing a moment is not worth redelivering ten
+minutes later.
 
 **One drainer.** The pacer runs on every replica (the turn loop speaks from whichever holds the
-session's lease), but two drains would reorder replies against each other, so this contends for
-an advisory lock the way the sync loop and the supervisor do.
+session's lease), but two drains would reorder replies against each other, so this contends for an
+advisory lock the way the sync loop and the supervisor do.
 """
 
 from __future__ import annotations
@@ -42,17 +42,15 @@ logger = logging.getLogger(__name__)
 # Distinct from the sync loop's lock, the supervisor's, and the OAuth refresh sweep's.
 _OUTBOX_ADVISORY_LOCK = 0x4D58_4F42  # "MXOB"
 
-# How many times one reply may be attempted before it is left alone. Past this the row stops
-# being claimed and keeps its `last_error`: a message the room has refused eight times over ten
-# minutes is not going to be accepted on the ninth, and a queue that retries it forever is a
-# queue that never gets to the next reply. Deliberately not a delete — the whole point of this
-# table is that a reply nobody could say is still somewhere an operator can find it.
+# How many times one reply may be attempted before it is left alone. Past this the row stops being
+# claimed and keeps its `last_error`: a queue that retries one reply forever never gets to the next.
+# Deliberately not a delete — a reply nobody could say is still somewhere an operator can find it.
 MAX_SEND_ATTEMPTS = 8
 
 # The first wait after a failed attempt, doubling to `MAX_RETRY_BACKOFF`. The whole budget —
-# roughly ten minutes across `MAX_SEND_ATTEMPTS` — is sized to stay inside the 30-to-60 minutes
-# Synapse keeps a transaction id for (<../../../docs/chat_runtime_facts.md>), because past that window
-# a redrive stops being deduplicated and starts being a second message.
+# roughly ten minutes across `MAX_SEND_ATTEMPTS` — stays inside the 30-to-60 minutes Synapse keeps a
+# transaction id for (<../../../docs/chat_runtime_facts.md>); past that window a redrive stops being
+# deduplicated and starts being a second message.
 FIRST_RETRY_BACKOFF = datetime.timedelta(seconds=5)
 MAX_RETRY_BACKOFF = datetime.timedelta(seconds=300)
 
@@ -69,10 +67,9 @@ LEADER_RETRY = datetime.timedelta(seconds=5)
 ERROR_BACKOFF = datetime.timedelta(seconds=10)
 
 # A ceiling on waiting for one queued reply to be attempted — a backstop, not a timeout anyone
-# expects to reach. `RoomPacer.send` drops silently once `MAX_QUEUED_SENDS` are waiting, so
-# without this the drain could park forever on a closure that will never run. Sized to a full
-# queue draining at the room's rate, so a reply genuinely waiting its turn behind a burst of
-# narration is never re-claimed while it is still going to be sent.
+# expects to reach. `RoomPacer.send` drops silently once `MAX_QUEUED_SENDS` are waiting, so without
+# this the drain could park forever on a closure that will never run. Sized to a full queue draining
+# at the room's rate, so a reply waiting its turn behind a burst of narration is never re-claimed.
 SETTLE_CEILING = datetime.timedelta(seconds=MAX_QUEUED_SENDS / SENDS_PER_SECOND)
 
 
@@ -94,8 +91,7 @@ class PendingReply:
 
         **The record's identity, never the outbox row's**, because the queue is the channel's
         private implementation and a reconciler re-deriving this reply from the transcript has to
-        arrive at the same subject after the table is gone
-        (<../../../plans/conversation_layers.md> § 5).
+        arrive at the same subject after the table is gone.
         """
         match self.message_id, self.turn_id:
             case UUID() as message_id, _:
@@ -121,12 +117,10 @@ class PendingReply:
     def transaction_id(self) -> str:
         """What this reply is sent under, on every attempt.
 
-        **The row's own id, not `EventTag.transaction_id`'s.** That derives from the transcript row
-        where there is one and *mints a fresh uuid4 otherwise* — correct for a status edit or a
-        lifecycle notice, but it would make a redrive of the one reply naming no transcript row
-        (`result.result` on a turn whose completed messages were all empty) post a second message
-        instead of being refused. The row id is stable for exactly as long as redelivery can
-        happen.
+        **The row's own id, not `EventTag.transaction_id`'s.** That mints a fresh uuid4 where the
+        event names no transcript row, so a redrive of the one reply naming none (`result.result`
+        on a turn whose completed messages were all empty) would post a second message instead of
+        being refused. The row id is stable for exactly as long as redelivery can happen.
         """
         return self.outbox_id.hex
 
@@ -160,19 +154,16 @@ class RoomOutbox:
 
         **A failed reply halts the queue rather than being overtaken.** The row asked for is the
         oldest, not the oldest that happens to be due, so a reply waiting out its backoff holds up
-        the one behind it. Deliberate: the room is read top to bottom, and two answers arriving in
-        the wrong order describe a conversation that did not happen. It is also what the classifier
-        this queue is meant to grow into needs (<../../../../plans/information_trust_tiers.md>).
-
-        The one row skipped is one out of attempts, which will never be sent and would otherwise
-        wedge every reply behind it forever.
+        the one behind it: the room is read top to bottom, and two answers arriving in the wrong
+        order describe a conversation that did not happen. The one row skipped is one out of
+        attempts, which will never be sent and would otherwise wedge everything behind it forever.
 
         The attempt is charged here rather than after the send, so a replica disappearing
         mid-request costs the row one attempt instead of leaving it claimable forever by processes
         that keep dying on it. `sent_at` is still the only record of success.
 
-        Only ever called under the drain's advisory lock, so there is no second claimant: the
-        `FOR UPDATE` is against a concurrent enqueue, not another drain.
+        Only ever called under the drain's advisory lock, so the `FOR UPDATE` is against a
+        concurrent enqueue rather than another drain.
         """
         now = datetime.datetime.now(datetime.UTC)
         async with self._sessions() as db, db.begin():
@@ -197,8 +188,8 @@ class RoomOutbox:
         """Record that the room has this reply, and which event of the room's it is.
 
         One transaction, so `sent_at` and the correspondence cannot come apart: a reply the room
-        accepted whose event we did not write down is one a reconciler would have to find by
-        reading the room back.
+        accepted whose event we did not write down is one a reconciler could only find by reading
+        the room back.
         """
         now = datetime.datetime.now(datetime.UTC)
         async with self._sessions() as db, db.begin():
@@ -219,8 +210,8 @@ class RoomOutbox:
             row.last_error = error
             if row.attempts >= MAX_SEND_ATTEMPTS:
                 # Loud, because this is the one outcome the table cannot recover from by itself.
-                # The row stays unsent with this error on it, so the reply is still readable and
-                # still redrivable by hand once whatever refused it has been fixed.
+                # The row stays unsent with this error on it, still readable and still redrivable
+                # by hand once whatever refused it has been fixed.
                 logger.error(
                     "Matrix: giving up on outbox row %s after %d attempts; last error: %s",
                     outbox_id,
@@ -230,8 +221,7 @@ class RoomOutbox:
 
 
 # Saying one reply into the room, and answering with the room's own reference for the event it
-# became. Raising is how the sender reports that the homeserver refused it — which is what leaves
-# the row unsent and therefore claimable again.
+# became. Raising is how the sender reports a refusal, which leaves the row claimable again.
 PostReply = Callable[[PendingReply], Awaitable[str]]
 
 # The room this console is currently bound to, or None before there is one.

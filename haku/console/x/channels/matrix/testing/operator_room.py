@@ -3,19 +3,18 @@
 Driven with `nio.AsyncClient` against the homeserver, so login, sends, edits, redactions,
 `/messages` pagination and typing are the library's problem rather than hand-written HTTP.
 
-**Independent of `client.py`, deliberately, and nothing here may import from it.** The
-production client is nio plus *our* layer — `EventTag` and the transaction ids derived from it,
-`SyncResult`, the mapping of nio's parse onto `InboundMessage`/`UnmappableEvent`, the pacer, the
-outbox — and that layer is the thing under test. A test that read the room back through it would
-agree with itself about any bug in it: a reply the console never sent and a reading that skipped
-it look identical. Sharing nio underneath costs nothing, because nio is third party and is not
-the subject; sharing a type or a tag parser would cost everything, which is why a
-`works.allegedly.haku` assertion spells the key out in the test instead.
+**Independent of `client.py`, deliberately, and nothing here may import from it.** The layer under
+test is nio plus *ours* — `EventTag` and the transaction ids derived from it, `SyncResult`, the
+mapping of nio's parse onto `InboundMessage`/`UnmappableEvent`, the pacer, the outbox — and a test
+that read the room back through it would agree with itself about any bug in it: a reply the console
+never sent and a reading that skipped it look identical. Sharing nio underneath costs nothing,
+because nio is third party and is not the subject; which is also why a `works.allegedly.haku`
+assertion spells the key out in the test.
 
 What this hands back is a `RoomEvent`, not nio's parse and not the wire's JSON. nio has no notion
 of an edit — an `m.replace` arrives as an ordinary message whose body is `* the new text` — so the
-three shapes the console actually produces become three variants here, and "is this a reply or the
-status line being rewritten?" is an `isinstance` rather than a check for a key whose absence means
+three shapes the console produces become three variants here, and "is this a reply or the status
+line being rewritten?" is an `isinstance` rather than a check for a key whose absence means
 something.
 """
 
@@ -209,8 +208,8 @@ async def sign_in(homeserver: str, user_id: str, password: str) -> AsyncIterator
 class OperatorRoom:
     """One room, driven and read as the operator.
 
-    *check_alive* is handed to every wait: a test whose console has died fails at the death rather
-    than at the deadline. Omitted where nothing but the homeserver is serving the room.
+    *check_alive* is handed to every wait, so a test whose console has died fails at the death
+    rather than at the deadline. Omitted where nothing but the homeserver is serving the room.
     """
 
     def __init__(
@@ -237,9 +236,9 @@ class OperatorRoom:
     async def send(self, content: dict[str, Any]) -> str:
         """Put an arbitrary `m.room.message` in the room.
 
-        Content rather than an argument per msgtype, because what this exists for is the msgtypes
-        a person's client sends and this API does not model — an image, with the `url` that makes
-        it one. What comes back is still read as a `RoomEvent`.
+        Content rather than an argument per msgtype, because what this exists for is the msgtypes a
+        person's client sends and this API does not model — an image, with the `url` that makes it
+        one.
         """
         sent = await self._client.room_send(self.room_id, message_type="m.room.message", content=content)
         return _ok(sent, RoomSendResponse).event_id
@@ -257,9 +256,8 @@ class OperatorRoom:
     async def content_of(self, event_id: str) -> dict[str, Any]:
         """The event's `content` off the wire, for the keys this API deliberately does not model.
 
-        The console's `works.allegedly.haku` tag rides in there, and a person sitting in the room
-        does not see it — so it is not a field of `Message`, and a test that is about the tag
-        surviving the homeserver reads it from here. The same half `Edit.content` carries.
+        The console's `works.allegedly.haku` tag rides in there and a person sitting in the room
+        does not see it, so it is not a field of `Message`. The same half `Edit.content` carries.
         """
         fetched = _ok(await self._client.room_get_event(self.room_id, event_id), RoomGetEventResponse)
         content: dict[str, Any] = fetched.event.source["content"]
@@ -292,10 +290,9 @@ class OperatorRoom:
     async def wait_for_notice(self, fragment: str) -> None:
         """Wait for a console notice containing *fragment*.
 
-        Separate from `wait_for_reply` because the two are different msgtypes and mean different
-        things: a reply is the agent talking, a notice is the console saying something about the
-        conversation. Matched on a fragment, since a notice carries counts and reasons a test
-        should not have to restate whole.
+        Separate from `wait_for_reply` because the two are different msgtypes: a reply is the agent
+        talking, a notice is the console saying something about the conversation. Matched on a
+        fragment, since a notice carries counts and reasons a test should not have to restate.
         """
 
         async def said() -> bool:

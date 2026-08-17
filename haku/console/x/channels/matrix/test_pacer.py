@@ -35,8 +35,8 @@ async def test_sends_go_out_in_the_order_they_were_queued() -> None:
 async def test_a_burst_beyond_the_budget_is_spread_rather_than_dropped() -> None:
     """The property the queue exists for: everything arrives, just not at once.
 
-    Sending faster than `rc_message` is what earns a 429, and a 429 that nio absorbs silently
-    is a send that never returns — so the fix has to be not making them, not handling them.
+    Sending faster than `rc_message` earns a 429, and a 429 nio absorbs silently is a send that
+    never returns — so the fix is not making them rather than handling them.
     """
     sent: list[str] = []
     # Two immediately, then one per 10ms: the shape of Synapse's bucket, at a rate a test
@@ -122,8 +122,8 @@ async def test_one_failed_send_does_not_stop_the_queue() -> None:
 
 
 async def test_a_429_is_believed_over_our_own_accounting() -> None:
-    """The homeserver's `retry_after_ms` is the only real measurement this console gets of a
-    budget it otherwise only estimates — two replicas can each think they own the whole of it.
+    """The homeserver's `retry_after_ms` is the only real measurement this console gets of a budget
+    it otherwise only estimates: two replicas can each think they own the whole of it.
     """
     sent: list[str] = []
     pacer = RoomPacer(sends_per_second=1e6, burst=100)

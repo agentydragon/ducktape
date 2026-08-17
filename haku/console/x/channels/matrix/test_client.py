@@ -128,9 +128,9 @@ async def test_an_emote_is_read_as_prose():
 
 async def test_a_notice_produces_neither_a_message_nor_a_report():
     """The loop guard. Everything Haku says that is not an answer is an `m.notice`, including the
-    notice it posts *about* an unreadable event — so a notice must never be reportable, from any
-    sender. The bot's own events are excluded a second time by sender; this covers the
-    case where that is not what saves us."""
+    notice it posts *about* an unreadable event, so a notice must never be reportable from any
+    sender. The sender rule excludes the bot's own; this covers the case where that is not what
+    saves us."""
     client, _ = _client(
         _sync_body(
             _message(USER, "received 1 message(s) Haku cannot read", event_id="$ours", msgtype="m.notice"),
@@ -300,8 +300,8 @@ async def test_backfill_is_bounded_and_says_what_it_dropped(monkeypatch, caplog)
 
 
 def test_a_tag_is_ids_and_kinds_and_omits_what_it_has_none_of() -> None:
-    """What goes under the console's own content key. Nothing reads one back — re-awakening asks
-    the transcript now — so what this pins is the wire, for the room's readers."""
+    """What goes under the console's own content key. Nothing reads one back, so what this pins is
+    the wire, for the room's readers."""
     tag = EventTag(
         kind=RoomEventKind.REPLY,
         session_id=UUID("11111111-2222-3333-4444-555555555555"),

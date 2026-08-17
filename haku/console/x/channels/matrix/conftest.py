@@ -2,13 +2,13 @@
 which room they are in, and the room/session binding.
 
 Everything neutral — the stores, the service, the claim stand-in, the operator's identity — comes
-from the runtime's own <../../conftest.py>, which these tests inherit and which is deliberately
-free of anything a homeserver knows about.
+from the runtime's own <../../conftest.py>, which is deliberately free of anything a homeserver
+knows about.
 
-`OPERATOR_SUBJECT` is imported rather than restated because it is the one value both levels have
-to agree on: `MATRIX_CONFIG.operator_subject` is what ingress resolves a sender through, and the
-`operator_id` fixture is what the runtime's stores were told owns the session. Two literals here
-would let a test bind a room to an operator no session belongs to.
+`OPERATOR_SUBJECT` is imported rather than restated because both levels have to agree on it:
+`MATRIX_CONFIG.operator_subject` is what ingress resolves a sender through, and the `operator_id`
+fixture is what the runtime's stores were told owns the session. Two literals here would let a test
+bind a room to an operator no session belongs to.
 """
 
 from __future__ import annotations
