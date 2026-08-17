@@ -48,8 +48,9 @@ spec:
               sha256sum "$fifo" | sed 's#  .*#  -#' > "$actual" &
               hasher_pid=$!
               # Verification reads only the retained S3 object; it never mounts the
-              # stranded control-plane PVC. Keep Seaweed HDD reads rate-limited.
-              rclone --config '' cat --bwlimit 2M archive:"$bucket/$partial" | tee "$fifo" | tar -tf - >/dev/null
+              # stranded control-plane PVC. Keep Seaweed HDD reads bounded while
+              # still completing verification in about an hour and a quarter.
+              rclone --config '' cat --bwlimit 10M archive:"$bucket/$partial" | tee "$fifo" | tar -tf - >/dev/null
               wait "$hasher_pid"
               cmp "$expected" "$actual"
               checksum_value="$(cut -d ' ' -f 1 "$actual")"
