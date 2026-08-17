@@ -124,7 +124,7 @@ class RecordedToolCall(BaseModel):
 
 
 class ConversationEventKind(StrEnum):
-    """Which neutral event a `session_events` row records.
+    """Which neutral event a `session_events` row records — the conversation category.
 
     The vocabulary is `x/conversation_events.ConversationEvent` less its two members that already
     have a durable home: a `TextDelta` is an increment of prose the completed message carries
@@ -141,6 +141,40 @@ class ConversationEventKind(StrEnum):
 
 # The two kinds that name a call rather than a message, and so carry `session_events.call_id`.
 TOOL_CALL_EVENT_KINDS = frozenset({ConversationEventKind.TOOL_CALL_STARTED, ConversationEventKind.TOOL_CALL_COMPLETED})
+
+
+class AuthoredEventKind(StrEnum):
+    """Which console-authored fact a `session_events` row records — the second category.
+
+    What happened *to* the session rather than in the conversation
+    (<../plans/chat_runtime_projection.md> § stage 4). These cross no wire: the console is their
+    only witness, so they carry `EventProvenance.AUTHORED`, no frame range, and no turn — the
+    facts here are the session's, and a session that never reached a turn is exactly the case they
+    exist to record.
+    """
+
+    SESSION_ADOPTED = "session_adopted"
+    LEASE_EXPIRED = "lease_expired"
+
+
+# What `session_events.kind` holds, over both categories of the one ordered stream.
+type StoredEventKind = ConversationEventKind | AuthoredEventKind
+
+
+class LeaseExpiryReason(StrEnum):
+    """Which of the three ways a session's lease lapsed past `ADOPTION_GRACE` and failed it.
+
+    Recorded rather than derived from the prose the operator is shown: the sweep decides between
+    these by looking at columns that are gone by the time anyone reads the error string.
+    """
+
+    # A replica held it and went away without handing it back — SIGKILL, OOM, node loss.
+    HOLDER_GONE = "holder_gone"
+    # A runner was here and released or dropped, and no replica took it back over: a roll, or the
+    # sandbox reaching its TTL. The common case.
+    UNADOPTED = "unadopted"
+    # No runner ever attached, so the session died having produced nothing at all.
+    NEVER_ATTACHED = "never_attached"
 
 
 class EventProvenance(StrEnum):

@@ -37,7 +37,7 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import ConversationEventKind, EventProvenance
+from haku.console.chat_models import EventProvenance, StoredEventKind
 from haku.console.database_schema import Session, SessionEvent, SessionFrame, SessionTurn
 from haku.console.x import frame_projection, session_events
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
@@ -73,8 +73,8 @@ class RowCountMismatch:
     """One frame's projection and one frame's rows are different lengths — a row gained or lost."""
 
     frame_seq: int
-    projected: tuple[ConversationEventKind, ...]
-    stored: tuple[ConversationEventKind, ...]
+    projected: tuple[StoredEventKind, ...]
+    stored: tuple[StoredEventKind, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,15 +86,21 @@ class RowsBeyondCursor:
     """
 
     frame_seq: int
-    stored: tuple[ConversationEventKind, ...]
+    stored: tuple[StoredEventKind, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class UnalignableRow:
-    """A row with no frame range to align by — the `authored` arm, which no writer produces yet."""
+    """A row with no frame range to align by — the `authored` arm, naming a turn.
+
+    The console's own session events take that arm and are written turn-less
+    (`session_events.authored`), so the per-turn read below does not see one and re-projection
+    cannot delete what it never re-derives. This finding is for an authored row that *does* name a
+    turn, which nothing writes today.
+    """
 
     event_seq: int
-    kind: ConversationEventKind
+    kind: StoredEventKind
 
 
 type Finding = RowMismatch | RowCountMismatch | RowsBeyondCursor | UnalignableRow
@@ -303,5 +309,5 @@ async def _turn_frames(db: AsyncSession, turn: SessionTurn, *, ends_before: int 
     return (await db.scalars(query)).all()
 
 
-def _kinds(rows: Sequence[SessionEvent]) -> tuple[ConversationEventKind, ...]:
+def _kinds(rows: Sequence[SessionEvent]) -> tuple[StoredEventKind, ...]:
     return tuple(row.kind for row in rows)

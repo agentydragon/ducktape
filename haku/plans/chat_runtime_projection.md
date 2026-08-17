@@ -444,7 +444,7 @@ state. The row is now both halves of what the fold needs — `first_frame_seq` s
 frames begin, the three columns say what projecting them has produced — so what stage 4 adds is the
 cursor between them.
 
-### 4. The fold, and what it projects **into** — conversation landed, session events open
+### 4. The fold, and what it projects **into** — conversation landed, session events begun
 
 **What it projects into is built, the fold and its cursor are wired, and the conversation events
 are rows.** #4145 landed the neutral vocabulary (`x/conversation_events.py`), the Claude adapter
@@ -452,8 +452,9 @@ into it (`x/claude_code/projection.py`) and a read surface over the result (`rea
 #4149 made the adapter a reducer; the turn loop and the room's status line both read it; the
 durable cursor is `sessions.projected_frame_seq` (§ The shape); and `session_events` stores what
 the fold produces, written inside the cursor's own transaction. **All four interpreters counted
-below are gone.** What is still open is the _second_ category — session events, which cross no wire;
-the paragraphs that have landed say so where they are.
+below are gone.** The _second_ category — session events, which cross no wire — has its first two
+writers, with most of its vocabulary still to come; the paragraphs that have landed say so where
+they are.
 
 `_run_turn`'s frame `match` became `project`, with the cursor advanced beside its effects. The
 abort path is still to collapse here: an abort becomes an intent the transport writes, and the
@@ -527,13 +528,14 @@ results and said nothing about it. The neutral message owns `message_id`; the ag
 provenance. This is the lesson `EventTag.transaction_id()` taught in stage 5: identity derived from
 the wire fails exactly when the wire does not carry it.
 
-#### Two categories, one ordered stream — the second category is unbuilt
+#### Two categories, one ordered stream — the second category has its first writers
 
 `ConversationEvent` is the first category and nothing else: `x/conversation_events.py` carries what
-participants said and did, and carries no session event at all. So the split below is still owed,
-and with it `RoomEventKind`'s move out of `channels/matrix/client.py`. What did land ahead of it is
-the discriminator the split turns on — `Provenance` is `FrameRange | Authored`, so a console-origin
-event already has a home in the type when there is one to put in it.
+participants said and did, and carries no session event at all. The second is stored beside it
+rather than modelled there — `AuthoredEventKind` plus a body per kind — because what a session
+event needs is a durable row and an order, not a place in the fold's own vocabulary. The split
+below is otherwise still owed, and with it `RoomEventKind`'s move out of
+`channels/matrix/client.py`.
 
 Bootstrap narration is the case that shows the vocabulary above is incomplete (operator's question,
 2026-08-16). Sandbox setup output is **not the model talking** — it is the bridge: the haku-state
@@ -572,10 +574,33 @@ Two consequences, and the first is a trap:
 
 - **Reprojection must preserve rather than re-derive them.** Re-projecting a session's frames cannot
   rebuild an event that was never in them, so a naive rebuild-and-replace would silently delete every
-  ownership change while the check reported green.
+  ownership change while the check reported green. What keeps `check_session` honest without it
+  having to know the category exists: an authored row names no turn, and the check reads a turn's
+  rows.
 - **Provenance is a union, not a nullable range.** `frame_range | authored` — an authored event has
   no range because it has no frames, which is different in kind from a frame-derived event whose
   range is unknown.
+
+**The principle that settles where these rows go** (operator, 2026-08-16):
+
+> i think the right thing would be: frames only come from actual runner<->console communication.
+> events like "session taken over by this replica of console" are not that. so they would probably
+> arrive as a different sort of event.
+
+**The frame log is the record of runner↔console traffic and nothing else may enter it.** That is
+what decides against <../console/plans/session_channels.md> § 3, which would have made a lifecycle
+event a frame-log row under its own bridge-side `kind`: a lease changing hands crosses no wire, so
+such a row is an envelope invented to fit, and a reader of `session_frames` would have to learn
+which of its rows are not evidence of anything said. Bootstrap narration is not that case and keeps
+its frame — a `SetupOutput` envelope is runner→console traffic.
+
+**Two facts have a writer**, each in the transaction that makes it true: a replica taking a session
+over (`session_store.authenticate_bridge`) and a lease lapsing past the adoption grace
+(`expire_stale_leases`, which also records _which_ of its three cases ended the session).
+`session_events.turn_id` became nullable for them — a session that died before it ever reached a
+turn is exactly what this category exists to record, and it has no turn to name. The rest is
+unbuilt: `_SessionStatusAnnouncer`'s transitions, the held batch, the unreadable inbound event, an
+aborted turn's notice.
 
 Worth recording because it is cheap and would already have paid: three hypotheses in the
 2026-08-15 drop investigation turned on whether a console had rolled, and the available evidence was

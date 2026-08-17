@@ -22,8 +22,9 @@ def setup_output_frame(text: str) -> dict[str, Any]:
     for the room. So this is a rendering, not the wire, and putting it under `kind` rather than
     the CLI's `type` is what keeps it from reading as a protocol frame that never existed.
 
-    It lives in the frame log rather than a table of its own because the question a reader asks
-    is "what happened in this session, in order" — and for a session that died before the CLI
-    produced anything, the answer is entirely here.
+    It lives in the frame log because it **is** runner→console traffic: a `SetupOutput` envelope
+    crossed the wire and only the splitting is ours. A fact the console is the sole witness to — a
+    lease changing hands — is a `session_events` row on the `authored` arm instead
+    (<../../plans/chat_runtime_projection.md> § stage 4).
     """
     return {"kind": SETUP_OUTPUT_KIND, "text": text}

@@ -100,8 +100,8 @@ two `unpointable_*` constraints, `DELETE FROM session_frames WHERE partial`, and
 
 ```sql
 SELECT column_name FROM information_schema.columns
- WHERE table_name IN ('sessions','session_messages','session_turns','session_frames','session_events')
-   AND column_name IN ('unpointable_reason','tool_calls','partial','provenance');
+ WHERE table_name IN ('sessions','session_messages','session_turns','session_frames')
+   AND column_name IN ('unpointable_reason','tool_calls','partial');
 ```
 
 Zero rows, and `ck_session_messages_source_anchored` must be `convalidated = true`.
@@ -160,22 +160,6 @@ early (#4190) because `TextBackedStrEnumColumn` parses the column, so a replica 
 reading `idle` fails rather than degrading; the writer is the second half.
 
 **Done when** an idle room holds no sandbox and the first message provisions one.
-
-### 3. The session-event category — decided
-
-`session_events.provenance` had an `authored` arm with no writer, and two design documents disagreed.
-**The operator settled it (2026-08-16):**
-
-> frames only come from actual runner<->console communication. events like "session taken over by
-> this replica of console" are not that. so they would probably arrive as a different sort of event.
-
-So [chat_runtime_projection.md](chat_runtime_projection.md) § stage 4 wins on a principle
-[session_channels.md](../console/plans/session_channels.md) § 3 did not weigh: **the frame log is the
-record of runner↔console traffic and nothing else may enter it.** A lease changing hands crosses no
-wire, so it is not a frame. `turn_id` becomes nullable — a session that died before its first turn
-has none — which the purge makes free, since production held one `session_events` row.
-
-**Done when** `EventProvenance.AUTHORED` has a writer and both design documents record the ruling.
 
 ### C. One sessions surface, and the SSE stream
 

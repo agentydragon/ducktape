@@ -114,20 +114,21 @@ room and **nothing else**. Three separate consequences, which is why this is the
   cursor _is_ the record of having announced it.
 - **Before a room is bound they are dropped entirely.** `announce` logs "no room bound yet,
   dropping notice" and returns (`matrix_sync.py:364-367`). A session that was provisioned, failed
-  and replaced before the operator ever invited Haku leaves no account of itself anywhere — which
-  is precisely the case `setup_output_frame`'s docstring uses to argue that console-authored
-  session events belong in the frame log.
+  and replaced before the operator ever invited Haku leaves no account of itself anywhere — the
+  case that argues a console-authored session event has to be recorded somewhere durable at all.
 
-**Where it belongs: the frame log, not the outbox.** It is a thing that happened, not a thing to
-send. `session_frames.kind` is free text and `setup_output` is the precedent for a console-authored
-row that is not the CLI's `type`.
+**Where it belongs: `session_events` on the `authored` arm, not the frame log and not the outbox.**
+It is a thing that happened, not a thing to send. This note first said the frame log, following
+`setup_output`'s precedent for a console-authored row that is not the CLI's `type`; the operator
+ruled that out on 2026-08-16 — frames come only from actual runner↔console communication, and a
+lifecycle transition is not that. `setup_output` is not the counter-example it looked like: a
+`SetupOutput` envelope does cross the wire.
 
 **Why it is not fixed here.** The row needs a `kind`, and choosing one is choosing what a lifecycle
 event _means_ channel-neutrally — `session_channels.md` §3 is explicit that `lifecycle` and
 `narration` become channel-neutral session events while `status`, `holding` and `room` stay
-Matrix's own, and warns against promoting the whole `RoomEventKind` enum. That decision belongs to
-the neutral-event vocabulary being built in parallel (`claude/haku-neutral-events`). Writing a
-Matrix-flavoured row now would be recording a rendering, the §3 mistake, one table over.
+Matrix's own, and warns against promoting the whole `RoomEventKind` enum. `AuthoredEventKind` is
+where that vocabulary now goes; it carries the two lease facts and not yet a status transition.
 
 ### Row 14 — the silent-turn notice
 
@@ -164,8 +165,9 @@ announced:
   dropped" currently rests on a room event and a log line, and if the pacer's replica dies the
   drop becomes silent after all.
 
-**Where they belong: the frame log**, both. They are things that happened to a session. Both need
-a `kind`, so both are blocked on the same vocabulary as row 13. The unreadable one additionally
+**Where they belong: `session_events` on the `authored` arm**, both — same correction as row 13.
+They are things that happened to a session and neither crossed the wire. Both need a `kind`, so
+both are blocked on the same vocabulary as row 13. The unreadable one additionally
 overlaps `claude/haku-inbound-unmappable-events`, which is live.
 
 ### Rows 8, 9, 10 — the room-binding notices

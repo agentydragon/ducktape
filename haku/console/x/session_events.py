@@ -1,9 +1,10 @@
-"""The neutral conversation events as `session_events` rows.
+"""The stream's two categories as `session_events` rows.
 
-The one place the vocabulary in <conversation_events.py> meets the table in
-<../database_schema.py>: a `ConversationEvent` in, a row out. Nothing else reads or writes
-`session_events.body`, so the stored spelling of an event is settled here and is a boundary shape
-rather than a second vocabulary — the events themselves stay dataclasses.
+The one place the vocabularies meet the table in <../database_schema.py>: a `ConversationEvent`
+from <conversation_events.py> in and a row out, or one of the console's own facts about a session
+in and a row out. Nothing else reads or writes `session_events.body`, so the stored spelling of an
+event is settled here and is a boundary shape rather than a second vocabulary — the events
+themselves stay dataclasses.
 
 **Three of an event's fields are columns rather than body, because readers address rows by them**:
 the provenance union, the frame range it discriminates, and a tool call's `call_id`. What is left
@@ -12,6 +13,9 @@ is the body, and it is per kind.
 **The message key is not stored.** `MessageKey` groups a fold's output while the fold runs; what
 survives it is the frame range, which is also what `session_messages` records its own span in and
 so what joins the two tables.
+
+**An authored row names no turn**, which is what keeps `reprojection.check_session` from having to
+know about the second category at all: it reads a turn's rows, and these belong to none.
 """
 
 from __future__ import annotations
@@ -23,7 +27,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from haku.console.chat_models import ConversationEventKind, EventProvenance
+from haku.console.chat_models import AuthoredEventKind, ConversationEventKind, EventProvenance, LeaseExpiryReason
 from haku.console.database_schema import SessionEvent
 from haku.console.x.conversation_events import (
     ActivityCompleted,
@@ -122,6 +126,53 @@ class ActivityCompletedBody(BaseModel):
     activity_id: str
     summary: str | None
     outcome: Outcome
+
+
+class SessionAdoptedBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    previous_holder: str | None = Field(
+        description="The replica whose lease this one took, or None where the session was unowned."
+    )
+    holder: str = Field(description="The replica that holds it now — `session_store.REPLICA`.")
+
+
+class LeaseExpiredBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: LeaseExpiryReason
+    last_holder: str | None = Field(description="The replica whose lease lapsed, where one held it.")
+
+
+type AuthoredBody = SessionAdoptedBody | LeaseExpiredBody
+
+
+def authored(body: AuthoredBody, *, session_id: UUID, now: datetime) -> SessionEvent:
+    """The row one of the console's own facts about *session_id* is stored as.
+
+    No frame range because it crossed no wire, and no turn because it is the session's fact rather
+    than an exchange's. Written in the transaction that makes the fact true, like every other row
+    in this table.
+    """
+    return SessionEvent(
+        session_id=session_id,
+        turn_id=None,
+        kind=_authored_kind(body),
+        provenance=EventProvenance.AUTHORED,
+        source_first_frame_seq=None,
+        source_last_frame_seq=None,
+        call_id=None,
+        body=body.model_dump(mode="json"),
+        created_at=now,
+    )
+
+
+def _authored_kind(body: AuthoredBody) -> AuthoredEventKind:
+    match body:
+        case SessionAdoptedBody():
+            return AuthoredEventKind.SESSION_ADOPTED
+        case LeaseExpiredBody():
+            return AuthoredEventKind.LEASE_EXPIRED
 
 
 def row(event: ConversationEvent, *, session_id: UUID, turn_id: UUID, now: datetime) -> SessionEvent | None:

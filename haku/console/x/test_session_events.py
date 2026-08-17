@@ -7,7 +7,13 @@ from uuid import uuid4
 
 import pytest_bazel
 
-from haku.console.chat_models import ConversationEventKind, EventProvenance, TurnOutcome
+from haku.console.chat_models import (
+    AuthoredEventKind,
+    ConversationEventKind,
+    EventProvenance,
+    LeaseExpiryReason,
+    TurnOutcome,
+)
 from haku.console.database_schema import SessionEvent
 from haku.console.x import session_events
 from haku.console.x.conversation_events import (
@@ -124,6 +130,33 @@ def test_the_harness_narrating_a_step_is_a_pair_of_rows() -> None:
     # the correlation column for the two tool kinds and this is neither of them.
     assert started.body["call_id"] == "toolu_1"
     assert (started.call_id, completed.call_id) == (None, None)
+
+
+def test_a_fact_the_console_authored_names_no_turn_and_no_frames() -> None:
+    """The second category: what happened *to* the session. It crossed no wire, so it is its own
+    evidence — and it is the session's fact rather than an exchange's, which is what lets a session
+    that never reached a turn have a stream at all."""
+    taken = session_events.authored(
+        session_events.SessionAdoptedBody(previous_holder="haku-console-a", holder="haku-console-b"),
+        session_id=SESSION_ID,
+        now=NOW,
+    )
+
+    assert (taken.kind, taken.provenance) == (AuthoredEventKind.SESSION_ADOPTED, EventProvenance.AUTHORED)
+    assert (taken.turn_id, taken.source_first_frame_seq, taken.source_last_frame_seq, taken.call_id) == (None,) * 4
+    assert taken.body == {"previous_holder": "haku-console-a", "holder": "haku-console-b"}
+
+
+def test_the_kind_of_an_authored_row_follows_from_its_body() -> None:
+    """One row per fact and no way to label it as another: the body is the discriminator."""
+    lapsed = session_events.authored(
+        session_events.LeaseExpiredBody(reason=LeaseExpiryReason.UNADOPTED, last_holder=None),
+        session_id=SESSION_ID,
+        now=NOW,
+    )
+
+    assert lapsed.kind == AuthoredEventKind.LEASE_EXPIRED
+    assert lapsed.body == {"reason": "unadopted", "last_holder": None}
 
 
 def test_the_two_events_with_a_durable_home_elsewhere_get_no_row() -> None:

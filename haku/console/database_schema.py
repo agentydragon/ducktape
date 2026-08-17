@@ -35,6 +35,7 @@ from haku.console.agents.models import (
     EnrollmentPhase,
 )
 from haku.console.chat_models import (
+    AuthoredEventKind,
     ChatMessageRole,
     ChatMessageStatus,
     ChatSurface,
@@ -44,13 +45,20 @@ from haku.console.chat_models import (
     MessageUnpointable,
     RecordedToolCall,
     SessionStatus,
+    StoredEventKind,
     TurnOutcome,
 )
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.operator_identity import OperatorStatus
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_calls import ToolCallStatus
-from util.sqlalchemy_types import PydanticListColumn, StrEnumColumn, StringBackedStrEnumColumn, TextBackedStrEnumColumn
+from util.sqlalchemy_types import (
+    PydanticListColumn,
+    StrEnumColumn,
+    StringBackedStrEnumColumn,
+    TextBackedStrEnumColumn,
+    TextBackedStrEnumUnionColumn,
+)
 
 
 class Base(DeclarativeBase):
@@ -1194,6 +1202,13 @@ class SessionEvent(Base):
     **Deliberately not one row per `TextDelta`.** A delta is an increment of prose that the
     message's own row carries whole, at hundreds per turn; the `stream_event` frames it was cut
     from are in `session_frames`, which is where an operator appeals the joined text to the wire.
+
+    **One ordered stream, two categories.** Beside the conversation are the facts the console
+    authors about the session itself — a lease changing hands, a lease lapsing — which cross no
+    wire and so are their own evidence (`AuthoredEventKind`). They are here rather than in the
+    frame log because the frame log is the record of runner↔console traffic and nothing else
+    (operator, 2026-08-16), and they are here rather than in a table of their own because ordering
+    against the conversation is the point.
     """
 
     __tablename__ = "session_events"
@@ -1204,14 +1219,15 @@ class SessionEvent(Base):
     session_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False
     )
-    # Every event so far belongs to an exchange, because the fold only runs while a turn is open.
-    # A session event with no turn — a lease changing hands, a sandbox coming up — is the second
-    # category <plans/chat_runtime_projection.md> § stage 4 has still to build, and it is what
-    # would make this nullable.
-    turn_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("session_turns.turn_id", ondelete="CASCADE"), nullable=False
+    # A projected event belongs to an exchange, because the fold only runs while a turn is open. An
+    # authored one need not: a lease changing hands is a fact about the session, and a session that
+    # died before it ever reached a turn is the case the second category exists to record.
+    turn_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("session_turns.turn_id", ondelete="CASCADE"), nullable=True
     )
-    kind: Mapped[ConversationEventKind] = mapped_column(TextBackedStrEnumColumn(ConversationEventKind), nullable=False)
+    kind: Mapped[StoredEventKind] = mapped_column(
+        TextBackedStrEnumUnionColumn(ConversationEventKind, AuthoredEventKind), nullable=False
+    )
     # Which arm of the provenance union this row carries, and NOT NULL is the point: an event whose
     # origin is unstated is exactly what `session_messages` cannot rule out.
     provenance: Mapped[EventProvenance] = mapped_column(TextBackedStrEnumColumn(EventProvenance), nullable=False)
@@ -1231,17 +1247,21 @@ class SessionEvent(Base):
     __table_args__ = (
         CheckConstraint(
             "kind IN ('message_completed','reasoning','tool_call_started','tool_call_completed',"
-            "'activity_started','activity_completed')",
+            "'activity_started','activity_completed','session_adopted','lease_expired')",
             name="ck_session_events_kind",
         ),
         CheckConstraint("provenance IN ('frame_range','authored')", name="ck_session_events_provenance"),
-        # The union, as the table states it: frames are present on exactly the `frame_range` arm,
-        # and a range has two ends or none. Written as one constraint because the three clauses are
-        # one rule — that the discriminator and the columns it discriminates cannot disagree.
+        # The union, as the table states it: frames are present on exactly the `frame_range` arm, a
+        # range has two ends or none, and an event projected from frames names the turn whose fold
+        # produced it. Written as one constraint because the clauses are one rule — that the
+        # discriminator and the columns it discriminates cannot disagree. The turn is required only
+        # on the `frame_range` arm: an authored event may name one and need not, since the console
+        # authors facts about sessions that have no turn to name.
         CheckConstraint(
             "(provenance = 'frame_range') = (source_first_frame_seq IS NOT NULL) "
             "AND (source_first_frame_seq IS NULL) = (source_last_frame_seq IS NULL) "
-            "AND (source_first_frame_seq IS NULL OR source_first_frame_seq <= source_last_frame_seq)",
+            "AND (source_first_frame_seq IS NULL OR source_first_frame_seq <= source_last_frame_seq) "
+            "AND (provenance <> 'frame_range' OR turn_id IS NOT NULL)",
             name="ck_session_events_provenance_frames",
         ),
         CheckConstraint(

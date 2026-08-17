@@ -39,6 +39,7 @@ from haku.console.chat_models import (
     ChatMessageStatus,
     ChatSurface,
     FrameDirection,
+    LeaseExpiryReason,
     PromptFate,
     RecordedToolCall,
     SessionStatus,
@@ -372,6 +373,10 @@ class SessionStore:
         **Taking the lease is the admission.** A live session admits any runner that can take its
         lease, and the lease is what stops two replicas adopting one CLI: whoever writes it under
         this row lock has it, for as long as it keeps renewing.
+
+        **A lease changing hands is recorded**, in this transaction, as the session event it is: it
+        happens on every roll, it is what three hypotheses in the 2026-08-15 drop investigation
+        turned on, and it crosses no wire — so nothing in the frame log can say it happened.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -380,7 +385,8 @@ class SessionStore:
                 return BridgeAuthentication.REJECTED
             if record.status in ENDED_SESSION_STATUSES:
                 return BridgeAuthentication.TERMINAL
-            if record.status == SessionStatus.PROVISIONING and record.bridge_connected_at is None:
+            first_attach = record.status == SessionStatus.PROVISIONING and record.bridge_connected_at is None
+            if first_attach:
                 record.bridge_connected_at = now
                 record.status = SessionStatus.READY
             elif record.lease_holder not in (None, REPLICA) and record.lease_expires_at > now:
@@ -388,9 +394,20 @@ class SessionStore:
                 # away is what keeps one CLI answering to one console — but only until that lease
                 # lapses, which is why it is `HELD` rather than `REJECTED`.
                 return BridgeAuthentication.HELD
+            previous_holder = record.lease_holder
             record.lease_holder = REPLICA
             record.lease_expires_at = now + LEASE_TTL
             record.updated_at = now
+            # The first attach is the session being served rather than taken over, and a runner
+            # redialling the replica that already holds it is neither.
+            if not first_attach and previous_holder != REPLICA:
+                db.add(
+                    session_events.authored(
+                        session_events.SessionAdoptedBody(previous_holder=previous_holder, holder=REPLICA),
+                        session_id=session_id,
+                        now=now,
+                    )
+                )
             return BridgeAuthentication.ACCEPTED
 
     async def release_lease(self, session_id: UUID) -> None:
@@ -1340,22 +1357,29 @@ class SessionStore:
                 chat = await db.get(Session, session_id, with_for_update=True)
                 if chat is None or chat.status not in LEASED_SESSION_STATUSES:
                     continue
-                # Say which of the three ended it. `lease_holder` set means a replica died without
-                # handing it back; cleared but `bridge_connected_at` set means a runner was here
-                # and released/dropped and nobody re-adopted (a roll, or the sandbox reaching its
-                # TTL) — the common case; neither set means the sandbox never connected.
-                # "mid-turn" only if a turn was in fact open.
+                # Which of the three ended it is read off two columns that the failure itself then
+                # leaves behind, so it is recorded as an event rather than only rendered into the
+                # error prose the operator sees. "mid-turn" only if a turn was in fact open.
                 mid_turn = " mid-turn" if chat.status == SessionStatus.RESPONDING else ""
                 if chat.lease_holder is not None:
-                    detail = f"the console replica holding it ({chat.lease_holder}) went away"
+                    reason = LeaseExpiryReason.HOLDER_GONE
                 elif chat.bridge_connected_at is not None:
-                    detail = "its runner went away and no replica took it back over"
+                    reason = LeaseExpiryReason.UNADOPTED
                 else:
-                    detail = "a runner never attached"
+                    reason = LeaseExpiryReason.NEVER_ATTACHED
+                detail = _expiry_detail(reason, chat.lease_holder)
                 logger.error("session %s lease expired: %s", session_id, detail)
+                now = datetime.now(UTC)
+                db.add(
+                    session_events.authored(
+                        session_events.LeaseExpiredBody(reason=reason, last_holder=chat.lease_holder),
+                        session_id=session_id,
+                        now=now,
+                    )
+                )
                 chat.status = SessionStatus.FAILED
                 chat.error = f"console session ended{mid_turn}: {detail}"
-                chat.updated_at = datetime.now(UTC)
+                chat.updated_at = now
                 await notify(db, SessionEventKind.UPDATE, session_id)
             return len(expired)
 
@@ -1391,6 +1415,17 @@ class SessionStore:
                 return False
             await notify(db, SessionEventKind.ABORT, session_id)
             return True
+
+
+def _expiry_detail(reason: LeaseExpiryReason, holder: str | None) -> str:
+    """What the operator is told, derived from the reason the sweep recorded."""
+    match reason:
+        case LeaseExpiryReason.HOLDER_GONE:
+            return f"the console replica holding it ({holder}) went away"
+        case LeaseExpiryReason.UNADOPTED:
+            return "its runner went away and no replica took it back over"
+        case LeaseExpiryReason.NEVER_ATTACHED:
+            return "a runner never attached"
 
 
 def _advance_cursor(chat: Session, frame_seq: int | None) -> None:

@@ -230,7 +230,8 @@ call and every result on every request — is deleted, because the events are ro
 
 `session_events.py` maps a `ConversationEvent` onto a row and `apply_frame` writes it inside the
 transaction that moves the cursor, so a row exists exactly when the cursor says its frame was
-projected. What the table holds that nothing else does is a **tool call's answer**:
+projected. The same module maps the console's own facts about a session onto rows, written in the
+transaction that makes each true. What the table holds that nothing else does is a **tool call's answer**:
 `session_messages.tool_calls` records what was asked, and the reply used to exist only as frames
 that `session_views.rollout_calls` re-parsed on every read.
 
@@ -240,6 +241,13 @@ that `session_views.rollout_calls` re-parsed on every read.
 - **Provenance is a column, and `NOT NULL`.** `frame_range` carries both ends and `authored`
   carries neither, which the table's own constraint makes the only two possibilities — the
   requirement #4143 could not put on `session_messages`, where NULL means two things.
+- **The `authored` arm carries a second category**: what happened _to_ the session, which the
+  console is the only witness to. `session_events.authored` writes it, `AuthoredEventKind` names
+  it, and `authenticate_bridge` and `expire_stale_leases` are its writers today — a lease taken
+  over and a lease lapsing. It is here rather than in the frame log because the frame log is the
+  record of runner↔console traffic and nothing else (operator, 2026-08-16). Such a row names no
+  turn: the fact is the session's, and a session that died before it reached a turn is the case
+  the category exists to record.
 - **Two members of the vocabulary have no row.** A `TextDelta` is an increment of prose the
   completed message carries whole; a `TurnCompleted` is the `session_turns` row, which already
   holds the exchange's outcome, its cost and its bracket.
@@ -316,8 +324,9 @@ with the report.
   frames sharing one `message.id` and cut its deltas from completed blocks — a different, equally
   correct, event sequence, and it would report drift everywhere.
 - **It aligns by frame.** One frame's rows are written in one transaction and each event's range is
-  `(frame_seq, frame_seq)`, so which rows a frame owns is a lookup. A row on the `authored` arm has
-  no frame to align by and is reported rather than matched by position.
+  `(frame_seq, frame_seq)`, so which rows a frame owns is a lookup. It reads a turn's rows, and an
+  authored row names no turn, so the second category is out of scope by construction rather than by
+  a filter — which is what stops a rebuild from deleting what it cannot re-derive.
 - **Two eras bound what it may speak about**, both per turn and both named by `SkipReason`: a turn
   whose frames the cursor never reached (#4178's era) and a turn with frames and no rows at all —
   which is what a replica on the image before these rows existed leaves, and is indistinguishable

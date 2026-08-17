@@ -22,12 +22,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from haku.console.chat_models import (
     OPEN_SESSION_STATUSES,
+    AuthoredEventKind,
     ChatMessageRole,
     ChatMessageStatus,
     ChatSurface,
     ConversationEventKind,
     EventProvenance,
     FrameDirection,
+    LeaseExpiryReason,
     PromptFate,
     RecordedToolCall,
     SessionStatus,
@@ -925,6 +927,86 @@ async def test_a_room_cannot_be_recorded_without_the_matrix_surface(migrated_ses
             await db.flush()
 
 
+async def authored_events(migrated_sessions, session_id: UUID) -> list[SessionEvent]:
+    """What the console recorded about *session_id* itself, oldest first."""
+    async with migrated_sessions() as db:
+        return list(
+            await db.scalars(
+                select(SessionEvent)
+                .where(SessionEvent.session_id == session_id, SessionEvent.provenance == EventProvenance.AUTHORED)
+                .order_by(SessionEvent.event_seq)
+            )
+        )
+
+
+async def test_a_replica_taking_a_session_over_records_who_it_took_it_from(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """The fact the frame log cannot hold: a lease changing hands crosses no wire.
+
+    It happens on every roll, and until this row the only evidence a console had rolled was
+    somebody's recollection — which three hypotheses in the 2026-08-15 drop investigation turned on.
+    """
+    view, token = await chat_store.create(operator_id, SpaSession())
+    with patch("haku.console.x.session_store.REPLICA", "haku-console-b"):
+        assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await age_lease(migrated_sessions, view.session_id, seconds_ago=1)
+
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+
+    taken = one(await authored_events(migrated_sessions, view.session_id))
+    assert taken.kind == AuthoredEventKind.SESSION_ADOPTED
+    assert taken.body == {"previous_holder": "haku-console-b", "holder": REPLICA}
+    # A fact about the session, not about an exchange — which is what makes it writable at all for
+    # a session that never reached a turn, and what keeps re-projection from seeing it.
+    assert (taken.turn_id, taken.source_first_frame_seq) == (None, None)
+
+
+async def test_the_first_runner_to_attach_is_not_a_takeover_and_neither_is_its_redial(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """A session being served for the first time changed no hands, and a socket dropping and
+    redialling to the same replica changes none either. Recording those would make every session's
+    stream open with an ownership event that says nothing happened."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+
+    assert await authored_events(migrated_sessions, view.session_id) == []
+
+
+async def test_a_session_that_died_before_a_runner_ever_attached_says_so_in_a_row(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """The case with nothing else to show: no frames, no turn, and until now no record of why.
+
+    The reason is recorded rather than parsed back out of the operator-facing error prose, because
+    the sweep decides it from two columns the failure then overwrites.
+    """
+    view, _ = await chat_store.create(operator_id, SpaSession())
+    await age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
+
+    assert await chat_store.expire_stale_leases() == 1
+
+    lapsed = one(await authored_events(migrated_sessions, view.session_id))
+    assert lapsed.kind == AuthoredEventKind.LEASE_EXPIRED
+    assert lapsed.body == {"reason": LeaseExpiryReason.NEVER_ATTACHED, "last_holder": None}
+    assert lapsed.turn_id is None
+
+
+async def test_a_lease_that_lapsed_names_the_replica_that_held_it(chat_store, migrated_sessions, operator_id) -> None:
+    """A different reason and a different answer to "who was serving this", from the same sweep."""
+    view, _ = await chat_store.create(operator_id, SpaSession())
+    await chat_store.renew_lease(view.session_id)
+    await age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
+
+    assert await chat_store.expire_stale_leases() == 1
+
+    lapsed = one(await authored_events(migrated_sessions, view.session_id))
+    assert lapsed.body == {"reason": LeaseExpiryReason.HOLDER_GONE, "last_holder": REPLICA}
+
+
 async def test_a_live_session_whose_holder_stopped_renewing_is_failed(
     chat_store, migrated_sessions, operator_id
 ) -> None:
@@ -1166,7 +1248,9 @@ async def test_an_event_row_cannot_be_written_without_a_provenance_union(
     """The requirement #4143 could not put on `session_messages`, where NULL means two things.
 
     Either arm is writable and neither can be written half: `frame_range` without a range, and
-    `authored` with one, are both refused by the table rather than by whoever remembers.
+    `authored` with one, are both refused by the table rather than by whoever remembers. The turn
+    goes the same way — required of a projected row, since the fold only runs inside one, and
+    optional on the arm the console authors about the session itself.
     """
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -1194,15 +1278,22 @@ async def test_an_event_row_cannot_be_written_without_a_provenance_union(
         event(provenance=EventProvenance.AUTHORED),
         event(source_first_frame_seq=9),
         event(call_id="toolu_1"),
+        event(turn_id=None),
     ):
         async with migrated_sessions() as db:
             db.add(unwritable)
             with pytest.raises(IntegrityError):
                 await db.commit()
 
-    async with migrated_sessions() as db:
-        db.add(event(provenance=EventProvenance.AUTHORED, source_first_frame_seq=None, source_last_frame_seq=None))
-        await db.commit()
+    for writable in (
+        event(provenance=EventProvenance.AUTHORED, source_first_frame_seq=None, source_last_frame_seq=None),
+        event(
+            provenance=EventProvenance.AUTHORED, source_first_frame_seq=None, source_last_frame_seq=None, turn_id=None
+        ),
+    ):
+        async with migrated_sessions() as db:
+            db.add(writable)
+            await db.commit()
 
 
 if __name__ == "__main__":

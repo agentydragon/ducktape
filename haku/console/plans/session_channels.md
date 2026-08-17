@@ -142,14 +142,28 @@ state from the same source and render it its own way (an activity line, a spinne
 Matrix's edited-message trick. Recording the status text would be recording a rendering, and it
 is the one mistake this section exists to prevent. It is also why §1's loop does not own them.
 
-**Lifecycle follows the precedent narration already set.** `_setup_output_frame`'s docstring
-makes the general argument: a console-authored session event lives in the frame log rather than a
-table of its own, because the question a reader asks is "what happened in this session, in
-order" — and for a session that died before the CLI produced anything, the answer is entirely
-there. Lifecycle is the same shape and is the clearest case for it: a session that never got past
-`provisioning` has nothing else to show. So lifecycle events become frame-log rows under their
-own bridge-side `kind`, not a new table — which also makes §1's cursor a position in one ordered
-log rather than a join across several.
+**Lifecycle is recorded — and this section was wrong about where.** It argued from
+`_setup_output_frame`'s precedent: a console-authored session event lives in the frame log rather
+than a table of its own, because the question a reader asks is "what happened in this session, in
+order", and for a session that died before the CLI produced anything the answer is entirely there.
+So lifecycle events would become frame-log rows under their own bridge-side `kind`, not a new
+table. The operator settled it the other way (2026-08-16):
+
+> i think the right thing would be: frames only come from actual runner<->console communication.
+> events like "session taken over by this replica of console" are not that. so they would probably
+> arrive as a different sort of event.
+
+**The frame log is the record of runner↔console traffic and nothing else**, and that property is
+worth more than the convenience traded for it above. A lease changing hands crosses no wire, so a
+frame-log row for it is an envelope invented to fit, and every reader that treats `session_frames`
+as evidence of what was said would have to learn which rows are not that.
+
+So lifecycle events are `session_events` rows on the `authored` arm
+(<../../plans/chat_runtime_projection.md> § stage 4). The ordering argument above survives the
+move intact: that table already carries the conversation in sequence, so a session event beside it
+is one ordered log and §1's cursor is a position in it rather than a join across several.
+Bootstrap narration keeps its frame and is not the same case — a `SetupOutput` envelope **is**
+runner→console traffic, which is the distinction this section missed.
 
 Two things fall out, both good:
 
@@ -364,7 +378,9 @@ rather than a viewer, from rows that already existed. What remains:
 
 1. ~~**Live updates** (§4)~~ — done.
 2. **Merge the two pages** (§2) and move sending into the merged detail (§5, SPA half).
-3. **Record lifecycle events** (§3) and render them in both channels.
+3. **Record lifecycle events** (§3) and render them in both channels. The `authored` arm has its
+   first two writers — a lease taken over and a lease lapsing; `_SessionStatusAnnouncer`'s
+   transitions are what remain.
 4. **The reconcile loop** (§1) — the cursor on `chat_attachment`, and Matrix delivery moved onto
    it. Wants cleanup stage 7's schema half; everything above is possible without it.
 5. **The Matrix relay** (§5, Matrix half) — one more thing the loop already does, once it exists.
