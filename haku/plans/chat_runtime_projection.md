@@ -410,7 +410,7 @@ UUID. **It repairs itself and the window is one sweep.** `sync_chat` computes
 `forgotten = indexed sessions − sessions the source still shows` and calls `forget_chat_sessions`
 before indexing anything, and the chat sweep runs every minute. What a reader sees until then is a
 `haku_index.search(corpus=conversations)` hit whose drilldown fails; afterwards the session is not
-listed by `haku_conversations.list_conversations` and `read_{transcript,rollout,frame}` on its id
+listed by `haku_conversations.list_sessions` and `read_{transcript,rollout,frame}` on its id
 fail rather than return an empty conversation. **The Matrix room still has the conversation** — room
 history lives on the homeserver and is federated, so the purge reaches the console's record and
 nothing else. For a room-attached session that asymmetry is what dropping means.

@@ -16,7 +16,7 @@ second is the appeal, and every transcript entry carries the frame range to appe
 built to be walked: a `frames` provenance hands `first_frame_seq` straight to `read_frame`, or
 straight to `read_rollout` as its `cursor`, with no arithmetic in between.
 
-**A drilldown, not a dump.** `list_conversations` finds the session, `list_turns` finds the
+**A drilldown, not a dump.** `list_sessions` finds the session, `list_turns` finds the
 exchange, and then one of the two readings. Context is the scarce resource, so a page is bounded
 in rows *and* in bytes — it stops when either runs out and its cursor says where.
 
@@ -29,7 +29,7 @@ its own type with its own fields rather than an opaque string pretending they ar
 whose shape matched but whose cursor lied about the order underneath would be worse than the
 heterogeneity it replaced.
 
-**`list_` finds, `read_` reads.** `list_conversations` and `list_turns` are inventories: rows you
+**`list_` finds, `read_` reads.** `list_sessions` and `list_turns` are inventories: rows you
 scan to pick the one worth opening, each carrying enough accounting to choose. `read_transcript`,
 `read_rollout` and `read_frame` return the thing itself. The split is not paged-versus-whole —
 `read_rollout` and `read_transcript` page too.
@@ -69,10 +69,10 @@ from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 from haku.console.x.conversation_records import (
-    Conversation,
-    ConversationCursor,
     FrameCursor,
     RolloutFrame,
+    SessionCursor,
+    SessionRecord,
     ToolResultEntry,
     TranscriptCursor,
     TranscriptEntry,
@@ -141,7 +141,7 @@ class Page[ItemT, CursorT](BaseModel):
     )
 
 
-class ConversationPage(Page[Conversation, ConversationCursor]):
+class SessionPage(Page[SessionRecord, SessionCursor]):
     pass
 
 
@@ -175,7 +175,7 @@ class ConversationReader(Protocol):
     to happen above it; doing it the same way for all of them is what keeps one shape.
     """
 
-    async def list_conversations(self, *, cursor: ConversationCursor | None, limit: int) -> list[Conversation]: ...
+    async def list_sessions(self, *, cursor: SessionCursor | None, limit: int) -> list[SessionRecord]: ...
 
     # `Sequence` rather than `list` so the tool can narrow `kinds` to a Literal union for its
     # generated schema: `list` is invariant, so `list[Literal[...]]` would not satisfy `list[str]`.
@@ -253,7 +253,7 @@ def take_page[ItemT](
 def build_mcp(reader: ConversationReader) -> FastMCP:
     mcp: FastMCP = FastMCP(
         name=HAKU_CONVERSATIONS_SERVER_ID,
-        instructions="Read Haku's own past sessions. `list_conversations` finds one and `list_turns` finds an "
+        instructions="Read Haku's own past sessions. `list_sessions` finds one and `list_turns` finds an "
         "exchange within it; `read_transcript` is what was said and done, in one vocabulary that names no "
         "agent backend, and `read_rollout` / `read_frame` are the raw frames one named backend sent — Claude "
         "Code's — which is the one place here that is not neutral, so read them as that backend's wire rather "
@@ -263,27 +263,29 @@ def build_mcp(reader: ConversationReader) -> FastMCP:
     )
 
     @mcp.tool
-    async def list_conversations(
+    async def list_sessions(
         cursor: Annotated[
-            ConversationCursor | None,
+            SessionCursor | None,
             Field(default=None, description="From a previous page's `next_cursor`; omit for the newest sessions."),
         ] = None,
         limit: Annotated[int, Field(default=20, ge=1, le=MAX_PAGE, description="Most recent sessions first.")] = 20,
-    ) -> ConversationPage:
+    ) -> SessionPage:
         """List Haku's past chat sessions, newest first, a page at a time.
+
+        A session is one runner's life and it ends; the `conversation_id` beside it is the thread,
+        which does not. Sessions sharing one are the same conversation continued after a sandbox
+        died, so that is the field to group by when reading back what a room was told.
 
         Keyset paging like every other listing here, not an offset: sessions keep being created
         at the top of this order while a reader walks it, so a page counted from the start would
         skip sessions or repeat them as new ones land.
         """
-        conversations, more = split_page(await reader.list_conversations(cursor=cursor, limit=limit + 1), limit=limit)
-        return ConversationPage(
-            items=conversations, next_cursor=ConversationCursor.of(more) if more is not None else None
-        )
+        sessions, more = split_page(await reader.list_sessions(cursor=cursor, limit=limit + 1), limit=limit)
+        return SessionPage(items=sessions, next_cursor=SessionCursor.of(more) if more is not None else None)
 
     @mcp.tool
     async def list_turns(
-        session_id: Annotated[UUID, Field(description="From `list_conversations`.")],
+        session_id: Annotated[UUID, Field(description="From `list_sessions`.")],
         cursor: Annotated[
             TurnCursor | None,
             Field(default=None, description="From a previous page's `next_cursor`; omit for the newest exchanges."),
@@ -302,7 +304,7 @@ def build_mcp(reader: ConversationReader) -> FastMCP:
 
     @mcp.tool
     async def read_transcript(
-        session_id: Annotated[UUID, Field(description="From `list_conversations`.")],
+        session_id: Annotated[UUID, Field(description="From `list_sessions`.")],
         cursor: Annotated[
             TranscriptCursor | None,
             Field(default=None, description="From a previous page's `next_cursor`; omit to start at the beginning."),
@@ -335,7 +337,7 @@ def build_mcp(reader: ConversationReader) -> FastMCP:
 
     @mcp.tool
     async def read_rollout(
-        session_id: Annotated[UUID, Field(description="From `list_conversations`.")],
+        session_id: Annotated[UUID, Field(description="From `list_sessions`.")],
         cursor: Annotated[
             FrameCursor | None,
             Field(
@@ -372,7 +374,7 @@ def build_mcp(reader: ConversationReader) -> FastMCP:
 
     @mcp.tool
     async def read_frame(
-        session_id: Annotated[UUID, Field(description="From `list_conversations`.")],
+        session_id: Annotated[UUID, Field(description="From `list_sessions`.")],
         frame_seq: Annotated[
             int, Field(description="From `read_rollout`, or from a transcript entry's `provenance.first_frame_seq`.")
         ],

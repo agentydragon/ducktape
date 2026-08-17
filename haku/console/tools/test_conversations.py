@@ -14,19 +14,20 @@ from more_itertools import one
 from haku.console.tools.conversations import (
     HAKU_CONVERSATIONS_SERVER_ID,
     MAX_PAGE_BYTES,
-    ConversationPage,
+    SessionPage,
     TranscriptPage,
     build_mcp,
 )
 from haku.console.x.conversation_records import (
-    Conversation,
-    ConversationCursor,
+    ChannelAttachment,
     FrameCursor,
     FromFrames,
     MessageEntry,
     MessageRef,
     Outcome,
     RolloutFrame,
+    SessionCursor,
+    SessionRecord,
     ToolResultEntry,
     TranscriptCursor,
     TranscriptEntry,
@@ -36,6 +37,7 @@ from haku.console.x.conversation_records import (
 )
 
 SESSION = UUID("11111111-1111-1111-1111-111111111111")
+CONVERSATION = UUID("44444444-4444-4444-4444-444444444444")
 OLDER_SESSION = UUID("33333333-3333-3333-3333-333333333333")
 TURN = UUID("22222222-2222-2222-2222-222222222222")
 NOW = datetime.datetime(2026, 8, 12, 9, 0, tzinfo=datetime.UTC)
@@ -43,7 +45,7 @@ NOW = datetime.datetime(2026, 8, 12, 9, 0, tzinfo=datetime.UTC)
 # Every tool that pages, and how a page of it is asked for. The point of the surface is that this
 # list can be walked with one loop, so the tests below walk it.
 PAGED_TOOLS: tuple[tuple[str, dict[str, str]], ...] = (
-    ("list_conversations", {}),
+    ("list_sessions", {}),
     ("list_turns", {"session_id": str(SESSION)}),
     ("read_transcript", {"session_id": str(SESSION)}),
     ("read_rollout", {"session_id": str(SESSION)}),
@@ -64,9 +66,13 @@ def _big_frame(seq: int) -> RolloutFrame:
     return _frame(seq, kind="user", payload={"type": "user", "content": "x" * (MAX_PAGE_BYTES * 2 // 3)})
 
 
-def _conversation(session_id: UUID, created_at: datetime.datetime) -> Conversation:
-    return Conversation(
-        session_id=session_id, surface="matrix", room_id="!room:example.org", status="closed", created_at=created_at
+def _session(session_id: UUID, created_at: datetime.datetime) -> SessionRecord:
+    return SessionRecord(
+        session_id=session_id,
+        conversation_id=CONVERSATION,
+        attachments=[ChannelAttachment(surface="matrix", address="!room:example.org", attached_at=created_at)],
+        status="closed",
+        created_at=created_at,
     )
 
 
@@ -108,20 +114,16 @@ class _Reader:
         self._frames = list(frames)
         self._transcript = list(transcript)
         self.queries: list[dict] = []
-        self.conversation_cursors: list[ConversationCursor | None] = []
+        self.session_cursors: list[SessionCursor | None] = []
         # Newest first, the order the store lists them in.
-        self._conversations = [
-            _conversation(SESSION, NOW),
-            _conversation(OLDER_SESSION, NOW - datetime.timedelta(hours=1)),
-        ]
+        self._sessions = [_session(SESSION, NOW), _session(OLDER_SESSION, NOW - datetime.timedelta(hours=1))]
 
-    async def list_conversations(self, *, cursor: ConversationCursor | None, limit: int) -> list[Conversation]:
-        self.conversation_cursors.append(cursor)
+    async def list_sessions(self, *, cursor: SessionCursor | None, limit: int) -> list[SessionRecord]:
+        self.session_cursors.append(cursor)
         return [
-            conversation
-            for conversation in self._conversations
-            if cursor is None
-            or (conversation.created_at, conversation.session_id) <= (cursor.created_at, cursor.session_id)
+            session
+            for session in self._sessions
+            if cursor is None or (session.created_at, session.session_id) <= (cursor.created_at, cursor.session_id)
         ][:limit]
 
     async def read_frames(
@@ -153,7 +155,7 @@ async def test_tool_surface() -> None:
     async with Client(build_mcp(_Reader())) as client:
         tools = {tool.name for tool in await client.list_tools()}
 
-    assert tools == {"list_conversations", "list_turns", "read_transcript", "read_rollout", "read_frame"}
+    assert tools == {"list_sessions", "list_turns", "read_transcript", "read_rollout", "read_frame"}
     assert HAKU_CONVERSATIONS_SERVER_ID == "haku_conversations"
 
 
@@ -169,39 +171,41 @@ async def test_every_listing_answers_in_the_same_shape() -> None:
             assert hasattr(result.data, "next_cursor"), tool
 
 
-async def test_a_conversation_says_which_room_it_served() -> None:
+async def test_a_session_names_its_thread_and_the_channels_holding_a_copy_of_it() -> None:
+    """The thread rather than a surface enum: what a reader groups sessions by, and what tells it
+    where the same conversation is also being read."""
     async with Client(build_mcp(_Reader())) as client:
-        result = await client.call_tool("list_conversations", {})
+        result = await client.call_tool("list_sessions", {})
 
     assert not result.is_error
-    assert result.data.items[0].room_id == "!room:example.org"
+    page = SessionPage.model_validate(result.structured_content)
+    assert page.items[0].conversation_id == CONVERSATION
+    assert [attachment.address for attachment in page.items[0].attachments] == ["!room:example.org"]
 
 
 async def test_a_full_page_of_sessions_names_both_halves_of_the_key_in_its_cursor() -> None:
     """`created_at` alone does not order the corpus — two sessions can start in one instant — so
     the cursor has to carry the tiebreak rather than pretend one column suffices."""
     async with Client(build_mcp(_Reader())) as client:
-        result = await client.call_tool("list_conversations", {"limit": 1})
+        result = await client.call_tool("list_sessions", {"limit": 1})
 
-    page = ConversationPage.model_validate(result.structured_content)
-    assert [conversation.session_id for conversation in page.items] == [SESSION]
-    assert page.next_cursor == ConversationCursor(
-        created_at=NOW - datetime.timedelta(hours=1), session_id=OLDER_SESSION
-    )
+    page = SessionPage.model_validate(result.structured_content)
+    assert [session.session_id for session in page.items] == [SESSION]
+    assert page.next_cursor == SessionCursor(created_at=NOW - datetime.timedelta(hours=1), session_id=OLDER_SESSION)
 
 
 async def test_the_session_cursor_reaches_the_store_and_the_last_page_offers_none() -> None:
     """Paging belongs in the query: filtering a page here would return fewer rows than asked for
     and read as the end of the corpus."""
     reader = _Reader()
-    cursor = ConversationCursor.of(_conversation(OLDER_SESSION, NOW - datetime.timedelta(hours=1)))
+    cursor = SessionCursor.of(_session(OLDER_SESSION, NOW - datetime.timedelta(hours=1)))
 
     async with Client(build_mcp(reader)) as client:
-        result = await client.call_tool("list_conversations", {"limit": 1, "cursor": cursor.model_dump(mode="json")})
+        result = await client.call_tool("list_sessions", {"limit": 1, "cursor": cursor.model_dump(mode="json")})
 
-    assert reader.conversation_cursors == [cursor]
-    page = ConversationPage.model_validate(result.structured_content)
-    assert [conversation.session_id for conversation in page.items] == [OLDER_SESSION]
+    assert reader.session_cursors == [cursor]
+    page = SessionPage.model_validate(result.structured_content)
+    assert [session.session_id for session in page.items] == [OLDER_SESSION]
     assert page.next_cursor is None
 
 

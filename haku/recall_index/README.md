@@ -187,7 +187,7 @@ comparable thing in reach and has had far more exposure to real sessions than th
 ## Evaluating it locally
 
 Everything here is runnable against a clone and a throwaway Postgres, which is the point: whether
-semantic retrieval over these corpora beats ripgrep and `list_conversations` is an empirical
+semantic retrieval over these corpora beats ripgrep and `list_sessions` is an empirical
 question, and the answer wants measuring rather than arguing.
 
 The CLI needs an embedder as well as a database — it defaults to `http://localhost:11434/v1` and
@@ -323,7 +323,7 @@ would have to change.
 
 **The chat corpus is unscoped: every session, whichever room or operator it served.**
 That inherits `haku/plans/matrix_chat_runtime.md` R5.3a, which left the policy deliberately open
-for `list_conversations`/`read_rollout` — "the eventual policy about which Haku may read which
+for `list_sessions`/`read_rollout` — "the eventual policy about which Haku may read which
 past conversation is not settled, and guessing at one here would be a scoping rule nobody
 stated."
 
@@ -357,7 +357,7 @@ What settling it touches:
   else. A scope is a `WHERE` over `sessions.operator_id`/`room_id`, which means the
   search joins that table (or `chat_chunks` denormalizes both, the way
   `sessions.room_id` itself is denormalized from `matrix_conversation`).
-- **`haku/console/tools/conversations.py`** — `list_conversations`, `list_turns`,
+- **`haku/console/tools/conversations.py`** — `list_sessions`, `list_turns`,
   `read_transcript` and `read_rollout` are unscoped by the same open decision. Scoping search but not the drilldown it
   hands off to would be theatre: the message ids in a hit are exactly what `read_rollout` takes.
 - **Whatever identity the scope keys on.** An Agent's canonical identity and owning Operator come

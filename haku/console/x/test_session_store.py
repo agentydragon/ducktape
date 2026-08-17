@@ -33,7 +33,14 @@ from haku.console.chat_models import (
     SessionStatus,
     TurnOutcome,
 )
-from haku.console.database_schema import Conversation, Session, SessionEvent, SessionMessage, SessionPrompt
+from haku.console.database_schema import (
+    ChatAttachment,
+    Conversation,
+    Session,
+    SessionEvent,
+    SessionMessage,
+    SessionPrompt,
+)
 from haku.console.x.claude_code.testing.wire import assistant, result, text_block, text_delta
 from haku.console.x.conftest import age_lease, lease_of, queued_for_the_room
 from haku.console.x.conversation_events import (
@@ -44,7 +51,7 @@ from haku.console.x.conversation_events import (
     ToolCallCompleted,
     ToolCallStarted,
 )
-from haku.console.x.conversation_records import ConversationCursor, FrameCursor, TranscriptCursor, TurnCursor
+from haku.console.x.conversation_records import FrameCursor, SessionCursor, TranscriptCursor, TurnCursor
 from haku.console.x.session_notifications import SessionEventKind
 from haku.console.x.session_store import (
     ADOPTION_GRACE,
@@ -348,15 +355,36 @@ async def test_a_frame_reaches_the_inspector_with_its_payload_whole(chat_store, 
     assert page.frames[0].direction == FrameDirection.TO_AGENT
 
 
-async def test_conversations_come_back_newest_first_with_the_room_they_served(chat_store, operator_id) -> None:
+async def _attach(sessions: async_sessionmaker[AsyncSession], session_id: UUID, address: str) -> None:
+    """Bind a channel to the conversation this session runs, as a room's ingress does."""
+    async with sessions.begin() as db:
+        db.add(
+            ChatAttachment(
+                attachment_id=uuid4(),
+                conversation_id=await db.scalar(
+                    select(Session.conversation_id).where(Session.session_id == session_id)
+                ),
+                surface=ChatSurface.MATRIX,
+                address=address,
+                attached_at=datetime.now(UTC),
+            )
+        )
+
+
+async def test_sessions_come_back_newest_first_with_the_channels_holding_their_thread(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """The attachments, not a surface enum: a session says which channels hold a copy of the
+    conversation it runs, which is the shape that survives a second one attaching."""
     await chat_store.create(operator_id, SpaSession())
     matrix, _ = await chat_store.create(operator_id, MatrixSession(room_id="!room:example.org"))
+    await _attach(migrated_sessions, matrix.session_id, "!room:example.org")
 
-    conversations = await chat_store.list_conversations(cursor=None, limit=10)
+    sessions = await chat_store.list_sessions(cursor=None, limit=10)
 
-    assert conversations[0].session_id == matrix.session_id
-    assert conversations[0].room_id == "!room:example.org"
-    assert conversations[1].room_id is None
+    assert sessions[0].session_id == matrix.session_id
+    assert [attachment.address for attachment in sessions[0].attachments] == ["!room:example.org"]
+    assert sessions[1].attachments == []
 
 
 async def test_a_session_created_between_two_pages_cannot_shift_what_the_second_one_holds(
@@ -368,12 +396,12 @@ async def test_a_session_created_between_two_pages_cannot_shift_what_the_second_
     newer, _ = await chat_store.create(operator_id, SpaSession())
 
     # Two rows for a page of one: the extra row is the one the tool's cursor names.
-    first, resume = await chat_store.list_conversations(cursor=None, limit=2)
+    first, resume = await chat_store.list_sessions(cursor=None, limit=2)
     await chat_store.create(operator_id, SpaSession())
-    second = await chat_store.list_conversations(cursor=ConversationCursor.of(resume), limit=1)
+    second = await chat_store.list_sessions(cursor=SessionCursor.of(resume), limit=1)
 
     assert first.session_id == newer.session_id
-    assert [conversation.session_id for conversation in second] == [older.session_id]
+    assert [session.session_id for session in second] == [older.session_id]
 
 
 async def test_two_sessions_created_in_one_instant_are_paged_exactly_once_each(
@@ -390,10 +418,10 @@ async def test_two_sessions_created_in_one_instant_are_paged_exactly_once_each(
             .values(created_at=datetime(2026, 8, 12, 9, 0, tzinfo=UTC))
         )
 
-    page, resume = await chat_store.list_conversations(cursor=None, limit=2)
-    rest = await chat_store.list_conversations(cursor=ConversationCursor.of(resume), limit=10)
+    page, resume = await chat_store.list_sessions(cursor=None, limit=2)
+    rest = await chat_store.list_sessions(cursor=SessionCursor.of(resume), limit=10)
 
-    assert [conversation.session_id for conversation in [page, *rest]] == sorted(
+    assert [session.session_id for session in [page, *rest]] == sorted(
         [first.session_id, second.session_id], reverse=True
     )
 

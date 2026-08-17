@@ -1067,7 +1067,7 @@ transcript with every tool result missing (R5.5):
    TODO: it tells the agent event IDs are citable while the harness can only resolve one it
    was already shown.
 4. **The `haku_conversations` read tools** (R11.3a) — **built**, and now five rather than the two
-   this specified: `list_conversations`, `read_rollout`, `list_turns`, `read_frame` (#4116) and
+   this specified: `list_sessions`, `read_rollout`, `list_turns`, `read_frame` (#4116) and
    `read_transcript` (#4145). `read_frame` is the bottom of the drilldown — one frame whole,
    however large. It exists because the page budget moved from a per-frame cap to a per-page one: a
    frame bigger than a whole page can then only be reached by naming it. A **drilldown, not a

@@ -42,6 +42,7 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.database_schema import (
+    ChatAttachment,
     Conversation,
     Session,
     SessionFrame,
@@ -56,13 +57,11 @@ from haku.console.x.claude_code import projection
 from haku.console.x.claude_code.frames import DELTA_FRAME_KIND, PROMPT_FRAME_KIND
 from haku.console.x.conversation_events import ConversationEvent, MessageCompleted, TextDelta
 from haku.console.x.conversation_records import (
-    # Aliased to avoid colliding with the ORM `Conversation` imported above. This one is the record
-    # of a *session* that the `haku_conversations` tools return, named before a conversation was a
-    # table of its own; the list surface that merges the two renames it.
-    Conversation as ConversationRecord,
-    ConversationCursor,
+    ChannelAttachment,
     FrameCursor,
     RolloutFrame,
+    SessionCursor,
+    SessionRecord,
     TranscriptCursor,
     TranscriptSlice,
     TurnCursor,
@@ -131,6 +130,40 @@ class PromptRefusedError(RuntimeError):
     def __init__(self, reason: PromptRejection):
         super().__init__(f"the session cannot take a prompt right now ({reason})")
         self.reason = reason
+
+
+def _thread_of(session: Session) -> UUID:
+    """The conversation this session runs.
+
+    The column is nullable only for the length of the roll that added it: `0064` backfilled every
+    row that predated it and every writer since names it. A NULL here is therefore a writer that
+    forgot, not a state to render around — and reading it as one would silently drop the session
+    from every listing keyed on the thread.
+    """
+    if session.conversation_id is None:
+        raise ValueError(f"a session belongs to no conversation: {session.session_id=}")
+    return session.conversation_id
+
+
+async def _live_attachments(db: AsyncSession, conversations: set[UUID]) -> dict[UUID, list[ChannelAttachment]]:
+    """The channels currently holding a copy of each of *conversations*, keyed by conversation.
+
+    Total over the argument: a conversation nothing is attached to gets an empty list rather than a
+    missing key, so a caller never has to decide what an absent entry meant.
+    """
+    rows = (
+        await db.scalars(
+            select(ChatAttachment)
+            .where(ChatAttachment.conversation_id.in_(conversations), ChatAttachment.detached_at.is_(None))
+            .order_by(ChatAttachment.attached_at, ChatAttachment.attachment_id)
+        )
+    ).all()
+    attachments: dict[UUID, list[ChannelAttachment]] = {conversation: [] for conversation in conversations}
+    for row in rows:
+        attachments[row.conversation_id].append(
+            ChannelAttachment(surface=row.surface, address=row.address, attached_at=row.attached_at)
+        )
+    return attachments
 
 
 class BridgeAuthentication(StrEnum):
@@ -831,7 +864,7 @@ class SessionStore:
                 select(func.max(SessionFrame.runner_seq)).where(SessionFrame.session_id == session_id)
             )
 
-    async def list_conversations(self, *, cursor: ConversationCursor | None, limit: int) -> list[ConversationRecord]:
+    async def list_sessions(self, *, cursor: SessionCursor | None, limit: int) -> list[SessionRecord]:
         """Past sessions from *cursor*, newest first, for the `haku_conversations` read tools.
 
         Keyset paging on `(created_at, session_id)`, for the same reason `read_frames` pages on
@@ -851,17 +884,18 @@ class SessionStore:
                 <= tuple_(literal(cursor.created_at), literal(cursor.session_id))
             )
         async with self._sessions() as db:
-            rows = (await db.scalars(query.limit(limit))).all()
+            threads = [(row, _thread_of(row)) for row in (await db.scalars(query.limit(limit))).all()]
+            attachments = await _live_attachments(db, {thread for _, thread in threads})
         return [
-            ConversationRecord(
+            SessionRecord(
                 session_id=row.session_id,
-                surface=row.surface,
-                room_id=row.room_id,
+                conversation_id=thread,
+                attachments=attachments[thread],
                 status=row.status,
                 created_at=row.created_at,
                 error=row.error,
             )
-            for row in rows
+            for row, thread in threads
         ]
 
     async def read_frames(

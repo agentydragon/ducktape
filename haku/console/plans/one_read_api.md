@@ -5,7 +5,7 @@ same questions off the same tables:
 
 | Question                         | REST                                 | MCP (`haku_conversations`)   |
 | -------------------------------- | ------------------------------------ | ---------------------------- |
-| which sessions are there         | `GET /api/conversations`             | `list_conversations`         |
+| which sessions are there         | `GET /api/conversations`             | `list_sessions`              |
 | what was said (interpreted)      | `GET /api/conversations/{id}`        | `read_transcript`            |
 | the raw protocol log             | `GET /api/conversations/{id}/frames` | `read_rollout`, `read_frame` |
 | the exchanges and what they cost | (nested in the detail view)          | `list_turns`                 |
@@ -126,13 +126,13 @@ servers for reflection. Every JSON Schema keyword those models produce is alread
 allowlist — `anyOf`/`type`/`format` (`uuid`, `date-time`), `additionalProperties` for
 `payload: dict[str, Any] | None` and `usage`, `enum` for the `FrameKind` literal union, `items`,
 `minimum`/`maximum` from the `ge`/`le` fields, `description`, `default`, `title` — and
-`list_conversations`' `-> ConversationPage` return is an ordinary object result, like
+`list_sessions`' `-> SessionPage` return is an ordinary object result, like
 `read_rollout`'s `RolloutPage`. So this should generate without adapter work,
 and if it does not, that is a cheap and decisive answer (§7, Stage 1).
 
 ## 3. The gap list, endpoint by endpoint
 
-### `GET /api/conversations` vs `list_conversations`
+### `GET /api/conversations` vs `list_sessions`
 
 |         | REST                                            | MCP                                              |
 | ------- | ----------------------------------------------- | ------------------------------------------------ |

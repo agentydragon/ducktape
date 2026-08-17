@@ -28,17 +28,41 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-class Conversation(BaseModel):
+class ChannelAttachment(BaseModel):
+    """A channel holding a copy of a conversation, at the address it holds it under.
+
+    Only live attachments are reported: a detached one is history the channel no longer serves.
+    A browser tab has none — it keeps no copy, so there is nothing to address.
+    """
+
+    surface: str = Field(description="Which kind of channel holds the copy; `matrix` today.")
+    address: str = Field(
+        description="What that channel calls this conversation — a Matrix room id for `matrix`. Opaque "
+        "to everything but the channel itself."
+    )
+    attached_at: datetime.datetime
+
+
+class SessionRecord(BaseModel):
+    """One runner's life, and the thread it ran.
+
+    A session, not a conversation: it ends, and the conversation it belonged to does not. Sessions
+    sharing a `conversation_id` are one thread, which is how a session replaced when its sandbox
+    died is recognisable as the continuation of the one before it.
+    """
+
     session_id: UUID
-    surface: str = Field(description="`matrix` or `spa`.")
-    room_id: str | None = Field(description="The Matrix room this session served, if it served one.")
+    conversation_id: UUID = Field(
+        description="The thread this session ran; successive sessions of one thread share it."
+    )
+    attachments: list[ChannelAttachment] = Field(description="The channels currently holding a copy of that thread.")
     status: str
     created_at: datetime.datetime
     error: str | None = None
 
 
-class ConversationCursor(BaseModel):
-    """A position in the `(created_at, session_id)` order `list_conversations` walks.
+class SessionCursor(BaseModel):
+    """A position in the `(created_at, session_id)` order `list_sessions` walks.
 
     **Both columns, because one does not order the corpus.** Sessions are created in bursts — a
     Matrix room and the SPA can open one in the same instant, and `created_at` alone leaves that
@@ -53,8 +77,8 @@ class ConversationCursor(BaseModel):
     session_id: UUID
 
     @classmethod
-    def of(cls, conversation: Conversation) -> ConversationCursor:
-        return cls(created_at=conversation.created_at, session_id=conversation.session_id)
+    def of(cls, session: SessionRecord) -> SessionCursor:
+        return cls(created_at=session.created_at, session_id=session.session_id)
 
 
 class RolloutFrame(BaseModel):
@@ -107,7 +131,7 @@ class TurnRecord(BaseModel):
 
 
 class TurnCursor(BaseModel):
-    """A position in the newest-first exchange order, tiebroken like `ConversationCursor`."""
+    """A position in the newest-first exchange order, tiebroken like `SessionCursor`."""
 
     started_at: datetime.datetime
     turn_id: UUID

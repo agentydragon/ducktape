@@ -301,7 +301,7 @@ schema — is still unobserved, so leave it unimplemented rather than guessed.
 
 ## Scope conversation reads to the reader's trust tier
 
-**The policy is decided** (operator, 2026-08-15) and now needs building. `list_conversations`,
+**The policy is decided** (operator, 2026-08-15) and now needs building. `list_sessions`,
 `read_rollout`, and `list_turns` (<tools/conversations.py>) are unscoped — any Haku may read any
 session, whichever room or operator it served — under R5.3a's deliberate deferral, whose stated
 condition for revisiting (more than one agent) has arrived. An agent reads the transcripts and

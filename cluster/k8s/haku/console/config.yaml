@@ -218,7 +218,14 @@ auto_approval_policies:
     type: exact_tools
     tools:
       haku_conversations:
+        # CLEANUP(added 2026-08-17): drop `list_conversations` once every haku-console pod runs an
+        #   image at or after the commit that renamed it to `list_sessions` — `kubectl get pods -n
+        #   haku-console -o jsonpath='{.items[*].spec.containers[0].image}'` reporting a single tag
+        #   at or after it. Both are listed because this ConfigMap and the image roll separately: a
+        #   policy naming only the new name sends the previous image's calls to the approval queue
+        #   for the length of the roll.
         - list_conversations
+        - list_sessions
         - list_turns
         - read_transcript
         - read_rollout
