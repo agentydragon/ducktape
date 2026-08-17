@@ -179,6 +179,28 @@ class MatrixConversationStore:
                 raise RuntimeError("cannot bind a session before a room is bound")
             row.session_id = session_id
 
+    async def session_serving(self, user_id: str) -> UUID | None:
+        """The session behind this bot's room, or None while nothing is serving it.
+
+        Read through the conversation the room's live attachment names rather than through a
+        pointer this table keeps: successive sessions of one thread share `conversation_id`, so the
+        newest of them is the answer and a replacement needs nothing re-pointed at it.
+        """
+        async with self._sessions() as db:
+            session_id: UUID | None = await db.scalar(
+                select(Session.session_id)
+                .join(ChatAttachment, ChatAttachment.conversation_id == Session.conversation_id)
+                .join(MatrixConversation, MatrixConversation.room_id == ChatAttachment.address)
+                .where(
+                    MatrixConversation.user_id == user_id,
+                    ChatAttachment.surface == ChatSurface.MATRIX,
+                    ChatAttachment.detached_at.is_(None),
+                )
+                .order_by(Session.created_at.desc(), Session.session_id.desc())
+                .limit(1)
+            )
+            return session_id
+
     async def conversation_of_room(self, room_id: str) -> UUID | None:
         """The conversation this room holds a copy of, or None where it holds none yet.
 
@@ -250,10 +272,11 @@ class RecordedMessage:
 class RoomTranscript:
     """The room's conversation, read back out of the console's own record.
 
-    Keyed by **room**, so it spans every session that has served it — which is what a replacement
-    session is handed as its waking context, and what a store scoped to one session cannot answer.
-    `sessions.room_id` is what makes that chain readable today, since it is written once and never
-    moves, unlike the pointer in `matrix_conversation`.
+    Keyed by **conversation** and spanning every session that has run it, which is why it is a
+    separate object from `SessionStore`: a store scoped to one session cannot answer it, since a
+    replacement session's whole problem is that the rows it needs belong to its predecessor.
+    `sessions.conversation_id` is what makes that chain readable: sessions of one thread share it,
+    and it outlives each of them.
 
     **A row is here once it was said, and the two sides say that differently.** An operator row
     exists from the moment ingress accepted the batch; a Haku row is said when it completes, which
@@ -265,8 +288,8 @@ class RoomTranscript:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]):
         self._sessions = sessions
 
-    async def recent(self, room_id: str, *, before_session: UUID, limit: int) -> tuple[RecordedMessage, ...]:
-        """The last *limit* things said in *room_id*, oldest first, excluding *before_session*'s own.
+    async def recent(self, conversation_id: UUID, *, before_session: UUID, limit: int) -> tuple[RecordedMessage, ...]:
+        """The last *limit* things said in *conversation_id*, oldest first, minus *before_session*'s.
 
         The only way the session being started has a row before its first turn is the batch it is
         about to be handed, and a message in both the history and the prompt reads as having been
@@ -276,7 +299,7 @@ class RoomTranscript:
             select(SessionMessage.role, SessionMessage.content, SessionMessage.created_at)
             .join(Session, Session.session_id == SessionMessage.session_id)
             .where(
-                Session.room_id == room_id,
+                Session.conversation_id == conversation_id,
                 SessionMessage.session_id != before_session,
                 or_(
                     SessionMessage.role == ChatMessageRole.USER,
@@ -371,29 +394,29 @@ class MatrixTurns:
         return True
 
     async def _enqueue(self, prompt_text: str, event_ids: tuple[str, ...]) -> Admission:
-        binding = await self._conversations.load(self._config.user_id)
-        if binding is None or binding.session_id is None:
+        session_id = await self._conversations.session_serving(self._config.user_id)
+        if session_id is None:
             logger.info("Matrix: no session behind the room, rejecting %d event(s)", len(event_ids))
             return PromptRejected(reason=PromptRejection.NO_SESSION, event=None)
         operator_id = await self._identities.resolve_configured_external_user_key(self._config.operator_subject)
         try:
             prompt = await self._chat_store.enqueue_prompt(
-                operator_id, binding.session_id, prompt_text, self._ledger.carrying(event_ids)
+                operator_id, session_id, prompt_text, self._ledger.carrying(event_ids)
             )
         except KeyError:
             # The session row has gone under us — the supervisor is between sessions. Nothing to
             # key an event to, so this reads to the operator like never having had one.
-            logger.info("Matrix: session %s is gone, rejecting the batch", binding.session_id)
+            logger.info("Matrix: session %s is gone, rejecting the batch", session_id)
             return PromptRejected(reason=PromptRejection.NO_SESSION, event=None)
         except PromptRefusedError as refusal:
             # Admission is `enqueue_prompt`'s alone, decided under `SELECT … FOR UPDATE`: a status
             # read here could only agree with a decision that had not been made yet.
-            logger.info("Matrix: session %s rejected the batch: %s", binding.session_id, refusal.reason)
+            logger.info("Matrix: session %s rejected the batch: %s", session_id, refusal.reason)
             return PromptRejected(
                 reason=refusal.reason,
                 event=session_events.authored(
                     PromptRejectedBody(reason=refusal.reason, text=prompt_text),
-                    session_id=binding.session_id,
+                    session_id=session_id,
                     now=datetime.datetime.now(datetime.UTC),
                 ),
             )
@@ -405,14 +428,12 @@ class MatrixTurns:
         Empty where no session is bound, on the same terms as `PromptRejected.event`: what
         arrived is still announced in the room, and the record keeps nothing.
         """
-        binding = await self._conversations.load(self._config.user_id)
-        if binding is None or binding.session_id is None:
+        session_id = await self._conversations.session_serving(self._config.user_id)
+        if session_id is None:
             return ()
         now = datetime.datetime.now(datetime.UTC)
         return tuple(
-            session_events.authored(
-                UnreadableInputBody(media_type=event.msgtype), session_id=binding.session_id, now=now
-            )
+            session_events.authored(UnreadableInputBody(media_type=event.msgtype), session_id=session_id, now=now)
             for event in events
         )
 
@@ -572,19 +593,19 @@ class MatrixSessionSupervisor:
         # anything reporting a failure.
         await self._chat_store.expire_stale_leases()
 
-        outcome = await self._chat_store.outcome(binding.session_id) if binding.session_id is not None else None
+        session_id = await self._conversations.session_serving(self._config.user_id)
+        outcome = await self._chat_store.outcome(session_id) if session_id is not None else None
         status = outcome.status if outcome is not None else None
         if status in OPEN_SESSION_STATUSES:
-            await self._report(str(status), f"session {binding.session_id} is {status}")
+            await self._report(str(status), f"session {session_id} is {status}")
             return
 
-        if binding.session_id is not None:
+        if session_id is not None:
             # With the reason, not just the status: every path that ends a session records a
             # specific sentence in `error`, and the room is where the operator is looking.
             reason = f" — {outcome.error}" if outcome is not None and outcome.error else ""
             await self._report(
-                f"ended:{status}",
-                f"session {binding.session_id} ended ({status or 'gone'}){reason}; starting a new one",
+                f"ended:{status}", f"session {session_id} ended ({status or 'gone'}){reason}; starting a new one"
             )
             # The claim may already be gone — `handle_runner` deletes it on the way out — so
             # this is the idempotent sweep rather than a targeted delete.
@@ -623,12 +644,12 @@ class MatrixSessionSupervisor:
         for what no transition announces — a room bound for the first time, or a session row
         disappearing underneath us.
         """
-        binding = await self._conversations.load(self._config.user_id)
-        if binding is None or binding.session_id is None:
+        session_id = await self._conversations.session_serving(self._config.user_id)
+        if session_id is None:
             await asyncio.sleep(SUPERVISE_INTERVAL.total_seconds())
             return
         await self._notifications.wait(
-            SessionEventKind.UPDATE, binding.session_id, timeout_seconds=SUPERVISE_INTERVAL.total_seconds()
+            SessionEventKind.UPDATE, session_id, timeout_seconds=SUPERVISE_INTERVAL.total_seconds()
         )
 
     async def _run(self) -> None:

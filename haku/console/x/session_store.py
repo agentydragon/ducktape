@@ -1319,15 +1319,36 @@ class SessionStore:
             await notify(db, SessionEventKind.PROMPT, session_id)
             await notify(db, SessionEventKind.UPDATE, session_id)
 
-    async def room_of(self, session_id: UUID) -> str | None:
-        """The room this session was created to serve, or None if it serves none.
+    async def attached(self, session_id: UUID) -> bool:
+        """Whether a channel holds a copy of the thread this session runs.
 
-        The session's own record of it, not the current binding in `matrix_conversation`: that
-        one moves to the next session the moment this one is replaced, so asking it "is this
-        session mine?" answers about the room's present, not about the session.
+        The conversation's attachments rather than the session's own record of a room: an
+        attachment outlives every session that has run under it, so a replacement answers this the
+        same way the session it replaced did.
         """
         async with self._sessions() as db:
-            return await db.scalar(select(Session.room_id).where(Session.session_id == session_id))
+            return (
+                await db.scalar(
+                    select(ChatAttachment.attachment_id)
+                    .join(Session, Session.conversation_id == ChatAttachment.conversation_id)
+                    .where(Session.session_id == session_id, ChatAttachment.detached_at.is_(None))
+                )
+            ) is not None
+
+    async def session_of(self, conversation_id: UUID) -> UUID | None:
+        """The session running *conversation_id*, or None where none has been started for it.
+
+        The newest, because only one session holds a conversation at a time and a replacement is
+        started after the one it replaces ended.
+        """
+        async with self._sessions() as db:
+            session_id: UUID | None = await db.scalar(
+                select(Session.session_id)
+                .where(Session.conversation_id == conversation_id)
+                .order_by(Session.created_at.desc(), Session.session_id.desc())
+                .limit(1)
+            )
+            return session_id
 
     async def outcome(self, session_id: UUID) -> SessionOutcome | None:
         async with self._sessions() as db:
@@ -1549,9 +1570,13 @@ async def _enqueue_reply(
 ) -> bool:
     """Put *body* in the room's outbox, inside the caller's transaction.
 
+    Where the room is addressed comes from the live Matrix attachment on this session's
+    conversation, so a session replaced under a thread queues into the same room its predecessor
+    did without either of them recording one.
+
     False means there is nothing for the room to be owed, which covers two ordinary states and no
-    failures: a session serving no room — the SPA reads the message rows directly — and a message
-    whose text is empty.
+    failures: a thread no channel holds a copy of — the SPA reads the message rows directly — and a
+    message whose text is empty.
 
     **Every row carries exactly one identity, and the insert is idempotent on it**, because both
     ways a reply can be produced twice are ways a *replacement* replica produces it: a completed
@@ -1560,12 +1585,21 @@ async def _enqueue_reply(
     Postgres infers one index per statement, so the conflict target follows whichever identity this
     row has.
     """
-    if chat.room_id is None or not (queued := body.strip()):
+    if not (queued := body.strip()):
+        return False
+    room_id: str | None = await db.scalar(
+        select(ChatAttachment.address).where(
+            ChatAttachment.conversation_id == chat.conversation_id,
+            ChatAttachment.surface == ChatSurface.MATRIX,
+            ChatAttachment.detached_at.is_(None),
+        )
+    )
+    if room_id is None:
         return False
     inserted = pg_insert(SessionOutbox).values(
         outbox_id=uuid4(),
         session_id=chat.session_id,
-        room_id=chat.room_id,
+        room_id=room_id,
         body=queued,
         message_id=message_id,
         agent_message_id=agent_message_id,

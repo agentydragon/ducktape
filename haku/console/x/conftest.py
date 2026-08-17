@@ -14,15 +14,16 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from haku.console.chat_models import ChatSurface
 from haku.console.config import ClaudeRuntimeConfig
-from haku.console.database_schema import Session, SessionOutbox
+from haku.console.database_schema import ChatAttachment, Session, SessionOutbox
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
@@ -85,6 +86,26 @@ def chat_service(
 async def operator_id(migrated_identity_store: PostgresOperatorIdentityStore) -> UUID:
     """The canonical Operator these tests act as. One key for every test; the database is per-test."""
     return await migrated_identity_store.resolve_configured_external_user_key(OPERATOR_SUBJECT)
+
+
+async def attach_channel(sessions: async_sessionmaker[AsyncSession], session_id: UUID, address: str) -> None:
+    """Give the conversation this session runs a channel holding a copy of it, at *address*.
+
+    What a room's ingress leaves behind, and what makes a reply this session produces owed
+    somewhere: the outbox row is addressed off the attachment, not off the session.
+    """
+    async with sessions.begin() as db:
+        db.add(
+            ChatAttachment(
+                attachment_id=uuid4(),
+                conversation_id=await db.scalar(
+                    select(Session.conversation_id).where(Session.session_id == session_id)
+                ),
+                surface=ChatSurface.MATRIX,
+                address=address,
+                attached_at=datetime.now(UTC),
+            )
+        )
 
 
 async def queued_for_the_room(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> list[str]:

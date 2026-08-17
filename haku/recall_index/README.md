@@ -354,15 +354,15 @@ materialized CTE that already filters the current chunker and model before the d
 What settling it touches:
 
 - **`haku/recall_index/store.py`** — `search_chat` takes an optional `session_id` and nothing
-  else. A scope is a `WHERE` over `sessions.operator_id`/`room_id`, which means the
-  search joins that table (or `chat_chunks` denormalizes both, the way
-  `sessions.room_id` itself is denormalized from `matrix_conversation`).
+  else. A scope is a `WHERE` over `sessions.operator_id`, or over the address of the
+  `chat_attachment` on the session's conversation, which means the search joins those tables (or
+  `chat_chunks` denormalizes both).
 - **`haku/console/tools/conversations.py`** — `list_sessions`, `list_turns`,
   `read_transcript` and `read_rollout` are unscoped by the same open decision. Scoping search but not the drilldown it
   hands off to would be theatre: the message ids in a hit are exactly what `read_rollout` takes.
 - **Whatever identity the scope keys on.** An Agent's canonical identity and owning Operator come
   from `haku/console/agents/authorization.py` and `mcp_agent_auth.py`; a room-scoped rule instead
-  needs the calling session's own `room_id`, which the in-process server would have to be told.
+  needs the calling session's own conversation, which the in-process server would have to be told.
 - **`cluster/k8s/haku/console/config.yaml`** — which agents get the tool at all, and under which
   auto-approval policy. An unscoped read tool on the unconditional auto-approve list is the
   configuration this section exists to prevent.

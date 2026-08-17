@@ -471,8 +471,8 @@ Behaviours worth knowing before reading the code:
 - **An accepted batch is acknowledged at once, and that has a cost.** A prompt is a row on the
   session that took it, so a session ending before it claims that prompt leaves the message
   unanswered by anything (<../debug/message_drops.md> I3). What carries it forward is the
-  replacement session's waking context: `RoomTranscript.recent` reads every session that served the
-  room, so an accepted-and-unanswered prompt is in the history the replacement is handed.
+  replacement session's waking context: `RoomTranscript.recent` reads every session of the
+  conversation, so an accepted-and-unanswered prompt is in the history the replacement is handed.
 - **An event Haku cannot read is announced, not held.** `m.text` and `m.emote` are prose and are
   serviced; an `m.image`, `m.file`, voice memo, or an msgtype invented after this release is
   carried out of the sync as an `UnmappableEvent`, said out loud in the room, and then
@@ -518,7 +518,7 @@ than restated, because `MATRIX_CONFIG.operator_subject` and the `operator_id` fi
 the same operator.
 
 The test files divide on the same seam. `test_session_runtime.py` and `test_session_store.py` reach
-a room only through the `ChatFrontend` port and the `room_id` string a session records — never
+a room only through the `ChatFrontend` port and a `chat_attachment` address — never
 `matrix-nio` — so what they cover (the turn loop, the outbox row, provenance, adoption, the abort
 drain, prompt fate) is what a second channel inherits. A message _arriving_ from a room and becoming
 a turn is the crossing itself, so `MatrixTurns.offer` is tested in

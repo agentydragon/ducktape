@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from haku.console import recall_index_sync
 from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSurface, SessionStatus
 from haku.console.config import HakuStateGitConfig, RecallIndexConfig
-from haku.console.database_schema import Conversation, Operator, Session, SessionMessage
+from haku.console.database_schema import ChatAttachment, Conversation, Operator, Session, SessionMessage
 from haku.console.operator_identity import OperatorStatus
 from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import CHAT_ADVISORY_LOCK, RecallIndexMaintenance
@@ -118,6 +118,37 @@ async def test_a_chat_sweep_makes_a_session_searchable(
     assert [hit.source.session_id for hit in results.hits if isinstance(hit.source, ConversationSource)] == [session_id]
     # Nothing is waiting, so an empty result here would have been evidence of absence.
     assert results.index is None
+
+
+async def test_a_hit_names_the_room_holding_a_copy_of_its_thread(
+    migrated_engine: AsyncEngine,
+    migrated_sessions: async_sessionmaker[AsyncSession],
+    operator_id: UUID,
+    embedder: FakeEmbedder,
+) -> None:
+    """The room is where a channel holds a copy of the conversation, not something the session
+    records — so every session of one thread reports the same room, replacements included."""
+    first = await say(migrated_sessions, operator_id, "we decided to keep the egress fence")
+    async with migrated_sessions.begin() as session:
+        conversation_id = await session.scalar(select(Session.conversation_id).where(Session.session_id == first))
+        session.add(
+            ChatAttachment(
+                attachment_id=uuid.uuid4(),
+                conversation_id=conversation_id,
+                surface=ChatSurface.MATRIX,
+                address="!room:allegedly.works",
+                attached_at=_NOW,
+            )
+        )
+
+    await RecallIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=None).sync_chat_once()
+
+    results = await PostgresIndexSearcher(migrated_sessions, embedder).search(
+        "egress", corpus=SearchCorpus.CONVERSATIONS, limit=5, path_prefix=None, session_id=None
+    )
+    assert [hit.source.room_id for hit in results.hits if isinstance(hit.source, ConversationSource)] == [
+        "!room:allegedly.works"
+    ]
 
 
 async def test_a_git_sweep_makes_the_tip_searchable(

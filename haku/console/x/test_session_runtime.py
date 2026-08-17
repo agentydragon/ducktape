@@ -1,8 +1,8 @@
 """Focused contracts for the Agent Sandbox Claude chat runtime.
 
 **No channel is imported here, deliberately.** A room reaches this file only as the `ChatFrontend`
-port `session_runtime.py` defines and the `room_id` string a `MatrixSession` records — never as
-`matrix-nio`, ingress or the room/session binding. What a homeserver's messages become is
+port `session_runtime.py` defines and a `chat_attachment` address — never as `matrix-nio`, ingress
+or the room/session binding. What a homeserver's messages become is
 <channels/matrix/test_conversation.py>, beside the `MatrixTurns` that makes them turns.
 """
 
@@ -43,7 +43,7 @@ from haku.console.x.claude_code.testing.wire import (
     tool_result,
     tool_use_block,
 )
-from haku.console.x.conftest import MCP_TOKEN, age_lease, lease_of, queued_for_the_room, runtime_config
+from haku.console.x.conftest import MCP_TOKEN, age_lease, attach_channel, lease_of, queued_for_the_room, runtime_config
 from haku.console.x.frame_projection import projected
 from haku.console.x.sandbox_claims import ProvisioningStep, provisioning_view
 from haku.console.x.session_notifications import SessionNotifications
@@ -747,6 +747,7 @@ async def _turn_into_a_room(
         runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend
     )
     view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    await attach_channel(migrated_sessions, view.session_id, ROOM)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
     turn = await chat_store.next_prompt(view.session_id)
@@ -764,16 +765,18 @@ async def _turn_into_a_room(
 
 
 async def test_only_the_sessions_that_serve_a_room_are_attached_to_the_frontend(
-    chat_store, recording_claims, notifications, operator_id
+    chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
     """One console serves both surfaces, and the frontend is bound to its room — so which sessions
-    it speaks for is the session's own record of what it serves."""
+    it speaks for is whether a channel holds a copy of the thread they run, read once per
+    connection."""
     frontend = _RecordingFrontend()
     service = SessionService(
         runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend
     )
     spa, _ = await chat_store.create(operator_id, SpaSession())
     room_backed, _ = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    await attach_channel(migrated_sessions, room_backed.session_id, ROOM)
 
     assert (await service._frontend_for(spa.session_id), await service._frontend_for(room_backed.session_id)) == (
         None,
@@ -792,6 +795,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     )
     view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
     session_id = view.session_id
+    await attach_channel(migrated_sessions, session_id, ROOM)
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
     started = await chat_store.next_prompt(session_id)
@@ -848,6 +852,7 @@ async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
     )
     view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
     session_id = view.session_id
+    await attach_channel(migrated_sessions, session_id, ROOM)
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
     started = await chat_store.next_prompt(session_id)
@@ -897,6 +902,7 @@ async def test_a_resumed_turn_does_not_say_again_what_it_had_already_queued(
     )
     view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
     session_id = view.session_id
+    await attach_channel(migrated_sessions, session_id, ROOM)
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
     started = await chat_store.next_prompt(session_id)
@@ -959,6 +965,7 @@ async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
         runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend
     )
     view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    await attach_channel(migrated_sessions, view.session_id, ROOM)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
     turn = await chat_store.next_prompt(view.session_id)

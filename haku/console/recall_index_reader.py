@@ -21,7 +21,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.database_schema import Session
+from haku.console.chat_models import ChatSurface
+from haku.console.database_schema import ChatAttachment, Session
 from haku.console.tools.recall_index import (
     ConversationSource,
     ConversationsStatus,
@@ -144,13 +145,18 @@ class PostgresIndexSearcher:
             budget=self._budget,
         )
         # The room a hit came from is the console's own binding, not the index's: the index knows
-        # sessions, and which room a session served is `sessions.room_id`.
-        rooms: dict[UUID, str | None] = {
-            row.session_id: row.room_id
+        # sessions, and the room is where the Matrix channel holds a copy of the thread the
+        # session ran.
+        rooms: dict[UUID, str] = {
+            row.session_id: row.address
             for row in (
                 await session.execute(
-                    select(Session.session_id, Session.room_id).where(
-                        Session.session_id.in_({hit.session_id for hit in found})
+                    select(Session.session_id, ChatAttachment.address)
+                    .join(ChatAttachment, ChatAttachment.conversation_id == Session.conversation_id)
+                    .where(
+                        Session.session_id.in_({hit.session_id for hit in found}),
+                        ChatAttachment.surface == ChatSurface.MATRIX,
+                        ChatAttachment.detached_at.is_(None),
                     )
                 )
             ).all()

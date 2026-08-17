@@ -327,12 +327,13 @@ class SessionService:
     async def _frontend_for(self, session_id: UUID) -> ChatFrontend | None:
         """The chat frontend this session is attached to, or None for one attached to none.
 
-        Decided by the session's own `surface`, immutable on the row; read once per runner
-        connection and carried for the session's life.
+        The frontend is bound to its room, so what is asked here is whether a channel holds a copy
+        of the thread this session runs. Read once per runner connection and carried for the
+        session's life.
         """
         if self._chat_frontend is None:
             return None
-        return self._chat_frontend if await self._store.room_of(session_id) is not None else None
+        return self._chat_frontend if await self._store.attached(session_id) else None
 
     async def _appended_prompt(self, session_id: UUID, frontend: ChatFrontend | None) -> str | None:
         """Who this session is, appended to Claude Code's own system prompt.

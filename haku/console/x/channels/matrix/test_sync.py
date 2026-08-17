@@ -820,7 +820,7 @@ async def test_each_kind_of_notice_says_which_it_is(service, matrix, turns, boun
 
 
 async def test_history_is_read_from_our_record_and_not_from_the_homeserver(
-    service, matrix, chat_store, operator_id, bound_room
+    service, matrix, chat_store, conversations, operator_id, bound_room
 ) -> None:
     """What a replacement session is told it said, at the seam.
 
@@ -829,7 +829,11 @@ async def test_history_is_read_from_our_record_and_not_from_the_homeserver(
     because "we asked the homeserver" and "we asked ourselves" are otherwise indistinguishable from
     the outside.
     """
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=MATRIX_ROOM))
+    view, token = await chat_store.create(
+        operator_id,
+        MatrixSession(room_id=MATRIX_ROOM),
+        conversation_id=await conversations.conversation_for_room(MATRIX_ROOM, operator_id),
+    )
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "[$a] hi")
     start = await chat_store.next_prompt(view.session_id)

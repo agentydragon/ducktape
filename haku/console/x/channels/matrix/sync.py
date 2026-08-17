@@ -351,6 +351,9 @@ class MatrixSyncService:
         conversation = await self._conversations.load(self._config.user_id)
         if conversation is None:
             return ()
+        conversation_id = await self._conversations.conversation_of_room(conversation.room_id)
+        if conversation_id is None:
+            return ()
         return tuple(
             HistoryMessage(
                 # The one per-channel step in this path: a recorded role becomes an address, and
@@ -359,7 +362,7 @@ class MatrixSyncService:
                 body=said.body,
                 sent_at=said.sent_at,
             )
-            for said in await self._transcript.recent(conversation.room_id, before_session=before_session, limit=limit)
+            for said in await self._transcript.recent(conversation_id, before_session=before_session, limit=limit)
         )
 
     async def announce(self, body: str, kind: RoomEventKind = RoomEventKind.LIFECYCLE) -> None:

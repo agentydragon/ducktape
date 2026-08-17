@@ -980,9 +980,13 @@ class Session(Base):
     # stops naming it gets instead of a `NOT NULL` violation, and absent is the honest record for a
     # session whose channel the attachment holds instead (`0075`).
     surface: Mapped[ChatSurface] = mapped_column(TextBackedStrEnumColumn(ChatSurface), nullable=True)
-    # The Matrix room this session serves — the *history* half of the binding, where
-    # `matrix_conversation.session_id` is the live pointer. Written once at creation and never
-    # updated, which is what keeps a replaced Matrix session distinguishable from an SPA one.
+    # The Matrix room this session serves, written once at creation and never updated.
+    #
+    # CLEANUP(added 2026-08-17): nothing selects this column any more — a session reaches its
+    #   room through `conversation_id` and that conversation's live `chat_attachment`. It stays
+    #   written for the length of a roll, since the previous image still selects it. Unmap it
+    #   together with `surface`, once `ck_sessions_matrix_room` is dropped; drop the column a
+    #   release after that unmapping has converged.
     room_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[SessionStatus] = mapped_column(TextBackedStrEnumColumn(SessionStatus), nullable=False)
     # The verifier for this session's rendezvous credential — SHA-256 of a bearer minted once at
@@ -1532,9 +1536,10 @@ class MatrixConversation(Base):
     """The one room Haku services, and the chat session bound to it.
 
     CLEANUP(added 2026-08-17): superseded by `ChatAttachment` above, which holds the same binding
-      keyed on the conversation instead of on the bot user. Unmap this class once nothing selects it
-      — `rg MatrixConversation haku/` naming only this file — and drop the table a release after
-      that unmapping has converged.
+      keyed on the conversation instead of on the bot user. `session_id` is already write-only
+      here; the room binding is the last thing still read off it. Unmap this class once nothing
+      selects it — `rg MatrixConversation haku/` naming only this file — and drop the table a
+      release after that unmapping has converged.
 
     Keyed by bot user rather than by room, which is what makes "one room at a time" a property of
     the schema instead of a rule the code has to remember: a second room cannot be recorded without
@@ -1553,17 +1558,10 @@ class MatrixConversation(Base):
     # The chat session currently serving the room. NULL between a session dying and the
     # supervisor replacing it — an expected state, not a broken one.
     #
-    # **This is the pointer; `sessions.room_id` is the history.** This column says which session
-    # the room is talking to *now* and moves every time the supervisor replaces one, while the
-    # session's own `room_id` says which room that session served and never changes — which is
-    # what keeps a past Matrix conversation findable after its successor has taken over. Asking
-    # this column "was this session mine?" answers about the room's present instead, and reads as
-    # no for every session but the live one.
-    #
-    # No constraint enforces that this points at a session whose `room_id` is this room: it is
-    # an agreement between two rows, which SQL cannot state (a CHECK sees one row, and a
-    # composite foreign key would need `room_id` in this table's key). It is maintained by
-    # `MatrixSessionSupervisor` alone, and asserted by a test rather than by the database.
+    # Nothing here selects it: which session serves a room is the newest session of the
+    # conversation the room's `chat_attachment` names, which needs no agreement between two rows.
+    # `MatrixSessionSupervisor` keeps writing it for the length of a roll, because the previous
+    # image still reads it; it goes with the rest of this class under the CLEANUP above.
     session_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="SET NULL"), nullable=True
     )
