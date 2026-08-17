@@ -485,16 +485,17 @@ Four properties it needs, and one of them is not obvious:
   stopping that agent stops the source; other agents in the room continuing is a feature, not a
   gap. Widen only if a failure is ever found that is not attributable to one sender.
 - **The queue is the room outbox, and it is not new.**
-  <chat_runtime_projection.md> § stage 5 already turns the Matrix pacer's deque into rows for
-  delivery reliability, and <../console/plans/session_channels.md> § 1 wants the same rows for
-  channel reconciliation. This makes a third consumer, and the one that changes the priority: an
-  outbox is a prerequisite for the classifier rather than a tidy-up, because a classifier needs
-  somewhere durable to **hold** a message while it decides.
+  <chat_runtime_projection.md> § stage 5 turned the Matrix pacer's deque into rows for delivery
+  reliability, and <../console/plans/session_channels.md> § 1 wants the same rows for channel
+  reconciliation. This makes a third consumer, and the one that changes the priority: an outbox is
+  a prerequisite for the classifier rather than a tidy-up, because a classifier needs somewhere
+  durable to **hold** a message while it decides.
 
-**So v0 builds the queue and no classifier.** With nothing consuming it but delivery, the outbox
-is exactly the reliability improvement stage 5 already wanted; the classifier lands later as a
-stage in front of the drain. That is a clean seam, and it means the v0/v1 boundary costs no
-rework.
+**So v0 builds the queue and no classifier — and the queue is already built.** `session_outbox`
+and `channels/matrix/outbox.py`'s `RoomOutboxDrain` landed as stage 5 (#4104), with nothing
+consuming them but delivery, which is exactly the reliability improvement that stage wanted. The
+classifier lands later as a stage in front of the drain. That is a clean seam, it means the v0/v1
+boundary costs no rework, and this half of v0 costs nothing at all now.
 
 ### Where it runs: local is a preference, not a requirement
 
