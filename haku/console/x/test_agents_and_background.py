@@ -30,7 +30,7 @@ from uuid import UUID
 import pytest_bazel
 from more_itertools import one
 
-from haku.console.chat_models import ConversationEventKind
+from haku.console.chat_models import AuthoredEventKind, ConversationEventKind
 from haku.console.x import session_events
 from haku.console.x.claude_code.projection import RecordedFrame, project_log
 from haku.console.x.claude_code.testing.wire import (
@@ -69,7 +69,7 @@ def _write_path(frames: Sequence[RecordedFrame]) -> tuple[ConversationEvent, ...
     return tuple(event for frame in frames for event in projected(frame_seq=frame.frame_seq, payload=frame.payload))
 
 
-def _rows(events: Sequence[ConversationEvent]) -> list[ConversationEventKind]:
+def _rows(events: Sequence[ConversationEvent]) -> list[ConversationEventKind | AuthoredEventKind]:
     """The `session_events` rows those events are stored as, in order. Two members of the
     vocabulary have no row at all, so this is shorter than the event list — which is the point of
     asking it rather than counting events."""
