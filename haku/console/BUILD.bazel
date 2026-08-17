@@ -1470,6 +1470,25 @@ py_test(
 )
 
 py_test(
+    name = "test_result_shape_collapse_migration",
+    size = "medium",
+    srcs = ["test_result_shape_collapse_migration.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":database_migrate",
+        "//:conftest",
+        "@pypi//psycopg",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
     name = "test_session_claim_cleaned_at_migration",
     size = "medium",
     srcs = ["test_session_claim_cleaned_at_migration.py"],

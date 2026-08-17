@@ -288,12 +288,8 @@ prose is Claude's concept keyed by Claude's identifiers, so nothing in the vocab
 `task_started` now lands in `Projection.unprojected`. A turn that would have shown it shows
 `writing` instead, and the frames stay in `session_frames` for a reader that wants the detail.
 
-**Two `session_events` kinds outlive their events.** `ConversationEventKind.ACTIVITY_STARTED` and
-`ACTIVITY_COMPLETED`, and `ck_session_events_kind` with them: rows written by earlier releases exist,
-`kind` is parsed rather than read as text, and a member removed while its rows survive makes reading
-one raise rather than degrade. Deleting the rows and narrowing the constraint is a later migration.
-Until then `reprojection.check_session` reports a `RowCountMismatch` on any old turn holding one,
-because the fold no longer produces what the row records — a true report, not a false alarm.
+The two `session_events` kinds that recorded it are gone with it: `0068` deleted the rows and
+narrowed `ck_session_events_kind`.
 
 ### The cursor — where the fold resumes, and what makes its effects exactly-once
 

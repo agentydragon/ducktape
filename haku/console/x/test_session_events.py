@@ -84,26 +84,8 @@ def test_a_tool_call_and_its_answer_are_two_rows_sharing_the_correlation_column(
     }
 
 
-def test_the_two_shapes_this_release_stopped_writing_still_read() -> None:
-    """Rows of both survive in production, and `ToolResultBody` is parsed on every SPA read of a
-    stored result — so an arm removed while its rows exist makes reading history raise."""
-    references = session_events.ToolResultBody.model_validate(
-        {
-            "content": {"shape": "tool_references", "tool_names": ["Read", "Grep"]},
-            "structured": None,
-            "outcome": "unknown",
-        }
-    )
-    opaque = session_events.ToolResultBody.model_validate(
-        {"content": {"shape": "opaque", "payload": {"unknown": True}}, "structured": None, "outcome": "unknown"}
-    )
-
-    assert references.content == session_events.ToolReferencesResultBody(tool_names=["Read", "Grep"])
-    assert opaque.content == session_events.OpaqueResultBody(payload={"unknown": True})
-
-
 def test_every_result_is_now_stored_as_text() -> None:
-    """The variant collapsed, so the shape discriminator has one live value and two legacy ones."""
+    """The variant collapsed to its one arm, which `0068` rewrote the surviving rows into."""
     rendered = stored(
         ToolCallCompleted(
             call_id="toolu_2",

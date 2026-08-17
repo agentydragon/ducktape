@@ -1330,12 +1330,9 @@ class SessionEvent(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
-        # `activity_*` is wider than `ConversationEventKind` needs: nothing writes those rows any
-        # more, and narrowing waits on the migration the enum's own tombstone names.
         CheckConstraint(
             "kind IN ('message_completed','reasoning','tool_call_started',"
-            "'tool_call_completed','activity_started','activity_completed',"
-            "'prompt_enqueued','prompt_rejected','unreadable_input',"
+            "'tool_call_completed','prompt_enqueued','prompt_rejected','unreadable_input',"
             "'session_adopted','lease_expired','turn_aborted')",
             name="ck_session_events_kind",
         ),
@@ -1580,19 +1577,8 @@ UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset({"matrix_held_batch"})
 # tables that stay. A separate set rather than an entry in the one above, which hides a whole
 # table — naming `session_messages` there would stop the comparison noticing any drift in it.
 #
-# The two gates below are different commits and converge separately, which is why each names its
-# own. The convergence check is the same either way: `kubectl get pods -n haku-console -o
+# The convergence check: `kubectl get pods -n haku-console -o
 # jsonpath='{.items[*].spec.containers[0].image}'` reporting a single tag at or after the commit.
-#
-# CLEANUP(added 2026-08-17): `DROP COLUMN session_messages.{tool_calls,unpointable_reason}` once
-#   every haku-console pod runs an image at or after #4266, which unmapped them. With
-#   `unpointable_reason` go `ck_session_messages_unpointable_{reason,exclusive}`, which that
-#   release also stopped declaring. <../plans/next_month.md> § 1 phase 3.
-#
-# CLEANUP(added 2026-08-17): `DROP COLUMN session_frames.partial` once every pod runs an image at
-#   or after this commit, and `DELETE FROM session_frames WHERE partial` with it. Those rows
-#   outlived their writer (#4230) and this release stopped marking them, so until the delete runs
-#   the fold reads them as ordinary `assistant` frames. Same § 1 phase 3.
 #
 # CLEANUP(added 2026-08-17): `DROP COLUMN session_turns.{input_tokens,output_tokens,
 #   cached_input_tokens,cost_usd,duration_ms}` once every pod runs an image at or after this
@@ -1602,9 +1588,6 @@ UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset({"matrix_held_batch"})
 #   were read off the `result` frame's payload, which is whole in `session_frames`.
 UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
     {
-        ("session_messages", "tool_calls"),
-        ("session_messages", "unpointable_reason"),
-        ("session_frames", "partial"),
         ("session_turns", "input_tokens"),
         ("session_turns", "output_tokens"),
         ("session_turns", "cached_input_tokens"),
@@ -1615,9 +1598,7 @@ UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
 
 # Indexes the database has and no ORM class declares. Reachable only through a column above: an
 # index over columns that are all still mapped would be drift rather than an unfinished drop.
-#
-# CLEANUP(added 2026-08-17): goes with `session_frames.partial`, on the same gate.
-UNMAPPED_INDEXES_PENDING_DROP: frozenset[str] = frozenset({"uq_session_frames_partial"})
+UNMAPPED_INDEXES_PENDING_DROP: frozenset[str] = frozenset()
 
 
 class MatrixAccessToken(Base):

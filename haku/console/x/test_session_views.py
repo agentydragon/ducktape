@@ -74,16 +74,12 @@ async def test_a_session_that_narrated_nothing_reports_no_narration(chat_store, 
     assert detail.narration == []
 
 
-_STORED_CONTENT = {
-    "toolu_text": {"shape": "text", "text": "a.py\nb.py"},
-    "toolu_references": {"shape": "tool_references", "tool_names": ["Read", "Grep"]},
-    "toolu_opaque": {"shape": "opaque", "payload": {"unknown": True}},
-}
+_STORED_CONTENT = {"toolu_text": {"shape": "text", "text": "a.py\nb.py"}, "toolu_empty": {"shape": "text", "text": ""}}
 
 
-async def test_a_result_stored_in_any_shape_reads_back_as_text(chat_store, migrated_sessions, operator_id) -> None:
-    """Only `text` is written now. The other two are rows this release inherited, and the SPA read
-    parses every one of them — so dropping either arm would make an old transcript raise."""
+async def test_a_stored_result_reads_back_as_its_text(chat_store, migrated_sessions, operator_id) -> None:
+    """`text` is the only shape left — `0068` rewrote the other two into it — and an empty result is
+    a result, not an absent one."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "list the files")
@@ -111,8 +107,7 @@ async def test_a_result_stored_in_any_shape_reads_back_as_text(chat_store, migra
 
     assert {call_id: result.content for call_id, result in calls.results.items()} == {
         "toolu_text": "a.py\nb.py",
-        "toolu_references": '["Read", "Grep"]',
-        "toolu_opaque": '{"unknown": true}',
+        "toolu_empty": "",
     }
 
 

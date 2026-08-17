@@ -249,8 +249,7 @@ Nothing writes one now.
   `SessionFrame` and to the projection plan's stage 2.
 - The table's own docstring says the same thing, since that is where a reader meets it first.
 
-The `partial` row is on its way out: its writers are deleted, the column and its index are
-unmapped, and the `DROP` is <../plans/next_month.md> § 1 phase 3. What is left after that is the
+The `partial` row is gone: `0068` dropped the column, its index and the rows. What is left is the
 two-vocabulary problem.
 
 `../plans/chat_runtime_projection.md` § stage 2 holds the intended shape — the table becomes the log
