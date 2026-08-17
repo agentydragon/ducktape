@@ -1,0 +1,15 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: public-coder-agent-archive
+  namespace: seaweedfs
+spec:
+  name: public-coder-agent-archive
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  # The rescue archive must outlive any later GitOps cleanup of this wiring.
+  reclaimPolicy: Retain
+  access:
+    - user: public-coder-agent-archive
+      actions: [Read, Write, List, Tagging]

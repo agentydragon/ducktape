@@ -399,6 +399,7 @@ resources:
   - seaweedfs/loom-gym-bucket/flux-kustomization.yaml
   - seaweedfs/pr-visuals-bucket/flux-kustomization.yaml
   - seaweedfs/wayback-archive-bucket/flux-kustomization.yaml
+  - seaweedfs/public-coder-agent-archive-bucket/flux-kustomization.yaml
   - seaweedfs/public-s3/flux-kustomization.yaml
   - seaweedfs/monitoring/flux-kustomization.yaml
   - seaweedfs-csi/flux-kustomization.yaml
