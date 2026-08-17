@@ -16,12 +16,11 @@ export function RawArgumentsDisclosure({ argumentsJson }: { argumentsJson: strin
   );
 }
 
-/** The arguments of a tool call: a per-tool-type widget (the tool_rendering/ per-server requests modules)
- * when one matches — rendered directly, since it's self-describing — else the generic
- * syntax-highlighted JSON view (compact-printed + truncated in brief mode, full in detailed),
- * which keeps an "Arguments" label so it isn't mistaken for a result. `variant` picks the compact
- * (skim) or detailed form; detailed always offers the exact raw JSON behind a disclosure even when
- * a widget rendered. Shared by the approvals panel and the past-tool-calls history view. */
+/** The arguments of a tool call: a per-server widget (tool_rendering/'s requests modules) when one
+ * matches, rendered unlabelled since it is self-describing; else the generic syntax-highlighted JSON
+ * view, which keeps an "Arguments" label so it isn't mistaken for a result. `variant` picks the
+ * compact (skim) or detailed form, and detailed always offers the exact raw JSON behind a disclosure
+ * even when a widget rendered. Shared by the approvals panel and the history view. */
 export function ToolArgumentsField({
   serverId,
   toolName,

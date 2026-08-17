@@ -10,8 +10,8 @@ components + **Tailwind v4** utilities — modeled on
 
 Every module is its own `ts_library` (`//devinfra/js:ts_library.bzl`), one target per file. tsc
 type-checks each target as it compiles it, so `bbr build` is the type check — there is no separate
-whole-project checker whose file list could fall out of step with the library graph. esbuild
-bundles the emitted `.js`, and vitest runs the emitted `.test.js`.
+whole-project checker whose file list could drift from the library graph. esbuild bundles the
+emitted `.js`, and vitest runs the emitted `.test.js`.
 
 - `main.tsx` → `app.tsx` → `haku_ui_embed.tsx`, the persistent application shell. The cross-origin
   iframe remains mounted while the content area switches between Haku UI, Settings, and Past tool
@@ -38,20 +38,17 @@ bundles the emitted `.js`, and vitest runs the emitted `.test.js`.
 - `tool_result_field.tsx` — the result-side counterpart: a finished call's result as a
   per-server widget (`tool_rendering/<server>/responses.tsx`) over the unwrapped
   `CallToolResult` payload, else the raw-JSON `Result` field (detailed only).
-- `console_events.ts` — `useConsoleEvents(onEvent)`: the shared live signal (the
-  `/api/events/ws` WebSocket) that carries tool-call, operator-link and chat-session changes. The server
-  broadcasts typed invalidations to every connected tab, so panels, the history view and open
-  transcripts stay live without
-  a reload — no client-side cross-tab plumbing needed. It
-  auto-reconnects with backoff and returns a `LiveStatus` (`connecting`/`live`/`offline`) the
-  shell uses to warn when the channel is down (and refetches on reconnect to catch up).
-  Every consumer sees every event, so one that refetches unconditionally pays for traffic it does
-  not care about: `changedSessionId(event)` is how the tool-call surfaces skip session
-  invalidations, which a streaming turn emits every coalescing window.
+- `console_events.ts` — `useConsoleEvents(onEvent)`: the shared live signal (the `/api/events/ws`
+  WebSocket) carrying tool-call, operator-link and chat-session changes. The server broadcasts typed
+  invalidations to every connected tab, so panels, the history view and open transcripts stay live
+  without a reload and without client-side cross-tab plumbing. It auto-reconnects with backoff,
+  refetches on reconnect to catch up, and returns a `LiveStatus` (`connecting`/`live`/`offline`)
+  the shell uses to warn when the channel is down. Every consumer sees every event, so
+  `changedSessionId(event)` is how the tool-call surfaces skip session invalidations, which a
+  streaming turn emits every coalescing window.
 - `coalesced_refresh.ts` — `useCoalescedRefresh(read)`: at most one refetch in flight, with a burst
-  of live events collapsing into a single catch-up afterwards. Live events arrive in bursts while a
-  view only ever shows the newest state, so overlapping fetches buy answers each of which the next
-  one discards. Used by the history page and both conversation surfaces.
+  of live events collapsing into a single catch-up afterwards, since overlapping fetches buy answers
+  the next one discards. Used by the history page and both conversation surfaces.
 - `client.ts` — typed `openapi-fetch` client; the types come from the backend's
   OpenAPI schema (the `:schema` target runs `//haku/console:export_schema_bin`), so
   the Pydantic models are the single source of truth for the wire contract. Includes the

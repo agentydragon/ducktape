@@ -1,14 +1,12 @@
-// Shell-side screen capture: a real `getDisplayMedia` tab/window/screen capture, held alive
-// across requests, cropped to the iframe's own on-screen rect. Only the trusted top-level
-// shell can call `getDisplayMedia` (the iframe has no `allow="display-capture"`; see
-// docs/containment.md → `requestScreenshot`) — mirrors why the shell reads geolocation.
+// Shell-side screen capture: a real `getDisplayMedia` tab/window/screen capture, held alive across
+// requests, cropped to the iframe's own on-screen rect. Only the trusted top-level shell can call
+// `getDisplayMedia` (the iframe has no `allow="display-capture"`; see docs/containment.md →
+// `requestScreenshot`).
 //
-// Unlike geolocation's browser permission, `getDisplayMedia` has no persistent silent grant:
-// the browser's own tab/window/screen picker reappears every time a NEW stream is requested
-// (our standing grant only skips OUR confirm, not the browser's). So the session below is held
-// alive deliberately — one picker interaction lets every subsequent capture, until the operator
-// stops sharing from the browser's own chrome, be an instant frame grab with no picker and no
-// DOM walk (the whole point of this over the DOM-serialization fallback it replaces).
+// Unlike geolocation's browser permission, `getDisplayMedia` has no persistent silent grant: the
+// browser's own picker reappears for every NEW stream, and our standing grant only skips OUR
+// confirm. So the session below is held alive deliberately — one picker interaction makes every
+// subsequent capture an instant frame grab, until the operator stops sharing from browser chrome.
 
 export type ScreenshotStartResult = { ok: true } | { ok: false; reason: string };
 

@@ -1,20 +1,17 @@
 // The console's service worker. Its only job is Web Push: render an OS notification for a tool
 // call waiting on the operator, and let them decide from it without opening the console.
 //
-// This is the one console surface that runs with no tab open, so it is deliberately tiny and
-// holds no state. Everything it needs arrives in the push payload, and every decision it makes
-// goes back through the same `/api/tool-calls/{id}/decision` endpoint the approvals drawer uses,
-// as a same-origin credentialed fetch. That is what keeps the trust story unchanged: the buttons
-// are defined here in reviewed console code, and the authority behind them is the operator's own
-// Authentik session cookie, not anything carried in the message.
+// This is the one console surface that runs with no tab open, so it holds no state: everything it
+// needs arrives in the push payload, and every decision goes back through the same
+// `/api/tool-calls/{id}/decision` endpoint the approvals drawer uses, as a same-origin credentialed
+// fetch. The buttons are defined here in reviewed console code and the authority behind them is the
+// operator's own Authentik session cookie, not anything carried in the message.
 //
-// Payload shapes mirror `PushShow`/`PushRetract` in ../web_push.py, and that pairing is a
-// versioned wire contract rather than two views of one type. This file updates on the browser's
-// schedule — a navigation to the console, or a push handled once the registration has gone stale
-// (>24h since its last check) — while the backend deploys atomically, so a worker running this
-// code can be a day or more behind the server sending to it. Treat every field below as optional
-// in practice: read what an older payload might not carry defensively, and never assume the
-// server that sent a message is the version that shipped alongside this file.
+// Payload shapes mirror `PushShow`/`PushRetract` in ../web_push.py as a versioned wire contract,
+// not as two views of one type. This file updates on the browser's schedule — a navigation to the
+// console, or a push handled once the registration has gone stale (>24h since its last check) —
+// while the backend deploys atomically, so a worker running this code can be a day or more behind
+// the server sending to it. Read every field below defensively; an older payload may not carry it.
 
 import { toolActionDescription } from "./tool_rendering/actions";
 
@@ -87,11 +84,10 @@ function notificationTitle(message: PushShow): string {
 
 /** The buttons this platform will actually render.
  *
- * Browsers cap notification actions and silently drop the rest (`Notification.maxActions` —
- * Chrome reports 2), so the array's tail cannot be treated as guaranteed. Deciding is what the
- * notification is *for*, so Approve and Deny come first and Details is offered only where there
- * is room for it. Nothing is lost when it is dropped: tapping the notification body opens the
- * call, which is the same thing Details does. */
+ * Browsers cap notification actions and silently drop the rest (`Notification.maxActions` — Chrome
+ * reports 2), so the array's tail is not guaranteed. Deciding is what the notification is *for*, so
+ * Approve and Deny come first and Details only where there is room; dropping it loses nothing,
+ * since tapping the notification body opens the call too. */
 function notificationActions(): NotificationAction[] {
   const decisions = [
     { action: APPROVE_ACTION, title: "Approve" },
@@ -118,11 +114,10 @@ async function showPending(message: PushShow): Promise<void> {
 }
 
 async function showResolved(message: PushRetract): Promise<void> {
-  // Replace in place rather than just closing. Chrome requires a `userVisibleOnly` subscription
-  // to show something per push and spends the origin's push budget when a handler shows nothing
-  // — exhaust it and the browser substitutes its own "site updated in the background" notice,
-  // which is worse than the stale notification this is clearing. Showing the outcome is also
-  // the better answer for the operator: they learn the thing they were pinged about is settled.
+  // Replace in place rather than just closing. Chrome requires a `userVisibleOnly` subscription to
+  // show something per push and spends the origin's push budget when a handler shows nothing;
+  // exhaust it and the browser substitutes its own "site updated in the background" notice. It also
+  // tells the operator that the call they were pinged about is settled.
   await self.registration.showNotification(message.outcome, {
     tag: message.tool_call_id,
     silent: true,
@@ -168,13 +163,13 @@ async function decide(message: PushShow, action: string): Promise<void> {
 
   if (response.ok) return;
 
-  // 401 is the expected failure, not an exceptional one: operator sessions are short, so a
-  // notification acted on hours later routinely outlives the session that would have authorized
-  // it. Hand the operator to the console, which re-authenticates and lands on this call.
+  // 401 is expected, not exceptional: operator sessions are short, so a notification acted on hours
+  // later routinely outlives the session that would have authorized it. Opening the console
+  // re-authenticates and lands on this call.
   //
-  // 409 means the call was already decided or withdrawn elsewhere — the backend resolves that
-  // race under the tool-call row lock and tells the loser the winner's status. Also not an
-  // error worth alarming about; opening the call shows what actually happened.
+  // 409 means the call was already decided or withdrawn elsewhere — the backend resolves that race
+  // under the tool-call row lock. Also not worth alarming about; opening the call shows what
+  // happened.
   if (response.status !== 401 && response.status !== 409) {
     console.warn("Tool call decision failed", response.status);
   }
@@ -189,10 +184,9 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(decided ? decide(message, event.action) : openToolCall(message.url));
 });
 
-// Take over from a previous worker immediately, rather than waiting in `waiting` until every
-// controlled tab closes — which is how a fixed worker sits undeployed for days. Safe here because
-// this worker holds no state and intercepts no fetches: there is nothing for a mid-session
-// handover to lose, and a console showing notifications from stale code is the worse outcome.
+// Take over from a previous worker immediately rather than waiting until every controlled tab
+// closes, which is how a fixed worker sits undeployed for days. Safe because this worker holds no
+// state and intercepts no fetches, so a mid-session handover loses nothing.
 self.addEventListener("install", () => {
   void self.skipWaiting();
 });

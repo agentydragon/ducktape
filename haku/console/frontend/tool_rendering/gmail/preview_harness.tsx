@@ -1,8 +1,7 @@
 // `gmail` preview screenshot entry — esbuild bundles this into the `:previews` IIFE. Holds the
-// fixtures plus the mount call; the Gmail-only fetch stub is imported before the widget graph.
-// `satisfies
-// RegisteredToolPreviewFixture` ties each (serverId, toolName, args, result?) to the registry's
-// real Zod schemas, so a stale id, argument, or result shape is a type error.
+// fixtures plus the mount call, with the Gmail-only fetch stub imported before the widget graph.
+// `satisfies RegisteredToolPreviewFixture` ties each (serverId, toolName, args, result?) to the
+// registry's real Zod schemas, so a stale id, argument, or result shape is a type error.
 import "./preview_mock";
 
 import { mountPreviewCards } from "../screenshot/mount";

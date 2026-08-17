@@ -1,24 +1,18 @@
-// Per-tool-type rendering for the remote `grocy-sf` MCP server (see
-// grocy_mcp/README.md and grocy_mcp/batch_tools.py). Falls back to the generic raw-JSON
-// view for anything that isn't shaped as expected — same caveat as kubectl/requests.tsx:
-// arguments are only validated by the tool's own schema at execution time, not at submission.
+// Per-tool-type rendering for the remote `grocy-sf` MCP server (see grocy_mcp/README.md and
+// grocy_mcp/batch_tools.py). Anything not shaped as expected falls back to the generic raw-JSON
+// view: as with kubectl/requests.tsx, arguments are validated by the tool's own schema at execution
+// time, not at submission. Every approved call runs as the operator's own linked Grocy account
+// (operator_oauth).
 //
-// grocy-sf's tool surface is generated from Grocy's own OpenAPI spec plus custom batch
-// tools (grocy_mcp/batch_tools.py). Because it is a remote operator-OAuth server rather than an
-// in-process console server, its tools/list schemas are not available to the build-time catalog;
-// these are hand-authored here against grocy_mcp/mcp_types.py's `AddItem` / `ConsumeItem` /
-// `CreateProductItem`. Every tool call runs as the approving operator's own linked Grocy
-// account (operator_oauth) once approved.
+// `product` / `location` / `qu` / `product_group` / `parent_product` / `shopping_list` arguments
+// accept either a name or a numeric ID (grocy_mcp's `GrocyClient` resolves either at execution
+// time); an ID alone renders poorly, so `useGrocyReferenceData` composes the server's MCP read tools
+// once per page and every row resolves through their results.
 //
-// `product` / `location` / `qu` / `product_group` / `parent_product` / `shopping_list`
-// arguments accept either a name or a numeric ID (grocy_mcp's `GrocyClient` resolves either at
-// execution time); an ID alone renders poorly, so `useGrocyReferenceData` composes the server's MCP
-// read tools once per page and every row resolves through their results.
-//
-// `products_edit` renders an old→new diff, so the reference carries each product's *current*
-// field values (its `products` entries are full records, not just `{id, name}`); the widget looks
-// the edited product up by name/ID and resolves its old foreign keys through the same maps. While
-// the reference is still loading the old side is simply omitted (only the new value shows).
+// `products_edit` renders an old→new diff, so the reference carries each product's *current* field
+// values (its `products` entries are full records, not just `{id, name}`); the widget looks the
+// edited product up by name/ID and resolves its old foreign keys through the same maps. While the
+// reference is still loading the old side is omitted and only the new value shows.
 
 import { Group, Stack } from "@mantine/core";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
@@ -624,8 +618,6 @@ function ProductsEditPreview({ args, variant }: PreviewProps<ProductsEditArgs>) 
     />
   );
 }
-
-// ── Shopping-list tools ──────────────────────────────────────────────────────
 
 function ShoppingListGetPreview({ args }: PreviewProps<ShoppingListGetArgs>) {
   const { reference, error } = useGrocyReferenceData();

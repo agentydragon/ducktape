@@ -2,15 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 /** Runs `read` with at most one call in flight, collapsing a burst of requests into one catch-up.
  *
- * Live events arrive in bursts — an agent's call is submitted, approved and finished within a
- * second, and a streaming turn invalidates its session every coalescing window — while a view only
- * ever shows the newest state. Overlapping refetches would queue up whole pages of records for
- * answers each of which the next one discards, so a request made while one is running sets a flag
- * instead, and the runner does exactly one more pass afterwards however many arrived.
+ * Live events arrive in bursts while a view only ever shows the newest state, so overlapping
+ * refetches would queue up whole pages of records for answers each of which the next one discards.
+ * A request made while one is running sets a flag instead, and the runner does exactly one more
+ * pass afterwards however many arrived.
  *
- * `read` owns its own errors: it is the caller that knows what a failure means for its view, and a
- * throw ends the burst rather than being retried immediately (the live channel, and the shell's
- * bounded periodic resync, bring the next one along).
+ * `read` owns its own errors: only the caller knows what a failure means for its view. A throw ends
+ * the burst rather than being retried immediately — the live channel and the shell's periodic
+ * resync bring the next one along.
  *
  * `busy` stays true for the whole burst, not per pass, so a spinner bound to it does not blink
  * between the passes of one catch-up.

@@ -36,9 +36,9 @@ function formatEventDateTime(value: EventDateTime): string {
   return "(unset)";
 }
 
-// A Google Calendar `date_time` ("2026-07-12T18:00:00") is a wall-clock time in the event's
-// own `time_zone` (the string carries no offset), so we read the date and time straight off
-// the string rather than parsing to an instant — no accidental shift into the viewer's zone.
+// A Google Calendar `date_time` ("2026-07-12T18:00:00") is a wall-clock time in the event's own
+// `time_zone` and carries no offset, so read date and time straight off the string rather than
+// parsing to an instant, which would shift it into the viewer's zone.
 type ParsedEventDate =
   | { allDay: true; y: number; mo: number; d: number }
   | { allDay: false; y: number; mo: number; d: number; time: string };
@@ -167,8 +167,8 @@ export function RecurrenceField({ recurrence, variant }: { recurrence: string[];
 }
 
 // A non-primary calendar's id is opaque; resolve its display name (linked into Google Calendar)
-// via the console read endpoint. On failure the raw id still renders — the operator sees the
-// target either way. Only shown for non-primary calendars (see the caller).
+// via the console read endpoint. On failure the raw id still renders, so the operator sees the
+// target either way.
 function CalendarField({ calendarId }: { calendarId: string }) {
   const [summary, setSummary] = useState<CalendarSummary | null>(null);
   const [failed, setFailed] = useState(false);
@@ -205,11 +205,11 @@ function CalendarField({ calendarId }: { calendarId: string }) {
   );
 }
 
-// Exported for google_calendar/calls.tsx's combined create_event widget (rendered pre-execution;
-// the finished view is CalendarEventResultView in responses.tsx, off the tool's actual result).
+// Exported for google_calendar/calls.tsx's combined create_event widget, which renders this
+// pre-execution and CalendarEventResultView (responses.tsx) once the call has finished.
 export function CreateCalendarEventPreview({ args, variant }: PreviewProps<CreateCalendarEventArgs>) {
-  // The summary is the event's own name, so it leads as a heading (no label); the rest use the
-  // inline icon fields (🕐 time, 📍 location, …) — denser than a stacked uppercase label per row.
+  // The summary is the event's own name, so it leads as an unlabelled heading; the rest use inline
+  // icon fields (🕐 time, 📍 location, …), denser than a stacked uppercase label per row.
   const when = formatEventDateTimeRange(args.start, args.end);
   return (
     <Stack gap={6}>

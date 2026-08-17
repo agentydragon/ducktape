@@ -1,12 +1,11 @@
 import { CodeBlock } from "./code_block";
 import type { PreviewVariant } from "./tool_rendering/vocabulary";
 
-// Width-aware pretty-print: a value whose one-line form fits within `maxLength` (accounting for
-// the current indent) stays inline; only larger arrays/objects break, one child per line, each
-// child re-evaluated the same way. So `[1, 2, 3, 4, 5]` stays one line while a big nested object
-// expands. (A local take on json-stringify-pretty-compact — kept in-repo because adding that npm
-// dep needs a pnpm-lock regen this environment's egress policy currently blocks.) The width-aware
-// layout is what gives CodeMirror meaningful structure to fold in compact mode.
+// Width-aware pretty-print: a value whose one-line form fits within `maxLength` (accounting for the
+// current indent) stays inline, and only larger arrays/objects break one child per line, each child
+// re-evaluated the same way — so `[1, 2, 3, 4, 5]` stays one line while a big nested object expands.
+// That layout is what gives CodeMirror meaningful structure to fold in compact mode. A local take on
+// json-stringify-pretty-compact, kept in-repo rather than taken as an npm dependency.
 function inlineJson(v: unknown): string {
   if (v === null || typeof v !== "object") return JSON.stringify(v) ?? "null";
   if (Array.isArray(v)) return `[${v.map(inlineJson).join(", ")}]`;

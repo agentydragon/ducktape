@@ -1,7 +1,6 @@
-// One registry entry: a tool's one-line action description ("Gmail: Draft email", "kubectl:
-// Delete Pod"), optionally computed from its parsed arguments. The per-server maps live beside
-// their widgets in `<server>/actions.ts`; `actions.ts` composes them, exactly as `index.tsx`
-// composes the per-server widget registries.
+// One registry entry: a tool's one-line action description ("Gmail: Draft email", "kubectl: Delete
+// Pod"), optionally computed from its parsed arguments. The per-server maps live beside their
+// widgets in `<server>/actions.ts`; `actions.ts` composes them.
 //
 // Leaf module, and **React-free** like everything on this side of the split: the service worker
 // (`../sw.ts`) bundles the action registry to title push notifications, and must not drag React,

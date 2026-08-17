@@ -62,9 +62,8 @@ export interface ShellChromeProps {
   // Live tool-call WebSocket health: drives the sync-status icon that is always visible (as an
   // ok-sync indicator) and the clickable panel that explains the current state.
   liveStatus: LiveStatus;
-  // Error message from the last REST fetch of pending approvals, or null on success. Shown in
-  // the sync-status panel and turns the icon orange so transient load errors are visible without
-  // a toast flood.
+  // Error message from the last REST fetch of pending approvals, or null on success. Shown in the
+  // sync-status panel and turns the icon orange, so load errors are visible without a toast flood.
   syncError: string | null;
   syncing: boolean;
   lastSyncAt: Date | null;
@@ -120,10 +119,9 @@ function RecentCountdown({ recent, nowMs }: { recent: RecentToolCall; nowMs: num
   );
 }
 
-// The location-sharing panel: opened from the map-pin toggle, shown only while the shell holds
-// the standing grant. Carries the current state and the stop/withdraw kill switch (a rare
-// one-tap action best reachable straight from the chrome). It occupies the shell's one shared
-// panel slot, just like approvals, screenshot capture, and settings.
+// The location-sharing panel: opened from the map-pin toggle, shown only while the shell holds the
+// standing grant. Carries the current state and the stop/withdraw kill switch, and occupies the
+// shell's one shared panel slot like approvals and screenshot capture.
 function LocationPanel({ tracking, onWithdraw }: { tracking: boolean; onWithdraw: () => void }) {
   return (
     <section className="haku-shell-card haku-shell-side-panel" aria-label="Location sharing">
@@ -213,10 +211,9 @@ function SessionPanel({ expiresAt, onReauthenticate }: { expiresAt: Date; onReau
 // operator never has to wonder whether the approval list is current.
 export type SyncState = "current" | "syncing" | "error";
 
-// Exhaustive over LiveStatus with no fallback: the old if-chain ended in `return "current"`, so a
-// new live-channel state would have been reported as fully healthy — the one answer that must
-// never be a default here, since the whole point of this indicator is to say when the channel is
-// broken. The maps below are keyed for the same reason.
+// Exhaustive over LiveStatus with no fallback, so a new live-channel state is a compile error
+// rather than being reported as healthy — the one answer that must never be a default here. The
+// maps below are keyed for the same reason.
 export function syncState(liveStatus: LiveStatus, syncError: string | null, syncing: boolean): SyncState {
   if (syncError !== null) return "error";
   switch (liveStatus) {
@@ -303,11 +300,9 @@ function SyncStatusPanel({
   );
 }
 
-// Each queue card renders compact by default and expands **in place** via its own Details
-// toggle (the same control as the history page) — no separate detail panel, no overlay. The
-// compact form is the scannable summary; the detailed form adds the fields you only want when
-// digging in. An always-visible denial-reason field keeps a single Deny click able to carry a
-// "why" from either form.
+// Each queue card renders compact by default and expands **in place** via its own Details toggle
+// (the same control as the history page) — no separate detail panel, no overlay. An always-visible
+// denial-reason field keeps a single Deny click able to carry a "why" from either form.
 function ToolApprovalCard({
   approval,
   deciding,

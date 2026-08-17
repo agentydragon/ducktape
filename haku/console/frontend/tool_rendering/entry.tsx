@@ -15,11 +15,10 @@ export type ToolPreview<S extends z.ZodTypeAny = z.ZodTypeAny> = {
   render: (args: never, variant: PreviewVariant) => ReactNode;
 };
 
-/** Bind a tool's argument schema to the widget that renders it. `Widget` takes the schema's
- * inferred `args` plus the `variant`, fed the schema's parsed output. Pass the component directly
- * — this builds the `<Widget/>` element (a real child component, so the widget's own hooks work).
- * The tool's one-line action description lives in `actions.ts`, which is React-free so the
- * service worker can reuse it for push notifications. */
+/** Bind a tool's argument schema to the widget that renders it. `Widget` takes the schema's parsed
+ * output as `args`, plus the `variant`. Pass the component directly — this builds the `<Widget/>`
+ * element, a real child component, so the widget's own hooks work. The tool's one-line action
+ * description lives in `actions.ts`. */
 export function definePreview<S extends z.ZodTypeAny>(
   schema: S,
   Widget: (props: PreviewProps<z.infer<S>>) => ReactNode

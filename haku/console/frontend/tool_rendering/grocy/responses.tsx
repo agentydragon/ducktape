@@ -61,8 +61,8 @@ const zShoppingListGetResult = z.looseObject({
   ),
 });
 // Grocy's `GET /system/info` nests the app version in its own object ({Version, ReleaseDate, …})
-// rather than a bare string — typed explicitly so the widget can format it instead of falling
-// through to a blind `String(value)` (which used to print "[object Object]").
+// rather than a bare string, typed explicitly so the widget formats it instead of falling through
+// to a blind `String(value)` that prints "[object Object]".
 const zSystemInfoResult = z.looseObject({
   grocy_version: z.looseObject({ Version: z.string(), ReleaseDate: z.string().nullish() }).nullish(),
   php_version: z.string().nullish(),

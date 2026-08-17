@@ -12,14 +12,14 @@ function placeholder(status: ConversationSession["status"]): string {
 /** Send into an existing session, whichever surface opened it.
  *
  * Nothing here asks what the session's `surface` is, because the route does not either: a Matrix
- * room's session takes a prompt from the browser on the same terms as one the SPA created. The
- * reply goes wherever that session's channel sends replies, so a prompt typed here also lands in
+ * room's session takes a prompt from the browser on the same terms as one the SPA created, and the
+ * reply goes wherever that session's channel sends replies — so a prompt typed here also lands in
  * the room.
  *
- * **A refusal is the case worth getting right.** `enqueue_prompt` rejects a mid-turn prompt and
- * rejects a second prompt while one is still queued — and the queued case leaves the session
- * `ready`, so the disabled Send below cannot pre-empt it. The operator's text exists nowhere but
- * this box until the console accepts it, so a refusal keeps it and says why.
+ * **A refusal is the case worth getting right.** `enqueue_prompt` rejects a mid-turn prompt and a
+ * second prompt while one is queued; the queued case leaves the session `ready`, so the disabled
+ * Send below cannot pre-empt it. The operator's text exists nowhere but this box until the console
+ * accepts it, so a refusal keeps it and says why.
  */
 export function ConversationComposer({
   sessionId,

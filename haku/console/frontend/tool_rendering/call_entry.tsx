@@ -1,11 +1,10 @@
-// A registry entry for one tool's *combined* argument + result rendering — used when a tool's
-// pending and finished states are naturally one evolving view (a creation tool whose result
-// mostly restates its own arguments) rather than two independent widgets (entry.tsx's args-only
-// registry paired with result_entry.tsx's result-only registry). The registry (index.tsx)
-// safeParses args once and, when a result is present, tries the result schema too. Depends on
-// result_entry.tsx for the same CallToolResult-envelope unwrap every result widget uses, so a
-// pending call, an error result, and a schema mismatch all resolve to `result: undefined` —
-// the widget's own "pending" branch — rather than losing the (valid) args rendering.
+// A registry entry for one tool's *combined* argument + result rendering, for a tool whose pending
+// and finished states are one evolving view rather than two independent widgets (entry.tsx's
+// args-only registry paired with result_entry.tsx's result-only one). The registry (index.tsx)
+// safeParses args once and, when a result is present, tries the result schema too. It unwraps the
+// CallToolResult envelope through result_entry.tsx, so a pending call, an error result, and a
+// schema mismatch all resolve to `result: undefined` — the widget's own "pending" branch — rather
+// than losing the valid args rendering.
 import type { ReactNode } from "react";
 import type { z } from "zod";
 

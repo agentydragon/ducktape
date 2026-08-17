@@ -2,9 +2,8 @@
 // code-shaped surface in tool-call previews (JSON arguments/results, kubectl YAML manifests,
 // hostexec shell commands, plain bodies like an email or a routine instruction). Per-language
 // grammars arrive as extensions; the fold gutter collapses long/nested regions. Colors read the
-// `--haku-json-*` / `--haku-code-*` CSS variables (see styles.src.css), which flip with the
-// Mantine color scheme, so one style adapts to light and dark and keeps the muted palette the
-// former highlight.js hues used.
+// `--haku-json-*` / `--haku-code-*` CSS variables (see styles.src.css), which flip with the Mantine
+// color scheme, so one style adapts to light and dark.
 import CodeMirror from "@uiw/react-codemirror";
 import { json } from "@codemirror/lang-json";
 import { yaml } from "@codemirror/lang-yaml";
@@ -34,9 +33,8 @@ const HAKU_HIGHLIGHT = HighlightStyle.define([
   { tag: tags.comment, color: "var(--haku-code-comment)", fontStyle: "italic" },
 ]);
 
-// Neutral chrome over the same `--haku-code-*` surface the old `<pre>` blocks used. `&` is
-// `.cm-editor`; `theme="none"` on the wrapper leaves this as the only theme, so nothing else
-// overrides the vars. Line wrapping stands in for the old `white-space: pre-wrap`.
+// Neutral chrome over the `--haku-code-*` surface. `&` is `.cm-editor`; `theme="none"` on the
+// wrapper leaves this as the only theme, so nothing else overrides the vars.
 const HAKU_THEME = EditorView.theme({
   "&": {
     backgroundColor: "var(--haku-code-bg)",
@@ -95,13 +93,12 @@ function topLevelContainers(state: EditorState): { from: number; to: number; spa
   return containers;
 }
 
-// Compact policy, as a pure decision: given a parsed state and a visible-line budget, which
-// top-level container ranges to fold so leading entries fill the height. Walk containers in order;
-// expand one while its span fits in the remaining budget MINUS one line per container still after it
-// (the breadth cap — every later entry keeps at least its header, so one verbose field can't crowd
-// out the rest); the LAST sibling always expands (folding it would waste the remaining height, so it
-// scrolls instead). `overhead` = braces/scalar lines always visible. No DOM, no dispatch — passed a
-// budget by the ViewPlugin (which measures it) and unit-tested headlessly.
+// Which top-level container ranges to fold so leading entries fill the height, as a pure decision
+// over a parsed state and a visible-line budget. Walk containers in order; expand one while its span
+// fits in the remaining budget MINUS one line per container still after it (the breadth cap — every
+// later entry keeps at least its header, so one verbose field can't crowd out the rest); the LAST
+// sibling always expands, since folding it would waste the remaining height. `overhead` =
+// braces/scalar lines always visible. The ViewPlugin measures the budget and passes it in.
 export function chooseCompactFolds(state: EditorState, budget: number): readonly { from: number; to: number }[] {
   const doc = state.doc;
   if (doc.lines <= 1 || doc.lines <= budget) return []; // already fits
@@ -128,9 +125,9 @@ function foldCompact(view: EditorView): void {
   if (folds.length) view.dispatch({ effects: folds.map((f) => foldEffect.of(f)) });
 }
 
-// ViewPlugin (silverbullet/flint-chart pattern): fold once the parse + layout settle, and never
-// clobber a fold the operator toggled. Polls via rAF until the syntax tree is ready rather than
-// blocking, so many compact blocks mounting together (the history page) don't jank.
+// Fold once the parse + layout settle, and never clobber a fold the operator toggled. Polls via rAF
+// until the syntax tree is ready rather than blocking, so many compact blocks mounting together
+// (the history page) don't jank.
 function compactFoldExtension(): Extension {
   return ViewPlugin.fromClass(
     class {
@@ -178,13 +175,13 @@ const PLACEHOLDER_PADDING_REM = 1.1;
 /** Whether this block has come near the viewport yet — the gate on building its editor.
  *
  * An `EditorView` is expensive to construct (DOM, a lezer parse, and for a compact block a
- * per-frame poll until the fold pass can run), and the history page holds one per row. Mounting
- * every one up front is what made that page freeze the tab: 500 rows spent ~15s of blocked main
- * thread, 5s of it in a single task. Off-screen rows now cost a placeholder div until scrolled to.
+ * per-frame poll until the fold pass can run), and the history page holds one per row: mounting
+ * every one up front froze the tab, 500 rows costing ~15s of blocked main thread. Off-screen rows
+ * cost a placeholder div until scrolled to.
  *
  * Latches on first intersection and stops observing: an editor that scrolls away stays mounted,
  * since tearing it down would lose the operator's own fold/scroll state within it. Where there is
- * no `IntersectionObserver` (jsdom under vitest) every block mounts immediately, as before. */
+ * no `IntersectionObserver` (jsdom under vitest) every block mounts immediately. */
 function useNearViewport(): { ref: (node: HTMLDivElement | null) => void; near: boolean } {
   const [near, setNear] = useState(typeof IntersectionObserver === "undefined");
   const observerRef = useRef<IntersectionObserver | null>(null);

@@ -1,7 +1,7 @@
 // `hostexec` preview screenshot entry — esbuild bundles this into the `:previews` IIFE. Holds the
-// fixtures plus the mount call; `satisfies RegisteredToolPreviewFixture` ties each
-// (serverId, toolName, args, result?) to the registry's real Zod schemas, so a stale id, argument,
-// or result shape is a type error.
+// fixtures plus the mount call. `satisfies RegisteredToolPreviewFixture` ties each (serverId,
+// toolName, args, result?) to the registry's real Zod schemas, so a stale id, argument, or result
+// shape is a type error.
 import { mountPreviewCards } from "../screenshot/mount";
 
 import type { RegisteredToolPreviewFixture } from "../index";

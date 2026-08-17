@@ -3,13 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBridgeClient } from "@haku/console-bridge";
 import type { GeoPosition } from "@haku/console-bridge/protocol";
 
-// Behavior test for the shared @haku/console-bridge client (the library this repo owns and
-// haku-state's iframe UI consumes). The console is the shell, not the iframe, so it never
-// uses these helpers in production — this exercises the linked package end-to-end (import
-// resolution + the postMessage request/reply correlation) so haku-state can adopt it safely.
-// createBridgeClient binds every helper to one trusted origin; here that's an arbitrary test
-// origin. postMessage is spied, so nothing leaves jsdom — we reply by dispatching the event
-// the client listens for.
+// Behavior test for the shared @haku/console-bridge client, which this repo owns and haku-state's
+// iframe UI consumes. The console is the shell, not the iframe, so it never uses these helpers in
+// production — this exercises the linked package end-to-end (import resolution + the postMessage
+// request/reply correlation) so haku-state can adopt it safely. postMessage is spied, so nothing
+// leaves jsdom: replies come from dispatching the event the client listens for.
 const SHELL = "https://shell.example";
 const { openLink, requestLaunch, requestGeolocation, watchGeolocation, notifyRouteChanged, requestScreenshot } =
   createBridgeClient(SHELL);

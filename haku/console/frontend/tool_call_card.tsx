@@ -10,19 +10,18 @@ import type { PreviewVariant } from "./tool_rendering/vocabulary";
 import { RawResultDisclosure, ToolResultField } from "./tool_result_field";
 import { VariantControl } from "./variant_control";
 
-/** One tool call, rendered the same way everywhere it appears — the approvals panel's pending and recent
- * cards and the history page's rows. It owns the shared skeleton (the identity header + action
- * line + rationale/denial subhead + status badge + Details toggle, the arguments body, the
- * result body — a finished call's result, or its error when it failed — and the detailed
- * Metadata) so all of that reads one way and lives in one place. The bits that genuinely differ
+/** One tool call, rendered the same way everywhere it appears — the approvals panel's pending and
+ * recent cards, and the history page's rows. It owns the shared skeleton: identity header, action
+ * line, rationale/denial subhead, status badge, Details toggle, the arguments body, the result body
+ * (a finished call's result, or its error when it failed) and the detailed Metadata. What differs
  * per surface — the status badge's label/color and the footer actions (approve/deny, dismiss,
- * countdown) — come in as props.
+ * countdown) — comes in as props.
  *
  * Most tools split pending/finished rendering across two independent widgets (arguments, then a
- * finished call's result). A tool whose result mostly restates its own arguments instead
- * registers one combined widget (tool_rendering's call registry) that owns both states itself —
- * `toolCallPreview` renders it in place of the separate fields when one matches; the raw-JSON
- * disclosures stay available either way. */
+ * finished call's result). A tool whose result mostly restates its own arguments instead registers
+ * one combined widget (tool_rendering's call registry) that owns both states; `toolCallPreview`
+ * renders it in place of the separate fields when one matches, and the raw-JSON disclosures stay
+ * available either way. */
 export function ToolCallCard({
   fields,
   args,

@@ -1,7 +1,7 @@
-// `haku_routine` preview screenshot entry — esbuild bundles this into the `:previews` IIFE.
-// Holds the fixtures plus the shared mount call. `satisfies
-// RegisteredToolPreviewFixture` ties each (serverId, toolName, args) to the registry's real Zod
-// schemas, so a stale id or argument is a type error.
+// `haku_routine` preview screenshot entry — esbuild bundles this into the `:previews` IIFE. Holds
+// the fixtures plus the shared mount call. `satisfies RegisteredToolPreviewFixture` ties each
+// (serverId, toolName, args) to the registry's real Zod schemas, so a stale id or argument is a
+// type error.
 import { mountPreviewCards } from "../screenshot/mount";
 
 import type { RegisteredToolPreviewFixture } from "../index";

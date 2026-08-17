@@ -323,7 +323,7 @@ const conversationDetail = {
   ],
 } as const;
 // The same session a few seconds earlier: still provisioning, mid-clone, with nothing but the
-// narration to show. This is what the panel exists for, so it gets its own scene.
+// narration to show.
 const conversationBootstrap = {
   ...conversationDetail,
   session: {
@@ -335,8 +335,8 @@ const conversationBootstrap = {
     turns: [],
   },
 } as const;
-// A sandbox still being handed out, which is a different picture from a sandbox already narrating:
-// the live Kubernetes read is the whole account for a session that never comes up.
+// A sandbox still being handed out, where the live Kubernetes read is the whole account for a
+// session that never comes up.
 const conversationProvisioning = {
   ...conversationDetail,
   session: {
@@ -554,18 +554,16 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
   if (url.includes("/frames")) return jsonResponse(conversationFrames);
   if (url.includes("/api/conversations/")) return jsonResponse(conversationDetailForScene);
   if (url.includes("/api/conversations")) return jsonResponse(conversationPage);
-  // The refusal the composer exists to render clearly: `enqueue_prompt` answers 409 and records
-  // nothing, so the operator's text has to survive it. Before the session read below, whose path
-  // this one extends.
+  // The refusal the composer has to render: `enqueue_prompt` answers 409 and records nothing, so
+  // the operator's text has to survive it. Before the session read below, whose path this extends.
   if (scene === "conversation-prompt-refused" && url.includes("/messages")) {
     return new Response(JSON.stringify({ detail: "a prompt is already queued" }), {
       status: 409,
       headers: { "Content-Type": "application/json" },
     });
   }
-  // Push is configured on this console, and one *other* device is enrolled — the two facts the
-  // Notifications section exists to show. The headless browser has no real subscription, so
-  // "this browser" renders Off; a second device proves the per-device list renders.
+  // Push is configured and one *other* device is enrolled. The headless browser has no real
+  // subscription, so "this browser" renders Off while the second device fills the per-device list.
   if (url.includes("/api/push/config")) return jsonResponse({ application_server_key: "BEl62iUYgUivxIkv69yViEuiBIa" });
   if (url.includes("/api/push/subscriptions")) {
     return jsonResponse([
@@ -603,11 +601,10 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
       autoApproved === null
         ? SAMPLE_TOOL_CALLS
         : SAMPLE_TOOL_CALLS.filter((call) => (call.approval_policy_id != null) === (autoApproved === "true"));
-    // The `history-paged` scene needs a ledger deeper than one page, which the handful of
-    // hand-written samples is not: it is what shows the "Load older calls" affordance and the
-    // placeholders standing in for the code blocks of rows that are not near the viewport yet.
+    // The `history-paged` scene needs a ledger deeper than one page — that is what shows the "Load
+    // older calls" affordance and the placeholders standing in for rows not near the viewport yet.
     // Repeated after filtering, so the page is deep enough under the default `auto_approved=false`
-    // the history view actually sends.
+    // the history view sends.
     const ledger =
       scene === "history-paged"
         ? Array.from({ length: 26 }, (_unused, index) => ({

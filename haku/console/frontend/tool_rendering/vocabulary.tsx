@@ -1,16 +1,15 @@
-// Shared vocabulary for per-server preview widgets, including compact vs detailed rendering. A **compact**
-// preview is the scannable form shown on an approvals panel card (and anywhere space is
-// tight): list-shaped arguments collapse to their first few items, long bodies to their
-// first few lines. A **detailed** preview is the full form shown in the expanded detail
-// view. Leaf module (no widget deps) so index.tsx and every widget can import the type
-// without a cycle.
+// Shared vocabulary for per-server preview widgets. A **compact** preview is the scannable form
+// shown on an approvals panel card and anywhere space is tight: list-shaped arguments collapse to
+// their first few items, long bodies to their first few lines. A **detailed** preview is the full
+// form. Leaf module (no widget deps) so index.tsx and every widget can import the type without a
+// cycle.
 import { Badge, type BadgeProps, Text, type TextProps } from "@mantine/core";
 import type { PropsWithChildren } from "react";
 
 export type PreviewVariant = "compact" | "detailed";
 
-// The props every top-level preview widget takes: the tool's parsed arguments plus the variant
-// to render. Shared so widgets (and `definePreview`) don't re-spell `{ args; variant }`.
+// The props every top-level preview widget takes: the tool's parsed arguments plus the variant to
+// render.
 export type PreviewProps<Args> = { args: Args; variant: PreviewVariant };
 
 /** Tool-widget body copy. Keeping the default here prevents Mantine's larger application-level

@@ -17,13 +17,12 @@ export function RawResultDisclosure({ result }: { result: unknown }) {
   );
 }
 
-/** The result of a finished tool call: a per-tool-type widget (the tool_rendering/ per-server responses
- * modules) over the unwrapped CallToolResult payload when one matches, else the raw-JSON
- * "Result" field — but only in detailed, so compact cards stay skimmable (a compact card shows
- * a result only when a widget makes it self-describing, mirroring how compact never shows raw
- * arguments JSON of a widget-rendered call). Detailed always offers the exact stored envelope
- * behind a `Raw result` disclosure once a widget rendered. Renders nothing while there is no
- * result yet. Shared by the approvals panel's recent cards and the history view. */
+/** The result of a finished tool call: a per-server widget (tool_rendering/'s responses modules)
+ * over the unwrapped CallToolResult payload when one matches, else the raw-JSON "Result" field —
+ * detailed only, so a compact card shows a result only when a widget makes it self-describing.
+ * Detailed always offers the exact stored envelope behind a `Raw result` disclosure once a widget
+ * rendered. Renders nothing while there is no result yet. Shared by the approvals panel's recent
+ * cards and the history view. */
 export function ToolResultField({
   serverId,
   toolName,

@@ -1,11 +1,10 @@
-// Runtime validators and static result types derived from the exact *output* schemas advertised
-// by the in-process FastMCP servers — the result-side mirror of mcp_tool_schema.ts. A tool that
-// returns None, or whose result the frontend renders as raw JSON, has no entry; the catalog only
-// carries tools with a structured output schema (so it is a subset of the argument catalog).
-// grocy-sf's typed batch-tool results are present too. Renderer-specific projections may still
-// narrow permissive `extra="allow"` Grocy rows further at their consumption boundary. The JSON
-// catalog and .d.ts module are two outputs of the same generator; like the argument side, this is
-// the only boundary where the experimental z.fromJSONSchema API is used.
+// Runtime validators and static result types derived from the exact *output* schemas advertised by
+// the in-process FastMCP servers — the result-side mirror of mcp_tool_schema.ts, plus grocy-sf's
+// typed batch-tool results. Only tools with a structured output schema have an entry, so this is a
+// subset of the argument catalog; renderer-specific projections may narrow permissive
+// `extra="allow"` Grocy rows further. The JSON catalog and .d.ts module are two outputs of the same
+// generator; like the argument side, this is the only boundary where the experimental
+// z.fromJSONSchema API is used.
 
 import { z } from "zod";
 
@@ -50,9 +49,9 @@ function compileResultCatalog(): CompiledResultSchema[] {
   return compiled;
 }
 
-// Eagerly compile the whole catalog, not just tools that currently have result widgets — the
-// argument-side counterpart's rationale applies: a newly advertised output schema that Zod cannot
-// represent fails tests and startup rather than quietly weakening a result preview.
+// Eagerly compile the whole catalog, not just tools that currently have result widgets, so a newly
+// advertised output schema that Zod cannot represent fails tests and startup rather than quietly
+// weakening a result preview.
 export const mcpToolResultSchemas: readonly CompiledResultSchema[] = Object.freeze(compileResultCatalog());
 
 export function mcpToolResultSchema<S extends McpToolResultServerId, T extends McpToolResultName<S>>(

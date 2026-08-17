@@ -1,8 +1,8 @@
 // `google_calendar` preview screenshot entry — esbuild bundles this into the `:previews` IIFE.
-// Holds the fixtures plus the mount call; the Calendar-only MCP stub is imported before the
-// registry/widget graph reaches client.ts. `satisfies
-// RegisteredToolPreviewFixture` ties each (serverId, toolName, args, result?) to the registry's
-// real Zod schemas, so a stale id, argument, or result shape is a type error.
+// Holds the fixtures plus the mount call, with the Calendar-only MCP stub imported before the
+// registry/widget graph reaches client.ts. `satisfies RegisteredToolPreviewFixture` ties each
+// (serverId, toolName, args, result?) to the registry's real Zod schemas, so a stale id, argument,
+// or result shape is a type error.
 import "./preview_mock";
 
 import { mountPreviewCards } from "../screenshot/mount";

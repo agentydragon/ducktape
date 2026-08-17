@@ -121,8 +121,7 @@ describe("approval queue state", () => {
     const declined = { autoApprovalEvaluation: "manual: not a read-only tool", approvalPolicyId: null };
     const approved = { autoApprovalEvaluation: "approved: allowlisted read", approvalPolicyId: "unconditional_v1" };
 
-    // A declined evaluation only explains an absence — the reason the operator is reading the card
-    // at all — so it is provenance the compact view omits.
+    // A declined evaluation is provenance: it only explains the absence the operator is looking at.
     expect(showsAutoApprovalEvaluation(declined, false)).toBe(false);
     expect(showsAutoApprovalEvaluation(declined, true)).toBe(true);
     // What let a call through unattended is worth a compact line.

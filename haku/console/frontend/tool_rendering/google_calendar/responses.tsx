@@ -22,9 +22,9 @@ const zListEventInstancesResult = mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID,
 export type CalendarEvent = z.infer<typeof zCreateEventResult>;
 type CalendarEventsPage = z.infer<typeof zListEventsResult>;
 
-// The event's own name is its identity, so — like every other card title — it leads unlabelled.
-// When the event has a Calendar link, the title doubles as that link (Google Calendar's own
-// icon marks it as external) instead of a separate "Open event in Google Calendar ↗" line below.
+// The event's own name is its identity, so it leads unlabelled. When the event has a Calendar link
+// the title doubles as that link, marked external by Google Calendar's own icon, instead of a
+// separate "Open event in Google Calendar ↗" line below.
 function EventTitle({ event }: { event: CalendarEvent }) {
   const title = event.summary ?? event.event_id;
   if (!event.html_link) return <PreviewTitle>{title}</PreviewTitle>;
@@ -79,11 +79,9 @@ function CalendarEventView({ event, variant }: { event: CalendarEvent; variant: 
   );
 }
 
-// Exported for google_calendar/calls.tsx's combined create_event widget (rendered once the tool
-// has actually executed) — the same full event view get_event/list_events use. The combined
-// widget only ever renders one of the pending preview or this result view at a time, so showing
-// when/recurrence/location/etc. here isn't a duplicate the way it would be if both rendered
-// together; it's the one place that info is visible once the call has finished.
+// Exported for google_calendar/calls.tsx's combined create_event widget, rendered once the tool has
+// executed — the same full event view get_event/list_events use, and the only place the event's
+// when/recurrence/location shows after the call finishes.
 export function CalendarEventResultView({ result, variant }: ResultPreviewProps<CalendarEvent>) {
   return <CalendarEventView event={result} variant={variant} />;
 }

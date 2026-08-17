@@ -3,19 +3,17 @@
 // iframe, then decides and acts. The iframe may only **request**.
 // See docs/containment.md → "The bridge protocol".
 //
-// The wire shapes (Inbound/Outbound/GeolocationOptions/GeoPosition) plus the client helpers
-// live in the shared @haku/console-bridge package (haku/js/bridge_protocol) — the one
-// source of truth both sides import. What stays HERE is shell-only and deliberately NOT
-// shared: the inbound validators and the open-link whitelist, PR-gated so a compromised
+// The wire shapes (Inbound/Outbound/GeolocationOptions/GeoPosition) plus the client helpers live in
+// the shared @haku/console-bridge package (haku/js/bridge_protocol), which both sides import. The
+// inbound validators and the open-link whitelist stay HERE, unshared and PR-gated, so a compromised
 // iframe can't widen them.
 import type { GeolocationOptions, Inbound } from "@haku/console-bridge/protocol";
 
-// A mirrored route is strictly a PATH, never a URL: leading `/` (but not a
-// protocol-relative `//`, so the value stays inert even if a future caller drops it into
-// a URL context), a length cap, and a conservative charset — `/` plus what haku-ui's
-// per-segment encodeURIComponent can emit, so `%` only as a well-formed `%XX` escape
-// (malformed escapes get normalized inconsistently by URL serializers) — so a hostile
-// iframe can't put arbitrary content in the console's URL bar.
+// A mirrored route is strictly a PATH, never a URL, so a hostile iframe can't put arbitrary content
+// in the console's URL bar: leading `/` but not a protocol-relative `//` (inert even if a caller
+// drops it into a URL context), a length cap, and a charset of `/` plus what haku-ui's per-segment
+// encodeURIComponent emits — `%` only as a well-formed `%XX`, since URL serializers normalize
+// malformed escapes inconsistently.
 export const ROUTE_PATH_MAX_LENGTH = 512;
 export const FRAME_TITLE_MAX_LENGTH = 512;
 const ROUTE_PATH_RE = /^\/(?:[A-Za-z0-9/._~!'()*-]|%[0-9A-Fa-f]{2})*$/;
@@ -23,9 +21,8 @@ export function isRoutePath(path: string): boolean {
   return path.length <= ROUTE_PATH_MAX_LENGTH && !path.startsWith("//") && ROUTE_PATH_RE.test(path);
 }
 
-// Pick only the recognized option fields with their correct types, dropping anything
-// unknown or mistyped — the browser's getCurrentPosition is itself lenient about its
-// option bag, and we never want a malformed `options` to reject the whole request.
+// Drop unknown or mistyped fields rather than rejecting the whole request, mirroring how lenient
+// the browser's own getCurrentPosition is about its option bag.
 export function parseGeolocationOptions(raw: unknown): GeolocationOptions | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const o = raw as Record<string, unknown>;
@@ -65,9 +62,9 @@ export function parseInbound(data: unknown): Inbound | null {
   return null;
 }
 
-// Operator-owned trusted whitelist — it lives in the **shell** (ducktape, PR-gated),
-// deliberately NOT in haku-state, or Haku could whitelist a phishing host to skip the
-// confirm. An entry matches the host exactly or any subdomain of it.
+// Operator-owned trusted whitelist. It lives in the **shell** (ducktape, PR-gated) and not in
+// haku-state, or Haku could whitelist a phishing host to skip the confirm. An entry matches the
+// host exactly or any subdomain of it.
 export const OPEN_LINK_WHITELIST = [
   "claude.ai",
   "github.com",

@@ -10,19 +10,17 @@ export type BootstrapNarration = {
 
 /** What the sandbox said while coming up, ordered, and how prominently to show it.
  *
- * `null` when the session narrated nothing: an empty panel is worse than no panel, and a
- * session whose bridge connected before it had anything to say is an ordinary one.
+ * `null` when the session narrated nothing: an empty panel is worse than no panel.
  *
- * **Ordered by `frame_seq`, and never deduplicated.** These rows are recorded with no frame
- * identity — the runner sends them `replayable=False` precisely because a console cannot tell a
- * replayed line from a repeated one — so the sequence is the only order there is, and two
+ * **Ordered by `frame_seq`, and never deduplicated.** These rows carry no frame identity — the
+ * runner sends them `replayable=False` — so the sequence is the only order there is, and two
  * identical texts are two things that happened. Sorting here rather than trusting the response
- * costs nothing and makes the rule local to the component that depends on it.
+ * keeps the rule local to the component that depends on it.
  *
  * It opens **expanded when nothing else is happening yet**: while the session is still
- * provisioning, and whenever the transcript is empty — which is also the session that died
- * during setup, where this is the entire account of what happened. Once there are messages the
- * transcript is what the operator came for, so the narration collapses out of its way.
+ * provisioning, and whenever the transcript is empty — including the session that died during
+ * setup, where this is the entire account of what happened. Once there are messages the transcript
+ * is what the operator came for, so the narration collapses out of its way.
  */
 export function bootstrapNarration(
   session: Pick<ConversationSession, "status" | "narration" | "messages">

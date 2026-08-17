@@ -2,15 +2,14 @@
 // the approvals card's identity line shows ("Gmail: Draft email", "kubectl: Delete Pod") and the
 // title a push notification is rendered with.
 //
-// Composes the per-server maps in `<server>/actions.ts`, exactly as `index.tsx` composes the
-// per-server widget registries: adding a server is "write a new directory + a registry entry
-// here". A tool with no entry falls back to `serverId.toolName`.
+// Composes the per-server maps in `<server>/actions.ts`, as `index.tsx` composes the per-server
+// widget registries: adding a server is "write a new directory + a registry entry here". A tool with
+// no entry falls back to `serverId.toolName`.
 //
-// **This side of the split is React-free**, and must stay that way. The card could import
-// anything, but the service worker (`../sw.ts`) also reads this registry to title notifications
-// for pending calls, and must not drag React, Mantine, and CodeMirror into a bundle the browser
-// loads to show a notification. Sharing one registry is also what stops the two surfaces from
-// drifting into different phrasings for the same call.
+// **This side of the split is React-free**, and must stay that way: the service worker (`../sw.ts`)
+// reads this registry to title notifications, and must not drag React, Mantine, and CodeMirror into
+// a bundle the browser loads to show one. Sharing the registry also keeps the card and the
+// notification from phrasing the same call differently.
 
 import type { ActionEntry, ToolAction } from "./action_entry";
 import { gmailActions } from "./gmail/actions";

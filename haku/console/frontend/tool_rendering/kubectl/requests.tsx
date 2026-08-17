@@ -1,10 +1,9 @@
 // Per-tool-type rendering for the remote `kubectl-passthrough-mcp` MCP server (see
-// cluster/k8s/agents/kubectl-passthrough-mcp/). Falls back to the generic raw-JSON view
-// for anything that isn't shaped as expected — same caveat as gmail/requests.tsx:
-// arguments are only validated by the tool's own schema at execution time, not at
-// submission. Every tool here runs with the approving operator's own cluster-admin
-// identity (cluster_auth_mode=passthrough) once approved, so rendering the exact target
-// unambiguously matters more than for narrower-scoped tools.
+// cluster/k8s/agents/kubectl-passthrough-mcp/). Anything not shaped as expected falls back to the
+// generic raw-JSON view: as with gmail/requests.tsx, arguments are validated at execution time, not
+// at submission. Every approved call runs with the operator's own cluster-admin identity
+// (cluster_auth_mode=passthrough), so rendering the exact target unambiguously matters more here
+// than for narrower-scoped tools.
 
 import { Group, Stack } from "@mantine/core";
 import type { z } from "zod";
@@ -15,9 +14,6 @@ import { definePreview, type ToolPreview } from "../entry";
 import { PreviewText, type PreviewProps } from "../vocabulary";
 import { zPodsDeleteArgs, zPodsLogArgs, zResourcesCreateOrUpdateArgs, zResourcesDeleteArgs } from "./schemas";
 
-// kubectl-passthrough-mcp is a remote third-party binary
-// (containers/kubernetes-mcp-server), so its tools/list schemas are not available to the
-// build-time in-process catalog. These are hand-authored against the live advertised schema.
 type ResourcesCreateOrUpdateArgs = z.infer<typeof zResourcesCreateOrUpdateArgs>;
 type ResourcesDeleteArgs = z.infer<typeof zResourcesDeleteArgs>;
 type PodsDeleteArgs = z.infer<typeof zPodsDeleteArgs>;

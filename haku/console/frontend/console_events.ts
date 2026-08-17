@@ -7,11 +7,10 @@ import { redirectToOperatorLogin } from "./operator_login";
 // Mirrors `OPERATOR_SESSION_EXPIRED_CLOSE_CODE` in ../console_events.py.
 const OPERATOR_SESSION_EXPIRED_CLOSE_CODE = 4001;
 
-// The live channel's health, surfaced so the shell can show when it's broken (a dead socket
-// means the approvals panel only updates on reload — the operator must be told, not left
-// silently stale). `connecting` is the pre-open grace state (no alarm during the handshake);
-// `offline` persists across reconnect attempts until one succeeds, so the indicator doesn't
-// blink between backoff tries.
+// The live channel's health, surfaced so the shell can show when it's broken: a dead socket means
+// the approvals panel only updates on reload. `connecting` is the pre-open grace state (no alarm
+// during the handshake); `offline` persists across reconnect attempts until one succeeds, so the
+// indicator doesn't blink between backoff tries.
 export type LiveStatus = "connecting" | "live" | "offline";
 
 export type ConsoleEvent = { event_type: string };
@@ -21,9 +20,8 @@ export type ConsoleEvent = { event_type: string };
  * Mirrors `SessionChangedEvent` in ../console_events.py, which carries no more than this: the
  * socket says a session changed and REST stays the source of what it changed to.
  *
- * Consumers of this channel see *every* event, so a page that refetches unconditionally starts
- * paying for session traffic the moment this exists — a streaming turn emits one of these per
- * coalescing window. Anything not about sessions should skip an event this returns an id for.
+ * Every consumer sees *every* event, and a streaming turn emits one of these per coalescing
+ * window, so anything not about sessions should skip an event this returns an id for.
  */
 export function changedSessionId(event: ConsoleEvent): string | null {
   if (event.event_type !== "session_changed") return null;

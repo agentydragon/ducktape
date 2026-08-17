@@ -53,9 +53,9 @@ function compileCatalog(): CompiledSchema[] {
   return compiled;
 }
 
-// Eagerly compile the complete catalog, not just tools that currently have custom previews.
-// A newly advertised schema that Zod cannot represent therefore fails tests and application
-// startup instead of quietly weakening validation for whichever preview eventually consumes it.
+// Eagerly compile the complete catalog, not just tools that currently have custom previews, so a
+// newly advertised schema that Zod cannot represent fails tests and application startup instead of
+// quietly weakening validation for whichever preview eventually consumes it.
 export const mcpToolSchemas: readonly CompiledSchema[] = Object.freeze(compileCatalog());
 
 export function mcpToolSchema<S extends McpServerId, T extends McpToolName<S>>(

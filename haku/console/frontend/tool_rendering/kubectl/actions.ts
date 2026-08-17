@@ -1,6 +1,5 @@
-// Notification/card action descriptions for kubectl-passthrough-mcp's tools — the one-line summary the
-// approvals card shows and a push notification is titled with. Beside the widgets they
-// describe, and React-free so `../../sw.ts` can bundle them (see ../action_entry.ts).
+// Card and notification action descriptions for kubectl-passthrough-mcp's tools. React-free so `../../sw.ts`
+// can bundle them (see ../action_entry.ts).
 
 import { type ActionEntry, fixed, fromArgs } from "../action_entry";
 import { zResourcesDeleteArgs } from "./schemas";

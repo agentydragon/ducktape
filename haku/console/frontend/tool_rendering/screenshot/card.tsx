@@ -86,11 +86,11 @@ export function PreviewCard({ fixture, variant }: { fixture: PreviewFixture; var
   });
   return (
     // `.haku-page` (position overridden to static) mirrors the real surface so the card's
-    // page-scoped CSS applies. `.haku-shell-panels` is the real approvals-panel column class —
-    // reused here (not duplicated as a magic-number viewport width) so the card renders at its
-    // true production width and tracks that CSS if it ever changes. `.haku-preview-card` is
-    // render.mjs's screenshot target: an opaque background keeps the standalone PNG
-    // self-contained, and no forced height means a tight crop at the card's real rendered height.
+    // page-scoped CSS applies, and `.haku-shell-panels` is the real approvals-panel column class,
+    // so the card renders at its production width and tracks that CSS if it changes — never a
+    // magic-number viewport width. `.haku-preview-card` is render.mjs's screenshot target: an
+    // opaque background keeps the standalone PNG self-contained, and forcing no height gives a
+    // tight crop at the card's real rendered height.
     <div className="haku-page" style={{ position: "static" }}>
       <div className="haku-shell-panels">
         <div className="haku-preview-card" style={{ background: "var(--haku-page-bg)", padding: 12, borderRadius: 8 }}>

@@ -42,13 +42,11 @@ type GmailThread = z.infer<typeof zThread>;
 type GmailThreadsList = z.infer<typeof zThreadsList>;
 type GmailMessage = z.infer<typeof zMessage>;
 
-// Exported for calls.tsx's combined drafts_create widget (rendered once the tool has actually
-// executed). The draft's own subject is the identity, like every other Gmail link here — not
-// generic "Open draft in Gmail ↗" text. Recipients and body still matter once the draft exists
-// (the operator is verifying what actually got drafted), so unlike a calendar event's when/
-// location — a click away in Calendar either way — this keeps restating them from `args`, the
-// same content the pending preview showed. The raw draft id is provenance, so it rides along
-// dimmed only in detailed (the link's href carries it for anyone who needs it compact).
+// Exported for calls.tsx's combined drafts_create widget, rendered once the tool has executed. The
+// draft's own subject is the identity, as with every other Gmail link here. Recipients and body
+// still matter once the draft exists — the operator is verifying what actually got drafted — so
+// they keep being shown from `args`. The raw draft id is provenance and rides along dimmed only in
+// detailed; the link's href carries it either way.
 export function CreateGmailDraftResultView({
   args,
   result,
@@ -118,10 +116,9 @@ function LabelPills({ labelIds, names }: { labelIds: string[]; names: ReadonlyMa
   );
 }
 
-// Opens Gmail in a new tab, Gmail's own icon marking it external — the Gmail counterpart of
-// google_calendar/responses.tsx's `EventTitle`. Shared by GmailLink below (thread/message ids,
-// all opened via the same `#all/<id>` URL) and the draft link above (a different URL scheme, so
-// it composes its own href instead of taking an id).
+// Opens Gmail in a new tab, Gmail's own icon marking it external. Shared by GmailLink below
+// (thread/message ids, all opened via the same `#all/<id>` URL) and the draft link above, which
+// composes its own href because its URL scheme differs.
 function GmailIconLink({ href, fw, children }: { href: string; fw?: number; children: ReactNode }) {
   return (
     <ExternalLink href={href} size="sm" fw={fw}>
@@ -133,10 +130,9 @@ function GmailIconLink({ href, fw, children }: { href: string; fw?: number; chil
   );
 }
 
-// `gmailThreadUrl`'s `#all/<id>` fragment resolves either a thread or a message id, so callers
-// just pass whichever id they have instead of composing the URL themselves. Reused for a
-// thread's/message's subject (bold, the card's identity) and a thread-list row's snippet (plain
-// weight).
+// `gmailThreadUrl`'s `#all/<id>` fragment resolves either a thread or a message id, so callers pass
+// whichever id they have. Used for a thread's/message's subject (bold, the card's identity) and for
+// a thread-list row's snippet (plain weight).
 function GmailLink({ id, fw, children }: { id: string; fw?: number; children: ReactNode }) {
   return (
     <GmailIconLink href={gmailThreadUrl(id)} fw={fw}>

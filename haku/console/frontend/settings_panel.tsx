@@ -113,11 +113,9 @@ function connectionSummary(server: McpServerConnection): string {
       ? `${backend} · Console-managed credential`
       : `${backend} · no operator-linked account`;
   }
-  // Both unions below are switched exhaustively with no `default`, so a new status is a missing
-  // return — a compile error — rather than falling through to the connected wording. That
-  // fall-through is not hypothetical: `degraded` already existed in both unions and landed on it,
-  // so a connection whose token refresh was failing was summarised as plainly connected while the
-  // badge beside it read "Unavailable".
+  // Both unions below are switched exhaustively with no `default`, so a new status is a compile
+  // error rather than a silent fall-through to the connected wording — which would summarise a
+  // connection whose token refresh is failing as plainly connected.
   if (isMcpOperatorAuthStatus(connection)) {
     const linkedUntil = shortDate(
       typeof connection.state.token_expires_at === "string" ? connection.state.token_expires_at : null
@@ -360,9 +358,8 @@ function PushNotificationCard() {
   const display = PUSH_STATE_DISPLAY[state.status];
   const actionable = state.status === "on" || state.status === "off" || state.status === "failed";
   const thisEndpoint = state.status === "on" ? state.endpoint : null;
-  // Everything except this browser. Notifications fan out to all of them and are retracted from
-  // all of them, so the operator needs to see what else is enrolled — a laptop left registered at
-  // an old desk keeps lighting up with tool calls until someone forgets it here.
+  // Everything except this browser. Notifications fan out to every enrolled device, so a laptop
+  // left registered at an old desk keeps lighting up with tool calls until it is forgotten here.
   const others = devices.filter((device) => device.endpoint !== thisEndpoint);
   return (
     <>

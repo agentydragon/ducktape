@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 // The trusted console owns one reserved namespace. Every other pathname belongs to the
-// cross-origin Haku UI frame, including the old /tool-calls console path.
+// cross-origin Haku UI frame.
 export const CONSOLE_ROOT_PATH = "/_console";
 export const SETTINGS_PATH = `${CONSOLE_ROOT_PATH}/settings`;
 export const TOOL_CALLS_PATH = `${CONSOLE_ROOT_PATH}/tool-calls`;
@@ -14,15 +14,14 @@ const LAST_EMBED_PATH_KEY = "haku-console:last-embed-path";
 export type ConsoleNavigationView = "embed" | "settings" | "toolCalls" | "conversations";
 export type ConsoleView = ConsoleNavigationView | "agentEnrollment" | "oauthResult" | "sessionFrames" | "notFound";
 
-// Every id-bearing console route carries a canonical UUIDv4, and each spelled its own pattern
-// until there were four of them.
+// Every id-bearing console route carries a canonical UUIDv4.
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
 
-// A single call, deep-linked — what a push notification's "Details" opens, and what the MCP
-// server advertises to an agent whose call is waiting. It resolves to the ordinary embed view
-// with the approvals drawer opened on that call, rather than to the history page: a pending call
-// is decided in the drawer, and that is what the operator followed the link to do. Tool call ids
-// are `tc_` + 24 hex (mcp_approval.py), not UUIDs like the other two id-bearing routes here.
+// A single call, deep-linked — what a push notification's "Details" opens, and what the MCP server
+// advertises to an agent whose call is waiting. It resolves to the ordinary embed view with the
+// approvals drawer opened on that call rather than to the history page, since a pending call is
+// decided in the drawer. Tool call ids are `tc_` + 24 hex (mcp_approval.py), not UUIDs like the
+// other id-bearing routes here.
 const TOOL_CALL_PATH = new RegExp(`^${TOOL_CALLS_PATH}/(tc_[0-9a-f]{24})$`, "i");
 
 const OAUTH_RESULT_PATH = new RegExp(`^${OAUTH_RESULT_PATH_PREFIX}/(${UUID})$`, "i");

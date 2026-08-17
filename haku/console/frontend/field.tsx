@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
 
-/** A labelled value in a preview/detail view. Both forms share one wrapper and value element —
- * only the label differs: the default stacks a small uppercase text label over the value, while
- * passing `icon` swaps that label for an inline icon on the value's own row (the label rides
- * along as the icon's tooltip/aria-label), saving the whole label row for short values. */
+/** A labelled value in a preview/detail view. The default stacks a small uppercase text label over
+ * the value; passing `icon` swaps that label for an inline icon on the value's own row, saving the
+ * label row for short values — the label rides along as the icon's tooltip/aria-label. */
 export function Field({
   label,
   children,

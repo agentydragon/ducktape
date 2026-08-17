@@ -1,15 +1,14 @@
 // Registries mapping each MCP server id to its per-tool rendering entries. Most tools split
 // pending/finished rendering across two independent widgets: `<server>/requests.tsx` exports the
 // server id plus a `{ toolName -> {schema, render} }` map for the call's *arguments*, and
-// `<server>/responses.tsx` the same for its *result* (request-only servers simply have no
-// responses module). A tool whose pending and finished states are naturally one evolving view
-// (its result mostly restates its own arguments, e.g. a creation tool) instead registers once in
-// `<server>/calls.tsx`'s combined map — see call_entry.tsx. A tool lives in exactly one of the
-// two systems, never both. Adding a server is "write a new directory + registry entries here".
+// `<server>/responses.tsx` the same for its *result* (a request-only server has no responses
+// module). A tool whose pending and finished states are naturally one evolving view — a creation
+// tool whose result mostly restates its arguments — instead registers once in `<server>/calls.tsx`'s
+// combined map (see call_entry.tsx). A tool lives in exactly one of the two systems, never both.
+// Adding a server is "write a new directory + registry entries here".
 // `toolPreview`/`toolResultPreview`/`toolCallPreview` dispatch by serverId, safeParse the payload
-// against the tool's schema(s) once, and hand the widget already-typed data — no module repeats
-// the parse, and this file never grows a hand-maintained `??` chain. `variant` picks the compact
-// vs detailed rendering.
+// against the tool's schema(s) once, and hand the widget already-typed data. `variant` picks the
+// compact vs detailed rendering.
 
 import type { ReactNode } from "react";
 import type { z } from "zod";

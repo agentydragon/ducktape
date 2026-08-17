@@ -10,10 +10,10 @@ import { useToolCallDecision } from "./tool_call_decision";
 import { changedSessionId, useConsoleEvents } from "./console_events";
 import { useVariant } from "./variant_control";
 
-// One screenful and change, not the ledger's `le=500` cap. Every record carries its whole
-// arguments and result payload, so a page of 25 is ~100 KB where 500 was several megabytes — and
-// each row builds a syntax-highlighted code block, which at 500 rows blocked the main thread for
-// seconds on end. Older calls arrive by following `nextCursor` on demand.
+// One screenful and change, not the ledger's `le=500` cap. Every record carries its whole arguments
+// and result payload, so a page of 25 is ~100 KB where 500 is several megabytes, and each row
+// builds a syntax-highlighted code block — 500 of them block the main thread for seconds. Older
+// calls arrive by following `nextCursor` on demand.
 const HISTORY_PAGE_SIZE = 25;
 
 /** The first page, refetched over what is already loaded: the fresh page, then the rows below it
@@ -76,11 +76,10 @@ function ToolCallRow({
   );
 }
 
-// The console's own page view of the whole tool-call audit ledger — a bigger,
-// persistent counterpart to the approvals drawer's ephemeral "Recent" list. The shared shell
-// keeps the framed haku-ui mounted behind this page.
-// A pending call that streams in (via the live WS signal) can be approved/denied here too,
-// through the same exact-Origin-gated endpoints the approvals panel uses, without going back to the shell.
+// The console's own page view of the whole tool-call audit ledger — the persistent counterpart to
+// the approvals drawer's ephemeral "Recent" list, with the framed haku-ui still mounted behind it.
+// A pending call that streams in over the live WS signal can be decided here too, through the same
+// exact-Origin-gated endpoints the approvals panel uses.
 export function ToolCallsPage() {
   const [loaded, setLoaded] = useState<ToolCallPage | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -104,7 +103,7 @@ export function ToolCallsPage() {
 
   // At most one refetch in flight, a burst of live events collapsing into one catch-up: every
   // record carries its whole arguments and result, so overlapping fetches of the newest page cost
-  // real bandwidth for answers each of which the next one discards.
+  // real bandwidth for answers the next one discards.
   const { refresh, busy: refreshing } = useCoalescedRefresh(async () => {
     const replaceLoaded = replaceRef.current;
     replaceRef.current = false;
@@ -137,12 +136,11 @@ export function ToolCallsPage() {
     }
   }, [loaded?.nextCursor, loadingMore]);
 
-  // Live: initial load on mount plus a refetch of the first page whenever a tool call is
-  // submitted, approved, denied, or finishes anywhere — the same WS signal the approvals panel
-  // uses. Pages already scrolled back through survive it (see `mergeNewestPage`).
-  // A session invalidation says nothing about the approval ledger, and a streaming turn emits one
-  // every coalescing window — refetching a page of full records on it would cost far more than the
-  // tool-call traffic this page exists for.
+  // Live: initial load on mount plus a refetch of the first page whenever a tool call is submitted,
+  // approved, denied, or finishes anywhere — the same WS signal the approvals panel uses. Pages
+  // already scrolled back through survive it (see `mergeNewestPage`). Session invalidations are
+  // skipped: they say nothing about the ledger, and a streaming turn emits one every coalescing
+  // window.
   useConsoleEvents((event) => {
     if (changedSessionId(event) === null) refresh();
   });

@@ -48,9 +48,8 @@ function timestamp(value: string): string {
 
 /** The channels holding a copy of this conversation, or that none do.
  *
- * Plural on purpose: a conversation is held by however many channels have attached to it, and the
- * browser reading it is not one of them — a tab keeps no copy, so it has no attachment and nothing
- * to address.
+ * Plural on purpose: a conversation is held by however many channels have attached to it. The
+ * browser reading it is not one of them — a tab keeps no copy, so it has no attachment.
  */
 function Attachments({ attachments }: { attachments: ConversationSummary["attachments"] }) {
   if (attachments.length === 0) {
@@ -97,11 +96,10 @@ function TurnBoundary({ turn, number }: { turn: ConversationTurn; number: number
 
 /** The sandbox's own account of coming up, at the head of the transcript where it happened.
  *
- * It sits first because it is first: narration is recorded before the CLI produces anything, and
- * a session that never got past setup has nothing below it. Open while that is still the case
- * (`bootstrapNarration` decides), collapsed to a summary line once the transcript is what the
- * operator came to read — with the last line kept visible there, since a bootstrap that ended
- * badly says so on its final line.
+ * Narration is recorded before the CLI produces anything, and a session that never got past setup
+ * has nothing below it. Open while that is still the case (`bootstrapNarration` decides), collapsed
+ * to a summary line once the transcript is what the operator came to read — keeping the last line
+ * visible, since a bootstrap that ended badly says so on its final line.
  */
 function BootstrapNarrationPanel({ narration, starting }: { narration: BootstrapNarration; starting: boolean }) {
   const [expanded, setExpanded] = useState(narration.startsExpanded);
@@ -174,10 +172,10 @@ function MessageView({ message }: { message: ClaudeChatMessage }) {
 
 /** Every conversation this operator has, newest activity first, and the button that starts one.
  *
- * **Paged by keyset from the day it ships**, because a conversation never ends: this list only
- * grows, and only at its top, so an offset would step over a row or repeat one every time
- * something moved mid-walk. Pages already loaded are kept and appended to; a live event refreshes
- * only the newest page, the way the tool-call history does.
+ * **Paged by keyset**, because a conversation never ends: this list only grows, and only at its
+ * top, so an offset would step over a row or repeat one every time something moved mid-walk. Pages
+ * already loaded are kept and appended to; a live event refreshes only the newest page, the way the
+ * tool-call history does.
  */
 function ConversationListPage() {
   // Null until the first read lands: an empty inventory and an unread one look the same
@@ -208,8 +206,8 @@ function ConversationListPage() {
   });
 
   // The initial read, a re-read when any session changes, and one more on every reconnect. A row
-  // carries `message_count` and `last_activity_at`, so it goes stale for exactly the reason a
-  // transcript does — and it is not told which of its rows moved, only that one did.
+  // carries `message_count` and `last_activity_at`, so it goes stale for the same reason a
+  // transcript does, and the event does not say which row moved.
   useConsoleEvents((event) => {
     if (event.event_type === "sync" || changedSessionId(event) !== null) refresh();
   });
@@ -327,8 +325,8 @@ function ConversationListPage() {
 /** The sessions this conversation ran before the current one.
  *
  * A conversation outlives its sessions, so a thread whose sandbox died has more than one. Their
- * transcripts are not merged into the one above — that is the subscription's job — so what they
- * get here is the link that keeps their frame log reachable.
+ * transcripts are not merged into the one above — that is the subscription's job — so what they get
+ * here is the link that keeps their frame log reachable.
  */
 function EarlierSessions({ sessions }: { sessions: Conversation["earlier_sessions"] }) {
   return (
@@ -401,8 +399,8 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
   }, [conversationId, refresh]);
 
   // Live: the initial read, this conversation's own invalidations, and a catch-up on every
-  // reconnect. A refetch rather than a delta stream is what makes a missed event cost nothing —
-  // the page lands on the current transcript whether it heard one event or none.
+  // reconnect. A refetch rather than a delta stream makes a missed event cost nothing — the page
+  // lands on the current transcript whether it heard one event or none.
   useConsoleEvents((event) => {
     if (event.event_type === "sync" || changedSessionId(event) === sessionRef.current) refresh();
   });

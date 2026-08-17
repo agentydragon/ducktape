@@ -3,11 +3,9 @@ import { type PointerEvent, useEffect, useRef, useState } from "react";
 
 import { ACTION_COLOR } from "./theme";
 
-// The escalation the shell is asking the operator to approve — the **actual action** the
-// iframe requested, as a disjoint union so each kind carries exactly its own fields and
-// renders its own confirm copy (no flag+optional soup). The trusted-rendered text for each
-// privileged action lives here, in one place, since this dialog is the only trustworthy
-// surface at the moment of approval.
+// The escalation the shell is asking the operator to approve — the **actual action** the iframe
+// requested. The trusted-rendered copy for each privileged action lives here, since this dialog is
+// the only trustworthy surface at the moment of approval.
 export type Escalation = { kind: "openLink"; url: string } | { kind: "launch"; id: string; prompt: string };
 
 interface Rendered {
@@ -41,14 +39,13 @@ export function escalationIdentity(action: Escalation): string {
   }
 }
 
-// Top-layer modal confirm — the only trustworthy surface at the moment of a privileged
-// action. Rendered with the native `<dialog>.showModal()` (the browser **top layer**)
-// so the cross-origin iframe cannot draw over it, read it, or intercept its clicks.
-// Mantine's Modal/Portal and CSS z-index can mimic the layout, but they cannot move an
-// arbitrary element into the browser top layer. The `::backdrop` dims the agent UI so
-// "the shell is talking now" is unambiguous. The approve button stays disabled for a
-// beat so a baited click-through can't land on a freshly-rendered confirm. See
-// docs/containment.md → "The shell as a thin trusted layer".
+// Top-layer modal confirm — the only trustworthy surface at the moment of a privileged action. It
+// must be the native `<dialog>.showModal()`, since only the browser top layer keeps the
+// cross-origin iframe from drawing over it, reading it, or intercepting its clicks; Mantine's
+// Modal/Portal and CSS z-index cannot put an element there. The `::backdrop` dims the agent UI so
+// "the shell is talking now" is unambiguous, and the approve button stays disabled for a beat so a
+// baited click-through can't land on a freshly-rendered confirm. See docs/containment.md → "The
+// shell as a thin trusted layer".
 const ARM_DELAY_MS = 400;
 
 function pointerDownOutsideDialog(e: PointerEvent<HTMLDialogElement>): boolean {

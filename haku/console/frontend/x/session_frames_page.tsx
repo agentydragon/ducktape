@@ -63,22 +63,20 @@ function FrameRow({ frame }: { frame: SessionFrame }) {
 }
 
 /** Claude Code's raw protocol frames behind one conversation — what the console's transcript is a
- * lossy projection *of*. Reached from the
- * conversation it belongs to and deep-linkable at its own route, so "look at frame 412" is a link.
+ * lossy projection *of*. Reached from the conversation it belongs to and deep-linkable at its own
+ * route, so "look at frame 412" is a link.
  *
  * **The one surface in the console that shows a backend's own shapes, and it says so.** Every other
- * surface renders the neutral vocabulary and cannot tell which backend produced it; this one is
- * addressed separately, is read by no rendering or delivery decision, and is labelled as one
- * backend's wire rather than as the conversation. Those three conditions are what keep it from
- * being a hole in the layering, and the third is this page's own job.
+ * surface renders the neutral vocabulary and cannot tell which backend produced it; this page must
+ * stay addressed separately, read by no rendering or delivery decision, and labelled as one
+ * backend's wire rather than as the conversation.
  *
- * **A long session must not be expensive to open.** The first read is the *tail* of the log, so
- * the frames an operator came for — a cut-off answer, a turn that died — are on the first page
- * rather than a hundred pages in; earlier ones arrive on demand, above what is loaded. Within a
- * page the frames stay in wire order and the view opens at the top of it, because reading a
- * protocol log backwards is not reading it — so this is a window on the end, read downwards.
- * Each row's payload builds its editor only once it nears the viewport, which is what keeps a
- * page of fifty JSON blocks off the main thread. */
+ * **A long session must not be expensive to open.** The first read is the *tail* of the log, so the
+ * frames an operator came for — a cut-off answer, a turn that died — are on the first page rather
+ * than a hundred pages in; earlier ones arrive on demand, above what is loaded. Within a page the
+ * frames stay in wire order and the view opens at the top of it, since reading a protocol log
+ * backwards is not reading it. Each row's payload builds its editor only once it nears the
+ * viewport, which keeps a page of fifty JSON blocks off the main thread. */
 export function SessionFramesPage({ sessionId }: { sessionId: string }) {
   const [mode, setMode] = useState<FrameMode>("frames");
   const [reloads, setReloads] = useState(0);

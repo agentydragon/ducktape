@@ -1,14 +1,11 @@
 // Per-tool-type rendering for haku-console's in-process `gmail` MCP server (see
-// haku/console/tools/gmail.py). Falls back to the generic raw-JSON view
-// (approval_state.ts's argumentsJson) for anything that isn't shaped as expected — arguments
-// are only validated by the tool's own Pydantic model at execution time, not at submission,
-// so a pending approval's arguments could in principle be malformed. `threads_get`,
-// `threads_list`, and `messages_get` get a minimal identity preview (mirrors
-// google_calendar/requests.tsx's `get_event`/`list_events`); the remaining read tools
-// (`labels_list`, `filters_list`, `drafts_list`, …) still have no widget — their args are
-// either empty or self-descriptive. The Zod schemas below are built from the FastMCP input
-// schemas advertised by tools/list. Execution still owns cross-field rules that JSON Schema
-// cannot express, such as add/remove label overlap.
+// haku/console/tools/gmail.py). Anything not shaped as expected falls back to the generic raw-JSON
+// view (approval_state.ts's argumentsJson): arguments are validated by the tool's own Pydantic model
+// at execution time, not at submission, so a pending approval's may be malformed. The remaining read
+// tools (`labels_list`, `filters_list`, `drafts_list`, …) have no widget — their args are empty or
+// self-descriptive. The Zod schemas below are built from the FastMCP input schemas advertised by
+// tools/list; execution still owns cross-field rules JSON Schema cannot express, such as add/remove
+// label overlap.
 
 import { Group, Loader, Stack } from "@mantine/core";
 import { useEffect, useState } from "react";
@@ -164,13 +161,12 @@ export function CompactBody({ body }: { body: string }) {
   );
 }
 
-// Exported for gmail/calls.tsx's combined drafts_create widget (rendered pre-execution; the
-// finished view is CreateGmailDraftResultView in responses.tsx, off the tool's actual result).
+// Exported for gmail/calls.tsx's combined drafts_create widget, which renders this pre-execution
+// and CreateGmailDraftResultView (responses.tsx) once the call has finished.
 export function CreateGmailDraftPreview({ args, variant }: PreviewProps<CreateGmailDraftArgs>) {
   // Subject leads as the draft's title; recipients ride one mail-icon line (cc folded in when
-  // detailed); the body follows unlabelled — clamped compact, full detailed. A reply draft
-  // links to the thread it lands in (useful in both variants) rather than printing the raw
-  // thread id, which is noise — the link's href carries the id for anyone who needs it.
+  // detailed); the body follows unlabelled — clamped compact, full detailed. A reply draft links to
+  // the thread it lands in rather than printing the raw thread id, whose value the href carries.
   const detailed = variant === "detailed";
   return (
     <Stack gap={6}>
@@ -191,11 +187,9 @@ export function CreateGmailDraftPreview({ args, variant }: PreviewProps<CreateGm
   );
 }
 
-// threads_get's and messages_get's own thread/message id is opaque and not user-readable (unlike
-// google_calendar's `get_event`, whose id is at least a stable, glanceable identifier), so both
-// resolve the real subject the same way ModifyGmailThreadLabelsPreview does — fetched, not
-// derived from the args alone. The raw id still rides along dimmed in detailed for anyone who
-// needs it.
+// A thread/message id is opaque and not user-readable, so threads_get and messages_get resolve the
+// real subject by fetching it, the same way ModifyGmailThreadLabelsPreview does. The raw id still
+// rides along dimmed in detailed.
 function GetGmailThreadPreview({ args, variant }: PreviewProps<GetGmailThreadArgs>) {
   const [preview, setPreview] = useState<GmailThreadPreview | null | undefined>(undefined);
 

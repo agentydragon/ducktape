@@ -3,9 +3,9 @@ import type { ReactNode } from "react";
 
 import { SUCCESS_COLOR } from "./theme";
 
-// The single mechanism for surfacing action outcomes to the operator. Failures
-// (launch, feedback, a click that didn't commit) route here as a red toast rather
-// than inline/quiet, so a 502/timeout is always visible instead of being swallowed.
+// The single mechanism for surfacing action outcomes to the operator. Failures (launch, feedback, a
+// click that didn't commit) route here as a red toast, so a 502/timeout is visible rather than
+// swallowed.
 export function toastError(title: string, error: unknown): void {
   notifications.show({
     color: "red",

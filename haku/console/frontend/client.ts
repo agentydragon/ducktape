@@ -3,17 +3,15 @@ import createClient from "openapi-fetch";
 import type { components, paths } from "./api/schema";
 import { operatorLoginRedirectStarted, redirectToOperatorLogin } from "./operator_login";
 
-// Same-origin typed client (nginx serves this bundle and proxies /api). Types are
-// generated from the backend's OpenAPI schema: //haku/console/frontend:schema.
-// Exported (not module-private) so per-integration client files (gmail_client.ts,
-// grocy_client.ts) share this one instance instead of each creating their own.
+// Same-origin typed client (nginx serves this bundle and proxies /api). Types are generated from
+// the backend's OpenAPI schema: //haku/console/frontend:schema. Exported so the per-integration
+// client files (gmail_client.ts, grocy_client.ts) share this one instance.
 export const api = createClient<paths>({ baseUrl: "" });
 
-// App-owned operator auth: the /api/* router guards answer with 401 when there's no operator
-// session (the console replaced the Authentik forward-auth outpost with its own OIDC login). The
-// SPA itself is served publicly, so on that 401 bounce the browser to /auth/login to (re)establish
-// the session; Authentik's application access policy decides who may complete it. In the
-// operator_oidc-unset dev/test mode the guards no-op and /api never 401s, so this never fires there.
+// App-owned operator auth: the /api/* guards answer 401 when there is no operator session, while
+// the SPA itself is served publicly — so a 401 bounces the browser to /auth/login, where Authentik's
+// application access policy decides who may complete it. With operator_oidc unset (dev/test) the
+// guards no-op and /api never 401s, so this never fires there.
 api.use({
   onResponse({ response }) {
     if (response.status === 401 && typeof window !== "undefined") redirectToOperatorLogin();
@@ -54,9 +52,8 @@ export type EnrollmentDecisionResponse =
   | components["schemas"]["EnrollmentContinues"]
   | components["schemas"]["EnrollmentWasDenied"];
 
-// FastAPI error responses are `{detail: string}`; surface that real reason rather
-// than a generic message, falling back when the body isn't shaped that way. Exported
-// for per-integration client files to reuse the same error-unwrapping convention.
+// FastAPI error responses are `{detail: string}`; surface that real reason, falling back when the
+// body isn't shaped that way. Shared with the per-integration client files.
 export function errorDetail(error: unknown, fallback: string): string {
   if (error && typeof error === "object" && "detail" in error) {
     const { detail } = error as { detail: unknown };
@@ -65,10 +62,10 @@ export function errorDetail(error: unknown, fallback: string): string {
   return fallback;
 }
 
-// Every fetch-error surface in the SPA holds `string | null`, so null means "nothing to show".
-// That is the right answer once a 401 has started the login redirect (the middleware above): this
-// document is about to be replaced, and reporting the failure of the request that triggered its own
-// redirect just flashes the API's detail string at an operator being signed straight back in.
+// Null means "nothing to show", which is the right answer once a 401 has started the login redirect
+// (the middleware above): this document is about to be replaced, so reporting the failure of the
+// request that triggered the redirect only flashes a detail string at an operator being signed
+// straight back in.
 export function displayableError(e: unknown): string | null {
   if (operatorLoginRedirectStarted()) return null;
   return e instanceof Error ? e.message : String(e);
@@ -226,7 +223,6 @@ export async function decideAgentEnrollment(
   return data;
 }
 
-// stays server-side; this only triggers the action and returns the new session URL.
 export async function launchRoutine(text?: string): Promise<LaunchRoutineResult> {
   const { data, error } = await api.POST("/api/capabilities/launch-routine", {
     body: text ? { text } : {},
@@ -249,10 +245,9 @@ export interface ToolCallPage {
 
 // The tool-call audit ledger for the history view: newest first, one page at a time. A record
 // carries its whole arguments and result payload — megabytes for a few hundred of them — so the
-// page follows `next_cursor` instead of asking for the ledger's cap up front.
-// `showAutoApproved` false asks the server to filter out auto-approved calls (rather than
-// over-fetching and discarding client-side, which would starve the page of older manual calls
-// once auto-approved traffic fills the window).
+// page follows `next_cursor` instead of asking for the ledger's cap up front. `showAutoApproved`
+// false filters server-side; discarding client-side would starve the page of older manual calls
+// once auto-approved traffic fills the window.
 export async function fetchToolCalls(
   limit: number,
   showAutoApproved: boolean,
@@ -288,9 +283,9 @@ export async function disconnectMcpOperatorAuth(serverId: string): Promise<McpOp
   return data;
 }
 
-// Per-Operator external account connections (Google today), the console's own replacement for
-// Airlock's brokered token. Connect opens the provider's consent in a new tab; the backend
-// callback stores the refresh token and broadcasts an `operator_connection_changed` event.
+// Per-Operator external account connections (Google today). Connect opens the provider's consent in
+// a new tab; the backend callback stores the refresh token and broadcasts an
+// `operator_connection_changed` event.
 export async function connectOperatorConnection(
   connection: OperatorConnectionName
 ): Promise<ProviderConnectionConnectResponse> {

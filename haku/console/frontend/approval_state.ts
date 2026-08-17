@@ -172,10 +172,9 @@ const STATUS_COLORS: Record<ToolCallRecord["status"], string> = {
 
 /** Whether the card should show the auto-approval evaluation string.
  *
- * The evaluation records why the reviewed policy did or did not match. When it *did*, it says what
- * let the call through unattended, which is worth a compact line. When it did not, the string only
- * explains an absence — and that absence is the very reason the operator is looking at the card at
- * all — so it is provenance, which compact omits. Detailed still carries it either way. */
+ * A policy that matched says what let the call through unattended, which earns a compact line. One
+ * that did not only explains an absence the operator is already looking at, so it is provenance and
+ * compact omits it. Detailed carries it either way. */
 export function showsAutoApprovalEvaluation(
   fields: Pick<ApprovalDisplayFields, "autoApprovalEvaluation" | "approvalPolicyId">,
   detailed: boolean
@@ -234,9 +233,8 @@ export function geolocationApprovalBody(approval: GeolocationApproval): string {
     : "Haku is asking to read your current device location once.";
 }
 
-// Same title/body whether this is the first grant or a resume after the operator stopped
-// sharing from their browser's own chrome — approving either way opens the browser's own
-// tab-share picker, so the ask reads the same either time.
+// Same wording for a first grant and for a resume after the operator stopped sharing: either way
+// approving opens the browser's own tab-share picker.
 export const SCREENSHOT_APPROVAL_TITLE = "Allow screen capture for a screenshot?";
 export const SCREENSHOT_APPROVAL_BODY =
   "Haku is asking to capture a screenshot of this page. Approving opens your browser's own " +

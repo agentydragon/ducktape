@@ -1,14 +1,14 @@
 // Reading the raw frame log: which frames to ask the API for, how a fetched page joins the ones
-// already loaded, and the one line that says what a frame is without expanding its JSON. All pure
-// — the page component (session_frames_page.tsx) owns the fetching and the DOM, this owns the
-// decisions, so they are unit-tested instead of eyeballed in a browser.
+// already loaded, and the one line that says what a frame is without expanding its JSON. All pure,
+// so the decisions are unit-tested; the page component (session_frames_page.tsx) owns the fetching
+// and the DOM.
 import type { SessionFrame, SessionFramePage } from "../client";
 
-/** What the inspector is showing. `frames` is the log as a reader means it — everything the CLI
- * and the bridge said; `deltas` is the token-batch stream, which a turn produces in the hundreds
- * and whose content the completed `assistant` frame repeats. Deltas are their own mode rather
- * than a checkbox that adds them, because interleaved they bury the frames they duplicate: you
- * read them for one question, how far an answer got before it was cut off. */
+/** What the inspector is showing. `frames` is the log as a reader means it — everything the CLI and
+ * the bridge said; `deltas` is the token-batch stream, which a turn produces in the hundreds and
+ * whose content the completed `assistant` frame repeats. Deltas are their own mode rather than a
+ * checkbox that adds them, because interleaved they bury the frames they duplicate, and they answer
+ * one question: how far an answer got before it was cut off. */
 export type FrameMode = "frames" | "deltas";
 
 const DELTA_KIND = "stream_event";
@@ -89,9 +89,9 @@ function blockSummary(block: Record<string, unknown>): string {
 
 /** What this frame is, in one line, without opening its payload.
  *
- * Deliberately tolerant: the payload is the wire, where a block type or a `kind` we have never
- * seen is a new CLI feature rather than a bug, and the frame's own JSON is right below the
- * summary either way. So an unrecognised shape summarises to nothing instead of guessing. */
+ * Deliberately tolerant: the payload is the wire, where an unseen block type or `kind` is a new CLI
+ * feature rather than a bug, and the frame's own JSON sits right below the summary. So an
+ * unrecognised shape summarises to nothing instead of guessing. */
 export function frameSummary(frame: SessionFrame): string {
   const { payload } = frame;
   if (frame.kind === "stream_event") return oneLine(field(payload, "event", "delta", "text"));

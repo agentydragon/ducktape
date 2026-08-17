@@ -40,27 +40,25 @@ import { redirectToOperatorLogin } from "./operator_login";
 import { useOperatorSessionDeadline, useSessionExpiringSoon } from "./operator_session";
 import { ToolCallsPage } from "./tool_calls_page";
 
-// Haku's own UI service — a separate, Authentik-gated origin running in haku-sandbox —
-// embedded as a sandboxed cross-origin iframe (the whole console is now this frame). The
-// console never renders Haku's UI itself; it only frames this origin (the backend CSP
-// frame-src permits the embed) and runs the trusted **bridge**: the iframe may `openLink`,
-// `requestLaunch`, read location (`requestGeolocation` one-shot / `startGeolocationWatch`
-// stream), or `requestScreenshot` (a real tab-capture crop, not a DOM serialization) via
-// postMessage, but only the shell decides and acts (origin-checked + schema-validated).
-// `allow-same-origin`/`allow-forms` are needed for the framed app's own Authentik auth; **no
-// `allow-popups`** (only the shell opens links), **no `allow="fullscreen"`**, **no
-// `allow="geolocation"`** (only the shell reads location, per its own consent grant; it holds
+// Haku's own UI service — a separate, Authentik-gated origin running in haku-sandbox — embedded as
+// a sandboxed cross-origin iframe (the backend CSP frame-src permits the embed). The console never
+// renders Haku's UI itself; it frames this origin and runs the trusted **bridge**: the iframe may
+// `openLink`, `requestLaunch`, read location (`requestGeolocation` one-shot /
+// `startGeolocationWatch` stream), or `requestScreenshot` (a real tab-capture crop, not a DOM
+// serialization) via postMessage, but only the shell decides and acts (origin-checked +
+// schema-validated). `allow-same-origin`/`allow-forms` are needed for the framed app's own
+// Authentik auth; **no `allow-popups`** (only the shell opens links), **no `allow="fullscreen"`**,
+// **no `allow="geolocation"`** (only the shell reads location, per its own consent grant; it holds
 // every location watch), and **no `allow="display-capture"`** (only the shell captures screen
 // content, per its own consent grant; it holds the one live capture stream). See
 // docs/containment.md.
 
-// Restore the route the console URL carries into the frame on first mount. haku-ui
-// speaks real History-API paths now, so the console pathname mirrors the frame route
-// directly; a legacy `#/…` console URL still wins when present (old bookmarks). The
-// input is treated strictly as a validated path, never a URL: the src is always `uiUrl`
-// with only its pathname replaced, so the frame origin stays pinned. Paths (unlike the
-// old fragments) survive the whole in-frame Authentik redirect chain, interactive login
-// included — the rd parameter carries them.
+// Restore the route the console URL carries into the frame on first mount. haku-ui speaks
+// History-API paths, so the console pathname mirrors the frame route directly; a legacy `#/…`
+// console URL still wins when present (old bookmarks). The input is treated strictly as a validated
+// path, never a URL: the src is always `uiUrl` with only its pathname replaced, so the frame origin
+// stays pinned. A path survives the whole in-frame Authentik redirect chain, interactive login
+// included, carried by the `rd` parameter.
 export function initialFrameSrc(uiUrl: string, routePath: string): string {
   const path = routePath.replace(/^#/, "");
   if (!isRoutePath(path)) return uiUrl;
@@ -368,12 +366,11 @@ export function HakuUiEmbed({
                 : "Not found · Haku";
   }, [view]);
 
-  // The bridge listener stays registered for the tab's whole life. Re-subscribing whenever one
-  // of the handlers it closes over changes would open a window in which a postMessage from the
-  // iframe arrives with nothing listening, silently dropping a launch or geolocation reply — so
-  // the handler is reached through a ref instead of being an effect dependency. That also means
-  // it always sees current state: with `[origin, launchAvailable]` deps it captured whatever the
-  // other nine handlers were at the last change of those two.
+  // The bridge listener stays registered for the tab's whole life, reached through a ref rather
+  // than being an effect dependency. Re-subscribing whenever a handler it closes over changes would
+  // open a window in which a postMessage arrives with nothing listening, silently dropping a launch
+  // or geolocation reply — and the ref also keeps every handler current, which a dependency list
+  // naming only some of them would not.
   function onMessage(e: MessageEvent) {
     if (e.origin !== origin) return; // only Haku's UI origin may talk to the shell
     const msg = parseInbound(e.data);
@@ -421,12 +418,11 @@ export function HakuUiEmbed({
       return;
     }
     if (msg.type === "routeChanged") {
-      // Mirror the route into the console's own pathname so refresh/deep-links restore the
-      // view (path-form URLs are the copyable ones — operator, 2026-07-13).
+      // Mirror the route into the console's own pathname so refresh/deep-links restore the view.
       // replaceState, not pushState: the iframe's own history navigations already create
-      // joint-session-history entries, so Back works via the frame. Skip while a
-      // console-own view (e.g. /_console/tool-calls) holds the pathname — just remember the
-      // route for the return trip.
+      // joint-session-history entries, so Back works via the frame. Skip while a console-own view
+      // (e.g. /_console/tool-calls) holds the pathname — just remember the route for the return
+      // trip.
       rememberEmbedPath(msg.path);
       if (viewForPathname(window.location.pathname) === "embed") {
         history.replaceState(null, "", msg.path);

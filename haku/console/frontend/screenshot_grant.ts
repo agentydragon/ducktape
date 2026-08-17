@@ -1,11 +1,8 @@
 // Standing operator consent to let Haku's UI request a screenshot of the shell's own frame —
-// "allow until withdrawn", same shape as geolocation_grant.ts. Persisted on the SHELL origin:
-// the cross-origin iframe cannot read or forge it. Set on the first approved request; the
-// shell will only start (or resume) a `getDisplayMedia` capture while this is set, and
-// withdrawing clears it so nothing captures again until re-granted.
-//
-// Deliberately a separate key from geolocation's, not reused: each capability is its own
-// standing grant per docs/containment.md's consent doctrine.
+// "allow until withdrawn", same shape as geolocation_grant.ts, under its own key because each
+// capability is its own standing grant (docs/containment.md's consent doctrine). Persisted on the
+// SHELL origin, which the cross-origin iframe can neither read nor forge. The shell starts or
+// resumes a `getDisplayMedia` capture only while this is set.
 const GRANT_KEY = "haku.screenshot.grant.v1";
 const GRANTED = "granted";
 
