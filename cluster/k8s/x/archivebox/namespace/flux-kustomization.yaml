@@ -4,6 +4,8 @@ metadata:
   name: archivebox-namespace
   namespace: ducktape-flux
 spec:
+  # Retain the declarative record without reconciling the retired namespace.
+  suspend: true
   interval: 1h
   retryInterval: 5m
   timeout: 2m

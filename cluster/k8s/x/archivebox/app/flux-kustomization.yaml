@@ -6,6 +6,8 @@ metadata:
   annotations:
     description: Experimental ArchiveBox deployment with Authentik header SSO and split local/SeaweedFS CSI storage.
 spec:
+  # Retain the declaration without allowing Flux to recreate retired objects.
+  suspend: true
   interval: 10m
   retryInterval: 1m
   timeout: 15m
