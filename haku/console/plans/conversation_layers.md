@@ -518,10 +518,30 @@ reading.
   requirement is superseded here and the cost is accepted deliberately: a message sent mid-turn is
   dropped rather than answered late.
 
-  What it buys is the whole second ingress position. `matrix_held_batch` exists only to hold a
-  batch that could not be delivered and re-offer it, so with rejection terminal the watermark
-  advances every pass and the table, its backoff, and the `_resolve`/`prompt_fate` mapping of
+  What it buys is the whole second ingress position: with rejection terminal the watermark advances
+  every pass, so `matrix_held_batch`, its backoff, and the `_resolve`/`prompt_fate` mapping of
   `IN_FLIGHT`/`LOST`/`COMPLETED` onto three watermark actions all go.
+
+  **This paragraph used to say `matrix_held_batch` exists to hold an undelivered batch and re-offer
+  it. That is backwards, and the correction is the real cost of the ruling** (found building #4291).
+  It defers the _acknowledgement_ of a batch that **was** delivered — #4117, and `message_drops.md`
+  I3. So deleting it does not only supersede R2.5; it reverses #4117 as well: a prompt accepted by a
+  session that dies before claiming it stops being re-offered. It survives as a transcript row the
+  replacement is woken with, but it gets no turn until the operator says something else. That is
+  pinned by a test today, which is how it was caught.
+
+  **And the loss is wider than "mid-turn".** Admission also refuses on `SESSION_NOT_READY`, so a
+  message sent while the sandbox is still provisioning is now dropped rather than delivered when it
+  comes up. The notice names the state, so the operator is told to wait rather than left guessing —
+  but "a prompt sent to a waking session is lost" is part of what this ruling buys, and it was not
+  what the ruling was asked about. Worth revisiting when mid-turn steering or a post-turn queue
+  arrives, since both would take it back.
+
+  **One fact still has nowhere to live.** A rejection with no session behind the room cannot be
+  recorded at all: a `session_events` row names a session. So it is announced and kept nowhere,
+  which is the thing § 4 wants a writer for. It is not dischargeable until an entity above the
+  session owns the event — the conversation — which makes it another argument for § 6 rather than a
+  loose end of this step.
 
   **The rejection is an event**, which is what stops this becoming today's `_report_unreadable`
   bug: recorded in `session_events` in the transaction that advances the watermark, with the room
@@ -663,83 +683,83 @@ holder, which is the point at which a rate budget can be real rather than estima
 **Do not start with the reconciler.** Each step is independently reviewable, and every one is worth
 having even if the loop is never built.
 
-1. **The browser joins a session instead of creating one.** No schema and no dependency on anything
-   below, and it is most of what "both surfaces open on one conversation" looks like from the
-   operator's side: `enqueue_prompt` has no surface check, so what is missing is a chat page that
-   opens an existing session. **Shipped as #4282, on the whole-conversation refetch**, which is the
-   correction its author made to this sentence: § 8's increment route is #4257, still open and with
-   no frontend consumer, so this step could not and did not build on it. Reading the increment is
-   its own later change, and it is invisible to the operator when it lands.
-2. **`conversation`, then `chat_attachment` keyed on it** (§ 6). One schema change, because the
-   attachment's key is the whole point of the identity — building the attachment on `session_id`
-   first would mean writing the re-pointing logic and then deleting it. Subsumes
-   `matrix_conversation` and `sessions.room_id`.
+1.  **The browser joins a session instead of creating one.** No schema and no dependency on anything
+    below, and it is most of what "both surfaces open on one conversation" looks like from the
+    operator's side: `enqueue_prompt` has no surface check, so what is missing is a chat page that
+    opens an existing session. **Shipped as #4282, on the whole-conversation refetch**, which is the
+    correction its author made to this sentence: § 8's increment route is #4257, still open and with
+    no frontend consumer, so this step could not and did not build on it. Reading the increment is
+    its own later change, and it is invisible to the operator when it lands.
+2.  **`conversation`, then `chat_attachment` keyed on it** (§ 6). One schema change, because the
+    attachment's key is the whole point of the identity — building the attachment on `session_id`
+    first would mean writing the re-pointing logic and then deleting it. Subsumes
+    `matrix_conversation` and `sessions.room_id`.
 
-   **Two releases, not one** — the correction #4285 made to this step. Schema, backfill and
-   writers ship first (#4285); **a reader keyed on `conversation_id` waits a release**, because
-   for the length of the roll the previous image inserts sessions with it NULL and any join
-   through it silently omits them. `RoomTranscript.recent` losing a room's re-awakening history is
-   the concrete case. Same gate as the `SET NOT NULL`.
+    **Two releases, not one** — the correction #4285 made to this step. Schema, backfill and
+    writers ship first (#4285); **a reader keyed on `conversation_id` waits a release**, because
+    for the length of the roll the previous image inserts sessions with it NULL and any join
+    through it silently omits them. `RoomTranscript.recent` losing a room's re-awakening history is
+    the concrete case. Same gate as the `SET NOT NULL`.
 
-   **Two nullability traps sit on the columns this subsumes**, found while writing it and worth
-   knowing before step 2's second half is scheduled:
-   - `sessions.surface` is `NOT NULL` **with no server default** — precisely `session_frames.partial`
-     again. The release that unmaps it omits it from every `INSERT` and Postgres rejects the first
-     session of that roll, so it needs `server_default='spa'` in a migration landing _before_ the
-     unmapping. Four steps, not three.
-   - `sessions.room_id` is nullable and undefaulted, so it is safe alone — but
-     `ck_sessions_matrix_room` couples it to `surface`. Drop the CHECK before either column is
-     unmapped, and unmap the pair together.
+    **Two nullability traps sit on the columns this subsumes**, found while writing it and worth
+    knowing before step 2's second half is scheduled:
+    - `sessions.surface` is `NOT NULL` **with no server default** — precisely `session_frames.partial`
+      again. The release that unmaps it omits it from every `INSERT` and Postgres rejects the first
+      session of that roll, so it needs `server_default='spa'` in a migration landing _before_ the
+      unmapping. Four steps, not three.
+    - `sessions.room_id` is nullable and undefaulted, so it is safe alone — but
+      `ck_sessions_matrix_room` couples it to `surface`. Drop the CHECK before either column is
+      unmapped, and unmap the pair together.
 
-   **Find every reader of `sessions.room_id` before unmapping it, and one is outside `x/`.** The
-   audit counted six, including `recall_index_reader` — a consumer in another package entirely,
-   which a sweep of the chat runtime would not have turned up. "Subsumes `sessions.room_id`" is a
-   statement about the column; the readers are what makes it work.
+    **Find every reader of `sessions.room_id` before unmapping it, and one is outside `x/`.** The
+    audit counted six, including `recall_index_reader` — a consumer in another package entirely,
+    which a sweep of the chat runtime would not have turned up. "Subsumes `sessions.room_id`" is a
+    statement about the column; the readers are what makes it work.
 
-3. **The conversation list surface**, keyset-paged from the start, since § 7 settles that a
-   conversation never ends and so the list only grows. `/chat` and `/conversations` merge
-   (<session_channels.md> § 2) into one list of conversations — each showing its attached channels,
-   its last activity, and whether a session is live — with "new conversation" minting the
-   conversation and its first session together. Step 1 lands before this and lists sessions; the
-   list query is rewritten once here, which is the price of not blocking a visible surface behind a
-   migration.
-4. **Reject a mid-turn prompt instead of holding it** (§ 7), and **record both the rejection and
-   the unreadable-event notice as events** — one piece of work, because both are "the fact is
-   recorded, the notice is its projection", and it is what lets the watermark advance every pass.
-   `matrix_held_batch` and its backoff go with it.
-5. **Record a prompt's provenance** (§ 8's missing item 3), **built as #4289**. A structured link
-   from the transcript row to the channel events it came from, rather than brackets in prose.
-   Smaller than it looked: `PROMPT_ENQUEUED` is already an `AUTHORED` event, so the link is one
-   field on `PromptBody` — no table, no migration, no join. Two corrections this step made to its
-   own description: **the plan said "the channel event", singular, and a prompt is a batch**, since
-   `/sync` folds several room events into one prompt, so the field carries the attachment plus the
-   refs; and the union is closed with the SPA named rather than implied by absence (§ 4).
-6. **Move the artifacts that are durable in the wrong layer.** The abort notice is a
-   `session_outbox` row keyed by `turn_id`; § 7 settles that it is an event. This is also what gives
-   a reconciler the conversation-side identity it needs to be at-least-once, which § 3 names as a
-   prerequisite rather than a follow-up.
-7. **Give the facts in stack frames a writer** (§ 8's missing item 4), so a notice body can be a
-   pure function of the record.
-8. **Record what we sent** (§ 8's missing item 2), or turn on the correspondence reader. § 7's
-   ruling puts channel state in Postgres, which argues for storing the `event_id` beside the
-   attachment rather than deriving it from the room every pass; the room read stays available for
-   repair. This decides how idempotence works, so it wants its own PR.
-9. **Matrix becomes a subscriber** (§ 2's primitive): one loop per `(channel, conversation)`,
-   reading the record from its cursor instead of being handed events by the turn loop, woken by
-   `session_changed` and by inbound events with the 1s poll demoted to a fallback. Here the three
-   elections collapse to one, the three egress mechanisms become one difference calculation, the
-   pacer's bucket stops being an estimate, and the browser stops being the only consumer that reads
-   the record. **`_frontend_for` is deleted here, not improved** (§ 5): the turn loop stops holding
-   a channel at all, so the question "which frontend is this session's" stops being asked rather
-   than being answered better. Three things go with it, each found by the audit and none of them
-   obvious from the symbol: a **green test** pinning the surface-matching contract, which deleting
-   the code deletes; **two `x/README.md` sentences** restating the doctrine; and
-   `SessionIntroduction.room_id`, **required rather than optional** in a struct the SPA also
-   builds. And one correction to make here rather than carry: `x/README.md` claims "the live path
-   no longer knows that `assistant`, `stream_event` and `result` exist", while `_run_turn` reads
-   `subtype`, `stop_reason` and `result` straight off the payload. The code is honest —
-   `_CompletedTurn.frame` calls itself the escape hatch — so the README is the false half, and a
-   second backend would degrade silently in both directions until it is fixed.
+3.  **The conversation list surface**, keyset-paged from the start, since § 7 settles that a
+    conversation never ends and so the list only grows. `/chat` and `/conversations` merge
+    (<session_channels.md> § 2) into one list of conversations — each showing its attached channels,
+    its last activity, and whether a session is live — with "new conversation" minting the
+    conversation and its first session together. Step 1 lands before this and lists sessions; the
+    list query is rewritten once here, which is the price of not blocking a visible surface behind a
+    migration.
+4.  **Reject a mid-turn prompt instead of holding it** (§ 7), and **record both the rejection and
+    the unreadable-event notice as events** — one piece of work, because both are "the fact is
+    recorded, the notice is its projection", and it is what lets the watermark advance every pass.
+    `matrix_held_batch` and its backoff go with it.
+5.  **Record a prompt's provenance** (§ 8's missing item 3), **built as #4289**. A structured link
+    from the transcript row to the channel events it came from, rather than brackets in prose.
+    Smaller than it looked: `PROMPT_ENQUEUED` is already an `AUTHORED` event, so the link is one
+    field on `PromptBody` — no table, no migration, no join. Two corrections this step made to its
+    own description: **the plan said "the channel event", singular, and a prompt is a batch**, since
+    `/sync` folds several room events into one prompt, so the field carries the attachment plus the
+    refs; and the union is closed with the SPA named rather than implied by absence (§ 4).
+6.  **Move the artifacts that are durable in the wrong layer.** The abort notice is a
+    `session_outbox` row keyed by `turn_id`; § 7 settles that it is an event. This is also what gives
+    a reconciler the conversation-side identity it needs to be at-least-once, which § 3 names as a
+    prerequisite rather than a follow-up.
+7.  **Give the facts in stack frames a writer** (§ 8's missing item 4), so a notice body can be a
+    pure function of the record.
+8.  **Record what we sent** (§ 8's missing item 2), or turn on the correspondence reader. § 7's
+    ruling puts channel state in Postgres, which argues for storing the `event_id` beside the
+    attachment rather than deriving it from the room every pass; the room read stays available for
+    repair. This decides how idempotence works, so it wants its own PR.
+9.  **Matrix becomes a subscriber** (§ 2's primitive): one loop per `(channel, conversation)`,
+    reading the record from its cursor instead of being handed events by the turn loop, woken by
+    `session_changed` and by inbound events with the 1s poll demoted to a fallback. Here the three
+    elections collapse to one, the three egress mechanisms become one difference calculation, the
+    pacer's bucket stops being an estimate, and the browser stops being the only consumer that reads
+    the record. **`_frontend_for` is deleted here, not improved** (§ 5): the turn loop stops holding
+    a channel at all, so the question "which frontend is this session's" stops being asked rather
+    than being answered better. Three things go with it, each found by the audit and none of them
+    obvious from the symbol: a **green test** pinning the surface-matching contract, which deleting
+    the code deletes; **two `x/README.md` sentences** restating the doctrine; and
+    `SessionIntroduction.room_id`, **required rather than optional** in a struct the SPA also
+    builds. And one correction to make here rather than carry: `x/README.md` claims "the live path
+    no longer knows that `assistant`, `stream_event` and `result` exist", while `_run_turn` reads
+    `subtype`, `stop_reason` and `result` straight off the payload. The code is honest —
+    `_CompletedTurn.frame` calls itself the escape hatch — so the README is the false half, and a
+    second backend would degrade silently in both directions until it is fixed.
 10. **Notices as spans** (§ 4), once 7 and 9 exist: one work notice per turn, one lifecycle notice
     per session, **each body a fold over the subscription stream**, each retired or sealed. This is
     Matrix's streaming — the granularity a channel that holds a permanent, federated copy can
@@ -753,11 +773,16 @@ having even if the loop is never built.
     `ConversationEventKind.ACTIVITY_*` and `ck_session_events_kind` as they are**: rows of those
     kinds may exist, the column is parsed rather than read as text, and a previous image still
     writes them for the length of the roll.
-12. **Delete the rows and narrow the kind**, a release after 11 has converged: `DELETE FROM
-session_events WHERE kind IN ('activity_started','activity_completed')`, drop the two enum
-    members, narrow the CHECK — one migration, the shape `0059`'s downgrade already uses. Deleting
-    the members before the rows would make reading one raise rather than degrade, and deleting the
-    rows earlier is harmless but pointless: the previous image is still writing them.
+12. **Delete the rows and narrow the kind** — **unblocked: 11 has converged.** Delete every
+    `activity_started` and `activity_completed` row, drop the two enum members, narrow the CHECK:
+    one migration, the shape `0059`'s downgrade already uses. Order matters in one direction only —
+    deleting the members while their rows survive makes reading one raise rather than degrade. The
+    gate was "a release after 11", and the deployed image contains #4279 by ancestry (`351dd27`,
+    checked 2026-08-17). The same reading clears **15** (gate #4278) and the purge's **phase 3**
+    (gate #4266); #4285 is _not_ deployed, so step 2's reader half and step 3 still wait a roll.
+    Re-derive all of that with § 12's two commands rather than trusting this sentence — it is a
+    reading, and it goes stale on its own.
+
 13. **Audit the rest of `ConversationEvent` against the same question** — could a second backend
     produce this, or is it one provider's concept renamed? — **done, and its findings are § 11's**
     rather than a separate note, since what survived is one rule and one open item. It found one
@@ -1119,3 +1144,41 @@ This document. A session running this loses its context; the plan, the rulings a
 what survive, which is the argument for landing it early rather than holding it until the work is
 done. Each PR that completes a step deletes that step here, so what remains is the work that
 remains.
+
+### Checking the world instead of remembering it
+
+Three habits that are not obvious from the step list, each written down because forgetting one cost
+something today.
+
+**Deploy gates progress on their own. Re-derive them; never carry them.** Several steps are gated on
+"the release that stopped writing X has converged", and that becomes true without anyone doing
+anything — so a gate checked an hour ago is not a fact, it is a stale reading. I carried
+`654a4fc` as the deployed commit while the cluster had rolled to `351dd27`, and spent that time
+describing three steps as blocked that were not. The check is two commands and there is no excuse
+for inferring it:
+
+```bash
+kubectl get pods -n haku-console -o jsonpath='{range .items[*]}{.spec.containers[0].image}{"\n"}{end}'
+git merge-base --is-ancestor <merge-commit> <deployed-commit> && echo converged
+```
+
+Read the commit suffix off the image tag and resolve it by **ancestry**, not by comparing tag
+timestamps or trusting a PR title. Both replicas must report one tag: mid-roll, the older pod is
+still serving.
+
+**Production is queryable, so check the data before scheduling work against it.** The console's MCP
+server answers over the network with the bearer in the `haku-console-agent-api` secret in the
+agent's own namespace — `kubectl get secret haku-console-agent-api -o jsonpath='{.data.token}'`,
+base64-decoded, against `https://haku.allegedly.works/mcp`. Its `haku_conversations__*` tools read
+production sessions, transcripts and frames, which is how a question like "are there rows of this
+kind left to delete" gets an answer rather than an estimate. `hostexec__bash` is approval-gated and
+pages the operator, so it is for when a shell is genuinely required and not before.
+
+**Fan out hard, then babysit what you dispatched.** Agents work in their own worktrees and PRs go
+out in parallel; the operator merges. The half that is easy to drop is the second one — a PR is not
+delivered when it is opened, it is delivered when it is green, rebased and still mergeable, and
+`devel` moves under all of them. That means a standing sweep rather than a reaction to being told:
+merge-cleanliness with `git merge-tree --write-tree` and its **exit code**, every PR's checks with
+`perPage: 100` because `Pre-commit checks` lands on a later page, and the migration branches
+simulated **against each other** rather than only against `devel`. Prune finished worktrees as you
+go; the disk allowance is fixed and agents fill it.
