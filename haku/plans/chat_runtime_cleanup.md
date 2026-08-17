@@ -79,7 +79,7 @@ instead of a room id. What is left of the seam:
    parameter cost.
 
 2. Then the schema half — **done, and keyed on the conversation rather than on the session**.
-   Migration `0063` creates `conversation(conversation_id, operator_id, created_at)` and
+   Migration `0064` creates `conversation(conversation_id, operator_id, created_at)` and
    `chat_attachment(attachment_id, conversation_id, surface, address, attached_at, detached_at)`
    with the partial unique index on `(surface, address) where detached_at is null`, and
    `database_schema.py` maps both. Keying on `session_id`, which this paragraph used to specify, is
@@ -90,7 +90,7 @@ instead of a room id. What is left of the seam:
    prose becomes `detached_at IS NULL`. <../console/plans/session_channels.md>'s `chat_attachment`
    need is this table, not a second one.
 
-   **What is left is the reader move**: `0063` is additive, so `matrix_conversation`,
+   **What is left is the reader move**: `0064` is additive, so `matrix_conversation`,
    `sessions.room_id` and `sessions.surface` all stay mapped and authoritative, and
    `sessions.conversation_id` is nullable until every replica writes it.
 
