@@ -733,7 +733,8 @@ reported as drifted until that session ends.
 needs is production rows — and production has almost none: `session_events` held **one row** on
 2026-08-16, a `message_completed` over frames 45129..45129, every other session predating the
 writer. A tool pointed at that corpus reads nothing, and the backfill above — the one caller it had
-— is deleted with the rows it was built to point (<legacy_purge.md>). So this is a function, and
+— is deleted with the rows it was built to point
+(<../console/debug/2026_08_16_legacy_purge.md>). So this is a function, and
 the CLI is a decision to revisit only if a drift report ever has a population to speak about.
 
 #### Pressure-tested against the two things that would break it
