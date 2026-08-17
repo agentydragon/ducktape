@@ -19,7 +19,7 @@ turn's tool calls and thinking reach a room that will not take a token at a time
 | Layer            | Owns                                                                                                                                                                                                                                                           | Identity today                | Ends when                                                 |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | --------------------------------------------------------- |
 | **LLM session**  | the runner wire (`session_frames`), the model's context and its compaction, the sandbox claim, the lease one replica holds, **and everything said or done while it ran** — `session_messages`, `session_events`, `session_turns` are all keyed by `session_id` | `sessions.session_id`         | the runner goes — lease lapse, disconnect, failure, close |
-| **Conversation** | which sessions are the same thread, and which channels are attached to it — **identity, and nothing else** (§ 6)                                                                                                                                               | none today                    | the operator ends the thread                              |
+| **Conversation** | which sessions are the same thread, and which channels are attached to it — **identity, and nothing else** (§ 6)                                                                                                                                               | none today                    | never — a conversation has no end (§ 7)                   |
 | **Channel**      | its own copy and addressing, its credential and rate budget, its rendering vocabulary, its delivery state                                                                                                                                                      | `matrix_conversation.room_id` | the attachment is released (R3.6c, unbuilt)               |
 
 **An earlier draft of this table put the transcript under the conversation.** That was wrong and it
@@ -367,6 +367,28 @@ reading.
   console owes work against, and a tab holds no copy. So `chat_attachment` is for copy-holding
   channels only, and "the browser is looking at this conversation" is an absence — no row to key by
   an address a tab does not have, and nothing to close when it goes away.
+- **A conversation never ends.** No `ended_at`, no terminal state — it is an id, sessions come and
+  go under it, attachments hold and detach. Two consequences: the list surface (§ 9 step 3) needs
+  keyset paging from the day it ships, since the list only grows, and "start this room over" is
+  detaching the address and attaching it to a new conversation rather than ending the old one,
+  which the partial unique index on `(surface, address) where detached_at is null` already permits.
+- **A prompt arriving mid-turn is rejected, not held.** The channel says so and the operator
+  re-sends; nothing queues behind a running turn. This **reverses R2.5**
+  (<../../plans/matrix_chat_runtime.md>), which requires that acceptance not be answering — that
+  requirement is superseded here and the cost is accepted deliberately: a message sent mid-turn is
+  dropped rather than answered late.
+
+  What it buys is the whole second ingress position. `matrix_held_batch` exists only to hold a
+  batch that could not be delivered and re-offer it, so with rejection terminal the watermark
+  advances every pass and the table, its backoff, and the `_resolve`/`prompt_fate` mapping of
+  `IN_FLIGHT`/`LOST`/`COMPLETED` onto three watermark actions all go.
+
+  **The rejection is an event**, which is what stops this becoming today's `_report_unreadable`
+  bug: recorded in `session_events` in the transaction that advances the watermark, with the room
+  notice as its projection. Advance-then-announce would lose the message _and_ the notice to one
+  crash and tell the operator nothing. Same shape as the abort ruling, and it makes the
+  `_report_unreadable` fix and this one the same piece of work.
+
 - **Channel state lives in Postgres, not in the room.** The watermark stays a row; `m.fully_read`
   and per-room `account_data` are not pursued. The reason given was preference for the known
   quantity — "postgres is known, state in matrix, who knows" — and it is reinforced by the
@@ -423,9 +445,9 @@ holder, which is the point at which a rate budget can be real rather than estima
 
 ### What is already the right shape
 
-- **Ingress's two positions.** `matrix_sync_watermark` is a promise and `matrix_held_batch` is what
-  is being read from — exactly the read-position/acknowledgement-position pair § 2 generalises, and
-  the batch is acknowledged after the turn completes rather than at enqueue (R2.5). Keep as is.
+- **Ingress's watermark.** `matrix_sync_watermark` is where the loop reads from. The second
+  position beside it (`matrix_held_batch`) was right under R2.5 and is not under § 7's rejection
+  ruling — see § 8's own list of what is missing.
 - **The ordered address.** `session_events.event_seq`, with `PROMPT_ENQUEUED` now on it, so the
   stream carries both halves of a conversation.
 - **The wake with no payload.** `session_changed` names a session and nothing else, coalesced at
@@ -462,71 +484,77 @@ having even if the loop is never built.
    attachment's key is the whole point of the identity — building the attachment on `session_id`
    first would mean writing the re-pointing logic and then deleting it. Subsumes
    `matrix_conversation` and `sessions.room_id`.
-3. **The conversation list surface.** `/chat` and `/conversations` merge
+3. **The conversation list surface**, keyset-paged from the start, since § 7 settles that a
+   conversation never ends and so the list only grows. `/chat` and `/conversations` merge
    (<session_channels.md> § 2) into one list of conversations — each showing its attached channels,
    its last activity, and whether a session is live — with "new conversation" minting the
    conversation and its first session together. Step 1 lands before this and lists sessions; the
    list query is rewritten once here, which is the price of not blocking a visible surface behind a
    migration.
-4. **Record a prompt's provenance** (§ 8's missing item 3). A structured link from the transcript
+4. **Reject a mid-turn prompt instead of holding it** (§ 7), and **record both the rejection and
+   the unreadable-event notice as events** — one piece of work, because both are "the fact is
+   recorded, the notice is its projection", and it is what lets the watermark advance every pass.
+   `matrix_held_batch` and its backoff go with it.
+5. **Record a prompt's provenance** (§ 8's missing item 3). A structured link from the transcript
    row to the channel event it came from, rather than brackets in prose. Small, additive, and what
    makes "answer the message that asked" expressible at all.
-5. **Move the artifacts that are durable in the wrong layer.** The abort notice is a
+6. **Move the artifacts that are durable in the wrong layer.** The abort notice is a
    `session_outbox` row keyed by `turn_id`; § 7 settles that it is an event. This is also what gives
    a reconciler the conversation-side identity it needs to be at-least-once, which § 3 names as a
    prerequisite rather than a follow-up.
-6. **Give the facts in stack frames a writer** (§ 8's missing item 4), so a notice body can be a
+7. **Give the facts in stack frames a writer** (§ 8's missing item 4), so a notice body can be a
    pure function of the record.
-7. **Record what we sent** (§ 8's missing item 2), or turn on the correspondence reader. § 7's
+8. **Record what we sent** (§ 8's missing item 2), or turn on the correspondence reader. § 7's
    ruling puts channel state in Postgres, which argues for storing the `event_id` beside the
    attachment rather than deriving it from the room every pass; the room read stays available for
    repair. This decides how idempotence works, so it wants its own PR.
-8. **Matrix becomes a subscriber** (§ 2's primitive): one loop per `(channel, conversation)`,
+9. **Matrix becomes a subscriber** (§ 2's primitive): one loop per `(channel, conversation)`,
    reading the record from its cursor instead of being handed events by the turn loop, woken by
    `session_changed` and by inbound events with the 1s poll demoted to a fallback. Here the three
    elections collapse to one, the three egress mechanisms become one difference calculation, the
    pacer's bucket stops being an estimate, and the browser stops being the only consumer that reads
    the record.
-9. **Notices as spans** (§ 4), once 6 and 8 exist: one work notice per turn, one lifecycle notice
-   per session, each a pure function of its span, each retired or sealed. This is Matrix's
-   streaming — the granularity a channel that holds a permanent, federated copy can afford.
-10. **Delete `ActivityStarted`/`ActivityCompleted` from the vocabulary** (operator, 2026-08-17):
+10. **Notices as spans** (§ 4), once 7 and 9 exist: one work notice per turn, one lifecycle notice
+    per session, each a pure function of its span, each retired or sealed. This is Matrix's
+    streaming — the granularity a channel that holds a permanent, federated copy can afford.
+11. **Delete `ActivityStarted`/`ActivityCompleted` from the vocabulary** (operator, 2026-08-17):
     the `case "task_started"` arm of the projection, both dataclasses, the `session_events` bodies
     that store them, and `room_status.coarse_status`'s arm — so a status line that would have shown
     the harness's prose shows `writing`. That loss is the price of the invariant. **Keep
     `ConversationEventKind.ACTIVITY_*` and `ck_session_events_kind` as they are**: rows of those
     kinds may exist, the column is parsed rather than read as text, and a previous image still
     writes them for the length of the roll.
-11. **Delete the rows and narrow the kind**, a release after 10 has converged: `DELETE FROM
+12. **Delete the rows and narrow the kind**, a release after 11 has converged: `DELETE FROM
 session_events WHERE kind IN ('activity_started','activity_completed')`, drop the two enum
     members, narrow the CHECK — one migration, the shape `0059`'s downgrade already uses. Deleting
     the members before the rows would make reading one raise rather than degrade, and deleting the
     rows earlier is harmless but pointless: the previous image is still writing them.
-12. **Audit the rest of `ConversationEvent` against the same question**: could a second backend
+13. **Audit the rest of `ConversationEvent` against the same question**: could a second backend
     produce this, or is it one provider's concept renamed? Do this before a second backend exists,
     because afterwards every answer is retrofitted to what that backend happens to emit.
 
-13. **Delete `Usage`** (operator, 2026-08-17), for a different reason from 10: not that it fails
+14. **Delete `Usage`** (operator, 2026-08-17), for a different reason from 11: not that it fails
     the neutrality test — it passes, being a reduction to quantities every backend reports — but
     that nobody wants the feature. `Usage` leaves `TurnCompleted`, `_usage` leaves the projection,
     `TurnUsage`/`_turn_usage` leave `session_views`, `ConversationTurnView.usage` leaves the API,
     and the frontend stops rendering cost. Pure code.
-14. **Unmap the `session_turns` usage columns**, a release after 13. **Check each for a server
+15. **Unmap the `session_turns` usage columns**, a release after 14. **Check each for a server
     default first** — a `NOT NULL` column without one breaks every `INSERT` the moment it is
     unmapped, which is the trap `session_frames.partial` walked into and the reason its own
     sequence grew a step. Find that out here, not at the drop.
-15. **Drop them**, a release after 14 has converged.
+16. **Drop them**, a release after 15 has converged.
 
-Steps 10–15 are a separate lane from 1–9: nothing in the layering depends on them and they do not
+Steps 11–16 are a separate lane from 1–10: nothing in the layering depends on them and they do not
 wait on it. **Both deletions lose something recoverable rather than something gone.** `Usage` is
 read straight off the `result` frame's payload — `usage.input_tokens`, `cache_read_input_tokens`,
 `total_cost_usd`, `duration_ms` — and what `ActivityStarted` recorded came off `task_started` the
 same way. Both payloads stay in `session_frames`, the surface allowed to be provider-shaped, so
 wanting either back is a re-fold over frames. That is what makes these cheap rather than a bet.
 
-Steps 1, 4–6, 10 and 12 are independent of each other and of step 2; 3 and 7 depend on 2; 8 depends
-on 6 and 7; 9 depends on 8; 11 depends on 10 converging. Step 12 may reorder 10 and 11 by finding
-more members that fail, which is an argument for doing it early rather than a reason to wait.
+Steps 1, 4–7, 11 and 13 are independent of each other and of step 2; 3 and 8 depend on 2; 9 depends
+on 7 and 8; 10 depends on 9; 12 depends on 11 converging; 15 on 14, and 16 on 15. Step 13 may
+reorder 11 and 12 by finding more members that fail, which argues for doing it early rather than
+waiting.
 
 ## 10. `sessions.status` is derived, and lossy
 
@@ -639,8 +667,8 @@ gap that let the turn loop become a frame interpreter in the first place.
 | `session_outbox`                                                  | the reconciler derives what it owes by comparing the record to the room; a queue that holds no facts need not be durable |
 | `sessions.status`                                                 | the timestamps of § 10, with the enum computed                                                                           |
 
-Not gone, and deliberately: `matrix_sync_watermark` and `matrix_held_batch` (ingress's two positions
-are already right), `session_events`, `session_frames`, the lease.
+`matrix_held_batch` also goes, with the hold semantics it exists for (§ 7). Not gone, and
+deliberately: `matrix_sync_watermark`, `session_events`, `session_frames`, the lease.
 
 **Mechanisms**
 
