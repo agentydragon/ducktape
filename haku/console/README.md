@@ -366,10 +366,11 @@ enables it; the response CSP adds `frame-src` for that origin and Authentik's or
 redirect can complete.
 Containment is cross-origin isolation: the iframe can't read the console's DOM/cookies or
 act as it. The trusted **bridge** (`bridge.ts`) lets the iframe _request_ things via
-postMessage — opening a link (`openLink`), launching a run (`requestLaunch`), and reading the
-operator's location, either one-shot (`requestGeolocation`) or as a continuous stream the
-shell holds (`startGeolocationWatch`); location is gated by a shell-owned standing consent
-grant since the iframe has no `allow="geolocation"`. The shell origin-checks,
+postMessage — opening a link (`openLink`), launching a run (`requestLaunch`), reading the
+operator's location either one-shot (`requestGeolocation`) or as a continuous stream the
+shell holds (`startGeolocationWatch`), and grabbing a frame of the shell's own on-screen rect
+(`requestScreenshot`). The last two are gated by shell-owned standing consent grants, since the
+iframe has neither `allow="geolocation"` nor `allow="display-capture"`. The shell origin-checks,
 schema-validates, and decides/confirms before acting. It mirrors the iframe's validated route
 (`routeChanged`) into the console's pathname so refresh/deep links — path-form URLs included —
 restore the view (legacy `#/…` console URLs still restore). The shared bridge client also watches
