@@ -4,8 +4,8 @@
 half of a conversation and not the operator's, and `event_seq` addressed only that half
 (<../../plans/session_channels.md> § 4). The prompt is `authored` for the same reason a lease
 change is — it has crossed no wire when it is accepted, and `next_prompt` hands it to the CLI
-later — but it is conversation rather than a fact about the session, so its kind joins the first
-category.
+later. It reads as conversation rather than as a fact about the session, but membership is decided
+by whether a frame carried the row, so its kind is an `AuthoredEventKind` (`chat_models`).
 
 **Additive, and safe for the length of a roll** (<../../README.md> § Perimeter / deploy).
 A widened CHECK forbids nothing the previous image writes, and that image never *reads* one of
