@@ -699,7 +699,7 @@ async def test_a_rejected_batch_records_nothing_for_the_homeserver_to_be_deduped
 ) -> None:
     session_id = await serving_session(chat_store, operator_id, thread)
     await serving_room(conversations, operator_id)
-    await chat_store.enqueue_prompt(operator_id, session_id, "first")
+    await chat_store.enqueue_prompt(operator_id, session_id, "first", SPA_ORIGIN)
     assert await chat_store.next_prompt(session_id) is not None
 
     assert isinstance(await turns.offer([operator_message("hi", event_id="$1", at=1)]), PromptRejected)
