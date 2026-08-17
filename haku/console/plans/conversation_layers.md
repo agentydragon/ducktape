@@ -691,6 +691,11 @@ having even if the loop is never built.
      `ck_sessions_matrix_room` couples it to `surface`. Drop the CHECK before either column is
      unmapped, and unmap the pair together.
 
+   **Find every reader of `sessions.room_id` before unmapping it, and one is outside `x/`.** The
+   audit counted six, including `recall_index_reader` — a consumer in another package entirely,
+   which a sweep of the chat runtime would not have turned up. "Subsumes `sessions.room_id`" is a
+   statement about the column; the readers are what makes it work.
+
 3. **The conversation list surface**, keyset-paged from the start, since § 7 settles that a
    conversation never ends and so the list only grows. `/chat` and `/conversations` merge
    (<session_channels.md> § 2) into one list of conversations — each showing its attached channels,
@@ -726,7 +731,15 @@ having even if the loop is never built.
    pacer's bucket stops being an estimate, and the browser stops being the only consumer that reads
    the record. **`_frontend_for` is deleted here, not improved** (§ 5): the turn loop stops holding
    a channel at all, so the question "which frontend is this session's" stops being asked rather
-   than being answered better.
+   than being answered better. Three things go with it, each found by the audit and none of them
+   obvious from the symbol: a **green test** pinning the surface-matching contract, which deleting
+   the code deletes; **two `x/README.md` sentences** restating the doctrine; and
+   `SessionIntroduction.room_id`, **required rather than optional** in a struct the SPA also
+   builds. And one correction to make here rather than carry: `x/README.md` claims "the live path
+   no longer knows that `assistant`, `stream_event` and `result` exist", while `_run_turn` reads
+   `subtype`, `stop_reason` and `result` straight off the payload. The code is honest —
+   `_CompletedTurn.frame` calls itself the escape hatch — so the README is the false half, and a
+   second backend would degrade silently in both directions until it is fixed.
 10. **Notices as spans** (§ 4), once 7 and 9 exist: one work notice per turn, one lifecycle notice
     per session, **each body a fold over the subscription stream**, each retired or sealed. This is
     Matrix's streaming — the granularity a channel that holds a permanent, federated copy can
@@ -784,6 +797,38 @@ session_events WHERE kind IN ('activity_started','activity_completed')`, drop th
     the session holding the prompt can still die before answering it. The fix re-establishes the
     hold rather than dropping the event.
 
+19. **Give the abort notice a home in the record, and stop concatenating it into prose.** Step 6
+    moves the `session_outbox` copy; an audit found two more that § 7 does not name. The notice is
+    **appended to `session_messages.content`** on two of `_run_turn`'s three branches, so a row
+    whose `source_first_frame_seq` is required to be set now spans prose no frame in its range
+    carries, and the row disagrees with its own stored `MessageCompleted` — nothing compares them,
+    since `reprojection.check_session` aligns `session_events` against the fold and never looks at
+    `session_messages`. On the third branch — a message completed, then aborted before the next
+    opened — a session with no channel gets `spoke = False`, `_speak` returns on
+    `frontend is None`, and **the notice is written nowhere at all**. That last one is § 5's
+    frontend-per-surface structure showing up as data loss rather than as a name, which is why it
+    belongs with step 6 rather than after it.
+
+20. **Retire `surface` from the read models, not just from the column.** § 11's table retires
+    `sessions.surface` and `.room_id`; the API field and its renderer are named nowhere.
+    `ConversationSessionSummary.surface`, `ConversationSessionView.surface`,
+    `conversation_records.Conversation.surface` and the SPA's `surfaceLabel` each say a
+    conversation has exactly one channel, which is the shape acceptance behaviour 5 cannot render.
+    Step 3 rewrites the list surface and is where this is decided — today's field being the obvious
+    thing to carry forward is precisely the risk.
+
+21. **The record shapes still call a session a conversation, and let it end.**
+    `conversation_records.Conversation` is keyed by `session_id` and carries a terminal status;
+    `ConversationSessionSummary`/`View` and the `{session_id}` route say the same. § 6 introduces
+    the identity and step 3 rewrites the list, but neither names the MCP record, the two views or
+    the route — and the model name reaches the generated MCP schemas and the frontend validators,
+    so it is a rename with a blast radius rather than a local one.
+
+22. **Say whose wire the frame inspector shows.** § 11 sanctions it on three conditions and it
+    meets two: addressed separately, never load-bearing. It is not labelled as one backend's wire,
+    and `read_transcript`'s own instructions claim "one vocabulary that names no agent backend".
+    One sentence of labelling, and the carve-out is honest.
+
 Steps 11–16 are a separate lane from 1–10: nothing in the layering depends on them and they do not
 wait on it. **Both deletions lose something recoverable rather than something gone.** `Usage` is
 read straight off the `result` frame's payload — `usage.input_tokens`, `cache_read_input_tokens`,
@@ -793,7 +838,8 @@ wanting either back is a re-fold over frames. That is what makes these cheap rat
 
 Steps 1, 4–7, 11 and 13 are independent of each other and of step 2; 3 and 8 depend on 2; 9 depends
 on 7 and 8; 10 depends on 9; 12 depends on 11 converging; 15 on 14, and 16 on 15; 17 on 2's reader
-half, on step 9 and on idle sessions. Step 13 may reorder 11 and 12 by finding more members that fail, which
+half, on step 9 and on idle sessions; 19 rides with 6, and 20 and 21 with 3, which is
+where the shapes they name are rewritten. Step 13 may reorder 11 and 12 by finding more members that fail, which
 argues for doing it early rather than waiting.
 
 ## 10. `sessions.status` is derived, and lossy
