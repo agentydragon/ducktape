@@ -1,4 +1,4 @@
-"""0073 deletes the prompt rows that name no origin, then makes new ones impossible.
+"""0076 deletes the prompt rows that name no origin, then makes new ones impossible.
 
 The delete is authorized destruction (operator, 2026-08-17): the field is new in this release, so
 every older `prompt_enqueued` body lacks the key, and no backfill can invent the answer without
@@ -20,7 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from haku.console.database_migrate import apply_migrations, sync_database_url
 
 _NOW = datetime.datetime(2026, 8, 17, tzinfo=datetime.UTC)
-_BEFORE = "0072"
+_BEFORE = "0075"
 
 
 def _session(conn: Connection) -> UUID:
@@ -33,7 +33,7 @@ def _session(conn: Connection) -> UUID:
         text("INSERT INTO conversation (conversation_id, operator_id, created_at) VALUES (:id, :o, :n)"),
         {"id": conversation_id, "o": operator_id, "n": _NOW},
     )
-    # `sessions.conversation_id` is NOT NULL from `0072`, which `_BEFORE` already is.
+    # `sessions.conversation_id` is NOT NULL from `0072`, which `_BEFORE` is past.
     conn.execute(
         text(
             """

@@ -20,8 +20,8 @@ added over rows that violate it.
 `jsonb_exists(body, 'origin')` rather than `body ? 'origin'`: the same operator, spelled so it
 carries through DDL and driver parameter handling unambiguously.
 
-Revision ID: 0073
-Revises: 0072
+Revision ID: 0076
+Revises: 0075
 """
 
 from __future__ import annotations
@@ -29,8 +29,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0073"
-down_revision: str | None = "0072"
+revision: str = "0076"
+down_revision: str | None = "0075"
 branch_labels: str | None = None
 depends_on: str | None = None
 

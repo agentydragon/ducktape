@@ -140,7 +140,7 @@ def test_a_room_prompt_names_the_room_as_well_as_the_events() -> None:
 def test_a_prompt_body_without_an_origin_is_rejected() -> None:
     """The reason the SPA is a named arm rather than the absent one: there is no default to fall
     back to, because reading a missing key as "typed into a browser" would tell every attached room
-    it owes a copy of a prompt the room may already be showing. `0073` deleted the rows that had no
+    it owes a copy of a prompt the room may already be showing. `0076` deleted the rows that had no
     key and constrains the table against new ones, so this shape is a bug, not an era."""
     stored = {"message_id": str(uuid4()), "text": "no surface named"}
 
