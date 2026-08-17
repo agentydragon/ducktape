@@ -412,7 +412,7 @@ class _HakuMcpRouteGuard:
     ``RequireAuthMiddleware`` which rejects requests based on the absence of an Authorization
     header before consulting ``scope['user']``. Haku's browser credential is intentionally an
     HttpOnly session cookie, so the application-level backend above has already done all credential,
-    Origin, CSRF, and database checks by the time this guard runs.
+    Origin, and database checks by the time this guard runs.
 
     Only the in-memory ``OperatorActor`` claim can bypass the bearer-only guard. Agent requests and
     every unauthenticated request retain FastMCP's original guard and response behavior unchanged.

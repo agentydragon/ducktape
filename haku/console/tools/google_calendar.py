@@ -2,7 +2,7 @@
 
 Google Calendar event reads and creation behind haku-console's approval policy. Built as a
 real `FastMCP` server attached via an in-memory transport (see `gmail.py` for the pattern),
-so the application service's approval/audit lifecycle and the HTTP adapter's CSRF/reflection
+so the application service's approval/audit lifecycle and the HTTP adapter's Origin/reflection
 behavior run unchanged.
 Registered as MCP server id `google_calendar` with an `in_process` backend in
 `cluster/k8s/haku/console/config.yaml`. Executes as the acting Operator's own Google account via the

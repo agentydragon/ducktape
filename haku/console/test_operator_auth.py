@@ -468,8 +468,7 @@ def test_retired_authentik_headers_cannot_authenticate_an_operator(make_client, 
 
     These headers were trustworthy only behind the retired Authentik forward-auth
     outpost. Public requests reach Haku directly now, so accepting either value
-    would let an anonymous caller enter operator-only routes and mint the matching
-    double-submit CSRF token.
+    would let an anonymous caller enter operator-only routes.
     """
     with make_client() as client:
         response = client.get(

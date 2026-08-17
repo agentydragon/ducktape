@@ -591,7 +591,7 @@ def create_app(
     app.include_router(node_daemons.operator_router, dependencies=operator_only)
     app.include_router(push_routes.router, dependencies=operator_only)
     # Machine endpoints use their own per-daemon bearer and deliberately do not accept an Operator
-    # browser session or CSRF token.
+    # browser session.
     app.include_router(node_daemons.machine_router)
     app.include_router(enrollment_routes.entry_router)
     app.include_router(session_runtime.internal_router)

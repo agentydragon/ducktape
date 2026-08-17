@@ -464,8 +464,8 @@ def console_config(tmp_path: Path, mcp_server_url: str) -> Path:
 
 @pytest.fixture
 def operator_client(make_operator_client: Callable[..., Any], console_config: Path) -> Generator[TestClient]:
-    """An operator-session client against the standard `console_config`, CSRF configured — the setup
-    the majority of operator-facing tests need. Tests with a bespoke config call `make_operator_client`
+    """An operator-session client against the standard `console_config` — the setup the majority of
+    operator-facing tests need. Tests with a bespoke config call `make_operator_client`
     (or `make_client`) directly instead."""
     with make_operator_client(config_file=console_config) as client:
         yield client
