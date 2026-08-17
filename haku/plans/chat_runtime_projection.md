@@ -385,10 +385,8 @@ authorisation (2026-08-16):
 > conversations, nothing in the conversation tables I'd really miss in Haku console db
 
 `DELETE FROM sessions` is the whole operation. `ON DELETE CASCADE` takes
-`session_{frames,messages,turns,prompts,events,outbox}`; `session_turn_prompts` and
-`matrix_held_batch` cascade from the message and turn rows going with them, and a held batch's
-disappearance is the safe direction, since the watermark never moved and the homeserver re-offers it.
-`matrix_conversation.session_id` is set NULL, after which the Matrix supervisor provisions a
+`session_{frames,messages,turns,prompts,events,outbox}`; `session_turn_prompts` cascades from the
+message and turn rows going with them. `matrix_conversation.session_id` is set NULL, after which the Matrix supervisor provisions a
 replacement session against the same room — which is what makes the operation survivable on a live
 room rather than only on terminal sessions. Run against production on 2026-08-16 it removed 302
 sessions and 35,795 frames, and a replacement session was recording four minutes later.
