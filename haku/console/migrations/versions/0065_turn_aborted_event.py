@@ -16,8 +16,8 @@ its two queries against this table are the transcript's tool-call view, which fi
 caller in the tree. Both matter, because `TextBackedStrEnumUnionColumn` parses the column: a row of
 an unknown kind reaching either would raise rather than degrade.
 
-Revision ID: 0063
-Revises: 0062
+Revision ID: 0065
+Revises: 0064
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0063"
-down_revision: str | None = "0062"
+revision: str = "0065"
+down_revision: str | None = "0064"
 branch_labels: str | None = None
 depends_on: str | None = None
 
