@@ -78,6 +78,9 @@ class IngressLedger:
         the harness will take it. What this finds is the prompt nothing can reach any more — the
         window a killed sandbox opens, where the batch was acknowledged to the homeserver and the
         session holding it died before the turn that would have answered it.
+
+        **Unscoped, because the bot serves one room.** Whatever gives it a second one has to give
+        this a room to ask about, or a message outstanding in one room is offered into another.
         """
         stranded = (
             select(SessionMessage.message_id, SessionMessage.content)
