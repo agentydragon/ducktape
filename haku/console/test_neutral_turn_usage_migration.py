@@ -68,8 +68,10 @@ def test_the_backfill_reads_the_payload_the_columns_replace(db_url: str) -> None
     with a cost but no usage object still gets counters, so its cost survives the reader's test for
     whether an exchange was accounted for at all.
 
-    Run to head rather than to `0049`, which is what makes it also the safety argument for `0056`:
-    the counters are still there after the payload they were read from is dropped."""
+    Run to `0056` rather than to `0049`, which is what makes it also the safety argument for
+    `0056`: the counters are still there after the payload they were read from is dropped. Not to
+    head, which is past `0069` — that drops the counters themselves, so the claim this test makes
+    about them has no reading there."""
     apply_migrations(db_url, "0048")
     engine = create_engine(sync_database_url(db_url))
     try:
@@ -92,7 +94,7 @@ def test_the_backfill_reads_the_payload_the_columns_replace(db_url: str) -> None
                 {"turn_id": open_turn, "session_id": session_id, "n": _NOW},
             )
 
-        apply_migrations(db_url)
+        apply_migrations(db_url, "0056")
 
         with engine.connect() as conn:
             counters = {

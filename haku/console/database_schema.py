@@ -1576,25 +1576,7 @@ UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset({"matrix_held_batch"})
 # The same, one level down: `(table, column)` pairs the database has and no ORM class maps, in
 # tables that stay. A separate set rather than an entry in the one above, which hides a whole
 # table — naming `session_messages` there would stop the comparison noticing any drift in it.
-#
-# The convergence check: `kubectl get pods -n haku-console -o
-# jsonpath='{.items[*].spec.containers[0].image}'` reporting a single tag at or after the commit.
-#
-# CLEANUP(added 2026-08-17): `DROP COLUMN session_turns.{input_tokens,output_tokens,
-#   cached_input_tokens,cost_usd,duration_ms}` once every pod runs an image at or after this
-#   commit, and `ck_session_turns_usage_counters` with them — this release stopped declaring that
-#   constraint, and it survives the unmapping because an `INSERT` naming none of the three
-#   counters leaves them all NULL, which is what it asks for. The numbers stay recoverable: they
-#   were read off the `result` frame's payload, which is whole in `session_frames`.
-UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("session_turns", "input_tokens"),
-        ("session_turns", "output_tokens"),
-        ("session_turns", "cached_input_tokens"),
-        ("session_turns", "cost_usd"),
-        ("session_turns", "duration_ms"),
-    }
-)
+UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset()
 
 # Indexes the database has and no ORM class declares. Reachable only through a column above: an
 # index over columns that are all still mapped would be drift rather than an unfinished drop.
