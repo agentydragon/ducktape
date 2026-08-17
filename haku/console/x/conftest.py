@@ -100,14 +100,16 @@ async def operator_id(migrated_identity_store: PostgresOperatorIdentityStore) ->
     return await migrated_identity_store.resolve_configured_external_user_key(OPERATOR_SUBJECT)
 
 
-async def provisioned(store: SessionStore, operator_id: UUID, surface: SessionSurface) -> tuple[SessionView, str]:
+async def provisioned(
+    store: SessionStore, operator_id: UUID, surface: SessionSurface, *, conversation_id: UUID | None = None
+) -> tuple[SessionView, str]:
     """A session with a sandbox credential — what `create` alone used to hand back.
 
     `create` writes an idle row and `allocate` is what mints the bearer and moves it to
     `provisioning`, so the two calls together are what a test needing a session a runner can dial
     into asks for. Tests about the idle state itself call `create` directly.
     """
-    view = await store.create(operator_id, surface)
+    view = await store.create(operator_id, surface, conversation_id=conversation_id)
     token = await store.allocate(view.session_id)
     assert token is not None
     return await store.get(operator_id, view.session_id), token

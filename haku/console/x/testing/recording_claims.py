@@ -44,6 +44,7 @@ class RecordingClaims:
         self.inspected: list[UUID] = []
         self._answer: ClaudeSandboxProvisioningView | None = None
         self._failure: Exception | None = None
+        self._refused: set[UUID] = set()
 
     def answer(self, view: ClaudeSandboxProvisioningView) -> None:
         """Make the next inspections report *view* instead of the fixed one."""
@@ -53,7 +54,6 @@ class RecordingClaims:
     def fail(self, error: Exception) -> None:
         """Make inspection raise, as an unreachable Kubernetes does."""
         self._failure = error
-        self._refused: set[UUID] = set()
 
     def refuse(self, session_id: UUID) -> None:
         """Make this session's claim creation raise, the way a cluster that will not take it does."""
