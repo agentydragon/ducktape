@@ -777,9 +777,10 @@ having even if the loop is never built.
     `activity_started` and `activity_completed` row, drop the two enum members, narrow the CHECK:
     one migration, the shape `0059`'s downgrade already uses. Order matters in one direction only —
     deleting the members while their rows survive makes reading one raise rather than degrade. The
-    gate was "a release after 11", and the deployed image contains #4279 by ancestry (`351dd27`,
-    checked 2026-08-17). The same reading clears **15** (gate #4278) and the purge's **phase 3**
-    (gate #4266); #4285 is _not_ deployed, so step 2's reader half and step 3 still wait a roll.
+    gate was "a release after 11", and the deployed image contains #4279 by ancestry. The same
+    reading cleared **15** (gate #4278, done as #4306) and the purge's **phase 3** (gate #4266).
+    **And #4285 has since deployed** — the image is `3da90ff`, which _is_ #4285's merge — so step
+    2's reader half and step 3 are unblocked too, which they were not an hour earlier.
     Re-derive all of that with § 12's two commands rather than trusting this sentence — it is a
     reading, and it goes stale on its own.
 
@@ -794,10 +795,13 @@ having even if the loop is never built.
     that nobody wants the feature. `Usage` leaves `TurnCompleted`, `_usage` leaves the projection,
     `TurnUsage`/`_turn_usage` leave `session_views`, `ConversationTurnView.usage` leaves the API,
     and the frontend stops rendering cost. Pure code.
-15. **Unmap the `session_turns` usage columns**, a release after 14. **Check each for a server
-    default first** — a `NOT NULL` column without one breaks every `INSERT` the moment it is
-    unmapped, which is the trap `session_frames.partial` walked into and the reason its own
-    sequence grew a step. Find that out here, not at the drop.
+15. **Unmap the `session_turns` usage columns** — **done (#4306).** No server default was needed:
+    all five are nullable, so it could not hit the `session_frames.partial` trap. That does _not_
+    generalise — `sessions.surface` is `NOT NULL` with no default and needs one before its own
+    unmapping, which is what makes step 2's sequence four steps rather than three.
+    `ck_session_turns_usage_counters` stops being declared and stays in the database until 16 drops
+    it with the columns; an insert naming none of the three satisfies it trivially.
+
 16. **Drop them**, a release after 15 has converged.
 
 17. **Many rooms at once** (§ 7's ruling). `claim_room` stops refusing the second room and becomes
