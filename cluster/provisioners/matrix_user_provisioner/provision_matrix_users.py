@@ -1,21 +1,13 @@
 """Provision Matrix users on Synapse: the provisioner admin + agent bots.
 
-Two-phase idempotent provisioning:
-  Phase 1: Register provisioner as admin via shared-secret endpoint.
-           Skips if user already exists (M_USER_IN_USE).
-  Phase 2: Log in as provisioner, then ensure the bot user exists via Synapse
-           admin API. Only sets password on initial creation — setting password
-           on an existing user invalidates all access tokens (Synapse re-hashes
-           with bcrypt and deletes all devices/tokens), which breaks the bot's
-           active Matrix session.
+Idempotent. The password is set only on initial creation: setting it on an existing user
+deletes every device and access token, which would break the bot's live session.
 
-This deliberately does **not** mint an access token for the bot. haku-console
-holds the bot password and logs in for itself, so it can replace its own token
-the moment Synapse stops accepting one, rather than waiting for this Job to run
-again.
+Mints no access token — haku-console logs in for itself, so it can replace its own token
+without waiting for this Job.
 
-Requires: REGISTRATION_SECRET, ADMIN_PASSWORD, BOT_PASSWORD, and one password
-environment variable per bot in BOT_SPECS.
+Requires: REGISTRATION_SECRET, ADMIN_PASSWORD, BOT_PASSWORD, and one password environment
+variable per bot in BOT_SPECS.
 """
 
 import hashlib
