@@ -31,8 +31,10 @@ def test_both_live_values_are_carried_across_and_a_null_becomes_no_row(db_url: s
         apply_migrations(db_url)
 
         with engine.connect() as conn:
-            tokens = dict(conn.execute(text("SELECT user_id, access_token FROM matrix_access_token")).tuples())
-            watermarks = dict(conn.execute(text("SELECT user_id, next_batch FROM matrix_sync_watermark")).tuples())
+            tokens = dict(conn.execute(text("SELECT user_id, access_token FROM matrix_access_token")).tuples().all())
+            watermarks = dict(
+                conn.execute(text("SELECT user_id, next_batch FROM matrix_sync_watermark")).tuples().all()
+            )
         assert tokens == {"@both:example.org": "syt_live", "@token-only:example.org": "syt_fresh"}
         assert watermarks == {"@both:example.org": "s99", "@watermark-only:example.org": "s7"}
     finally:
