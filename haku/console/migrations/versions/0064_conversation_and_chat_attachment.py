@@ -25,8 +25,8 @@ name the column, so a `NOT NULL` would reject the first session of the roll — 
 creates and takes its `NOT NULL` in the release after this one has converged, which is also when a
 reader may key on it: until then a session created by the previous image has none.
 
-Revision ID: 0063
-Revises: 0062
+Revision ID: 0064
+Revises: 0063
 """
 
 from __future__ import annotations
@@ -35,8 +35,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0063"
-down_revision: str | None = "0062"
+revision: str = "0064"
+down_revision: str | None = "0063"
 branch_labels: str | None = None
 depends_on: str | None = None
 
