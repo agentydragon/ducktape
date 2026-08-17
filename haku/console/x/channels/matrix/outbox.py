@@ -34,8 +34,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from haku.console.database_schema import SessionOutbox
 from haku.console.x import delivery_log
 from haku.console.x.channels.matrix.client import EventTag, RoomEventKind
+from haku.console.x.channels.matrix.conversation import live_attachment
 from haku.console.x.channels.matrix.pacer import MAX_QUEUED_SENDS, SENDS_PER_SECOND, RoomPacer
-from haku.console.x.channels.matrix.session import live_attachment
 
 logger = logging.getLogger(__name__)
 

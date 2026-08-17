@@ -1,5 +1,5 @@
-"""What `session.py` does with a room: keep a session behind it, build the prompt that starts one,
-read back what the room has been told, and take what is said in it into a turn.
+"""What `conversation.py` does with a room: keep a session running under it, build the prompt that
+starts one, read back what the room has been told, and take what is said in it into a turn.
 
 Ingress is here rather than beside the turn loop it feeds: `MatrixTurns.offer` takes homeserver
 events and hands them to `enqueue_prompt`, so a test of it is a test of the crossing. The turn
@@ -21,8 +21,7 @@ from haku.console.chat_models import AuthoredEventKind, ChatMessageRole, PromptR
 from haku.console.database_schema import ChatAttachment, Session
 from haku.console.x.channels.matrix.client import InboundMessage, RoomEventKind, UnmappableEvent
 from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
-from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
-from haku.console.x.channels.matrix.session import (
+from haku.console.x.channels.matrix.conversation import (
     NOTHING_SAID,
     MatrixConversationStore,
     MatrixSessionSupervisor,
@@ -32,6 +31,7 @@ from haku.console.x.channels.matrix.session import (
     PromptRejected,
     RoomTranscript,
 )
+from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.conftest import runtime_config
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
@@ -40,9 +40,9 @@ from haku.console.x.system_prompt import HistoryMessage, SystemPromptTemplate
 
 
 async def bound_session(conversations: MatrixConversationStore) -> UUID | None:
-    conversation = await conversations.load(MATRIX_USER)
-    assert conversation is not None
-    return conversation.session_id
+    binding = await conversations.load(MATRIX_USER)
+    assert binding is not None
+    return binding.session_id
 
 
 @pytest.fixture

@@ -53,16 +53,16 @@ from haku.console.x.channels.matrix.client import (
     RoomEventKind,
     UnmappableEvent,
 )
-from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
-from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox, RoomOutboxDrain
-from haku.console.x.channels.matrix.pacer import RoomPacer
-from haku.console.x.channels.matrix.session import (
+from haku.console.x.channels.matrix.conversation import (
     MatrixConversationStore,
     MatrixTurns,
     PromptAccepted,
     PromptRejected,
     RoomTranscript,
 )
+from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
+from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox, RoomOutboxDrain
+from haku.console.x.channels.matrix.pacer import RoomPacer
 from haku.console.x.delivery_log import DeliveryLog
 from haku.console.x.system_prompt import HistoryMessage
 

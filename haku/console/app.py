@@ -75,13 +75,13 @@ from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import delivery_log, sandbox_claims, session_runtime, subscription
 
-# Aliased: bare `session`, `sync` and `outbox` would each collide with something this module
-# already talks about (database sessions, the index sweeps, the push queue).
+# Aliased: bare `conversation`, `sync` and `outbox` would each collide with something this module
+# already talks about (the console's own conversation record, the index sweeps, the push queue).
 from haku.console.x.channels.matrix import (
+    conversation as matrix_conversation,
     ingress_ledger as matrix_ingress_ledger,
     outbox as matrix_outbox,
     room_subscription as matrix_room_subscription,
-    session as matrix_session,
     sync as matrix_sync,
 )
 from haku.console.x.session_live_updates import SessionLiveUpdates
@@ -290,22 +290,22 @@ def create_app(
     # ingress has to exist before the service, which takes the reply sink, and the
     # supervisor has to come after it.
     matrix_sync_service: matrix_sync.MatrixSyncService | None = None
-    matrix_conversations: matrix_session.MatrixConversationStore | None = None
-    matrix_surface: matrix_session.MatrixSurface | None = None
+    matrix_conversation_store: matrix_conversation.MatrixConversationStore | None = None
+    matrix_surface: matrix_conversation.MatrixSurface | None = None
     matrix_notices: matrix_room_subscription.RoomNotices | None = None
     if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
-        matrix_conversations = matrix_session.MatrixConversationStore(db_sessions)
+        matrix_conversation_store = matrix_conversation.MatrixConversationStore(db_sessions)
         matrix_ledger = matrix_ingress_ledger.IngressLedger(db_sessions)
         matrix_sync_service = matrix_sync.MatrixSyncService(
             matrix_config,
             matrix_config.password,
             db_engine,
             matrix_sync.MatrixSyncStore(db_sessions),
-            matrix_conversations,
-            matrix_session.MatrixTurns(
-                matrix_config, matrix_conversations, session_store, operator_identity_store, matrix_ledger
+            matrix_conversation_store,
+            matrix_conversation.MatrixTurns(
+                matrix_config, matrix_conversation_store, session_store, operator_identity_store, matrix_ledger
             ),
-            matrix_session.RoomTranscript(db_sessions),
+            matrix_conversation.RoomTranscript(db_sessions),
             matrix_outbox.RoomOutbox(db_sessions),
             delivery_log.DeliveryLog(db_sessions),
             matrix_ledger,
@@ -317,7 +317,7 @@ def create_app(
             db_engine,
             db_sessions,
             subscription.ConversationStream(db_sessions),
-            matrix_conversations,
+            matrix_conversation_store,
             session_notifications,
             matrix_sync_service.announce,
             matrix_sync_service.bound_room,
@@ -325,7 +325,7 @@ def create_app(
         if claude_runtime is not None:
             # The template is parsed here, at construction, so a broken one is a pod that never
             # becomes Ready rather than a turn that fails hours later.
-            matrix_surface = matrix_session.MatrixSurface(
+            matrix_surface = matrix_conversation.MatrixSurface(
                 matrix_config,
                 claude_runtime,
                 SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
@@ -353,16 +353,16 @@ def create_app(
     # The supervisor comes after the Claude runtime it provisions through, and announces via
     # the sync service, which holds the only Matrix credential — one login, one device,
     # whoever is speaking.
-    matrix_supervisor: matrix_session.MatrixSessionSupervisor | None = None
+    matrix_supervisor: matrix_conversation.MatrixSessionSupervisor | None = None
     if (
         matrix_config is not None
         and matrix_sync_service is not None
-        and matrix_conversations is not None
+        and matrix_conversation_store is not None
         and session_service is not None
     ):
-        matrix_supervisor = matrix_session.MatrixSessionSupervisor(
+        matrix_supervisor = matrix_conversation.MatrixSessionSupervisor(
             matrix_config,
-            matrix_conversations,
+            matrix_conversation_store,
             session_service,
             session_store,
             session_notifications,

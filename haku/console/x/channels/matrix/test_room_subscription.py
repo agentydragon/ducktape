@@ -16,8 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.chat_models import TurnOutcome
 from haku.console.database_schema import MatrixRoomCursor
 from haku.console.x.channels.matrix.conftest import MATRIX_ROOM, MATRIX_USER
+from haku.console.x.channels.matrix.conversation import MatrixConversationStore
 from haku.console.x.channels.matrix.room_subscription import ABORTED_BY_OPERATOR, RoomCursor, RoomNotices
-from haku.console.x.channels.matrix.session import MatrixConversationStore
 from haku.console.x.session_store import MatrixSession, SessionStore
 from haku.console.x.subscription import START, ConversationStream, StreamPosition
 

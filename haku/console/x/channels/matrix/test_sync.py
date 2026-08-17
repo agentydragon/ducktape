@@ -33,10 +33,10 @@ from haku.console.x.channels.matrix.client import (
     UnmappableEvent,
 )
 from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
+from haku.console.x.channels.matrix.conversation import Admission, PromptAccepted, PromptRejected, RoomTranscript
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger, Unanswered
 from haku.console.x.channels.matrix.outbox import PendingReply
 from haku.console.x.channels.matrix.pacer import RoomPacer
-from haku.console.x.channels.matrix.session import Admission, PromptAccepted, PromptRejected, RoomTranscript
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.delivery_log import DeliveryLog
 from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody

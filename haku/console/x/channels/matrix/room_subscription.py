@@ -36,8 +36,8 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.database_schema import MatrixRoomCursor
+from haku.console.x.channels.matrix.conversation import Announce, MatrixConversationStore
 from haku.console.x.channels.matrix.outbox import BoundRoom
-from haku.console.x.channels.matrix.session import Announce, MatrixConversationStore
 from haku.console.x.session_events import TurnAbortedBody
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.subscription import ConversationStream, StreamedEvent, StreamPosition, Subscription, Unstarted

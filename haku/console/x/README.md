@@ -405,8 +405,9 @@ the test that reads it, as `test_diverse_session` has.
 - `sync.py` — logs in as `@haku`, long-polls `/sync`, binds the one room Haku services, and hands
   what the operator types to the session behind it. Holds the only Matrix credential, so everything
   that speaks into the room speaks through it.
-- `session.py` — the room/session binding, ingress (`MatrixTurns`), the surface a room-backed turn
-  reports through (`MatrixSurface`), and the supervisor that keeps a live session behind the room.
+- `conversation.py` — the room's attachment to a conversation, ingress (`MatrixTurns`), the surface
+  a turn reports through (`MatrixSurface`), and the supervisor that keeps a session running under
+  it.
 - `pacer.py` — one paced outbound queue per room, over Synapse's `rc_message` budget.
 - `outbox.py` — the room's outbox: replies as `session_outbox` rows, and the drain that
   says them, recording which room event each became.
@@ -521,7 +522,7 @@ a room only through the `ChatFrontend` port and the `room_id` string a session r
 `matrix-nio` — so what they cover (the turn loop, the outbox row, provenance, adoption, the abort
 drain, prompt fate) is what a second channel inherits. A message _arriving_ from a room and becoming
 a turn is the crossing itself, so `MatrixTurns.offer` is tested in
-`channels/matrix/test_session.py`, beside the module that defines it.
+`channels/matrix/test_conversation.py`, beside the module that defines it.
 
 ### The stand-ins live in `testing/`
 

@@ -7,7 +7,7 @@ real CLI emits is pinned separately by the probes in `haku/cli_protocol/probes/`
 
 It answers `re: $body`, so a reply can be matched to the message that earned it — which is what
 `../test_matrix_fullstack_e2e.py` asserts of every message the operator sent. The prompt a Matrix
-turn carries is `[$event_id] $body` per message (`channels/matrix/session.py`'s `_as_prompt`), so the event id is
+turn carries is `[$event_id] $body` per message (`channels/matrix/conversation.py`'s `_as_prompt`), so the event id is
 stripped first. The body also carries the turn's stage directions, in trailing `[…]` markers the
 test writes and this strips before answering:
 

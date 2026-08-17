@@ -45,8 +45,8 @@ py_library(
     srcs = ["outbox.py"],
     deps = [
         ":client",
+        ":conversation",
         ":pacer",
-        ":session",
         "//haku/console:database_schema",
         "//haku/console/x:delivery_log",
         "@pypi//sqlalchemy",
@@ -54,8 +54,8 @@ py_library(
 )
 
 py_library(
-    name = "session",
-    srcs = ["session.py"],
+    name = "conversation",
+    srcs = ["conversation.py"],
     deps = [
         ":client",
         ":ingress_ledger",
@@ -76,8 +76,8 @@ py_library(
     name = "room_subscription",
     srcs = ["room_subscription.py"],
     deps = [
+        ":conversation",
         ":outbox",
-        ":session",
         "//haku/console:database_schema",
         "//haku/console/x:session_events",
         "//haku/console/x:session_notifications",
@@ -91,10 +91,10 @@ py_library(
     srcs = ["sync.py"],
     deps = [
         ":client",
+        ":conversation",
         ":ingress_ledger",
         ":outbox",
         ":pacer",
-        ":session",
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:database_schema",
@@ -109,8 +109,8 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":conversation",
         ":ingress_ledger",
-        ":session",
         "//haku/console:config",
         "//haku/console/x:conftest",
         "@pypi//pytest",
@@ -180,9 +180,9 @@ py_test(
     deps = [
         ":client",
         ":conftest",
+        ":conversation",
         ":outbox",
         ":pacer",
-        ":session",
         "//:conftest",
         "//haku/console:conftest",
         "//haku/console:database_schema",
@@ -196,14 +196,14 @@ py_test(
 )
 
 py_test(
-    name = "test_session",
+    name = "test_conversation",
     size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_session.py"],
+    srcs = ["test_conversation.py"],
     deps = [
         ":client",
         ":conftest",
+        ":conversation",
         ":ingress_ledger",
-        ":session",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:config",
@@ -227,8 +227,8 @@ py_test(
     srcs = ["test_room_subscription.py"],
     deps = [
         ":conftest",
+        ":conversation",
         ":room_subscription",
-        ":session",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
@@ -251,10 +251,10 @@ py_test(
     deps = [
         ":client",
         ":conftest",
+        ":conversation",
         ":ingress_ledger",
         ":outbox",
         ":pacer",
-        ":session",
         ":sync",
         "//:conftest",
         "//haku/console:chat_models",

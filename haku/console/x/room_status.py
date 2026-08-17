@@ -2,7 +2,7 @@
 
 The driver alone — it is handed a frontend and told what the conversation did, and never learns
 which room that frontend speaks to, how a line is created and edited, or which backend the events
-came off. `channels/matrix/session.py` owns the middle one.
+came off. `channels/matrix/conversation.py` owns the middle one.
 
 **It reads <conversation_events.py>, not a provider's wire.** Matching here on one backend's own
 top-level `type`, `system` subtypes and content blocks would make the channel-neutral driver a

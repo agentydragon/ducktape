@@ -42,15 +42,15 @@ from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.channels.matrix.client import MatrixError
-from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
-from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox
-from haku.console.x.channels.matrix.session import (
+from haku.console.x.channels.matrix.conversation import (
     MatrixConversationStore,
     MatrixSessionSupervisor,
     MatrixSurface,
     MatrixTurns,
     RoomTranscript,
 )
+from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
+from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.delivery_log import DeliveryLog
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView

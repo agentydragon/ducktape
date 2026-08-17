@@ -18,9 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from haku.console.database_schema import ChatDelivery, SessionOutbox
 from haku.console.x.channels.matrix.client import MatrixError, RoomEventKind
 from haku.console.x.channels.matrix.conftest import MATRIX_ROOM
+from haku.console.x.channels.matrix.conversation import MatrixConversationStore
 from haku.console.x.channels.matrix.outbox import MAX_SEND_ATTEMPTS, PendingReply, RoomOutbox, RoomOutboxDrain
 from haku.console.x.channels.matrix.pacer import RoomPacer
-from haku.console.x.channels.matrix.session import MatrixConversationStore
 from haku.console.x.session_store import BridgeAuthentication, MatrixSession, SessionStore, SpaSession
 
 

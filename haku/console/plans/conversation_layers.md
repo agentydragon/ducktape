@@ -39,7 +39,7 @@ to do:
   (<../x/session_store.py>) returns early on `chat.room_id is None` and writes `session_outbox.room_id`,
   inside the turn loop's own transaction. § 5.
 - **The conversation's own read is addressed by a channel key.** `RoomTranscript.recent`
-  (<../x/channels/matrix/session.py>) joins `Session.room_id`, so re-awakening asks the channel
+  (<../x/channels/matrix/conversation.py>) joins `Session.room_id`, so re-awakening asks the channel
   (`RoomChannel.recent_history`) for the conversation's tail.
 - **Channel state that survives nothing.** `MatrixSyncService._status_body`,
   `MatrixSessionSupervisor._last_announced` — per-process, so a leader handover re-announces. § 3.
