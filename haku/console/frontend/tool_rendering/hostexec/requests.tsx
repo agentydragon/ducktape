@@ -1,8 +1,7 @@
 // Per-tool-type rendering for haku-console's in-process `hostexec` MCP server (see
-// haku/console/tools/hostexec.py). Its one tool, `bash`, runs `cmd` as a bash script
-// (`bash -c cmd`) on an operator machine as a chosen POSIX user; every call is manually approved
-// (never auto-approved), so showing the exact script unambiguously matters more than for
-// narrower-scoped tools.
+// haku/console/tools/hostexec.py). Its one tool, `bash`, runs `cmd` as `bash -c cmd` on an operator
+// machine as a chosen POSIX user, and is never auto-approved — so showing the exact script
+// unambiguously matters more here than for narrower-scoped tools.
 
 import { Stack } from "@mantine/core";
 import prettyBytes from "pretty-bytes";

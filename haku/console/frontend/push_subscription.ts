@@ -76,9 +76,8 @@ export async function enablePush(): Promise<PushState> {
       applicationServerKey: serverKey,
     }));
 
-  // `toJSON()` already yields the subscription's keys base64url-encoded, in the shape the Web
-  // Push spec defines and pywebpush consumes — no need to pull ArrayBuffers out of `getKey()`
-  // and re-encode them.
+  // `toJSON()` already yields the keys base64url-encoded, in the shape the Web Push spec defines
+  // and pywebpush consumes, so nothing has to decode `getKey()`'s ArrayBuffers.
   const { keys } = subscription.toJSON();
   if (!keys?.p256dh || !keys.auth) throw new Error("push subscription is missing its encryption keys");
 
