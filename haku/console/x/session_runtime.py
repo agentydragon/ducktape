@@ -39,6 +39,7 @@ from haku.console.x.session_notifications import SessionEventKind, SessionNotifi
 from haku.console.x.session_store import (
     LEASE_RENEW_INTERVAL,
     BridgeAuthentication,
+    PositionUnusableError,
     PromptRefusedError,
     ResumedTurn,
     SessionStore,
@@ -47,8 +48,11 @@ from haku.console.x.session_store import (
     TurnStart,
 )
 from haku.console.x.session_views import (
+    DEFAULT_CHANGED_ROWS,
     DEFAULT_FRAME_PAGE,
+    MAX_CHANGED_ROWS,
     MAX_FRAME_PAGE,
+    ConversationChanges,
     ConversationCursor,
     ConversationPage,
     ConversationSessionView,
@@ -838,6 +842,39 @@ async def get_conversation(
         return await service.conversation(actor.operator_id, conversation_id)
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Conversation not found") from error
+
+
+@router.get("/api/sessions/{session_id}/changes")
+async def read_session_changes(
+    session_id: UUID,
+    actor: OperatorActorDep,
+    store: SessionStoreDep,
+    after: Annotated[
+        int, Query(ge=0, description="A `watermark` from an earlier read; 0 is the start of the log.")
+    ] = 0,
+    limit: Annotated[int, Query(ge=1, le=MAX_CHANGED_ROWS)] = DEFAULT_CHANGED_ROWS,
+) -> ConversationChanges:
+    """What this session's transcript has changed to since *after*, for a caller holding the rest.
+
+    Beside the whole read rather than a mode of it: a transcript and an increment are different
+    answers, and one route returning either is how a client renders the second as the first. The
+    opening snapshot is `GET /api/conversations/{conversation_id}`, whose `session.watermark` is
+    where a caller starts — the transcript that read carries is this session's.
+
+    Every read is "everything after *after*", never "the next one after it": `event_seq` is a
+    global `Identity`, so one session's rows are not contiguous and a gap is normal rather than a
+    loss to detect.
+
+    **410 means read the conversation whole** — the position is one this log can no longer answer
+    from, or too much has moved since it. Both recover the same way, which is why neither is an
+    error the caller has to tell apart.
+    """
+    try:
+        return await store.read_operator_changes(actor.operator_id, session_id, after=after, limit=limit)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="session not found") from error
+    except PositionUnusableError as error:
+        raise HTTPException(status_code=410, detail=str(error)) from error
 
 
 @router.get("/api/sessions/{session_id}/frames")

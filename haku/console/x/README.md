@@ -684,6 +684,36 @@ Three consequences worth knowing:
 The consumers today are the Matrix room's notices (below) and, once #4257 lands,
 `GET /api/sessions/{session_id}/changes?after=N` — whose `after` is exactly a `ClientHeldCursor`.
 
+## Reading the increment — `GET /api/sessions/{session_id}/changes`
+
+The wake above says _which_ session moved; this is what a woken reader reads instead of the whole
+transcript. `session_events.event_seq` is the address and the caller's own `after` is the position:
+the server keeps nothing per consumer, because a tab holds no copy that outlives it
+(<../plans/conversation_layers.md> § 2). Keyed by the session rather than the thread, like every other
+route that reads one runner's log: the opening snapshot is `GET /api/conversations/{conversation_id}`,
+whose `session.watermark` says where the transcript it carries was taken.
+
+- **Whole message rows, not events to apply.** Folding events into messages a second time in the
+  browser would be one meaning maintained in two languages across a roll; replacing rows keyed on
+  `message_id` is idempotent, so delivery need not be exactly-once or in order and re-reading from
+  an older position is always correct.
+- **What is sent is everything from the earliest turn that moved**, plus the rows the newest turn
+  can still rewrite with no event to name them — its open message (a `TextDelta` is not a row), its
+  prompts (`next_prompt` moves one out of `pending`; `_requeue` moves it back) and its own row
+  (`end_turn` writes the outcome). That is what bounds an increment by one exchange
+  instead of by the transcript.
+- **410 means read the conversation whole**: the position names no row this log still has, or more
+  than `limit` rows have moved since it. One recovery, so the caller does not tell them apart, and
+  an increment does not page — the whole read already is the way to catch up on more than a window.
+- **`session_changed` gains nothing.** Not the position, not a range. A tab showing a live session
+  must read anyway, because a streaming message advances no event; putting a position on the wire
+  would state it in a second place and invite a client to treat the socket as authoritative about
+  it, at the expand/contract cost every widening of a cross-replica payload pays (§ the wake
+  channel).
+
+**No consumer yet.** The SPA still refetches whole, so the flush cost above is unchanged until the
+page reads this.
+
 ## Cross-replica state, and the trap it sets
 
 `replicas: 2` means any given HTTP request reaches an arbitrary pod, while a session's live

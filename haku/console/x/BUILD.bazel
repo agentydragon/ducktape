@@ -408,6 +408,7 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "//haku/console/x/claude_code:frames",
         "//haku/console/x/claude_code/testing:wire",
         "@pypi//more_itertools",
         "@pypi//pytest",

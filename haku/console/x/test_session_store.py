@@ -34,6 +34,7 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.database_schema import Conversation, Session, SessionEvent, SessionMessage, SessionPrompt
+from haku.console.x.claude_code.frames import PROMPT_FRAME_KIND
 from haku.console.x.claude_code.testing.wire import assistant, result, text_block, text_delta
 from haku.console.x.conftest import age_lease, attach_channel, lease_of, queued_for_the_room
 from haku.console.x.conversation_events import (
@@ -51,6 +52,7 @@ from haku.console.x.session_store import (
     REPLICA,
     BridgeAuthentication,
     MatrixSession,
+    PositionUnusableError,
     PromptRefusedError,
     SessionStore,
     SpaSession,
@@ -1282,6 +1284,150 @@ async def test_an_event_row_cannot_be_written_without_a_provenance_union(
         async with migrated_sessions() as db:
             db.add(writable)
             await db.commit()
+
+
+async def _exchange(chat_store, operator_id, session_id: UUID, prompt: str, answer: str) -> None:
+    """One prompt through to one finished answer, with the frames it took, as the loop writes them."""
+    await chat_store.enqueue_prompt(operator_id, session_id, prompt)
+    turn = await chat_store.next_prompt(session_id)
+    assert turn is not None
+    sent = await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, PROMPT_FRAME_KIND, {"type": "user"})
+    await chat_store.set_message_source_frames(session_id, turn.message_id, sent.frame_seq)
+    spoke = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "assistant", {"type": "assistant"})
+    await chat_store.apply_frame(
+        session_id,
+        turn.turn_id,
+        spoke.frame_seq,
+        [
+            MessageCompleted(
+                message=MessageKey(opened_at_frame_seq=spoke.frame_seq),
+                text=answer,
+                agent_message_id=None,
+                provenance=FrameRange(spoke.frame_seq, spoke.frame_seq),
+            )
+        ],
+    )
+    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED, last_frame_seq=spoke.frame_seq)
+
+
+async def test_an_increment_carries_the_rows_the_events_after_a_position_name(chat_store, operator_id) -> None:
+    """What the increment drops is the history — the part that grows without bound.
+
+    A caller holding the first exchange's watermark is sent the second exchange and not the first,
+    which is the whole of what this route is for.
+    """
+    view, token = await chat_store.create(operator_id, SpaSession())
+    session_id = view.session_id
+    assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    await _exchange(chat_store, operator_id, session_id, "first", "one")
+    held = (await chat_store.read_operator_changes(operator_id, session_id, after=0, limit=50)).watermark
+
+    await _exchange(chat_store, operator_id, session_id, "second", "two")
+    changes = await chat_store.read_operator_changes(operator_id, session_id, after=held, limit=50)
+
+    assert [message.content for message in changes.messages] == ["second", "two"]
+    assert [turn.outcome for turn in changes.turns] == [TurnOutcome.ANSWERED]
+    assert changes.watermark > held
+    # Re-reading the same position is the same answer: the merge is keyed on `message_id`, so a
+    # duplicate costs nothing and nothing about delivery has to be exactly-once.
+    again = await chat_store.read_operator_changes(operator_id, session_id, after=held, limit=50)
+    assert [message.message_id for message in again.messages] == [message.message_id for message in changes.messages]
+
+
+async def test_a_prompt_leaving_pending_reaches_a_caller_that_no_event_told(chat_store, operator_id) -> None:
+    """`next_prompt` moves the operator's own question out of `pending` and writes no event.
+
+    The address alone would leave a tab rendering it as still queued forever, which is why the
+    newest turn's own rows ride along on every read rather than waiting to be named.
+    """
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
+    enqueued = await chat_store.read_operator_changes(operator_id, view.session_id, after=0, limit=50)
+    assert [(row.content, row.status) for row in enqueued.messages] == [("why did it fail?", ChatMessageStatus.PENDING)]
+
+    assert await chat_store.next_prompt(view.session_id) is not None
+    claimed = await chat_store.read_operator_changes(operator_id, view.session_id, after=enqueued.watermark, limit=50)
+
+    assert [(row.content, row.status) for row in claimed.messages] == [("why did it fail?", ChatMessageStatus.COMPLETE)]
+    assert claimed.watermark == enqueued.watermark, "a claim writes no event, so the position does not move"
+    assert [turn.ended_at for turn in claimed.turns] == [None]
+
+
+async def test_an_open_message_is_sent_whole_because_no_event_names_it(chat_store, operator_id) -> None:
+    """A `TextDelta` is deliberately not a row and `content` is mutated in place, so prose being
+    written is invisible in the log until `message_completed`. One row, bounded by one message."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "explain")
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
+    held = (await chat_store.read_operator_changes(operator_id, view.session_id, after=0, limit=50)).watermark
+    message_id = await chat_store.begin_assistant(view.session_id, turn.turn_id, source_first_frame_seq=1)
+    await chat_store.update_assistant(view.session_id, message_id, "half an ans")
+
+    changes = await chat_store.read_operator_changes(operator_id, view.session_id, after=held, limit=50)
+
+    assert [(row.content, row.status) for row in changes.messages] == [
+        ("explain", ChatMessageStatus.COMPLETE),
+        ("half an ans", ChatMessageStatus.STREAMING),
+    ]
+    assert changes.status == SessionStatus.RESPONDING
+
+
+async def test_a_position_the_log_cannot_answer_from_is_refused_rather_than_read_as_empty(
+    chat_store, operator_id
+) -> None:
+    """ "Nothing after N" and "N is not in this log" are different answers, and only one of them is
+    safe to render. `event_seq` is a global `Identity`, so the difference cannot be a comparison:
+    the positions a read hands out are 0 and this session's own rows, so membership is the check.
+    """
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
+    held = (await chat_store.read_operator_changes(operator_id, view.session_id, after=0, limit=50)).watermark
+
+    with pytest.raises(PositionUnusableError):
+        await chat_store.read_operator_changes(operator_id, view.session_id, after=held + 1, limit=50)
+
+
+async def test_an_increment_over_its_limit_is_refused_rather_than_shortened(chat_store, operator_id) -> None:
+    """Silently short is a message the caller never learns about. An increment does not page — the
+    whole read is already the way to catch up on more than one window's worth."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await _exchange(chat_store, operator_id, view.session_id, "first", "one")
+    await _exchange(chat_store, operator_id, view.session_id, "second", "two")
+
+    with pytest.raises(PositionUnusableError):
+        await chat_store.read_operator_changes(operator_id, view.session_id, after=0, limit=2)
+
+    assert len((await chat_store.read_operator_changes(operator_id, view.session_id, after=0, limit=50)).messages) == 4
+
+
+async def test_the_whole_read_says_where_its_own_snapshot_sits(chat_store, operator_id) -> None:
+    """A freshly opened transcript is self-addressing, so a page that has just read one does not
+    have to read it again to find out where it is."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await _exchange(chat_store, operator_id, view.session_id, "first", "one")
+
+    detail = await chat_store.get_operator_conversation(operator_id, await chat_store.conversation_of(view.session_id))
+    session = detail.session
+    changes = await chat_store.read_operator_changes(operator_id, view.session_id, after=session.watermark, limit=50)
+
+    assert session.watermark > 0
+    assert changes.watermark == session.watermark
+    # The rows still open to in-place change come back; nothing the snapshot did not already have.
+    assert {row.message_id for row in changes.messages} <= {row.message_id for row in session.messages}
+
+
+async def test_the_increment_refuses_a_session_another_operator_owns(chat_store, operator_id) -> None:
+    """The MCP reader is deliberately unscoped (R5.3a); a browser surface must never be."""
+    view, _ = await chat_store.create(operator_id, SpaSession())
+
+    with pytest.raises(KeyError):
+        await chat_store.read_operator_changes(uuid4(), view.session_id, after=0, limit=50)
 
 
 if __name__ == "__main__":
