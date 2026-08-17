@@ -21,7 +21,5 @@ spec:
     name: ducktape
     namespace: ducktape-flux
   dependsOn:
-    - name: public-coder-agent-app
-      namespace: ducktape-flux
     - name: seaweedfs-public-coder-agent-archive-bucket
       namespace: ducktape-flux
