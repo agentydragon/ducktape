@@ -18,7 +18,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Any, Protocol, cast
+from typing import Annotated, Any, ClassVar, Protocol, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
@@ -26,7 +26,7 @@ from fastapi.responses import StreamingResponse
 from more_itertools import first
 from pydantic import BaseModel, Field, SecretStr
 
-from haku.console.chat_models import ENDED_SESSION_STATUSES, FrameDirection, SessionStatus, TurnOutcome
+from haku.console.chat_models import ENDED_SESSION_STATUSES, ChatSurface, FrameDirection, SessionStatus, TurnOutcome
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.x import frame_projection
@@ -147,22 +147,24 @@ class RolloutRecorder:
 class ChatFrontend(StatusFrontend, Protocol):
     """The chat channel a session is attached to, for the parts a turn cannot do itself.
 
-    **Bound to its address at construction**, never asked for one per call: a channel serves one
-    room and a session serves one channel, so an address parameter on every method would be this
-    loop re-asking what is answered once per connection. The three methods a running turn's
-    status line and typing indicator need are `StatusFrontend`, declared beside the driver that
-    calls them (<room_status.py>).
+    **It carries its own address**, so no method here takes one: a frontend is constructed
+    knowing where it speaks, and the turn loop never handles an address at all. The three methods
+    a running turn's status line and typing indicator need are `StatusFrontend`, declared beside
+    the driver that calls them (<room_status.py>).
 
     The SPA needs none of this today — its client reads the message rows over SSE, so a finished
     turn is delivered by being written down. A room has to be spoken to.
 
-    **The service picks this by reading the session's `surface`**, rather than offering every
-    session to every listener and having each re-derive whether it is its own.
+    **The service picks this by comparing the session's `surface` to the frontend's own**, rather
+    than offering every session to every listener and having each re-derive whether it is its own.
 
     **Replies are not here.** They are rows in `session_outbox`, written where they are produced
     and drained into the room by whoever holds the outbox lock (<../debug/message_drops.md>). What
     is left here is what describes a moment and is worthless afterwards.
     """
+
+    # Which sessions are this frontend's, matched against the `surface` each session records.
+    surface: ClassVar[ChatSurface]
 
     async def system_prompt(self, session_id: UUID) -> str: ...
 
@@ -269,13 +271,13 @@ class SessionService:
     async def _frontend_for(self, session_id: UUID) -> ChatFrontend | None:
         """The chat frontend this session is attached to, or None for one attached to none.
 
-        The frontend is bound to its room, so what is asked here is which sessions it serves — the
-        session's own `surface`, immutable on the row. Read once per runner connection and carried
-        for the session's life, so re-reading it would only add round trips.
+        The frontend carries its own address, so what is asked here is which sessions it serves —
+        the session's own `surface`, immutable on the row. Read once per runner connection and
+        carried for the session's life, so re-reading it would only add round trips.
         """
         if self._chat_frontend is None:
             return None
-        return self._chat_frontend if await self._store.room_of(session_id) is not None else None
+        return self._chat_frontend if await self._store.surface_of(session_id) is self._chat_frontend.surface else None
 
     async def _appended_prompt(self, session_id: UUID, frontend: ChatFrontend | None) -> str | None:
         """Who this session is, appended to Claude Code's own system prompt.

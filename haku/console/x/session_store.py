@@ -1208,15 +1208,15 @@ class SessionStore:
             await notify(db, SessionEventKind.PROMPT, session_id)
             await notify(db, SessionEventKind.UPDATE, session_id)
 
-    async def room_of(self, session_id: UUID) -> str | None:
-        """The room this session was created to serve, or None if it serves none.
+    async def surface_of(self, session_id: UUID) -> ChatSurface | None:
+        """Which chat surface this session was created for, or None if there is no such session.
 
         The session's own record of it, not the current binding in `matrix_conversation`: that
         one moves to the next session the moment this one is replaced, so asking it "is this
         session mine?" answers about the room's present, not about the session.
         """
         async with self._sessions() as db:
-            return await db.scalar(select(Session.room_id).where(Session.session_id == session_id))
+            return await db.scalar(select(Session.surface).where(Session.session_id == session_id))
 
     async def outcome(self, session_id: UUID) -> SessionOutcome | None:
         async with self._sessions() as db:

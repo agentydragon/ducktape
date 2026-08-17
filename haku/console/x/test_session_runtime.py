@@ -13,7 +13,7 @@ import contextlib
 import json
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 from unittest.mock import patch
 from uuid import UUID
 
@@ -27,6 +27,7 @@ from haku.console.chat_models import (
     OPEN_SESSION_STATUSES,
     ChatMessageRole,
     ChatMessageStatus,
+    ChatSurface,
     FrameDirection,
     SessionStatus,
     TurnOutcome,
@@ -682,6 +683,8 @@ class _RecordingFrontend:
     moment — including the notice a turn with nothing to say leaves.
     """
 
+    surface: ClassVar[ChatSurface] = ChatSurface.MATRIX
+
     def __init__(self) -> None:
         self.silent_turns = 0
 
@@ -784,11 +787,11 @@ async def _turn_into_a_room(
     return await queued_for_the_room(migrated_sessions, view.session_id)
 
 
-async def test_only_the_sessions_that_serve_a_room_are_attached_to_the_frontend(
+async def test_only_the_sessions_on_the_frontends_own_surface_are_attached_to_it(
     chat_store, recording_claims, notifications, operator_id
 ) -> None:
-    """One console serves both surfaces, and the frontend is bound to its room — so which sessions
-    it speaks for is the session's own record of what it serves, read once per connection."""
+    """One console serves both surfaces, so which sessions a frontend speaks for is its own
+    `surface` against the session's record of what it serves, read once per connection."""
     frontend = _RecordingFrontend()
     service = SessionService(
         runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend

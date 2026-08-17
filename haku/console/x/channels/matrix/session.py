@@ -21,7 +21,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Protocol
+from typing import ClassVar, Protocol
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select, text
@@ -32,6 +32,7 @@ from haku.console.chat_models import (
     OPEN_SESSION_STATUSES,
     ChatMessageRole,
     ChatMessageStatus,
+    ChatSurface,
     PromptFate,
     SessionStatus,
 )
@@ -316,9 +317,11 @@ class MatrixSurface:
     the outbox has not drained yet is here before it is in the room, and an operator message
     redacted after we recorded it stays here after the room has forgotten it.
 
-    The `RoomChannel` is the sync service, which holds the only Matrix credential and services
-    one room (R3.6a) — so this frontend is bound to its address by construction and takes none.
+    The `RoomChannel` is the sync service, which holds the only Matrix credential and knows which
+    room it speaks to — so this frontend carries its address and none of its methods takes one.
     """
+
+    surface: ClassVar[ChatSurface] = ChatSurface.MATRIX
 
     def __init__(
         self, config: MatrixConfig, runtime: ClaudeRuntimeConfig, template: SystemPromptTemplate, room: RoomChannel
