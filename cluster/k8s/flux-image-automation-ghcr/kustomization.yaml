@@ -15,8 +15,6 @@ resources:
   - image-update-automation.yaml
   - openclaw-image-repository.yaml
   - openclaw-image-policy.yaml
-  - activitywatch-image-repository.yaml
-  - activitywatch-image-policy.yaml
   - cpap-sync-image-repository.yaml
   - cpap-sync-image-policy.yaml
   - airlock-image-repository.yaml

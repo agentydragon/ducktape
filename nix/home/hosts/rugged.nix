@@ -36,7 +36,9 @@
   };
 
   ducktape.activitywatch.sync = {
-    enable = true;
+    # Retired with the cluster receiver; retain config material for a future
+    # snapshot-based replacement of the aw-sync transport.
+    enable = false;
     syncthing = {
       certFile = ../../../secrets/home/rugged/activitywatch-syncthing.cert.pem;
       keySopsFile = ../../../secrets/home/rugged/activitywatch-syncthing.sops.key;

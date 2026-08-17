@@ -71,8 +71,8 @@ secrets that Flux and tofu consume.
 | `secrets/k8s-ca.crt`                                      | K8s cluster CA cert (plaintext)                                            | None                                                                        | L7: kubelet TLS on NixOS workers                                                                                   |
 | `secrets/k8s-worker.yaml`                                 | k8s bootstrap token                                                        | Admin age key                                                               | L7: kubelet TLS bootstrap on NixOS workers                                                                         |
 | `cluster/k8s/**/*.sops.yaml`                              | App credentials, generated service identities, API keys, tokens            | Admin age key + cluster age key                                             | L6: individual services + L5 Flux git auth (`ducktape-automation-github-app`)                                      |
-| `secrets/home/*/activitywatch-syncthing.cert.pem`         | Per-host Syncthing public certificate for ActivityWatch device sync        | None                                                                        | L7: Home Manager Syncthing config for ActivityWatch sync                                                           |
-| `secrets/home/*/activitywatch-syncthing.sops.key`         | Per-host Syncthing private key for ActivityWatch device sync               | Admin age key + owning host user age key                                    | L7: Home Manager Syncthing config for ActivityWatch sync                                                           |
+| `secrets/home/*/activitywatch-syncthing.cert.pem`         | Retained public certificate for retired ActivityWatch Syncthing topology   | None                                                                        | Inactive; retained with suspended `x/activitywatch` manifests                                                      |
+| `secrets/home/*/activitywatch-syncthing.sops.key`         | Retained private key for retired ActivityWatch Syncthing topology          | Admin age key + owning host user age key                                    | Inactive; retained with suspended `x/activitywatch` manifests                                                      |
 
 **If nebula CA is lost**: Generate new CA with `nebula-cert ca`, write cert
 to `secrets/nebula/ca.crt`, encrypt key to `secrets/nebula/ca.sops.key`.
@@ -237,19 +237,13 @@ and writes state to the `forgejo_agentydragon` schema.
 reconciliation. The token and webhook URL use `ignore_changes` and are stable across
 re-applies — only resource recreation changes them.
 
-### ActivityWatch Authentik Access
+### ActivityWatch Authentik Access (retired)
 
-The `agent-machine-access` tofu-controller module creates the Authentik
-`activitywatch` proxy provider/application, the `activitywatch-users` group, and
-the `activitywatch-agent-client-credentials` OAuth2 provider. It also creates
-per-agent Authentik service accounts (`activitywatch-haku`,
-`activitywatch-claude-sandbox`) and writes reflected Kubernetes Secrets in the
-`authentik` namespace for `haku-sandbox` and `claude-sandbox`.
-
-These credentials are generated from Authentik state, not SOPS files. If the
-tofu state is lost but Authentik still has the resources, import or recreate
-them consistently with the `agent_machine_access` schema before expecting agent
-ActivityWatch queries to work.
+ActivityWatch was retired because upstream `aw-sync` cannot safely produce a
+canonical central dataset. Its Authentik proxy, OAuth provider, service accounts,
+and reflected Kubernetes Secrets are removed by the `agent-machine-access`
+tofu-controller; they are not SOPS-managed and must not be recreated unless a
+replacement importer design is adopted.
 
 ## L7: NixOS Worker Integration
 

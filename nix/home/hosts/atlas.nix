@@ -30,7 +30,9 @@ in
   };
 
   ducktape.activitywatch.sync = {
-    enable = true;
+    # Retired with the cluster receiver; retain config material for a future
+    # snapshot-based replacement of the aw-sync transport.
+    enable = false;
     syncthing = {
       certFile = ../../../secrets/home/atlas/activitywatch-syncthing.cert.pem;
       keySopsFile = ../../../secrets/home/atlas/activitywatch-syncthing.sops.key;
