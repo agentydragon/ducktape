@@ -299,23 +299,21 @@ async def test_a_replacement_session_wakes_from_our_transcript_rather_than_from_
 ) -> None:
     """**Which copy of the conversation is this?**
 
-    The two copies are distinguishable here, which is why this can assert provenance rather than
-    only content: our transcript holds the operator's message as ingress wrote it — `[$event] one`,
-    event id inline — while the homeserver holds an event whose body is `one` and whose id is a
-    field beside it. So a prompt containing the first form was built from the transcript, and one
-    built by paginating `/messages` could not contain it.
+    `two` is what tells the copies apart, and it is the load-bearing case anyway. The killed
+    sandbox is how a replacement session gets made at all; `two` is accepted by the dying session
+    and never answered by it, so it sits past the sync watermark and the only thing that can carry
+    it into the replacement is our own transcript.
 
-    The killed sandbox is how a replacement session gets made at all, and it also puts the
-    load-bearing case in the same test: `two` is accepted by the dying session and never answered
-    by it, so the only thing that can carry it into the replacement is the transcript.
+    Form no longer distinguishes them: the event ids ingress once wrote inline ride on the prompt's
+    own event now, so both copies carry the same text and only position separates them.
     """
     await deployment.start_console("console-1")
     doomed = await deployment.serving()
-    one = await room.say("one")
+    await room.say("one")
     await room.wait_for_reply("re: one")
 
     await deployment.kill_sandbox(doomed)
-    two = await room.say("two")
+    await room.say("two")
     await deployment.wait_until_queued(doomed, "two")
     await deployment.serving(after=doomed)
     # The replacement launches its CLI on its first prompt, and the launch is what renders the
@@ -328,9 +326,8 @@ async def test_a_replacement_session_wakes_from_our_transcript_rather_than_from_
     launched = deployment.system_prompts()
     assert len(launched) >= 2, "no replacement session was ever started"
     woken = launched[-1]
-    assert f"[{one}] one" in woken, "the operator's message, in the form only our record holds"
     assert "re: one" in woken, "half a conversation is not context — Haku's own reply is there too"
-    assert f"[{two}] two" in woken, "the message its predecessor accepted and never answered"
+    assert "two" in woken, "the message its predecessor accepted and never answered"
 
 
 if __name__ == "__main__":

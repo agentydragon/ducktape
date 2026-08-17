@@ -437,6 +437,7 @@ py_test(
         ":conftest",
         ":conversation_events",
         ":conversation_records",
+        ":session_events",
         ":session_notifications",
         ":session_store",
         "//:conftest",

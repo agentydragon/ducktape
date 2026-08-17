@@ -32,12 +32,14 @@ from haku.console.chat_models import (
     ENDED_SESSION_STATUSES,
     LEASED_SESSION_STATUSES,
     OPEN_SESSION_STATUSES,
+    SPA_ORIGIN,
     AuthoredEventKind,
     ChatMessageRole,
     ChatMessageStatus,
     ChatSurface,
     FrameDirection,
     LeaseExpiryReason,
+    PromptOrigin,
     PromptRejection,
     SessionStatus,
     TurnOutcome,
@@ -775,8 +777,22 @@ class SessionStore:
             chat.updated_at = now
 
     async def enqueue_prompt(
-        self, operator_id: UUID, session_id: UUID, prompt_text: str, records: PromptRecords | None = None
+        self,
+        operator_id: UUID,
+        session_id: UUID,
+        prompt_text: str,
+        origin: PromptOrigin = SPA_ORIGIN,
+        records: PromptRecords | None = None,
     ) -> SessionMessageView:
+        """Accept a prompt, recording which surface it arrived through.
+
+        The origin rides on the `PROMPT_ENQUEUED` event rather than on the transcript row, because
+        that event is already the prompt's provider-neutral place in the stream — and a surface
+        deciding whether it has already shown this prompt reads the stream, not the transcript.
+
+        Defaulted to the console's own surface: a caller that passes nothing is one, and a channel
+        says which of its attachments the prompt came through.
+        """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
             chat = await db.scalar(
@@ -815,7 +831,7 @@ class SessionStore:
             # transcript does. Without it `session_events` holds only the agent's half.
             db.add(
                 session_events.prompt_enqueued(
-                    session_id=session_id, message_id=message.message_id, text=prompt_text, now=now
+                    session_id=session_id, message_id=message.message_id, text=prompt_text, origin=origin, now=now
                 )
             )
             chat.updated_at = now

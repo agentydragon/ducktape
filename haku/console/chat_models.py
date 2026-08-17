@@ -5,7 +5,7 @@ surfaces that read and write them live in `x/` — an enum here cannot invert th
 """
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -32,6 +32,76 @@ class ChatSurface(StrEnum):
 
     SPA = "spa"
     MATRIX = "matrix"
+
+
+class PromptOriginKind(StrEnum):
+    """Which arm of `PromptOrigin` a prompt carries.
+
+    Two of these are `ChatSurface` members and one is not, which is why this is its own vocabulary
+    rather than that one: `UNRECORDED` is not a surface a prompt could have arrived through, it is
+    the console saying it did not write the origin down.
+    """
+
+    SPA = "spa"
+    MATRIX = "matrix"
+    UNRECORDED = "unrecorded"
+
+
+class SpaOrigin(BaseModel):
+    """The operator typed this into the console.
+
+    **No address, and that is not an inconsistency with the room's arm.** An address exists so a
+    channel can tell its own copy of a prompt from a sibling attachment's; a browser tab holds no
+    copy to confuse, because it renders the record rather than keeping one.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[PromptOriginKind.SPA] = PromptOriginKind.SPA
+
+
+class MatrixOrigin(BaseModel):
+    """The operator said this in a Matrix room, as one or more events folded into one prompt.
+
+    **Both strings are opaque to everything but the Matrix channel.** Only the channel that minted
+    an origin may look inside one; **everything else compares, it never interprets**. That is what
+    lets the conversation layer hold a channel's address without learning its vocabulary
+    (<plans/conversation_layers.md> § 1).
+
+    **`address` is why this is not just a ref.** One bot serves many rooms, so a bare event id
+    cannot tell a sibling room's copy from this room's — and telling them apart is the whole job of
+    the reader this exists for.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[PromptOriginKind.MATRIX] = PromptOriginKind.MATRIX
+    address: str = Field(description="Which room. Never parsed outside the Matrix channel.")
+    refs: tuple[str, ...] = Field(description="The events folded into this prompt, oldest first.")
+
+
+class UnrecordedOrigin(BaseModel):
+    """The prompt predates the origin being written down.
+
+    **A named state, not an absence.** Overloading "no value" with both "typed into a browser" and
+    "we never wrote it down" makes the reader wrong on exactly the rows where being wrong reposts
+    history into a room. Its meaning to that reader is the conservative one: show this prompt where
+    it already is and nowhere else.
+    """
+
+    # CLEANUP(added 2026-08-17): drop this arm once no stored prompt lacks an origin —
+    #   `SELECT count(*) FROM session_events WHERE kind = 'prompt_enqueued' AND NOT (body ? 'origin')`
+    #   returning 0. Until then it is what those rows deserialize to.
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[PromptOriginKind.UNRECORDED] = PromptOriginKind.UNRECORDED
+
+
+type PromptOrigin = SpaOrigin | MatrixOrigin | UnrecordedOrigin
+
+# The console's own surface, as one value rather than one per call: `SpaOrigin` carries nothing, so
+# every instance is the same statement and a shared frozen one says so.
+SPA_ORIGIN = SpaOrigin()
 
 
 class FrameDirection(StrEnum):

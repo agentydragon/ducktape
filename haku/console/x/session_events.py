@@ -32,7 +32,9 @@ from haku.console.chat_models import (
     ConversationEventKind,
     EventProvenance,
     LeaseExpiryReason,
+    PromptOrigin,
     PromptRejection,
+    UnrecordedOrigin,
 )
 from haku.console.database_schema import SessionEvent
 from haku.console.x.conversation_events import (
@@ -99,6 +101,21 @@ class PromptBody(BaseModel):
 
     message_id: UUID = Field(description="The `session_messages` row this prompt is — its only join.")
     text: str
+    # What reads this is cross-surface prompt visibility: every attached surface shows the
+    # operator's prompts wherever they were sent from, so each asks "did this arrive through me?"
+    # — an equality test against the origin, never a look inside one — and posts only what did not.
+    # Nothing projects it yet; that is the step where a channel starts reading the record instead
+    # of being handed what the turn loop produced (#4254 § 9 step 9).
+    #
+    # **Defaulted rather than required**, because a row written before this field has no key for
+    # it and `extra="forbid"` says nothing about missing ones. The default is the arm that means
+    # exactly that, so an old row deserializes to "not written down" instead of impersonating a
+    # surface.
+    origin: PromptOrigin = Field(
+        default_factory=UnrecordedOrigin,
+        discriminator="kind",
+        description="The surface this prompt arrived through, and its own address for it.",
+    )
 
 
 class PromptRejectedBody(BaseModel):
@@ -185,7 +202,9 @@ def _authored_kind(body: AuthoredBody) -> AuthoredEventKind:
             return AuthoredEventKind.LEASE_EXPIRED
 
 
-def prompt_enqueued(*, session_id: UUID, message_id: UUID, text: str, now: datetime) -> SessionEvent:
+def prompt_enqueued(
+    *, session_id: UUID, message_id: UUID, text: str, origin: PromptOrigin, now: datetime
+) -> SessionEvent:
     """The row an accepted prompt is stored as, written in `enqueue_prompt`'s own transaction.
 
     Authored because no frame carries it at this point: `next_prompt` hands the prompt to the CLI
@@ -202,7 +221,7 @@ def prompt_enqueued(*, session_id: UUID, message_id: UUID, text: str, now: datet
         source_first_frame_seq=None,
         source_last_frame_seq=None,
         call_id=None,
-        body=PromptBody(message_id=message_id, text=text).model_dump(mode="json"),
+        body=PromptBody(message_id=message_id, text=text, origin=origin).model_dump(mode="json"),
         created_at=now,
     )
 

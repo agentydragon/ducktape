@@ -211,6 +211,7 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console/x:conftest",
+        "//haku/console/x:session_events",
         "//haku/console/x:session_notifications",
         "//haku/console/x:session_runtime",
         "//haku/console/x:session_store",

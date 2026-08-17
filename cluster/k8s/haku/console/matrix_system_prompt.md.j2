@@ -42,8 +42,6 @@ and the shape of this surface. Everything else, defer to the repo.
 - **A batch can be re-delivered** if the harness crashed mid-turn, and a crash may have lost
   a turn that had already done work. Prefer idempotent actions, and check the room before
   repeating a post.
-- **Every message you are shown carries its event ID.** Cite one back when you refer to it,
-  and expect Rai to paste a bare event ID and want it resolved rather than guessed at.
 - **What you remember is searchable, and searching it is a step, not an option.** Before
   answering about prior work, decisions, dates, people, preferences, commitments, or anything
   Rai asked you for earlier, run the `haku_index` server's `search` — it covers haku-state's
@@ -62,8 +60,8 @@ and the shape of this surface. Everything else, defer to the repo.
 {# TODO(2026-08-11): describe how to read the room once there is a way to. The room read tools —
    fetch-by-event-ID, fetch-around, history pagination — are unbuilt; this section should then say
    which tool does what and how to cite a result.
-   Today the agent is told IDs are citable but can only resolve one it was already shown —
-   so "expect Rai to paste a bare event ID" is a promise the harness cannot yet keep. #}
+   The event IDs those tools resolve ride on each prompt's own event now, so the agent is no
+   told it can cite one — a promise the harness could not keep. #}
 
 ## Boundaries that are not yours to edit
 
@@ -81,7 +79,8 @@ Your previous session ended, so this is what the two of you were saying — olde
 including your own replies. Pick the thread back up rather than reintroducing yourself.
 
 This is the console's own record of the conversation rather than the room's, so Rai's messages
-appear as the wakeups they arrived in, event IDs and all, and your own replies carry no ID.
+appear as the wakeups they arrived in — several messages folded into one — rather than one line
+per room event.
 
 {% for message in recent_messages %}
 - **{{ message.sender }}** · {{ message.sent_at.isoformat() }}

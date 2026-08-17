@@ -67,11 +67,16 @@ over Matrix, and any write surface for the agent beyond its own replies.
   acknowledgement, so the watermark advances every pass. The cost, and the two richer answers that
   would take it back — mid-turn steering, a conversation-layer queue — are in
   <../../../plans/conversation_layers.md> § 7.
+- **What a prompt answered is recorded, not rendered.** The `PROMPT_ENQUEUED` event's body names the
+  prompt's origin — a closed union of the SPA, a Matrix room, and the unrecorded state rows written
+  before the field existed deserialize to. The room's arm carries the room beside the events folded
+  into the prompt, because one bot serves many rooms and a bare event id cannot tell a sibling room's
+  copy from this room's. Both strings are opaque outside this channel: everything else compares them
+  and never reads them.
 - **Unsettled, and tracked in <../../../TODO.md>:** the batch size cap and its overflow split, the
   ingress debounce window, and the age fence that makes a very old message context rather than work.
-  Provenance in the rendered prompt is thinner than intended: `_as_prompt` renders one line per
-  message carrying its `event_id` and body alone, so sender, timestamp and thread root do not reach
-  the agent.
+  Provenance in the rendered prompt is thinner than intended: `_as_prompt` renders one body per line,
+  so sender, timestamp and thread root do not reach the agent.
 
 ## The room and the session behind it
 
@@ -201,12 +206,14 @@ over Matrix, and any write surface for the agent beyond its own replies.
   (<../../../../plans/information_trust_tiers.md>) — a decision function at one console call site,
   not scoping smeared through the transport, which is a second reason to keep the tools plain HTTP
   entries rather than closures over a session.
-- **IDs are given, not guessed.** Every message the agent sees carries its event ID in the form the
-  read tools accept, and a permalink is accepted as input since that is what a client produces on
-  "copy link". A finding drawn from a room message cites the message, and the operator-facing form
-  of that citation is clickable.
-- **The room read tools are unbuilt.** Until they land, the system prompt tells the agent event IDs
-  are citable while the harness can only resolve one it was already shown.
+- **IDs are given, not guessed.** Nothing renders one into a prompt, so the only ones the agent holds
+  are what the operator pasted; a permalink is accepted as input, since that is what a client
+  produces on "copy link". A finding drawn from a room message cites the message, in a form the
+  operator can click.
+- **The room read tools are unbuilt**, so the system prompt no longer tells the agent an event ID is
+  citable — the harness could resolve only one it had already shown, which is a promise it could not
+  keep. What a prompt was folded from rides on the prompt's own event instead, which is what a read
+  tool will resolve a citation through once one exists.
 
 ## Deployment
 

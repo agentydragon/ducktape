@@ -29,8 +29,10 @@ from haku.console.chat_models import (
     EventProvenance,
     FrameDirection,
     LeaseExpiryReason,
+    MatrixOrigin,
     PromptRejection,
     SessionStatus,
+    SpaOrigin,
     TurnOutcome,
 )
 from haku.console.database_schema import Conversation, Session, SessionEvent, SessionMessage, SessionPrompt
@@ -46,6 +48,7 @@ from haku.console.x.conversation_events import (
     ToolCallStarted,
 )
 from haku.console.x.conversation_records import FrameCursor, SessionCursor, TranscriptCursor, TurnCursor
+from haku.console.x.session_events import PromptBody
 from haku.console.x.session_notifications import SessionEventKind
 from haku.console.x.session_store import (
     ADOPTION_GRACE,
@@ -393,6 +396,35 @@ async def test_two_sessions_created_in_one_instant_are_paged_exactly_once_each(
     assert [session.session_id for session in [page, *rest]] == sorted(
         [first.session_id, second.session_id], reverse=True
     )
+
+
+async def test_a_prompt_records_the_channel_events_it_was_folded_from(
+    chat_store, operator_id, migrated_sessions
+) -> None:
+    """The store carries a surface's origin without reading it: the arm says whose it is, and
+    nothing here knows what a Matrix room or event id is.
+
+    The SPA is named rather than left absent, so the reader this exists for cannot confuse "typed
+    into a browser" with "we never wrote it down" — which are opposite answers to "does this room
+    already have a copy?".
+    """
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(
+        operator_id, view.session_id, "first\nsecond", MatrixOrigin(address=ROOM, refs=("$a", "$b"))
+    )
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
+    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "do the thing")
+
+    asked = [
+        PromptBody.model_validate(event.body)
+        for event in await authored_events(migrated_sessions, view.session_id)
+        if event.kind == AuthoredEventKind.PROMPT_ENQUEUED
+    ]
+
+    assert [body.origin for body in asked] == [MatrixOrigin(address=ROOM, refs=("$a", "$b")), SpaOrigin()]
 
 
 async def test_exchanges_page_by_their_own_keyset(chat_store, operator_id) -> None:

@@ -6,10 +6,9 @@ it. It is deliberately **not** a model: what it answers is decided by what was a
 real CLI emits is pinned separately by the probes in `haku/cli_protocol/probes/`.
 
 It answers `re: $body`, so a reply can be matched to the message that earned it — which is what
-`../test_matrix_fullstack_e2e.py` asserts of every message the operator sent. The prompt a Matrix
-turn carries is `[$event_id] $body` per message (`channels/matrix/conversation.py`'s `_as_prompt`), so the event id is
-stripped first. The body also carries the turn's stage directions, in trailing `[…]` markers the
-test writes and this strips before answering:
+`../test_matrix_fullstack_e2e.py` asserts of every message the operator sent. The body also carries
+the turn's stage directions, in trailing `[…]` markers the test writes and this strips before
+answering:
 
 - `[hold]` — wait for `release` in `HAKU_STUB_STATE` before finishing the turn, which is what
   leaves a turn open across a console going away.
@@ -89,7 +88,7 @@ def _answer(state: Path, prompt: str, answered: int) -> None:
     """Answer one prompt, obeying whatever directions its last line carried."""
     # The last line, because a batch the sync loop folded together is several messages and the
     # directions belong to the one that arrived last.
-    body = prompt.strip().splitlines()[-1].split("] ", 1)[-1]
+    body = prompt.strip().splitlines()[-1]
     directives = _DIRECTIVE.findall(body)
     text = f"re: {_DIRECTIVE.sub('', body).strip()}"
 

@@ -26,6 +26,7 @@ from haku.console.chat_models import (
     ChatMessageRole,
     ChatMessageStatus,
     ChatSurface,
+    MatrixOrigin,
     PromptRejection,
     SessionStatus,
 )
@@ -374,14 +375,21 @@ class MatrixTurns:
         return True
 
     async def _enqueue(self, prompt_text: str, event_ids: tuple[str, ...]) -> Admission:
+        # The binding is read for the room alone — which session is serving comes through the
+        # conversation — because the room is the address this prompt's origin names.
+        binding = await self._conversations.bound_room()
         session_id = await self._conversations.session_serving()
-        if session_id is None:
+        if binding is None or session_id is None:
             logger.info("Matrix: no session behind the room, rejecting %d event(s)", len(event_ids))
             return PromptRejected(reason=PromptRejection.NO_SESSION, event=None)
         operator_id = await self._identities.resolve_configured_external_user_key(self._config.operator_subject)
         try:
             prompt = await self._chat_store.enqueue_prompt(
-                operator_id, session_id, prompt_text, self._ledger.carrying(event_ids)
+                operator_id,
+                session_id,
+                prompt_text,
+                _origin(binding.room_id, event_ids),
+                self._ledger.carrying(event_ids),
             )
         except KeyError:
             # The session row has gone under us — the supervisor is between sessions. Nothing to
@@ -418,9 +426,28 @@ class MatrixTurns:
         )
 
 
+def _origin(room_id: str, event_ids: tuple[str, ...]) -> MatrixOrigin:
+    """This batch, as the origin the rest of the console may hold but not read.
+
+    One origin rather than one per message: a batch arrives through a single attachment and
+    becomes a single prompt, so the room is the origin and the events are what it folded.
+
+    **The room travels with the events**, even though only one room is serviced today: a surface
+    deciding whether a prompt is already in front of its reader compares origins, and a bare event
+    id cannot tell a sibling room's copy from this room's the moment one bot serves several.
+    """
+    return MatrixOrigin(address=room_id, refs=event_ids)
+
+
 def _as_prompt(messages: Sequence[InboundMessage]) -> str:
-    """Render a batch as one prompt, each event ID inline so the agent can cite a message back."""
-    return "\n".join(f"[{message.event_id}] {message.body}" for message in messages)
+    """Render a batch as one prompt: what the operator said, in the order they said it.
+
+    The event ids used to be rendered in front of each line. They ride on the prompt's own
+    `PROMPT_ENQUEUED` event now — a field instead of a prefix — which is what the room read tools
+    will resolve a citation through, and what a reply that answers a specific message will
+    address itself with.
+    """
+    return "\n".join(message.body for message in messages)
 
 
 class MatrixSurface:

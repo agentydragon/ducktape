@@ -69,17 +69,15 @@ def test_deployed_template_renders_a_fresh_room(deployed: SystemPromptTemplate):
 def test_deployed_template_carries_both_sides_of_the_history(deployed: SystemPromptTemplate):
     rendered = deployed.render(
         introduction(
-            history("@rai:allegedly.works", "[$first] did the OA thing happen?"),
+            history("@rai:allegedly.works", "did the OA thing happen?"),
             history("@haku:allegedly.works", "you booked it for Monday"),
         )
     )
     assert "Where the conversation was" in rendered
+    assert "did the OA thing happen?" in rendered
     # Haku's own replies are context, not noise: a prompt with only Rai's half reads as a
     # monologue and invites the agent to answer questions it already answered.
     assert "you booked it for Monday" in rendered
-    # Rai's half carries the event IDs it arrived with, inline, because the recorded prompt is
-    # what ingress wrote — the console never learns an ID for a reply of its own.
-    assert "$first" in rendered
     assert "no earlier conversation" not in rendered
 
 

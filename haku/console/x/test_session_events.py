@@ -9,11 +9,14 @@ import pytest
 import pytest_bazel
 
 from haku.console.chat_models import (
+    SPA_ORIGIN,
     AuthoredEventKind,
     ConversationEventKind,
     EventProvenance,
     LeaseExpiryReason,
+    MatrixOrigin,
     TurnOutcome,
+    UnrecordedOrigin,
 )
 from haku.console.database_schema import SessionEvent
 from haku.console.x import session_events
@@ -111,11 +114,36 @@ def test_a_prompt_is_conversation_on_the_authored_arm() -> None:
     """The operator's half of the transcript, which no fold produces: a prompt is accepted before
     it crosses the wire, so it has frames nowhere and a turn not yet."""
     message_id = uuid4()
-    asked = session_events.prompt_enqueued(session_id=SESSION_ID, message_id=message_id, text="list the files", now=NOW)
+    asked = session_events.prompt_enqueued(
+        session_id=SESSION_ID, message_id=message_id, text="list the files", origin=SPA_ORIGIN, now=NOW
+    )
 
     assert (asked.kind, asked.provenance) == (AuthoredEventKind.PROMPT_ENQUEUED, EventProvenance.AUTHORED)
     assert (asked.turn_id, asked.source_first_frame_seq, asked.source_last_frame_seq, asked.call_id) == (None,) * 4
-    assert asked.body == {"message_id": str(message_id), "text": "list the files"}
+    assert asked.body == {"message_id": str(message_id), "text": "list the files", "origin": {"kind": "spa"}}
+
+
+def test_a_room_prompt_names_the_room_as_well_as_the_events() -> None:
+    """A bare event id cannot tell a sibling room's copy of a prompt from this room's, which is
+    exactly the question the surface reading this asks. Both strings stay the channel's own."""
+    asked = session_events.prompt_enqueued(
+        session_id=SESSION_ID,
+        message_id=uuid4(),
+        text="hi",
+        origin=MatrixOrigin(address="!room:example.org", refs=("$a", "$b")),
+        now=NOW,
+    )
+
+    assert asked.body["origin"] == {"kind": "matrix", "address": "!room:example.org", "refs": ["$a", "$b"]}
+
+
+def test_a_prompt_stored_before_origins_existed_reads_as_unrecorded() -> None:
+    """The reason the SPA is a named arm rather than the absent one. An old row carries no origin
+    key, and reading that as "typed into a browser" would tell every attached room it owes a copy
+    of a prompt the room may already be showing."""
+    stored = {"message_id": str(uuid4()), "text": "from before the field existed"}
+
+    assert session_events.PromptBody.model_validate(stored).origin == UnrecordedOrigin()
 
 
 def test_a_fact_the_console_authored_names_no_turn_and_no_frames() -> None:

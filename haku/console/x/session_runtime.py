@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from more_itertools import first
 from pydantic import BaseModel, Field, SecretStr
 
-from haku.console.chat_models import ENDED_SESSION_STATUSES, FrameDirection, SessionStatus, TurnOutcome
+from haku.console.chat_models import ENDED_SESSION_STATUSES, SPA_ORIGIN, FrameDirection, SessionStatus, TurnOutcome
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.x import frame_projection
@@ -898,7 +898,9 @@ async def send_message(
     session_id: UUID, body: SessionPromptRequest, actor: OperatorActorDep, store: SessionStoreDep
 ) -> SessionMessageView:
     try:
-        return await store.enqueue_prompt(actor.operator_id, session_id, body.text)
+        # Named rather than left to the default: the console's own surface is a channel like any
+        # other, and a prompt typed here is one every attached room is owed a copy of.
+        return await store.enqueue_prompt(actor.operator_id, session_id, body.text, SPA_ORIGIN)
     except KeyError as error:
         raise HTTPException(status_code=404, detail="session not found") from error
     except PromptRefusedError as error:

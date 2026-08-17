@@ -30,10 +30,11 @@ from jinja2 import Environment, StrictUndefined
 class HistoryMessage:
     """One thing already said in this conversation, either side of it, as we recorded it.
 
-    No event id of its own: this comes from the console's transcript rather than from the room
-    (`channels/matrix/sync.py`'s `recent_history`), and the ids we hold are the ones ingress wrote
-    inline into the operator's prompts. Haku's own replies have none, because the room's id for a
-    reply is minted by the homeserver at send time and nothing brings it back.
+    No channel address: this comes from the console's transcript rather than from the room
+    (`channels/matrix/sync.py`'s `recent_history`), and what a prompt was folded from is a
+    field on its `PROMPT_ENQUEUED` event rather than something the text carries. Nothing renders one into a prompt
+    — the agent has no way to resolve one until the room read tools land, and until then an
+    address in front of the operator's words is noise it is invited to quote back.
     """
 
     sender: str
