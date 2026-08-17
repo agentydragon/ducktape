@@ -143,7 +143,7 @@ def test_a_range_cannot_end_where_it_never_began(db_url: str, engine: Engine) ->
 def test_an_assistant_row_must_say_which_frame_opened_it(db_url: str, engine: Engine) -> None:
     """`begin_assistant` names that frame at insert, so an unpointed answer is one nothing can
     appeal to the log. Refusable only because the purge deleted the rows that were in that shape
-    (<../plans/legacy_purge.md>)."""
+    (<debug/2026_08_16_legacy_purge.md>)."""
     apply_migrations(db_url)
     with engine.begin() as conn:
         session_id = _session(conn)

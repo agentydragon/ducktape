@@ -47,14 +47,17 @@ def _session(conn: Connection) -> UUID:
 
 
 def _message_with_tool_uses(conn: Connection, session_id: UUID, calls: list[dict[str, object]]) -> UUID:
+    """An assistant row as a writer of its era left it: the calls in `tool_uses`, and — since `0058`
+    requires it of every assistant row — the frame it was projected from."""
     message_id = uuid4()
     conn.execute(
         text(
             """
             INSERT INTO session_messages (
-                message_id, session_id, role, status, content, tool_uses, created_at, updated_at
+                message_id, session_id, role, status, content, tool_uses,
+                source_first_frame_seq, created_at, updated_at
             ) VALUES (
-                :message_id, :session_id, 'assistant', 'complete', '', CAST(:calls AS jsonb), :n, :n
+                :message_id, :session_id, 'assistant', 'complete', '', CAST(:calls AS jsonb), 1, :n, :n
             )
             """
         ),

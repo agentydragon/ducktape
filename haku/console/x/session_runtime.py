@@ -15,6 +15,7 @@ import contextlib
 import json
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Protocol, cast
@@ -168,6 +169,19 @@ class ChatFrontend(StatusFrontend, Protocol):
     async def report_silent_turn(self) -> None: ...
 
     async def report(self, detail: str) -> None: ...
+
+
+@dataclass(frozen=True)
+class _CompletedTurn:
+    """The event that ended a turn, and the frame it was projected from."""
+
+    event: TurnCompleted
+    # Still read for the two things the neutral event does not carry: the failure's reason (an
+    # outcome is not a message) and the prose of a turn that said nothing anywhere else. Appealing
+    # an event to the frame behind it is the design's own escape hatch, so this is the seam working
+    # rather than leaking. The turn's cost is not among them — that is `event.usage`, in columns
+    # that mean the same thing whichever backend filled them.
+    frame: ReceivedFrame
 
 
 class SessionService:
@@ -561,16 +575,7 @@ class SessionService:
         # facts because a session with no room queues nothing.
         state = await self._store.turn_state(turn_id)
         assistant_id = state.assistant_message_id
-        completed: TurnCompleted | None = None
-        # The frame `completed` was projected from, kept because the code below still reads
-        # Claude's own payload out of it for two things the neutral event does not carry: the
-        # failure's reason (an outcome is not a message) and the prose of a turn that said nothing
-        # anywhere else. What it no longer reads out of it is the turn's cost — that is
-        # `completed.usage`, and it lands in columns that mean the same thing whichever backend
-        # filled them. Appealing an event to the frame behind it is the design's own escape hatch,
-        # so this is the seam working rather than leaking.
-        result: dict[str, Any] | None = None
-        result_frame_seq: int | None = None
+        completed: _CompletedTurn | None = None
         status = TurnStatus(frontend)
         status.start()
         aborted = asyncio.ensure_future(abort_event.wait())
@@ -613,13 +618,12 @@ class SessionService:
                 # cursor ahead of the turn's own last word.
                 finished = first((event for event in events if isinstance(event, TurnCompleted)), None)
                 if finished is not None:
-                    completed, result, result_frame_seq = finished, received.payload, frame_seq
+                    completed = _CompletedTurn(finished, received)
                 else:
                     state = await self._store.apply_frame(session_id, turn_id, frame_seq, events)
                     assistant_id = state.assistant_message_id
-            if result is None:
-                raise RuntimeError("the Claude stream ended without a result for this turn")
-            if completed.outcome is TurnOutcome.FAILED and not abort_event.is_set():
+            result = completed.frame.payload
+            if completed.event.outcome is TurnOutcome.FAILED and not abort_event.is_set():
                 # Quoted from the frame rather than the event: *why* a turn failed is
                 # provider-specific by nature, and the neutral vocabulary carries an outcome
                 # rather than a message on purpose.
@@ -644,14 +648,14 @@ class SessionService:
             elif not state.said_anything:
                 # This row's only source is the `result` frame — the turn said nothing else.
                 assistant_id = await self._store.begin_assistant(
-                    session_id, turn_id, source_first_frame_seq=result_frame_seq
+                    session_id, turn_id, source_first_frame_seq=completed.frame.frame_seq
                 )
                 carried_final = await self._store.update_assistant(
                     session_id,
                     assistant_id,
                     final_text,
                     tool_calls=[],
-                    source_last_frame_seq=result_frame_seq,
+                    source_last_frame_seq=completed.frame.frame_seq,
                     complete=True,
                 )
                 assistant_id = None
@@ -680,17 +684,19 @@ class SessionService:
             # frame any more.
             await self._store.end_turn(
                 turn_id,
-                TurnOutcome.ABORTED if abort_event.is_set() else completed.outcome,
-                completed.usage,
+                TurnOutcome.ABORTED if abort_event.is_set() else completed.event.outcome,
+                completed.event.usage,
                 # One frame, said twice because it means two things here: where this turn's frames
                 # end, and that this transaction is the one taking the cursor past it.
-                last_frame_seq=result_frame_seq,
-                projected_frame_seq=result_frame_seq,
+                last_frame_seq=completed.frame.frame_seq,
+                projected_frame_seq=completed.frame.frame_seq,
             )
         except Exception as error:
-            # Set only where the failure was diagnosed from the `result` frame; otherwise this turn
-            # ended on no frame of its own and `end_turn` bounds it by what it recorded.
-            await self._store.end_turn(turn_id, TurnOutcome.FAILED, last_frame_seq=result_frame_seq)
+            # Bounded only where the failure was diagnosed from the `result` frame; otherwise this
+            # turn ended on no frame of its own and `end_turn` bounds it by what it recorded.
+            await self._store.end_turn(
+                turn_id, TurnOutcome.FAILED, last_frame_seq=completed.frame.frame_seq if completed is not None else None
+            )
             if assistant_id is not None:
                 await self._store.fail(session_id, str(error), assistant_id)
             raise
