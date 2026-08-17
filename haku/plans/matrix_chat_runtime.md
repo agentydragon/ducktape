@@ -246,7 +246,8 @@ input to a running turn**. Interrupt exists; steer does not.
   transcript still lives in exactly one room; the others it watches and can write to are a
   separate relation, owned by the agent rather than the session so a rotation does not lose them
   (R5.4's note, and <information_trust_tiers.md> § Attachment and subscription). Only the
-  attachment is what R3.6a refuses a second of.
+  attachment was what R3.6a refused a second of, and R3.6a is withdrawn — so a bot holds several
+  attachments, each its own conversation, and the subscription relation is still a separate thing.
 
 - **R3.2 [v1] One long-lived sandbox, always up.** The sandbox backs that session
   continuously — not provisioned per turn, not expired on a short TTL, and **not scaled
@@ -366,14 +367,26 @@ input to a running turn**. Interrupt exists; steer does not.
   which room is the live one. Silently joining a room nothing services is the one outcome
   ruled out: it looks like Haku is listening when it is not.
 
-  **[later] The shape this generalizes to is one room per `(operator, agent)` pair**, with
+  **[withdrawn 2026-08-17] One bot serves many rooms.** The operator's ruling: rooms held at
+  once are sessions run in parallel, which is wanted. So the refusal above goes — an invite
+  mints a conversation rather than being declined — and what replaces the rule is
+  `chat_attachment`'s partial unique index, **one live conversation per address**
+  (<../console/plans/conversation_layers.md> § 7). Note this is a reversal rather than the
+  widening the paragraph below anticipated: that one kept "one room per key" and widened the
+  key; this drops the property.
+
+  Two things the withdrawal does not touch. R3.6's join rule stands — only the operator's own
+  MXID gets in, and the point of R3.6a was never access control. And **silently joining a room
+  nothing services stays ruled out**; it is now prevented by the invite creating the thing that
+  services it, rather than by refusing the invite.
+
+  **[superseded] The shape this generalizes to is one room per `(operator, agent)` pair**, with
   one bot account per agent. Today's rule is the single-operator, single-agent case of that,
   not a different rule — which is why the binding is keyed by bot user rather than by room:
   widening the key is the whole migration, and the "one room per key" property survives
-  unchanged. Refusal is then the right answer only for a second room on a pair that already
-  has one; a room for a _different_ operator or a _different_ agent would simply be its own
-  binding. What that needs first is more than one of either, which is also what makes it
-  premature to design now.
+  unchanged. Kept because two other documents reason from it
+  (<information_trust_tiers.md> § one bot account per agent), and their arguments need re-reading
+  against the withdrawal rather than silently inheriting it.
 
   **Wanted now** (operator, 2026-08-15): more than one session at a time, and two rooms on the
   one bot account would already be an improvement. The generalization above is still the target;
