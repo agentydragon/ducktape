@@ -26,7 +26,7 @@ def test_a_tool_result_is_the_call_it_answers() -> None:
 
 def test_a_command_is_identified_by_its_state_as_well() -> None:
     """One command reports several states and each is its own frame, so the uuid alone would make
-    `queued` and `started` collide — and collapsing those is exactly what stage 4 must not do."""
+    `queued` and `started` collide."""
     queued = {"type": "command_lifecycle", "command_uuid": "cmd-1", "state": "queued"}
     started = {**queued, "state": "started"}
 

@@ -5,10 +5,9 @@ metadata:
   # The console is reviewed/released ducktape code, so it sits OUTSIDE Haku's
   # RBAC (no `haku` RoleBinding here) and OUTSIDE the haku-egress-proxy egress fence
   # (the fence's CiliumClusterwideNetworkPolicy keys on the haku-sandbox
-  # namespace; this one gets ordinary egress). This is the confidentiality
-  # boundary that lets the console later hold secrets Haku may not read — e.g.
-  # the Claude Code web session bearer. See haku/PLAN.md → "The agent-authored
-  # console (free-form UI behind a trusted boundary)".
+  # namespace; this one gets ordinary egress). That is the confidentiality boundary
+  # letting the console hold secrets Haku may not read, e.g. the Claude Code web
+  # session bearer.
   name: haku-console
   labels:
     goldilocks.fairwinds.com/enabled: "true"

@@ -8,18 +8,15 @@ CLI:
     python3 -m haku.cli_protocol.probes.hooks
     CLAUDE_BIN=/path/to/claude python3 -m haku.cli_protocol.probes.hooks
 
-**Standard library only**, here and in every probe, so that stays true: the box with the
-credential is usually not the box with Bazel, and a probe that needed the repo's dependency set
-could not run where the question is.
+**Standard library only**, here and in every probe: the box with the credential is usually not the
+box with Bazel.
 
-Verbatim logging is the point rather than a convenience. Earlier probes printed a curated subset
-and managed to be inconclusive twice over, because a frame missing from the output could not be
-told apart from a frame missing from the wire.
+Logging is verbatim because a curated subset leaves a frame missing from the output
+indistinguishable from a frame missing from the wire.
 
-This driver deliberately does **not** reuse `ClaudeCli`. That client refuses every inbound
-control request, which is right for the console and useless here: half of what these probes
-measure is what the CLI asks a client to do. It does implement the same `FrameChannel` shape, so
-the channel a probe drives is the one production drives.
+This driver deliberately does **not** reuse `ClaudeCli`, which refuses every inbound control
+request — half of what these probes measure is what the CLI asks a client to do. It does implement
+the same `FrameChannel` shape, so the channel a probe drives is the one production drives.
 """
 
 from __future__ import annotations
@@ -48,10 +45,9 @@ InboundHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None]]
 class SubprocessChannel:
     """The CLI's own frames off a local process, for the probes in this directory.
 
-    Shaped like the console's `FrameChannel` (`haku.runtime.x.bridge.cli_client`) and no longer
-    one: that port yields the bridge envelope now, so the frame carries the number the runner put
-    on it. There is no runner here and nothing numbers these frames, and importing the envelope
-    to say so would point this package at one built on top of it.
+    Shaped like the console's `FrameChannel` (`haku.runtime.x.bridge.cli_client`) but not one: that
+    port yields the bridge envelope, and there is no runner here to number these frames. Importing
+    the envelope to say so would point this package at one built on top of it.
     """
 
     def __init__(self, *args: str, env: dict[str, str] | None = None, on_text: Callable[[str], None] | None = None):
@@ -90,9 +86,8 @@ class SubprocessChannel:
     async def read_messages(self) -> AsyncIterator[dict[str, Any]]:
         assert self.process.stdout is not None
         while line := await self.process.stdout.readline():
-            # The CLI writes plain prose to the same stdout as the frames — `Warning: no stdin
-            # data received in 3s`, `[SandboxDebug] …`. A reader that assumes every line parses
-            # raises on them, so they are surfaced rather than swallowed.
+            # The CLI writes plain prose to the same stdout as the frames — `Warning: no stdin data
+            # received in 3s`, `[SandboxDebug] …` — so surface those rather than raising on them.
             try:
                 frame = json.loads(line)
             except json.JSONDecodeError:
@@ -116,7 +111,7 @@ class Probe:
 
     `capture` additionally appends every frame, in both directions, to a JSONL file — one record
     per line, `{"at_s", "direction", "frame"}`, or `{"at_s", "direction", "stdout_line"}` for the
-    prose the CLI interleaves with the frames. Printing alone leaves nothing a test can read.
+    prose the CLI interleaves with the frames — which is what a test can read.
     """
 
     def __init__(self, *args: str, capture: Path | None = None, env: dict[str, str] | None = None):

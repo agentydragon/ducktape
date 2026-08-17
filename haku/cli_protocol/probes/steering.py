@@ -5,13 +5,12 @@ mid-turn prompt lands; `interrupt` measures what an abort does to one still queu
 
 **The first prompt must have real step boundaries.** A turn answered in continuous prose has
 nothing between its first token and its last, so every candidate absorption point — the CLI's own
-folding, `PreToolUse`, appending to a tool result — is guaranteed to do nothing, and the run
-proves only that this shape of turn cannot be steered. Asking the model to work "slowly" does not
-help: slow prose is still one message. Hence separate `Bash` calls with a real `sleep` in each.
+folding, `PreToolUse`, appending to a tool result — does nothing, and the run proves only that this
+shape of turn cannot be steered. Working "slowly" does not help: slow prose is still one message.
+Hence separate `Bash` calls with a real `sleep` in each.
 
-Verdicts come from `command_lifecycle`, which is why every prompt here is uuid-stamped. Without
-that, folding was visible only in what the model did next, and "the CLI queued it but has not
-read it" could not be told apart from "the CLI read it and ignored it".
+Verdicts come from `command_lifecycle`, which is why every prompt here is uuid-stamped: without it,
+"the CLI queued it but has not read it" cannot be told apart from "the CLI read it and ignored it".
 """
 
 from __future__ import annotations

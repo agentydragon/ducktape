@@ -2,18 +2,16 @@
 
 **Replay is safe because a frame carries identity, not because a cursor is exact.** A console can
 die between recording a frame and acknowledging it, so a resumed connection replays whatever fell
-in that gap however careful the cursor was. Making the cursor exact is therefore an optimisation;
-what makes replay *correct* is being able to recognise a frame already seen.
+in that gap however careful the cursor was; recognising a frame already seen is what makes that
+correct.
 
-The identities below are the agent's own — every one of them is a field the CLI already put on the
-wire, not something this console assigns. That matters: an id we minted would identify our receipt
-of a frame rather than the frame, and two receipts of one frame are exactly what has to collapse.
+Every identity below is the agent's own — a field the CLI already put on the wire. An id we minted
+would identify our receipt of a frame rather than the frame, and two receipts of one frame are
+exactly what has to collapse.
 
 **`stream_event` has none, and must not be given one.** A delta is meaningless alone — the console
-reconstructs an answer with `streamed += delta`, so replaying one double-appends — and it is also
-the one class that never needs replaying, because it is superseded by the completed `assistant`
-frame that follows. The recorder already drops deltas for an unrelated reason, so "buffer and
-replay everything except deltas" is a rule the system was keeping anyway.
+reconstructs an answer with `streamed += delta`, so replaying one double-appends — and it never
+needs replaying, being superseded by the completed `assistant` frame that follows.
 
 <protocol.md> describes the wire these fields come from.
 """
@@ -31,17 +29,15 @@ CONSOLE_AUTHORED_KINDS = frozenset({"setup_output", "partial"})
 def frame_uid(kind: str, payload: dict[str, Any]) -> str | None:
     """The agent's own identity for this frame, or None when it has none to give.
 
-    None is not a failure and not a fallback — it is the honest answer for a delta, for the two
-    kinds this console authors itself, and for any frame kind the CLI adds that this release has
-    not been taught. A caller dedupes on what it gets and lets the rest through, which is the safe
-    direction: a duplicate that slips past is one repeated line in a rollout, while a collision
-    invented to avoid that would drop a frame that never arrived twice.
+    None is the honest answer for a delta, for the two kinds this console authors itself, and for
+    any frame kind the CLI adds that this release has not been taught. A caller dedupes on what it
+    gets and lets the rest through: a duplicate that slips past is one repeated line, while an
+    invented identity would drop a frame that never arrived twice.
     """
     match kind:
         case "assistant" | "user" if isinstance(message := payload.get("message"), dict):
-            # The assistant's own message id, and for a `user` frame the id of the call it
-            # answers — which is what pairs a result with the request in the rollout, and is why
-            # `user` reads its identity out of the content rather than the envelope.
+            # The assistant's own message id, or for a `user` frame the id of the call it answers —
+            # which is why `user` reads its identity out of the content, not the envelope.
             if (message_id := message.get("id")) is not None:
                 return f"{kind}:{message_id}"
             return _tool_result_uid(kind, message)

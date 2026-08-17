@@ -1,17 +1,12 @@
 """Provision and auto-renew InvenTree API token for sandbox agents.
 
-Creates a non-privileged sandbox-agent user in InvenTree (if absent), issues
-a named API token for that user as superuser, and writes the token to a K8s
-Secret in the inventree namespace. An ESO ClusterExternalSecret mirrors the
-Secret to claude-sandbox (token-eso.yaml) — distribution is
-decoupled from this provisioner, so it just writes one plain Secret.
+Creates a non-privileged sandbox-agent user in InvenTree (if absent), issues a named API token for
+it as superuser, and writes the token to a Secret in the inventree namespace. An ESO
+ClusterExternalSecret mirrors that Secret to claude-sandbox (token-eso.yaml), so this provisioner
+writes one plain Secret and does no distribution.
 
-On subsequent runs (CronJob), checks the token expiry via the InvenTree API
-and renews it when fewer than RENEW_DAYS_BEFORE days remain: revokes the old
-token, creates a fresh one, and patches the k8s Secret in-place.
-
-InvenTree tokens expire after 365 days by default. The CronJob runs weekly;
-with RENEW_DAYS_BEFORE=30 this gives a comfortable renewal window.
+On subsequent runs it renews when fewer than RENEW_DAYS_BEFORE days remain: revoke, recreate, patch
+the Secret in place. InvenTree tokens expire after 365 days by default and the CronJob runs weekly.
 
 Requires: INVENTREE_ADMIN_USER, INVENTREE_ADMIN_PASSWORD env vars.
 """
@@ -69,8 +64,8 @@ def needs_renewal(token: dict) -> bool:
 def provision_token(api: InvenTreeAPI, user_pk: int, existing: dict | None) -> str:
     """Revoke the existing token (if any) and create a fresh named one.
 
-    The full token value is only present in the creation response, so we always
-    create fresh rather than trying to retrieve an existing token's value.
+    The full token value appears only in the creation response, so an existing token's value cannot
+    be retrieved.
     """
     if existing is not None:
         api.delete(f"user/tokens/{existing['pk']}/")

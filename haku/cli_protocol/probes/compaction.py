@@ -1,29 +1,24 @@
 """What does a compaction look like on the wire, and does it invalidate a stored cursor?
 
-The question with consequences. Haku's projection contract is that *a prefix of the frame log
-determines the transcript*, and compaction is the only
-event that rewrites what the conversation **is**. Either the pre-compaction frames stay in the log
-and a stored cursor still reproduces what the model saw, or they do not — and the durable cursor
-has a hazard nobody has costed.
+Haku's projection contract is that *a prefix of the frame log determines the transcript*, and
+compaction is the only event that rewrites what the conversation **is**: either the pre-compaction
+frames stay in the log and a stored cursor still reproduces what the model saw, or they do not — and
+the durable cursor has a hazard nobody has costed.
 
 One session exercises three things at once, so the capture holds all of them:
 
 - **Hooks handled in Python.** `hooks` on `initialize` with `hookCallbackIds`; the CLI asks over
-  `hook_callback` and this process answers. That is exactly the wire the Agent SDK's `hooks=`
-  option produces — the SDK is the typed layer above this, and probes stay stdlib-only, so the
-  measurement is taken here. `--include-hook-events` is passed to see whether the CLI's own hook
-  lifecycle also reaches the conversation channel; measured, it does not.
+  `hook_callback` and this process answers — the same wire the Agent SDK's `hooks=` option
+  produces. `--include-hook-events` is passed to see whether the CLI's own hook lifecycle also
+  reaches the conversation channel; measured, it does not.
 - **A tool implemented in-process.** `sdkMcpServers: ["probe"]` makes this client the MCP server;
-  the same wire the SDK's in-process tool servers produce. Its one tool returns filler, which is
-  also how the context grows.
+  its one tool returns the filler that grows the context.
 - **A real compaction**, forced rather than waited for. `--autocompact` sets the window the CLI
-  budgets against (its floor is 100k) and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` sets the fraction of
-  it that trips auto-compact. Both are the CLI's own accounting, not the API's, so the session
-  compacts against a window it would otherwise need most of a real one to reach. The
-  `autocompact_state` frame reports what they resolved to, so the run asserts it is about to
-  compact rather than hoping. **`CLAUDE_CODE_MAX_CONTEXT_TOKENS` is not the lever**: measured, it
-  left `effective_window` at 180000 with `source: "auto"` — it is the model's assumed window, not
-  the auto-compact one.
+  budgets against (its floor is 100k) and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` the fraction of it that
+  trips auto-compact — both the CLI's own accounting, not the API's. The `autocompact_state` frame
+  reports what they resolved to, so the run asserts it is about to compact rather than hoping.
+  **`CLAUDE_CODE_MAX_CONTEXT_TOKENS` is not the lever**: measured, it left `effective_window` at
+  180000 with `source: "auto"` — it is the model's assumed window, not the auto-compact one.
 
     python3 -m haku.cli_protocol.probes.compaction /tmp/capture.jsonl
 
@@ -46,15 +41,14 @@ from haku.cli_protocol.probes.harness import Probe, allow_every_tool
 SERVER = "probe"
 FILLER_TOOL = "haku_filler"
 
-# Planted before the compaction and asked for after it. Nothing in the model's training predicts
-# it, so an answer that contains it is evidence the summary carried it across the boundary rather
-# than evidence the model played along.
+# Planted before the compaction and asked for after it. Nothing in the model's training predicts it,
+# so an answer containing it is evidence the summary carried it across the boundary.
 CANARY = "PLATYPUS-7731"
 
-# The CLI's floor for `--autocompact`, from which it subtracts 20k of headroom: 100000 resolves
-# to `effective_window: 80000`. The percentage then has to clear the ~26k the system prompt and
-# tool schemas already cost, with enough room above it for several turns to precede the boundary —
-# a capture whose whole pre-compaction history is one turn proves less about the prefix.
+# The CLI's floor for `--autocompact`, from which it subtracts 20k of headroom: 100000 resolves to
+# `effective_window: 80000`. The percentage has to clear the ~26k the system prompt and tool schemas
+# already cost, with room above it for several turns to precede the boundary — a capture whose whole
+# pre-compaction history is one turn proves less about the prefix.
 WINDOW_TOKENS = 100_000
 THRESHOLD_PCT = 60
 FILLER_WORDS = 4_000
@@ -62,8 +56,8 @@ MAX_ROUNDS = 12
 
 HOOK_EVENTS = ("PreToolUse", "PostToolUse", "UserPromptSubmit", "PreCompact", "SessionStart", "Stop")
 
-# A closed vocabulary, so the filler is bulk without being prose: nothing in it can be mistaken
-# for content, and the redactor can recognise and elide it by shape.
+# A closed vocabulary, so the filler is bulk without being prose and the redactor can elide it by
+# shape.
 VOCABULARY = ("alpha", "bravo", "delta", "echo", "gamma", "kilo", "lima", "mike", "oscar", "tango", "victor", "zulu")
 
 
@@ -122,9 +116,8 @@ async def main() -> None:
         # environment scrub in `harness` ever misses a variable.
         "--session-id",
         str(uuid.uuid4()),
-        # The operator's own MCP servers and skills would otherwise be in the system prompt and
-        # in `system/init` — identifying, and thousands of tokens of budget spent on nothing the
-        # probe measures.
+        # The operator's own MCP servers and skills would otherwise land in the system prompt and in
+        # `system/init`: identifying, and thousands of tokens of budget on nothing measured here.
         "--strict-mcp-config",
         "--mcp-config",
         json.dumps({"mcpServers": {}}),
@@ -157,8 +150,8 @@ async def main() -> None:
     try:
         await run(probe)
     finally:
-        # A timeout mid-run would otherwise leave the CLI process alive and the capture unflushed,
-        # which is the run you most want the partial capture from.
+        # A timeout mid-run would otherwise leave the CLI alive and the capture unflushed — and that
+        # is the run whose partial capture is most wanted.
         await probe.stop()
     print(f"  capture written to {capture} ({capture.stat().st_size} bytes)", flush=True)
 

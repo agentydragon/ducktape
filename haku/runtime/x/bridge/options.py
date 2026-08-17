@@ -1,13 +1,12 @@
 """Claude Code as a bridge backend: the launch the console asks for, and the binary that answers.
 
-Both halves of what `backend.CliBackend` calls a backend, kept in one module because they have
-to agree: the flags below only mean anything to the executable `ClaudeBackend` starts. Everything
-generic about running *an* agent CLI is <backend.py>.
+Both halves of what `backend.CliBackend` calls a backend, in one module because they have to agree:
+the flags below only mean anything to the executable `ClaudeBackend` starts. Everything generic
+about running *an* agent CLI is <backend.py>.
 
 `build_claude_launch` is the one place a session's argv is decided, and `test_options.py` pins it
-exactly — so a change to what we launch shows up as a diff there. The flag spellings and their
-order match what the Agent SDK emitted for these options at 0.2.128, verified against its source.
-The CLI's own protocol reference is <../../../cli_protocol/README.md>.
+exactly. The flag spellings and their order match what the Agent SDK emitted for these options at
+0.2.128. The CLI's own protocol reference is <../../../cli_protocol/README.md>.
 """
 
 from __future__ import annotations
@@ -22,14 +21,12 @@ from typing import Any, ClassVar
 from haku.runtime.x.bridge.backend import ProcessLaunch, child_environment
 from haku.runtime.x.bridge.protocol import FINE_GRAINED_TOOL_STREAMING_ENV, ClaudeLaunch
 
-# What the CLI reports itself as. The SDK sent `sdk-py`; the console is not the SDK, and the CLI
-# treats this as a label rather than switching behaviour on it.
+# What the CLI reports itself as. A label: the CLI does not switch behaviour on it.
 ENTRYPOINT = "haku-console"
 
 # Where the sandbox image put the Claude executable. Named per-backend rather than by one shared
-# `HAKU_CLI_PATH` on purpose: a second CLI ships in its own image with its own path, so it can
-# name its own variable, and this one keeps the name the runner image and the bridge end-to-end
-# test already set — a rename here would have to be a flag day for no gain.
+# `HAKU_CLI_PATH`, since a second CLI ships in its own image with its own path and can name its own
+# variable.
 EXECUTABLE_VARIABLE = "HAKU_CLAUDE_PATH"
 
 
@@ -66,9 +63,9 @@ def build_claude_launch(session: ClaudeSession, *, resume_from: int | None = Non
     """The argv, cwd and environment for one CLI process, and where its console has got to.
 
     *resume_from* is not part of the process: it is the highest frame number this console has
-    recorded for the session, which rides on `start` because that frame is sent on every
-    connection (`ClaudeLaunch.resume_from`). None is a console that has recorded nothing yet, and
-    a runner reading one replays its whole window as it always did.
+    recorded for the session, riding on `start` because that frame is sent on every connection
+    (`ClaudeLaunch.resume_from`). None means nothing recorded yet, and the runner replays its whole
+    window.
     """
     arguments = ["--output-format", "stream-json", "--verbose"]
     if session.append_system_prompt is not None:
@@ -77,8 +74,8 @@ def build_claude_launch(session: ClaudeSession, *, resume_from: int | None = Non
     if session.mcp_servers:
         servers = {name: server.as_config() for name, server in session.mcp_servers.items()}
         arguments += ["--mcp-config", json.dumps({"mcpServers": servers})]
-    # Streams text and incremental tool-input JSON. The env switch is the other half of the
-    # same request and is set here rather than by a caller, so the two cannot drift apart.
+    # Streams text and incremental tool-input JSON. The env switch below is the other half of the
+    # same request, set here so the two cannot drift apart.
     arguments += ["--include-partial-messages"]
     # Only the servers above: without this the CLI would union them with whatever is configured
     # on the sandbox image.
@@ -100,10 +97,10 @@ class ClaudeBackend:
     """Claude Code, as the sandbox runner starts it and reads it back."""
 
     name: ClassVar[str] = "claude"
-    # No agent-assigned identity, so a console cannot recognise a second copy of one, and its
-    # reconstruction is `streamed += delta` — a replay double-appends. Also the class that never
-    # needs replaying: whatever it built is superseded by the completed `assistant` frame behind
-    # it, which does carry an id (<../../../cli_protocol/frame_identity.py>).
+    # No agent-assigned identity, so a console cannot recognise a second copy, and its
+    # reconstruction is `streamed += delta` — a replay double-appends. It never needs replaying
+    # either: the completed `assistant` frame behind it supersedes what it built, and does carry an
+    # id (<../../../cli_protocol/frame_identity.py>).
     DELTA_TYPE: ClassVar[str] = "stream_event"
 
     executable: Path

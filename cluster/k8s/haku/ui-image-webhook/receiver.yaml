@@ -31,8 +31,7 @@ spec:
       kind: ImageRepository
       name: haku-ui
       namespace: haku-sandbox
-    # haku-anki's registry scan rides the same package webhook (added 2026-07-13 —
-    # until then its first-image pickup was the 5m poll).
+    # haku-anki's registry scan rides the same package webhook.
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
       name: haku-anki

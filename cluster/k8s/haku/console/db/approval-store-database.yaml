@@ -1,18 +1,15 @@
-# Declares the `vector` extension in the console's database, ahead of the semantic index that
-# needs it (`haku/recall_index`, formerly `haku/state_index`, PR #3956). Landing separately and first, because the index's
-# Alembic migration creates `vector` columns and fails the moment it runs without this — so
-# this wants to be reconciled and verified before that code deploys.
+# Declares the `vector` extension in the console's database for the semantic index
+# (`haku/recall_index`), whose Alembic migration creates `vector` columns and fails without it.
 #
 # **Adopts an existing database.** `approval_store` was created by the Cluster's
-# `bootstrap.initdb` and predates this CR, which reconciles it rather than creating it —
-# hence `databaseReclaimPolicy: retain`: with `delete`, removing this file would drop the
-# console's whole database, and nothing here is worth that risk.
+# `bootstrap.initdb` and predates this CR, which reconciles rather than creates it — hence
+# `databaseReclaimPolicy: retain`: with `delete`, removing this file would drop the console's
+# whole database.
 #
 # The extension has to be declared rather than created by the app: pgvector is not a trusted
-# extension, so `CREATE EXTENSION vector` needs superuser and the migration runs as
-# `approval_store`. CNPG's reconciler holds that superuser connection, which is the whole
-# reason this is a CR and not a line of Alembic. No image change was needed — pgvector 0.8.1
-# already ships in `ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie`.
+# extension, so `CREATE EXTENSION vector` needs the superuser connection CNPG's reconciler holds,
+# while the migration runs as `approval_store`. pgvector 0.8.1 already ships in
+# `ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie`.
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
 metadata:

@@ -1,10 +1,8 @@
 """One-shot Haku scan on the persisted thread (resumes by session id).
 
-This binary runs a single scan, suitable for a manual trigger or a scheduled job; the long-lived
-alternative is `supervisor.py` (`:serve`). History persists across runs via the history provider
-`agent.build_history_provider` chooses — Valkey/Redis when `HAKU_REDIS_URL` is set, else in-memory
-— keyed by the stable session id, so each run resumes the warm thread rather than re-reading
-everything cold.
+A single scan for a manual trigger or a scheduled job; the long-lived alternative is `supervisor.py`
+(`:serve`). History persists across runs via `agent.build_history_provider`, keyed by the stable
+session id, so each run resumes the warm thread rather than re-reading everything cold.
 """
 
 import asyncio

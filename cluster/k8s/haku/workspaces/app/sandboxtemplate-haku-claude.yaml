@@ -23,10 +23,9 @@ spec:
       # (cluster/k8s/haku/rbac/rolebinding-haku.yaml).
       serviceAccountName: haku-claude
       automountServiceAccountToken: true
-      # Deliberately outside haku-sandbox: Haku's general compute authority must not
-      # inherit access to the Claude OAuth-substituting proxy — the CCNP that admits this
-      # namespace to it keys on the namespace, so the split is the fence. Still deferred:
-      # the Haku Console agent bearer and the general sandbox MCP integrations.
+      # Deliberately outside haku-sandbox: Haku's general compute authority must not inherit access
+      # to the Claude OAuth-substituting proxy — the CCNP that admits this namespace to it keys on
+      # the namespace, so the split is the fence.
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -71,11 +70,10 @@ spec:
               value: proxy-haku-claude-github-placeholder
             - name: GITHUB_TOKEN
               value: proxy-haku-claude-github-placeholder
-            # ducktape is a read-only source Haku consults. github.com is now reachable *from
-            # the agent's shell*, which has the proxy in its environment — but not from the
-            # bootstrap, which runs with pod env and deliberately has no proxy vars, so a clone
-            # here would still fail. Left skipped so the bootstrap's exit status keeps meaning
-            # "the workspace is ready"; the agent can clone it itself when it wants it.
+            # ducktape is a read-only source Haku consults. github.com is reachable from the
+            # agent's shell, which has the proxy in its environment, but not from the bootstrap,
+            # which runs with pod env and deliberately has no proxy vars — so a clone here would
+            # fail and cost the bootstrap's exit status its meaning. The agent clones it itself.
             - name: HAKU_DUCKTAPE_SKIP
               value: "1"
           securityContext:

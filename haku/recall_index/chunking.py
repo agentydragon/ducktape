@@ -51,9 +51,9 @@ class ChunkBudget:
             raise ValueError(f"chunk overlap leaves no room for progress: {self}")
 
 
-# Conservative rather than tuned: it was chosen for a model with a 512-token window, and the one
-# in use now has a far larger one. Raising it is a retrieval question — bigger chunks match more
-# broadly and cite less precisely — which is why it is a knob and not a constant.
+# Conservative rather than tuned: sized for a model with a 512-token window, where the one in use
+# now has a far larger one. Raising it is a retrieval question — bigger chunks match more broadly
+# and cite less precisely — hence a knob and not a constant.
 DEFAULT_CHUNK_BUDGET = ChunkBudget(target_bytes=1500, max_bytes=3000, overlap_codepoints=128)
 
 

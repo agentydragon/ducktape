@@ -1,19 +1,16 @@
 """Reconcile Grocy user permissions against a declarative policy file.
 
-Read-only is the default in every grocy household instance (DEFAULT_PERMISSIONS=none,
-see ../app-base), so every auto-created user is born with no permissions.
-This reconciler converges
-each user listed in the policy to exactly its declared permission set (creating
-the user via reverse-proxy auth if absent); unlisted users are left untouched.
+Read-only is the default in every grocy household instance (DEFAULT_PERMISSIONS=none, see
+../app-base), so every auto-created user is born with no permissions. This reconciler converges
+each user listed in the policy to exactly its declared permission set, creating the user via
+reverse-proxy auth if absent; unlisted users are left untouched.
 
-Two triggers, same convergence: the one-shot Job (runs at bootstrap; policy or
-image changes recreate it via the Flux force annotation, and the kustomization's
-healthcheck gates on its completion) and the daily CronJob (drift correction —
-an operator demoted or haku elevated in the web UI converges back within a day).
+Two triggers, same convergence: the one-shot Job at bootstrap (policy or image changes recreate it
+via the Flux force annotation, and the kustomization's healthcheck gates on its completion) and the
+daily CronJob, which converges drift from the web UI back within a day.
 
-Idempotent. Runs as the built-in `admin` user (always ADMIN, created by the
-schema migration) via Grocy's trusted X-authentik-username header; the sibling
-NetworkPolicy is what restricts who may present it.
+Idempotent. Runs as the built-in `admin` user (always ADMIN, created by the schema migration) via
+Grocy's trusted X-authentik-username header; the sibling NetworkPolicy restricts who may present it.
 """
 
 import contextlib
@@ -37,15 +34,14 @@ class Policy(BaseModel):
 
 
 def wait_for_schema(client: httpx.Client) -> None:
-    """Await Grocy's schema. The app self-migrates at startup (postStart hits the
-    auth-exempt `/`) and Flux only runs the Job once grocy is Ready, but poll
-    defensively so this also works run standalone (e.g. the CronJob racing a fresh
-    deploy). Hit `/` (its body is an HTML redirect — ignore it) in case migration
-    hasn't run, then poll the JSON `/api/users` until the schema exists.
+    """Await Grocy's schema. The app self-migrates at startup (postStart hits the auth-exempt `/`)
+    and Flux only runs the Job once grocy is Ready, but poll anyway for a standalone run (e.g. the
+    CronJob racing a fresh deploy). Hit `/` — its body is an HTML redirect, ignore it — in case
+    migration has not run, then poll the JSON `/api/users` until the schema exists.
     """
     for _ in range(30):
-        # Transient connection errors and non-JSON bodies (mid-migration HTML)
-        # are all just "not ready yet" — keep polling.
+        # Transient connection errors and non-JSON bodies (mid-migration HTML) all mean "not ready
+        # yet" — keep polling.
         with contextlib.suppress(httpx.HTTPError, ValueError):
             client.get("/")
             resp = client.get("/api/users")
@@ -68,8 +64,7 @@ def reconcile(client: httpx.Client, policy: Policy) -> None:
     if unknown := {name for names in policy.users.values() for name in names} - permission_ids.keys():
         raise ValueError(f"unknown permission names {sorted(unknown)}; valid: {sorted(permission_ids)}")
     for username in policy.users:
-        # Reverse-proxy auth auto-creates the user on the first request bearing its
-        # username; default-deny means it is born with no permissions.
+        # Reverse-proxy auth auto-creates the user on the first request bearing its username.
         client.get("/api/system/info", headers={"X-authentik-username": username}).raise_for_status()
     user_ids = {u["username"]: int(u["id"]) for u in get_json(client, "/api/users")}
     for username, permission_names in policy.users.items():

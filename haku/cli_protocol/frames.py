@@ -5,10 +5,8 @@ that is the half where getting a field name or a nesting wrong fails silently. `
 validates almost nothing and rejects no unknown field, so a misspelled key is answered `success`
 and ignored — a model is the only thing that catches it.
 
-The conversation channel is deliberately not modelled. The console's record of a session is the
-wire, a model that dropped an unrecognised field would make the record a parse of it, and the
-frames it will eventually act on (`command_lifecycle`, `system/task_*`, `result` cost and usage)
-get models when the code that reads them exists.
+The conversation channel is deliberately not modelled: the console's record of a session is the
+wire, and a model that dropped an unrecognised field would make the record a parse of it.
 
 **The control channel is camelCase, but not uniformly**: the `initialize` request is, while the
 envelope's `request_id` and `interrupt`'s `cancel_queued` are snake_case. So the alias generator

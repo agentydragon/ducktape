@@ -91,9 +91,8 @@ class Session:
 async def existing_token_ids(session: Session) -> list[str]:
     """Return the ids of the long-lived tokens this provisioner already owns."""
     tokens = await session.command("auth/refresh_tokens")
-    # The session's own refresh token came from the authorization-code grant in login(),
-    # so its type is `normal` and it can never match here -- revoking these cannot cut
-    # the connection doing the revoking.
+    # The session's own refresh token came from login()'s authorization-code grant, so its type is
+    # `normal` and never matches here -- revoking these cannot cut the connection doing it.
     return [
         token["id"]
         for token in tokens
@@ -104,11 +103,10 @@ async def existing_token_ids(session: Session) -> list[str]:
 async def replace_long_lived_token(access_token: str, websocket_url: str) -> str:
     """Revoke any long-lived token this provisioner owns, then mint a replacement.
 
-    Revoking first is required, not tidiness: Home Assistant rejects a second long-lived
-    token whose `client_name` already exists (`async_create_refresh_token` raises
-    `ValueError`), and the websocket API reports that as a bare `unknown_error`. Minting
-    without revoking therefore deadlocks the moment the Secret's token stops validating
-    while the Home Assistant side still holds one -- every run fails identically forever.
+    Revoking first is required: Home Assistant rejects a second long-lived token whose
+    `client_name` already exists (`async_create_refresh_token` raises `ValueError`), and the
+    websocket API reports that as a bare `unknown_error`. Minting without revoking therefore
+    deadlocks once the Secret's token stops validating while Home Assistant still holds one.
     """
     async with websockets.connect(websocket_url) as websocket:
         greeting = json.loads(await websocket.recv())

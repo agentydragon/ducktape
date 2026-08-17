@@ -13,11 +13,9 @@ Two channels are multiplexed on one stream, distinguished by the top-level `type
   `initialize`, `interrupt` and the rest.
 
 **The record is taken here**, by the `FrameSink` every client is built with, because this is where
-each frame is already parsed and where both channels are still visible.
-
-**Every frame the client hands on carries the sink's number for it**, which is what lets a reader
-address one. The sink is therefore not optional: a client with nowhere to record is a client whose
-frames cannot be pointed at, and the console's projection has to point at them.
+each frame is already parsed and where both channels are still visible. Every frame the client hands
+on carries the sink's number for it, so the sink is not optional: the console's projection has to be
+able to point at a frame.
 
 **The conversation queue must stay unbounded.** The reader that routes control responses is the
 same task that fills it, so a bounded queue plus a consumer that stops draining stalls the reader
@@ -55,16 +53,13 @@ CONTROL_TIMEOUT_SECONDS = 60.0
 class FrameChannel(Protocol):
     """A bidirectional line channel to a CLI process, however it is reached.
 
-    Narrow on purpose: in production the process is in a sandbox pod at the far end of the
-    runner's websocket, and in a test it is a scripted double. The client should not be able to
-    tell, which is also what makes it exercisable against a real CLI without standing up the
-    bridge.
+    Narrow on purpose: in production the process is in a sandbox pod at the far end of the runner's
+    websocket, and in a test it is a scripted double. The client should not be able to tell, which is
+    also what makes it exercisable against a real CLI without standing up the bridge.
 
-    **A read yields the envelope, not the payload alone**, because the runner puts its own number
-    on each frame (`ClaudeMessage.seq`) and that number has to reach the sink — it is what a
-    reconnect's cursor is built from. A channel with no runner behind it — a
-    scripted double, a local subprocess — leaves `seq` None, which is the honest answer: nobody
-    numbered those frames.
+    **A read yields the envelope, not the payload alone**, because the runner's own number for each
+    frame (`ClaudeMessage.seq`) has to reach the sink — it is what a reconnect's cursor is built
+    from. A channel with no runner behind it leaves `seq` None: nobody numbered those frames.
     """
 
     async def connect(self) -> None: ...
@@ -104,9 +99,8 @@ class FrameSink(Protocol):
     writes, and anything from a runner image predating the field. It is recorded beside the sink's
     own number rather than replacing it; what reads it is the resume cursor.
 
-    Called from the client's write path and from its reader, so an implementation that raises
-    takes the session down — which is the intent where the sink is the rollout: a record with
-    quiet holes is the one that looks complete while being wrong.
+    Called from the client's write path and from its reader, so an implementation that raises takes
+    the session down — intentionally: a record with quiet holes looks complete while being wrong.
     """
 
     async def sent(self, payload: dict[str, Any]) -> int: ...
@@ -126,10 +120,9 @@ class SentPrompt:
 class ReceivedFrame:
     """One conversation frame, with the sink's number for it.
 
-    **The number travels with the frame rather than being read back off the client**, because the
-    reader is a detached task that runs ahead of whoever consumes `frames()`: a cursor on the
-    client answers "the newest frame recorded", not "the frame you are holding", and the two
-    differ for the whole of any burst — which is what a streamed answer is.
+    **The number travels with the frame rather than being read back off the client**: the reader is
+    a detached task running ahead of whoever consumes `frames()`, so a cursor on the client answers
+    "the newest frame recorded", not "the frame you are holding".
     """
 
     payload: dict[str, Any]
@@ -163,16 +156,14 @@ class ClaudeCli:
     async def query(self, text: str) -> SentPrompt:
         """Send one user message, returning the id its lifecycle will be reported under.
 
-        Deliberately writable at any time, including while a turn is running: the CLI folds a
-        prompt that arrives mid-turn into that turn at the next tool boundary
-        (<../../../cli_protocol/probes/steering.py>).
+        Writable at any time, including mid-turn: the CLI folds a prompt that arrives then into that
+        turn at the next tool boundary (<../../../cli_protocol/probes/steering.py>).
 
-        **The `uuid` is what turns `command_lifecycle` on**, and the SDK never sent one. The CLI
-        reports `queued` → `started` → `completed`/`cancelled` for a prompt only when the
-        inbound frame carries one, which is the only **confirmation** of a fold rather than an
-        inference from behaviour: a command that starts a fresh turn reports `completed` after
-        that turn's `result`, and one folded into a running turn reports it before. It is also
-        what makes the prompt reachable by `interrupt`'s `cancel_queued`.
+        **The `uuid` is what turns `command_lifecycle` on.** The CLI reports `queued` → `started` →
+        `completed`/`cancelled` for a prompt only when the inbound frame carries one, which is the
+        only confirmation of a fold rather than an inference from behaviour: a command starting a
+        fresh turn reports `completed` after that turn's `result`, one folded into a running turn
+        before. It is also what makes the prompt reachable by `interrupt`'s `cancel_queued`.
         """
         command_uuid = str(uuid.uuid4())
         return SentPrompt(
@@ -190,11 +181,9 @@ class ClaudeCli:
     async def interrupt(self) -> None:
         """Abort the running turn **and** anything queued behind it.
 
-        `cancel_queued` is not optional here because the console has one abort, and an operator
-        saying "stop" does not mean "stop this and start the next thing I typed" — which is what
-        a bare interrupt does: the CLI begins the next queued prompt the moment this one dies
-        (<../../../cli_protocol/probes/steering.py>). Nothing is queued today, since the console
-        writes one prompt per turn; this is what keeps that true once folding lands.
+        `cancel_queued` is not optional: a bare interrupt makes the CLI begin the next queued prompt
+        the moment this one dies (<../../../cli_protocol/probes/steering.py>), and an operator
+        saying "stop" does not mean "start the next thing I typed".
         """
         await self.control(InterruptRequest(reason="user-cancel", cancel_queued=True))
 
@@ -222,10 +211,10 @@ class ClaudeCli:
 
     async def wait_closed(self) -> None:
         """Resolve once the reader has ended — the CLI's stream stopped, cleanly or on a broken
-        socket. The reader is a detached task, so an exception in it cannot propagate to whoever
-        owns this client; this is how a lost connection becomes observable to them instead of
-        being swallowed. A caller races this against its idle wait so a dropped socket is handed
-        back at once rather than after a graceful-shutdown timeout (see console `handle_runner`).
+        socket. The reader is a detached task whose exception cannot propagate to this client's
+        owner, so this is how a lost connection becomes observable to them. A caller races it
+        against its idle wait so a dropped socket is handed back at once rather than after a
+        graceful-shutdown timeout (see console `handle_runner`).
         """
         await self._closed.wait()
 
@@ -242,15 +231,13 @@ class ClaudeCli:
     async def _write(self, payload: dict[str, Any]) -> int:
         """Record the frame, then put it on the wire — in that order, deliberately.
 
-        A written frame is answerable at once, and its answer is numbered by `_read`, a separate
-        task calling the same sink, which serialises nothing. Numbering after the write would
-        therefore leave "a request precedes its response in the log" to a race between this end's
-        sink — a Postgres `Identity` taken at the INSERT — and the peer's turnaround.
+        A written frame is answerable at once and its answer is numbered by `_read`, a separate task
+        on the same sink. Numbering after the write would leave "a request precedes its response in
+        the log" to a race between this end's `Identity` and the peer's turnaround.
 
-        The cost is which way an interrupted write falls: this end can now hold a frame it never
-        sent. `session_store._prompt_left` reads that record as evidence the prompt was delivered,
-        so it lands there as a turn never re-asked rather than one asked twice, which is the
-        direction that function already prefers.
+        The cost is that an interrupted write leaves a frame recorded but never sent.
+        `session_store._prompt_left` reads that as evidence of delivery, so it lands as a turn never
+        re-asked rather than one asked twice.
         """
         frame_seq = await self._frames_to.sent(payload)
         await self._channel.write(json.dumps(payload) + "\n")
@@ -258,20 +245,17 @@ class ClaudeCli:
 
     async def _read(self) -> None:
         """Route the stream: control responses to their waiter, everything else to the queue."""
-        # Adoption re-sends the whole rollout for dedup, so a skip is one burst of dozens at
-        # connect, not a per-frame event worth a line each. Count the burst and log it once when
-        # it ends (the next real frame, or the stream doing so).
+        # Adoption re-sends the whole rollout for dedup, so skips arrive as one burst of dozens at
+        # connect. Count them and log once when the burst ends.
         skipped = 0
         try:
             async for message in self._channel.read_messages():
                 frame = message.payload
                 # Before the routing, deliberately: control frames never reach `frames()`, so a
-                # recorder hung off the conversation queue would silently drop the control
-                # channel from the record — invisible until someone tried to debug an interrupt.
-                # The record is also what recognises a replay: an adopted connection re-sends
-                # whatever the previous console may not have acknowledged, and a frame already in
-                # the log must not be routed again — a second `assistant` would post the same
-                # answer into the room twice.
+                # recorder hung off the conversation queue would drop the control channel from the
+                # record. The record is also what recognises a replay — an adopted connection
+                # re-sends what the previous console may not have acknowledged, and routing a
+                # second `assistant` would post the same answer into the room twice.
                 recorded = await self._frames_to.received(frame, runner_seq=message.seq)
                 if not recorded.fresh:
                     skipped += 1
@@ -291,9 +275,9 @@ class ClaudeCli:
         except asyncio.CancelledError:
             raise
         except Exception:
-            # Logged, not re-raised: a detached task cannot hand its failure to the owner, so the
-            # useful signal is that the stream is *over*, delivered below to both the queue (for a
-            # mid-turn consumer) and `wait_closed` (for an idle one). What broke it is in the log.
+            # Logged, not re-raised: a detached task cannot hand its failure to the owner. The
+            # useful signal is that the stream is over, delivered below to both the queue (for a
+            # mid-turn consumer) and `wait_closed` (for an idle one).
             logger.exception("Claude CLI stream failed")
         finally:
             if skipped:
@@ -307,10 +291,9 @@ class ClaudeCli:
         response = ControlResponse.model_validate(frame["response"])
         pending = self._pending.get(response.request_id)
         if pending is None or pending.done():
-            # No local waiter. Routine on an adopted connection: the runner replays control
-            # responses to requests a *previous* console sent, which this one never had pending.
-            # A response we genuinely awaited and lost surfaces as a control-request timeout
-            # instead, so this is not the place that reports a broken control channel.
+            # No local waiter — routine on an adopted connection, where the runner replays responses
+            # to requests a *previous* console sent. A response we genuinely awaited and lost
+            # surfaces as a control-request timeout instead.
             logger.debug("Ignoring a control response with no local waiter: %s", response.request_id)
             return
         if response.subtype is ControlSubtype.ERROR:
@@ -321,10 +304,9 @@ class ClaudeCli:
     async def _refuse(self, frame: dict[str, Any]) -> None:
         """Answer an inbound control request we cannot serve, rather than leaving it hanging.
 
-        This session registers no hooks, no `can_use_tool` and no SDK-hosted MCP server, so
-        there is nothing the CLI should be asking us — but an unanswered request blocks it
-        forever (measured: <../../../cli_protocol/probes/harness.py>), and a wedged CLI is a room
-        that goes quiet with no reason recorded.
+        This session registers no hooks, no `can_use_tool` and no SDK-hosted MCP server, so there is
+        nothing the CLI should be asking us — but an unanswered request blocks it forever (measured:
+        <../../../cli_protocol/probes/harness.py>).
         """
         subtype = (frame.get("request") or {}).get("subtype")
         logger.error("Claude CLI asked for %s, which this client does not serve", subtype)

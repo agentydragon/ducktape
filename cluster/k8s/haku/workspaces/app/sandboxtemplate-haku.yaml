@@ -107,14 +107,10 @@ spec:
           volumeMounts:
             - name: workspace
               mountPath: /workspace
-      # emptyDir, not a PVC: /workspace only ever holds a shallow (--depth 1) haku-state
-      # git checkout, which haku-sandbox-setup.sh unconditionally fetch+reset --hard's on
-      # every claim anyway — nothing here needs to survive a pod restart. Was a 30Gi
-      # seaweedfs-ovh PVC; that added PVC provisioning/binding latency and made /workspace
-      # a network filesystem for no benefit (Bazel's project-file scan intermittently
-      # ENOENTs against SeaweedFS — see haku/plans/sandbox_run_runtime.md's "cold/warm
-      # build cost" probe notes). sizeLimit kept at the same 30Gi ceiling as the old PVC
-      # request.
+      # emptyDir, not a PVC: /workspace only ever holds a shallow (--depth 1) haku-state git
+      # checkout, which haku-sandbox-setup.sh unconditionally fetch+reset --hard's on every claim,
+      # so nothing here needs to survive a pod restart. A network filesystem also costs binding
+      # latency and makes Bazel's project-file scan intermittently ENOENT against SeaweedFS.
       volumes:
         - name: workspace
           emptyDir:

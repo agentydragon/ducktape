@@ -1,13 +1,10 @@
 """CLI for the haku index: build each corpus, query it, report what it holds.
 
-This is how the index gets evaluated before anything is deployed — point it at a clone of
-haku-state or at a copy of the console's database, build the index, and see whether semantic
-retrieval over that corpus is worth owning a service for. It talks to any Postgres with
-pgvector, including a throwaway one.
+Point it at a clone of haku-state or at a copy of the console's database and it builds and
+searches the index against any Postgres with pgvector, including a throwaway one.
 
-The two corpora are named in every command rather than defaulted: they answer different
-questions, they are built from different sources, and a query that silently searched the wrong
-one would look like a retrieval quality problem.
+The two corpora are named in every command rather than defaulted: a query that silently searched
+the wrong one would look like a retrieval quality problem.
 """
 
 from __future__ import annotations

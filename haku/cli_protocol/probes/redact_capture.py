@@ -1,17 +1,15 @@
 """Scrub a probe capture until it is safe to commit, then prove it structurally.
 
-A raw capture is a session transcript taken on somebody's machine: it carries their home
-directory, their skill and MCP-server catalog, a socket path with a live PID in it, and — the one
-that is easy to miss because it does not look like anything — the opaque `signature` on every
-`thinking` block. Keyword-grepping for the obvious found none of those. So the check here is
-**structural**: after scrubbing, no long opaque token and no absolute path outside `/workspace`
-may remain, whatever they were called.
+A raw capture is a session transcript taken on somebody's machine: it carries their home directory,
+their skill and MCP-server catalog, a socket path with a live PID in it, and — easiest to miss — the
+opaque `signature` on every `thinking` block. Keyword-grepping for the obvious finds none of those,
+so the check here is **structural**: after scrubbing, no long opaque token and no absolute path
+outside `/workspace` may remain, whatever they were called.
 
     python3 -m haku.cli_protocol.probes.redact_capture raw.jsonl redacted.jsonl
 
-The needles it greps for are derived from the running machine (its user, host and home) rather
-than written down, so nothing identifying has to be committed to make the check work — and the
-check adapts to whoever runs the probe next.
+The needles are derived from the running machine (its user, host and home) rather than written down,
+so nothing identifying has to be committed to make the check work.
 """
 
 from __future__ import annotations
@@ -47,9 +45,8 @@ ELIDED_KEYS = {
 UUID = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
 ABSOLUTE_PATH = re.compile(r"/(?:root|home|tmp|Users)(?:/[\w.@%+-]+)*")
 
-# The probe's filler is a closed vocabulary of drill words, so a long run of them is recognisable
-# by shape. It carries nothing, and it is most of the capture's bytes; keeping it would commit a
-# megabyte of noise to say what its length already says.
+# The probe's filler is a closed vocabulary of drill words, so a long run of them is recognisable by
+# shape. It carries nothing and is most of the capture's bytes.
 FILLER_WORDS = frozenset(
     ("alpha", "bravo", "delta", "echo", "gamma", "kilo", "lima", "mike", "oscar", "tango", "victor", "zulu")
 )

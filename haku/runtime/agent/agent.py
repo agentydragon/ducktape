@@ -1,17 +1,15 @@
 """Assemble Haku's Microsoft Agent Framework agent and run one scan pass.
 
-Runtime C (see <../../plans/runtime_options.md>): the agent loop runs here, in-process
-and provider-agnostic. Model calls go through the in-cluster LiteLLM proxy
-(OpenAI-compatible), so the provider (Anthropic / OpenAI) is a LiteLLM
-config knob (`HAKU_MODEL`), not code. Tools are a `run_command` shell tool (the Pod
-is the trust boundary — see <../../PLAN.md>) plus haku-console's aggregated MCP
-catalog (Tana reads to start).
-Behavior is the haku-state checkout's root cards + `memory/procedures/run.md` (bootstrap.py clones it
-at startup), read at runtime, so it stays single-sourced and live-editable. Session
-history persists in Valkey/Redis
-(`RedisHistoryProvider`) when `HAKU_REDIS_URL` is set, else in-memory;
-`SummarizationStrategy` keeps the instruction prefix and, once history fills,
-LLM-summarizes the oldest turns into a running summary rather than dropping them.
+The agent loop runs in-process and provider-agnostic: model calls go through the in-cluster LiteLLM
+proxy (OpenAI-compatible), so the provider is a config knob (`HAKU_MODEL`) rather than code. Tools
+are a `run_command` shell tool — the Pod is the trust boundary — plus haku-console's aggregated MCP
+catalog.
+
+Behavior is the haku-state checkout's root cards + `memory/procedures/run.md` (bootstrap.py clones
+it at startup), read at runtime so it stays single-sourced and live-editable. Session history
+persists in Valkey/Redis when `HAKU_REDIS_URL` is set, else in-memory; `SummarizationStrategy` keeps
+the instruction prefix and LLM-summarizes the oldest turns into a running summary rather than
+dropping them.
 """
 
 from __future__ import annotations
@@ -112,8 +110,7 @@ def build_client(settings: Settings, *, model: str | None = None) -> OpenAIChatC
 def build_history_provider(settings: Settings) -> InMemoryHistoryProvider | RedisHistoryProvider:
     """Durable session history in Valkey/Redis when HAKU_REDIS_URL is set, else in-memory.
 
-    The same session id keys the same Redis list, so history survives pod restarts; git
-    (haku-state) remains the durable memory regardless."""
+    The same session id keys the same Redis list, so history survives pod restarts."""
     if settings.redis_url:
         return RedisHistoryProvider(redis_url=settings.redis_url, max_messages=settings.redis_max_messages)
     return InMemoryHistoryProvider()
@@ -138,9 +135,8 @@ def build_agent(
         instructions=_instructions(settings),
         tools=tools,
         context_providers=[history],
-        # Keep the (cached) instruction prefix, append turns, and once history grows past
-        # target+threshold groups, LLM-summarize the oldest into a running summary and
-        # continue — rather than hard-dropping old turns.
+        # Once history grows past target+threshold groups, LLM-summarize the oldest into a running
+        # summary rather than hard-dropping them; the cached instruction prefix is kept.
         compaction_strategy=SummarizationStrategy(
             client=summarizer, target_count=settings.summarize_target_count, threshold=settings.summarize_threshold
         ),

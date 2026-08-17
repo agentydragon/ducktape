@@ -2,11 +2,9 @@
 # Used by the sandbox exec-target pods, the managed-agent worker, and the Console-owned
 # Claude runner alike.
 #
-# TWO SUBJECTS, ONE GRANT. Haku runs on more than one harness, and a ServiceAccount is
-# namespaced, so its identity has to exist once per namespace it runs a pod in. Its
-# *permissions* do not: both subjects sit on this binding rather than on parallel roles, so
-# "what can Haku do to the cluster" has one answer and one place to change it. A second
-# binding would be two answers that drift.
+# TWO SUBJECTS, ONE GRANT. A ServiceAccount is namespaced, so Haku's identity exists once per
+# namespace it runs a pod in; its *permissions* do not. Both subjects sit on this binding rather
+# than parallel roles, so "what can Haku do to the cluster" has one answer and one place to change.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:

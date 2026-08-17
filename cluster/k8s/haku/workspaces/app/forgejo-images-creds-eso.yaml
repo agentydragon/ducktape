@@ -4,11 +4,9 @@
 # stamps the type on top (no reassembly, no hardcoded host); sources the
 # reflector-mirrored copy in flux-system.
 #
-# The sibling proxies moved to reflector to get off the flux-system store's
-# allowlist, but haku-sandbox stays on ESO deliberately: it is on that allowlist
-# regardless, for alloy-otlp-bearer and haku-mail-token. Converting this one
-# would remove nothing it can already read, so it would be churn rather than a
-# narrowing.
+# ESO rather than reflector, unlike the sibling proxies: haku-sandbox is on the flux-system store's
+# allowlist regardless, for alloy-otlp-bearer and haku-mail-token, so converting would narrow
+# nothing.
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:

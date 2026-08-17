@@ -1,15 +1,14 @@
 """The chat corpus: the console's own record of what was said, made searchable.
 
-The corpus is the console's `session_messages` — every session it has served,
-Matrix and SPA alike. This module is the shape of a chunk; `chat_source.py` is where the rows
-come from, and keeping the two apart is what lets the store depend on the former without
-dragging the console's whole schema behind it.
+The corpus is the console's `session_messages` — every session it has served, Matrix and SPA
+alike. This module is the shape of a chunk; `chat_source.py` is where the rows come from, so the
+store can depend on the former without dragging the console's whole schema behind it.
 
 **Message boundaries are preferred, not required.** Packing selects a message boundary whenever
 one fits the configured budget, then carries Unicode-code-point overlap into the following
 window. The overlap and an oversized message can therefore cut a message, but each window names
-every message it intersects (`schema.ChatChunkMessage`) and a hit still hands back exact pointers
-a caller can drill into with the console's conversation tools.
+every message it intersects (`schema.ChatChunkMessage`), so a hit still hands back exact pointers
+to drill into.
 
 Frames (`session_frames`) are deliberately not indexed here; see this package's README.
 """

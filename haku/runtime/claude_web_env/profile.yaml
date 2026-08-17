@@ -23,10 +23,8 @@ env_exports: |
   export K8S_NAMESPACE=haku-sandbox
 
 background_commands:
-  # One command does the whole home bootstrap: materialize ~/.kube/config from
-  # the SOPS-encrypted haku JWT (the single place kubeconfig is built), then
-  # write ~/.netrc and clone haku-state into ~/haku-state — so the agent starts
-  # with cluster access and its memory ready, and git needs no inline creds.
+  # The whole home bootstrap: materialize ~/.kube/config from the SOPS-encrypted haku JWT (the
+  # single place kubeconfig is built), then write ~/.netrc and clone haku-state into ~/haku-state.
   # after_env so the K8S_* exports above are in scope.
   - name: bootstrap
     command: bash "$CLAUDE_PROJECT_DIR/haku/runtime/claude_web_env/bootstrap.sh"

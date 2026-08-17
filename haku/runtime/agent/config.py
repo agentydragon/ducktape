@@ -17,9 +17,9 @@ class Settings(BaseSettings):
     console_token: str | None = Field(
         default=None, description="Bearer for haku-console's /mcp (Tana + other console-mediated tools); omit to skip."
     )
-    # Repos cloned at startup so the agent has them as context. ducktape holds the
-    # manual/run-procedure/sources + the codebase; haku-state is Haku's memory + write
-    # surface. *_repo_url None skips the clone (the dir is assumed already present).
+    # Repos cloned at startup as context: ducktape holds the manual, run procedure, sources and
+    # code; haku-state is Haku's memory and write surface. A None `*_repo_url` skips the clone,
+    # assuming the directory is already present.
     ducktape_repo_url: str | None = Field(default=None, description="ducktape git URL to clone for context.")
     ducktape_dir: Path = Field(default=Path("/workspace/ducktape"), description="ducktape checkout (manual + code).")
     ducktape_clone_depth: int = Field(default=1, description="Shallow-clone depth for ducktape; 0 = full history.")

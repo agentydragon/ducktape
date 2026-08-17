@@ -14,17 +14,15 @@ from haku.runtime.x.bridge.cli_client import ClaudeCli, ClaudeCliError, Recorded
 from haku.runtime.x.bridge.protocol import ClaudeMessage
 
 # The gap between one frame's number and the next. Deliberately not 1: the real sink is a Postgres
-# `Identity` column, which skips, so the sequence is an order and never a dense count — and a test
-# that numbered densely would let a reader come to depend on adjacency.
+# `Identity` column, which skips, so nothing may come to depend on adjacency.
 _SEQ_STRIDE = 3
 
 
 class CountingSink:
     """A `FrameSink` that only numbers, which is all this file needs one for.
 
-    Every client keeps a rollout, so a test cannot construct one without a sink; what the console's
-    own sink additionally does — recognising a replayed frame — is `RolloutRecorder`'s, and is
-    covered against a real database in `haku/console/x/test_session_runtime.py`.
+    Recognising a replayed frame is `RolloutRecorder`'s job, covered against a real database in
+    `haku/console/x/test_session_runtime.py`.
     """
 
     def __init__(self) -> None:
@@ -147,22 +145,21 @@ async def test_the_number_the_runner_put_on_a_frame_reaches_the_sink() -> None:
 
 async def test_a_written_frame_is_numbered_before_it_can_be_answered() -> None:
     """The log is the ordered record of the conversation, so a request has to precede its response
-    in it. The two are numbered by two tasks — this one for the write, the reader for the answer —
-    against a sink that serialises nothing, so a frame numbered only once it is on the wire leaves
-    that order to a race the peer can win.
+    in it. Two tasks number them — this one the write, the reader the answer — against a sink that
+    serialises nothing, so numbering only once a frame is on the wire leaves that order to a race
+    the peer can win.
     """
 
     class RecordingCosts(CountingSink):
-        """A sink whose write side takes a turn of the loop, as the console's does — it is a
-        Postgres round trip and not a counter."""
+        """A sink whose write side takes a turn of the loop, as a Postgres round trip does."""
 
         async def sent(self, payload: dict[str, Any]) -> int:
             await asyncio.sleep(0)
             return self._number(payload)
 
     class AnsweringChannel(ScriptedChannel):
-        """A peer that answers as the request lands. A real one takes a round trip, which is the
-        margin this race is decided by; removing it makes the outcome deterministic."""
+        """A peer that answers as the request lands, closing the round-trip margin this race would
+        otherwise be decided by."""
 
         async def write(self, data: str) -> None:
             await super().write(data)

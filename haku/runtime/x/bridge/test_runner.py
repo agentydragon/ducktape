@@ -68,13 +68,11 @@ def memory_websocket_pair() -> tuple[MemoryWebSocket, MemoryWebSocket]:
 
 
 def test_the_runner_runs_the_launch_the_console_sent(tmp_path: Path) -> None:
-    """The sandbox side of the launch: the binary is the backend's to choose, everything after
-    it is the console's.
+    """The sandbox side of the launch: the binary is the backend's to choose, everything after it
+    is the console's.
 
-    This used to assert our argv equalled the SDK's `_build_command()`, and to locate the CLI
-    through the SDK's own `_find_cli()`. Both are gone with the dependency; the argv itself is
-    pinned in `test_options.py`, and that the image really carries an extracted `claude` is a
-    property of the `claude_executable` genrule the image build exercises.
+    The argv itself is pinned in `test_options.py`, and that the image carries an extracted `claude`
+    is a property of the `claude_executable` genrule the image build exercises.
     """
     launch = build_claude_launch(
         ClaudeSession(
@@ -144,9 +142,8 @@ async def test_bridge_copies_json_between_websocket_and_cli_stdio(tmp_path: Path
         message = {"type": "user", "message": {"role": "user", "content": "hello"}}
         await console_socket.send_text(ClaudeMessage(payload=message).model_dump_json())
         with anyio.fail_after(5):
-            # Unwrapped on the way to the CLI and re-wrapped on the way back, so the echo
-            # proves the runner strips and restores the envelope rather than passing it through.
-            # `seq=1`: the runner numbers what it sends, and this is the first frame of the session.
+            # Unwrapped on the way to the CLI and re-wrapped on the way back, so the echo proves the
+            # runner strips and restores the envelope. `seq=1` is the session's first frame.
             assert RUNNER_TO_CONSOLE.validate_json(await console_socket.receive_text()) == ClaudeMessage(
                 payload=message, seq=1
             )
@@ -156,11 +153,8 @@ async def test_bridge_copies_json_between_websocket_and_cli_stdio(tmp_path: Path
 
 
 async def test_what_the_cli_writes_to_stderr_reaches_the_console(tmp_path: Path) -> None:
-    """The one place a CLI that fails to start explains itself.
-
-    It went to `DEVNULL`, so a rejected credential or a bad flag reached the console as
-    `claude exited with status 1` and nothing else.
-    """
+    """The one place a CLI that fails to start explains itself: without it a rejected credential or
+    a bad flag reaches the console as `claude exited with status 1` and nothing else."""
     fake_claude = tmp_path / "claude"
     fake_claude.write_text(
         "#!/usr/bin/env python3\nimport sys\nprint('cannot start: no credential', file=sys.stderr, flush=True)\n"
@@ -180,11 +174,8 @@ async def test_what_the_cli_writes_to_stderr_reaches_the_console(tmp_path: Path)
 
 
 async def test_the_cli_keeps_running_when_a_console_connection_ends(tmp_path: Path) -> None:
-    """The property the whole roll-survival design rests on.
-
-    `bridge_websocket_to_cli` used to terminate Claude in its `finally`, so one dropped socket
-    ended the conversation; `_serve_console` returning is now just this connection ending.
-    """
+    """The property roll survival rests on: `_serve_console` returning is this connection ending,
+    not the conversation."""
     fake_claude = tmp_path / "claude"
     fake_claude.write_text("#!/usr/bin/env python3\nimport time\ntime.sleep(30)\n")
     fake_claude.chmod(0o755)
@@ -207,10 +198,9 @@ async def test_the_runner_waits_out_a_missing_console_but_not_a_refusing_one(tmp
     """The refusal a crashloop is made of, and the outage that is not one.
 
     All three of the console's refusal paths close before `accept()`, and an ASGI server answers
-    such a handshake with `403`, never a close code — so the close-code check this replaced could
-    not fire. Worse, `InvalidStatus` is not an `OSError`: a single `503` from a Gateway with no
-    ready backend, which is exactly what a console roll looks like from in here, escaped `run()`
-    and took the sandbox with it.
+    such a handshake with `403`, never a close code — so a close-code check cannot fire. And
+    `InvalidStatus` is not an `OSError`, so a single `503` from a Gateway with no ready backend —
+    a console roll, from in here — must not escape `run()` and take the sandbox with it.
     """
     answered: list[int] = []
 
@@ -233,9 +223,8 @@ async def test_the_runner_waits_out_a_missing_console_but_not_a_refusing_one(tmp
 
 
 async def test_a_second_console_is_handed_what_the_first_may_not_have_recorded(tmp_path: Path) -> None:
-    """The point of the window. A frame handed to a dying socket may or may not have been
-    recorded, and nothing at this end can tell the two apart — so it is offered again, and the
-    console drops what it already has by the agent's own id."""
+    """The point of the window: nothing at this end can tell whether a frame handed to a dying
+    socket was recorded, so it is offered again and the console dedupes by the agent's own id."""
     process = await _start_cli(claude_backend(executable(tmp_path / "claude", "sleep 30")), _launch(tmp_path))
     sender, receiver = anyio.create_memory_object_stream[Outbound](8)
     log = OutboundLog()
@@ -366,8 +355,8 @@ async def test_workspace_setup_runs_in_the_launch_directory(tmp_path: Path) -> N
 async def test_workspace_setup_streams_its_output_verbatim(tmp_path: Path) -> None:
     """The runner is a pipe: raw bytes, stderr included, no decoding and no line-splitting."""
     console_socket, runner_socket = memory_websocket_pair()
-    # \xff is not valid UTF-8. The previous decode-in-the-runner design replaced it with
-    # U+FFFD before the console ever saw it; nothing here is allowed to touch it.
+    # \xff is not valid UTF-8: a runner that decoded would replace it with U+FFFD before the
+    # console ever saw it.
     setup = executable(tmp_path / "setup.sh", r"printf 'cloning\n\xff\n'" + "\necho 'trouble' >&2")
 
     await prepare_workspace(setup, cwd=str(tmp_path), narrate=_narrator(runner_socket, OutboundLog()))
@@ -382,8 +371,8 @@ async def test_workspace_setup_streams_its_output_verbatim(tmp_path: Path) -> No
             forwarded += frame.data
             seqs.append(frame.seq)
     assert forwarded == b"cloning\n\xff\ntrouble\n"
-    # Narration is numbered too, and from the same counter: it is the whole account of a session
-    # that died before its first CLI frame, so leaving it out would put a hole at the very start.
+    # Narration is numbered from the same counter: it is the whole account of a session that died
+    # before its first CLI frame, so leaving it out would put a hole at the very start.
     assert seqs == list(range(1, len(seqs) + 1))
 
 

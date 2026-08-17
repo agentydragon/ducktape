@@ -1,10 +1,9 @@
 """Startup bootstrap: write git creds, then clone/refresh ducktape (context) and
 haku-state (memory) so the agent has both checked out before its first wake.
 
-Clones via pygit2 (hermetic — no git binary needed, like the console). A `~/.netrc` is
-written from the same creds so the agent's own shell `git` commits/pushes (via
-run_command) authenticate too. `*_repo_url = None` skips that clone (the dir is assumed
-already present, e.g. in tests or a pre-seeded volume).
+Clones via pygit2, so no git binary is needed. A `~/.netrc` is written from the same creds so the
+agent's own shell `git` commits and pushes (via run_command) authenticate too. `*_repo_url = None`
+skips that clone, assuming the directory is already present (tests, a pre-seeded volume).
 """
 
 from __future__ import annotations

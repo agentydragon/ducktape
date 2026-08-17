@@ -1,14 +1,13 @@
-# Haku's Managed Agents agent (control plane; version-controlled, applied via
-# `ant beta:agents {create,update}`). The `system` prompt is a thin pointer —
-# behavior stays single-sourced in the haku-state checkout, which the worker
-# clones into the agent workdir at startup (see entrypoint.sh).
+# Haku's Managed Agents agent (control plane; applied via `ant beta:agents {create,update}`). The
+# `system` prompt is a thin pointer — behavior stays single-sourced in the haku-state checkout,
+# which the worker clones into the agent workdir at startup (see entrypoint.sh).
 #
 # SYNC: `model` + full toolset are identical to the cloud agent
-# (<../../../../tf/gitops/haku-cloud-agent/main.tf>). SSOT haku/base/agent_shared.yaml,
-# parity enforced by //haku/base:test_agent_config_ssot — a red run shows any drift.
+# (<../../../../tf/gitops/haku-cloud-agent/main.tf>). SSOT haku/base/agent_shared.yaml, parity
+# enforced by //haku/base:test_agent_config_ssot.
 #
-# `name`: the control-plane object name (matches the `haku-selfhosted` environment;
-# sibling `haku-cloud`). Persona stays "Haku" (see `system`).
+# `name` is the control-plane object name, matching the `haku-selfhosted` environment; the persona
+# stays "Haku" (see `system`).
 name: haku-selfhosted
 # TEMP(debugging): Sonnet while we shake out the self-hosted worker; switch to
 # claude-opus-5 once sessions run end-to-end.
@@ -27,31 +26,28 @@ system: |
 
   Read those, then execute the run procedure end to end. Each user message is a wake: do one scan pass, commit and push haku-state,
   then stop and wait for the next wake.
-# The MCP-credential auth for every mcp_toolset below is injected at Anthropic's
-# egress from the SHARED, TF-managed vault (tf/gitops/haku-cloud-agent; both agents
-# reference it) — the pod never sees a token. Toolset set is identical to the cloud
-# agent; keep it that way (test_agent_config_ssot).
+# The MCP-credential auth for every mcp_toolset below is injected at Anthropic's egress from the
+# SHARED, TF-managed vault (tf/gitops/haku-cloud-agent; both agents reference it) — the pod never
+# sees a token. Keep the toolset identical to the cloud agent (test_agent_config_ssot).
 tools:
-  # Fixed built-in toolset, supplied by `worker.py` in the pod. The Pod is
-  # the trust boundary (Ember posture), so everything is auto-allowed.
+  # Fixed built-in toolset, supplied by `worker.py` in the pod. The Pod is the trust boundary, so
+  # everything is auto-allowed.
   - type: agent_toolset_20260401
     default_config:
       enabled: true
       permission_policy:
         type: always_allow
-  # kubectl-machine — cluster access via the machine-JWT MCP. Redundant with this
-  # runtime's in-pod kubectl (in-cluster SA), but kept for parity with the cloud
-  # agent; Anthropic calls the MCP, so no pod egress is involved.
+  # kubectl-machine — cluster access via the machine-JWT MCP. Redundant with this runtime's in-pod
+  # kubectl, but kept for parity with the cloud agent; Anthropic calls the MCP, so no pod egress.
   - type: mcp_toolset
     mcp_server_name: kubectl-machine
     default_config:
       enabled: true
       permission_policy:
         type: always_allow
-  # haku-console — the console's aggregated MCP catalog (Tana + Grocy reads to start,
-  # plus approval-gated writes). Auto-allow (the console's own approval queue is the
-  # trust boundary, not this policy); without it the mcp_toolset defaults to always_ask
-  # and parks an unattended scan.
+  # haku-console — the console's aggregated MCP catalog, with approval-gated writes. Auto-allow,
+  # since the console's own approval queue is the trust boundary: without it the mcp_toolset
+  # defaults to always_ask and parks an unattended scan.
   - type: mcp_toolset
     mcp_server_name: haku-console
     default_config:

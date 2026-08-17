@@ -1,10 +1,9 @@
 """The properties a reader of the frame log may rely on across a compaction.
 
 The fixture is one real session captured by `probes/compaction.py` and scrubbed by
-`probes/redact_capture.py` (claude-code 2.1.233). It is not here to be compared against itself:
-each assertion below is a claim <protocol.md> makes about compaction, hooks, or client-hosted
-tools, held against the one run in which those things happened. A CLI repin that breaks one has
-broken something a consumer of this protocol depends on.
+`probes/redact_capture.py` (claude-code 2.1.233). Each assertion is a claim <protocol.md> makes
+about compaction, hooks, or client-hosted tools, held against the one run in which those things
+happened. A CLI repin that breaks one has broken something a consumer of this protocol depends on.
 """
 
 from __future__ import annotations
@@ -45,9 +44,8 @@ def test_the_conversation_that_was_compacted_is_still_in_the_log(
 ) -> None:
     """Nothing is retracted. A compaction appends; it never edits or drops an earlier frame.
 
-    This is what makes a stored cursor safe *as a record*: replaying any prefix still yields the
-    frames it yielded before. What it does not make safe is treating the fold of the whole log as
-    the conversation — see the two tests below.
+    That makes a stored cursor safe *as a record* — replaying any prefix yields the frames it
+    yielded before — but not as the conversation; see the two tests below.
     """
     before = inbound[:boundary_index]
 
@@ -104,14 +102,12 @@ def test_the_boundarys_backpointer_does_not_resolve_in_the_frame_log(
 ) -> None:
     """`logical_parent_uuid` points into the CLI's on-disk transcript, not into the stream.
 
-    It reads like the relink a consumer wants — "the last message still in context" — and it is
-    not usable as one here: the uuid it names occurs exactly once in the whole capture, in this
-    frame, and belongs to no frame the CLI ever sent. (The message it names is one of the
-    compaction's own internal turns, which the wire never carries.)
+    It reads like the relink a consumer wants — "the last message still in context" — but the uuid
+    it names occurs exactly once in the whole capture, in this frame, and belongs to no frame the
+    CLI ever sent: it is one of the compaction's own internal turns, which the wire never carries.
 
-    So the cut a reader can act on is **positional**: everything before this frame's index is out
-    of the model's context. That is what a stored cursor already records, which is why the hazard
-    is survivable — but a reader that tries to relink by uuid finds nothing to relink to.
+    So the cut a reader can act on is **positional**: everything before this frame's index is out of
+    the model's context, which is what a stored cursor already records.
     """
     parent = inbound[boundary_index]["logical_parent_uuid"]
 

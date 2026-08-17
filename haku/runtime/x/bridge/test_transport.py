@@ -100,12 +100,9 @@ def test_launch_rejects_another_protocol_version() -> None:
 
 
 def test_an_unknown_frame_kind_is_refused() -> None:
-    """A kind from a newer peer is an error, not something to route somewhere plausible.
-
-    The other half of the same decision as the unknown-*field* test below: a peer that cannot name
-    the frame cannot act on it, so must-understand changes arrive as kinds and fail closed here,
-    while optional additions arrive as fields and are ignored.
-    """
+    """A kind from a newer peer is an error, not something to route somewhere plausible: a peer that
+    cannot name a frame cannot act on it, so must-understand changes arrive as kinds and fail closed
+    here, while optional additions arrive as fields and are ignored (the test below)."""
     with pytest.raises(ValidationError, match="union_tag_invalid"):
         CONSOLE_TO_RUNNER.validate_json(encode_object({"kind": "a-kind-from-the-future"}))
 
@@ -118,11 +115,8 @@ def test_a_frame_missing_its_kind_is_refused() -> None:
 
 def test_a_frame_carrying_an_unknown_field_is_read_without_it() -> None:
     """An optional addition from a newer peer. Ignoring it leaves this end behaving as its own
-    version correctly did, which is the whole point of adding one.
-
-    This used to be `extra=forbid` and assert the opposite. That made every additive field a
-    fleet-wide break: a live session's runner keeps its image for hours, so the release that added
-    a field killed every session still on the previous one.
+    version correctly did; `extra=forbid` would make every additive field a fleet-wide break, since
+    a live session's runner keeps its image for hours.
     """
     frame = RUNNER_TO_CONSOLE.validate_json(
         encode_object({"kind": "setup_output", "data": "aGk=", "severity": "warning"})
@@ -369,12 +363,8 @@ async def test_progress_with_nowhere_to_go_is_dropped_not_fatal() -> None:
 
 
 async def test_a_failing_progress_sink_does_not_end_the_conversation() -> None:
-    """Narration is not worth a session.
-
-    The sink posts into a Matrix room, which rate-limits; this is awaited inside the read loop,
-    so an unguarded raise here ended the conversation and recorded the room's error over
-    whatever the narration was reporting.
-    """
+    """Narration is not worth a session: the sink posts into a Matrix room, which rate-limits, and
+    it is awaited inside the read loop, so an unguarded raise would end the conversation."""
     console_socket, runner_socket = memory_websocket_pair()
 
     async def on_progress(line: str) -> None:
@@ -400,9 +390,9 @@ async def test_a_failing_progress_sink_does_not_end_the_conversation() -> None:
 async def test_transport_refuses_a_control_frame_from_the_runner() -> None:
     """`end_input` only travels console -> runner; one coming back is refused at the read.
 
-    The unit-level version of this is `test_each_direction_refuses_the_other_direction_only
-    _frames`; this one is here because the property has to hold where it is actually load
-    bearing — a wrong-direction frame must not reach the SDK's message iterator.
+    The unit-level version is `test_each_direction_refuses_the_other_direction_only_frames`; this
+    one holds the property where it is load bearing — a wrong-direction frame must not reach the
+    SDK's message iterator.
     """
     console_socket, runner_socket = memory_websocket_pair()
     transport = WebSocketTransport(console_socket, ClaudeLaunch(arguments=(), cwd="/workspace", environment={}))

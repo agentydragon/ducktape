@@ -1,12 +1,10 @@
 """Long-lived Haku supervisor: one warm Agent Framework session, woken by events.
 
-A single in-process `AgentSession` stays warm across wakes for the pod's lifetime, so
-the manual + run procedure the agent reads on the first wake stay in context and aren't
-re-read each wake (the expensive part); `SummarizationStrategy` bounds the history. When
-`HAKU_REDIS_URL` is set, session history persists in Valkey keyed by the session id, so
-it survives pod restarts too; otherwise a restart re-orients from haku-state (git is the
-durable memory regardless). Wakes fire from a scheduler tick or `POST /wake`, one at a
-time.
+A single in-process `AgentSession` stays warm for the pod's lifetime, so the manual and run
+procedure the agent reads on the first wake stay in context instead of being re-read each wake —
+the expensive part; `SummarizationStrategy` bounds the history. With `HAKU_REDIS_URL` set, history
+persists in Valkey keyed by the session id and survives pod restarts; otherwise a restart
+re-orients from haku-state. Wakes fire from a scheduler tick or `POST /wake`, one at a time.
 """
 
 from __future__ import annotations

@@ -34,10 +34,10 @@ from haku.recall_index.store import (
 
 logger = logging.getLogger(__name__)
 
-# How long a session must go without a new message before it is worth indexing. A changed
-# session is re-windowed wholesale, so indexing one mid-exchange re-chunks its whole tail and
-# the next turn does it again; waiting for a pause turns a burst into one pass. Shorter than any
-# sane sweep interval, so a finished conversation is still picked up by the following sweep.
+# How long a session must go without a new message before it is worth indexing. A changed session
+# is re-windowed wholesale, so indexing one mid-exchange re-chunks its whole tail and the next turn
+# does it again. Shorter than any sane sweep interval, so a finished conversation is still picked up
+# by the following sweep.
 DEFAULT_QUIET_PERIOD = datetime.timedelta(seconds=30)
 
 
@@ -82,9 +82,8 @@ async def sync_chat(
     shapes = await session_shapes(session)
     states = await chat_session_states(session)
 
-    # A session the console has dropped would otherwise stay searchable forever: chat windows
-    # are reachable until deleted, where a git blob stops being reachable the moment it leaves
-    # the tip. This sweep is that difference.
+    # A session the console has dropped would otherwise stay searchable forever: chat windows are
+    # reachable until deleted, where a git blob stops being reachable when it leaves the tip.
     forgotten = sorted(set(states) - {shape.session_id for shape in shapes})
     await forget_chat_sessions(session, forgotten)
 
@@ -101,9 +100,8 @@ async def sync_chat(
             continue
 
         # A session someone is still talking in is left alone: its trailing window changes shape
-        # with every turn, and re-windowing it now only means re-windowing it again next sweep.
-        # Nothing is lost — the shape it was skipped at is not recorded, so the next sweep sees
-        # it as changed still.
+        # with every turn. Nothing is lost — the shape it was skipped at is not recorded, so the
+        # next sweep still sees it as changed.
         if shape.last_message_at > now - quiet_for:
             settling += 1
             continue

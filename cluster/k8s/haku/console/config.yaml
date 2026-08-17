@@ -368,11 +368,8 @@ mcp:
     # auto-approve (the readOnlyHint subset, minus ha_report_issue — see `home_assistant_reads`
     # above); every state-changing/control tool stays operator-gated. Schemas exercised 2026-07-20.
     #
-    # Was operator OAuth with dynamic client registration until 2026-08-09. That broke on
-    # 2026-08-06: the facade's registration store went away and every refresh 404'd, so the
-    # connection sat `degraded` with `attempts: 1, next_retry_at: null` — the console stops and
-    # waits for the operator by design, so it never self-heals. Haku is the only consumer and
-    # ha-mcp is our own in-cluster service, so there was no consent boundary OAuth was buying.
+    # A static bearer rather than operator OAuth: Haku is the only consumer and ha-mcp is our own
+    # in-cluster service, so there is no consent boundary OAuth would buy.
     - id: home-assistant
       backend:
         kind: remote_mcp
