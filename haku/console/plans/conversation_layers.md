@@ -814,7 +814,11 @@ having even if the loop is never built.
     that assume one bot serves one room; an audit of the code found **eleven**. The seven it adds
     are all per-bot-process state that step 9 deletes: `_status_event_id`, `_status_body`,
     `_holding`, `_last_announced`, the single `RoomPacer` with its one collapsing status slot,
-    `_serviced`/`_live_room`, and `RoomOutboxDrain` claiming only `bound_room()`'s rows. Every one
+    `_serviced`/`_live_room`, and `RoomOutboxDrain` claiming only `bound_room()`'s rows. **Two are
+    already gone**: step 8 (#4307) made the status line read its event id out of `chat_delivery`
+    rather than `_status_event_id`/`_status_body`, which was not the minimum that step needed but
+    is what keeps the new table from being write-only — and it fixes § 8's orphaned status line,
+    where an adopting replica posted a second line beside its predecessor's. Every one
     fails **silently** with a second room — ingress dropped to a `logger.warning`, a status line
     that never appears in room B, an edit addressed at another room's event id, replies that sit
     unsent forever. Shipping 17 before 9 is shipping all seven.
