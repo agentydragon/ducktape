@@ -78,6 +78,7 @@ from haku.console.x import delivery_log, sandbox_claims, session_runtime, subscr
 # Aliased: bare `session`, `sync` and `outbox` would each collide with something this module
 # already talks about (database sessions, the index sweeps, the push queue).
 from haku.console.x.channels.matrix import (
+    ingress_ledger as matrix_ingress_ledger,
     outbox as matrix_outbox,
     room_subscription as matrix_room_subscription,
     session as matrix_session,
@@ -294,16 +295,20 @@ def create_app(
     matrix_notices: matrix_room_subscription.RoomNotices | None = None
     if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
         matrix_conversations = matrix_session.MatrixConversationStore(db_sessions)
+        matrix_ledger = matrix_ingress_ledger.IngressLedger(db_sessions)
         matrix_sync_service = matrix_sync.MatrixSyncService(
             matrix_config,
             matrix_config.password,
             db_engine,
             matrix_sync.MatrixSyncStore(db_sessions),
             matrix_conversations,
-            matrix_session.MatrixTurns(matrix_config, matrix_conversations, session_store, operator_identity_store),
+            matrix_session.MatrixTurns(
+                matrix_config, matrix_conversations, session_store, operator_identity_store, matrix_ledger
+            ),
             matrix_session.RoomTranscript(db_sessions),
             matrix_outbox.RoomOutbox(db_sessions),
             delivery_log.DeliveryLog(db_sessions),
+            matrix_ledger,
         )
         # The room as a subscriber to the conversation: it reads the record from a position it keeps
         # itself and says what the room has not been told, rather than being pushed at by whichever

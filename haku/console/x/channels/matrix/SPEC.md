@@ -29,6 +29,20 @@ over Matrix, and any write surface for the agent beyond its own replies.
   watermark, so the room's line is a rendering of a fact the console kept rather than the only copy
   of it.
 
+- **A re-delivered event is recognised rather than asked again.** Accepting a batch and advancing
+  the stream position are two commits, so a crash between them hands the same events back. Ingress
+  keys on the Matrix `event_id` and drops what a prompt in the record already carries. The key is
+  written in the prompt's own transaction, which is what makes "already carried" mean the record
+  holds it rather than that some process once saw it.
+
+- **A message accepted by a session that then died is asked again**, on the session that replaces
+  it. **Suppression is not acknowledgement:** skipping a re-delivered event and letting the position
+  advance would trade a duplicate ask for a lost message, because the session holding the prompt can
+  still die before answering it. So what is outstanding is worked out from the record rather than
+  from the position — on every pass, which is also what a console that has just restarted does
+  first. The room is told, since a question reappearing with no operator gesture behind it otherwise
+  reads as Haku answering something twice.
+
 - **No message is lost across console downtime**, however long the gap: messages that arrive while
   the console is down are processed once it returns, in order. If recovery cannot close a gap it
   says so loudly and never skips one silently.

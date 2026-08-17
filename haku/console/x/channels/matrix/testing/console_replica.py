@@ -42,6 +42,7 @@ from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.channels.matrix.client import MatrixError
+from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox
 from haku.console.x.channels.matrix.session import (
     MatrixConversationStore,
@@ -158,6 +159,7 @@ async def _serve() -> None:
     await notifications.start()
     store = SessionStore(sessions)
     conversations = MatrixConversationStore(sessions)
+    ledger = IngressLedger(sessions)
     identities = PostgresOperatorIdentityStore(
         sessions, OperatorIdentityTrust(trust_domain=TRUST_DOMAIN, trusted_issuers=frozenset({TRUSTED_ISSUER}))
     )
@@ -167,10 +169,11 @@ async def _serve() -> None:
         engine,
         MatrixSyncStore(sessions),
         conversations,
-        MatrixTurns(matrix, conversations, store, identities),
+        MatrixTurns(matrix, conversations, store, identities, ledger),
         RoomTranscript(sessions),
         RoomOutbox(sessions),
         DeliveryLog(sessions),
+        ledger,
         armed=Path(_environment("HAKU_E2E_REFUSE_NEXT_REPLY")),
     )
     surface = MatrixSurface(matrix, runtime, SystemPromptTemplate.from_path(runtime.system_prompt_template), sync)

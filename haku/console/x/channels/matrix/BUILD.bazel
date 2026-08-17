@@ -24,6 +24,17 @@ py_library(
 )
 
 py_library(
+    name = "ingress_ledger",
+    srcs = ["ingress_ledger.py"],
+    deps = [
+        "//haku/console:chat_models",
+        "//haku/console:database_schema",
+        "//haku/console/x:session_store",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "pacer",
     srcs = ["pacer.py"],
     deps = [":client"],
@@ -47,6 +58,7 @@ py_library(
     srcs = ["session.py"],
     deps = [
         ":client",
+        ":ingress_ledger",
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:database_schema",
@@ -79,6 +91,7 @@ py_library(
     srcs = ["sync.py"],
     deps = [
         ":client",
+        ":ingress_ledger",
         ":outbox",
         ":pacer",
         ":session",
@@ -96,6 +109,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":ingress_ledger",
         ":session",
         "//haku/console:config",
         "//haku/console/x:conftest",
@@ -140,6 +154,26 @@ py_test(
 )
 
 py_test(
+    name = "test_ingress_ledger",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_ingress_ledger.py"],
+    deps = [
+        ":conftest",
+        ":ingress_ledger",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "//haku/console/x:conftest",
+        "//haku/console/x:session_store",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
     name = "test_outbox",
     size = "medium",  # provisions a Postgres database per test
     srcs = ["test_outbox.py"],
@@ -168,6 +202,7 @@ py_test(
     deps = [
         ":client",
         ":conftest",
+        ":ingress_ledger",
         ":session",
         "//:conftest",
         "//haku/console:chat_models",
@@ -216,6 +251,7 @@ py_test(
     deps = [
         ":client",
         ":conftest",
+        ":ingress_ledger",
         ":outbox",
         ":pacer",
         ":session",

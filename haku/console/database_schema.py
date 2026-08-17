@@ -1581,3 +1581,35 @@ class MatrixRoomCursor(Base):
 
     room_id: Mapped[str] = mapped_column(Text, primary_key=True)
     event_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class MatrixIngressEvent(Base):
+    """Which prompt in the record carries an inbound Matrix event.
+
+    The dedupe key for ingress, and the Matrix channel's own table: an `event_id` is this
+    channel's address for a message and nothing above the channel boundary reads it.
+
+    **A row is written in the prompt's own transaction** (`session_store.enqueue_prompt`'s
+    `records` hook), which is the whole point of the table. The watermark commits separately and
+    afterwards, so a crash between the two re-delivers a batch the session already holds; a row
+    written beside the watermark instead would be missing in exactly that case.
+
+    **Presence therefore means the record carries the event, not that the loop saw it.** That is
+    what makes suppressing a re-delivered event safe: the prompt is in the transcript, and if the
+    session holding it dies unclaimed, `matrix.ingress` finds it through this table and offers it
+    again. `message_id` moves to the newer prompt when that happens, so the row always names the
+    prompt currently answering for the event.
+
+    Rejected and unreadable events are deliberately absent: both are recorded in the transaction
+    that advances the watermark, so a crash before it leaves neither the acknowledgement nor the
+    row, and the re-delivery is a clean first offer.
+    """
+
+    __tablename__ = "matrix_ingress_event"
+
+    event_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    message_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("session_messages.message_id", ondelete="CASCADE"), nullable=False
+    )
+
+    __table_args__ = (Index("idx_matrix_ingress_event_message", "message_id"),)

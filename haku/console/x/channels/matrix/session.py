@@ -47,6 +47,7 @@ from haku.console.database_schema import (
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x import session_events
 from haku.console.x.channels.matrix.client import InboundMessage, RoomEventKind, UnmappableEvent
+from haku.console.x.channels.matrix.ingress_ledger import IngressLedger, Unanswered
 from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.session_runtime import SessionService
@@ -327,8 +328,9 @@ class MatrixTurns:
     row this hands back in the same transaction (`sync.MatrixSyncStore.advance`).
 
     Nothing here is delivery either. A prompt this accepts can still be stranded by a session that
-    ends before claiming it, and it is acknowledged all the same; what carries it forward is the
-    transcript the replacement session is woken with, where the unclaimed prompt row already is.
+    ends before claiming it — and that is what `re_offer` exists for: the prompt is recorded
+    against the events it carries (`ingress_ledger`), so a later pass can find it and ask the live
+    session the same question rather than leaving it as history nobody answers.
     """
 
     def __init__(
@@ -337,11 +339,13 @@ class MatrixTurns:
         conversations: MatrixConversationStore,
         chat_store: SessionStore,
         identities: PostgresOperatorIdentityStore,
+        ledger: IngressLedger,
     ):
         self._config = config
         self._conversations = conversations
         self._chat_store = chat_store
         self._identities = identities
+        self._ledger = ledger
 
     async def offer(self, messages: Sequence[InboundMessage]) -> Admission:
         """Enqueue `messages` as one prompt, or say why the session would not take them.
@@ -349,14 +353,32 @@ class MatrixTurns:
         The whole batch or none of it: a partial enqueue would leave half a sentence delivered and
         half of it rejected, which is a worse answer than either.
         """
+        return await self._enqueue(_as_prompt(messages), tuple(message.event_id for message in messages))
+
+    async def re_offer(self, unanswered: Unanswered) -> bool:
+        """Ask the live session what a dead one was asked and never answered.
+
+        True where it took it. False is an ordinary state rather than a failure — there may be no
+        session yet, or one mid-turn — and the caller asks again on its next pass, so nothing here
+        records a refusal or says anything in the room: the operator did not send this message
+        again and has nothing to do about it.
+        """
+        admission = await self._enqueue(unanswered.text, unanswered.event_ids)
+        if isinstance(admission, PromptRejected):
+            logger.info("Matrix: the live session will not take the unanswered message yet (%s)", admission.reason)
+            return False
+        return True
+
+    async def _enqueue(self, prompt_text: str, event_ids: tuple[str, ...]) -> Admission:
         conversation = await self._conversations.load(self._config.user_id)
         if conversation is None or conversation.session_id is None:
-            logger.info("Matrix: no session behind the room, rejecting %d message(s)", len(messages))
+            logger.info("Matrix: no session behind the room, rejecting %d event(s)", len(event_ids))
             return PromptRejected(reason=PromptRejection.NO_SESSION, event=None)
         operator_id = await self._identities.resolve_configured_external_user_key(self._config.operator_subject)
-        prompt_text = _as_prompt(messages)
         try:
-            prompt = await self._chat_store.enqueue_prompt(operator_id, conversation.session_id, prompt_text)
+            prompt = await self._chat_store.enqueue_prompt(
+                operator_id, conversation.session_id, prompt_text, self._ledger.carrying(event_ids)
+            )
         except KeyError:
             # The session row has gone under us — the supervisor is between sessions. Nothing to
             # key an event to, so this reads to the operator like never having had one.

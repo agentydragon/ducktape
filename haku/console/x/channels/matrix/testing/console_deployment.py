@@ -19,11 +19,11 @@ from typing import IO, Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ChatMessageRole, SessionStatus
-from haku.console.database_schema import SessionMessage
+from haku.console.database_schema import MatrixSyncWatermark, SessionMessage
 from haku.console.x.claude_code.frames import ASSISTANT_FRAME_KIND
 from haku.console.x.session_store import SessionStore
 from haku.console.x.testing.waiting import BUDGET_SECONDS, WedgedError, wait_until
@@ -201,6 +201,23 @@ class Deployment:
             return any(body in prompt for prompt in prompts)
 
         await self._wait_until(f"{body!r} to be queued against session {session_id}", queued)
+
+    async def sync_position(self) -> str:
+        """Where the sync loop has acknowledged up to, as a test can put it back."""
+        async with self._db() as db:
+            position = await db.scalar(select(MatrixSyncWatermark.next_batch))
+        assert position is not None, "nothing has been acknowledged yet"
+        return str(position)
+
+    async def rewind_sync_to(self, position: str) -> None:
+        """Put the acknowledged position back, which is what a crash before the commit leaves.
+
+        The one gap the watermark cannot express: a prompt commits, the process dies, and the
+        homeserver is still holding the batch that produced it. Only safe with the console stopped
+        — a running sync pass writes its own position over this one.
+        """
+        async with self._db.begin() as db:
+            await db.execute(update(MatrixSyncWatermark).values(next_batch=position))
 
     async def serving(self, *, after: UUID | None = None) -> UUID:
         """Wait until the room has a sandbox behind it with the bridge up, and say which session.

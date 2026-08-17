@@ -21,6 +21,7 @@ from haku.console.chat_models import AuthoredEventKind, ChatMessageRole, PromptR
 from haku.console.database_schema import ChatAttachment, Session
 from haku.console.x.channels.matrix.client import InboundMessage, RoomEventKind, UnmappableEvent
 from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
+from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.session import (
     NOTHING_SAID,
     MatrixConversationStore,
@@ -533,9 +534,11 @@ async def test_the_limit_takes_the_tail(
 
 
 @pytest.fixture
-def turns(conversations: MatrixConversationStore, chat_store: SessionStore, migrated_identity_store) -> MatrixTurns:
+def turns(
+    conversations: MatrixConversationStore, chat_store: SessionStore, migrated_identity_store, ledger: IngressLedger
+) -> MatrixTurns:
     """Ingress over the real stores — only the homeserver's events are handed in by the test."""
-    return MatrixTurns(MATRIX_CONFIG, conversations, chat_store, migrated_identity_store)
+    return MatrixTurns(MATRIX_CONFIG, conversations, chat_store, migrated_identity_store, ledger)
 
 
 async def serving_room(conversations: MatrixConversationStore, session_id: UUID) -> None:
@@ -626,6 +629,96 @@ async def test_a_batch_offered_to_a_session_that_is_gone_is_rejected_rather_than
     admitted = await turns.offer([operator_message("hi", event_id="$1", at=1)])
 
     assert admitted == PromptRejected(reason=PromptRejection.NO_SESSION, event=None)
+
+
+async def test_an_accepted_batch_records_its_events_against_the_prompt_it_became(
+    turns: MatrixTurns,
+    conversations: MatrixConversationStore,
+    chat_store: SessionStore,
+    ledger: IngressLedger,
+    operator_id: UUID,
+) -> None:
+    """The dedupe key, written where it cannot come apart from the prompt.
+
+    A rejected batch records nothing, because there is no prompt for a row to name and the
+    homeserver re-offering it is the outcome we want.
+    """
+    session_id = await serving_session(chat_store, operator_id)
+    await serving_room(conversations, session_id)
+
+    await turns.offer([operator_message("hi", event_id="$1", at=1), operator_message("more", event_id="$2", at=2)])
+
+    assert await ledger.carried(["$1", "$2", "$3"]) == frozenset({"$1", "$2"})
+
+
+async def test_a_rejected_batch_records_nothing_for_the_homeserver_to_be_deduped_against(
+    turns: MatrixTurns,
+    conversations: MatrixConversationStore,
+    chat_store: SessionStore,
+    ledger: IngressLedger,
+    operator_id: UUID,
+) -> None:
+    session_id = await serving_session(chat_store, operator_id)
+    await serving_room(conversations, session_id)
+    await chat_store.enqueue_prompt(operator_id, session_id, "first")
+    assert await chat_store.next_prompt(session_id) is not None
+
+    assert isinstance(await turns.offer([operator_message("hi", event_id="$1", at=1)]), PromptRejected)
+
+    assert await ledger.carried(["$1"]) == frozenset()
+
+
+async def test_an_unanswered_message_is_asked_again_and_its_events_follow_the_new_prompt(
+    turns: MatrixTurns,
+    conversations: MatrixConversationStore,
+    chat_store: SessionStore,
+    ledger: IngressLedger,
+    operator_id: UUID,
+) -> None:
+    """Suppression is not acknowledgement: the batch was acknowledged to the homeserver, so this
+    prompt is the only copy left of what the operator asked, and the session holding it died.
+
+    The events move to the replacement's prompt, which is what stops the next pass finding the
+    same message outstanding and asking a third time.
+    """
+    doomed = await serving_session(chat_store, operator_id)
+    await serving_room(conversations, doomed)
+    await turns.offer([operator_message("did you see this", event_id="$1", at=1)])
+    await chat_store.closed(doomed)
+    replacement = await serving_session(chat_store, operator_id)
+    await conversations.set_session(MATRIX_USER, replacement)
+
+    unanswered = await ledger.unanswered()
+    assert unanswered is not None
+    assert await turns.re_offer(unanswered) is True
+
+    start = await chat_store.next_prompt(replacement)
+    assert start is not None
+    assert start.prompt == "[$1] did you see this"
+    assert await ledger.unanswered() is None, "the re-offered prompt is the one answering for it now"
+
+
+async def test_an_unanswered_message_the_live_session_will_not_take_is_left_for_the_next_pass(
+    turns: MatrixTurns,
+    conversations: MatrixConversationStore,
+    chat_store: SessionStore,
+    ledger: IngressLedger,
+    operator_id: UUID,
+) -> None:
+    """Refusal is not the end of it. Nothing is recorded and nothing is said — the operator did not
+    send this message again and has nothing to do about it — so the only correct answer is to ask
+    once there is somewhere to ask."""
+    doomed = await serving_session(chat_store, operator_id)
+    await serving_room(conversations, doomed)
+    await turns.offer([operator_message("did you see this", event_id="$1", at=1)])
+    await chat_store.closed(doomed)
+    await conversations.set_session(MATRIX_USER, None)
+
+    unanswered = await ledger.unanswered()
+    assert unanswered is not None
+    assert await turns.re_offer(unanswered) is False
+
+    assert await ledger.unanswered() == unanswered
 
 
 async def test_an_unreadable_event_is_a_row_per_event_on_the_live_session(

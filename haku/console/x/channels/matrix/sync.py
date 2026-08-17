@@ -12,6 +12,11 @@ Both are **recorded in the transaction that advances the watermark**, as `sessio
 room notice is a rendering of. Advancing first and announcing afterwards would let one crash lose
 the message and the notice together.
 
+An accepted batch is the one thing that commits *before* the watermark, so a crash in between
+re-delivers it. That is what `ingress_ledger` is for: the loop asks the record which events a
+prompt already carries rather than trusting its own position, and re-offers the prompt whose
+session died before answering it.
+
 It is also the only holder of a Matrix credential, so the supervisor's lifecycle notices go out
 through `announce` rather than a second login, and an answer — a row until it has been said — is
 drained into the room from here (`outbox`).
@@ -48,6 +53,7 @@ from haku.console.x.channels.matrix.client import (
     RoomEventKind,
     UnmappableEvent,
 )
+from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox, RoomOutboxDrain
 from haku.console.x.channels.matrix.pacer import RoomPacer
 from haku.console.x.channels.matrix.session import (
@@ -167,6 +173,7 @@ class MatrixSyncService:
         transcript: RoomTranscript,
         outbox: RoomOutbox,
         deliveries: DeliveryLog,
+        ledger: IngressLedger,
     ):
         # Taken separately from `config`, which carries it as optional: the service is only ever
         # constructed once the password is known to be there.
@@ -178,6 +185,7 @@ class MatrixSyncService:
         self._turns = turns
         self._transcript = transcript
         self._deliveries = deliveries
+        self._ledger = ledger
         self._client = MatrixClient(config.homeserver, config.user_id, config.device_id)
         # Public because its lifecycle is the owner's to drive: everything the console says into
         # the room goes through here, so it outlives no individual send.
@@ -331,9 +339,11 @@ class MatrixSyncService:
         history could not have reproduced a memory read back out of `/messages`
         (<../../../debug/channel_write_audit.md> § "What a second channel would need", #4130).
 
-        **A message the previous session never answered is still in here**, which is what a
-        replacement is for: ingress writes the prompt row when it accepts a batch, and a session
-        that ended before claiming that row leaves it recorded and unanswered.
+        **A message the previous session never answered is still in here**: ingress writes the
+        prompt row when it accepts a batch, and a session that ended before claiming that row
+        leaves it recorded. It is also offered to the replacement as a prompt
+        (`_re_offer_unanswered`), so it appears here as well as there — which is what happened, the
+        operator having been left waiting on it.
 
         Empty until something has been recorded for this room: a first-ever session and a session
         whose room only just bound read the same, and both are correct.
@@ -398,13 +408,19 @@ class MatrixSyncService:
         **The room is told once that is committed**: a crash before the commit re-delivers the
         batch and says nothing, and one after it leaves a recorded fact whose notice can be posted
         again.
+
+        **A re-delivered message is dropped from the batch rather than offered again**, and what
+        makes that safe is that the ledger only knows an event because a prompt in the record
+        carries it. The outstanding one that prompt may still be is settled first, so the operator
+        is answered in the order they spoke.
         """
         result = await self._client.sync(token, await self._store.watermark(self._config.user_id))
         for invite in result.invites:
             await self._handle_invite(token, invite)
         # Read after the invites, so a room bound by this very batch serves it too.
         live_room = await self._live_room(token, result.messages)
-        messages = self._serviced(result.messages, live_room)
+        await self._re_offer_unanswered(live_room)
+        messages = await self._undelivered(self._serviced(result.messages, live_room))
         unreadable = self._serviced(result.unmappable, live_room)
         recorded = list(await self._turns.unreadable(unreadable)) if unreadable else []
         rejection: PromptRejection | None = None
@@ -420,6 +436,42 @@ class MatrixSyncService:
         if rejection is not None:
             self._report_rejected(live_room, len(messages), rejection)
         self._report_unreadable(live_room, unreadable)
+
+    async def _undelivered(self, messages: list[InboundMessage]) -> list[InboundMessage]:
+        """The messages of a batch no prompt in the record carries yet.
+
+        The rest are a re-delivery: the prompt they were folded into committed and the crash that
+        followed lost only the acknowledgement. Offering them again would ask the same question
+        twice — and would usually be refused, since the first copy is generally still queued, so
+        the room would report a message as undelivered that the session was about to answer.
+        """
+        if not messages:
+            return messages
+        carried = await self._ledger.carried([message.event_id for message in messages])
+        if carried:
+            logger.info("Matrix: %d re-delivered event(s) the record already carries", len(carried))
+        return [message for message in messages if message.event_id not in carried]
+
+    async def _re_offer_unanswered(self, live_room: str | None) -> None:
+        """Ask again about a message accepted by a session that died before answering it.
+
+        Acceptance acknowledges the batch to the homeserver, so nothing re-delivers it and the
+        prompt row is the only copy left. Level-triggered rather than driven by the death itself:
+        a pass reads what the record still owes, which is what makes this the recovery a restarted
+        console performs as well as the one a live console performs when a sandbox is lost.
+
+        The room is told, because a question reappearing minutes later with no operator gesture
+        behind it otherwise reads as Haku answering something twice.
+        """
+        if (unanswered := await self._ledger.unanswered()) is None:
+            return
+        if not await self._turns.re_offer(unanswered):
+            return
+        logger.info("Matrix: re-offered a message the previous session never answered")
+        if live_room is not None:
+            self._queue_notice(
+                live_room, "asking again about a message the previous session never answered", RoomEventKind.NARRATION
+            )
 
     async def _live_room(self, token: str, messages: tuple[InboundMessage, ...]) -> str | None:
         """The room being serviced, adopting one from traffic when nothing is bound.

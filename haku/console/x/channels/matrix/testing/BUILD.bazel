@@ -73,6 +73,7 @@ py_library(
         "//haku/console/x:session_store",
         "//haku/console/x:system_prompt",
         "//haku/console/x/channels/matrix:client",
+        "//haku/console/x/channels/matrix:ingress_ledger",
         "//haku/console/x/channels/matrix:outbox",
         "//haku/console/x/channels/matrix:session",
         "//haku/console/x/channels/matrix:sync",

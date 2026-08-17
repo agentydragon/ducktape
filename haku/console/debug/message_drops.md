@@ -165,7 +165,7 @@ The loss that does exist is upstream: `_serviced` (`matrix_sync.py:282-300`) dro
 messages with a warning and the watermark advances regardless; when it returns `[]` the entire batch
 is discarded and acknowledged. Warned, so not silent — still unrecoverable.
 
-### I3. The batch is acknowledged at enqueue, not at turn completion — FIXED (#4117), REOPENED
+### I3. The batch is acknowledged at enqueue, not at turn completion — FIXED (#4117), REOPENED, CLOSED AGAIN
 
 `save_batch` ran as soon as `offer` returned, which is as soon as `enqueue_prompt` commits. A
 session dying between enqueue and the turn orphaned the prompt: `expire_stale_leases` fails the
@@ -180,18 +180,19 @@ side.
 `/sync` token and the prompt row, `SessionStore.prompt_fate` decided between publishing the token
 and dropping the row, and a `LOST` prompt was offered again to the replacement session.
 
-**That mechanism is gone and this window is open again**, deliberately. The operator's rejection
-ruling (2026-08-17) makes a refusal terminal, which removes the second sync position the deferral
-needed; holding the acknowledgement of an _accepted_ batch was the same machinery. Acceptance is
-now the acknowledgement.
+That mechanism is gone: the operator's rejection ruling (2026-08-17) makes a refusal terminal,
+which removes the second sync position the deferral needed; holding the acknowledgement of an
+_accepted_ batch was the same machinery. Acceptance is still the acknowledgement.
 
-What is different from the original bug is where the message ends up. It is not acknowledged to
-nobody: the prompt row is in the transcript, and `RoomTranscript.recent` reads every session that
-served the room, so the replacement session is **woken with it** as context rather than handed it
-as a prompt. So the message survives and is visible to the agent; what it does not get is a turn
-of its own until the operator says something else. That is the accepted cost, and
-`test_a_message_accepted_by_a_dying_session_is_not_offered_to_its_replacement` pins it so it stays
-a decision.
+What closes the window instead is that the record can be asked what it still owes.
+`matrix/ingress_ledger.py` records the events a prompt carries **in that prompt's transaction**, so
+a prompt whose session ended without ever claiming it is findable — and the sync loop offers it to
+the live session rather than leaving it as context the agent may or may not act on.
+`test_a_message_accepted_by_a_dying_session_is_answered_after_a_restart` is the end-to-end pin.
+
+Note what the deferral would not have fixed and this does: acknowledgement and the prompt were
+always two commits, so a crash between them re-delivered a batch the session already held. The
+ledger's key is the Matrix `event_id`, which survives that where a stream position cannot.
 
 ### I4. Backfill page cap
 

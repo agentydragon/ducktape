@@ -33,6 +33,7 @@ from haku.console.x.channels.matrix.client import (
     UnmappableEvent,
 )
 from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
+from haku.console.x.channels.matrix.ingress_ledger import IngressLedger, Unanswered
 from haku.console.x.channels.matrix.outbox import PendingReply
 from haku.console.x.channels.matrix.pacer import RoomPacer
 from haku.console.x.channels.matrix.session import Admission, PromptAccepted, PromptRejected, RoomTranscript
@@ -106,6 +107,11 @@ class _FakeTurns:
     accepts: bool = True
     reason: PromptRejection = PromptRejection.TURN_IN_FLIGHT
     offered: list[list[str]] = field(default_factory=list)
+    re_offered: list[Unanswered] = field(default_factory=list)
+
+    async def re_offer(self, unanswered: Unanswered) -> bool:
+        self.re_offered.append(unanswered)
+        return self.accepts
 
     async def offer(self, messages: Sequence[InboundMessage]) -> Admission:
         self.offered.append([message.body for message in messages])
@@ -149,7 +155,7 @@ def transcript(migrated_sessions) -> RoomTranscript:
     return RoomTranscript(migrated_sessions)
 
 
-def _replica(sync_store, conversations, turns, transcript, matrix, migrated_sessions) -> MatrixSyncService:
+def _replica(sync_store, conversations, turns, transcript, matrix, migrated_sessions, ledger) -> MatrixSyncService:
     """One console replica's sync service, unthrottled.
 
     The real budget is `test_pacer`'s subject; at the room's true rate each of these would wait
@@ -167,6 +173,7 @@ def _replica(sync_store, conversations, turns, transcript, matrix, migrated_sess
         # pass and assert the narration, which never touches the table (`test_outbox` does).
         outbox=cast(Any, None),
         deliveries=DeliveryLog(migrated_sessions),
+        ledger=ledger,
     )
     service._client = cast(Any, matrix)
     service.pacer = RoomPacer(sends_per_second=1e6, burst=1_000)
@@ -174,9 +181,9 @@ def _replica(sync_store, conversations, turns, transcript, matrix, migrated_sess
 
 
 @pytest.fixture
-async def service(sync_store, conversations, turns, transcript, matrix, migrated_sessions):
+async def service(sync_store, conversations, turns, transcript, matrix, migrated_sessions, ledger):
     """The service with its outbound queue running, because every send goes through it."""
-    service = _replica(sync_store, conversations, turns, transcript, matrix, migrated_sessions)
+    service = _replica(sync_store, conversations, turns, transcript, matrix, migrated_sessions, ledger)
     async with service.pacer.run():
         yield service
 
@@ -249,6 +256,83 @@ async def test_a_batch_is_offered_as_one_prompt(service, matrix, turns, bound_ro
     await service.sync_once("tok")
 
     assert turns.offered == [["first", "second"]]
+
+
+async def carried_prompt(
+    chat_store: SessionStore, operator_id: UUID, ledger: IngressLedger, event_id: str, body: str
+) -> UUID:
+    """A prompt in the record carrying *event_id*, as an accepted batch leaves one behind."""
+    view, token = await chat_store.create(operator_id, MatrixSession(room_id=MATRIX_ROOM))
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, f"[{event_id}] {body}", ledger.carrying((event_id,)))
+    return view.session_id
+
+
+async def test_a_re_delivered_message_is_dropped_from_the_batch(
+    service, matrix, turns, sync_store, chat_store, operator_id, ledger, bound_room
+):
+    """The crash this closes: the prompt committed, the watermark did not, and `/sync` hands the
+    same event back. Offering it again would ask twice — and be refused, since the first copy is
+    still queued, so the room would report a message as undelivered that the session is about to
+    answer."""
+    await carried_prompt(chat_store, operator_id, ledger, "$a", "hello")
+    matrix.result = SyncResult("s2", (_message("hello", event_id="$a"),), ())
+
+    await service.sync_once("tok")
+    await settled(service)
+
+    assert turns.offered == []
+    assert await watermark(sync_store) == "s2"
+    assert matrix.notices == []
+
+
+async def test_only_the_re_delivered_half_of_a_batch_is_dropped(
+    service, matrix, turns, chat_store, operator_id, ledger, bound_room
+):
+    """A restart can land the crashed batch and what was said since in one response."""
+    await carried_prompt(chat_store, operator_id, ledger, "$a", "hello")
+    matrix.result = SyncResult("s2", (_message("hello", event_id="$a"), _message("and this", event_id="$b")), ())
+
+    await service.sync_once("tok")
+
+    assert turns.offered == [["and this"]]
+
+
+async def test_a_message_no_session_ever_answered_is_offered_again_and_said_in_the_room(
+    service, matrix, turns, chat_store, operator_id, ledger, bound_room
+):
+    """Suppression is not acknowledgement. The batch was acknowledged to the homeserver, so nothing
+    re-delivers it: the prompt row is the only copy left, and its session died holding it.
+
+    The room is told, because a question reappearing with no operator gesture behind it otherwise
+    reads as Haku answering something twice.
+    """
+    stranded = await carried_prompt(chat_store, operator_id, ledger, "$a", "hello")
+    await chat_store.closed(stranded)
+    matrix.result = SyncResult("s2", (), ())
+
+    await service.sync_once("tok")
+    await settled(service)
+
+    assert turns.re_offered == [Unanswered(text="[$a] hello", event_ids=("$a",))]
+    assert matrix.notices == [(bound_room, "asking again about a message the previous session never answered")]
+
+
+async def test_an_unanswered_message_nothing_will_take_yet_is_not_announced(
+    service, matrix, turns, chat_store, operator_id, ledger, bound_room
+):
+    """Every pass asks, so a pass that says so would fill the room while the operator waits for a
+    sandbox — and there is nothing for them to do about it either way."""
+    stranded = await carried_prompt(chat_store, operator_id, ledger, "$a", "hello")
+    await chat_store.closed(stranded)
+    turns.accepts = False
+    matrix.result = SyncResult("s2", (), ())
+
+    await service.sync_once("tok")
+    await settled(service)
+
+    assert len(turns.re_offered) == 1
+    assert matrix.notices == []
 
 
 async def test_a_rejected_batch_is_acknowledged_and_recorded_in_one_go(
@@ -638,7 +722,7 @@ async def test_the_line_is_redacted_when_the_turn_ends(service, matrix, bound_ro
 
 
 async def test_a_replica_that_adopts_the_session_edits_the_line_it_inherits(
-    service, sync_store, conversations, turns, transcript, matrix, migrated_sessions, bound_room
+    service, sync_store, conversations, turns, transcript, matrix, migrated_sessions, ledger, bound_room
 ) -> None:
     """The status line outlives the process that posted it. Whichever replica holds the session's
     lease drives the line, so one starting with an empty process would post a second line beside
@@ -646,7 +730,7 @@ async def test_a_replica_that_adopts_the_session_edits_the_line_it_inherits(
     await service.show_status("running Bash")
     await settled(service)
 
-    successor = _replica(sync_store, conversations, turns, transcript, matrix, migrated_sessions)
+    successor = _replica(sync_store, conversations, turns, transcript, matrix, migrated_sessions, ledger)
     async with successor.pacer.run():
         await successor.show_status("running Read")
         await settled(successor)

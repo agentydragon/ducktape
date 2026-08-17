@@ -20,7 +20,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar, Protocol, cast
 from uuid import UUID, uuid4
 
 from sqlalchemy import CursorResult, Select, delete, func, literal, or_, select, text, tuple_, update
@@ -119,6 +119,19 @@ def _frames_of_kinds(query: Select[tuple[SessionFrame]], kinds: Sequence[str] | 
     console's frame inspector alike, which is why the policy lives here rather than in either one.
     """
     return query.where(SessionFrame.kind.in_(kinds) if kinds else SessionFrame.kind != DELTA_FRAME_KIND)
+
+
+class PromptRecords(Protocol):
+    """What a caller needs written in the prompt's own transaction, given the message it minted.
+
+    A channel's record of which of its own inbound events a prompt carries. It has to commit with
+    the prompt or not at all: written afterwards it is lost by a crash in between, and the channel
+    then cannot tell a message the record already holds from one it has never been offered.
+
+    The store adds it and never reads it — what these rows mean is the caller's business.
+    """
+
+    async def __call__(self, db: AsyncSession, message_id: UUID) -> None: ...
 
 
 class PromptRefusedError(RuntimeError):
@@ -655,7 +668,9 @@ class SessionStore:
                 chat.status = SessionStatus.CLOSED
             chat.updated_at = now
 
-    async def enqueue_prompt(self, operator_id: UUID, session_id: UUID, prompt_text: str) -> SessionMessageView:
+    async def enqueue_prompt(
+        self, operator_id: UUID, session_id: UUID, prompt_text: str, records: PromptRecords | None = None
+    ) -> SessionMessageView:
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
             chat = await db.scalar(
@@ -698,6 +713,8 @@ class SessionStore:
                 )
             )
             chat.updated_at = now
+            if records is not None:
+                await records(db, message.message_id)
             await notify(db, SessionEventKind.PROMPT, session_id)
             await notify(db, SessionEventKind.UPDATE, session_id)
         return user_message_view(message)

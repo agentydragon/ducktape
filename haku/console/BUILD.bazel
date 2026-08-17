@@ -936,6 +936,7 @@ py_library(
         "//haku/console/x:session_runtime",
         "//haku/console/x:session_store",
         "//haku/console/x:subscription",
+        "//haku/console/x/channels/matrix:ingress_ledger",
         "//haku/console/x/channels/matrix:outbox",
         "//haku/console/x/channels/matrix:room_subscription",
         "//haku/console/x/channels/matrix:session",

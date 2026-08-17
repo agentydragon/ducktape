@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.config import MatrixConfig
+from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.session import MatrixConversationStore
 from haku.console.x.conftest import OPERATOR_SUBJECT
 
@@ -35,3 +36,8 @@ MATRIX_CONFIG = MatrixConfig(
 @pytest.fixture
 def conversations(migrated_sessions: async_sessionmaker[AsyncSession]) -> MatrixConversationStore:
     return MatrixConversationStore(migrated_sessions)
+
+
+@pytest.fixture
+def ledger(migrated_sessions: async_sessionmaker[AsyncSession]) -> IngressLedger:
+    return IngressLedger(migrated_sessions)
