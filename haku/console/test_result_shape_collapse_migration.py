@@ -23,21 +23,32 @@ _BEFORE = "0067"
 
 
 def _session(conn: Connection) -> UUID:
-    operator_id, session_id = uuid4(), uuid4()
+    operator_id, session_id, conversation_id = uuid4(), uuid4(), uuid4()
     conn.execute(
         text("INSERT INTO operators (operator_id, status, created_at, updated_at) VALUES (:id, 'active', :n, :n)"),
         {"id": operator_id, "n": _NOW},
+    )
+    # `_BEFORE` is after `0064`, so the column exists here and `0072` will require it to be set.
+    conn.execute(
+        text("INSERT INTO conversation (conversation_id, operator_id, created_at) VALUES (:id, :o, :n)"),
+        {"id": conversation_id, "o": operator_id, "n": _NOW},
     )
     conn.execute(
         text(
             """
             INSERT INTO sessions (
-                session_id, operator_id, surface, status, bridge_token_fingerprint,
+                session_id, operator_id, conversation_id, surface, status, bridge_token_fingerprint,
                 lease_expires_at, created_at, updated_at
-            ) VALUES (:session_id, :operator_id, 'spa', 'ready', :fingerprint, :n, :n, :n)
+            ) VALUES (:session_id, :operator_id, :conversation_id, 'spa', 'ready', :fingerprint, :n, :n, :n)
             """
         ),
-        {"session_id": session_id, "operator_id": operator_id, "fingerprint": b"digest", "n": _NOW},
+        {
+            "session_id": session_id,
+            "operator_id": operator_id,
+            "conversation_id": conversation_id,
+            "fingerprint": b"digest",
+            "n": _NOW,
+        },
     )
     return session_id
 
