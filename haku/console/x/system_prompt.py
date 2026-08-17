@@ -31,9 +31,9 @@ class HistoryMessage:
     """One thing already said in this conversation, either side of it, as we recorded it.
 
     No channel address: this comes from the console's transcript rather than from the room
-    (`channels/matrix/sync.py`'s `recent_history`), and what a prompt was folded from is a
-    field on its `PROMPT_ENQUEUED` event rather than something the text carries. Nothing renders one into a prompt
-    — the agent has no way to resolve one until the room read tools land, and until then an
+    (`channels/matrix/sync.py`'s `recent_history`), and what a prompt was folded from is a field on
+    its `PROMPT_ENQUEUED` event rather than something the text carries. Nothing renders one into a
+    prompt — the agent cannot resolve one until the room read tools land, and until then an
     address in front of the operator's words is noise it is invited to quote back.
     """
 
