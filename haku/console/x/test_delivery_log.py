@@ -89,7 +89,9 @@ async def test_a_detached_attachment_takes_its_deliveries_with_it(
     await deliveries.record(attachment_id, "status", "$line")
 
     async with migrated_sessions() as db, db.begin():
-        await db.delete(await db.get_one(ChatAttachment, attachment_id))
+        attachment = await db.get(ChatAttachment, attachment_id)
+        assert attachment is not None
+        await db.delete(attachment)
 
     assert await deliveries.live(attachment_id, "status") is None
 
