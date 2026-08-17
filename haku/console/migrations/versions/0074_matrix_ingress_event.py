@@ -11,7 +11,7 @@ messages it accepts while the roll is in flight simply have no row — they are 
 is the behaviour that image already has.
 
 Revision ID: 0074
-Revises: 0072
+Revises: 0073
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0074"
-down_revision: str | None = "0072"
+down_revision: str | None = "0073"
 branch_labels: str | None = None
 depends_on: str | None = None
 
