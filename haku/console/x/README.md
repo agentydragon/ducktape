@@ -112,11 +112,43 @@ carrying no agent-assigned id escape. Two properties worth knowing before changi
 
 Both surfaces run on it at once. They are ordinary separate sessions — separate rows,
 separate sandboxes — so a browser conversation and the Matrix conversation coexist rather
-than contend. **Gotcha:** that also means two live sandboxes, and only the Matrix one
-announces itself, so the browser one is the easy one to forget you are paying for.
+than contend. **Gotcha:** that means up to two live sandboxes, and only the Matrix one
+announces itself, so the browser one is the easy one to forget you are paying for — and it is now
+also the only one a quiet day leaves running, since the room's is allocated on demand (below).
 
 Delta streaming (`StreamEvent`) exists for the SPA alone. The Matrix path forwards whole assistant
 messages, each as it completes, so if the SPA view is ever retired that machinery goes with it.
+
+### An idle session — a sandbox is bought, not assumed
+
+**A session and its sandbox are two things, and `create` makes only the first.** A created session
+is `idle`: a row, no credential, no `SandboxClaim`. `allocate` is what mints the rendezvous bearer,
+creates the claim and moves the row to `provisioning`. The SPA does both in one call
+(`SessionService.provision`), because a browser posting to `/api/sessions` has already said it
+wants a session; a Matrix room has no such gesture, so the supervisor waits for one.
+
+**The substitute for that gesture is an unclaimed prompt**, which is why `enqueue_prompt` admits
+`idle` — a refusal is terminal, so the room's first message after quiet would be rejected outright
+and the room would have no way of ever asking. Admitted, it is a `session_prompts` row, and
+`MatrixSessionSupervisor` allocates when it sees one, waking on `SessionEventKind.PROMPT` as well
+as `UPDATE` (a queued prompt changes no status, so waiting on `UPDATE` alone would defer the
+sandbox to the poll interval).
+
+Three consequences worth knowing before changing any of it:
+
+- **`OPEN_SESSION_STATUSES` and `LEASED_SESSION_STATUSES` are different questions.** Open is "worth
+  keeping" — the supervisor must not replace it. Leased is "owes a heartbeat" — `renew_lease`,
+  `release_lease` and `expire_stale_leases` read this one. `idle` is the first status where they
+  disagree, and reading the open set in the sweep would fail every idle session `ADOPTION_GRACE`
+  after it was created.
+- **The credential could not be minted at creation.** The plaintext is handed to a sandbox once and
+  never stored, and allocation happens later and possibly on another replica — so a token minted at
+  `create` is one no runner could ever be given. Until `allocate` overwrites it, the column holds a
+  random verifier no bearer matches, which is what makes an unallocated session unreachable from
+  `authenticate_bridge` without a second guard restating it.
+- **The first message after quiet pays the full cold start**, since the warm pool is `replicas: 0`.
+  That is the trade: a standing ~1 CPU / 2Gi for a room nobody is using, against latency on the
+  message that ends the quiet.
 
 ### What has been lifted out of it
 
@@ -406,7 +438,8 @@ the test that reads it, as `test_diverse_session` has.
   what the operator types to the session behind it. Holds the only Matrix credential, so everything
   that speaks into the room speaks through it.
 - `session.py` — the room/session binding, ingress (`MatrixTurns`), the surface a room-backed turn
-  reports through (`MatrixSurface`), and the supervisor that keeps a live session behind the room.
+  reports through (`MatrixSurface`), and the supervisor that keeps a session behind the room and a
+  sandbox behind the session once one is asked for.
 - `pacer.py` — one paced outbound queue per room, over Synapse's `rc_message` budget.
 - `outbox.py` — the room's outbox: replies as `session_outbox` rows, and the drain that
   says them, recording which room event each became.
@@ -452,10 +485,11 @@ Behaviours worth knowing before reading the code:
   want of a subject — they have no conversation-side identity to be keyed by until every fact
   behind one is a row.
 
-- **A rejected batch is not queued anywhere.** `enqueue_prompt` only accepts on a ready session with
-  no turn open and nothing pending, and a refusal is the answer: the room is told the messages were
-  not delivered and what to wait for, and the watermark advances past them so the homeserver does
-  not offer them again. **Admission is that one transaction's alone**: `MatrixTurns.offer` asks no
+- **A rejected batch is not queued anywhere.** `enqueue_prompt` accepts on an idle or a ready
+  session with no turn open and nothing pending — idle among them because that acceptance is what
+  asks for a sandbox (§ An idle session) — and a refusal is the answer: the room is told the messages
+  were not delivered and what to wait for, and the watermark advances past them so the homeserver
+  does not offer them again. **Admission is that one transaction's alone**: `MatrixTurns.offer` asks no
   status question of its own, because an answer read outside `enqueue_prompt`'s
   `SELECT … FOR UPDATE` could only agree with a decision that had not been made yet. It turns the
   refusal into a `PromptRejected` carrying the reason and the row that records it —

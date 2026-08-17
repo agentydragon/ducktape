@@ -216,25 +216,50 @@ class SessionService:
     async def create(
         self, operator_id: UUID, surface: SessionSurface, *, conversation_id: UUID | None = None
     ) -> SessionView:
-        view, token = await self._store.create(operator_id, surface, conversation_id=conversation_id)
+        """A session row and nothing else — no credential, no claim, nothing to pay for.
+
+        `allocate` is what gives it a sandbox, and the two are separate calls because a Matrix room
+        only earns the second once somebody speaks in it (<README.md> § An idle session).
+        """
+        return await self._store.create(operator_id, surface, conversation_id=conversation_id)
+
+    async def allocate(self, session_id: UUID) -> None:
+        """Give *session_id* a sandbox: mint its credential, then create the claim.
+
+        A no-op if the session was already allocated — the store's transition is what decides, so
+        two callers racing produce one claim rather than a second orphaned sandbox.
+        """
+        token = await self._store.allocate(session_id)
+        if token is None:
+            return
         try:
             await self._claims.create(
-                session_id=view.session_id,
+                session_id=session_id,
                 bridge_token=token,
                 expires_at=datetime.now(UTC) + timedelta(seconds=self._config.session_ttl_seconds),
             )
         except Exception as error:
-            await self._store.fail(view.session_id, f"sandbox provisioning failed: {error}")
+            await self._store.fail(session_id, f"sandbox provisioning failed: {error}")
             # If claim creation reached Kubernetes before its response failed, remove the partial
             # resource now. A failed delete leaves `claim_cleaned_at` NULL, which is the durable
             # retry marker.
-            await self._cleanup_terminal_claim(view.session_id)
+            await self._cleanup_terminal_claim(session_id)
             raise
-        return view
+
+    async def provision(self, operator_id: UUID, surface: SessionSurface) -> SessionView:
+        """A session with a sandbox already on its way — the whole of what the SPA's POST asks for.
+
+        The browser opening a chat has said it wants one, which is the gesture Matrix has no
+        equivalent of, so there is nothing here to wait for: deferring would only move the cold
+        start to the operator's first message.
+        """
+        view = await self.create(operator_id, surface)
+        await self.allocate(view.session_id)
+        return await self.get(operator_id, view.session_id)
 
     async def create_conversation(self, operator_id: UUID) -> ConversationView:
         """Open a thread and the session that runs it, and read the thread back."""
-        view = await self.create(operator_id, SpaSession())
+        view = await self.provision(operator_id, SpaSession())
         return await self.conversation(operator_id, await self._store.conversation_of(view.session_id))
 
     async def conversation(self, operator_id: UUID, conversation_id: UUID) -> ConversationView:

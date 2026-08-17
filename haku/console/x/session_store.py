@@ -109,6 +109,10 @@ ADOPTION_GRACE = timedelta(seconds=45)
 # is what `kubectl logs` wants as an argument — so a session that died names the thing to go read.
 REPLICA = os.environ.get("HOSTNAME", "unknown")
 
+# Where a prompt may be accepted: a session whose sandbox is up and between turns, and one that
+# has no sandbox at all — because accepting on `idle` is what asks for one.
+_PROMPTABLE_STATUSES = frozenset({SessionStatus.IDLE, SessionStatus.READY})
+
 
 def _frames_of_kinds(query: Select[tuple[SessionFrame]], kinds: Sequence[str] | None) -> Select[tuple[SessionFrame]]:
     """Restrict a frame query to *kinds*, or to everything a reader means by "everything".
@@ -330,16 +334,27 @@ class SessionStore:
 
     async def create(
         self, operator_id: UUID, surface: SessionSurface, *, conversation_id: UUID | None = None
-    ) -> tuple[SessionView, str]:
-        """Start a session, continuing *conversation_id* or opening a conversation of its own.
+    ) -> SessionView:
+        """Write the row and stop: a session that exists, holds no sandbox, and costs nothing.
 
-        Absent is not "unknown": it is a caller with no thread to continue, which is every session
-        the browser starts. A channel that holds a copy passes the conversation its attachment
-        names, which is what makes replacing a dead session invisible to that channel.
+        It continues *conversation_id*, or opens a conversation of its own. Absent is not
+        "unknown": it is a caller with no thread to continue, which is every session the browser
+        starts. A channel that holds a copy passes the conversation its attachment names, which is
+        what makes replacing a dead session invisible to that channel.
+
+        **The rendezvous credential is `allocate`'s, and could not be minted here.** The plaintext
+        is handed to a sandbox once and never stored, and allocation happens later — possibly on
+        another replica, after this call's process has forgotten everything — so a token minted at
+        creation is one no runner could ever be given. What the column holds until then is a
+        verifier no bearer matches, which is what makes an unallocated session unreachable from
+        `authenticate_bridge` without a second guard saying so.
+
+        The lease is already expired for the matching reason: an idle session has no holder to
+        lose. `LEASED_SESSION_STATUSES` is what keeps `expire_stale_leases` away from it, rather
+        than a far-future deadline that would be a lie about a heartbeat nobody is keeping.
         """
         now = datetime.now(UTC)
         session_id = uuid4()
-        bridge_token = secrets.token_urlsafe(32)
         async with self._sessions.begin() as db:
             if conversation_id is None:
                 conversation_id = uuid4()
@@ -354,22 +369,47 @@ class SessionStore:
                     conversation_id=conversation_id,
                     surface=surface.surface_column,
                     room_id=surface.room_id,
-                    status=SessionStatus.PROVISIONING,
-                    bridge_token_fingerprint=self._fingerprint(bridge_token),
+                    status=SessionStatus.IDLE,
+                    bridge_token_fingerprint=secrets.token_bytes(hashlib.sha256().digest_size),
                     bridge_connected_at=None,
                     error=None,
-                    # Granted by the creator, not by an owner: until a runner attaches no replica
-                    # holds this session, and a sandbox that never comes up would otherwise sit in
-                    # `provisioning` — a live status — with no lease to expire and so nothing to
-                    # reclaim it. The owning replica takes over renewing it once the bridge
-                    # connects.
-                    lease_expires_at=now + PROVISION_LEASE,
+                    lease_expires_at=now,
                     created_at=now,
                     updated_at=now,
                 )
             )
-        view = await self.get(operator_id, session_id)
-        return view, bridge_token
+        return await self.get(operator_id, session_id)
+
+    async def allocate(self, session_id: UUID) -> str | None:
+        """Mint this session's rendezvous credential and move it to `provisioning`.
+
+        The bearer comes back for the sandbox that is about to be created, and this transition is
+        what decides who creates it: None means the session is no longer idle — another allocator
+        got there first — and the caller must not make a second claim.
+
+        The credential's life starts here and ends with the claim's (`complete_claim_cleanup`),
+        which is the same lifetime `claim_cleaned_at` already tracks. `claim_cleaned_at` is cleared
+        for that reason: this session is about to have a claim again, so a marker saying its claim
+        is gone would take it out of the cleanup sweep that has to delete the new one.
+
+        The lease is the creator's grant, not an owner's: until a runner attaches nobody holds this
+        session, and a sandbox that never comes up would otherwise sit in `provisioning` — a leased
+        status — with no lease to expire and so nothing to reclaim it. The owning replica takes over
+        renewing it once the bridge connects.
+        """
+        now = datetime.now(UTC)
+        bridge_token = secrets.token_urlsafe(32)
+        async with self._sessions.begin() as db:
+            chat = await db.get(Session, session_id, with_for_update=True)
+            if chat is None or chat.status != SessionStatus.IDLE:
+                return None
+            chat.status = SessionStatus.PROVISIONING
+            chat.bridge_token_fingerprint = self._fingerprint(bridge_token)
+            chat.claim_cleaned_at = None
+            chat.lease_expires_at = now + PROVISION_LEASE
+            chat.updated_at = now
+            await notify(db, SessionEventKind.UPDATE, session_id)
+        return bridge_token
 
     async def get(self, operator_id: UUID, session_id: UUID) -> SessionView:
         async with self._sessions() as db:
@@ -671,6 +711,14 @@ class SessionStore:
     async def enqueue_prompt(
         self, operator_id: UUID, session_id: UUID, prompt_text: str, records: PromptRecords | None = None
     ) -> SessionMessageView:
+        """Accept a prompt against this session, or refuse it naming the state that refused.
+
+        **`idle` is admitted, and that is what creates demand.** A session with no sandbox is the
+        state a room nobody is speaking in sits in, and the prompt is what asks for one: the
+        supervisor allocates on the `PROMPT` notify below (<README.md> § An idle session). Refusing
+        here instead would reject every first message a room sends, and leave that room with
+        nothing that could ever start a sandbox for it.
+        """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
             chat = await db.scalar(
@@ -680,9 +728,9 @@ class SessionStore:
             )
             if chat is None:
                 raise KeyError(session_id)
-            if chat.status != SessionStatus.READY:
+            if chat.status not in _PROMPTABLE_STATUSES:
                 raise PromptRefusedError(PromptRejection.SESSION_NOT_READY)
-            # Admission asks about the turn, not the session's status: gating on `READY` alone
+            # Admission asks about the turn, not the session's status: gating on the status alone
             # would accept a prompt mid-turn, which is mid-turn steering arriving by accident with
             # no fold path wired.
             if await _open_turn(db, session_id) is not None:
@@ -718,6 +766,16 @@ class SessionStore:
             await notify(db, SessionEventKind.PROMPT, session_id)
             await notify(db, SessionEventKind.UPDATE, session_id)
         return user_message_view(message)
+
+    async def has_queued_prompt(self, session_id: UUID) -> bool:
+        """Whether anything is waiting on this session that no turn has claimed.
+
+        The supervisor's demand signal. A room has no gesture meaning "I want a sandbox", so an
+        unclaimed prompt is the honest substitute: it is the one thing that cannot be answered
+        without one (<README.md> § An idle session).
+        """
+        async with self._sessions() as db:
+            return await _queued_prompt(db, session_id) is not None
 
     async def next_prompt(self, session_id: UUID) -> TurnStart | None:
         """Take the queued prompt and open the turn that will answer it, or None if there is none.

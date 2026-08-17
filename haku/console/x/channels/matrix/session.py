@@ -2,7 +2,11 @@
 
 The console's chat machinery is otherwise driven by an operator browser gesture: a `POST` creates a
 session, mints a bridge token and provisions a SandboxClaim. Matrix has no gesture, so something
-has to own *"there is one session and it has a live sandbox"* — this.
+has to own *"there is one session behind this room"* — this.
+
+**And a sandbox only once there is something for it to do.** A room cannot say it wants one, so the
+substitute is a prompt nobody has claimed: an idle room holds a row, and the first message
+provisions (<../../README.md> § An idle session).
 
 A sibling task to the sync loop, under an advisory lock of its own. The lock keeps exactly one
 replica provisioning; being a separate task from `/sync` keeps a slow or stalled claim from wedging
@@ -321,11 +325,16 @@ type Admission = PromptAccepted | PromptRejected
 class MatrixTurns:
     """Ingress: hands the operator's messages to the session behind the live room.
 
-    Refusal is a first-class answer and a terminal one. `enqueue_prompt` accepts a prompt only on a
-    `ready` session with nothing already queued, so a message arriving mid-turn, mid-provision, or
-    between a session dying and its replacement is rejected rather than held: the operator is told
-    so and sends it again. What the caller does with a rejection is acknowledge it, recording the
-    row this hands back in the same transaction (`sync.MatrixSyncStore.advance`).
+    Refusal is a first-class answer and a terminal one. `enqueue_prompt` accepts a prompt only on an
+    `idle` or a `ready` session with nothing already queued, so a message arriving mid-turn,
+    mid-provision, or between a session dying and its replacement is rejected rather than held: the
+    operator is told so and sends it again. What the caller does with a rejection is acknowledge it,
+    recording the row this hands back in the same transaction (`sync.MatrixSyncStore.advance`).
+
+    **An unallocated session takes the batch rather than refusing it**, which is what makes the
+    prompt the room's request for a sandbox: rejected, it would be gone and the room would have
+    asked for nothing; in the durable queue it is what the supervisor allocates for
+    (<../../README.md> § An idle session).
 
     Nothing here is delivery either. A prompt this accepts can still be stranded by a session that
     ends before claiming it — and that is what `re_offer` exists for: the prompt is recorded
@@ -555,7 +564,12 @@ class MatrixSessionSupervisor:
         await self._announce(detail)
 
     async def supervise_once(self) -> None:
-        """Bring the live room's session back to a working state, if it is not already."""
+        """Bring the live room's session back to a working state, if it is not already.
+
+        Two steps, and the second is what a room nobody is speaking in never reaches: a session is
+        created as soon as a room is bound, and it is given a sandbox only once a prompt is waiting
+        that nothing has claimed (<../../README.md> § An idle session).
+        """
         binding = await self._conversations.load(self._config.user_id)
         if binding is None:
             return  # No room yet — nothing to serve, and nowhere to say so.
@@ -566,19 +580,23 @@ class MatrixSessionSupervisor:
         # anything reporting a failure.
         await self._chat_store.expire_stale_leases()
 
-        outcome = await self._chat_store.outcome(binding.session_id) if binding.session_id is not None else None
+        session_id = binding.session_id
+        outcome = await self._chat_store.outcome(session_id) if session_id is not None else None
         status = outcome.status if outcome is not None else None
+        if session_id is not None and status == SessionStatus.IDLE:
+            await self._allocate_on_demand(session_id)
+            return
         if status in OPEN_SESSION_STATUSES:
-            await self._report(str(status), f"session {binding.session_id} is {status}")
+            await self._report(str(status), f"session {session_id} is {status}")
             return
 
-        if binding.session_id is not None:
+        if session_id is not None:
             # With the reason, not just the status: every path that ends a session records a
             # specific sentence in `error`, and the room is where the operator is looking.
             reason = f" — {outcome.error}" if outcome is not None and outcome.error else ""
             await self._report(
                 f"ended:{status}",
-                f"session {binding.session_id} ended ({status or 'gone'}){reason}; starting a new one",
+                f"session {session_id} ended ({status or 'gone'}){reason}; starting a new one",
             )
             # The claim may already be gone — `handle_runner` deletes it on the way out — so
             # this is the idempotent sweep rather than a targeted delete.
@@ -594,9 +612,24 @@ class MatrixSessionSupervisor:
             conversation_id=await self._conversations.conversation_for_room(binding.room_id, operator_id),
         )
         await self._conversations.set_session(self._config.user_id, session.session_id)
+        self._last_announced = SessionStatus.IDLE
+        await self._announce(f"session {session.session_id} is ready to be spoken to · no sandbox until then")
+        logger.info("Matrix: created idle session %s for room %s", session.session_id, binding.room_id)
+
+    async def _allocate_on_demand(self, session_id: UUID) -> None:
+        """Give an idle session a sandbox once there is a prompt waiting for one.
+
+        The unclaimed prompt is Matrix's substitute for the gesture the SPA has: a browser says it
+        wants a session by posting for one, and a room can only say it by being spoken in. Until
+        then the row is the whole session, and a room nobody is using costs no quota.
+        """
+        if not await self._chat_store.has_queued_prompt(session_id):
+            await self._report(str(SessionStatus.IDLE), f"session {session_id} is idle · no sandbox until asked")
+            return
+        await self._chat.allocate(session_id)
         self._last_announced = SessionStatus.PROVISIONING
-        await self._announce(f"provisioning a sandbox · session {session.session_id}")
-        logger.info("Matrix: provisioned session %s for room %s", session.session_id, binding.room_id)
+        await self._announce(f"provisioning a sandbox · session {session_id}")
+        logger.info("Matrix: a queued prompt asked for a sandbox; allocating one for session %s", session_id)
 
     async def _supervise_as_leader(self) -> None:
         """Supervise until cancelled. Only ever entered holding the advisory lock."""
@@ -610,20 +643,35 @@ class MatrixSessionSupervisor:
             await self._wait_for_change()
 
     async def _wait_for_change(self) -> None:
-        """Wait until the session's status may have changed, or the interval elapses.
+        """Wait until there is something to supervise, or the interval elapses.
 
         The chat store notifies on every status transition, so waiting on that channel reports them
-        as they happen rather than up to a full interval late. The interval stays as the backstop
-        for what no transition announces — a room bound for the first time, or a session row
-        disappearing underneath us.
+        as they happen rather than up to a full interval late.
+
+        **`PROMPT` as well as `UPDATE`, because a queued prompt is now a reason to act.** An idle
+        session's row does not change when a batch is admitted against it — a queued prompt is not a
+        turn in flight — so a supervisor waiting on status alone would leave the sandbox unallocated
+        until the interval's backstop fired.
+
+        The interval stays as the backstop for what no notification announces — a room bound for the
+        first time, or a session row disappearing underneath us.
         """
         binding = await self._conversations.load(self._config.user_id)
         if binding is None or binding.session_id is None:
             await asyncio.sleep(SUPERVISE_INTERVAL.total_seconds())
             return
-        await self._notifications.wait(
-            SessionEventKind.UPDATE, binding.session_id, timeout_seconds=SUPERVISE_INTERVAL.total_seconds()
-        )
+        async with (
+            self._notifications.subscribe(SessionEventKind.UPDATE, binding.session_id) as updated,
+            self._notifications.subscribe(SessionEventKind.PROMPT, binding.session_id) as prompted,
+        ):
+            waiters = [asyncio.ensure_future(event.wait()) for event in (updated, prompted)]
+            try:
+                with contextlib.suppress(TimeoutError):
+                    async with asyncio.timeout(SUPERVISE_INTERVAL.total_seconds()):
+                        await asyncio.wait(waiters, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                for waiter in waiters:
+                    waiter.cancel()
 
     async def _run(self) -> None:
         """Contend for leadership, and supervise for as long as we hold it.

@@ -223,6 +223,7 @@ py_library(
         ":session_notifications",
         ":session_runtime",
         ":session_store",
+        ":session_views",
         "//haku/console:config",
         "//haku/console:database_schema",
         "//haku/console:operator_identity_store",

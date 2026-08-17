@@ -22,8 +22,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ChatMessageRole, SessionStatus
-from haku.console.database_schema import MatrixSyncWatermark, SessionMessage
+from haku.console.chat_models import ChatMessageRole
+from haku.console.database_schema import MatrixConversation, MatrixSyncWatermark, SessionMessage
 from haku.console.x.claude_code.frames import ASSISTANT_FRAME_KIND
 from haku.console.x.session_store import SessionStore
 from haku.console.x.testing.waiting import BUDGET_SECONDS, WedgedError, wait_until
@@ -220,19 +220,23 @@ class Deployment:
             await db.execute(update(MatrixSyncWatermark).values(next_batch=position))
 
     async def serving(self, *, after: UUID | None = None) -> UUID:
-        """Wait until the room has a sandbox behind it with the bridge up, and say which session.
+        """Wait until the room has a session bound to it, and say which.
 
         Also the barrier every test needs before its first message: a first `/sync` establishes a
         position rather than replaying backlog, so a message sent before the console has joined the
         room is one it is entitled never to see.
 
+        **It waits for no sandbox, because there is none to wait for.** An idle room holds a row and
+        nothing else, and the first message is what provisions (<../../../README.md> § An idle
+        session) — so every test below pays the cold start rather than skipping past it here.
+
         `after` names a session being replaced. The supervisor mints the replacement only once the
         dead one's lease has lapsed, so without it a test that has just killed a sandbox reads its
-        own victim back and believes the replacement is already serving.
+        own victim back and believes the replacement is already bound.
         """
-        await self._wait_until("a session to be provisioned", lambda: self._provisioned(after))
-        session_id = self._session_ids[-1]
-        await self._wait_until("the bridge to connect", lambda: self._ready(session_id))
+        await self._wait_until("a session to be bound to the room", lambda: self._bound(after))
+        session_id = await self._bound_session()
+        assert session_id is not None
         return session_id
 
     async def wait_until_recorded(self, session_id: UUID, text: str) -> None:
@@ -297,11 +301,13 @@ class Deployment:
         writer.close()
         return True
 
-    async def _provisioned(self, after: UUID | None = None) -> bool:
-        return bool(self._session_ids) and self._session_ids[-1] != after
+    async def _bound_session(self) -> UUID | None:
+        """The session the room points at, which the supervisor writes. One row — one bot user."""
+        async with self._db() as db:
+            return await db.scalar(select(MatrixConversation.session_id))
 
-    async def _ready(self, session_id: UUID) -> bool:
-        return await self._store.status(session_id) == SessionStatus.READY
+    async def _bound(self, after: UUID | None = None) -> bool:
+        return (session_id := await self._bound_session()) is not None and session_id != after
 
     async def _provision_sandboxes(self) -> None:
         """Start a runner for every claim the console writes, and stop one whose claim it deletes."""

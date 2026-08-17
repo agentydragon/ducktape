@@ -17,7 +17,7 @@ import pytest_bazel
 from more_itertools import one
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.chat_models import (
     OPEN_SESSION_STATUSES,
@@ -42,7 +42,7 @@ from haku.console.database_schema import (
     SessionPrompt,
 )
 from haku.console.x.claude_code.testing.wire import assistant, result, text_block, text_delta
-from haku.console.x.conftest import age_lease, lease_of, queued_for_the_room
+from haku.console.x.conftest import age_lease, lease_of, provisioned, queued_for_the_room
 from haku.console.x.conversation_events import (
     FrameRange,
     MessageCompleted,
@@ -66,10 +66,121 @@ from haku.console.x.session_store import (
 ROOM = "!room:example.org"
 
 
+async def test_a_created_session_holds_no_sandbox_and_no_credential_for_one(
+    chat_store, operator_id, migrated_sessions
+) -> None:
+    """`create` writes the row and stops, which is the whole of what an idle room costs.
+
+    Its lease is already spent rather than granted far into the future: nothing holds this session,
+    and `LEASED_SESSION_STATUSES` is what keeps the sweep off it (below).
+    """
+    view = await chat_store.create(operator_id, SpaSession())
+
+    assert view.status == SessionStatus.IDLE
+    async with migrated_sessions() as db:
+        record = await db.get(Session, view.session_id)
+    assert record is not None
+    assert record.lease_holder is None
+    assert record.lease_expires_at <= datetime.now(UTC), "an idle session holds a lease nobody is keeping"
+
+
+async def test_an_idle_session_admits_no_runner_at_all(chat_store, operator_id, migrated_sessions) -> None:
+    """No token was minted for it, so the verifier on the row matches no bearer that exists.
+
+    That is what makes an unallocated session unreachable without a second guard in
+    `authenticate_bridge` saying so — including against the token its predecessor allocation held,
+    since `allocate` overwrites rather than reuses.
+    """
+    view = await chat_store.create(operator_id, SpaSession())
+    async with migrated_sessions() as db:
+        record = await db.get(Session, view.session_id)
+    assert record is not None
+
+    assert await chat_store.authenticate_bridge(view.session_id, "any-bearer") == BridgeAuthentication.REJECTED
+    assert len(record.bridge_token_fingerprint) == len(SessionStore._fingerprint("shaped like a digest"))
+
+
+async def test_allocation_mints_the_credential_and_only_one_caller_wins(chat_store, operator_id) -> None:
+    """The transition is what decides who creates the claim, so a race cannot make two sandboxes."""
+    view = await chat_store.create(operator_id, SpaSession())
+
+    token = await chat_store.allocate(view.session_id)
+
+    assert token is not None
+    assert await chat_store.status(view.session_id) == SessionStatus.PROVISIONING
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert await chat_store.allocate(view.session_id) is None, "a second allocation would be a second sandbox"
+
+
+async def test_allocation_clears_the_marker_that_says_this_session_s_claim_is_gone(
+    chat_store, operator_id, migrated_sessions
+) -> None:
+    """`claim_cleaned_at` is a statement about a claim, and allocation is what gives it a new one.
+
+    A stamped idle row is what a replica on an image that reads `idle` as ended leaves behind for
+    the length of a roll; carrying that forward would take the session out of the cleanup sweep
+    that has to delete the sandbox this allocation is about to create.
+    """
+    view = await chat_store.create(operator_id, SpaSession())
+    await chat_store.complete_claim_cleanup(view.session_id)
+
+    assert await chat_store.allocate(view.session_id) is not None
+
+    async with migrated_sessions() as db:
+        record = await db.get(Session, view.session_id)
+    assert record is not None
+    assert record.claim_cleaned_at is None
+
+
+async def test_the_sweep_leaves_an_idle_session_alone_however_old_its_lease_is(
+    chat_store, operator_id, migrated_sessions
+) -> None:
+    """What the open/leased split exists for: worth keeping is not the same as owing a beat.
+
+    An idle session is created with a lease already in the past, so a sweep reading the open set
+    would fail every one of them `ADOPTION_GRACE` later — a room would lose its session for the
+    crime of nobody having spoken in it.
+    """
+    idle = await chat_store.create(operator_id, SpaSession())
+    leased, _ = await provisioned(chat_store, operator_id, SpaSession())
+    for session in (idle, leased):
+        await age_lease(migrated_sessions, session.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 60)
+
+    assert await chat_store.expire_stale_leases() == 1
+
+    assert await chat_store.status(idle.session_id) == SessionStatus.IDLE
+    assert await chat_store.status(leased.session_id) == SessionStatus.FAILED
+
+
+async def test_a_prompt_is_admitted_by_a_session_with_no_sandbox(chat_store, operator_id) -> None:
+    """Admission on `idle` is what turns a message into the request for a sandbox.
+
+    Refusing would reject the room's first message after quiet, leaving it with nothing that could
+    ever ask for one (<README.md> § An idle session).
+    """
+    view = await chat_store.create(operator_id, SpaSession())
+
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "are you there?")
+
+    assert await chat_store.has_queued_prompt(view.session_id)
+    assert await chat_store.status(view.session_id) == SessionStatus.IDLE, "a queued prompt is not a sandbox"
+
+
+async def test_a_claimed_prompt_is_no_longer_demand(chat_store, operator_id) -> None:
+    """The signal is *unclaimed*: a prompt a turn is already running must not re-ask for a sandbox."""
+    view, _ = await provisioned(chat_store, operator_id, SpaSession())
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "hello")
+    assert await chat_store.has_queued_prompt(view.session_id)
+
+    assert await chat_store.next_prompt(view.session_id) is not None
+
+    assert not await chat_store.has_queued_prompt(view.session_id)
+
+
 async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
     chat_store, operator_id, migrated_sessions
 ) -> None:
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     session_id = view.session_id
 
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
@@ -90,7 +201,7 @@ async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
 async def test_deliberate_close_is_not_reclassified_as_runner_failure(
     chat_store, operator_id, migrated_sessions
 ) -> None:
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
 
     await chat_store.request_close(operator_id, view.session_id)
     await chat_store.fail(view.session_id, "sandbox runner disconnected")
@@ -115,9 +226,9 @@ async def test_the_cleanup_sweep_offers_ended_sessions_until_their_claim_is_reco
 ) -> None:
     """Two facts, two columns: liveness gates the candidate set, `claim_cleaned_at` empties it, so
     an interrupted teardown is retryable and a completed one final."""
-    live, _ = await chat_store.create(operator_id, SpaSession())
-    swept, _ = await chat_store.create(operator_id, SpaSession())
-    cleaned, _ = await chat_store.create(operator_id, SpaSession())
+    live, _ = await provisioned(chat_store, operator_id, SpaSession())
+    swept, _ = await provisioned(chat_store, operator_id, SpaSession())
+    cleaned, _ = await provisioned(chat_store, operator_id, SpaSession())
     for session in (swept, cleaned):
         await chat_store.fail(session.session_id, "runner failed")
 
@@ -132,7 +243,7 @@ async def test_a_cleaned_up_session_admits_nobody_and_says_which_of_the_two_reas
     """The credential survives cleanup, so refusal is the status's doing — which is what tells a
     runner holding the right token to stop (`TERMINAL`) apart from one holding the wrong one
     (`REJECTED`)."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     await chat_store.request_close(operator_id, view.session_id)
     await chat_store.complete_claim_cleanup(view.session_id)
 
@@ -147,7 +258,7 @@ async def test_a_turn_records_the_message_it_finished_rather_than_the_frames_it_
     session serving a room — records that the room's outbox holds it, in the transaction that puts
     it there. Reading that off the `assistant` frames could only answer "one was recorded".
     """
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    view, token = await provisioned(chat_store, operator_id, MatrixSession(room_id=ROOM))
     session_id = view.session_id
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
@@ -166,7 +277,7 @@ async def test_a_turn_records_the_message_it_finished_rather_than_the_frames_it_
 async def test_the_rollout_reads_back_in_wire_order_with_a_keyset_cursor(chat_store, operator_id) -> None:
     """Keyset, not offset: the log is append-only, so new frames landing between pages would
     make an offset skip or repeat a row."""
-    session, _ = await chat_store.create(operator_id, SpaSession())
+    session, _ = await provisioned(chat_store, operator_id, SpaSession())
     for kind in ("user", "assistant", "result"):
         await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, kind, {"type": kind})
 
@@ -180,7 +291,7 @@ async def test_the_rollout_reads_back_in_wire_order_with_a_keyset_cursor(chat_st
 
 
 async def test_the_kinds_filter_skims_without_paging_through_everything(chat_store, operator_id) -> None:
-    session, _ = await chat_store.create(operator_id, SpaSession())
+    session, _ = await provisioned(chat_store, operator_id, SpaSession())
     for kind in ("user", "system", "assistant", "system", "result"):
         await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, kind, {"type": kind})
 
@@ -193,7 +304,7 @@ async def test_a_replayed_frame_is_recorded_once(chat_store, operator_id) -> Non
     """An adopted connection re-sends whatever the previous console may not have acknowledged, and
     the agent's own id is what recognises it. The cursor is an optimisation; this is what makes
     replay safe."""
-    session, _ = await chat_store.create(operator_id, SpaSession())
+    session, _ = await provisioned(chat_store, operator_id, SpaSession())
     frame = assistant(message_id="msg_01abc")
 
     assert (await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "assistant", frame)).fresh
@@ -209,8 +320,8 @@ async def test_the_resume_cursor_is_the_highest_number_a_runner_gave_this_sessio
     both can read. It ignores rows no runner numbered, and need not be the newest row — a
     `setup_output` recorded after them carries no number of its own.
     """
-    session, _ = await chat_store.create(operator_id, SpaSession())
-    other, _ = await chat_store.create(operator_id, SpaSession())
+    session, _ = await provisioned(chat_store, operator_id, SpaSession())
+    other, _ = await provisioned(chat_store, operator_id, SpaSession())
     assert await chat_store.highest_runner_seq(session.session_id) is None
 
     await chat_store.record_frame(
@@ -231,8 +342,8 @@ async def test_the_resume_cursor_is_the_highest_number_a_runner_gave_this_sessio
 async def test_two_sessions_may_hold_the_same_agent_id(chat_store, operator_id) -> None:
     """The index is per session, because a replacement session re-awakened from the room can be
     handed the same message ids by an agent with no idea it is a second session."""
-    mine, _ = await chat_store.create(operator_id, SpaSession())
-    theirs, _ = await chat_store.create(operator_id, SpaSession())
+    mine, _ = await provisioned(chat_store, operator_id, SpaSession())
+    theirs, _ = await provisioned(chat_store, operator_id, SpaSession())
     frame = assistant(message_id="msg_01abc")
 
     assert (await chat_store.record_frame(mine.session_id, FrameDirection.FROM_AGENT, "assistant", frame)).fresh
@@ -242,7 +353,7 @@ async def test_two_sessions_may_hold_the_same_agent_id(chat_store, operator_id) 
 async def test_frames_with_no_identity_are_never_collapsed(chat_store, operator_id) -> None:
     """ "No identity" is not "the same as the last one". Deltas and console-authored rows have
     none, and two of them are two frames."""
-    session, _ = await chat_store.create(operator_id, SpaSession())
+    session, _ = await provisioned(chat_store, operator_id, SpaSession())
     delta = {"type": "stream_event", "event": {"type": "content_block_delta"}}
 
     assert (await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "stream_event", delta)).fresh
@@ -256,7 +367,7 @@ async def test_deltas_are_in_the_log_but_not_in_the_default_view(chat_store, ope
     """A turn streams them in the hundreds and the completed `assistant` frame repeats all of it,
     so "everything" means the frames rather than the typing — and naming the kind is how a reader
     asking how far a cut-off answer got says so."""
-    session, _ = await chat_store.create(operator_id, SpaSession())
+    session, _ = await provisioned(chat_store, operator_id, SpaSession())
     session_id = session.session_id
     await chat_store.record_frame(
         session_id, FrameDirection.FROM_AGENT, "stream_event", {"type": "stream_event", "event": {}}
@@ -271,8 +382,8 @@ async def test_deltas_are_in_the_log_but_not_in_the_default_view(chat_store, ope
 
 
 async def test_one_session_never_reads_another_session_frames(chat_store, operator_id) -> None:
-    mine, _ = await chat_store.create(operator_id, SpaSession())
-    theirs, _ = await chat_store.create(operator_id, SpaSession())
+    mine, _ = await provisioned(chat_store, operator_id, SpaSession())
+    theirs, _ = await provisioned(chat_store, operator_id, SpaSession())
     await chat_store.record_frame(mine.session_id, FrameDirection.FROM_AGENT, "assistant", {"type": "assistant"})
     await chat_store.record_frame(theirs.session_id, FrameDirection.FROM_AGENT, "result", {"type": "result"})
 
@@ -286,7 +397,7 @@ async def test_the_frame_inspector_opens_on_the_end_of_the_log_and_walks_back(ch
     frames are its last ones, so the first page is the tail and the cursor walks towards the start.
     Each page itself stays in wire order.
     """
-    session, _ = await chat_store.create(operator_id, SpaSession())
+    session, _ = await provisioned(chat_store, operator_id, SpaSession())
     for kind in ("system", "user", "assistant", "result"):
         await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, kind, {"type": kind})
 
@@ -305,7 +416,7 @@ async def test_the_frame_inspector_opens_on_the_end_of_the_log_and_walks_back(ch
 
 async def test_the_frame_inspector_leaves_deltas_out_until_they_are_asked_for(chat_store, operator_id) -> None:
     """The same default view the MCP reader gets, for the same reason — one policy, one place."""
-    session, _ = await chat_store.create(operator_id, SpaSession())
+    session, _ = await provisioned(chat_store, operator_id, SpaSession())
     session_id = session.session_id
     await chat_store.record_frame(
         session_id, FrameDirection.FROM_AGENT, "stream_event", {"type": "stream_event", "event": {}}
@@ -324,7 +435,7 @@ async def test_the_frame_inspector_leaves_deltas_out_until_they_are_asked_for(ch
 
 async def test_the_frame_inspector_refuses_a_session_another_operator_owns(chat_store, operator_id) -> None:
     """The MCP reader is deliberately unscoped; a browser surface must never be."""
-    session, _ = await chat_store.create(operator_id, SpaSession())
+    session, _ = await provisioned(chat_store, operator_id, SpaSession())
     await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "result", {"type": "result"})
 
     with pytest.raises(KeyError):
@@ -334,7 +445,7 @@ async def test_the_frame_inspector_refuses_a_session_another_operator_owns(chat_
 async def test_a_frame_reaches_the_inspector_with_its_payload_whole(chat_store, operator_id) -> None:
     """No clipping on this path: the MCP reader clips for context budget, but here the wire *is* the
     answer."""
-    session, _ = await chat_store.create(operator_id, SpaSession())
+    session, _ = await provisioned(chat_store, operator_id, SpaSession())
     payload = {"type": "user", "message": {"content": [{"type": "tool_result", "content": "x" * 20_000}]}}
     await chat_store.record_frame(session.session_id, FrameDirection.TO_AGENT, "user", payload)
 
@@ -365,8 +476,8 @@ async def test_sessions_come_back_newest_first_with_the_channels_holding_their_t
 ) -> None:
     """The attachments, not a surface enum: a session says which channels hold a copy of the
     conversation it runs, which is the shape that survives a second one attaching."""
-    await chat_store.create(operator_id, SpaSession())
-    matrix, _ = await chat_store.create(operator_id, MatrixSession(room_id="!room:example.org"))
+    await provisioned(chat_store, operator_id, SpaSession())
+    matrix, _ = await provisioned(chat_store, operator_id, MatrixSession(room_id="!room:example.org"))
     await _attach(migrated_sessions, matrix.session_id, "!room:example.org")
 
     sessions = await chat_store.list_sessions(cursor=None, limit=10)
@@ -381,12 +492,12 @@ async def test_a_session_created_between_two_pages_cannot_shift_what_the_second_
 ) -> None:
     """This order grows at the top and an offset counts from there, so a session created mid-walk
     would push the first page's last row into the second page again."""
-    older, _ = await chat_store.create(operator_id, SpaSession())
-    newer, _ = await chat_store.create(operator_id, SpaSession())
+    older, _ = await provisioned(chat_store, operator_id, SpaSession())
+    newer, _ = await provisioned(chat_store, operator_id, SpaSession())
 
     # Two rows for a page of one: the extra row is the one the tool's cursor names.
     first, resume = await chat_store.list_sessions(cursor=None, limit=2)
-    await chat_store.create(operator_id, SpaSession())
+    await provisioned(chat_store, operator_id, SpaSession())
     second = await chat_store.list_sessions(cursor=SessionCursor.of(resume), limit=1)
 
     assert first.session_id == newer.session_id
@@ -398,8 +509,8 @@ async def test_two_sessions_created_in_one_instant_are_paged_exactly_once_each(
 ) -> None:
     """`created_at` ties, so it does not order the corpus on its own — a cursor naming only the
     timestamp would either step over one of the pair or hand it out on both pages."""
-    first, _ = await chat_store.create(operator_id, SpaSession())
-    second, _ = await chat_store.create(operator_id, SpaSession())
+    first, _ = await provisioned(chat_store, operator_id, SpaSession())
+    second, _ = await provisioned(chat_store, operator_id, SpaSession())
     async with migrated_sessions.begin() as db:
         await db.execute(
             update(Session)
@@ -418,7 +529,7 @@ async def test_two_sessions_created_in_one_instant_are_paged_exactly_once_each(
 async def test_exchanges_page_by_their_own_keyset(chat_store, operator_id) -> None:
     """`(started_at, turn_id)`, because two exchanges of one session can share a start instant and
     a cursor naming only the timestamp would step over one of a tied pair."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     for index in range(3):
         await chat_store.enqueue_prompt(operator_id, view.session_id, f"prompt {index}")
@@ -438,7 +549,7 @@ async def test_a_turn_ends_at_the_frame_it_names_rather_than_at_the_head_of_the_
     """The CLI emits a `command_lifecycle` frame just after the `result` one and the recorder writes
     it while the turn is still being closed, so a bound taken from the log swallows a frame the turn
     did not produce."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
     turn = await chat_store.next_prompt(view.session_id)
@@ -458,7 +569,7 @@ async def test_a_turn_that_ended_on_no_frame_is_bounded_by_the_ones_it_recorded(
     """A failure has no ending frame to name, and the session's log is not a bound either: what
     came before the turn opened belongs to no turn of its own, and reporting it would hand a reader
     a range that ends before it starts."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, "system", {"type": "system"})
     await chat_store.enqueue_prompt(operator_id, view.session_id, "first")
@@ -484,7 +595,7 @@ async def test_a_turn_that_ended_on_no_frame_is_bounded_by_the_ones_it_recorded(
 
 async def test_the_transcript_reads_the_conversation_rather_than_the_protocol(chat_store, operator_id) -> None:
     """What a session meant, with a way back to the frames it was read off."""
-    session, _ = await chat_store.create(operator_id, SpaSession())
+    session, _ = await provisioned(chat_store, operator_id, SpaSession())
     await chat_store.record_frame(
         session.session_id, FrameDirection.FROM_AGENT, "assistant", assistant(text_block("hi"), message_id="msg_1")
     )
@@ -506,7 +617,7 @@ async def test_the_transcript_reads_the_conversation_rather_than_the_protocol(ch
 async def test_a_transcript_page_holds_what_the_whole_session_holds_at_that_position(chat_store, operator_id) -> None:
     """The fold runs from the session's first frame however far in the cursor is, so a page
     boundary cannot close a message the whole session does not end there."""
-    session, _ = await chat_store.create(operator_id, SpaSession())
+    session, _ = await provisioned(chat_store, operator_id, SpaSession())
     for index in range(3):
         await chat_store.record_frame(
             session.session_id,
@@ -528,7 +639,7 @@ async def test_deltas_are_not_on_the_transcript_at_all(chat_store, operator_id) 
     """They are recorded, and `read_rollout` still serves them by name — but the prose they carry
     arrives again whole in the message that follows, so a reader of a finished conversation would
     get it twice."""
-    session, _ = await chat_store.create(operator_id, SpaSession())
+    session, _ = await provisioned(chat_store, operator_id, SpaSession())
     await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "stream_event", text_delta("h"))
     await chat_store.record_frame(
         session.session_id, FrameDirection.FROM_AGENT, "assistant", assistant(text_block("hi"), message_id="msg_1")
@@ -547,8 +658,8 @@ async def test_operator_conversation_read_surface_keeps_inventory_and_transcript
     by the conversation and carry its attachments, so a list row says which channels hold this
     thread rather than which surface a session was created for.
     """
-    await chat_store.create(operator_id, SpaSession())
-    matrix, matrix_token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    await provisioned(chat_store, operator_id, SpaSession())
+    matrix, matrix_token = await provisioned(chat_store, operator_id, MatrixSession(room_id=ROOM))
     await _attach(migrated_sessions, matrix.session_id, ROOM)
     assert await chat_store.authenticate_bridge(matrix.session_id, matrix_token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, matrix.session_id, "What is happening?")
@@ -640,7 +751,7 @@ async def test_the_last_page_of_conversations_offers_no_cursor(chat_store, opera
 async def test_a_second_prompt_is_refused_while_a_turn_is_open(chat_store, operator_id) -> None:
     """Admission asks the turn rather than the session's status, so a mid-turn prompt cannot become
     fold-into-turn with no fold path wired."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "first")
     turn = await chat_store.next_prompt(view.session_id)
@@ -660,7 +771,7 @@ async def test_a_prompt_is_taken_off_the_queue_rather_than_found_by_status(
     """The queue row is what says a prompt is waiting, and claiming it is what says it no longer is
     — the transcript row's status cannot mean that, since `COMPLETE` on an assistant row means the
     answer finished."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
 
@@ -681,7 +792,7 @@ async def test_a_prompt_is_taken_off_the_queue_rather_than_found_by_status(
 async def test_one_prompt_in_flight_is_a_schema_property(chat_store, migrated_sessions, operator_id) -> None:
     """The index and not a scan-plus-rule: two replicas racing on one session would otherwise each
     conclude they may accept."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "first")
 
@@ -712,7 +823,7 @@ async def test_one_prompt_in_flight_is_a_schema_property(chat_store, migrated_se
 async def test_a_pending_row_with_no_queue_row_is_not_a_prompt(chat_store, migrated_sessions, operator_id) -> None:
     """The queue is the only admission record. A `pending` transcript row on its own is the
     residue of a session that was already stuck, not a prompt waiting to run."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     async with migrated_sessions.begin() as db:
         db.add(
@@ -739,7 +850,7 @@ async def test_a_pending_row_with_no_queue_row_is_not_a_prompt(chat_store, migra
 async def test_the_view_says_responding_for_as_long_as_the_turn_is_open(chat_store, operator_id) -> None:
     """`status` is the SPA's contract, and the view derives it from the open turn rather than from
     the column."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "work")
     assert (await chat_store.get(operator_id, view.session_id)).status == SessionStatus.READY, (
@@ -762,7 +873,7 @@ async def test_a_session_that_ended_does_not_report_a_turn_it_left_open(
 ) -> None:
     """A replica losing its pod mid-turn closes nothing, so the open row is exactly the record of
     an abandoned exchange — and must not make a failed session read as still working."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "work")
     assert await chat_store.next_prompt(view.session_id) is not None
@@ -782,7 +893,7 @@ async def test_abort_is_refused_until_a_turn_is_actually_running(chat_store, ope
     event set until the next turn, killing that one on arrival — so the abort names the open turn,
     which does not exist until the prompt is handed to the model.
     """
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     # The bridge handshake is what takes a session from provisioning to ready, and only a
     # ready session accepts a prompt.
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -808,7 +919,7 @@ async def test_abort_reaches_the_replica_running_the_turn(
     is balanced across all of them. Two stores over two engines is what reproduces that; a single
     store would pass on an in-process path.
     """
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "work")
     assert await chat_store.next_prompt(view.session_id) is not None, "the turn the abort names"
@@ -827,8 +938,8 @@ async def test_abort_reaches_the_replica_running_the_turn(
 async def test_a_session_records_the_surface_it_was_created_for(chat_store, migrated_sessions, operator_id) -> None:
     """Which surface a conversation belonged to has to outlive the conversation: `matrix_conversation`
     holds one binding, which moves the moment the supervisor replaces a session."""
-    spa, _ = await chat_store.create(operator_id, SpaSession())
-    matrix, _ = await chat_store.create(operator_id, MatrixSession(room_id="!room:allegedly.works"))
+    spa, _ = await provisioned(chat_store, operator_id, SpaSession())
+    matrix, _ = await provisioned(chat_store, operator_id, MatrixSession(room_id="!room:allegedly.works"))
 
     async with migrated_sessions() as db:
         assert (await db.get(Session, spa.session_id)).surface == ChatSurface.SPA
@@ -842,15 +953,15 @@ async def test_a_session_opens_its_own_conversation_unless_it_is_given_one(
 ) -> None:
     """The identity a channel's attachment hangs off. A caller with a thread to continue names it,
     and a caller with none — every session the browser starts — gets one of its own."""
-    first, _ = await chat_store.create(operator_id, SpaSession())
-    second, _ = await chat_store.create(operator_id, SpaSession())
+    first = await chat_store.create(operator_id, SpaSession())
+    second = await chat_store.create(operator_id, SpaSession())
 
     async with migrated_sessions() as db:
         opened = (await db.get(Session, first.session_id)).conversation_id
         assert opened != (await db.get(Session, second.session_id)).conversation_id
         assert (await db.get(Conversation, opened)).operator_id == operator_id
 
-    continued, _ = await chat_store.create(operator_id, SpaSession(), conversation_id=opened)
+    continued = await chat_store.create(operator_id, SpaSession(), conversation_id=opened)
 
     async with migrated_sessions() as db:
         assert (await db.get(Session, continued.session_id)).conversation_id == opened
@@ -899,7 +1010,7 @@ async def test_a_replica_taking_a_session_over_records_who_it_took_it_from(
 ) -> None:
     """The fact the frame log cannot hold: a lease changing hands crosses no wire, and it happens on
     every roll."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     with patch("haku.console.x.session_store.REPLICA", "haku-console-b"):
         assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await age_lease(migrated_sessions, view.session_id, seconds_ago=1)
@@ -920,7 +1031,7 @@ async def test_the_first_runner_to_attach_is_not_a_takeover_and_neither_is_its_r
     """A session being served for the first time changed no hands, and a socket dropping and
     redialling to the same replica changes none either. Recording those would make every session's
     stream open with an ownership event that says nothing happened."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
 
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -935,7 +1046,7 @@ async def test_a_session_that_died_before_a_runner_ever_attached_says_so_in_a_ro
     parsed back out of the operator-facing prose, because the sweep decides it from two columns the
     failure then overwrites.
     """
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view, _ = await provisioned(chat_store, operator_id, SpaSession())
     await age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 
     assert await chat_store.expire_stale_leases() == 1
@@ -948,7 +1059,7 @@ async def test_a_session_that_died_before_a_runner_ever_attached_says_so_in_a_ro
 
 async def test_a_lease_that_lapsed_names_the_replica_that_held_it(chat_store, migrated_sessions, operator_id) -> None:
     """A different reason and a different answer to "who was serving this", from the same sweep."""
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view, _ = await provisioned(chat_store, operator_id, SpaSession())
     await chat_store.renew_lease(view.session_id)
     await age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 
@@ -965,7 +1076,7 @@ async def accepted_prompt(chat_store: SessionStore, operator_id: UUID) -> tuple[
     Room-backed because the tests using it are about what a channel reads back — but a room is a
     `room_id` on the session row here, not a homeserver.
     """
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    view, token = await provisioned(chat_store, operator_id, MatrixSession(room_id=ROOM))
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     prompt = await chat_store.enqueue_prompt(operator_id, view.session_id, "what were we doing")
     return view.session_id, prompt.message_id
@@ -976,7 +1087,7 @@ async def test_an_accepted_prompt_is_a_row_in_the_stream_as_well_as_in_the_trans
 ) -> None:
     """The operator's own question, addressed by `event_seq` like the agent's answer is — without
     it a reader following the stream sees answers to questions that are not in it."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
 
     prompt = await chat_store.enqueue_prompt(operator_id, view.session_id, "list the files")
@@ -1029,7 +1140,7 @@ async def test_a_turn_that_ended_any_other_way_leaves_no_abort_row(
 
 async def test_a_refused_prompt_is_not_in_the_stream(chat_store, migrated_sessions, operator_id) -> None:
     """The row and the event commit together, so what is not accepted is not recorded."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "first")
 
@@ -1048,7 +1159,7 @@ async def test_a_live_session_whose_holder_stopped_renewing_is_failed(
     corrects nothing and every other observer reads the status it left as healthy, so the room is
     never answered and never told why; the expired lease is what makes it reclaimable by anyone.
     """
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view, _ = await provisioned(chat_store, operator_id, SpaSession())
     await chat_store.renew_lease(view.session_id)
     await age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 
@@ -1062,7 +1173,7 @@ async def test_a_session_is_adoptable_before_it_is_dead(chat_store, migrated_ses
     moment the lease lapses beats the runner's redial every time — killing the session while its
     sandbox sits there retrying. An expired lease has to mean unowned for long enough to be
     taken."""
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view, _ = await provisioned(chat_store, operator_id, SpaSession())
     await chat_store.renew_lease(view.session_id)
     await age_lease(migrated_sessions, view.session_id, seconds_ago=1)
 
@@ -1074,21 +1185,12 @@ async def test_a_session_is_adoptable_before_it_is_dead(chat_store, migrated_ses
     assert await chat_store.expire_stale_leases() == 1, "and dead once nobody took it"
 
 
-async def _set_idle(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> None:
-    """Put the session in the status no production path writes yet (`SessionStatus.IDLE`)."""
-    async with sessions.begin() as db:
-        chat = await db.get(Session, session_id)
-        assert chat is not None
-        chat.status = SessionStatus.IDLE
-
-
 async def test_an_idle_session_holds_no_lease_to_lose(chat_store, migrated_sessions, operator_id) -> None:
     """A session holding no sandbox has no holder, so its lapsed lease is evidence of nothing. The
     sweep and the renewal key on the statuses something is actually holding, not on every status
     worth keeping, or this row would be reaped after `ADOPTION_GRACE` for a holder it never had.
     """
-    view, _ = await chat_store.create(operator_id, SpaSession())
-    await _set_idle(migrated_sessions, view.session_id)
+    view = await chat_store.create(operator_id, SpaSession())
     await age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 
     assert await chat_store.expire_stale_leases() == 0
@@ -1101,20 +1203,18 @@ async def test_an_idle_session_holds_no_lease_to_lose(chat_store, migrated_sessi
     assert expires_at < datetime.now(UTC), "so nothing renews its lease either"
 
 
-async def test_an_idle_session_is_kept_rather_than_cleaned_up(chat_store, migrated_sessions, operator_id) -> None:
+async def test_an_idle_session_is_kept_rather_than_cleaned_up(chat_store, operator_id) -> None:
     """Holding no sandbox is not an ending: the session is still the room's, so the claim sweep
-    leaves it alone and a runner dialling in is not told it is terminal."""
-    view, token = await chat_store.create(operator_id, SpaSession())
-    await _set_idle(migrated_sessions, view.session_id)
+    leaves it alone rather than tidying up after a sandbox it never had."""
+    view = await chat_store.create(operator_id, SpaSession())
 
     assert view.session_id not in await chat_store.claim_cleanup_candidates()
-    assert await chat_store.authenticate_bridge(view.session_id, token) is not BridgeAuthentication.TERMINAL
 
 
 async def test_shutdown_hands_back_every_lease_this_replica_holds(chat_store, migrated_sessions, operator_id) -> None:
     """The graceful-shutdown path: a rolling replica releases all its live sessions in one act, so
     each is adoptable at once instead of waiting out the sweep's grace. Not failed — handed back."""
-    held = [await chat_store.create(operator_id, SpaSession()) for _ in range(2)]
+    held = [await provisioned(chat_store, operator_id, SpaSession()) for _ in range(2)]
     for view, token in held:
         assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
 
@@ -1130,7 +1230,7 @@ async def test_shutdown_hands_back_every_lease_this_replica_holds(chat_store, mi
 
 async def test_shutdown_leaves_another_replicas_lease_alone(chat_store, migrated_sessions, operator_id) -> None:
     """One replica going down must not hand back a session another replica is still serving."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     with patch("haku.console.x.session_store.REPLICA", "haku-console-b"):
         assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
 
@@ -1141,7 +1241,7 @@ async def test_shutdown_leaves_another_replicas_lease_alone(chat_store, migrated
 
 async def test_shutdown_does_not_touch_an_ended_session(chat_store, migrated_sessions, operator_id) -> None:
     """A session that already ended is not this replica's to hand back, even if it once held it."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.fail(view.session_id, "something went wrong")
 
@@ -1152,7 +1252,7 @@ async def test_shutdown_does_not_touch_an_ended_session(chat_store, migrated_ses
 async def test_an_unheld_session_says_no_replica_ever_attached(chat_store, migrated_sessions, operator_id) -> None:
     """The creator's provisioning grant has no holder, so a sandbox that never came up must not
     blame a replica for going away."""
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view, _ = await provisioned(chat_store, operator_id, SpaSession())
     await age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 
     assert await chat_store.expire_stale_leases() == 1
@@ -1162,7 +1262,7 @@ async def test_an_unheld_session_says_no_replica_ever_attached(chat_store, migra
 async def test_a_failed_session_names_the_replica_that_held_it(chat_store, migrated_sessions, operator_id) -> None:
     """The reason to record a holder: without it a room says a session died and nothing says which
     process to go read."""
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view, _ = await provisioned(chat_store, operator_id, SpaSession())
     await chat_store.renew_lease(view.session_id)
     await age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 
@@ -1173,7 +1273,7 @@ async def test_a_failed_session_names_the_replica_that_held_it(chat_store, migra
 async def test_renewing_is_what_claims_the_session(chat_store, migrated_sessions, operator_id) -> None:
     """A session goes from budgeted to held the first time its replica renews, with nothing else
     sequencing the handover."""
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view, _ = await provisioned(chat_store, operator_id, SpaSession())
     async with migrated_sessions() as db:
         assert (await db.get(Session, view.session_id)).lease_holder is None
 
@@ -1187,7 +1287,7 @@ async def test_a_session_whose_holder_is_still_renewing_is_left_alone(
     chat_store, migrated_sessions, operator_id
 ) -> None:
     """A busy replica must not have its session reclaimed out from under it."""
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view, _ = await provisioned(chat_store, operator_id, SpaSession())
     await chat_store.renew_lease(view.session_id)
 
     assert await chat_store.expire_stale_leases() == 0
@@ -1196,7 +1296,7 @@ async def test_a_session_whose_holder_is_still_renewing_is_left_alone(
 
 async def test_an_ended_session_is_not_reclassified_by_the_sweep(chat_store, migrated_sessions, operator_id) -> None:
     """Only a *live* status is a lie worth correcting; a terminal one is already the truth."""
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view, _ = await provisioned(chat_store, operator_id, SpaSession())
     await chat_store.fail(view.session_id, "something else went wrong first")
     await age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 
@@ -1208,7 +1308,7 @@ async def test_a_frames_events_land_as_rows_with_the_cursor_that_says_they_did(
     chat_store, migrated_sessions, operator_id
 ) -> None:
     """The projection's own output, stored in the transaction that moves the cursor."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     session_id = view.session_id
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, session_id, "list the files")
@@ -1281,7 +1381,7 @@ async def test_an_event_row_cannot_be_written_without_a_provenance_union(
     `ConversationEventKind` is what folding a frame produced and cannot claim the console authored
     it.
     """
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "list the files")
     started = await chat_store.next_prompt(view.session_id)

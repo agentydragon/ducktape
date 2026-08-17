@@ -32,7 +32,7 @@ from haku.console.x.channels.matrix.session import (
     PromptRejected,
     RoomTranscript,
 )
-from haku.console.x.conftest import runtime_config
+from haku.console.x.conftest import provisioned, runtime_config
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, MatrixSession, SessionStore, SpaSession
@@ -43,6 +43,32 @@ async def bound_session(conversations: MatrixConversationStore) -> UUID | None:
     conversation = await conversations.load(MATRIX_USER)
     assert conversation is not None
     return conversation.session_id
+
+
+async def supervised_session(supervisor: MatrixSessionSupervisor, conversations: MatrixConversationStore) -> UUID:
+    """One supervision pass, and the session it left bound to the room."""
+    await supervisor.supervise_once()
+    session_id = await bound_session(conversations)
+    assert session_id is not None
+    return session_id
+
+
+async def asked_for_a_sandbox(
+    supervisor: MatrixSessionSupervisor,
+    conversations: MatrixConversationStore,
+    chat_store: SessionStore,
+    operator_id: UUID,
+) -> UUID:
+    """A room whose session has a sandbox, acquired the only way a room can ask for one.
+
+    Two passes with a prompt between them, because that is the whole mechanism: the supervisor
+    creates an idle session, the message is admitted against it, and the next pass reads the
+    unclaimed prompt as the demand a room has no other gesture for.
+    """
+    session_id = await supervised_session(supervisor, conversations)
+    await chat_store.enqueue_prompt(operator_id, session_id, "[$0] are you there?")
+    await supervisor.supervise_once()
+    return session_id
 
 
 @pytest.fixture
@@ -85,40 +111,82 @@ async def test_does_nothing_before_a_room_is_bound(supervisor, recording_claims,
     assert (recording_claims.created, announced) == ([], [])
 
 
-async def test_provisions_a_session_for_a_freshly_bound_room(
+async def test_a_freshly_bound_room_gets_a_session_and_no_sandbox(
     supervisor, conversations, chat_store, recording_claims, announced
 ) -> None:
+    """The standing cost this removes: a room nobody has spoken in used to hold a pod for good."""
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
 
+    session_id = await supervised_session(supervisor, conversations)
+
+    assert await chat_store.status(session_id) == SessionStatus.IDLE
+    assert recording_claims.created == [], "a room nobody has spoken in paid for a sandbox"
+    assert "no sandbox" in announced[0]
+
+
+async def test_the_first_message_provisions_a_sandbox(
+    supervisor, conversations, chat_store, recording_claims, operator_id, announced
+) -> None:
+    """Stage 6's acceptance criterion, in one test: an idle room holds none, and a message buys one.
+
+    Admission on `idle` is what makes it possible for the batch to be in the durable queue rather
+    than left on the homeserver, and an unclaimed prompt there is the only demand signal a room
+    has (<../../README.md> § An idle session).
+    """
+    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
+    session_id = await supervised_session(supervisor, conversations)
+    assert recording_claims.created == []
+
+    await chat_store.enqueue_prompt(operator_id, session_id, "[$1] are you there?")
     await supervisor.supervise_once()
 
-    [session_id] = recording_claims.created
-    assert await bound_session(conversations) == session_id
+    assert recording_claims.created == [session_id], "the message did not buy the room a sandbox"
     assert await chat_store.status(session_id) == SessionStatus.PROVISIONING
-    assert "provisioning a sandbox" in announced[0]
+    assert any("provisioning a sandbox" in line for line in announced)
 
 
-async def test_leaves_a_live_session_alone(supervisor, conversations, recording_claims) -> None:
+async def test_leaves_a_live_session_alone(
+    supervisor, conversations, chat_store, recording_claims, operator_id
+) -> None:
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-    await supervisor.supervise_once()
-    [live] = recording_claims.created
+    live = await asked_for_a_sandbox(supervisor, conversations, chat_store, operator_id)
 
     await supervisor.supervise_once()
 
     assert recording_claims.created == [live], "a live session was replaced"
+    assert await bound_session(conversations) == live
 
 
-async def test_replaces_a_failed_session(supervisor, conversations, chat_store, recording_claims, announced) -> None:
+async def test_an_idle_session_is_not_replaced_either(supervisor, conversations, chat_store, recording_claims) -> None:
+    """Worth keeping and holding a lease are different, and only the second is false here.
+
+    Reading `idle` as ended would replace the room's session on every poll — a row churned ten
+    times a minute, and each replacement announcing itself.
+    """
+    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
+    idle = await supervised_session(supervisor, conversations)
+
+    await supervisor.supervise_once()
+    await supervisor.supervise_once()
+
+    assert await bound_session(conversations) == idle
+    assert await chat_store.status(idle) == SessionStatus.IDLE
+    assert recording_claims.created == []
+
+
+async def test_replaces_a_failed_session(
+    supervisor, conversations, chat_store, recording_claims, operator_id, announced
+) -> None:
     """A dead session over Matrix is invisible — the room would just stop answering."""
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-    await supervisor.supervise_once()
-    [dead] = recording_claims.created
+    dead = await asked_for_a_sandbox(supervisor, conversations, chat_store, operator_id)
     await chat_store.fail(dead, "the sandbox went away")
 
     await supervisor.supervise_once()
 
-    assert len(recording_claims.created) == 2
-    assert await bound_session(conversations) not in (None, dead)
+    replacement = await bound_session(conversations)
+    assert replacement not in (None, dead)
+    assert await chat_store.status(replacement) == SessionStatus.IDLE, "the replacement waits to be spoken to"
     assert dead in recording_claims.deleted, "the dead session's claim must be swept before a new one is made"
     assert any("ended" in line for line in announced)
     # The status alone says a session died; only the reason says which failure it was, and the
@@ -127,7 +195,7 @@ async def test_replaces_a_failed_session(supervisor, conversations, chat_store, 
 
 
 async def test_the_pointer_moves_while_each_session_keeps_the_room_it_served(
-    supervisor, conversations, chat_store, recording_claims, migrated_sessions
+    supervisor, conversations, chat_store, migrated_sessions
 ) -> None:
     """The binding lives in two places and they answer different questions.
 
@@ -138,8 +206,7 @@ async def test_the_pointer_moves_while_each_session_keeps_the_room_it_served(
     checked.
     """
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-    await supervisor.supervise_once()
-    [first] = recording_claims.created
+    first = await supervised_session(supervisor, conversations)
     await chat_store.fail(first, "the sandbox went away")
 
     await supervisor.supervise_once()
@@ -174,7 +241,7 @@ async def test_a_replacement_session_joins_the_room_s_conversation_and_the_attac
 
 
 async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(
-    supervisor, conversations, chat_store, recording_claims, migrated_sessions, announced
+    supervisor, conversations, chat_store, operator_id, migrated_sessions, announced
 ) -> None:
     """A replica that went away without recording anything leaves a live status nothing is working
     on, and supervision has to reclaim it rather than believe it — but only once the lease has been
@@ -182,8 +249,7 @@ async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(
     roll survivable rather than fatal.
     """
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-    await supervisor.supervise_once()
-    [orphan] = recording_claims.created
+    orphan = await asked_for_a_sandbox(supervisor, conversations, chat_store, operator_id)
     async with migrated_sessions.begin() as db:
         chat = await db.get(Session, orphan)
         assert chat is not None
@@ -191,23 +257,21 @@ async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(
 
     await supervisor.supervise_once()
 
-    assert len(recording_claims.created) == 2, "the orphaned session was believed rather than replaced"
-    assert await bound_session(conversations) not in (None, orphan)
+    assert await bound_session(conversations) not in (None, orphan), (
+        "the orphaned session was believed rather than replaced"
+    )
     assert any("ended" in line for line in announced)
 
 
-async def test_replaces_a_session_whose_row_is_gone(
-    supervisor, conversations, recording_claims, migrated_sessions
-) -> None:
-    """A deleted session leaves the room bound but unserved, and the next pass re-provisions.
+async def test_replaces_a_session_whose_row_is_gone(supervisor, conversations, migrated_sessions) -> None:
+    """A deleted session leaves the room bound but unserved, and the next pass re-creates one.
 
     `matrix_conversation.session_id` is a foreign key, so a bound session always references a real
     row; what the schema allows is that row being deleted underneath the binding, which
     `ondelete="SET NULL"` turns into an unbound-session state rather than a dangling reference.
     """
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-    await supervisor.supervise_once()
-    [vanished] = recording_claims.created
+    vanished = await supervised_session(supervisor, conversations)
 
     async with migrated_sessions.begin() as db:
         await db.execute(delete(Session).where(Session.session_id == vanished))
@@ -215,17 +279,15 @@ async def test_replaces_a_session_whose_row_is_gone(
 
     await supervisor.supervise_once()
 
-    assert len(recording_claims.created) == 2
     assert await bound_session(conversations) not in (None, vanished)
 
 
 async def test_does_not_repeat_an_unchanged_status(
-    supervisor, conversations, chat_store, recording_claims, announced
+    supervisor, conversations, chat_store, recording_claims, operator_id, announced
 ) -> None:
     """Every transition is reported, but a poll that changes nothing must not spam the room."""
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-    await supervisor.supervise_once()
-    [session_id] = recording_claims.created
+    session_id = await asked_for_a_sandbox(supervisor, conversations, chat_store, operator_id)
     # Provisioning already announced itself; the runner connecting is the next transition.
     assert (
         await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
@@ -243,7 +305,7 @@ async def test_does_not_repeat_an_unchanged_status(
 async def bound(conversations: MatrixConversationStore, chat_store: SessionStore, operator_id: UUID) -> UUID:
     """A room bound to a real session row — `session_id` is a foreign key, not a free UUID."""
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view = await chat_store.create(operator_id, SpaSession())
     await conversations.set_session(MATRIX_USER, view.session_id)
     return view.session_id
 
@@ -382,8 +444,8 @@ def transcript(migrated_sessions) -> RoomTranscript:
 
 
 async def serving_session(chat_store: SessionStore, operator_id: UUID, room_id: str = MATRIX_ROOM) -> UUID:
-    """A Matrix session ready to take prompts, made the way the supervisor and a runner make one."""
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=room_id))
+    """A Matrix session with its sandbox up, made the way an allocation and a runner make one."""
+    view, token = await provisioned(chat_store, operator_id, MatrixSession(room_id=room_id))
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     return view.session_id
 
@@ -472,8 +534,8 @@ async def test_a_session_s_own_rows_are_not_its_history(
 ) -> None:
     """A prompt this session has already been handed is not also its history; twice is not context.
 
-    The window is real: a session goes `ready` when its runner authenticates, and its system
-    prompt is rendered a few statements later — so a batch can be accepted in between.
+    Not a narrow window any more but the ordinary case: the session's sandbox is allocated
+    *because* the batch was accepted against it, so the row always predates the prompt this renders.
     """
     doomed = await serving_session(chat_store, operator_id)
     await exchange(chat_store, operator_id, doomed, "[$a] hi", "hello")
@@ -556,6 +618,24 @@ def operator_message(body: str, *, event_id: str, at: int) -> InboundMessage:
 
 def _unmappable(msgtype: str) -> UnmappableEvent:
     return UnmappableEvent(room_id=MATRIX_ROOM, event_id=f"${msgtype}", sender=MATRIX_OPERATOR, msgtype=msgtype)
+
+
+async def test_a_batch_offered_to_a_session_with_no_sandbox_is_taken(
+    turns: MatrixTurns, conversations: MatrixConversationStore, chat_store: SessionStore, operator_id: UUID
+) -> None:
+    """Refusing here would leave the room unable to ask for the sandbox it needs.
+
+    Rejected, the batch is gone and the console has heard nothing about it; in the durable queue it
+    is the demand the supervisor allocates for, which is Matrix's substitute for the SPA's "I want
+    a session" gesture (<../../README.md> § An idle session).
+    """
+    view = await chat_store.create(operator_id, MatrixSession(room_id=MATRIX_ROOM))
+    await serving_room(conversations, view.session_id)
+
+    admitted = await turns.offer([operator_message("are you there?", event_id="$1", at=1)])
+
+    assert isinstance(admitted, PromptAccepted), "the batch was rejected, leaving the room nothing to ask with"
+    assert await chat_store.has_queued_prompt(view.session_id)
 
 
 async def test_a_batch_a_ready_session_takes_becomes_its_prompt(

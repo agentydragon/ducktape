@@ -38,6 +38,7 @@ from haku.console.x.channels.matrix.outbox import PendingReply
 from haku.console.x.channels.matrix.pacer import RoomPacer
 from haku.console.x.channels.matrix.session import Admission, PromptAccepted, PromptRejected, RoomTranscript
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
+from haku.console.x.conftest import provisioned
 from haku.console.x.delivery_log import DeliveryLog
 from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
 from haku.console.x.session_store import BridgeAuthentication, MatrixSession, SessionStore, SpaSession
@@ -140,7 +141,7 @@ def sync_store(migrated_sessions) -> MatrixSyncStore:
 @pytest.fixture
 async def turns(chat_store: SessionStore, operator_id: UUID) -> _FakeTurns:
     """Ingress over a real session, since what it hands the loop are rows keyed to one."""
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view = await chat_store.create(operator_id, SpaSession())
     return _FakeTurns(view.session_id)
 
 
@@ -829,7 +830,7 @@ async def test_history_is_read_from_our_record_and_not_from_the_homeserver(
     because "we asked the homeserver" and "we asked ourselves" are otherwise indistinguishable from
     the outside.
     """
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=MATRIX_ROOM))
+    view, token = await provisioned(chat_store, operator_id, MatrixSession(room_id=MATRIX_ROOM))
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "[$a] hi")
     start = await chat_store.next_prompt(view.session_id)

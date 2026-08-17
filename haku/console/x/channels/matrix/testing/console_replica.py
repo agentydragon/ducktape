@@ -73,8 +73,9 @@ MCP_TOKEN = SecretStr("haku-static-bearer")
 class FileSandboxClaims:
     """The `SandboxClaims` surface, writing what Kubernetes would have been asked to run.
 
-    One file per live claim, named by session, holding the bridge credential the runner needs.
-    Written by rename so a watcher never reads a half-written claim.
+    One file per live claim, named by session, holding the bridge credential the runner needs —
+    which `SessionStore.allocate` mints and `SessionService.allocate` does not hand back. Written
+    by rename so a watcher never reads a half-written claim.
     """
 
     def __init__(self, directory: Path):

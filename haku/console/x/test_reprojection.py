@@ -17,6 +17,7 @@ from sqlalchemy import delete, update
 from haku.console.chat_models import ConversationEventKind, FrameDirection, TurnOutcome
 from haku.console.database_schema import Session, SessionEvent
 from haku.console.x import reprojection
+from haku.console.x.conftest import provisioned
 from haku.console.x.frame_projection import projected
 from haku.console.x.session_store import BridgeAuthentication, SpaSession
 
@@ -37,7 +38,7 @@ def _tool_result(call_id: str, text: str) -> dict[str, Any]:
 
 async def _turn_through_the_write_path(chat_store, operator_id, frames: list[dict[str, Any]]) -> tuple[UUID, UUID]:
     """One session and one open turn, with *frames* recorded and projected as the turn loop does."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     session_id = view.session_id
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, session_id, "what is in here?")

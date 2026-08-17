@@ -252,11 +252,10 @@ already, so even the two-bot-accounts version — which distinct agent kinds eve
 the room-tier policy keys on membership and membership needs distinct MXIDs — costs a second
 credential and a per-account sync lock rather than a schema change.
 
-**Budget for the sandboxes before doing this.** Sessions are always-up, so N rooms hold N sandboxes
-continuously — at ~1 CPU / 2Gi against an 8 CPU / 16Gi quota, two idle rooms is a quarter of it
-doing nothing. <../console/plans/conversation_layers.md> § 9 step 3 (allocate because there is
-something to do) is what makes this scale, and it is worth landing with multi-session rather than
-after it.
+**Budget for the sandboxes before doing this.** A session is created idle and an unclaimed prompt
+is what buys it a sandbox (<../console/x/README.md> § An idle session), so N attached rooms cost N
+sandboxes only while all N are being spoken to — at ~1 CPU / 2Gi against an 8 CPU / 16Gi quota, four
+at once is half of it.
 
 ### Talking to a particular agent: one Matrix account each
 

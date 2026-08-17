@@ -11,15 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class SessionStatus(StrEnum):
-    # CLEANUP(added 2026-08-16): `idle` deliberately has no writer yet — a session that exists and
-    #   holds no sandbox. This column is parsed (`database_schema.TextBackedStrEnumColumn`), so a
-    #   replica on the previous image reading an
-    #   `idle` row raises rather than degrading, and the console rolls with `maxUnavailable: 0`
-    #   (<README.md> § Perimeter / deploy). Write the first `idle` row only once every pod runs an
-    #   image at or after the release carrying migration 0054 — one tag out of
-    #   `kubectl get pods -n haku-console -o jsonpath='{.items[*].spec.containers[0].image}'`,
-    #   whose commit suffix is at or after this commit. Delete this comment with that writer; the
-    #   sets below already classify `idle` as open and unleased, so nothing else waits on it.
+    # The session exists and holds no sandbox. What a room nobody has spoken in sits in, until a
+    # prompt is what asks for one (<x/README.md> § An idle session).
     IDLE = "idle"
     PROVISIONING = "provisioning"
     READY = "ready"
@@ -83,6 +76,8 @@ class PromptRejection(StrEnum):
     # while the supervisor mints its replacement. The one member that cannot be recorded — a
     # `session_events` row names a session, and here there is none to name.
     NO_SESSION = "no_session"
+    # Not `status != READY`: an `idle` session takes a prompt, because that is what asks for its
+    # sandbox. This is the sandbox coming up, or the session already over.
     SESSION_NOT_READY = "session_not_ready"
     TURN_IN_FLIGHT = "turn_in_flight"
     PROMPT_QUEUED = "prompt_queued"

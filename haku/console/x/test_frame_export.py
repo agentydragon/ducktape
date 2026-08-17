@@ -18,6 +18,7 @@ from haku.console.chat_models import FrameDirection
 from haku.console.x import frame_export
 from haku.console.x.claude_code import frames
 from haku.console.x.claude_code.projection import RecordedFrame, project_log
+from haku.console.x.conftest import provisioned
 from haku.console.x.conversation_events import ToolCallCompleted, ToolCallStarted
 from haku.console.x.frame_projection import projected
 from haku.console.x.session_store import BridgeAuthentication, SpaSession
@@ -73,7 +74,7 @@ SESSION_FRAMES: list[dict[str, Any]] = [
 @pytest.fixture
 async def exported(chat_store, migrated_sessions, operator_id) -> frame_export.ExportedSession:
     """One session recorded through the write path, with a console-authored `setup_output` row in it."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
     session_id: UUID = view.session_id
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.record_frame(

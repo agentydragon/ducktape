@@ -451,7 +451,7 @@ happens to be the one running under it. It also does not survive § 7's ruling: 
 several rooms every Matrix session matches the surface, so a surface-keyed singleton cannot address
 any of them correctly.
 
-**Until then, leave it alone.** The right amount of work on `_frontend_for` before step 4 is none:
+**Until then, leave it alone.** The right amount of work on `_frontend_for` before step 3 is none:
 it is deleted, not improved, and polishing it buys a rename in exchange for entrenching the concept.
 
 ## 6. The conversation is identity only
@@ -653,26 +653,7 @@ having even if the loop is never built. The dependency edges are at the end.
     conversation on every poll. `Subscription` over a `ClientHeldCursor` is the server-side half;
     the position-addressed route and the frontend consumer are what is left.
 
-3.  **Allocate a sandbox because there is something to do** — open as #4231. An idle room holds a
-    sandbox permanently: the supervisor provisions whenever the room has no live session, and the
-    warm pool is `replicas: 0` so every claim is a cold start. That is ~1 CPU / 2Gi of an 8 CPU /
-    16Gi quota standing idle for a room nobody speaks in. The SPA has a gesture that means "I want a
-    session" and Matrix has none, so the supervisor substitutes by assuming demand permanently; the
-    prompt is the honest substitute.
-
-    `create()` writes the row and stops in `idle`; `allocate()` mints the credential and the claim
-    and moves to `provisioning`; admission accepts on `idle`, so `enqueue_prompt` creates demand.
-    **The demand signal is the same on every surface**: an unclaimed prompt against an idle session,
-    swept by a channel-neutral `SandboxAllocator` (`x/sandbox_allocation.py`) under its own `SBOX`
-    election — never from the request path, and never from a channel's supervisor, which now only
-    creates its room's session and announces what it sees. `POST /api/conversations` therefore
-    returns an idle conversation holding no sandbox, exactly as a quiet room does. The enum widening shipped
-    a release early (#4190) because `TextBackedStrEnumColumn` parses the column; the writer is the
-    second half. **Cost, stated plainly:** the first message after quiet pays the full cold start.
-    Measure it rather than assume it away. **Done when** an idle room holds no sandbox and the first
-    message provisions one.
-
-4.  **Matrix becomes a subscriber** (§ 2's primitive) for every kind, not just the one
+3.  **Matrix becomes a subscriber** (§ 2's primitive) for every kind, not just the one
     `RoomNotices` reads. One loop per `(channel, conversation)`, reading the record from its cursor
     instead of being handed events by the turn loop, woken by `session_changed` and by inbound
     events with the 1s poll demoted to a fallback. Here the four elections collapse to one, the
@@ -692,40 +673,39 @@ having even if the loop is never built. The dependency edges are at the end.
     calls itself the escape hatch — so the README is the false half, and a second backend would
     degrade silently in both directions until it is fixed.
 
-5.  **Notices as spans** (§ 4), once 4 exists: one work notice per turn, one lifecycle notice per
+4.  **Notices as spans** (§ 4), once 3 exists: one work notice per turn, one lifecycle notice per
     session, **each body a fold over the subscription stream**, each retired or sealed. This is
     Matrix's streaming — the granularity a channel that holds a permanent, federated copy can
     afford. The fold is not optional; editing already-posted notices is, and a v0 that appends one
     notice per noticeable event is the accepted lesser form. Split the fold from the send path in
     the same PR, because the fold is where this step's tests live.
 
-6.  **Many rooms at once** (§ 7's ruling). `claim_room` stops refusing the second room and becomes
+5.  **Many rooms at once** (§ 7's ruling). `claim_room` stops refusing the second room and becomes
     "resolve or create this room's attachment", so an invite mints a conversation; the supervisor
     fans out over live attachments instead of supervising one binding; `MatrixSessionFrontend` takes
     its address rather than claiming it has one by construction. The `MXSE` advisory lock stays
     global — one election supervising every attachment is cheaper than a lock per conversation, and
     the thing that must not be global is the _lease_, which is already per session.
 
-    **Depends on 1, on 3 and on 4**, and the last two are the ones the dependency line is easy to
-    get wrong. Ten rooms each holding a sandbox is the failure this would ship without 3. And an
-    audit found **eleven** things that assume one bot serves one room, seven of which are per-bot
-    process state that step 4 deletes: `_status_body`, `_last_announced`, the single `RoomPacer`
+    **Depends on 1 and on 3**, and the latter is the one the dependency line is easy to get wrong.
+    An audit found **eleven** things that assume one bot serves one room, seven of which are per-bot
+    process state that step 3 deletes: `_status_body`, `_last_announced`, the single `RoomPacer`
     with its one collapsing status slot, `_serviced`/`_live_room`, and `RoomOutboxDrain` claiming
     only `bound_room()`'s rows. Every one fails **silently** with a second room — ingress dropped to
     a `logger.warning`, a status line that never appears in room B, an edit addressed at another
     room's event id, replies that sit unsent forever.
 
-7.  **Dedupe ingress on the Matrix `event_id`**, with startup reconciliation from the last processed
+6.  **Dedupe ingress on the Matrix `event_id`**, with startup reconciliation from the last processed
     event (§ 8's missing item 3). Distinct bug, distinct query shape, its own review.
 
-8.  **The console relays an operator's message into the room.** The console holds one Matrix
+7.  **The console relays an operator's message into the room.** The console holds one Matrix
     credential, `@haku`'s, and cannot post as the operator's MXID — so a console-originated message
     either does not appear in the room at all, or appears under Haku's account. Not posting it is
     ruled out, because the operator's own Element would then show half a conversation. So `@haku`
     posts it under a `relay` kind, tagged like every other console-authored event and rendered so
     the room states its true provenance.
 
-    **Under step 4 the send posts nothing.** It enqueues the prompt, in one transaction, and stops;
+    **Under step 3 the send posts nothing.** It enqueues the prompt, in one transaction, and stops;
     the room is then behind the transcript by one message, which is a divergence the reconciler
     already exists to close. That is what the model buys here: no "enqueue then post" order to
     choose, no partial failure where one landed and the other did not, and no bespoke retry.
@@ -742,7 +722,7 @@ having even if the loop is never built. The dependency edges are at the end.
     appservice with a puppet MXID. The first breaks the single-holder property for a send button;
     the second reverses the whole `/sync`-over-appservice decision for one.
 
-9.  **Slash commands**, which are how Matrix gets the actions the console has. The parity gap —
+8.  **Slash commands**, which are how Matrix gets the actions the console has. The parity gap —
     abort, new session, close — is one missing affordance, not three: a way for a room message to
     mean something other than "talk to Haku". They are **ingress interception, not an agent tool**:
     a command is recognised and consumed by the harness before batching, so it never reaches the
@@ -752,26 +732,26 @@ having even if the loop is never built. The dependency edges are at the end.
     the _session_, and a Matrix message is never consent for a tool call. Namespace choice is § 7's
     open question. Abort is the one worth having first. Depends on nothing here.
 
-10. **The session link in the room's startup notice**, and interlinking generally: room notice →
+9.  **The session link in the room's startup notice**, and interlinking generally: room notice →
     console session, console session → the room (a `matrix.to` permalink the client already builds),
     session → its tool calls, tool call → the session that made it. The last has its precedent —
     `/_console/tool-calls/<tc_…>` opens the drawer on that exact call. A Matrix event is permanent
     and federated, so post links under routes chosen to survive, or not at all.
 
-11. **The frame log stores one thing, and the runner numbers it.** Two changes, deliberately one
+10. **The frame log stores one thing, and the runner numbers it.** Two changes, deliberately one
     step, because they share a cause — the recorder sits _above_ the bridge envelope and
     structurally cannot see one — and therefore share a fix: moving that sink down onto the socket.
     § 13 holds the design and the release schedule.
 
-12. **`sessions.status` becomes derived timestamps** (§ 10). Waits on 3.
+11. **`sessions.status` becomes derived timestamps** (§ 10).
 
-13. **Enforce the neutral-vocabulary invariants instead of reviewing for them** (§ 11). Two pieces,
+12. **Enforce the neutral-vocabulary invariants instead of reviewing for them** (§ 11). Two pieces,
     each one change: a CHECK tying frame-derived event kinds to the `frame_range` provenance arm,
     with `session_events.row` raising instead of downgrading; and restricting
     `//haku/console/x/claude_code`'s `default_visibility` to `//haku/console/x:__pkg__`, which
     enforces "no channel knows a provider's frame shape" at build time in one line.
 
-14. **Finish the legacy purge.** Two items left of it. `ck_session_frames_wire_numbered` is
+13. **Finish the legacy purge.** Two items left of it. `ck_session_frames_wire_numbered` is
     declared nowhere — its rows are gone, so all that stands between it and the database is writing
     it in the ORM as well as the migration, once
     `SELECT count(*) FROM session_frames WHERE runner_seq IS NULL AND direction = 'from_agent'`
@@ -789,8 +769,8 @@ having even if the loop is never built. The dependency edges are at the end.
     `test_neutral_turn_usage_migration.py`, `test_session_claim_cleaned_at_migration.py` and
     `test_frame_runner_seq_migration.py`, each asserting a backfill or a nullability the schema has
     since moved past. `test_session_idle_status_migration.py` **becomes a constraint test**, since
-    both its assertions are about what `ck_sessions_status` admits — not before step 3 ships, while
-    the widening is still the live half of a two-release change. And
+    both its assertions are about what `ck_sessions_status` admits — not before the `idle` writer
+    ships, while the widening is still the live half of a two-release change. And
     `test_recall_index_migration.py` **stays, rebased**: it compares
     <../../recall_index/schema.py> against what the deployed database gets, and nothing else does.
     No coverage is lost, because the two tests that assert the property a squash actually endangers
@@ -798,13 +778,13 @@ having even if the loop is never built. The dependency edges are at the end.
     database already at head being unchanged — and both must pass before the squash lands as well
     as after.
 
-15. **The read surfaces stop maintaining two model families over one query** (§ 14). Two small
+14. **The read surfaces stop maintaining two model families over one query** (§ 14). Two small
     changes, neither of which needs a transport decision.
 
 **Smaller, and each landing with the change that creates it rather than as a standalone reshuffle:**
 
 - **Remove the `asyncio.wait` abort dance in `_run_turn`.** Unmounting the SSE route made it
-  removable and nothing has removed it. It collapses properly at step 4, where an abort becomes an
+  removable and nothing has removed it. It collapses properly at step 3, where an abort becomes an
   intent the transport writes and the CLI's answer comes back as frames.
 - **Split `session_runtime.py` further.** `handle_runner`'s admission and finalisation are a
   connection's lifecycle and `_run_turn` is a frame reducer; those are two files' worth of concern
@@ -816,16 +796,16 @@ having even if the loop is never built. The dependency edges are at the end.
   loop-side bugs block it and `session_runtime._projected` names both. Pull it in when a message
   spanning frames needs to be one row.
 
-**Dependencies.** 1 gates 6. 4 gates 5 and 6. 3 gates 6 and 12. Everything else — 2, 7 through 11,
-13, 14, 15 and the smaller items — depends on nothing here and can be dispatched in any order.
+**Dependencies.** 1 gates 5. 3 gates 4 and 5. Everything else — 2, 6 through 14 and the smaller
+items — depends on nothing here and can be dispatched in any order.
 
 ## 10. `sessions.status` is derived, and lossy
 
 **Derived.** `responding` already is: no path writes it to the column, and `session_view` computes
 it from an open `session_turns` row — the SPA switches on the API field, so the column stopped
 carrying it with no frontend release. Of the rest, `provisioning`/`ready` follow from
-`bridge_connected_at`, and `failed` from `error IS NOT NULL`. Only `closing` and `closed` have no
-evidence in the row today, and `idle` has none until the writer lands.
+`bridge_connected_at`, and `failed` from `error IS NOT NULL`. Only `closing`, `closed` and `idle`
+have no evidence in the row today.
 
 **Lossy, which is the stronger argument.** `provisioning` stands for several distinct facts — claim
 submitted, pod scheduled, sandbox running, runner dialled back — and the row records exactly one of
@@ -983,7 +963,7 @@ architecture rather than the features, and each is the acceptance test for the t
 
 **Write these per step, not at the end.** A failing test cannot land on `devel`, so each step's PR
 carries the test that proves its own part, and 5 and 6 land as end-to-end tests with the steps that
-make them passable — 2 and 4. Behaviour 4 lands with step 4, which is where a channel starts reading
+make them passable — 2 and 3. Behaviour 4 lands with step 3, which is where a channel starts reading
 the record rather than being handed the half the turn loop produced.
 
 **Encode the invariants as tests too**, because each is false today and would otherwise creep back
@@ -995,7 +975,7 @@ silently:
   room and no database. The cases worth writing are the ones an end-to-end test cannot provoke on
   demand — a forty-call run collapsing to a tally, a session replaced mid-turn, a turn aborting
   between two tool results.
-- The Matrix channel's Bazel target cannot depend on `//haku/console/x/claude_code:*` (step 13). The
+- The Matrix channel's Bazel target cannot depend on `//haku/console/x/claude_code:*` (step 12). The
   one exception it surfaces — `x/channels/matrix/testing` depending on `stub_claude_bin` and
   `:frames` to drive a fake backend — is worth having to write down, because a channel _test_
   knowing Claude's frames is how a channel comes to know them.

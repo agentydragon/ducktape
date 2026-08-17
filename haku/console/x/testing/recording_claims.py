@@ -57,8 +57,8 @@ class RecordingClaims:
     async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None:
         assert expires_at > datetime.now(expires_at.tzinfo)
         self.created.append(session_id)
-        # The claim is where a test reaches the bridge credential: the store mints it and
-        # `SessionService.create` does not hand it back.
+        # The claim is where a test reaches the bridge credential: `SessionStore.allocate` mints it
+        # and `SessionService.allocate` does not hand it back.
         self.tokens[session_id] = bridge_token
 
     async def renew(self, *, session_id: UUID, expires_at: datetime) -> None:

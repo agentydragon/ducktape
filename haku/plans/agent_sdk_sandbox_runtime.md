@@ -275,7 +275,7 @@ MCP path) and the behavioral gotchas recorded in <../TODO.md> § haku-traces.
 - **Answered:** the session record is a table in the console DB — `sessions` and the
   `session_{messages,frames,turns,prompts,events,outbox}` around it — with the Sandbox CR held
   beside it as a claim (`x/sandbox_claims.py`).
-- Whether an idle session should dispose its sandbox automatically, and what the operator sees
-  when it does. **Still open, and now designed rather than merely asked:**
-  <../console/plans/conversation_layers.md> § 9 step 3 is the answer this question was waiting
-  for; today an idle room holds a sandbox indefinitely.
+- Whether a session that has gone quiet should dispose its sandbox automatically, and what the
+  operator sees when it does. **Still open**, though half of it fell away: a session is created
+  idle and only an unclaimed prompt buys it a sandbox (<../console/x/README.md> § An idle session),
+  so a room nobody speaks in never holds one to dispose.
