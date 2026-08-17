@@ -389,6 +389,25 @@ reading.
   crash and tell the operator nothing. Same shape as the abort ruling, and it makes the
   `_report_unreadable` fix and this one the same piece of work.
 
+  **Rejection is the simple answer, not the intended end state** (operator, 2026-08-17). Two
+  richer ones are wanted eventually, once the layering is in place, and they are different
+  features rather than two spellings of one:
+  - **Mid-turn steering.** Claude Code accepts input while a turn is running, so a prompt could
+    join the turn in flight rather than be refused. That is a runner-protocol capability, not
+    queueing — and the bridge already has an unused input path in that direction (`EndInput` is
+    implemented by the runner and called by nothing, § 8's sibling finding), so what is missing is
+    a console-side decision rather than a wire.
+  - **A post-turn queue.** Hold the prompt and deliver it when the turn ends, which is what
+    `matrix_held_batch` does today. If this comes back it belongs **in the conversation, once, for
+    every channel** — not as per-channel ingress state. That is why deleting `matrix_held_batch`
+    is right even under a future where queueing returns: what is being deleted is one channel's
+    private hold, and what would replace it is a conversation-layer queue that the SPA gets for
+    free.
+
+  Neither is scheduled. Both want the layering first, because both are about what the conversation
+  admits, and admission is a conversation-layer question that is currently answered inside a
+  channel's sync loop.
+
 - **Channel state lives in Postgres, not in the room.** The watermark stays a row; `m.fully_read`
   and per-room `account_data` are not pursued. The reason given was preference for the known
   quantity — "postgres is known, state in matrix, who knows" — and it is reinforced by the
