@@ -477,6 +477,14 @@ reading.
 - **Which notices exist, and what does each summarise?** § 4 proposes one per turn and one per
   session and leaves the set open, along with retire-or-seal for each.
 - **Does `sessions.status` survive?** § 10.
+- **What refuses the second room?** Raised by #4285, and it blocks step 2's reader half rather
+  than its schema. § 6 says the conversation subsumes `matrix_conversation` entirely, **including
+  its `user_id` primary key — the thing that makes one bot user serve exactly one room ever**
+  (R3.6a). `chat_attachment`'s partial unique index does not reproduce that rule: it says one
+  _live conversation per address_, which permits one bot serving two rooms. So either R3.6a was a
+  constraint worth keeping and something must re-express it, or it was an artifact of the old
+  key and the bot may hold several rooms. The answer binds the sync loop's invite handling, so it
+  is wanted before the reader-move PR is written.
 
 ## 8. Where this stands
 
@@ -553,10 +561,27 @@ having even if the loop is never built.
    correction its author made to this sentence: § 8's increment route is #4257, still open and with
    no frontend consumer, so this step could not and did not build on it. Reading the increment is
    its own later change, and it is invisible to the operator when it lands.
-2. **`conversation`, then `chat_attachment` keyed on it** (§ 6). One change, because the
+2. **`conversation`, then `chat_attachment` keyed on it** (§ 6). One schema change, because the
    attachment's key is the whole point of the identity — building the attachment on `session_id`
    first would mean writing the re-pointing logic and then deleting it. Subsumes
    `matrix_conversation` and `sessions.room_id`.
+
+   **Two releases, not one** — the correction #4285 made to this step. Schema, backfill and
+   writers ship first (#4285); **a reader keyed on `conversation_id` waits a release**, because
+   for the length of the roll the previous image inserts sessions with it NULL and any join
+   through it silently omits them. `RoomTranscript.recent` losing a room's re-awakening history is
+   the concrete case. Same gate as the `SET NOT NULL`.
+
+   **Two nullability traps sit on the columns this subsumes**, found while writing it and worth
+   knowing before step 2's second half is scheduled:
+   - `sessions.surface` is `NOT NULL` **with no server default** — precisely `session_frames.partial`
+     again. The release that unmaps it omits it from every `INSERT` and Postgres rejects the first
+     session of that roll, so it needs `server_default='spa'` in a migration landing _before_ the
+     unmapping. Four steps, not three.
+   - `sessions.room_id` is nullable and undefaulted, so it is safe alone — but
+     `ck_sessions_matrix_room` couples it to `surface`. Drop the CHECK before either column is
+     unmapped, and unmap the pair together.
+
 3. **The conversation list surface**, keyset-paged from the start, since § 7 settles that a
    conversation never ends and so the list only grows. `/chat` and `/conversations` merge
    (<session_channels.md> § 2) into one list of conversations — each showing its attached channels,
