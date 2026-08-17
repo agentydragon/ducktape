@@ -5,7 +5,8 @@ import type { ConversationSession } from "../client";
 type Provisioning = NonNullable<ConversationSession["provisioning"]>;
 
 const STEP_LABELS: Record<Provisioning["step"], string> = {
-  claim_created: "Creating the SandboxClaim",
+  claim_absent: "No SandboxClaim — never created, or already reclaimed",
+  claim_created: "SandboxClaim created; nothing observed past it",
   waiting_for_sandbox: "Waiting for Sandbox assignment",
   waiting_for_pod: "Waiting for the sandbox Pod",
   waiting_for_pod_ready: "Waiting for the Pod and runner container",

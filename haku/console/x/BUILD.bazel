@@ -267,6 +267,7 @@ py_test(
     deps = [
         ":conftest",
         ":frame_projection",
+        ":sandbox_claims",
         ":session_notifications",
         ":session_runtime",
         ":session_store",

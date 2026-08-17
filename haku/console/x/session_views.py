@@ -233,6 +233,29 @@ class ConversationView(BaseModel):
     earlier_sessions: list[EarlierSession]
 
 
+class SessionProvisioningView(BaseModel):
+    """What one session says about the sandbox it asked for — in whatever state that session is now.
+
+    **Nothing is reported by being absent.** `sandbox` is null for exactly one reason, a session
+    that has never asked for a sandbox; a claim Kubernetes does not have is a view whose step is
+    `claim_absent`, and a cluster that could not be read at all is a view carrying
+    `observation_error`. Those are three different answers, and a reader that has to tell them
+    apart — an operator asking why a session never came up — cannot do it from one null.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: UUID
+    status: SessionStatus = Field(
+        description="The session's stored status. `responding` never appears here: it is derived "
+        "from an open turn by `session_view` and is not on the row."
+    )
+    sandbox: ClaudeSandboxProvisioningView | None = Field(
+        description="The cluster's account of this session's sandbox, or null for an `idle` "
+        "session — one that holds no claim, so there is nothing to read and nothing was asked."
+    )
+
+
 # Frames per page of the inspector. A frame is usually small, but one `user` frame carries a whole
 # tool result — a file read, a command's output — so the row count alone does not bound a response,
 # and the browser pays again to syntax-highlight each one (`frontend/code_block.tsx`). Fifty is

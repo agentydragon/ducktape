@@ -56,6 +56,7 @@ from haku.console.x.session_views import (
     ConversationView,
     SessionFramePage,
     SessionMessageView,
+    SessionProvisioningView,
     SessionView,
 )
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
@@ -66,6 +67,11 @@ from haku.runtime.x.bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, T
 router = APIRouter(tags=["sessions"])
 internal_router = APIRouter(tags=["claude-chat-internal"])
 logger = logging.getLogger(__name__)
+
+# How long one session's observed provisioning state is reused before the cluster is read again.
+# Short enough that a browser watching a sandbox come up sees it move, long enough that polling
+# costs the Kubernetes API server a bounded rate rather than the operator's refresh rate.
+OBSERVATION_TTL = timedelta(seconds=2)
 
 
 def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
@@ -204,6 +210,9 @@ class SessionService:
         self._notifications = notifications
         self._mcp_token = mcp_token
         self._chat_frontend = chat_frontend
+        # Per session, the last view read off the cluster — see `_observed`. Entries older than
+        # `OBSERVATION_TTL` are dropped as it goes, so this holds what is being watched now.
+        self._observations: dict[UUID, ClaudeSandboxProvisioningView] = {}
 
     async def request_abort(self, operator_id: UUID, session_id: UUID) -> bool:
         """Interrupt this session's turn, or answer False when it has none.
@@ -249,20 +258,76 @@ class SessionService:
             update={"session": view.session.model_copy(update={"provisioning": await self._provisioning(view.session)})}
         )
 
+    async def sandbox_provisioning(self, operator_id: UUID, session_id: UUID) -> SessionProvisioningView:
+        """How this one session's sandbox came up — asked of a session in any state.
+
+        **Per session, because a conversation runs several.** Each got its own sandbox and the one
+        that died has its own account of why; the conversation read below carries this for the
+        current session only, so an earlier session's story is reachable nowhere else.
+
+        What each state answers, and why:
+
+        - `idle`: nothing to report, and Kubernetes is not asked. A session holds no claim until
+          one is created for it, so an idle session provably has none — and that is the state a
+          session sits in once a prompt rather than its creation buys the sandbox, so it must not
+          cost a cluster read.
+        - `provisioning`: the live claim/Sandbox/Pod/runner graph, which is what an operator
+          watching a sandbox come up is watching.
+        - `failed`: the same live read, which is the whole point of asking a non-provisioning
+          session. A session that never came up has nothing else to say why — until cleanup
+          deletes its claim, after which this says `claim_absent` rather than inventing a story.
+        - `ready`, `closing`, `closed`: the same live read. A session whose claim has been
+          reclaimed answers `claim_absent`, which is the truthful answer and not an error.
+
+        Raises `KeyError` for a session this Operator does not own, like `request_abort`.
+        """
+        status = await self._store.operator_status(operator_id, session_id)
+        return SessionProvisioningView(
+            session_id=session_id,
+            status=status,
+            sandbox=None if status is SessionStatus.IDLE else await self._observed(session_id),
+        )
+
     async def _provisioning(self, session: ConversationSessionView) -> ClaudeSandboxProvisioningView | None:
         """What Kubernetes says about a sandbox still coming up, for a session still waiting on one.
 
-        A live read rather than a stored one: the claim, the pod and the runner are the cluster's
-        state, and a session that never comes up has nothing but this to say why.
+        **Only while it is what the operator is waiting on**, unlike `sandbox_provisioning`, which
+        answers for a session in any state. Not a different answer — the same `_observed` produces
+        both — but a different question about when to ask: this one is nested in the whole-
+        conversation read, which a streaming turn refetches twice a second, so reading the cluster
+        for a session already past provisioning would put that on the transcript's hot path.
         """
         if session.status != SessionStatus.PROVISIONING:
             return None
+        return await self._observed(session.session_id)
+
+    async def _observed(self, session_id: UUID) -> ClaudeSandboxProvisioningView:
+        """The cluster's account of one session's sandbox — never raising, never hammered.
+
+        Never raising: an unreachable Kubernetes comes back as `observation_error` on the view,
+        because "the claim exists and I cannot see the pod" is worth more than an exception that
+        replaces the whole answer (<sandbox_claims.py>). A failure is remembered like a success, so
+        an API server that is down is asked at the same bounded rate as one that is up.
+
+        Never hammered: one session's view is reused for `OBSERVATION_TTL`. This is up to three
+        Kubernetes reads on an operator-facing GET that a browser polls while it watches a sandbox
+        come up, and the cost of that lands on the API server rather than on this process. The view
+        carries the `inspected_at` it was taken at, so a reader can see how old the answer is.
+        """
+        now = datetime.now(UTC)
+        self._observations = {
+            observed: view for observed, view in self._observations.items() if now - view.inspected_at < OBSERVATION_TTL
+        }
+        if (fresh := self._observations.get(session_id)) is not None:
+            return fresh
         try:
-            return await self._claims.inspect(session_id=session.session_id)
+            view = await self._claims.inspect(session_id=session_id)
         except Exception as error:
-            return provisioning_view(
-                f"claude-{session.session_id.hex}", step=ProvisioningStep.CLAIM_CREATED, observation_error=str(error)
+            view = provisioning_view(
+                f"claude-{session_id.hex}", step=ProvisioningStep.CLAIM_CREATED, observation_error=str(error)
             )
+        self._observations[session_id] = view
+        return view
 
     async def dispose(self, operator_id: UUID, session_id: UUID) -> None:
         await self._store.request_close(operator_id, session_id)
@@ -863,6 +928,24 @@ async def read_session_frames(
         return await store.read_operator_frames(
             actor.operator_id, session_id, before_seq=before_seq, limit=limit, kinds=kind
         )
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="session not found") from error
+
+
+@router.get("/api/sessions/{session_id}/provisioning")
+async def read_session_provisioning(
+    session_id: UUID, actor: OperatorActorDep, service: SessionServiceDep
+) -> SessionProvisioningView:
+    """What Kubernetes says about the sandbox this session asked for, read live off the cluster.
+
+    Addressed at a session rather than a conversation because a conversation runs several over its
+    life, and each has its own sandbox to account for. `GET /api/conversations/{conversation_id}`
+    carries the same view for the current session and only while it is still provisioning; this
+    answers for any session the Operator owns, in any state — including the failed one whose whole
+    explanation for never coming up is here.
+    """
+    try:
+        return await service.sandbox_provisioning(actor.operator_id, session_id)
     except KeyError as error:
         raise HTTPException(status_code=404, detail="session not found") from error
 

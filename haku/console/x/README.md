@@ -215,6 +215,32 @@ so linking one message to its frames is a filter over this view, not a second re
 deliberately not guessed at here: the join key the transcript has today (`agent_message_id`) is
 missing on thousands of production rows, which is why that change exists.
 
+## Asking one session how its sandbox came up
+
+`GET /api/sessions/{session_id}/provisioning` is the claim/Sandbox/Pod/runner graph
+(`sandbox_claims.py`), read live off the cluster for **one session in whatever state it is now**.
+Addressed at a session for the same reason the frame inspector is: a conversation outlives its
+sessions and each of them got its own sandbox, so the session that died has an account only it can
+give. `GET /api/conversations/{conversation_id}` still nests the same view, and deliberately only
+while that session is provisioning — that read is on the transcript's hot path, refetched twice a
+second by a streaming turn, and a cluster read per refetch is not worth paying for a question
+already answered. Both go through one `_observed`, so the two surfaces cannot disagree about what
+the cluster said; what differs is when each asks.
+
+**Nothing here is reported by being absent.** A `null` means one thing only — a session that has
+never asked for a sandbox, the state a session sits in once a prompt rather than its creation is
+what buys one, and one that costs no cluster read because a claim provably does not exist. A claim
+Kubernetes does not have (never created, or reclaimed by `_cleanup_terminal_claim` once the session
+ended) is `claim_absent`, and a cluster that could not be read at all is `observation_error` on an
+otherwise empty view. Three answers, three shapes; collapsing them was what made a failed session
+indistinguishable from a fresh one.
+
+**One observation is reused for `OBSERVATION_TTL`.** A poll costs up to three Kubernetes reads, and
+this is an operator-facing GET a browser watching a sandbox come up will poll — so the API server
+pays a bounded rate rather than the operator's refresh rate. A failed observation is remembered like
+a successful one, so an API server that is down is not asked harder than one that is up. The view
+carries the `inspected_at` it was taken at, so a reader can see how old its answer is.
+
 ## The neutral projection — what reads it
 
 `conversation_events.py` is the provider-neutral vocabulary a conversation is read as — text,

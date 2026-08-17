@@ -1383,6 +1383,20 @@ class SessionStore:
         outcome = await self.outcome(session_id)
         return outcome.status if outcome is not None else None
 
+    async def operator_status(self, operator_id: UUID, session_id: UUID) -> SessionStatus:
+        """The stored status of this Operator's session, raising `KeyError` for one that is not theirs.
+
+        Ownership and status in one query, so a route that needs both asks once. Stored, never the
+        derived `responding` — that is `session_view` reading an open turn, and no path writes it.
+        """
+        async with self._sessions() as db:
+            status = await db.scalar(
+                select(Session.status).where(Session.session_id == session_id, Session.operator_id == operator_id)
+            )
+            if status is None:
+                raise KeyError(session_id)
+            return status
+
     async def renew_lease(self, session_id: UUID) -> None:
         """Assert that this replica still holds *session_id* and is still working on it.
 

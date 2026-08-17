@@ -9,13 +9,13 @@ underneath it — lives in `x/test_sandbox_claims.py`, and is a different job: t
 for the claim builder, that one puts it under test. It stays beside the module it tests rather
 than moving here, because it is a test, not a test implementation.
 
-**`inspect` is where this can lie**, and `fixed_provisioning_view` is that lie told once. It
-answers with one fixed view rather than deriving a step from what the caller has recorded, so a
-reader of provisioning state gets an answer the real implementation would only give for a claim
-that is *not there* (`CLAIM_CREATED` is its 404 case). Nothing reads the step today; the
-annotation is the real type so that at least the shape is checked, but a test about provisioning
-steps needs `../test_sandbox_claims.py`, not this. It is shared rather than copied so that the
-stand-in in `channels/matrix/testing/console_replica.py` cannot lie differently.
+**`inspect` is where this can lie**, and `fixed_provisioning_view` is that lie told once: the
+least committal step there is, `CLAIM_CREATED`, which the real implementation gives only when it
+created a claim and could not observe past it. A test that is about provisioning state says what
+it wants instead (`RecordingClaims.answer`/`fail`); one that is about anything else gets a
+well-shaped view it has no reason to read. `fixed_provisioning_view` is shared rather than copied
+so that the stand-in in `channels/matrix/testing/console_replica.py` cannot lie differently, and a
+test about the *real* step derivation needs `../test_sandbox_claims.py`, not this.
 """
 
 from __future__ import annotations
@@ -39,6 +39,20 @@ class RecordingClaims:
         self.deleted: list[UUID] = []
         self.renewed: list[tuple[UUID, datetime]] = []
         self.tokens: dict[UUID, str] = {}
+        # Every `inspect`, so a test can assert that a state which cannot have a claim — an idle
+        # session — was answered without the cluster being asked at all.
+        self.inspected: list[UUID] = []
+        self._answer: ClaudeSandboxProvisioningView | None = None
+        self._failure: Exception | None = None
+
+    def answer(self, view: ClaudeSandboxProvisioningView) -> None:
+        """Make the next inspections report *view* instead of the fixed one."""
+        self._answer = view
+        self._failure = None
+
+    def fail(self, error: Exception) -> None:
+        """Make inspection raise, as an unreachable Kubernetes does."""
+        self._failure = error
 
     async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None:
         assert expires_at > datetime.now(expires_at.tzinfo)
@@ -54,7 +68,10 @@ class RecordingClaims:
         self.deleted.append(session_id)
 
     async def inspect(self, *, session_id: UUID) -> ClaudeSandboxProvisioningView:
-        return fixed_provisioning_view(session_id)
+        self.inspected.append(session_id)
+        if self._failure is not None:
+            raise self._failure
+        return self._answer if self._answer is not None else fixed_provisioning_view(session_id)
 
     async def aclose(self) -> None:
         return None

@@ -16,7 +16,7 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
 from haku.console.x.conftest import runtime_config
-from haku.console.x.sandbox_claims import KubernetesClients, KubernetesSandboxClaims
+from haku.console.x.sandbox_claims import KubernetesClients, KubernetesSandboxClaims, ProvisioningStep
 
 
 class RecordingCustomObjectsApi:
@@ -226,6 +226,18 @@ async def test_inspect_distinguishes_ready_pod_from_runner_bridge_wait(
     assert info.pod_ready is True
     assert info.runner_ready is True
     assert info.runner_state == "running"
+
+
+async def test_inspect_says_a_claim_is_gone_rather_than_newly_made(sandbox_claims, custom_objects_api) -> None:
+    """A 404 is a claim that was never created or has been reclaimed, and it used to report
+    `claim_created` — an ended session's reclaimed sandbox reading as one just being built."""
+    custom_objects_api.get_namespaced_custom_object = _raise_api_error(404)
+
+    info = await sandbox_claims.inspect(session_id=UUID("10000000-0000-4000-8000-000000000002"))
+
+    assert info.step == ProvisioningStep.CLAIM_ABSENT
+    assert info.claim_name == "claude-10000000000040008000000000000002"
+    assert info.observation_error is None, "the cluster answered; it just has no such claim"
 
 
 if __name__ == "__main__":

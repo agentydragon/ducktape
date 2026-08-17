@@ -12,10 +12,10 @@ import asyncio
 import contextlib
 import json
 from collections.abc import Awaitable, Callable, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from unittest.mock import patch
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
@@ -45,6 +45,7 @@ from haku.console.x.claude_code.testing.wire import (
 )
 from haku.console.x.conftest import MCP_TOKEN, age_lease, lease_of, queued_for_the_room, runtime_config
 from haku.console.x.frame_projection import projected
+from haku.console.x.sandbox_claims import ProvisioningStep, provisioning_view
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import GOING_AWAY_CODE, RolloutRecorder, SessionService, _replaying
 from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, MatrixSession, SessionStore, SpaSession
@@ -1661,6 +1662,111 @@ async def test_a_cancelled_runner_hands_the_session_back_without_stranding_it(
     await age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
     assert await chat_store.expire_stale_leases() == 1
     assert await chat_store.status(view.session_id) == SessionStatus.FAILED
+
+
+async def _force_status(sessions: async_sessionmaker[AsyncSession], session_id: UUID, status: SessionStatus) -> None:
+    """Put a session in *status* directly.
+
+    `idle` has no writer yet (see `SessionStatus.IDLE`) — it is the state a session sits in once a
+    prompt rather than its creation buys the sandbox — so a test about it writes the row itself.
+    """
+    async with sessions.begin() as db:
+        await db.execute(update(Session).where(Session.session_id == session_id).values(status=status))
+
+
+async def test_a_session_that_never_asked_for_a_sandbox_reports_nothing_and_asks_kubernetes_nothing(
+    chat_service, recording_claims, migrated_sessions, operator_id
+) -> None:
+    """No claim exists until allocation makes one, so an idle session's "nothing to report" is
+    provable from the row — and it must stay free, because it is the state a room nobody has
+    spoken in sits in."""
+    session = await chat_service.create(operator_id, SpaSession())
+    await _force_status(migrated_sessions, session.session_id, SessionStatus.IDLE)
+
+    view = await chat_service.sandbox_provisioning(operator_id, session.session_id)
+
+    assert (view.status, view.sandbox) == (SessionStatus.IDLE, None)
+    assert recording_claims.inspected == [], "an idle session has no claim to read"
+
+
+async def test_a_session_that_failed_to_come_up_still_says_what_it_was_stuck_behind(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    """The whole reason to ask a session that is no longer provisioning: the conversation read
+    answers `null` for a failed session, which is the one that most needs to be asked why."""
+    session = await chat_service.create(operator_id, SpaSession())
+    recording_claims.answer(
+        provisioning_view(
+            f"claude-{session.session_id.hex}",
+            step=ProvisioningStep.WAITING_FOR_POD,
+            claim_ready=False,
+            claim_message="no warm sandbox available",
+        )
+    )
+    await chat_store.fail(session.session_id, "sandbox provisioning failed")
+
+    view = await chat_service.sandbox_provisioning(operator_id, session.session_id)
+
+    assert view.status is SessionStatus.FAILED
+    assert view.sandbox is not None
+    assert view.sandbox.step is ProvisioningStep.WAITING_FOR_POD
+    assert view.sandbox.claim_message == "no warm sandbox available"
+
+
+async def test_a_reclaimed_claim_is_not_the_same_answer_as_never_having_asked(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    """`_cleanup_terminal_claim` deletes the claim once a session ends, so the cluster has nothing
+    to show — which is a different answer from an idle session's, and neither of them is `null`."""
+    session = await chat_service.create(operator_id, SpaSession())
+    recording_claims.answer(provisioning_view(f"claude-{session.session_id.hex}", step=ProvisioningStep.CLAIM_ABSENT))
+    await chat_store.closed(session.session_id)
+
+    view = await chat_service.sandbox_provisioning(operator_id, session.session_id)
+
+    assert view.status is SessionStatus.CLOSED
+    assert view.sandbox is not None, "a claim that is gone is a fact, not an absence of one"
+    assert view.sandbox.step is ProvisioningStep.CLAIM_ABSENT
+
+
+async def test_a_cluster_that_cannot_be_read_says_so_instead_of_failing_the_request(
+    chat_service, recording_claims, operator_id
+) -> None:
+    """The third of the three answers: not "nothing here" and not "the claim is gone", but "I could
+    not look" — which is the one a reader must not act on."""
+    session = await chat_service.create(operator_id, SpaSession())
+    recording_claims.fail(RuntimeError("kubernetes: connection refused"))
+
+    view = await chat_service.sandbox_provisioning(operator_id, session.session_id)
+
+    assert view.sandbox is not None
+    assert view.sandbox.observation_error == "kubernetes: connection refused"
+
+
+async def test_polling_provisioning_reads_the_cluster_at_a_bounded_rate(
+    chat_service, recording_claims, operator_id
+) -> None:
+    """One poll is up to three Kubernetes reads, and the browser's refresh rate is not the API
+    server's problem — so polls inside one observation's budget cost one look at the cluster."""
+    session = await chat_service.create(operator_id, SpaSession())
+
+    with patch("haku.console.x.session_runtime.OBSERVATION_TTL", timedelta(hours=1)):
+        for _ in range(5):
+            await chat_service.sandbox_provisioning(operator_id, session.session_id)
+    assert recording_claims.inspected == [session.session_id]
+
+    with patch("haku.console.x.session_runtime.OBSERVATION_TTL", timedelta(0)):
+        await chat_service.sandbox_provisioning(operator_id, session.session_id)
+    assert recording_claims.inspected == [session.session_id] * 2, (
+        "a view past its budget is taken again rather than served stale"
+    )
+
+
+async def test_provisioning_is_not_readable_for_a_session_another_operator_owns(chat_service, operator_id) -> None:
+    session = await chat_service.create(operator_id, SpaSession())
+
+    with pytest.raises(KeyError):
+        await chat_service.sandbox_provisioning(uuid4(), session.session_id)
 
 
 if __name__ == "__main__":

@@ -43,6 +43,11 @@ def _format_shutdown_time(when: datetime) -> str:
 
 
 class ProvisioningStep(StrEnum):
+    # Kubernetes does not have this session's claim: it was never created, or it has been reclaimed
+    # (`session_runtime._cleanup_terminal_claim` deletes it once the session ends). Distinct from
+    # `CLAIM_CREATED`, which is what the console knows when it created a claim and could not observe
+    # past it — collapsing the two reported a claim that is gone as one that had just been made.
+    CLAIM_ABSENT = "claim_absent"
     CLAIM_CREATED = "claim_created"
     WAITING_FOR_SANDBOX = "waiting_for_sandbox"
     WAITING_FOR_POD = "waiting_for_pod"
@@ -224,7 +229,7 @@ class KubernetesSandboxClaims:
             )
         except k8s_client.ApiException as error:
             if error.status == 404:
-                return provisioning_view(claim_name, step=ProvisioningStep.CLAIM_CREATED)
+                return provisioning_view(claim_name, step=ProvisioningStep.CLAIM_ABSENT)
             raise
 
         claim_condition = _condition(claim, "Ready")
