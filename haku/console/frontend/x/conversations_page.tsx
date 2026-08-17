@@ -37,10 +37,8 @@ function timestamp(value: string): string {
   return `${value.slice(0, 16).replace("T", " ")} UTC`;
 }
 
-function surfaceLabel(summary: { surface: ConversationSessionSummary["surface"]; room_id: string | null }): string {
-  if (summary.surface === "matrix") return "Matrix";
-  if (summary.surface === "spa") return "Console chat";
-  return "Conversation";
+function surfaceLabel(summary: { surface: ConversationSessionSummary["surface"] }): string {
+  return summary.surface === "matrix" ? "Matrix" : "Console chat";
 }
 
 /** Where one exchange began, and what it cost, drawn across the transcript.
