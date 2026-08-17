@@ -90,10 +90,11 @@ channel differs only in two ways:
 - **Whether its position is durable.** A room holds its own copy, so its position is a cursor the
   console owes work against; a tab holds none, so its position is an argument to the next read.
 
-The read half already exists in the shape the primitive needs: `GET /api/conversations/{id}` is the
-snapshot and carries its `watermark`, `…/changes?after=N` is the changes, and `session_changed` is
-the wake that says to ask again. What is missing is not a new protocol but a second consumer —
-Matrix reading the record rather than being handed events by the turn loop.
+The primitive is code: `Subscription.read()` over a `ConversationStream` in `x/subscription.py`,
+where "no position given" is the `Unstarted` arm rather than a zero. `GET /api/conversations/{id}`
+and `…/changes?after=N` are the same contract over HTTP, and `session_changed` is the wake that says
+to ask again. Matrix is a second consumer for **one** event kind — `RoomNotices` reads `turn_aborted`
+from the record instead of the turn loop pushing it. What is missing is the rest of the kinds.
 
 **The stream carries two kinds of message, and a delta is one of them** (operator, 2026-08-17).
 State changes are whole rows, merged by id. A **delta** is `{message_id, append}` — the neutral
@@ -337,7 +338,7 @@ channel whose transport has no idempotency key needs a different one.
 **Moving it is the reconciler, not a rename.** The row is written today inside the turn loop's
 transaction, so while it exists the conversation's writer branches on `chat.room_id`. Under
 reconciliation the turn writes only the record and the channel derives what it owes, which is what
-removes that branch. What stays shared is the record and the per-attachment cursor.
+removes that branch. What stays shared is the record and the subscription interface.
 
 **And the table should say Matrix** (operator, 2026-08-17: _"the matrix outbox should as matrix impl
 be named after matrix in its table and not try to be generic"_). `session_outbox`'s docstring says
@@ -362,9 +363,11 @@ They are easy to confuse because both are "what has gone out", so name whose con
 (operator, 2026-08-17):
 
 - **The cursor is how far the conversation has been handed to the channel implementation and
-  acked by it.** It lives on the boundary between the conversation layer and the channel layer, and
-  it is a position in the conversation's own stream — the one thing every channel has, including a
-  channel that keeps no copy.
+  acked by it.** It is a position in the conversation's own stream — the one thing every channel
+  has, including a channel that keeps no copy. What sits on the boundary between the layers is the
+  **interface**: `Cursor.position()` / `keep()`. The position itself sits wherever that subscriber's
+  durability requires — a tab passes it as an argument to the next read and stores nothing, a room
+  keeps it in `matrix_room_cursor`, which is the Matrix channel's own table and nobody else's.
 - **The outbox is the channel's queue against the homeserver.** It lives entirely inside the Matrix
   implementation, below that boundary, and what it holds is retry state about a flaky external
   server: `attempts`, `next_attempt_at`, `last_error`, a row that stays unsent until it is not.
@@ -376,9 +379,8 @@ is backing off" in a cursor is just re-deriving a queue. Equally the outbox cann
 cursor: it is the channel's private business, and the conversation layer must not have to read a
 Matrix queue to know how far Matrix has got.
 
-**Build the cursor on its own, ahead of the rest of step 4.** It is a position over rows that
-already exist, gated on nothing, and it is what lets a piece of merged schema shrink rather than
-grow.
+**The cursor is built** (#4315), ahead of the rest of step 4 and gated on nothing, which is what
+lets the merged schema below shrink rather than grow.
 
 ### `chat_delivery` is a revision index, and most of it is write-only
 
@@ -601,9 +603,9 @@ exists to remove:
 
 - **A dropped notice is silently gone.** `RoomPacer.send` logs and returns once 200 sends are
   queued. A reply survives that (the row is re-claimed); a notice does not.
-- **The pacer's budget is an estimate.** `MXSY` (the sync loop), `MXOB` (the outbox drain) and the
-  session lease are independent, so three different replicas can hold them and two token buckets can
-  each believe they own the whole room budget — only the homeserver's `retry_after_ms` corrects
+- **The pacer's budget is an estimate.** `MXSY` (the sync loop), `MXOB` (the outbox drain), `MXNT`
+  (the notice reader) and the session lease are independent, so four different replicas can hold
+  them and two token buckets can each believe they own the whole room budget — only the homeserver's `retry_after_ms` corrects
   them. A reconciler per `(channel, conversation)` collapses these to one holder, which is the point
   at which a rate budget can be real rather than estimated.
 
@@ -684,18 +686,22 @@ having even if the loop is never built. The dependency edges are at the end.
     prompt is the honest substitute.
 
     `create()` writes the row and stops in `idle`; `allocate()` mints the credential and the claim
-    and moves to `provisioning`; admission accepts on `idle`, so `enqueue_prompt` creates demand and
-    the supervisor's trigger becomes "an unclaimed prompt and no sandbox". The enum widening shipped
+    and moves to `provisioning`; admission accepts on `idle`, so `enqueue_prompt` creates demand.
+    **The demand signal is the same on every surface**: an unclaimed prompt against an idle session,
+    swept by a channel-neutral `SandboxAllocator` (`x/sandbox_allocation.py`) under its own `SBOX`
+    election — never from the request path, and never from a channel's supervisor, which now only
+    creates its room's session and announces what it sees. `POST /api/conversations` therefore
+    returns an idle conversation holding no sandbox, exactly as a quiet room does. The enum widening shipped
     a release early (#4190) because `TextBackedStrEnumColumn` parses the column; the writer is the
     second half. **Cost, stated plainly:** the first message after quiet pays the full cold start.
     Measure it rather than assume it away. **Done when** an idle room holds no sandbox and the first
     message provisions one.
 
-4.  **Matrix becomes a subscriber** (§ 2's primitive) — **but build the cursor first, on its own**
-    (§ 5): the position is gated on nothing here, and everything else in this step is. One loop per
+4.  **Matrix becomes a subscriber** (§ 2's primitive). The cursor half is built and landed on its
+    own (#4315); what is left is every consumer that still is not one. One loop per
     `(channel, conversation)`, reading the record from its cursor instead of being handed events by
     the turn loop, woken by `session_changed` and by inbound events with the 1s poll demoted to a
-    fallback. Here the three elections collapse to one, the three egress mechanisms become one
+    fallback. Here the four elections collapse to one, the three egress mechanisms become one
     difference calculation, the pacer's bucket stops being an estimate, and the browser stops being
     the only consumer that reads the record.
 
@@ -972,7 +978,7 @@ Not gone, and deliberately: `matrix_sync_watermark`, `session_events`, `session_
 
 **Mechanisms**
 
-- `RoomOutboxDrain` and its `MXOB` advisory lock — one election instead of three.
+- `RoomOutboxDrain` (`MXOB`) and `RoomNotices` (`MXNT`) — one election instead of four.
 - `TurnStatus._run`'s in-process poll, and the turn loop calling `show_status`/`set_typing` at all.
 - Every per-process latch that stands in for durable state: `_status_body`, `_last_announced`.
 - `RoomPacer` as a queue of opaque callables — a budget the reconciler spends, not a deque of
