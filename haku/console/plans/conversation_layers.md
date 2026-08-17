@@ -16,11 +16,17 @@ turn's tool calls and thinking reach a room that will not take a token at a time
 
 ## 1. What each layer owns
 
-| Layer            | Owns                                                                                                                       | Identity today                | Ends when                                                 |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | --------------------------------------------------------- |
-| **LLM session**  | the runner wire (`session_frames`), the model's context and its compaction, the sandbox claim, the lease one replica holds | `sessions.session_id`         | the runner goes — lease lapse, disconnect, failure, close |
-| **Conversation** | what was said and done, ordered and backend-neutral: `session_messages`, `session_events`, `session_turns`                 | none of its own (§ 6)         | nothing expresses this                                    |
-| **Channel**      | its own copy and addressing, its credential and rate budget, its rendering vocabulary, its delivery state                  | `matrix_conversation.room_id` | the attachment is released (R3.6c, unbuilt)               |
+| Layer            | Owns                                                                                                                                                                                                                                                           | Identity today                | Ends when                                                 |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | --------------------------------------------------------- |
+| **LLM session**  | the runner wire (`session_frames`), the model's context and its compaction, the sandbox claim, the lease one replica holds, **and everything said or done while it ran** — `session_messages`, `session_events`, `session_turns` are all keyed by `session_id` | `sessions.session_id`         | the runner goes — lease lapse, disconnect, failure, close |
+| **Conversation** | which sessions are the same thread, and which channels are attached to it — **identity, and nothing else** (§ 6)                                                                                                                                               | none today                    | the operator ends the thread                              |
+| **Channel**      | its own copy and addressing, its credential and rate budget, its rendering vocabulary, its delivery state                                                                                                                                                      | `matrix_conversation.room_id` | the attachment is released (R3.6c, unbuilt)               |
+
+**An earlier draft of this table put the transcript under the conversation.** That was wrong and it
+hid the shape of the problem: no row in the schema belongs to a conversation rather than a session,
+so the conversation was being described as an under-built entity when it is a _view_. Correcting it
+is what makes § 6's argument decidable — the question is not "where do the rows go" (they are
+already where they belong) but "what names the set of sessions that are one thread".
 
 What sits across a boundary today rather than inside a layer, each a place where the model has work
 to do:
@@ -252,33 +258,78 @@ removes that branch. What stays shared is the record and the per-attachment curs
 record-then-drain split "the shape every outbound channel write has to take". The split is right;
 the neutral half is the record, and this is the sentence to correct when the move lands.
 
-## 6. What a conversation would cost as a table
+## 6. The conversation is a real table, and it is identity only
 
-**It is not one today.** `matrix_conversation.session_id` is the pointer to the session serving the
-room now; `sessions.room_id` is the history, written once so a past Matrix conversation stays
-findable (R11.3a); and the conversation's own read — the tail handed to a replacement session — is
-a join on `Session.room_id`. So the conversation exists, addressed by a channel's key.
+**Decided 2026-08-17**, after the operator named the case that forces it.
 
-What a real table would add: an identity independent of both neighbours, the ordered list of
-sessions that have held it, and something for the per-attachment cursor to hang off.
+### What forces it is a combination, not a cardinality
 
-**What it costs.** A `conversation` row plus a foreign key from `sessions`, backfilled from
-`sessions.room_id` for Matrix sessions; every SPA session becomes its own one-session conversation,
-which is what it already is. The migration is expand/contract — a mapped column takes three
-releases to remove (README § Perimeter / deploy) — and it overlaps
-<../../plans/chat_runtime_cleanup.md> § stage 7's unbuilt `chat_attachment`, which is specified to
-subsume `sessions.room_id` and `matrix_conversation.session_id`. So the real choice is whether attachments
-are re-keyed to a conversation or a conversation table is added beside them.
+Taken one at a time, neither multiplicity needs an entity:
 
-**What not doing it costs.** Every cross-session read stays addressed by a channel key, so a second
-channel onto one conversation cannot be expressed; and "only one session holds it at a time" stays
-a property of the supervisor and its advisory lock rather than a partial unique index over open
-sessions.
+- **One session, many channels.** The session is already the object both attachments point at.
+  Nothing to name.
+- **Many sessions, one channel.** The address is the thread key: `(surface, address)` is stable
+  across the sessions that served it, which is what `sessions.room_id` is doing today.
+- **Many sessions × many channels.** Forced. When the sandbox dies and session A is replaced by B,
+  what has to move is _the set of attachments_, and a set has no name. Re-pointing every one of A's
+  live attachments at B works mechanically, but afterwards "this thread" is recoverable only as a
+  transitive closure over "sessions that ever shared an attachment with…" — not a join, and no
+  handle to link to.
+
+The operator's case is the third: an SPA tab and a Matrix room both open on one session, both able
+to send, and **"the sandbox went away, I had to restart it" preserved in both**. Session replacement
+is not an edge case there — it is the supervisor's normal job.
+
+### What it is
+
+`conversation(conversation_id, operator_id, created_at)`, a foreign key from `sessions`, and
+<../../plans/chat_runtime_cleanup.md> § stage 7's `chat_attachment` keyed on `conversation_id`
+rather than `session_id`, keeping its partial unique index on `(surface, address) where detached_at
+is null`.
+
+**Identity and nothing else.** Every fact stays where it already is: what was said on the session,
+delivery state on the attachment, rendering on the channel. That is what makes it feel like
+ceremony, and it is the correct shape for naming a set whose membership changes over time — the
+same call this codebase already made for `agents` against `credential_bindings`, where the Agent is
+identity, the binding holds the state, and rotation creates a successor binding rather than
+mutating the Agent (<../README.md> § Canonical Agent authority).
+
+**What it buys is that the attachment stops moving.** Replacement becomes "a new session with the
+same `conversation_id`"; the attachments are not touched, because they were never the session's.
+Compare re-pointing them, which is the same write done N times and leaves nothing named afterwards.
+
+**A session attached to nothing stays expressible** — a conversation with one session and no
+attachment rows. That is what an SPA session is today, and it costs one row and no decisions.
+
+### Where events live, which this does not change
+
+On the session. "This session's sandbox died", "this replica adopted it", "the lease lapsed" are
+facts about a session and stay `session_events` rows keyed by `session_id`. The conversation answers
+only _which channels are told_. Events on sessions, fan-out by conversation.
+
+### The cost
+
+`sessions.conversation_id` is a mapped column, so removing it later would take three releases
+(<../README.md> § Perimeter / deploy). The backfill is one conversation per session, except Matrix
+sessions grouped by `room_id` and ordered by `created_at`, which the purge left small. It subsumes
+`matrix_conversation` entirely — including its `user_id` primary key, which is what makes one bot
+user serve exactly one room ever.
+
+### What does not wait for it
+
+**Most of "both surfaces open on one session" needs no schema.** `enqueue_prompt` has no surface
+check, so the browser can already prompt a Matrix-surfaced session given its id, and § 8's
+increment route already serves it updates. What is missing is that `frontend/x/claude_chat_page.tsx`
+_creates_ a session rather than joining one. The durable machinery here is for the channel that
+holds its own copy surviving replacement — not for the browser, which holds none and converges by
+reading.
 
 ## 7. Settled, and still open
 
 **Settled by the operator, 2026-08-17.**
 
+- **The conversation becomes a real table**, identity only, with `chat_attachment` keyed on it.
+  § 6 gives the case that forces it and what it costs.
 - **Channel state lives in Postgres, not in the room.** The watermark stays a row; `m.fully_read`
   and per-room `account_data` are not pursued. The reason given was preference for the known
   quantity — "postgres is known, state in matrix, who knows" — and it is reinforced by the
@@ -294,9 +345,10 @@ sessions.
 
 **Still open.**
 
-- **Does the conversation become a real table, or does `chat_attachment` re-key onto one?** § 6
-  prices both. Deciding it also decides where the reconciler's cursor lives. This is the one
-  question that blocks § 9's sequence rather than sitting beside it.
+- **Is a live attachment per surface, or per surface _instance_?** One room is one attachment. Two
+  browser tabs on one conversation are not two attachments — a tab holds no copy and needs no
+  cursor (§ 2) — so the SPA is either one attachment per conversation or none at all. Deciding it
+  decides whether "the SPA is attached" is a row or an absence.
 - **Which notices exist, and what does each summarise?** § 4 proposes one per turn and one per
   session and leaves the set open, along with retire-or-seal for each.
 - **Does `sessions.status` survive?** § 10.
@@ -369,9 +421,14 @@ holder, which is the point at which a rate budget can be real rather than estima
 **Do not start with the reconciler.** Each step below is independently reviewable, and every one of
 them is worth having even if the loop is never built.
 
-1. **Give the conversation an identity.** § 6's open question first, because every cursor hangs off
-   the answer. Either a `conversation` table with a foreign key from `sessions`, or `chat_attachment`
-   re-keyed onto one — cleanup stage 7 specifies that table and nothing builds it yet.
+0. **The browser joins a session instead of creating one.** No schema, no dependency on anything
+   below, and it is most of what "both surfaces open on one conversation" looks like from the
+   operator's side: `enqueue_prompt` has no surface check and § 8's increment route already serves
+   updates, so what is missing is a chat page that opens an existing session.
+1. **`conversation`, then `chat_attachment` keyed on it** (§ 6). Both in one change, because the
+   attachment's key is the whole point of the identity — building the attachment on `session_id`
+   first would mean writing the re-pointing logic and then deleting it. This subsumes
+   `matrix_conversation` and `sessions.room_id`.
 2. **Record a prompt's provenance** (missing item 3). A structured link from the transcript row to
    the channel event it came from, rather than brackets in prose. Small, additive, and it is what
    makes "answer the message that asked" expressible at all.
@@ -392,8 +449,9 @@ them is worth having even if the loop is never built.
 7. **Notices as spans** (§ 4), once 4 and 6 exist: one work notice per turn, one lifecycle notice
    per session, each a pure function of its span, each retired or sealed.
 
-Steps 2, 3 and 4 are independent of each other and of step 1; step 5 depends on 1; step 6 depends
-on 4 and 5; step 7 depends on 6.
+Step 0 and steps 2–4 are independent of each other and of step 1; step 5 depends on 1; step 6
+depends on 4 and 5; step 7 depends on 6. Nothing depends on step 0, which is why it goes first: it
+is the only one an operator would notice landing.
 
 ## 10. `sessions.status` is derived, and lossy
 
