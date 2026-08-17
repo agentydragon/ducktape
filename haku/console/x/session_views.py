@@ -41,29 +41,23 @@ from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 class SessionToolResultView(BaseModel):
     """What a tool answered — the renderable half, out of the event that recorded it.
 
-    Always text: what the provider sent where it sent prose, and its JSON otherwise. A row stored
-    before a result's content became a string is rendered to the same text rather than handed to
-    the SPA as two further shapes to branch on.
+    Always text: what the provider sent where it sent prose, and its JSON otherwise.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     content: str
-    # `Outcome.UNKNOWN` reads here as "not an error", which is what the frame parser this replaced
-    # also did: a provider routinely reports nothing, and the SPA has one boolean with no third
-    # state to render. Carrying the outcome through is a frontend change rather than this one.
+    # `Outcome.UNKNOWN` reads here as "not an error": a provider routinely reports nothing, and the
+    # SPA has one boolean with no third state to render.
     is_error: bool = False
 
 
 class SessionToolCallView(RecordedToolCall):
     """A recorded call, plus the answer stored beside it.
 
-    Inheriting the stored model is the statement of what the two are: `call_id`, `tool_name` and
-    `arguments` are what the transcript row records, and `result` is the `tool_call_completed`
-    event that answered the same `call_id`.
-
-    Absent while the call is still running, and on a turn that died before answering: a state worth
-    seeing rather than hiding.
+    `call_id`, `tool_name` and `arguments` are what the transcript row records; `result` is the
+    `tool_call_completed` event that answered the same `call_id`, absent while the call is still
+    running and on a turn that died before answering.
     """
 
     result: SessionToolResultView | None = None
@@ -87,8 +81,7 @@ class SessionMessageView(BaseModel):
 class SessionView(BaseModel):
     """One session's own row and transcript, as the store hands it to whoever asked.
 
-    Not a wire shape: the browser reads a conversation, and this is what the read of its current
-    session is assembled from.
+    Not a wire shape: the browser reads a conversation, assembled from this.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -117,9 +110,8 @@ class LiveSession(BaseModel):
 class ConversationSummary(BaseModel):
     """The operator-facing inventory entry for one conversation.
 
-    Keyed by the thread rather than by a session, and carrying **attachments** rather than one
-    surface: a conversation is held by however many channels have attached to it, and a browser
-    reading it is not one of them.
+    Carries **attachments** rather than one surface: a conversation is held by however many
+    channels have attached to it, and a browser reading it is not one of them.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -137,10 +129,9 @@ class ConversationSummary(BaseModel):
 class ConversationCursor(BaseModel):
     """A position in the newest-activity-first order the inventory walks.
 
-    Keyset rather than an offset, because a conversation never ends: the list only ever grows, and
-    it grows at the top — every conversation that moves while a reader pages would push a row
-    across a page boundary, skipping it or repeating it. `conversation_id` breaks the tie
-    `last_activity_at` alone leaves, so the key is total.
+    Keyset rather than an offset, because this list only ever grows and grows at the top: every
+    conversation that moves while a reader pages would push a row across a page boundary.
+    `conversation_id` breaks the tie `last_activity_at` alone leaves, so the key is total.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -162,9 +153,8 @@ class ConversationPage(BaseModel):
 class SetupNarrationView(BaseModel):
     """One thing the sandbox said while coming up, as the frame log recorded it.
 
-    Positioned by `frame_seq` and nothing else: these rows carry **no frame identity** (the runner
-    sends them `replayable=False`, since a console cannot tell a replayed narration line from a
-    repeated one), so two identical lines are two things that happened, not one seen twice.
+    Positioned by `frame_seq` alone: these rows carry **no frame identity** (the runner sends them
+    `replayable=False`), so two identical lines are two things that happened, not one seen twice.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -204,10 +194,8 @@ class ConversationSessionView(BaseModel):
 class EarlierSession(BaseModel):
     """A session this conversation ran before the current one, newest first.
 
-    A conversation outlives its sessions, so a thread whose sandbox died has more than one — and
-    what each of them said is still in its own frame log. Merging their transcripts into one
-    reading is the reconciler's job (`plans/conversation_layers.md` § 9 step 9); until then this is
-    the handle that keeps them reachable.
+    A conversation outlives its sessions, so a thread whose sandbox died has more than one, each
+    with its own frame log. This is the handle that keeps them reachable.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -239,8 +227,8 @@ class SessionProvisioningView(BaseModel):
     **Nothing is reported by being absent.** `sandbox` is null for exactly one reason, a session
     that has never asked for a sandbox; a claim Kubernetes does not have is a view whose step is
     `claim_absent`, and a cluster that could not be read at all is a view carrying
-    `observation_error`. Those are three different answers, and a reader that has to tell them
-    apart — an operator asking why a session never came up — cannot do it from one null.
+    `observation_error`. An operator asking why a session never came up has to tell the three
+    apart.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -256,11 +244,9 @@ class SessionProvisioningView(BaseModel):
     )
 
 
-# Frames per page of the inspector. A frame is usually small, but one `user` frame carries a whole
-# tool result — a file read, a command's output — so the row count alone does not bound a response,
-# and the browser pays again to syntax-highlight each one (`frontend/code_block.tsx`). Fifty is
-# roughly two exchanges: enough that the answer to "what happened at the end" is on the first page,
-# few enough that reaching it costs one request.
+# Frames per page of the inspector. One `user` frame carries a whole tool result — a file read, a
+# command's output — so the row count alone does not bound a response, and the browser pays again
+# to syntax-highlight each one (`frontend/code_block.tsx`). Fifty is roughly two exchanges.
 DEFAULT_FRAME_PAGE = 50
 MAX_FRAME_PAGE = 200
 
@@ -269,12 +255,11 @@ class SessionFrameView(BaseModel):
     """One row of the rollout, as the console's frame inspector reads it — Claude Code's own frame.
 
     **This is one backend's wire and must be presented as such**, never as the conversation: it is
-    the only shape the console serves that names a backend, and a surface rendering it without
-    saying whose frames they are contradicts what every other read promises.
+    the only shape the console serves that names a backend.
 
-    The payload is the wire, whole: this surface exists because `session_messages` is a lossy
-    projection of the frame log, so clipping here would reintroduce that one level down. Bounding a
-    response is the page's job, not the frame's.
+    The payload is the wire, whole. This surface exists because `session_messages` is a lossy
+    projection of the frame log, so clipping here would reintroduce that one level down; bounding a
+    response is the page's job.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -308,10 +293,9 @@ class SessionFramePage(BaseModel):
 def _unprojected(row: SessionFrame) -> dict[str, int] | None:
     """`Projection.unprojected` for one frame, or nothing — never an empty map standing in for "none".
 
-    **The keys are the adapter's, and that is not the leak it looks like.** They are Claude's own
-    frame class names (`system/vcs_state_changed`, `user/text`) because the adapter is the component
-    allowed to be provider-shaped — translating is its job. A future reader should not rename them
-    into a neutral vocabulary; what the fold could not read is only sayable in the wire's own words.
+    **The keys are the adapter's on purpose.** They are Claude's own frame class names
+    (`system/vcs_state_changed`, `user/text`): what the fold could not read is only sayable in the
+    wire's own words, so they must not be renamed into the neutral vocabulary.
 
     Folding one frame at a time is exact here, unlike for the events: a count keys off the frame's
     own class and content blocks, never off what the fold accumulated before it, so per frame sums
@@ -328,7 +312,7 @@ def frame_page(rows: Sequence[SessionFrame], *, limit: int, conversation_id: UUI
     """One page of rollout rows in wire order, with the cursor for the page before it.
 
     A short page is the first one, the same rule the MCP reader uses in the other direction:
-    cheaper than a second count query, for the only question a caller has — whether to ask again.
+    cheaper than a second count query, for the only question a caller has.
     """
     frames = [
         SessionFrameView(
@@ -364,8 +348,7 @@ class SessionToolCalls:
     def within(self, first: int | None, last: int | None) -> list[RecordedToolCall]:
         """The calls a message's own frames made, in the order it made them.
 
-        `asked` is ordered by frame, so this is a slice: a message's span and the next one's do not
-        overlap, which is what makes a range lookup exact where matching by position was a guess.
+        `asked` is ordered by frame and message spans do not overlap, so this is a slice.
         """
         if first is None:
             return []
@@ -379,11 +362,7 @@ def _frame_of(asked: tuple[int, RecordedToolCall]) -> int:
 
 
 async def tool_calls(db: AsyncSession, session_id: UUID) -> SessionToolCalls:
-    """Read the calls and their answers out of the session's stored events.
-
-    Until `session_events` the reply existed in no row at all: it was re-parsed out of the frame
-    log on every request by a Claude frame parser — the last of the four interpreters, all now gone.
-    """
+    """Read the calls and their answers out of the session's stored events."""
     rows = (
         await db.scalars(
             select(SessionEvent)
@@ -400,8 +379,7 @@ async def tool_calls(db: AsyncSession, session_id: UUID) -> SessionToolCalls:
 def _asked(row: SessionEvent) -> tuple[int, RecordedToolCall]:
     """One call, at the frame that made it.
 
-    Both columns are guaranteed by the table — a `call_id` on exactly the tool kinds, and a frame
-    range on the only arm anything writes — so a row missing either is a bug in the writer rather
+    Both columns are guaranteed by the table, so a row missing either is a bug in the writer rather
     than a state to render around.
     """
     if row.call_id is None or row.source_first_frame_seq is None:
@@ -422,9 +400,8 @@ def _answered(row: SessionEvent) -> tuple[str, SessionToolResultView]:
 async def setup_narration(db: AsyncSession, session_id: UUID) -> list[SetupNarrationView]:
     """What the sandbox printed while bootstrapping, in the order it produced it.
 
-    Unbounded, like the transcript beside it in the same response: narration is the shorter of the
-    two in any session that got as far as answering, and in the one where it is not — a session
-    that died during setup — it is the whole account, which is what a cap would truncate.
+    Unbounded, like the transcript beside it in the same response: in the session where narration
+    is the longer of the two — one that died during setup — it is the whole account.
     """
     rows = await db.execute(
         select(SessionFrame.frame_seq, SessionFrame.payload, SessionFrame.created_at)
@@ -455,10 +432,9 @@ def message_view(message: SessionMessage, calls: SessionToolCalls) -> SessionMes
 def user_message_view(message: SessionMessage) -> SessionMessageView:
     """The prompt row `enqueue_prompt` has just written, as its caller reads it back.
 
-    Its own constructor rather than `message_view` with an empty `SessionToolCalls`, because the
-    empty value was a caller asserting a fact about its message and reads equally as "I did not
-    look": a prompt that has only just been accepted is a user turn nothing has answered, so
-    there are no tool calls to join and no events to join them out of.
+    Its own constructor rather than `message_view` with an empty `SessionToolCalls`: a prompt that
+    has only just been accepted is a user turn nothing has answered, so there are no tool calls to
+    join and no events to join them out of.
     """
     return _view(message, tool_calls=[])
 
@@ -484,10 +460,9 @@ def session_view(
     """The session as the SPA reads it, with `responding` derived from an open turn.
 
     `status` is the frontend's contract (`frontend/x/conversations_page.tsx` switches on it); the
-    column underneath does not carry turn state. A live session with a turn in flight reports
-    `responding`; the session's own lifecycle — provisioning, closing, closed, failed — always
-    wins, because a turn left open by a dead replica says nothing about a session the sweep has
-    since failed.
+    column underneath carries no turn state. The session's own lifecycle — provisioning, closing,
+    closed, failed — always wins, because a turn left open by a dead replica says nothing about a
+    session the sweep has since failed.
     """
     status = SessionStatus.RESPONDING if responding and record.status == SessionStatus.READY else record.status
     return SessionView(

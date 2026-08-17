@@ -1,12 +1,11 @@
 """What a channel has put in its own copy, over `chat_delivery`.
 
 Reads and writes the correspondence a copy-holding channel keeps: a subject it decided to show, and
-where it put it. Both strings pass through untouched — this module never parses either, which is
-what lets it be shared by every such channel without learning any of their vocabularies.
+where it put it. Both strings pass through untouched, so this is shared by every such channel
+without learning any of their vocabularies.
 
 `sent` returns a row rather than writing it, so a channel that wants the delivery and its own
-bookkeeping to commit together can add it to that transaction — the same shape
-`session_events.authored` takes, and for the same reason.
+bookkeeping to commit together can add it to that transaction.
 """
 
 from __future__ import annotations

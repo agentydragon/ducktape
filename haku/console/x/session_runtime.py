@@ -1,8 +1,7 @@
 """Operator chat sessions backed by Claude Code in Agent Sandbox pods.
 
-The service half: the turn loop, the runner's websocket bridge, the sandbox lifecycle and the SPA
-chat surface's own routes. The rows underneath it, and every transaction that moves them, are
-`session_store.py`.
+The turn loop, the runner's websocket bridge, the sandbox lifecycle and the SPA chat surface's own
+routes. The rows underneath, and every transaction that moves them, are `session_store.py`.
 
 The incidents behind this file's invariants are in <../debug/2026_08_16_runtime_archaeology.md>.
 """
@@ -69,16 +68,15 @@ internal_router = APIRouter(tags=["claude-chat-internal"])
 logger = logging.getLogger(__name__)
 
 # How long one session's observed provisioning state is reused before the cluster is read again.
-# Short enough that a browser watching a sandbox come up sees it move, long enough that polling
-# costs the Kubernetes API server a bounded rate rather than the operator's refresh rate.
+# Bounds what a polling browser costs the Kubernetes API server.
 OBSERVATION_TTL = timedelta(seconds=2)
 
 
 def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
     """The message of the first leaf in *errors*, for the operator-facing `error` column.
 
-    `except*` hands back a group even when one thing failed, and a group's own `str` is a
-    count ("1 sub-exception"), which says nothing about what broke.
+    `except*` hands back a group even for a single failure, and a group's own `str` is a count
+    ("1 sub-exception").
     """
     leaves = errors.exceptions
     while leaves and isinstance(leaves[0], BaseExceptionGroup):
@@ -117,9 +115,9 @@ class StarletteTextWebSocket(TextWebSocket):
 class RolloutRecorder:
     """One session's `FrameSink`: every protocol frame either way, into `session_frames`.
 
-    **No exclusions.** Control frames, because an interrupt that did not take is diagnosable from
-    nothing else; deltas, because a log with a hole in it cannot be folded over. "Do not bury the
-    reader" is answered at the read instead: `read_frames` leaves deltas out of its default view.
+    No exclusions — control frames, because an interrupt that did not take is diagnosable from
+    nothing else, and deltas, because a log with a hole in it cannot be folded over. Not burying
+    the reader is the read's job: `read_frames` leaves deltas out of its default view.
     """
 
     def __init__(self, store: SessionStore, session_id: UUID):
@@ -127,8 +125,7 @@ class RolloutRecorder:
         self._session_id = session_id
 
     async def sent(self, payload: dict[str, Any]) -> int:
-        # No `runner_seq`: the runner numbers what *it* puts on the wire, and this is a write to
-        # the CLI that it only forwards.
+        # No `runner_seq`: the runner numbers what it puts on the wire, and this it only forwards.
         return (await self._record(FrameDirection.TO_AGENT, payload)).frame_seq
 
     async def received(self, payload: dict[str, Any], *, runner_seq: int | None) -> RecordedFrame:
@@ -138,7 +135,7 @@ class RolloutRecorder:
         because the runner never replays one (`runner.DELTA_TYPE`).
 
         *runner_seq* is kept beside the row's own `frame_seq` and read back as the session's resume
-        cursor. Nothing orders by it yet.
+        cursor. Nothing orders by it.
         """
         return await self._record(FrameDirection.FROM_AGENT, payload, runner_seq=runner_seq)
 
@@ -154,26 +151,19 @@ class ChatFrontend(StatusFrontend, Protocol):
     """The chat channel a session is attached to, for the parts a turn cannot do itself.
 
     **Bound to its address at construction**, never asked for one per call: a channel serves one
-    room and a session serves one channel, so an address parameter on every method would be this
-    loop re-asking what is answered once per connection. The three methods a running turn's
-    status line and typing indicator need are `StatusFrontend`, declared beside the driver that
-    calls them (<room_status.py>).
+    room and a session serves one channel. The three methods a running turn's status line and
+    typing indicator need are `StatusFrontend`, declared beside the driver that calls them
+    (<room_status.py>).
 
-    The SPA needs none of this today — its client reads the message rows over SSE, so a finished
-    turn is delivered by being written down. A room has to be spoken to.
-
-    **The service picks this by reading the session's `surface`**, rather than offering every
-    session to every listener and having each re-derive whether it is its own.
+    Which sessions it serves is the session's `surface`. The SPA needs none of this — its client
+    reads the message rows over SSE, so a finished turn is delivered by being written down. A room
+    has to be spoken to.
 
     **Replies are not here.** They are rows in `session_outbox`, written where they are produced
     and drained into the room by whoever holds the outbox lock (<../debug/message_drops.md>).
-
-    **Neither is anything the stream already records.** A channel subscribes to the conversation and
-    renders what it reads from its own position (<subscription.py>), so a fact with a
-    `session_events` row needs nothing pushed at it from here — `turn_aborted` was the last one that
-    was, and it now reaches the room through <channels/matrix/room_subscription.py>. What is left is
-    what no row carries: the turn that produced nothing to record, and the sandbox's setup
-    narration.
+    Neither is anything the stream already records: a channel subscribes to the conversation and
+    renders what it reads from its own position (<subscription.py>). What is left is what no row
+    carries — the turn that produced nothing to record, and the sandbox's setup narration.
     """
 
     async def system_prompt(self, session_id: UUID) -> str: ...
@@ -188,10 +178,8 @@ class _CompletedTurn:
     """The event that ended a turn, and the frame it was projected from."""
 
     event: TurnCompleted
-    # Still read for the two things the neutral event does not carry: the failure's reason (an
-    # outcome is not a message) and the prose of a turn that said nothing anywhere else. Appealing
-    # an event to the frame behind it is the design's own escape hatch, so this is the seam working
-    # rather than leaking.
+    # Read for the two things the neutral event does not carry: the failure's reason (an outcome is
+    # not a message) and the prose of a turn that said nothing anywhere else.
     frame: ReceivedFrame
 
 
@@ -212,15 +200,14 @@ class SessionService:
         self._notifications = notifications
         self._mcp_token = mcp_token
         self._chat_frontend = chat_frontend
-        # Per session, the last view read off the cluster — see `_observed`. Entries older than
-        # `OBSERVATION_TTL` are dropped as it goes, so this holds what is being watched now.
+        # Per session, the last view read off the cluster; `_observed` drops entries older than
+        # `OBSERVATION_TTL` as it goes.
         self._observations: dict[UUID, ClaudeSandboxProvisioningView] = {}
 
     async def request_abort(self, operator_id: UUID, session_id: UUID) -> bool:
         """Interrupt this session's turn, or answer False when it has none.
 
-        Raises `KeyError` for a session this Operator does not own, so the route asks one question
-        rather than reaching through `service._store` for an ownership check first.
+        Raises `KeyError` for a session this Operator does not own.
         """
         if not await self._store.session_exists(operator_id, session_id):
             raise KeyError(session_id)
@@ -246,11 +233,7 @@ class SessionService:
         return view
 
     async def create_conversation(self, operator_id: UUID) -> ConversationView:
-        """Open a thread and the session that runs it, and read the thread back.
-
-        The read is what the browser wants — a conversation, not a session — and it is one query
-        against rows this call has just committed.
-        """
+        """Open a thread and the session that runs it, and read the thread back."""
         view = await self.create(operator_id, SpaSession())
         return await self.conversation(operator_id, await self._store.conversation_of(view.session_id))
 
@@ -265,23 +248,15 @@ class SessionService:
 
         **Per session, because a conversation runs several.** Each got its own sandbox and the one
         that died has its own account of why; the conversation read below carries this for the
-        current session only, so an earlier session's story is reachable nowhere else.
+        current session only.
 
-        What each state answers, and why:
+        `idle` is answered without asking Kubernetes: a session holds no claim until one is created
+        for it, so an idle session provably has none. Every other state is the live
+        claim/Sandbox/Pod/runner graph — `failed` included, which is the whole point of asking a
+        non-provisioning session. Once cleanup deletes the claim the answer becomes `claim_absent`,
+        which is truthful rather than an error.
 
-        - `idle`: nothing to report, and Kubernetes is not asked. A session holds no claim until
-          one is created for it, so an idle session provably has none — and that is the state a
-          session sits in once a prompt rather than its creation buys the sandbox, so it must not
-          cost a cluster read.
-        - `provisioning`: the live claim/Sandbox/Pod/runner graph, which is what an operator
-          watching a sandbox come up is watching.
-        - `failed`: the same live read, which is the whole point of asking a non-provisioning
-          session. A session that never came up has nothing else to say why — until cleanup
-          deletes its claim, after which this says `claim_absent` rather than inventing a story.
-        - `ready`, `closing`, `closed`: the same live read. A session whose claim has been
-          reclaimed answers `claim_absent`, which is the truthful answer and not an error.
-
-        Raises `KeyError` for a session this Operator does not own, like `request_abort`.
+        Raises `KeyError` for a session this Operator does not own.
         """
         status = await self._store.operator_status(operator_id, session_id)
         return SessionProvisioningView(
@@ -293,11 +268,10 @@ class SessionService:
     async def _provisioning(self, session: ConversationSessionView) -> ClaudeSandboxProvisioningView | None:
         """What Kubernetes says about a sandbox still coming up, for a session still waiting on one.
 
-        **Only while it is what the operator is waiting on**, unlike `sandbox_provisioning`, which
-        answers for a session in any state. Not a different answer — the same `_observed` produces
-        both — but a different question about when to ask: this one is nested in the whole-
-        conversation read, which a streaming turn refetches twice a second, so reading the cluster
-        for a session already past provisioning would put that on the transcript's hot path.
+        Only while it is what the operator is waiting on, unlike `sandbox_provisioning`: this read
+        is nested in the whole-conversation read, which a streaming turn refetches twice a second,
+        so asking for a session already past provisioning would put a cluster read on the
+        transcript's hot path.
         """
         if session.status != SessionStatus.PROVISIONING:
             return None
@@ -306,15 +280,11 @@ class SessionService:
     async def _observed(self, session_id: UUID) -> ClaudeSandboxProvisioningView:
         """The cluster's account of one session's sandbox — never raising, never hammered.
 
-        Never raising: an unreachable Kubernetes comes back as `observation_error` on the view,
-        because "the claim exists and I cannot see the pod" is worth more than an exception that
-        replaces the whole answer (<sandbox_claims.py>). A failure is remembered like a success, so
-        an API server that is down is asked at the same bounded rate as one that is up.
-
-        Never hammered: one session's view is reused for `OBSERVATION_TTL`. This is up to three
-        Kubernetes reads on an operator-facing GET that a browser polls while it watches a sandbox
-        come up, and the cost of that lands on the API server rather than on this process. The view
-        carries the `inspected_at` it was taken at, so a reader can see how old the answer is.
+        An unreachable Kubernetes comes back as `observation_error` on the view rather than as an
+        exception replacing the whole answer (<sandbox_claims.py>), and a failure is remembered
+        like a success, so an API server that is down is asked at the same bounded rate as one that
+        is up. One session's view — up to three Kubernetes reads — is reused for `OBSERVATION_TTL`,
+        and carries the `inspected_at` it was taken at.
         """
         now = datetime.now(UTC)
         self._observations = {
@@ -357,9 +327,8 @@ class SessionService:
     async def _frontend_for(self, session_id: UUID) -> ChatFrontend | None:
         """The chat frontend this session is attached to, or None for one attached to none.
 
-        The frontend is bound to its room, so what is asked here is which sessions it serves — the
-        session's own `surface`, immutable on the row. Read once per runner connection and carried
-        for the session's life, so re-reading it would only add round trips.
+        Decided by the session's own `surface`, immutable on the row; read once per runner
+        connection and carried for the session's life.
         """
         if self._chat_frontend is None:
             return None
@@ -368,17 +337,16 @@ class SessionService:
     async def _appended_prompt(self, session_id: UUID, frontend: ChatFrontend | None) -> str | None:
         """Who this session is, appended to Claude Code's own system prompt.
 
-        Appended, not replacing: the built-ins (Read, Bash, Edit) are live in the sandbox and the
-        preset is what tells the model how to drive them. Hence `--append-system-prompt` and never
-        `--system-prompt`.
+        `--append-system-prompt` and never `--system-prompt`: the built-ins (Read, Bash, Edit) are
+        live in the sandbox and Claude Code's own preset is what tells the model how to drive them.
         """
         return None if frontend is None else await frontend.system_prompt(session_id)
 
     def _progress_reporter(self, session_id: UUID, frontend: ChatFrontend | None) -> Callable[[str], Awaitable[None]]:
         """Record every sandbox progress report, log it, and show it to the frontend if there is one.
 
-        Recorded first because the rollout is the only durable copy: the pod's log is reaped with
-        the sandbox, and a session that died before its first CLI frame has its whole account here.
+        The rollout is the only durable copy: the pod's log is reaped with the sandbox, and a
+        session that died before its first CLI frame has its whole account here.
         """
 
         async def report(detail: str) -> None:
@@ -395,10 +363,9 @@ class SessionService:
         authentication = await self._store.authenticate_bridge(session_id, bearer)
         if authentication == BridgeAuthentication.HELD:
             # **A denial response, not a close.** uvicorn renders any pre-`accept()` close as
-            # HTTP 403 whatever code is passed, and the runner gives up on a 4xx — correctly, since
-            # a bad credential is not worth redialling. The ASGI `websocket.http.response`
-            # extension is what lets this answer 503 instead, which `_worth_redialling` retries
-            # along with every other 5xx, that being what the Gateway says mid-roll.
+            # HTTP 403 whatever code is passed, and the runner gives up on a 4xx. The ASGI
+            # `websocket.http.response` extension is what lets this answer 503 instead, which
+            # `_worth_redialling` retries along with every other 5xx.
             logger.info("session %s is held by another replica; telling the runner to retry", session_id)
             await websocket.send_denial_response(
                 Response(status_code=503, content=b"session is held by another replica")
@@ -411,10 +378,9 @@ class SessionService:
         if authentication == BridgeAuthentication.REJECTED:
             await websocket.close(code=NOT_ADMITTED_CODE, reason="invalid or consumed runner credential")
             return
-        # Whatever the previous holder was in the middle of *is* ours to finish: the sandbox
-        # outlived it, so the rest of that exchange is about to arrive on this socket. What that
-        # holder recorded and did not get to project comes back with the turn, to be fed to the
-        # loop ahead of the live stream.
+        # The sandbox outlived the previous holder, so the rest of its exchange is about to arrive
+        # on this socket; what it recorded and did not get to project comes back with the turn, to
+        # be fed to the loop ahead of the live stream.
         #
         # **Read before the socket is accepted**, which is what stops a frame being both replayed
         # here and delivered fresh: `RolloutRecorder.received` records a frame at the moment
@@ -428,10 +394,9 @@ class SessionService:
                 len(resumed.replay),
             )
         # Rendered before the socket is accepted, with the other admission failures, so a broken
-        # prompt ends the session where the supervisor can see it (and say so in the room) rather
-        # than raising past the cleanup below and stranding the claim. Failing is deliberate: a
-        # session that silently started without its identity is the generic-assistant bug this
-        # prompt exists to fix, and it would be invisible.
+        # prompt ends the session where the supervisor can see it rather than raising past the
+        # cleanup below and stranding the claim. Failing is deliberate: a session that silently
+        # started without its identity is a generic assistant, and invisibly so.
         try:
             frontend = await self._frontend_for(session_id)
             appended = await self._appended_prompt(session_id, frontend)
@@ -466,17 +431,10 @@ class SessionService:
         # closed, or failed in a way the CLI cannot be asked to continue past — and true when it
         # is only this replica that is going away.
         keep_sandbox = False
-        # Two nested handlers because Python forbids `except` and `except*` on one `try`, and they
-        # are about different things: the inner unwraps what the task group failed with, the outer
-        # is this whole activity being cancelled.
+        # Two nested handlers because Python forbids `except` and `except*` on one `try`.
         try:
             try:
-                # `TaskGroup` rather than bare `create_task`: both helpers run for exactly this
-                # block's lifetime, and it owns awaiting and cancelling them.
                 async with asyncio.TaskGroup() as helpers:
-                    # The operator's abort lands on whichever replica the Service picks, which
-                    # is rarely the one holding this websocket — so the event is driven by
-                    # NOTIFY, not by a caller reaching into this process.
                     abort_watch = helpers.create_task(self._watch_aborts(session_id, abort_event))
                     # Says "this replica is still here" for as long as it is. Its absence is
                     # what another replica reclaims the session by; see `expire_stale_leases`.
@@ -490,8 +448,8 @@ class SessionService:
                         await client.connect()
                         # One stream for the session, not one per turn: a folded prompt is answered
                         # with no second `result`, and an adopted turn was issued by a process that
-                        # is gone. A turn is a bracket over this stream, not a request/response pair
-                        # (<../../plans/cli_protocol_ownership.md>).
+                        # is gone. A turn is a bracket over this stream, not a request/response
+                        # pair.
                         frames = _replaying(() if resumed is None else resumed.replay, client.frames().__aiter__())
                         while True:
                             status = await self._store.status(session_id)
@@ -523,8 +481,6 @@ class SessionService:
                                 await self._store.fail(session_id, str(error))
                                 break
                     finally:
-                        # The helpers outlive the loop by construction, so ending it is what
-                        # ends them; the group then awaits them before leaving this block.
                         abort_watch.cancel()
                         renewal.cancel()
                         connection.cancel()
@@ -541,19 +497,19 @@ class SessionService:
                 await self._store.fail(session_id, f"Claude runtime failed: {_first_message(errors)}")
         except asyncio.CancelledError:
             # A `BaseException`, so neither clause above sees it. This is the replica going away —
-            # a rolling update, an evicted pod — which says nothing about the session, so it must
-            # not be recorded as a failure: a terminal row refuses the runner's reconnect and the
-            # supervisor builds a replacement. Hand it back instead; the sandbox outlives this
-            # process and whichever replica the runner redials adopts it. Nothing is swallowed —
-            # the sweep fails the session once its adoption window passes with no runner back.
+            # a rolling update, an evicted pod — which says nothing about the session: recording it
+            # as a failure gives the session a terminal row, which refuses the runner's reconnect.
+            # Hand it back instead; the sandbox outlives this process and whichever replica the
+            # runner redials adopts it. Nothing is swallowed — the sweep fails the session once its
+            # adoption window passes with no runner back.
             keep_sandbox = True
             await self._store.release_lease(session_id)
             raise
         finally:
             # Shielded because everything here is an `await` and this task may already be
             # cancelled, in which case the first would re-raise and the rest silently not happen.
-            # Best effort even so — a SIGKILL runs no finalizer, which is why the lease and not
-            # this block is what guarantees the session stops looking alive.
+            # Best effort even so: a SIGKILL runs no finalizer, so the lease and not this block is
+            # what guarantees the session stops looking alive.
             with contextlib.suppress(asyncio.CancelledError, TimeoutError):
                 await asyncio.shield(
                     asyncio.wait_for(self._finalize(session_id, websocket, client, keep_sandbox), timeout=10)
@@ -581,8 +537,8 @@ class SessionService:
         """Hold *session_id*'s lease for as long as this replica runs it, and keep its sandbox with it.
 
         The same heartbeat slides the SandboxClaim's `shutdownTime` forward, so the sandbox is a
-        renewed lease rather than a `session_ttl_seconds` hard timer (`sandbox_claims.renew`).
-        Console lease and sandbox deadline lapse together the moment a replica stops tending it.
+        renewed lease rather than a `session_ttl_seconds` hard timer (`sandbox_claims.renew`), and
+        both lapse together the moment a replica stops tending it.
         """
         while True:
             await self._store.renew_lease(session_id)
@@ -596,10 +552,9 @@ class SessionService:
         """Raise `WebSocketDisconnect` the moment the runner's stream ends.
 
         The reader is a detached task, so a dropped socket cannot propagate into the task group by
-        itself — it becomes a `None` sentinel only a *turn* consumer sees. An idle session is not
-        consuming, so without this it sits in the prompt-wait until graceful shutdown cancels it.
-        Waking here routes the drop to the `except* WebSocketDisconnect` clause, so a roll hands the
-        session back at once instead of after that timeout.
+        itself — it becomes a `None` sentinel only a *turn* consumer sees, and an idle session is
+        not consuming. Waking here routes the drop to the `except* WebSocketDisconnect` clause, so
+        a roll hands the session back at once instead of after the graceful-shutdown timeout.
         """
         await client.wait_closed()
         raise WebSocketDisconnect(code=GOING_AWAY_CODE)
@@ -608,8 +563,7 @@ class SessionService:
         """Set *abort_event* every time this session is told to abort, until cancelled.
 
         The operator's abort lands on whichever replica the Service picks, rarely the one holding
-        this session's websocket, so it arrives over NOTIFY rather than by a caller reaching into
-        this process.
+        this session's websocket, so it arrives over NOTIFY rather than in process.
         """
         async with self._notifications.subscribe(SessionEventKind.ABORT, session_id) as notified:
             while True:
@@ -630,15 +584,15 @@ class SessionService:
         """Ask *turn*'s question if it has not been asked, then consume the stream until the turn
         completes.
 
-        **Project, then act.** Every frame goes through `claude_code.projection` and this loop acts on
-        the neutral events that come back, so what it knows about is prose, messages, tool calls
+        **Project, then act.** Every frame goes through `claude_code.projection` and this loop acts
+        on the neutral events that come back, so what it knows about is prose, messages, tool calls
         and a completed turn — not `assistant`, `stream_event` and `result`
         (<README.md> § The neutral projection).
 
         *frames* belongs to the session, not to this call — see `handle_runner`. This call is the
-        turn's span and the only thing that closes it, so a turn left open is not a bookkeeping leak:
-        it means no code got to close it, which is what a replica losing its pod mid-exchange looks
-        like from outside, and what `ResumedTurn` picks back up.
+        turn's span and the only thing that closes it, so a turn left open means no code got to
+        close it, which is what a replica losing its pod mid-exchange looks like from outside and
+        what `ResumedTurn` picks back up.
 
         **No turn state is held here.** `state` is the row's, re-read from every write of it, and
         each frame's effects are written with the projection cursor in one transaction
@@ -655,11 +609,10 @@ class SessionService:
             # The prompt's row was written when the operator typed it, before any frame existed to
             # point at; this is where the question acquires the frame it went out as.
             await self._store.set_message_source_frames(session_id, turn.message_id, prompt.frame_seq)
-        # How far the turn has got: the message it is streaming into and what is in it,
-        # `said_anything`, and `queued_reply` — the outbox row's existence, recorded on the turn by
-        # the transaction that inserts it, never a report from the delivery layer and never
-        # `sent_at`, which is the drain's business and comes later. The two booleans are separate
-        # facts because a session with no room queues nothing.
+        # How far the turn has got. `queued_reply` is the outbox row's existence, recorded on the
+        # turn by the transaction that inserts it — never a report from the delivery layer and
+        # never `sent_at`, which is the drain's business. It is a separate fact from
+        # `said_anything` because a session with no room queues nothing.
         state = await self._store.turn_state(turn_id)
         assistant_id = state.assistant_message_id
         completed: _CompletedTurn | None = None
@@ -682,13 +635,10 @@ class SessionService:
                             await client.interrupt()
                 # **The drain is this loop, not a second one beside it.** The CLI finishes the
                 # message it is mid-way through, so an `assistant` frame between the interrupt and
-                # the `result` is the normal case, and it is applied like any other — a message the
-                # agent finished before it stopped is a message (<../debug/message_drops.md> E3).
-                #
-                # It therefore moves `said_anything` and `queued_reply` exactly as it would have a
-                # moment earlier, which is what keeps the tail below honest: the room is not owed
-                # the turn's final text as well (it repeats that message), and no second row is
-                # minted for it.
+                # the `result` is the normal case and is applied like any other
+                # (<../debug/message_drops.md> E3). It therefore moves `said_anything` and
+                # `queued_reply`, which is what keeps the tail below from owing the room the turn's
+                # final text as well.
                 #
                 # The stream stays open for the next turn: it is the session's, so an interrupt
                 # ends a turn rather than the conversation.
@@ -722,9 +672,9 @@ class SessionService:
             # else.
             final_text = state.streamed.strip() or str(result.get("result") or "").strip()
             if assistant_id is not None:
-                # A stream no completed frame closed.
-                # No frame range is passed: the deltas that produced this text already recorded
-                # theirs, and the `result` frame closing the turn is not where the words came from.
+                # A stream no completed frame closed. No frame range is passed: the deltas that
+                # produced this text already recorded theirs, and the `result` frame closing the
+                # turn is not where the words came from.
                 carried_final = await self._store.update_assistant(session_id, assistant_id, final_text, complete=True)
                 assistant_id = None
             elif not state.said_anything:
@@ -741,10 +691,8 @@ class SessionService:
                 # `final_text` — which is `result.result` repeating the last of them — belongs to
                 # no row of its own.
                 carried_final = False
-            # Only what the room is not already owed. Each assistant message queued its own row as
-            # it finished and `result.result` normally repeats the last of them, so queueing
-            # `final_text` unconditionally would post the answer twice — what is left is a turn
-            # whose text belongs to no completed message.
+            # Only what the room is not already owed: each assistant message queued its own row as
+            # it finished and `result.result` normally repeats the last of them.
             #
             # **Before the turn is closed, not after.** Closing it makes it unadoptable, so a
             # replica dying between the two would strand this reply with nothing left to re-derive
@@ -772,8 +720,8 @@ class SessionService:
         finally:
             # The event outlives the turn (it is the session's), so only this turn's waiter goes.
             aborted.cancel()
-            # Every terminal path, failure included: a line still saying "running Bash" after
-            # the turn died is the stuck-typing-indicator bug in another form.
+            # Every terminal path, failure included: a line still saying "running Bash" after the
+            # turn died is the stuck-indicator bug in another form.
             await status.finish()
 
     async def _speak(self, session_id: UUID, frontend: ChatFrontend | None, turn_id: UUID, text: str) -> None:
@@ -785,9 +733,9 @@ class SessionService:
         were all empty.
 
         A session attached to no frontend needs nothing here; the SPA reads the message rows the
-        turn already wrote. An empty body is not a silence token: the room is told the turn
-        said nothing, as a notice rather than a reply, because it is the console reporting and not
-        the agent talking.
+        turn already wrote. An empty body is not a silence token: the room is told the turn said
+        nothing, as a notice rather than a reply, because it is the console reporting and not the
+        agent talking.
         """
         if frontend is None:
             return
@@ -795,10 +743,9 @@ class SessionService:
             await frontend.report_silent_turn()
 
     async def aclose(self) -> None:
-        # Called from the lifespan on the way down. Handing every held lease back here is the
-        # guarantee the per-connection releases cannot be: a cancelled `handle_runner` may not
-        # finish its own commit, this one statement does, so a graceful roll leaves no session
-        # waiting out the sweep. Reachable only because `uvicorn.run` bounds
+        # Called from the lifespan on the way down. Handing every held lease back in one statement
+        # is the guarantee the per-connection releases cannot be: a cancelled `handle_runner` may
+        # not finish its own commit. Reachable only because `uvicorn.run` bounds
         # `timeout_graceful_shutdown` (see app.main).
         released = await self._store.release_held_leases()
         if released:
@@ -812,11 +759,8 @@ async def _replaying(
     """The frames past the session's cursor, then the ones still to arrive.
 
     **This is what makes adoption and steady state one call.** The turn loop consumes one iterator
-    and cannot tell which half a frame came from, so "project each frame as it lands" and "project
-    from the stored cursor, which happens to be behind" are the same code with a different starting
-    cursor (<README.md> § The cursor). A turn whose ending is among the recorded frames therefore
-    closes without the socket being consulted, which is what used to be a separate question asked
-    of the log.
+    and cannot tell which half a frame came from, so a turn whose ending is among the recorded
+    frames closes without the socket being consulted (<README.md> § The cursor).
     """
     for frame in recorded:
         yield frame
@@ -861,8 +805,7 @@ async def list_conversations(
     """One page of this Operator's conversations, newest activity first.
 
     The two cursor parameters are the halves of `next_cursor` and travel together: either both or
-    neither, because half a keyset is not a position. Spelled out rather than encoded into one
-    opaque string so the page boundary is readable from the URL.
+    neither, because half a keyset is not a position.
     """
     if (before_activity is None) != (before_conversation is None):
         raise HTTPException(status_code=422, detail="before_activity and before_conversation go together")
@@ -878,8 +821,7 @@ async def list_conversations(
 async def create_conversation(actor: OperatorActorDep, service: SessionServiceDep) -> ConversationView:
     """Open a new thread and the first session to run it.
 
-    One call, because a conversation with no session is a thread nothing can be said to — and the
-    operator asking for a new conversation is asking to say something.
+    One call, because a conversation with no session is a thread nothing can be said to.
     """
     try:
         return await service.create_conversation(actor.operator_id)
@@ -908,17 +850,16 @@ async def read_session_frames(
 ) -> SessionFramePage:
     """Claude Code's own protocol frames behind one session, newest page first.
 
-    **One backend's wire, not the conversation.** Everything else the console serves is the neutral
-    vocabulary, which names no backend; these are the CLI's own frames, in the CLI's own shapes, and
-    a reader of this route is looking at what a transcript was projected *from* rather than at what
-    it means. Nothing renders, announces or delivers from them.
+    **One backend's wire, not the conversation.** These are the CLI's own frames in the CLI's own
+    shapes — what `session_messages` is a lossy projection *of*. Nothing renders, announces or
+    delivers from them.
 
-    What `session_messages` is a lossy projection *of*. Omitting `before_seq` opens on the end of
-    the log; the response's `next_before_seq` walks back from there.
+    Omitting `before_seq` opens on the end of the log; the response's `next_before_seq` walks back
+    from there.
 
-    `kind` is repeatable and open, because the column is: the CLI may send a `type` this release has
-    never heard of, and an inspector limited to a closed list would hide exactly the frame worth
-    looking at. Omitting it means everything except `stream_event` — see
+    `kind` is repeatable and open, because the column is: the CLI may send a `type` this release
+    has never heard of, and an inspector limited to a closed list would hide exactly the frame
+    worth looking at. Omitting it means everything except `stream_event` — see
     `session_store._frames_of_kinds`.
     """
     try:
@@ -936,10 +877,9 @@ async def read_session_provisioning(
     """What Kubernetes says about the sandbox this session asked for, read live off the cluster.
 
     Addressed at a session rather than a conversation because a conversation runs several over its
-    life, and each has its own sandbox to account for. `GET /api/conversations/{conversation_id}`
+    life, each with its own sandbox to account for. `GET /api/conversations/{conversation_id}`
     carries the same view for the current session and only while it is still provisioning; this
-    answers for any session the Operator owns, in any state — including the failed one whose whole
-    explanation for never coming up is here.
+    answers for any session the Operator owns, in any state.
     """
     try:
         return await service.sandbox_provisioning(actor.operator_id, session_id)

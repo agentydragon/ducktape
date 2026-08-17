@@ -113,12 +113,8 @@ async def test_deliberate_close_is_not_reclassified_as_runner_failure(
 async def test_the_cleanup_sweep_offers_ended_sessions_until_their_claim_is_recorded_gone(
     chat_store, operator_id
 ) -> None:
-    """Two facts, two columns: liveness gates the candidate set, `claim_cleaned_at` empties it.
-
-    A live session is never a candidate however its credential reads, and an ended one stays a
-    candidate until cleanup stamps it — which is what makes an interrupted teardown retryable and a
-    completed one final.
-    """
+    """Two facts, two columns: liveness gates the candidate set, `claim_cleaned_at` empties it, so
+    an interrupted teardown is retryable and a completed one final."""
     live, _ = await chat_store.create(operator_id, SpaSession())
     swept, _ = await chat_store.create(operator_id, SpaSession())
     cleaned, _ = await chat_store.create(operator_id, SpaSession())
@@ -133,9 +129,9 @@ async def test_the_cleanup_sweep_offers_ended_sessions_until_their_claim_is_reco
 
 
 async def test_a_cleaned_up_session_admits_nobody_and_says_which_of_the_two_reasons(chat_store, operator_id) -> None:
-    """The credential survives cleanup, so refusal is the status's doing — and it can now tell a
+    """The credential survives cleanup, so refusal is the status's doing — which is what tells a
     runner holding the right token to stop (`TERMINAL`) apart from one holding the wrong one
-    (`REJECTED`), which blanking the fingerprint collapsed into the latter."""
+    (`REJECTED`)."""
     view, token = await chat_store.create(operator_id, SpaSession())
     await chat_store.request_close(operator_id, view.session_id)
     await chat_store.complete_claim_cleanup(view.session_id)
@@ -147,12 +143,9 @@ async def test_a_cleaned_up_session_admits_nobody_and_says_which_of_the_two_reas
 async def test_a_turn_records_the_message_it_finished_rather_than_the_frames_it_left(
     chat_store, migrated_sessions, operator_id
 ) -> None:
-    """What `_said_anything` was the only cover for, now asked of the turn instead of the log.
-
-    A completed message clears the pointer, records that this turn has spoken, and — for a session
-    serving a room — records that the room's outbox holds it, in the transaction that puts it
-    there. Reading that off the `assistant` frames could only ever answer "one was recorded",
-    which is a different question from either.
+    """A completed message clears the pointer, records that this turn has spoken, and — for a
+    session serving a room — records that the room's outbox holds it, in the transaction that puts
+    it there. Reading that off the `assistant` frames could only answer "one was recorded".
     """
     view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
     session_id = view.session_id
@@ -197,9 +190,9 @@ async def test_the_kinds_filter_skims_without_paging_through_everything(chat_sto
 
 
 async def test_a_replayed_frame_is_recorded_once(chat_store, operator_id) -> None:
-    """The property the whole of stage 4 rests on. An adopted connection re-sends whatever the
-    previous console may not have acknowledged, and the agent's own id is what recognises it —
-    the cursor is an optimisation, this is the correctness argument."""
+    """An adopted connection re-sends whatever the previous console may not have acknowledged, and
+    the agent's own id is what recognises it. The cursor is an optimisation; this is what makes
+    replay safe."""
     session, _ = await chat_store.create(operator_id, SpaSession())
     frame = assistant(message_id="msg_01abc")
 
@@ -211,12 +204,10 @@ async def test_a_replayed_frame_is_recorded_once(chat_store, operator_id) -> Non
 
 
 async def test_the_resume_cursor_is_the_highest_number_a_runner_gave_this_session(chat_store, operator_id) -> None:
-    """What a reconnecting console hands back, and it is per session rather than per connection.
-
-    Two consoles can be adopting one runner's window during a roll, so the cursor has to be a fact
-    about the log both can read. It ignores rows no runner numbered — this console's own writes and
-    the frames it authors — and it does not have to be the newest row: a `setup_output` recorded
-    after them carries no number of its own.
+    """What a reconnecting console hands back, per session rather than per connection: two consoles
+    can be adopting one runner's window during a roll, so the cursor has to be a fact about the log
+    both can read. It ignores rows no runner numbered, and need not be the newest row — a
+    `setup_output` recorded after them carries no number of its own.
     """
     session, _ = await chat_store.create(operator_id, SpaSession())
     other, _ = await chat_store.create(operator_id, SpaSession())
@@ -291,11 +282,9 @@ async def test_one_session_never_reads_another_session_frames(chat_store, operat
 
 
 async def test_the_frame_inspector_opens_on_the_end_of_the_log_and_walks_back(chat_store, operator_id) -> None:
-    """The console's read is the reverse keyset of the MCP reader's.
-
-    A long session's interesting frames are its last ones, so the first page is the tail and the
-    cursor walks towards the start — while each page itself stays in wire order, because reading
-    a protocol log backwards within a page is not what anyone means by reading it.
+    """The console's read is the reverse keyset of the MCP reader's: a long session's interesting
+    frames are its last ones, so the first page is the tail and the cursor walks towards the start.
+    Each page itself stays in wire order.
     """
     session, _ = await chat_store.create(operator_id, SpaSession())
     for kind in ("system", "user", "assistant", "result"):
@@ -343,8 +332,8 @@ async def test_the_frame_inspector_refuses_a_session_another_operator_owns(chat_
 
 
 async def test_a_frame_reaches_the_inspector_with_its_payload_whole(chat_store, operator_id) -> None:
-    """No clipping on this path. The MCP reader clips for context budget; here the wire *is* the
-    answer, and a clipped frame would be the lossy projection again one level down."""
+    """No clipping on this path: the MCP reader clips for context budget, but here the wire *is* the
+    answer."""
     session, _ = await chat_store.create(operator_id, SpaSession())
     payload = {"type": "user", "message": {"content": [{"type": "tool_result", "content": "x" * 20_000}]}}
     await chat_store.record_frame(session.session_id, FrameDirection.TO_AGENT, "user", payload)
@@ -390,8 +379,8 @@ async def test_sessions_come_back_newest_first_with_the_channels_holding_their_t
 async def test_a_session_created_between_two_pages_cannot_shift_what_the_second_one_holds(
     chat_store, operator_id
 ) -> None:
-    """The keyset's whole point: this order grows at the top, and an offset counts from there, so
-    a session created mid-walk would push the first page's last row into the second page again."""
+    """This order grows at the top and an offset counts from there, so a session created mid-walk
+    would push the first page's last row into the second page again."""
     older, _ = await chat_store.create(operator_id, SpaSession())
     newer, _ = await chat_store.create(operator_id, SpaSession())
 
@@ -446,9 +435,9 @@ async def test_exchanges_page_by_their_own_keyset(chat_store, operator_id) -> No
 
 
 async def test_a_turn_ends_at_the_frame_it_names_rather_than_at_the_head_of_the_log(chat_store, operator_id) -> None:
-    """The CLI emits a `command_lifecycle` frame just after the `result` one, and the recorder
-    writes it while the turn is still being closed — so a bound taken from the log here swallows a
-    frame the turn did not produce."""
+    """The CLI emits a `command_lifecycle` frame just after the `result` one and the recorder writes
+    it while the turn is still being closed, so a bound taken from the log swallows a frame the turn
+    did not produce."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
@@ -494,8 +483,7 @@ async def test_a_turn_that_ended_on_no_frame_is_bounded_by_the_ones_it_recorded(
 
 
 async def test_the_transcript_reads_the_conversation_rather_than_the_protocol(chat_store, operator_id) -> None:
-    """The neutral half of the read surface: what a session meant, with a way back to the frames
-    it was read off."""
+    """What a session meant, with a way back to the frames it was read off."""
     session, _ = await chat_store.create(operator_id, SpaSession())
     await chat_store.record_frame(
         session.session_id, FrameDirection.FROM_AGENT, "assistant", assistant(text_block("hi"), message_id="msg_1")
@@ -555,10 +543,9 @@ async def test_deltas_are_not_on_the_transcript_at_all(chat_store, operator_id) 
 async def test_operator_conversation_read_surface_keeps_inventory_and_transcript_separate(
     chat_store, migrated_sessions, operator_id
 ) -> None:
-    """The Console list is light, while detail carries messages and turn summaries.
-
-    Both are keyed by the conversation and carry its attachments — a list row says which channels
-    hold this thread, not which single surface a session was created for.
+    """The Console list is light, while detail carries messages and turn summaries. Both are keyed
+    by the conversation and carry its attachments, so a list row says which channels hold this
+    thread rather than which surface a session was created for.
     """
     await chat_store.create(operator_id, SpaSession())
     matrix, matrix_token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
@@ -585,11 +572,9 @@ async def test_operator_conversation_read_surface_keeps_inventory_and_transcript
 async def test_a_conversation_a_channel_holds_takes_a_prompt_typed_in_the_browser(
     chat_store, migrated_sessions, operator_id
 ) -> None:
-    """Acceptance behaviour 5: one conversation, two surfaces.
-
-    Nothing on the browser path asks what channel holds the thread, and nothing may start to — a
-    room's session admits a prompt on exactly the terms an SPA session does, which is what makes
-    "either can prompt" true rather than aspirational.
+    """One conversation, two surfaces. Nothing on the browser path asks what channel holds the
+    thread, and nothing may start to: a room's session admits a prompt on exactly the terms an SPA
+    session does.
     """
     matrix, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
     await _attach(migrated_sessions, matrix.session_id, ROOM)
@@ -607,8 +592,8 @@ async def test_a_conversation_a_channel_holds_takes_a_prompt_typed_in_the_browse
 async def test_a_replacement_session_leaves_the_thread_and_its_attachment_where_they_were(
     chat_store, migrated_sessions, operator_id
 ) -> None:
-    """What the conversation entity is for: the successor runs the same thread, so the attachment
-    is untouched and the transcript of the session that died stays reachable beside it."""
+    """The successor runs the same thread, so the attachment is untouched and the transcript of the
+    session that died stays reachable beside it."""
     first, _ = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
     await _attach(migrated_sessions, first.session_id, ROOM)
     conversation_id = await chat_store.conversation_of(first.session_id)
@@ -627,8 +612,7 @@ async def test_a_replacement_session_leaves_the_thread_and_its_attachment_where_
 async def test_a_conversation_created_between_two_pages_cannot_shift_what_the_second_one_holds(
     chat_store, operator_id
 ) -> None:
-    """The keyset's whole point, and why the list needs one from the day it ships: a conversation
-    never ends, so this order only grows and only at its top."""
+    """A conversation never ends, so this order only grows and only at its top."""
     older, _ = await chat_store.create(operator_id, SpaSession())
     newer, _ = await chat_store.create(operator_id, SpaSession())
 
@@ -654,11 +638,8 @@ async def test_the_last_page_of_conversations_offers_no_cursor(chat_store, opera
 
 
 async def test_a_second_prompt_is_refused_while_a_turn_is_open(chat_store, operator_id) -> None:
-    """The gate `enqueue_prompt` used to keep was `status == READY`, which doubled as "not
-    mid-turn" only because `enqueue_prompt` itself had written `responding`. Asking the turn
-    directly is what keeps a mid-turn prompt being rejected from silently becoming fold-into-turn
-    with no fold path wired.
-    """
+    """Admission asks the turn rather than the session's status, so a mid-turn prompt cannot become
+    fold-into-turn with no fold path wired."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "first")
@@ -676,9 +657,9 @@ async def test_a_second_prompt_is_refused_while_a_turn_is_open(chat_store, opera
 async def test_a_prompt_is_taken_off_the_queue_rather_than_found_by_status(
     chat_store, migrated_sessions, operator_id
 ) -> None:
-    """The transcript row used to be the queue: `COMPLETE` on a user row meant "handed to the
-    model" while on an assistant row it means "the answer finished". The queue row is what says a
-    prompt is waiting now, and claiming it is what says it no longer is."""
+    """The queue row is what says a prompt is waiting, and claiming it is what says it no longer is
+    — the transcript row's status cannot mean that, since `COMPLETE` on an assistant row means the
+    answer finished."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
@@ -698,8 +679,8 @@ async def test_a_prompt_is_taken_off_the_queue_rather_than_found_by_status(
 
 
 async def test_one_prompt_in_flight_is_a_schema_property(chat_store, migrated_sessions, operator_id) -> None:
-    """It used to be a scan of the transcript for a `pending` row plus the rule that only one
-    exists — so two replicas racing on one session could each conclude they may accept."""
+    """The index and not a scan-plus-rule: two replicas racing on one session would otherwise each
+    conclude they may accept."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "first")
@@ -756,8 +737,8 @@ async def test_a_pending_row_with_no_queue_row_is_not_a_prompt(chat_store, migra
 
 
 async def test_the_view_says_responding_for_as_long_as_the_turn_is_open(chat_store, operator_id) -> None:
-    """`status` is the SPA's contract, so the column underneath can stop carrying turn state
-    without a frontend release — the view derives it from the open turn instead."""
+    """`status` is the SPA's contract, and the view derives it from the open turn rather than from
+    the column."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "work")
@@ -797,13 +778,9 @@ async def test_a_session_that_ended_does_not_report_a_turn_it_left_open(
 async def test_abort_is_refused_until_a_turn_is_actually_running(chat_store, operator_id) -> None:
     """An idle session has nothing to interrupt, and saying so is the point of the 409.
 
-    A *queued* prompt is not a turn either, and this is where that used to go wrong twice over:
-    the first check asked "is this session's abort event registered in this process", true for
-    the whole life of the runner bridge; the second asked whether the session's status was
-    `responding`, which `enqueue_prompt` set before any turn started. Both accepted an abort
-    with nothing to abort, and the event then sat set until the next turn, killing it on
-    arrival. The abort now names the open turn, which does not exist until the prompt is handed
-    to the model.
+    A *queued* prompt is not a turn either. An abort accepted with nothing to abort leaves its
+    event set until the next turn, killing that one on arrival — so the abort names the open turn,
+    which does not exist until the prompt is handed to the model.
     """
     view, token = await chat_store.create(operator_id, SpaSession())
     # The bridge handshake is what takes a session from provisioning to ready, and only a
@@ -826,13 +803,10 @@ async def test_abort_is_refused_until_a_turn_is_actually_running(chat_store, ope
 async def test_abort_reaches_the_replica_running_the_turn(
     migrated_db_url, chat_store, notifications, operator_id
 ) -> None:
-    """The two ends of an abort are on different pods, so it has to cross the database.
-
-    The abort event belongs to whichever replica holds the runner's bridge websocket, while
-    `POST .../abort` is balanced across all of them — at `replicas: 2` the operator's abort
-    button therefore failed with a spurious 409 about half the time. Two stores over two
-    engines is what reproduces that; a single store would pass on the in-process path this
-    change removes.
+    """The two ends of an abort are on different pods, so it has to cross the database: the abort
+    event belongs to whichever replica holds the runner's bridge websocket, while `POST .../abort`
+    is balanced across all of them. Two stores over two engines is what reproduces that; a single
+    store would pass on an in-process path.
     """
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -851,11 +825,8 @@ async def test_abort_reaches_the_replica_running_the_turn(
 
 
 async def test_a_session_records_the_surface_it_was_created_for(chat_store, migrated_sessions, operator_id) -> None:
-    """Which surface a conversation belonged to has to outlive the conversation.
-
-    `matrix_conversation` holds one binding, so before this the room link vanished the moment
-    the supervisor replaced a session, and a past Matrix session read as an SPA one.
-    """
+    """Which surface a conversation belonged to has to outlive the conversation: `matrix_conversation`
+    holds one binding, which moves the moment the supervisor replaces a session."""
     spa, _ = await chat_store.create(operator_id, SpaSession())
     matrix, _ = await chat_store.create(operator_id, MatrixSession(room_id="!room:allegedly.works"))
 
@@ -926,11 +897,8 @@ async def authored_events(migrated_sessions, session_id: UUID) -> list[SessionEv
 async def test_a_replica_taking_a_session_over_records_who_it_took_it_from(
     chat_store, migrated_sessions, operator_id
 ) -> None:
-    """The fact the frame log cannot hold: a lease changing hands crosses no wire.
-
-    It happens on every roll, and until this row the only evidence a console had rolled was
-    somebody's recollection — which three hypotheses in the 2026-08-15 drop investigation turned on.
-    """
+    """The fact the frame log cannot hold: a lease changing hands crosses no wire, and it happens on
+    every roll."""
     view, token = await chat_store.create(operator_id, SpaSession())
     with patch("haku.console.x.session_store.REPLICA", "haku-console-b"):
         assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -963,10 +931,9 @@ async def test_the_first_runner_to_attach_is_not_a_takeover_and_neither_is_its_r
 async def test_a_session_that_died_before_a_runner_ever_attached_says_so_in_a_row(
     chat_store, migrated_sessions, operator_id
 ) -> None:
-    """The case with nothing else to show: no frames, no turn, and until now no record of why.
-
-    The reason is recorded rather than parsed back out of the operator-facing error prose, because
-    the sweep decides it from two columns the failure then overwrites.
+    """The case with nothing else to show: no frames and no turn. The reason is recorded rather than
+    parsed back out of the operator-facing prose, because the sweep decides it from two columns the
+    failure then overwrites.
     """
     view, _ = await chat_store.create(operator_id, SpaSession())
     await age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
@@ -1007,11 +974,8 @@ async def accepted_prompt(chat_store: SessionStore, operator_id: UUID) -> tuple[
 async def test_an_accepted_prompt_is_a_row_in_the_stream_as_well_as_in_the_transcript(
     chat_store, migrated_sessions, operator_id
 ) -> None:
-    """The operator's own question, addressed by `event_seq` like the agent's answer is.
-
-    Until this row `session_events` held one side of a conversation, so a reader following the
-    stream saw answers to questions that were not in it.
-    """
+    """The operator's own question, addressed by `event_seq` like the agent's answer is — without
+    it a reader following the stream sees answers to questions that are not in it."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
 
@@ -1080,11 +1044,9 @@ async def test_a_refused_prompt_is_not_in_the_stream(chat_store, migrated_sessio
 async def test_a_live_session_whose_holder_stopped_renewing_is_failed(
     chat_store, migrated_sessions, operator_id
 ) -> None:
-    """The wedge this exists for: a live status nobody is working on.
-
-    A replica that dies without running its finalizer corrects nothing, and every other observer
-    reads the live status it left as healthy — so the room is never answered and never told why.
-    The expired lease is the evidence that makes it reclaimable by anyone.
+    """A live status nobody is working on. A replica that dies without running its finalizer
+    corrects nothing and every other observer reads the status it left as healthy, so the room is
+    never answered and never told why; the expired lease is what makes it reclaimable by anyone.
     """
     view, _ = await chat_store.create(operator_id, SpaSession())
     await chat_store.renew_lease(view.session_id)
@@ -1096,10 +1058,10 @@ async def test_a_live_session_whose_holder_stopped_renewing_is_failed(
 
 
 async def test_a_session_is_adoptable_before_it_is_dead(chat_store, migrated_sessions, operator_id) -> None:
-    """The bug a production roll found, in one test. `release_lease` is a finalizer, so SIGKILL and
-    node loss skip it — measured, every roll took this path. Failing the row the moment the lease
-    lapsed beat the runner's redial every time, so the session died while its sandbox sat there
-    retrying. An expired lease has to mean unowned for long enough to be taken."""
+    """`release_lease` is a finalizer, so SIGKILL and node loss skip it, and failing the row the
+    moment the lease lapses beats the runner's redial every time — killing the session while its
+    sandbox sits there retrying. An expired lease has to mean unowned for long enough to be
+    taken."""
     view, _ = await chat_store.create(operator_id, SpaSession())
     await chat_store.renew_lease(view.session_id)
     await age_lease(migrated_sessions, view.session_id, seconds_ago=1)
@@ -1121,11 +1083,9 @@ async def _set_idle(sessions: async_sessionmaker[AsyncSession], session_id: UUID
 
 
 async def test_an_idle_session_holds_no_lease_to_lose(chat_store, migrated_sessions, operator_id) -> None:
-    """A session holding no sandbox has no holder, so its lapsed lease is evidence of nothing.
-
-    The sweep and the renewal key on the statuses something is actually holding, not on every
-    status worth keeping: one set answering both questions is what would reap this row after
-    `ADOPTION_GRACE` for a holder it never had.
+    """A session holding no sandbox has no holder, so its lapsed lease is evidence of nothing. The
+    sweep and the renewal key on the statuses something is actually holding, not on every status
+    worth keeping, or this row would be reaped after `ADOPTION_GRACE` for a holder it never had.
     """
     view, _ = await chat_store.create(operator_id, SpaSession())
     await _set_idle(migrated_sessions, view.session_id)
@@ -1200,8 +1160,8 @@ async def test_an_unheld_session_says_no_replica_ever_attached(chat_store, migra
 
 
 async def test_a_failed_session_names_the_replica_that_held_it(chat_store, migrated_sessions, operator_id) -> None:
-    """The whole reason to record a holder: this message used to be identical for every such
-    failure, so a room said a session died and nothing could say which process to go read."""
+    """The reason to record a holder: without it a room says a session died and nothing says which
+    process to go read."""
     view, _ = await chat_store.create(operator_id, SpaSession())
     await chat_store.renew_lease(view.session_id)
     await age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
@@ -1247,11 +1207,7 @@ async def test_an_ended_session_is_not_reclassified_by_the_sweep(chat_store, mig
 async def test_a_frames_events_land_as_rows_with_the_cursor_that_says_they_did(
     chat_store, migrated_sessions, operator_id
 ) -> None:
-    """The projection's own output, stored — and stored in the transaction that moves the cursor.
-
-    A tool call's answer is the row nothing held before these: until them the frames carrying the
-    reply were re-parsed on every read.
-    """
+    """The projection's own output, stored in the transaction that moves the cursor."""
     view, token = await chat_store.create(operator_id, SpaSession())
     session_id = view.session_id
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
@@ -1316,9 +1272,7 @@ async def test_a_frames_events_land_as_rows_with_the_cursor_that_says_they_did(
 async def test_an_event_row_cannot_be_written_without_a_provenance_union(
     chat_store, migrated_sessions, operator_id
 ) -> None:
-    """The requirement #4143 could not put on `session_messages`, where NULL means two things.
-
-    Either arm is writable and neither can be written half: `frame_range` without a range, and
+    """Either arm is writable and neither can be written half: `frame_range` without a range, and
     `authored` with one, are both refused by the table rather than by whoever remembers. The turn
     goes the same way — required of a projected row, since the fold only runs inside one, and
     optional on the arm the console authors about the session itself.

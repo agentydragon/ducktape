@@ -99,11 +99,10 @@ def test_a_claude_turn_still_reads_the_way_it_did_off_the_frames() -> None:
 
     The frames are the census's shapes (<../debug/frame_shape_census.md>: one content block per
     `assistant` frame), and the cut is `_run_turn`'s — one frame, `STREAM_EVENTS`, fresh state — so
-    what this asserts is exactly the sequence a room sees.
+    this asserts exactly the sequence a room sees.
 
-    `task_started` says nothing now: the harness's own prose for a step in flight was one provider's
-    concept in the neutral vocabulary, so the frame is unprojected and the line stays on whatever it
-    last said until the agent writes again.
+    `task_started` says nothing: the harness's prose for a step in flight is one provider's concept,
+    so the frame is unprojected and the line stays on whatever it last said.
     """
     frames: list[tuple[dict[str, Any], str | None]] = [
         (assistant(thinking_block("hm"), message_id="msg_A"), "writing"),
@@ -162,12 +161,10 @@ async def test_a_slow_turn_says_what_it_is_doing_and_then_retires_the_line() -> 
 
 
 async def test_a_state_that_changes_inside_the_floor_is_deferred_rather_than_lost() -> None:
-    """The floor may delay what the room is told; it may not decide the room is never told it.
-
-    This used to be the sink's: it declined silently inside its own edit interval while this
-    driver had already recorded the state as shown, so a turn that changed tools twice in five
-    seconds left the room reading the first of them — until the *next* change, which on a turn
-    that then settles into one long tool call is the rest of the turn.
+    """The floor may delay what the room is told; it may not decide the room is never told it. A
+    sink that declined silently inside its own edit interval would leave a turn that changed tools
+    twice in five seconds reading the first of them until the *next* change — which on a turn
+    settling into one long tool call is the rest of the turn.
     """
     frontend = _RecordingFrontend()
 
@@ -200,9 +197,8 @@ async def test_the_line_is_retired_even_when_the_turn_fails() -> None:
 
 
 async def test_typing_starts_with_the_turn_rather_than_waiting_for_the_status_threshold() -> None:
-    """The room hears that Haku is working on it, and hearing it after the fact is worth nothing —
-    so unlike the status line the typing notice does not wait — a turn shorter than
-    `STATUS_AFTER_SECONDS` still shows it."""
+    """Typing is worth nothing after the fact, so unlike the status line it does not wait — a turn
+    shorter than `STATUS_AFTER_SECONDS` still shows it."""
     frontend = _RecordingFrontend()
 
     status = TurnStatus(frontend)
@@ -232,8 +228,8 @@ async def test_typing_is_refreshed_for_the_length_of_the_turn() -> None:
 
 
 async def test_typing_is_taken_back_even_when_the_turn_fails() -> None:
-    """The stuck typing indicator this requirement is named after: every terminal path clears it,
-    failure included, and `finish()` is the one hook all of them run."""
+    """Every terminal path clears it, failure included, and `finish()` is the one hook all of them
+    run."""
     frontend = _RecordingFrontend()
 
     status = TurnStatus(frontend)

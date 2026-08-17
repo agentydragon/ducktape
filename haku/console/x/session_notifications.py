@@ -1,28 +1,23 @@
 """The session runtime's Postgres LISTEN/NOTIFY channel.
 
-Separate from `SessionStore` because it is not storage: a repository answers questions
-about rows, and this wakes tasks. Keeping the two in one class is what let the listener be
-written against psycopg3's API while running on an asyncpg engine — it raised on every call
-in production, killing every Matrix session about four seconds in, and the only test
-covering it passed against a fake engine.
+Separate from `SessionStore` because it is not storage: a repository answers questions about rows,
+and this wakes tasks.
 
-**Deviation from a pooled connection:** one long-lived connection with a reconnect loop,
-rather than borrowing from the SQLAlchemy pool per wait. Two problems go with the pooled
-shape — a listener that dies takes its waiters with it, and a session-lifetime watcher holds
-a pool connection for as long as it lives.
+**Deviation from a pooled connection:** one long-lived connection with a reconnect loop, rather
+than borrowing from the SQLAlchemy pool per wait. Two problems go with the pooled shape — a
+listener that dies takes its waiters with it, and a session-lifetime watcher holds a pool
+connection for as long as it lives.
 
 The driver is asyncpg, the same one the application's engine uses, so nothing in the console's
 async path speaks two dialects. (psycopg remains for synchronous Alembic; see
 <../database_migrate.py>.)
 
-The notify half stays inside the caller's transaction (see `notify`), because `pg_notify`
-delivers on commit: emitting it anywhere else would announce work that a rollback then
-un-did.
+The notify half stays inside the caller's transaction (see `notify`), because `pg_notify` delivers
+on commit: emitting it anywhere else would announce work that a rollback then un-did.
 
-**One channel, a typed payload.** Every event travels on `CHANNEL` as a `SessionEvent`, rather
-than the kind being implicit in one of three channel names — which was untyped, unvalidated,
-and needed another LISTEN per kind. `pg_notify` allows 8000 bytes of payload; this uses about
-seventy.
+**One channel, a typed payload.** Every event travels on `CHANNEL` as a `SessionEvent` rather than
+the kind being implicit in a channel name, which would need another LISTEN per kind. `pg_notify`
+allows 8000 bytes of payload; this uses about seventy.
 """
 
 from __future__ import annotations
@@ -61,9 +56,9 @@ class SessionEventKind(StrEnum):
 class SessionEvent(BaseModel):
     """What travels on `CHANNEL`.
 
-    A cross-replica wire contract: both ends of a notification are separate pods, which may
-    run different releases during a roll. Add fields, never rename or remove one, and treat
-    a change of `CHANNEL` itself as destructive — see the expand/contract note in the README.
+    A cross-replica wire contract: both ends of a notification are separate pods, which may run
+    different releases during a roll. Add fields, never rename or remove one, and treat a change of
+    `CHANNEL` itself as destructive — see the expand/contract note in the README.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -89,9 +84,9 @@ def _parse(payload: str) -> SessionEvent | None:
     try:
         return SessionEvent.model_validate_json(payload)
     except ValueError:
-        # Pydantic's ValidationError is a ValueError. Not raised onward: this runs on
-        # asyncpg's reader task, and one bad payload must not cost the connection every
-        # other session is being woken through.
+        # Pydantic's ValidationError is a ValueError. Not raised onward: this runs on asyncpg's
+        # reader task, and one bad payload must not cost the connection every other session is
+        # being woken through.
         logger.exception("session notification carried an unreadable payload: %r", payload)
         return None
 
@@ -164,9 +159,9 @@ class SessionNotifications:
     async def subscribe(self, kind: SessionEventKind, session_id: UUID) -> AsyncIterator[asyncio.Event]:
         """Hold a registration for as long as the caller needs it.
 
-        For watchers that outlive a single wait: the caller clears the event and waits
-        again. Registration is in-process, so unlike a per-wait connection there is no
-        window between waits in which a notification is lost.
+        For watchers that outlive a single wait: the caller clears the event and waits again.
+        Registration is in-process, so there is no window between waits in which a notification is
+        lost.
         """
         with self._registered(kind, session_id) as event:
             yield event
@@ -176,9 +171,9 @@ class SessionNotifications:
         """Hand *on_session* every *kind* event this replica receives, whatever session it names.
 
         For a consumer with no session in mind — the console-socket fan-out has to hear about
-        sessions nobody has told it to expect, and `subscribe` cannot serve that: a waiter is
-        registered per `(kind, session_id)`, and the session ids are precisely what is unknown.
-        A callback rather than an `asyncio.Event` for the same reason — the id *is* the payload.
+        sessions nobody has told it to expect, and `subscribe` registers a waiter per
+        `(kind, session_id)`. A callback rather than an `asyncio.Event` because the id *is* the
+        payload.
 
         It runs on asyncpg's reader task, like `_on_notification` itself, so it must neither block
         nor await: record the id and do the work elsewhere.

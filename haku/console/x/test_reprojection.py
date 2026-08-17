@@ -79,9 +79,9 @@ async def test_a_session_the_write_path_projected_agrees_with_itself(
 
 
 async def test_an_aborted_turn_still_agrees_with_its_frames(chat_store, migrated_sessions, operator_id) -> None:
-    """The authored arm is out of scope, and `turn_aborted` is the first member of it to name a
-    turn — so the per-turn read has to exclude it. Comparing it against a re-fold would report
-    drift on every turn the operator stopped, since no frame projects to a row nothing sent.
+    """The authored arm is out of scope and `turn_aborted` is the member of it that names a turn, so
+    the per-turn read excludes it: no frame projects to a row nothing sent, and comparing it against
+    a re-fold would report drift on every turn the operator stopped.
     """
     session_id, turn_id = await _turn_through_the_write_path(
         chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
@@ -152,9 +152,8 @@ async def test_a_row_that_is_gone_is_a_count_mismatch_rather_than_a_silent_pass(
 
 
 async def test_a_turn_with_frames_and_no_rows_is_drift(chat_store, migrated_sessions, operator_id) -> None:
-    """No writer leaves a projected frame without its rows, so a turn with none is the projection
-    having stopped producing — reported against the frame that should have written them, exactly as
-    a single missing row is."""
+    """No writer leaves a projected frame without its rows, so a turn with none is reported against
+    the frame that should have written them, exactly as a single missing row is."""
     session_id, _ = await _turn_through_the_write_path(
         chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
     )
@@ -173,11 +172,8 @@ async def test_a_turn_with_frames_and_no_rows_is_drift(chat_store, migrated_sess
 async def test_a_turn_the_cursor_never_reached_is_skipped_rather_than_re_projected(
     chat_store, migrated_sessions, operator_id
 ) -> None:
-    """The other era, #4178's: a session whose cursor a previous image never advanced.
-
-    Its frames were projected by *something* — the rows are there — but the cursor stands where
-    nothing has been projected, so re-projecting them would compare against a position no writer
-    claimed.
+    """A session whose cursor was never advanced: its frames were projected by *something*, since
+    the rows are there, but re-projecting them would compare against a position no writer claimed.
     """
     session_id, _ = await _turn_through_the_write_path(
         chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
@@ -195,10 +191,8 @@ async def test_a_turn_the_cursor_never_reached_is_skipped_rather_than_re_project
 async def test_a_frame_recorded_past_the_cursor_is_counted_and_not_reported(
     chat_store, migrated_sessions, operator_id
 ) -> None:
-    """A replica that died between recording a frame and projecting it is not drift.
-
-    The cursor is what says so, and adoption is what will still redo the frame — so it is counted
-    and reported as coverage rather than as a finding.
+    """A replica that died between recording a frame and projecting it is not drift: the cursor says
+    so and adoption will still redo the frame, so it is coverage rather than a finding.
     """
     session_id, _ = await _turn_through_the_write_path(
         chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]

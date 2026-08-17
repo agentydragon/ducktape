@@ -1,15 +1,13 @@
 """One recorded session's frames, redacted, in the form the recorded-frame tests already read.
 
-The capture route that produced <claude_code/testdata/diverse_session.jsonl> was the CLI's stdout
-in a throwaway directory, which can only ever record a session somebody ran for the purpose. The
-shapes worth pinning next are the ones a console session produces — a subagent, a backgrounded
-`Bash`, a monitor loop polling it — and those exist in `session_frames` and nowhere else. This is
-the second route to the same file format.
+The other capture route reads the CLI's stdout in a throwaway directory, which can only record a
+session somebody ran for the purpose; the shapes worth pinning — a subagent, a backgrounded `Bash`,
+a monitor loop polling it — exist in `session_frames` and nowhere else.
 
-**The format is that fixture's, not a new one.** One JSON object per line, `frame` carrying the
-payload and `t` its offset in seconds from the first exported frame, `original_bytes` on a record
-redaction shrank. Two of that file's properties do not survive the change of route, and their
-absence is the honest reading rather than a gap:
+**The format is <claude_code/testdata/diverse_session.jsonl>'s, not a new one.** One JSON object
+per line, `frame` carrying the payload and `t` its offset in seconds from the first exported frame,
+`original_bytes` on a record redaction shrank. Two of that file's properties do not survive the
+change of route:
 
 - **A record's index is its `frame_seq`.** The table's own numbers are database-assigned with gaps
   that mean nothing, and this drops rows besides, so renumbering is what keeps the fixture's

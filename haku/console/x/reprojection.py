@@ -1,7 +1,7 @@
 """Re-project a recorded session's frames and say where `session_events` disagrees.
 
-`check_session` returns findings; it prints nothing and decides nothing, so a caller chooses what
-a per-turn disagreement is worth.
+`check_session` returns findings; it prints nothing and decides nothing, so a caller chooses what a
+per-turn disagreement is worth.
 
 **The fold is the write path's own** (`frame_projection.projected`) and the row is built by the
 write path's own mapping (`session_events.row`), so the only thing added here is the alignment.
@@ -13,9 +13,9 @@ lookup rather than a guess.
 `sessions.projected_frame_seq` is how far the fold committed, so a frame past it is one whose
 effects were never written — a replica that died mid-turn — and is counted rather than reported.
 
-The ambiguous case is reported rather than guessed at: a turn whose rows begin part-way through
-it, which is what a replica on the new image adopting a turn the old one started produces — and
-also what a projection that dropped its first frames produces.
+The ambiguous case is reported rather than guessed at: a turn whose rows begin part-way through it,
+which a replica adopting a turn another started produces, and so does a projection that dropped its
+first frames.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ class FieldDifference:
     """One column of one row, as the frames project it and as it is stored.
 
     Rendered to text rather than carried typed: the field set spans an enum, two integers, a string
-    and a JSON body, and a caller acts on *that a column differs*, not on the value.
+    and a JSON body, and a caller acts on *that* a column differs.
     """
 
     field: str
@@ -88,8 +88,8 @@ type Finding = RowMismatch | RowCountMismatch | RowsBeyondCursor
 class SkipReason(StrEnum):
     """An era the check cannot speak about, as opposed to a turn that agrees or drifts."""
 
-    # `sessions.projected_frame_seq` is NULL or behind the turn (#4178's era), so nothing in it
-    # claims to have been projected and re-folding would compare against a position no writer took.
+    # `sessions.projected_frame_seq` is NULL or behind the turn, so nothing in it claims to have
+    # been projected and re-folding would compare against a position no writer took.
     CURSOR_NEVER_REACHED = "cursor_never_reached"
 
 
@@ -166,7 +166,7 @@ async def _check_turn(
 ) -> TurnReport:
     frames = await _turn_frames(db, turn, ends_before=ends_before)
     # The fold's own output and nothing else. An authored row may name a turn (`turn_aborted`
-    # does), and re-projecting frames can never re-derive one — so comparing it against the fold
+    # does) and re-projecting frames can never re-derive one, so comparing it against the fold
     # would report drift on every aborted turn.
     rows = (
         await db.scalars(
@@ -217,9 +217,8 @@ def _outcome(
 def _aligned(frame_seq: int, projected: Sequence[SessionEvent], stored: Sequence[SessionEvent]) -> list[Finding]:
     """One frame's rows against one frame's projection, in order.
 
-    Position is the alignment, because both sequences come out of the same fold over the same frame
-    — so a difference in length is a row gained or lost rather than a reordering to search for, and
-    saying which is which is the reader's job and not this function's.
+    Position is the alignment, because both sequences come out of the same fold over the same
+    frame, so a difference in length is a row gained or lost rather than a reordering to search for.
     """
     if len(projected) != len(stored):
         return [RowCountMismatch(frame_seq=frame_seq, projected=_kinds(projected), stored=_kinds(stored))]

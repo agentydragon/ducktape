@@ -1,13 +1,11 @@
 """The narrow declarative `SandboxClaim` one chat session runs in, and how it is inspected.
 
-Out of `session_runtime.py` because none of it is about chat: it creates a claim, deletes it, and
-turns the CR graph underneath — claim, Sandbox, Pod, runner container — into the one progress
-view the SPA renders. A change to that graph should not read as a change to the turn loop.
+Creates a claim, deletes it, and turns the CR graph underneath — claim, Sandbox, Pod, runner
+container — into the one progress view the SPA renders.
 
-**Reporting is best effort and says so in the data.** Provisioning is what an operator watches
-when nothing is happening yet, so a step that cannot be observed reports `observation_error`
-rather than raising: the answer "the claim exists and the sandbox is not visible" is worth more
-than an exception that replaces the whole view.
+**Reporting is best effort and says so in the data.** A step that cannot be observed reports
+`observation_error` rather than raising: "the claim exists and the sandbox is not visible" is worth
+more than an exception that replaces the whole view.
 """
 
 from __future__ import annotations
@@ -80,10 +78,9 @@ class ClaudeSandboxProvisioningView(BaseModel):
 class KubernetesClients:
     """The three clients built from one in-cluster configuration.
 
-    One object because they are one thing: they are built together, closed together, and no state
-    where some exist and others do not is reachable — which is what the four `assert`s this
-    replaced were restating at every call site. Public so a test can supply recorded ones through
-    the constructor instead of reaching past it into private attributes.
+    One object because they are built together and closed together, so no state where some exist
+    and others do not is reachable. Public so a test can supply recorded ones through the
+    constructor instead of reaching past it into private attributes.
     """
 
     api: ApiClient
@@ -112,9 +109,8 @@ class KubernetesSandboxClaims:
         self._lock = asyncio.Lock()
 
     async def _connected(self) -> KubernetesClients:
-        # The lock is held on every call rather than only the first: acquiring an uncontended
-        # `asyncio.Lock` does not suspend, so the fast path costs nothing and there is no
-        # check-then-build window to reason about.
+        # Held on every call rather than only the first: acquiring an uncontended `asyncio.Lock`
+        # does not suspend, so the fast path costs nothing and there is no check-then-build window.
         async with self._lock:
             if self._clients is None:
                 configuration = k8s_client.Configuration()
@@ -161,10 +157,9 @@ class KubernetesSandboxClaims:
         """Slide this session's sandbox shutdown deadline forward while a replica is tending it.
 
         The deadline is a lease, not a hard timer: the console pushes it out on the same heartbeat
-        that renews the session's console lease, so a conversation in full flow no longer dies at
-        exactly `session_ttl_seconds`, and the controller reclaims the sandbox soon after nothing
-        tends it. `test` on `resourceVersion` plus a 409 retry, copying `sandbox_mcp`'s `_renew`,
-        so a concurrent writer never clobbers the deadline.
+        that renews the session's console lease, so a conversation in full flow does not die at
+        `session_ttl_seconds` and the controller reclaims the sandbox soon after nothing tends it.
+        `test` on `resourceVersion` plus a 409 retry, so a concurrent writer never clobbers it.
 
         Best effort: a slide that fails leaves the sandbox on its previous deadline and the sweep
         handles the fallout, so it must not take the renewal heartbeat down with it.

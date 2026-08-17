@@ -1,10 +1,10 @@
 """Session updates arriving on the console socket, against a real Postgres and a real hub.
 
-Both ends are the point. The notification is emitted by the write's own transaction and travels a
-broadcast channel; the invalidation goes out on the console channel's sockets. Standing either end
-in would assert the fan-out against a shape this file's author imagined — which is how the session
-listener passed every test it had while raising on every call in production (<README.md> § Tests
-run against a real database).
+Both ends are the point: the notification is emitted by the write's own transaction and travels a
+broadcast channel, and the invalidation goes out on the console channel's sockets. Standing either
+end in would assert the fan-out against an imagined shape, which is how the session listener passed
+every test it had while raising on every call in production (<README.md> § Tests run against a real
+database).
 """
 
 from __future__ import annotations
@@ -117,11 +117,8 @@ async def test_the_event_says_only_which_session_changed(
     migrated_sessions: async_sessionmaker[AsyncSession],
     operator_id: UUID,
 ) -> None:
-    """The wire shape is the contract: an invalidation, never the transcript itself.
-
-    Content here would make the socket a second source of truth for what a session holds, and
-    every consumer would then have to decide which of the two to believe.
-    """
+    """The wire shape is the contract: an invalidation, never the transcript itself, which would
+    make the socket a second source of truth for what a session holds."""
     view, _ = await chat_store.create(operator_id, SpaSession())
     socket = await _tab(hub, operator_id)
 

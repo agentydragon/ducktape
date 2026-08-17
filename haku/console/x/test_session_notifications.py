@@ -1,8 +1,7 @@
 """The session LISTEN/NOTIFY channel, against a real Postgres.
 
-The point of these is that the driver and the connection lifecycle are the thing that broke
-before: a listener written against the wrong driver's API passed every test it had, because
-those tests never opened a socket.
+The driver and the connection lifecycle are what these are for: a listener written against the
+wrong driver's API passes every test that never opens a socket.
 """
 
 from __future__ import annotations
@@ -98,13 +97,9 @@ async def test_wait_reports_a_timeout_rather_than_hanging(notifications) -> None
 
 
 async def test_the_listener_reconnects_and_wakes_its_waiters(notifications, migrated_sessions) -> None:
-    """A dropped listener must not take its waiters with it.
-
-    This is the property the previous implementation lacked: it borrowed a pooled connection
-    per wait, so a connection that died surfaced as an exception to whoever was waiting —
-    and in the case of the session-lifetime abort watcher, aborts simply stopped working
-    until the session ended. Killing the backend here is the closest thing to the real
-    failure (a database restart, a failover, an idle-connection reaper).
+    """A dropped listener must not take its waiters with it: a session-lifetime abort watcher whose
+    connection died would stop aborting until the session ended. Killing the backend here is the
+    closest thing to the real failure (a database restart, a failover, an idle-connection reaper).
     """
     session_id = uuid4()
 
@@ -117,8 +112,8 @@ async def test_the_listener_reconnects_and_wakes_its_waiters(notifications, migr
                     "AND query LIKE 'LISTEN%'"
                 )
             )
-        # The reconnect itself wakes every waiter, because notifications committed while the
-        # socket was down are gone and the only safe answer is "re-read your own state".
+        # The reconnect itself wakes every waiter: notifications committed while the socket was
+        # down are gone, so the only safe answer is "re-read your own state".
         async with asyncio.timeout(30):
             await woken.wait()
         woken.clear()

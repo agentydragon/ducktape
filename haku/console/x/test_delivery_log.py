@@ -60,8 +60,8 @@ async def test_a_subject_nobody_has_shown_is_absent(deliveries: DeliveryLog, att
 
 
 async def test_one_subject_cannot_be_showing_in_two_places(deliveries: DeliveryLog, attachment_id: UUID) -> None:
-    """The index is the idempotence: without it a second pass over the same subject would leave two
-    live rows and the reconciler would have no answer to "which event is this"."""
+    """The index is the idempotence: without it a second pass over the same subject leaves two live
+    rows and the reconciler has no answer to "which event is this"."""
     await deliveries.record(attachment_id, "status", "$line")
 
     with pytest.raises(IntegrityError):

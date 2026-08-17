@@ -1,11 +1,10 @@
 """How a session that runs agents and background commands projects — and where it does not.
 
-<claude_code/test_projection.py> pins one hazard per test from the census's measurements and
-<claude_code/test_diverse_session.py> folds a whole capture. Neither covers the shapes a console
-session reaches for once it is doing real work: a `Task` subagent, a `Bash` backgrounded, the
-`BashOutput` loop that watches it, and a background task running while the foreground keeps
-answering. Those are the shapes most likely to break a fold, and none of them was in the corpus —
-every `task_started` the census saw was `local_bash` and no subagent ever ran
+The shapes a console session reaches for once it is doing real work: a `Task` subagent, a `Bash`
+backgrounded, the `BashOutput` loop that watches it, and a background task running while the
+foreground keeps answering. None of them is in the recorded corpus that
+<claude_code/test_projection.py> and <claude_code/test_diverse_session.py> read — every
+`task_started` the census saw was `local_bash` and no subagent ever ran
 (<../debug/frame_shape_census.md> § Loose ends).
 
 **These frames are composed, not captured**, so what each test may claim is bounded: it says what
@@ -15,9 +14,9 @@ hypothesis — the forwarded subagent frame above all — the test says so, and
 (<README.md> § Recording a session as a fixture).
 
 **Both folds are asserted, because they answer different questions.** `project_log` is the read
-path's, and it merges the frames sharing one `message.id`; `frame_projection.projected` is the
-write path's own, seeded fresh per frame, and it is the one whose `MessageCompleted` count is a
-count of `session_messages` rows and of replies the room is told about.
+path's and merges the frames sharing one `message.id`; `frame_projection.projected` is the write
+path's own, seeded fresh per frame, and its `MessageCompleted` count is a count of
+`session_messages` rows and of replies the room is told about.
 """
 
 from __future__ import annotations
@@ -82,9 +81,8 @@ def _subagent_frames(*, nested: bool) -> list[RecordedFrame]:
     """A `Task` call whose subagent's own turns come back on the same stream.
 
     **Hypothesis, not capture.** `protocol.md` says a forwarded subagent frame carries the parent
-    call's id in `parent_tool_use_id`; the census saw that field non-null on `tool_progress` and on
-    nothing else, because no `local_agent` task ever ran. *nested* is what lets one test fold the
-    same session with the marker and without it.
+    call's id in `parent_tool_use_id`; the census saw that field non-null on `tool_progress` alone,
+    because no `local_agent` task ever ran. *nested* folds the same session with and without it.
     """
     parent = "toolu_task" if nested else None
     return [
@@ -113,10 +111,9 @@ def _subagent_frames(*, nested: bool) -> list[RecordedFrame]:
 def test_a_subagents_frames_project_exactly_as_the_sessions_own():
     """The fold reads no nesting at all: `parent_tool_use_id` is not in `projection.py`.
 
-    Folding the same session with the marker and without it gives byte-identical events, so a
-    subagent's message becomes an ordinary `MessageCompleted` and its `Grep` an ordinary
-    `ToolCallStarted` — attributed to the session, with nothing on the row saying whose work it
-    was. A transcript renders the subagent's inner turns inline as if the session had done them.
+    So a subagent's message becomes an ordinary `MessageCompleted` and its `Grep` an ordinary
+    `ToolCallStarted`, attributed to the session with nothing on the row saying whose work it was,
+    and a transcript renders the subagent's inner turns inline.
     """
     assert project_log(_subagent_frames(nested=True)) == project_log(_subagent_frames(nested=False))
 
@@ -242,8 +239,8 @@ def test_a_monitor_loop_mints_one_empty_assistant_message_per_poll():
 
     Under the write path's fold each `MessageCompleted` closes a `session_messages` row, so this is
     five rows with empty content — not queued to the room, since `_enqueue_reply` drops an empty
-    body, but five rows a transcript reader pages through. Nothing about the five says they are one
-    shell being watched: the only thing they share is an argument value, which no row indexes.
+    body, but five a transcript reader pages through. Nothing says they are one shell being watched:
+    the only thing they share is an argument value, which no row indexes.
     """
     frames = _monitor_frames(polls=5)
     events = _write_path(frames)
@@ -262,11 +259,11 @@ def test_the_two_folds_produce_a_monitor_loops_events_in_different_orders():
     """Same events, different sequence — the read path defers a message past the tool result and
     the write path does not.
 
-    Each poll is its own `message.id`, so nothing here is merged and the two folds produce exactly
-    the same nine events. They still do not agree positionally: `project_log` closes a message only
-    when the next one opens, so its `MessageCompleted` lands *after* the poll's result, while the
-    per-frame fold closes it on its own frame and emits it *before*. A check comparing the two by
-    position would report drift on every monitor loop, which is why `reprojection` aligns by frame.
+    Each poll is its own `message.id`, so nothing here is merged and the two folds produce the same
+    nine events. They still do not agree positionally: `project_log` closes a message only when the
+    next one opens, so its `MessageCompleted` lands *after* the poll's result, while the per-frame
+    fold emits it *before*. A check comparing the two by position would report drift on every
+    monitor loop, which is why `reprojection` aligns by frame.
     """
     frames = _monitor_frames(polls=3)
     read, write = project_log(frames).events, _write_path(frames)
@@ -277,9 +274,7 @@ def test_the_two_folds_produce_a_monitor_loops_events_in_different_orders():
 
 
 def test_a_foreground_message_spans_the_background_frames_the_fold_ignores():
-    """The interleaving, and the range crossing it produces.
-
-    The foreground message spans frames 1 to 4 because the wire kept sending frames under one
+    """The foreground message spans frames 1 to 4 because the wire kept sending frames under one
     `message.id` — the background task's own frames at 2 and 5 project to nothing and end nothing.
     So a reader finding an event's message by range containment sees a span with holes in it, and
     what happened in those holes is only in `session_frames`.

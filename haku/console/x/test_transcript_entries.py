@@ -1,8 +1,7 @@
 """The neutral vocabulary as the MCP surface hands it out.
 
-Driven through the real `project_log()` rather than hand-built events: the property worth pinning is
-that what a caller reads is what the fold produced, and a mapping tested against its own
-hand-written input can agree with itself while disagreeing with the projection.
+Driven through the real `project_log()` rather than hand-built events: a mapping tested against its
+own hand-written input can agree with itself while disagreeing with the projection.
 """
 
 import pytest_bazel

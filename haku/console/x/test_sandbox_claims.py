@@ -1,8 +1,8 @@
 """Focused contracts for the SandboxClaim one chat session runs in.
 
-The recorded objects here are the *Kubernetes API clients*, so the real `KubernetesSandboxClaims`
-is what these tests run — unlike `recording_claims.py`, which stands in for the claim builder
-itself for tests that are not about Kubernetes.
+The recorded objects here are the *Kubernetes API clients*, so these tests run the real
+`KubernetesSandboxClaims` — unlike `recording_claims.py`, which stands in for the claim builder
+itself.
 """
 
 from __future__ import annotations
@@ -105,7 +105,7 @@ async def test_claim_injects_only_the_session_rendezvous_values(sandbox_claims, 
 
 async def test_renew_slides_the_shutdown_time_testing_on_resource_version(sandbox_claims, custom_objects_api) -> None:
     """The deadline is a lease: renew pushes `shutdownTime` out, guarded by a `test` on the
-    resourceVersion it read, so a concurrent writer never has its update clobbered."""
+    resourceVersion it read, so a concurrent writer's update is never clobbered."""
     session_id = UUID("10000000-0000-4000-8000-000000000001")
     name = "claude-10000000000040008000000000000001"
     custom_objects_api.objects[("sandboxclaims", name)] = {"metadata": {"resourceVersion": "4242"}}

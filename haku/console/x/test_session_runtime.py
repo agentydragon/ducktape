@@ -75,17 +75,14 @@ def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:
 
 
 # The gap this double leaves between one frame's number and the next. Deliberately not 1:
-# `session_frames.frame_seq` is a Postgres `Identity` column, so the real sequence is an order with
-# gaps in it and nothing may read a gap as a frame that went missing.
+# `session_frames.frame_seq` is a Postgres `Identity` column, so the real sequence has gaps and
+# nothing may read one as a frame that went missing.
 _FAKE_SEQ_STRIDE = 5
 
 
 class _FakeCli:
-    """A `ClaudeCli` that replays scripted frames.
-
-    Frames rather than SDK objects, because that is what the runtime now consumes — so a test
-    double cannot drift from the wire by being easier to construct than the wire is.
-    """
+    """A `ClaudeCli` that replays scripted frames — frames rather than SDK objects, as the runtime
+    consumes them, so the double cannot drift from the wire."""
 
     def __init__(
         self,
@@ -97,8 +94,7 @@ class _FakeCli:
         self.script = list(script or [])
         # What the rollout numbered each scripted frame, for the tests that assert a projection
         # points back at one. A test with nothing to say about provenance passes neither and this
-        # double numbers for itself — every frame the real client hands on carries a number, so a
-        # double that left one out would be standing in for a state that cannot occur.
+        # double numbers for itself, since every frame the real client hands on carries a number.
         self._next_seq = _FAKE_SEQ_STRIDE
         self.frame_seqs = frame_seqs
         self.prompt_frame_seq = self._number() if prompt_frame_seq is None else prompt_frame_seq
@@ -256,9 +252,8 @@ class _LifecycleClaudeClient(_FakeCli):
     """A `cli_over_websocket` stand-in that records through the sink it is handed.
 
     The sink is not optional in the real client (<../../runtime/x/bridge/cli_client.py>): every
-    frame either way is written as it crosses the wire, and each is numbered from the row it
-    landed in. So a double that dropped it would stand in for a client that cannot exist, and
-    would hand the turn loop numbers naming no row.
+    frame either way is written as it crosses the wire and numbered from the row it landed in, so a
+    double that dropped it would hand the turn loop numbers naming no row.
     """
 
     last_launch: object | None = None
@@ -282,9 +277,8 @@ class _LifecycleClaudeClient(_FakeCli):
 class _ClosingClaudeClient(_LifecycleClaudeClient):
     """Closes the session on connect, so the runner's loop exits at its first status check.
 
-    Something has to end the loop, which otherwise sits in a 30s `wait_for_prompt`. The fake
-    store this replaced got there by lying in `authenticate_bridge`; putting it in the SDK
-    client keeps the store real and the loop's own exit condition under test.
+    Something has to end the loop, which otherwise sits in a 30s `wait_for_prompt`; ending it from
+    the client keeps the store real and the loop's own exit condition under test.
     """
 
     on_connect: Callable[[], Awaitable[None]] | None = None
@@ -343,12 +337,9 @@ class _RollingClaudeClient(_LifecycleClaudeClient):
 async def test_a_rolling_replica_hands_the_session_back_instead_of_ending_it(
     chat_store, chat_service, recording_claims, operator_id
 ) -> None:
-    """The measured cause of sessions that record a boot and a death.
-
-    A roll cancels `handle_runner`, which recorded `console replica shut down mid-session` and
-    failed the row — so the runner's reconnect was refused as terminal and the whole session was
-    replaced. Six rolls a day made that the ordinary end of a conversation.
-    """
+    """A roll cancels `handle_runner`. Failing the row there refuses the runner's reconnect as
+    terminal and replaces the whole session, which at six rolls a day is the ordinary end of a
+    conversation."""
     websocket = _LifecycleWebSocket()
 
     session = await chat_service.create(operator_id, SpaSession())
@@ -369,7 +360,7 @@ async def test_a_rolling_replica_hands_the_session_back_instead_of_ending_it(
 async def test_a_returning_runner_is_admitted_and_takes_the_lease(
     chat_store, chat_service, recording_claims, operator_id
 ) -> None:
-    """A reconnect used to be refused unconditionally, which is what made the sandbox disposable."""
+    """A runner whose replica went away is admitted by the next one, which keeps the sandbox."""
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
     token = recording_claims.tokens[session_id]
@@ -389,10 +380,8 @@ async def test_adoption_picks_the_answer_up_where_it_stopped(
     chat_store, chat_service, recording_claims, operator_id
 ) -> None:
     """The runner replays what a console may not have recorded but never the deltas, so a resumed
-    turn that started from an empty string would write the tail of the answer as a second message.
-
-    Adoption itself no longer reconstructs any of that: it says which turn, and the turn's own row
-    says how far it got — which is what this reads back.
+    turn starting from an empty string would write the tail of the answer as a second message.
+    Adoption says which turn; the turn's own row says how far it got.
     """
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
@@ -416,11 +405,9 @@ async def test_adoption_picks_the_answer_up_where_it_stopped(
 async def test_a_turn_that_said_something_the_room_could_not_hear_still_knows_it_spoke(
     chat_store, chat_service, operator_id
 ) -> None:
-    """The two facts come apart on the SPA, and conflating them minted a second message.
-
-    A session with no room queues nothing, so `queued_reply` is false while `said_anything` is
-    true — and the resumed turn must read the second, or `result.result` (which repeats the
-    message that already completed) becomes a message of its own.
+    """A session with no room queues nothing, so `queued_reply` is false while `said_anything` is
+    true. The resumed turn must read the second, or `result.result` — which repeats the message
+    that already completed — becomes a message of its own.
     """
     view, token = await chat_store.create(operator_id, SpaSession())
     session_id = view.session_id
@@ -459,8 +446,7 @@ async def test_adoption_closes_a_turn_whose_result_nobody_projected(
 
     Waiting for it on the socket would wait forever — the runner replays that frame and
     `record_frame` refuses it as one this session already has — so adoption hands it back as a
-    frame to project, and projecting it closes the turn through the very loop a live frame goes
-    through. Recovery asks the log no question of its own here.
+    frame to project, and projecting it closes the turn through the loop a live frame goes through.
     """
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
@@ -491,13 +477,10 @@ async def test_adoption_closes_a_turn_whose_result_nobody_projected(
 async def test_adoption_reads_a_failed_result_as_a_failed_turn(
     chat_store, chat_service, recording_claims, operator_id
 ) -> None:
-    """Recovery used to close from `is_error`, which is `false` on every production result —
-    including all 27 sessions the console recorded as failed (<../debug/frame_shape_census.md>) —
-    so a turn that ended badly was adopted as answered.
-
-    It is now the projection of that frame that closes the turn, so recovery fails in exactly the
-    way the live path fails on the same frame: the turn is `failed` and the error propagates to
-    `handle_runner`, which ends the session.
+    """`is_error` is `false` on every production result, including all 27 sessions the console
+    recorded as failed (<../debug/frame_shape_census.md>), so closing from it adopts a turn that
+    ended badly as answered. The projection of the frame closes the turn instead, so recovery fails
+    exactly as the live path fails on the same frame.
     """
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
@@ -596,10 +579,10 @@ async def test_a_turn_that_asked_its_prompt_keeps_it(chat_store, chat_service, r
 async def test_a_held_session_tells_the_runner_to_retry_rather_than_refusing_it(
     chat_store, chat_service, recording_claims, operator_id
 ) -> None:
-    """The bug a production roll found. A runner redials about a second after its socket drops, so
-    it routinely reaches a new replica while the dying one's lease is still valid. Closing before
-    `accept()` reaches it as 403 whatever code is passed, and 403 is a refusal it correctly gives
-    up on — costing the sandbox. 503 is what it waits out."""
+    """A runner redials about a second after its socket drops, so it routinely reaches a new replica
+    while the dying one's lease is still valid. Closing before `accept()` reaches it as 403 whatever
+    code is passed, and 403 is a refusal it correctly gives up on — costing the sandbox. 503 is what
+    it waits out."""
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
     token = recording_claims.tokens[session_id]
@@ -677,10 +660,8 @@ _NARRATED_TURN = [
 class _RecordingFrontend:
     """A `ChatFrontend` that keeps what it was told instead of talking to a homeserver.
 
-    Answers are not among it: they are `session_outbox` rows the turn writes with the message
-    they copy, so what the room is owed is read out of the database (`_queued_for_the_room`)
-    rather than out of a sink the turn calls. What is left here is what genuinely describes a
-    moment — including the notice a turn with nothing to say leaves.
+    Answers are not among it: they are `session_outbox` rows, so what the room is owed is read out
+    of the database (`queued_for_the_room`) rather than out of a sink the turn calls.
     """
 
     def __init__(self) -> None:
@@ -706,14 +687,12 @@ class _RecordingFrontend:
 
 
 class _InterruptedCli(_FakeCli):
-    """Aborts once its script has run out, and answers `interrupt` with a `result` frame — which
-    is what a real CLI does and what the turn loop drains to.
+    """Aborts once its script has run out, and answers `interrupt` with a `result` frame, as a real
+    CLI does and as the turn loop drains to.
 
-    **Where the abort lands is the point.** A real one arrives between frames, with the turn
-    parked on `anext`, so this fires it exactly there: when the loop asks for a frame that has
-    not been sent. Set before the turn it would be a different case (nothing is ever spoken),
-    and set from outside it would race the loop instead of landing at a known point — and one
-    that lands while a frame is already in hand does not exercise the drain at all.
+    **Where the abort lands is the point.** A real one arrives between frames, with the turn parked
+    on `anext`, so this fires it exactly there: when the loop asks for a frame that has not been
+    sent. One that lands while a frame is already in hand does not exercise the drain at all.
     """
 
     def __init__(self, script: list[dict[str, Any]], *, abort_event: asyncio.Event):
@@ -734,11 +713,10 @@ class _InterruptedCli(_FakeCli):
 
 
 class _CliFinishingItsMessage(_InterruptedCli):
-    """Interrupted mid-message, and finishes that message before the `result` — which is what a
-    real CLI does, since the interrupt reaches it with a message already part written.
+    """Interrupted mid-message, and finishes that message before the `result`, as a real CLI does
+    when the interrupt reaches it with a message already part written.
 
-    `_InterruptedCli` on its own cannot reach that: the `result` is the first thing its drain sees,
-    so every frame a drain has to make sense of is one it never receives.
+    `_InterruptedCli` on its own cannot reach that: the `result` is the first thing its drain sees.
     """
 
     def __init__(self, script: list[dict[str, Any]], *, abort_event: asyncio.Event, finishing: dict[str, Any]) -> None:
@@ -789,7 +767,7 @@ async def test_only_the_sessions_that_serve_a_room_are_attached_to_the_frontend(
     chat_store, recording_claims, notifications, operator_id
 ) -> None:
     """One console serves both surfaces, and the frontend is bound to its room — so which sessions
-    it speaks for is the session's own record of what it serves, read once per connection."""
+    it speaks for is the session's own record of what it serves."""
     frontend = _RecordingFrontend()
     service = SessionService(
         runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend
@@ -806,8 +784,8 @@ async def test_only_the_sessions_that_serve_a_room_are_attached_to_the_frontend(
 async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
-    """The whole point of routing by turn: the replacement replica finishes the exchange the dead
-    one started, in the message it started, and the room is owed the answer once."""
+    """The replacement replica finishes the exchange the dead one started, in the message it
+    started, and the room is owed the answer once."""
     frontend = _RecordingFrontend()
     service = SessionService(
         runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend
@@ -908,9 +886,7 @@ async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
 async def test_a_resumed_turn_does_not_say_again_what_it_had_already_queued(
     chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
-    """The other half of adoption, and the one the old `spoke` could only guess at.
-
-    The departed holder finished a message and the room's outbox holds it. All the replacement
+    """The departed holder finished a message and the room's outbox holds it. All the replacement
     sees is the `result` frame — which repeats that same text — so it has to know the room is
     already owed it. `queued_reply` is that, written by the transaction that inserted the row
     rather than inferred from an `assistant` frame having been recorded.
@@ -949,9 +925,8 @@ async def test_a_resumed_turn_does_not_say_again_what_it_had_already_queued(
 async def test_the_room_is_owed_each_assistant_message_as_it_finishes(
     chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
-    """A turn that says what it is about to do, works, then reports back is three messages in
-    the transcript and used to be one in the room: it spoke only the final answer, so the room
-    watched a long turn in silence and then saw a conclusion with none of its reasoning."""
+    """A turn that says what it is about to do, works, then reports back is three messages in the
+    transcript, and the room gets all three rather than only the conclusion."""
     queued = await _turn_into_a_room(
         chat_store, migrated_sessions, recording_claims, notifications, operator_id, _FakeCli(_NARRATED_TURN)
     )
@@ -974,13 +949,10 @@ async def test_the_last_message_is_not_repeated_by_the_result_frame(
 async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
     chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
-    """The drop that needed neither a reconnection nor a roll: a turn that raised after producing
-    text (<../debug/message_drops.md> E4).
-
-    The failing `result` raises before any delivery ran, the `except` fails the session, and what
-    the agent said existed only in the transcript — where nobody but the SPA is looking. The row is
-    now written with the message, in one transaction, so the answer outlives the turn that
-    produced it and the drain says it whatever the turn went on to do.
+    """The drop that needs neither a reconnection nor a roll: a turn that raised after producing
+    text (<../debug/message_drops.md> E4). The failing `result` raises before any delivery ran, so
+    the outbox row has to be written with the message, in one transaction, for the answer to
+    outlive the turn that produced it.
     """
     frontend = _RecordingFrontend()
     service = SessionService(
@@ -1014,8 +986,8 @@ async def test_a_turn_the_cli_ended_badly_fails_even_though_is_error_says_it_did
     chat_store, chat_service, operator_id
 ) -> None:
     """`is_error` is false on all 129 production `result` frames — including every one of the 27
-    sessions the console recorded as failed — so a loop that read it called every turn fine. The
-    turn's outcome is now the projection's, and that reads `subtype` (<claude_code/projection.py>).
+    sessions the console recorded as failed — so a loop reading it calls every turn fine. The turn's
+    outcome is the projection's, and that reads `subtype` (<claude_code/projection.py>).
     """
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -1073,12 +1045,11 @@ async def test_a_turn_with_nothing_at_all_to_say_reports_it_rather_than_queueing
 async def test_an_aborted_turn_leaves_a_notice_and_no_reply(
     chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
-    """Two things this pins down. The operator's stop reaches the room as a notice and nothing
-    else — no `session_outbox` row, because the fact is a `session_events` row and the notice is
-    its projection. And the turn has to *survive* the abort at all: draining to the interrupt's
-    `result` used to open a second `anext` on the session's generator, which an async generator
-    refuses — so an abort landing where they land, between frames, raised out of the turn and
-    failed the whole session instead of ending its turn.
+    """Two things. The operator's stop reaches the room as a notice and nothing else — no
+    `session_outbox` row, because the fact is a `session_events` row and the notice is its
+    projection. And the turn has to *survive* the abort: draining to the interrupt's `result` must
+    not open a second `anext` on the session's generator, which an async generator refuses, since
+    an abort lands exactly there — between frames.
     """
     abort_event = asyncio.Event()
     client = _InterruptedCli(_NARRATED_TURN[:-1], abort_event=abort_event)
@@ -1131,13 +1102,12 @@ async def test_a_message_the_agent_finished_before_stopping_survives_the_drain(
     chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
     """<../debug/message_drops.md> E3 — the drop an outbox cannot close, because the reply never
-    reached the delivery layer at all.
+    reaches the delivery layer at all.
 
     An abort does not land between messages; it lands inside one, and the CLI finishes what it was
-    writing before it stops. Draining only to the `result` discarded that `assistant` frame
-    entirely: no transcript row, no outbox row, not even a log line, the text left in
-    `session_frames` where no operator is looking. It is a message like any other, so the room is
-    owed it like any other.
+    writing before it stops. Draining only to the `result` discards that `assistant` frame
+    entirely, leaving the text in `session_frames` where no operator is looking. It is a message
+    like any other, so the room is owed it like any other.
     """
     abort_event = asyncio.Event()
     client = _CliFinishingItsMessage(
@@ -1157,8 +1127,7 @@ async def test_a_message_the_agent_finished_before_stopping_survives_the_drain(
 
 
 async def test_a_turn_brackets_the_frames_it_produced(chat_store, chat_service, operator_id) -> None:
-    """The bracket is what makes a turn's own frames findable afterwards — including the numbers
-    the console keeps no account of, which live only in the `result` frame's payload."""
+    """The bracket is what makes a turn's own frames findable afterwards."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     # A frame from before this turn, so a bracket that started at the log's beginning would show.
@@ -1168,8 +1137,8 @@ async def test_a_turn_brackets_the_frames_it_produced(chat_store, chat_service, 
     assert turn is not None
     answer = assistant(text_block("a bad config"))
     ending = result(text="a bad config")
-    # Written by the real socket wrapper in production, where the recorder and the turn loop see
-    # the same frames; here the double is handed the numbers the log gave them.
+    # In production the socket wrapper writes these, so the recorder and the turn loop see the same
+    # frames; here the double is handed the numbers the log gave them.
     recorded_answer = await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, "assistant", answer)
     recorded_ending = await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, "result", ending)
     client = _FakeCli([answer, ending], frame_seqs=[recorded_answer.frame_seq, recorded_ending.frame_seq])
@@ -1188,8 +1157,8 @@ async def test_a_turn_ends_at_its_own_result_rather_than_at_what_the_cli_logs_af
     chat_store, chat_service, operator_id
 ) -> None:
     """The CLI emits a `command_lifecycle` frame just after the `result` one, so it is already in
-    the log by the time the turn loop closes the turn — and a bound taken from the log's head then
-    reports it as the turn's last frame. It was, on 80 of 99 production turns (2026-08-16)."""
+    the log by the time the turn loop closes the turn, and a bound taken from the log's head reports
+    it as the turn's last frame — on 80 of 99 production turns (2026-08-16)."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
@@ -1212,11 +1181,8 @@ async def test_a_turn_ends_at_its_own_result_rather_than_at_what_the_cli_logs_af
 
 
 async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_service, operator_id) -> None:
-    """The call and its answer are both `session_events` rows, paired by `call_id`.
-
-    The answer used to exist nowhere but the frame log, and the pairing is exact where matching the
-    Nth message to the Nth frame would be a guess.
-    """
+    """The call and its answer are both `session_events` rows, paired by `call_id` — exact, where
+    matching the Nth message to the Nth frame would be a guess."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "count the files")
@@ -1251,8 +1217,8 @@ async def test_the_calls_come_from_the_events_and_need_no_id_from_the_agent(
 ) -> None:
     """A message finds its calls through the frames it was built from, and nothing else.
 
-    The join used to run over `agent_message_id`, which 1,417 production assistant rows do not
-    have — and this frame carries none either, so the range is the whole of what pairs them.
+    1,417 production assistant rows carry no `agent_message_id`, and this frame carries none
+    either, so the frame range is the whole of what pairs them.
     """
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -1289,15 +1255,13 @@ class _RealDbClaudeClient(_LifecycleClaudeClient):
 async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, chat_service, operator_id) -> None:
     """The idle wait is a raw-driver call, so only a real engine exercises it.
 
-    `handle_runner` loops: consume a prompt, then block in `wait_for_prompt` until the next
-    one. That wait talks to `driver_connection` directly, and the existing lifecycle test
-    fakes the store, so a driver-API mismatch there was invisible — it shipped, and every
-    Matrix session died about four seconds after being created with "Claude runtime failed:
-    'Connection' object has no attribute 'set_autocommit'". Faking Kubernetes is right;
-    faking the store hid the bug.
+    `handle_runner` loops: consume a prompt, then block in `wait_for_prompt` until the next one.
+    That wait talks to `driver_connection` directly, so a driver-API mismatch there is invisible to
+    any test that fakes the store — and it killed every Matrix session about four seconds in with
+    "'Connection' object has no attribute 'set_autocommit'".
     """
-    # The store mints the real bridge token; no claim is created because handle_runner only
-    # ever deletes one on the way out, and Kubernetes is not what this test is about.
+    # The store mints the real bridge token; no claim is created because handle_runner only ever
+    # deletes one on the way out, and Kubernetes is not what this test is about.
     view, token = await chat_store.create(operator_id, SpaSession())
 
     with patch("haku.console.x.session_runtime.cli_over_websocket", _RealDbClaudeClient):
@@ -1311,11 +1275,9 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, 
                 "the runner failed while waiting for a prompt"
             )
 
-            # And the wait must actually wake on NOTIFY rather than only time out. A bounded
-            # poll rather than an Event: the thing under test is the runner's own wake, so the
-            # test must observe it from outside instead of being handed a signal by it. What it
-            # polls for is the closed turn — the session's status stays `ready` throughout now,
-            # so waiting on that would be a wait for something already true.
+            # And the wait must actually wake on NOTIFY rather than only time out. A bounded poll
+            # rather than an Event, so the runner's wake is observed from outside; what it polls
+            # for is the closed turn, since the session's status stays `ready` throughout.
             await chat_store.enqueue_prompt(operator_id, view.session_id, "ping")
             for _ in range(75):
                 if [
@@ -1360,8 +1322,7 @@ class _ScriptedChannel:
         """The opening frame, once it is actually on the wire.
 
         `cli_client._write` numbers a frame before writing it, and numbering here is a database
-        round trip, so the write lands several loop turns after `connect()` is scheduled rather
-        than on the first — which is what awaiting a single `sleep(0)` would assume.
+        round trip, so the write lands several loop turns after `connect()` is scheduled.
         """
         async with asyncio.timeout(30):
             await self._wrote.wait()
@@ -1394,11 +1355,10 @@ async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas
 ) -> None:
     """What the agent did is only recoverable from the wire.
 
-    Tool results arrive as `user` frames, which the turn loop drops entirely — it keeps the
-    `tool_use` blocks that asked and nothing that answered — so the record is taken where every
-    frame passes rather than from what the loop unpacks. **The control channel counts.** It never
-    reaches `frames()`, so recording off the conversation queue would drop `interrupt` and its
-    answer from the log, and an interrupt that did not take is diagnosable from nothing else.
+    Tool results arrive as `user` frames, which the turn loop drops entirely, so the record is
+    taken where every frame passes rather than from what the loop unpacks. **The control channel
+    counts.** It never reaches `frames()`, so recording off the conversation queue would drop
+    `interrupt` and its answer, and an interrupt that did not take is diagnosable from nothing else.
     """
     view, _ = await chat_store.create(operator_id, SpaSession())
     answered = tool_result("toolu_1", "42")
@@ -1440,11 +1400,9 @@ async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas
 
 
 async def test_the_runners_number_is_recorded_beside_the_rows_own(chat_store, migrated_sessions, operator_id) -> None:
-    """Two numbers per row, answering different questions.
-
-    `frame_seq` is Postgres's and stays the log's ordering; `runner_seq` is the peer's, and is the
-    only one a reconnect can hand back — which is what `highest_runner_seq` reads. A write to the
-    CLI carries none: the runner numbers what it sends, not what it forwards.
+    """Two numbers per row. `frame_seq` is Postgres's and is the log's ordering; `runner_seq` is
+    the peer's and the only one a reconnect can hand back, which is what `highest_runner_seq`
+    reads. A write to the CLI carries none: the runner numbers what it sends, not what it forwards.
     """
     view, _ = await chat_store.create(operator_id, SpaSession())
     channel = _ScriptedChannel()
@@ -1491,10 +1449,9 @@ async def test_an_idle_session_hands_back_the_instant_its_socket_drops(
     chat_store, chat_service, migrated_sessions, operator_id
 ) -> None:
     """A roll drops the runner's socket while the session is between turns. It has to hand back
-    then — not sit in the 30s prompt-wait until graceful shutdown cancels it — which is what the
-    connection watcher is for: it turns the drop into the disconnect the handler releases on.
-
-    The proof is that the task ends on its own, with no cancel, and the session stays adoptable.
+    then, rather than sit in the 30s prompt-wait until graceful shutdown cancels it: the connection
+    watcher turns the drop into the disconnect the handler releases on. The proof is that the task
+    ends on its own, with no cancel, and the session stays adoptable.
     """
     view, token = await chat_store.create(operator_id, SpaSession())
     _DisconnectingClaudeClient.instance = None
@@ -1525,11 +1482,9 @@ async def test_an_idle_session_hands_back_the_instant_its_socket_drops(
 async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
     chat_store, chat_service, migrated_sessions, operator_id
 ) -> None:
-    """The deltas are the record, and each is written as it crosses the wire.
-
-    So a turn no `assistant` frame ever completed still has its half-answer in the log, in the
-    order it was written — which reconstructing it in a finalizer would not, since a replica
-    losing its pod raises `CancelledError` straight past one.
+    """The deltas are the record, and each is written as it crosses the wire, so a turn no
+    `assistant` frame ever completed still has its half-answer in the log. A finalizer could not
+    reconstruct it: a replica losing its pod raises `CancelledError` straight past one.
     """
     view, token = await chat_store.create(operator_id, SpaSession())
 
@@ -1543,10 +1498,9 @@ async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
                     break
                 await asyncio.sleep(0.2)
             await chat_store.enqueue_prompt(operator_id, view.session_id, "go")
-            # Waits for the whole streamed text, not for the first delta to land: waiting on one
-            # frame existing races the second and cancels between them, which asserts a timing
-            # rather than the property. What makes this "cut off mid-stream" is that no
-            # `assistant` frame ever completes the message, however many deltas have landed.
+            # Waits for the whole streamed text, not for the first delta: waiting on one frame
+            # existing races the second and cancels between them, asserting a timing rather than
+            # the property.
             for _ in range(75):
                 if _streamed(await _frames(migrated_sessions, view.session_id)) == "half an answer":
                     break
@@ -1564,8 +1518,8 @@ async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
 async def test_a_returning_runner_beats_the_sweep(
     chat_store, chat_service, recording_claims, operator_id, migrated_sessions
 ) -> None:
-    """The point of the window: a runner that redials into it is admitted, and the session that
-    would otherwise have been failed keeps running under its new holder."""
+    """A runner that redials inside the adoption window is admitted, and the session keeps running
+    under its new holder rather than being failed."""
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
     token = recording_claims.tokens[session_id]
@@ -1610,11 +1564,9 @@ async def test_the_lease_heartbeat_also_slides_the_sandbox_deadline(
 async def test_a_released_session_nobody_readopted_is_not_called_never_attached(
     chat_store, recording_claims, chat_service, migrated_sessions, operator_id
 ) -> None:
-    """The production case behind a misleading message: a runner attached, then its lease was
-    handed back (a roll, or the sandbox reaching its TTL) and no runner returned. `release` clears
-    `lease_holder`, so the old message fell through to 'no replica (never attached)' — for a
-    session that was very much attached, for hours. The failure must say the runner went away, not
-    that one never came."""
+    """A runner attached, then its lease was handed back (a roll, or the sandbox reaching its TTL)
+    and no runner returned. `release` clears `lease_holder`, so the reason must not fall through to
+    "never attached" for a session that was attached for hours."""
     session = await chat_service.create(operator_id, SpaSession())
     token = recording_claims.tokens[session.session_id]
     assert await chat_store.authenticate_bridge(session.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -1630,15 +1582,11 @@ async def test_a_released_session_nobody_readopted_is_not_called_never_attached(
 async def test_a_cancelled_runner_hands_the_session_back_without_stranding_it(
     chat_store, chat_service, migrated_sessions, operator_id
 ) -> None:
-    """Pod termination cancels this task, and `CancelledError` is not an `Exception`.
-
-    So neither `except` clause saw it, and the session kept a live status nobody was
-    maintaining — the room waited forever. Failing the row closed that hole and cost every roll
-    its conversation, because a failed session is terminal and the runner's reconnect is refused.
-
-    Handing it back keeps both properties: the session stays adoptable by whichever replica the
-    runner reaches, and the sweep still catches it once its adoption window passes with no
-    runner back.
+    """Pod termination cancels this task, and `CancelledError` is not an `Exception`, so neither
+    `except` clause sees it. Neither answer at the two extremes works: leaving the row live strands
+    a session nobody maintains, and failing it is terminal, which refuses the runner's reconnect and
+    costs every roll its conversation. Handing it back keeps both properties — adoptable by
+    whichever replica the runner reaches, and still caught by the sweep once the window passes.
     """
     view, token = await chat_store.create(operator_id, SpaSession())
 
@@ -1676,8 +1624,8 @@ async def test_a_session_that_never_asked_for_a_sandbox_reports_nothing_and_asks
     chat_service, recording_claims, migrated_sessions, operator_id
 ) -> None:
     """No claim exists until allocation makes one, so an idle session's "nothing to report" is
-    provable from the row — and it must stay free, because it is the state a room nobody has
-    spoken in sits in."""
+    provable from the row — and must stay free, being the state a room nobody has spoken in sits
+    in."""
     session = await chat_service.create(operator_id, SpaSession())
     await _force_status(migrated_sessions, session.session_id, SessionStatus.IDLE)
 
@@ -1690,8 +1638,8 @@ async def test_a_session_that_never_asked_for_a_sandbox_reports_nothing_and_asks
 async def test_a_session_that_failed_to_come_up_still_says_what_it_was_stuck_behind(
     chat_store, chat_service, recording_claims, operator_id
 ) -> None:
-    """The whole reason to ask a session that is no longer provisioning: the conversation read
-    answers `null` for a failed session, which is the one that most needs to be asked why."""
+    """The reason to ask a session that is no longer provisioning: the conversation read answers
+    `null` for a failed session, which is the one that most needs to be asked why."""
     session = await chat_service.create(operator_id, SpaSession())
     recording_claims.answer(
         provisioning_view(

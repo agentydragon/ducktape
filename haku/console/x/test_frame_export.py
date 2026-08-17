@@ -1,8 +1,7 @@
-"""What comes out of exporting a recorded session, and — the half that has to be right — what does
-not.
+"""What comes out of exporting a recorded session, and what does not.
 
-The export turns production traffic into a git object, so the tests that matter are the one about
-the traffic that must not survive it and the ones about the structure that must.
+The export turns production traffic into a git object, so what matters is the traffic that must not
+survive it and the structure that must.
 """
 
 from __future__ import annotations
@@ -100,8 +99,8 @@ def _reread(exported: frame_export.ExportedSession) -> list[RecordedFrame]:
 
 
 def test_a_secret_in_a_tool_argument_does_not_reach_the_fixture(exported) -> None:
-    """The property the redaction rule exists for, asserted over the file's own bytes rather than
-    over any one field: a command line elides because nothing said to keep it."""
+    """Asserted over the file's own bytes rather than over any one field: a command line elides
+    because nothing said to keep it."""
     assert SECRET not in "\n".join(exported.lines())
 
     call = one(
@@ -128,10 +127,8 @@ def test_the_console_authored_row_is_left_out(exported) -> None:
 
 
 def test_redaction_leaves_the_projection_alone(exported) -> None:
-    """Structure is what a fixture is for, so the redacted frames must fold to the same shape.
-
-    Not to the same events — the prose is gone by construction — but to the same kinds in the same
-    order, which is every claim a projection test built on this route would make.
+    """Structure is what a fixture is for, so the redacted frames must fold to the same kinds in the
+    same order — not to the same events, since the prose is gone by construction.
     """
     original = project_log(RecordedFrame(frame_seq=seq, payload=payload) for seq, payload in enumerate(SESSION_FRAMES))
     redacted = project_log(_reread(exported))
@@ -141,8 +138,8 @@ def test_redaction_leaves_the_projection_alone(exported) -> None:
 
 
 def test_a_call_and_its_answer_still_pair_after_pseudonymisation(exported) -> None:
-    """One identifier, two frames: eliding it would leave every fixture built here unable to say
-    which result answered which call."""
+    """One identifier, two frames: eliding it would leave a fixture unable to say which result
+    answered which call."""
     events = project_log(_reread(exported)).events
 
     started = one(event for event in events if isinstance(event, ToolCallStarted))
@@ -153,7 +150,7 @@ def test_a_call_and_its_answer_still_pair_after_pseudonymisation(exported) -> No
 
 def test_the_offsets_are_relative_to_the_first_exported_frame(exported) -> None:
     """Wall-clock says when an operator was working; an offset says how far apart two frames were,
-    which is the half a background command's fixture needs."""
+    which is what a background command's fixture needs."""
     offsets = [json.loads(line)["t"] for line in exported.lines()]
 
     assert offsets[0] == 0.0

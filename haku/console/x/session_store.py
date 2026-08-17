@@ -1,10 +1,9 @@
 """Postgres store for operator sessions — the rows, and which of them commit together.
 
 The service that drives a turn is next door in `session_runtime.py`; the line between the two is
-the transaction. A method whose job is "these writes commit together or not at all" is here, and
-several of this file's invariants are exactly that grouping — `update_assistant` writing the
-message, the room's outbox row and the turn's `queued_reply` in one transaction is what stops a
-turn losing its answer (<../debug/message_drops.md>).
+the transaction. A method whose job is "these writes commit together or not at all" is here —
+`update_assistant` writing the message, the room's outbox row and the turn's `queued_reply` in one
+transaction is what stops a turn losing its answer (<../debug/message_drops.md>).
 
 Neutral runtime: no channel and no harness, so a second channel inherits every row in it.
 
@@ -92,20 +91,18 @@ from haku.runtime.x.bridge.cli_client import ReceivedFrame, RecordedFrame
 
 logger = logging.getLogger(__name__)
 
-# How long a live session stays believed-in after its holder last spoke, and how often that
-# holder speaks. The gap absorbs a slow database round trip or a paused event loop without
-# anyone reclaiming a session that is merely busy; the TTL bounds how long a room waits
-# before being told the truth. A turn itself may run far longer than the TTL — the renewal
-# is a separate task precisely so a long answer does not read as a dead replica.
+# How long a live session stays believed-in after its holder last spoke, and how often that holder
+# speaks. The gap absorbs a slow database round trip or a paused event loop without anyone
+# reclaiming a session that is merely busy. A turn may run far longer than the TTL — the renewal is
+# a separate task precisely so a long answer does not read as a dead replica.
 LEASE_TTL = timedelta(seconds=90)
 LEASE_RENEW_INTERVAL = timedelta(seconds=30)
 # The creator's grant, covering the gap before a runner attaches and starts renewing. Longer
 # than `LEASE_TTL` because it has to cover an image pull onto a cold node.
 PROVISION_LEASE = timedelta(minutes=10)
-# What a replica going down cleanly leaves behind: long enough for the runner to notice the
-# socket close and redial onto whichever replica is up, short enough that a session nobody comes
-# back for is reclaimed promptly. Shorter than `LEASE_TTL` because nothing is holding it — this
-# is a window for an adopter to appear, not a heartbeat anyone is keeping.
+# What a replica going down cleanly leaves behind: long enough for the runner to notice the socket
+# close and redial onto whichever replica is up. Shorter than `LEASE_TTL` because nothing is
+# holding it — this is a window for an adopter to appear, not a heartbeat anyone is keeping.
 ADOPTION_GRACE = timedelta(seconds=45)
 
 # This process, as the lease records its holder. Kubernetes sets HOSTNAME to the pod name, which
@@ -117,10 +114,9 @@ def _frames_of_kinds(query: Select[tuple[SessionFrame]], kinds: Sequence[str] | 
     """Restrict a frame query to *kinds*, or to everything a reader means by "everything".
 
     **Deltas are in the log but not in the default view.** A turn streams them in the hundreds and
-    each carries a few characters of an answer that arrives whole a moment later, so a reader
-    asking for "everything" wants the frames, not the typing. Naming the kind is how a caller
-    reading a truncated answer asks for them anyway — for the MCP reader and the console's frame
-    inspector alike, which is why the policy lives here rather than in either one.
+    each carries a few characters of an answer that arrives whole a moment later. Naming the kind
+    is how a caller reading a truncated answer asks for them anyway — for the MCP reader and the
+    console's frame inspector alike, which is why the policy lives here rather than in either one.
     """
     return query.where(SessionFrame.kind.in_(kinds) if kinds else SessionFrame.kind != DELTA_FRAME_KIND)
 
@@ -128,8 +124,8 @@ def _frames_of_kinds(query: Select[tuple[SessionFrame]], kinds: Sequence[str] | 
 class PromptRefusedError(RuntimeError):
     """Admission would not take this prompt, and says which state refused it.
 
-    Typed because the refusal is now an answer a surface renders and records rather than a string
-    it logs: the room tells the operator what to wait for, and `AuthoredEventKind.PROMPT_REJECTED`
+    Typed because the refusal is an answer a surface renders and records rather than a string it
+    logs: the room tells the operator what to wait for, and `AuthoredEventKind.PROMPT_REJECTED`
     stores the same member.
     """
 
@@ -174,13 +170,12 @@ async def _message_counts(db: AsyncSession, conversations: set[UUID]) -> dict[UU
 async def _live_sessions(db: AsyncSession, conversations: set[UUID]) -> dict[UUID, LiveSession]:
     """The session holding each of *conversations*, for those a session is holding.
 
-    At most one per conversation — that is the rule the supervisor keeps — so `one()` here would be
-    right and a duplicate is a bug. It is not enforced by an index yet, and a listing is the wrong
-    place to raise over it, so the newest wins and the invariant is checked where it is maintained.
+    At most one per conversation — the rule the supervisor keeps — so a duplicate is a bug. No
+    index enforces it and a listing is the wrong place to raise over it, so the newest wins.
 
     **`responding` is derived, not read**, the same way `session_view` derives it: the column
-    stopped carrying turn state, so a session with an open turn reports `responding` however its
-    row reads.
+    carries no turn state, so a session with an open turn reports `responding` however its row
+    reads.
     """
     rows = (
         await db.scalars(
@@ -209,10 +204,10 @@ async def _live_sessions(db: AsyncSession, conversations: set[UUID]) -> dict[UUI
 class BridgeAuthentication(StrEnum):
     """What admission has to say to a redialling runner.
 
-    **"Not yours" and "not yet" are different.** The runner redials about a second after its
-    socket drops, so it routinely arrives at a new replica while the dying one's lease is still
-    valid, and a refusal it cannot retry costs the sandbox — which is why
-    `session_runtime.handle_runner` answers `HELD` with a 5xx handshake response.
+    **"Not yours" and "not yet" are different.** The runner redials about a second after its socket
+    drops, so it routinely arrives at a new replica while the dying one's lease is still valid, and
+    a refusal it cannot retry costs the sandbox — hence `session_runtime.handle_runner` answering
+    `HELD` with a 5xx handshake response.
     """
 
     ACCEPTED = "accepted"
@@ -229,8 +224,8 @@ class BridgeAuthentication(StrEnum):
 class SpaSession:
     """A session created by the browser chat view, which has no room."""
 
-    # What the row records for this variant, carried on the variant rather than derived from it by
-    # an `isinstance` chain at the call site: a third surface is a dataclass, not another arm.
+    # What the row records for this variant, carried on the variant rather than derived by an
+    # `isinstance` chain at the call site: a third surface is a dataclass, not another arm.
     surface_column: ClassVar[ChatSurface] = ChatSurface.SPA
     room_id: ClassVar[None] = None
 
@@ -239,10 +234,10 @@ class SpaSession:
 class MatrixSession:
     """A session created to serve one Matrix room, which it records for good.
 
-    Carried as a variant rather than a `surface` enum beside an optional `room_id`, because
-    the two combinations that pair would also admit — a Matrix session with no room, a room on
-    an SPA session — are states no caller could act on. The table repeats the rule as a pair of
-    check constraints, since the columns outlive this call signature.
+    A variant rather than a `surface` enum beside an optional `room_id`, because the two
+    combinations that pair would also admit — a Matrix session with no room, a room on an SPA
+    session — are states no caller could act on. The table repeats the rule as a pair of check
+    constraints, since the columns outlive this call signature.
     """
 
     surface_column: ClassVar[ChatSurface] = ChatSurface.MATRIX
@@ -266,14 +261,13 @@ class ResumedTurn:
     """A turn a departed holder opened and asked, handed to whoever adopted the session.
 
     What the departed holder got through is on the turn's own row (`TurnState`), so adoption reads
-    it rather than rebuilding it out of the frame log: the live path and the recovery path are one
-    account of one exchange.
+    it rather than rebuilding it out of the frame log.
 
-    `replay` is the rest of that account — the frames recorded past the session's projection cursor,
-    whose effects therefore did not commit. Feeding them to the turn loop ahead of the live stream
-    is what makes adoption the same call as steady state with a cursor that happens to be behind
-    (<README.md> § The cursor). Empty for a session with no cursor,
-    where adoption falls back to reading the frames itself.
+    `replay` is the rest of that account — the frames recorded past the session's projection
+    cursor, whose effects therefore did not commit. Feeding them to the turn loop ahead of the live
+    stream is what makes adoption the same call as steady state with a cursor that happens to be
+    behind (<README.md> § The cursor). Empty for a session with no cursor, where adoption falls
+    back to reading the frames itself.
     """
 
     turn_id: UUID
@@ -285,16 +279,16 @@ class TurnState:
     """How far a turn has got, as `session_turns` records it.
 
     Every field is written in the same transaction as the effect it describes, so this is the
-    turn's state rather than a reading of its side effects — and it says the same thing to the
+    turn's state rather than a reading of its side effects, and it says the same thing to the
     process that opened the turn and to the one that inherits it.
     """
 
-    # The assistant message being streamed into, and the text already in it. None between
-    # messages: either nothing has been said yet, or the last one completed and closed.
+    # The assistant message being streamed into. None between messages: either nothing has been
+    # said yet, or the last one completed and closed.
     assistant_message_id: UUID | None
     # The empty prefix of an answer, not an absent one — `assistant_message_id` is what says
-    # whether a message is open at all. It is the message row's own content, which the stream
-    # writes on every delta, rather than a second copy of it kept on the turn.
+    # whether a message is open at all. The message row's own content, which the stream writes on
+    # every delta, rather than a second copy kept on the turn.
     streamed: str
     said_anything: bool
     queued_reply: bool
@@ -327,8 +321,8 @@ class SessionStore:
         """Start a session, continuing *conversation_id* or opening a conversation of its own.
 
         Absent is not "unknown": it is a caller with no thread to continue, which is every session
-        the browser starts. A channel that holds a copy passes the conversation its attachment names,
-        which is what makes the replacement of a dead session invisible to that channel.
+        the browser starts. A channel that holds a copy passes the conversation its attachment
+        names, which is what makes replacing a dead session invisible to that channel.
         """
         now = datetime.now(UTC)
         session_id = uuid4()
@@ -337,10 +331,8 @@ class SessionStore:
             if conversation_id is None:
                 conversation_id = uuid4()
                 db.add(Conversation(conversation_id=conversation_id, operator_id=operator_id, created_at=now))
-                # Flushed before the session that points at it, for the reason spelled out in
-                # `MatrixConversationStore.conversation_for_room`: a `ForeignKey` carrying no
-                # `relationship()` does not order the unit of work, and `Conversation` preceding
-                # `Session` there is alphabetical luck rather than a rule.
+                # Flushed before the session that points at it: a `ForeignKey` carrying no
+                # `relationship()` does not order the unit of work.
                 await db.flush()
             db.add(
                 Session(
@@ -353,11 +345,11 @@ class SessionStore:
                     bridge_token_fingerprint=self._fingerprint(bridge_token),
                     bridge_connected_at=None,
                     error=None,
-                    # Granted by the creator, not by an owner: until a runner attaches there is
-                    # no replica holding this session, and a sandbox that never comes up would
-                    # otherwise sit in `provisioning` — a live status — with no lease to expire
-                    # and so nothing to reclaim it. The window is the provisioning budget, and
-                    # the owning replica takes over renewing it once the bridge connects.
+                    # Granted by the creator, not by an owner: until a runner attaches no replica
+                    # holds this session, and a sandbox that never comes up would otherwise sit in
+                    # `provisioning` — a live status — with no lease to expire and so nothing to
+                    # reclaim it. The owning replica takes over renewing it once the bridge
+                    # connects.
                     lease_expires_at=now + PROVISION_LEASE,
                     created_at=now,
                     updated_at=now,
@@ -398,13 +390,13 @@ class SessionStore:
     ) -> ConversationPage:
         """One page of this Operator's conversations, newest activity first.
 
-        The MCP reader intentionally remains unscoped, but a browser-facing inventory is an
-        operator-owned surface and must never reveal another Operator's conversations.
+        Scoped, unlike the MCP reader: a browser-facing inventory must never reveal another
+        Operator's conversations.
 
-        **Keyset, from the day it ships**, because a conversation never ends: an offset counts from
-        the top of an order that only grows there, so anything that moves mid-walk pushes a row
-        across a page boundary. `limit + 1` rows are read so the last page is told from a full one
-        without a second count query, and the extra row is what `next_cursor` names.
+        **Keyset**, because a conversation never ends: an offset counts from the top of an order
+        that only grows there, so anything that moves mid-walk pushes a row across a page boundary.
+        `limit + 1` rows are read so the last page is told from a full one without a second count
+        query, and the extra row is what `next_cursor` names.
 
         Four reads rather than one join: the aggregates fan out per session and the attachments per
         conversation, so one query would multiply the two and count each message once per
@@ -455,10 +447,8 @@ class SessionStore:
         """Read one Operator-owned conversation: its channels, its current session, and the rest.
 
         The transcript is the current session's — the one holding the conversation, or the last one
-        to have held it. Reading the thread as one transcript across a replacement is the
-        subscription's job (<../plans/conversation_layers.md> § 9 step 9); what this surface owes
-        until then is that the earlier sessions stay reachable rather than disappearing when the
-        sandbox they ran in did.
+        to have held it; earlier sessions stay reachable rather than disappearing with the sandbox
+        they ran in.
 
         Not the raw frame log — the narration is the one projection of it this surface carries,
         because for a session that died before the CLI produced anything it is the whole account.
@@ -520,9 +510,8 @@ class SessionStore:
         lease, and the lease is what stops two replicas adopting one CLI: whoever writes it under
         this row lock has it, for as long as it keeps renewing.
 
-        **A lease changing hands is recorded**, in this transaction, as the session event it is: it
-        happens on every roll, it is what three hypotheses in the 2026-08-15 drop investigation
-        turned on, and it crosses no wire — so nothing in the frame log can say it happened.
+        **A lease changing hands is recorded** in this transaction, because it crosses no wire —
+        nothing in the frame log can say it happened.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -537,8 +526,8 @@ class SessionStore:
                 record.status = SessionStatus.READY
             elif record.lease_holder not in (None, REPLICA) and record.lease_expires_at > now:
                 # Somebody else is still serving this session and saying so. Turning this runner
-                # away is what keeps one CLI answering to one console — but only until that lease
-                # lapses, which is why it is `HELD` rather than `REJECTED`.
+                # away keeps one CLI answering to one console — but only until that lease lapses,
+                # which is why it is `HELD` rather than `REJECTED`.
                 return BridgeAuthentication.HELD
             previous_holder = record.lease_holder
             record.lease_holder = REPLICA
@@ -560,10 +549,10 @@ class SessionStore:
         """Hand a live session back for adoption, without declaring it dead.
 
         "This session is over" and "I am no longer holding it" are different, and only the second
-        is true during a roll. Expiring the lease here says the second: the session is unowned as
-        of now, and `expire_stale_leases` gives it the same `ADOPTION_GRACE` to be adopted that it
-        gives a lease nobody released. This is a courtesy, not the mechanism — a SIGKILL runs no
-        finalizer, so the sweep must be correct without it (see `expire_stale_leases`).
+        is true during a roll. Expiring the lease says the second: the session is unowned as of
+        now, and `expire_stale_leases` gives it the same `ADOPTION_GRACE` it gives a lease nobody
+        released. A courtesy, not the mechanism — a SIGKILL runs no finalizer, so the sweep must be
+        correct without it.
         """
         async with self._sessions.begin() as db:
             chat = await db.get(Session, session_id, with_for_update=True)
@@ -575,13 +564,11 @@ class SessionStore:
     async def release_held_leases(self) -> int:
         """Hand back every live session this replica holds, and report how many.
 
-        The graceful-shutdown counterpart to `release_lease`: that one is called per connection as
-        each `handle_runner` unwinds, this one is called once from the lifespan on the way down so a
-        rolling replica's sessions become adoptable at once rather than each waiting out the sweep's
-        `ADOPTION_GRACE`. One statement keyed on this replica, so it is safe to run concurrently
-        with the per-connection releases and idempotent if they already fired — and, unlike them, it
-        does not depend on every `handle_runner` task completing its own commit while being
-        cancelled, which is the guarantee a SIGKILL-free shutdown actually needs.
+        The graceful-shutdown counterpart to `release_lease`: called once from the lifespan on the
+        way down, so a rolling replica's sessions become adoptable at once rather than each waiting
+        out `ADOPTION_GRACE`. One statement keyed on this replica, so it runs safely beside the
+        per-connection releases and does not depend on every cancelled `handle_runner` completing
+        its own commit.
         """
         async with self._sessions.begin() as db:
             result = cast(
@@ -597,20 +584,17 @@ class SessionStore:
     async def adopt_open_turn(self, session_id: UUID) -> ResumedTurn | None:
         """Say what the previous holder's open turn was, and hand back the one worth finishing.
 
-        The sandbox outlives the replica, so an adopting console inherits the exchange too. Two
-        questions remain here, and they are different in kind:
+        The sandbox outlives the replica, so an adopting console inherits the exchange too. One
+        question is asked here: **was the prompt ever asked?** No prompt frame means the previous
+        holder claimed the prompt and died before writing it, so it goes back on the queue. A
+        projection cursor cannot answer that — the console's own outbound write is the evidence,
+        and the fold projects an outbound prompt to nothing on purpose
+        (`claude_code.projection._user`).
 
-        1. **Was the prompt ever asked?** No prompt frame means the previous holder claimed the
-           prompt and died before writing it, so it goes back on the queue. A projection cursor
-           cannot answer this — the console's own outbound write is the evidence, and the fold
-           projects an outbound prompt to nothing on purpose (`claude_code.projection._user`).
-        2. **Everything else is the fold's.** Whether the exchange finished is not asked of the
-           frames any more: the turn resumes with the frames past its cursor, and if one of them
-           is the turn's ending then projecting it is what closes the turn — the same events, in
-           the same loop, as if the frame had just arrived on the socket.
-
-        How far the answer got is not reconstructed here either: it is on the turn's row, and
-        `_run_turn` reads it the same way whether it opened the turn or inherited it.
+        Everything else is the fold's. The turn resumes with the frames past its cursor, and if one
+        of them is the turn's ending then projecting it closes the turn; how far the answer got is
+        on the turn's row, which `_run_turn` reads the same way whether it opened the turn or
+        inherited it.
 
         Leaving a turn open is safe only because `uq_session_turns_open` permits exactly one,
         which is what stops `next_prompt` opening a second beside the inherited one.
@@ -656,10 +640,10 @@ class SessionStore:
     async def complete_claim_cleanup(self, session_id: UUID) -> None:
         """Record that this session's claim is gone, which is what takes it out of the sweep.
 
-        The rendezvous fingerprint is deliberately left alone. It is a verifier for a bearer that
-        was never stored, and a cleaned-up session cannot be admitted anyway — `authenticate_bridge`
-        answers `TERMINAL` for any ended status — so blanking it bought nothing and cost the
-        redialling runner a truthful answer.
+        The rendezvous fingerprint is deliberately left alone: it verifies a bearer that was never
+        stored, and a cleaned-up session cannot be admitted anyway (`authenticate_bridge` answers
+        `TERMINAL` for any ended status), so blanking it would only cost the redialling runner a
+        truthful answer.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -690,8 +674,8 @@ class SessionStore:
                 raise PromptRefusedError(PromptRejection.TURN_IN_FLIGHT)
             if await _queued_prompt(db, session_id) is not None:
                 raise PromptRefusedError(PromptRejection.PROMPT_QUEUED)
-            # Still minted here, and still `pending`: the transcript row is what the SPA gets back
-            # from this call, and `pending` is how it renders a prompt that has not started.
+            # `pending` is how the SPA renders a prompt that has not started; the row is what this
+            # call hands back.
             message = SessionMessage(
                 message_id=uuid4(),
                 session_id=session_id,
@@ -721,15 +705,13 @@ class SessionStore:
     async def next_prompt(self, session_id: UUID) -> TurnStart | None:
         """Take the queued prompt and open the turn that will answer it, or None if there is none.
 
-        Dequeue and open are one transaction on purpose: they are the same event — the harness
-        handing the agent a prompt — and splitting them would leave a window in which the prompt
-        is claimed with no turn to name it, which is exactly what admission and abort now ask
-        about.
+        Dequeue and open are one transaction: splitting them would leave a window in which the
+        prompt is claimed with no turn to name it, which is what admission and abort ask about.
 
         **Opening the turn anchors the projection cursor**, in that same transaction: everything
         recorded so far has been projected, because the previous turn's own frames were and the
-        handshake frames between turns project to nothing. So the turn begins with a cursor it
-        can be resumed from rather than with one inherited from whatever last wrote it.
+        handshake frames between turns project to nothing. So the turn begins with a cursor it can
+        be resumed from rather than one inherited from whatever last wrote it.
         """
         async with self._sessions.begin() as db:
             chat = await db.get(Session, session_id, with_for_update=True)
@@ -766,9 +748,8 @@ class SessionStore:
     async def turn_state(self, turn_id: UUID) -> TurnState:
         """How far *turn_id* has got, read off its row.
 
-        The one place `_run_turn` learns what has already happened, so a turn this process opened
-        a moment ago and one a departed replica left half answered are the same question with the
-        same answer — an empty state being what a turn that has done nothing yet honestly has.
+        The one place `_run_turn` learns what has already happened, so a turn this process opened a
+        moment ago and one a departed replica left half answered are the same question.
         """
         async with self._sessions() as db:
             row = (
@@ -802,23 +783,21 @@ class SessionStore:
         CLI emits a `command_lifecycle` frame just after the `result` one, so a bound re-derived
         here from the head of the log lands on a frame the turn did not produce. A turn that ended
         on no frame at all — a failure, or an abort whose result never arrived — passes none, and
-        the bound is then the last frame recorded since the turn opened: an overshoot of the same
-        kind, but the most this transaction can honestly say, and one `uq_session_turns_open` keeps
-        inside this turn because no second turn can have opened. NULL stays what it always meant, a
-        turn that recorded nothing.
+        the bound is then the last frame recorded since the turn opened, which
+        `uq_session_turns_open` keeps inside this turn because no second turn can have opened. NULL
+        still means a turn that recorded nothing.
 
         *projected_frame_seq* is the frame that ended the turn, and this is the transaction that
         takes the cursor past it — the turn's last word is written before the close, so advancing
-        in `apply_frame` when that frame was projected would move the cursor ahead of writes still
-        to come. A turn ending any other way passes none and leaves the cursor where it is; the
-        next `next_prompt` re-anchors it.
+        in `apply_frame` for that frame would move the cursor ahead of writes still to come. A turn
+        ending any other way passes none and leaves the cursor where it is; the next `next_prompt`
+        re-anchors it.
 
         An `ABORTED` outcome also writes the `turn_aborted` event, so the operator stopping an
         exchange is in the ordered stream a channel reads and not only in this row's `outcome`
-        column. The same lock and the same early return make it exactly once.
+        column. The same lock and early return make it exactly once.
 
-        Idempotent on an already-closed turn: a second close must not overwrite the first
-        outcome, because the first one is the one that happened.
+        Idempotent on an already-closed turn: the first outcome is the one that happened.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -840,8 +819,8 @@ class SessionStore:
             turn.outcome = outcome
             chat = await db.get(Session, turn.session_id)
             if chat is not None:
-                # `responding` is derived from this turn being open, so closing it is what retires
-                # the state — and what the SPA has to be told about.
+                # `responding` is derived from this turn being open, so closing it retires the
+                # state and the SPA has to be told.
                 _advance_cursor(chat, projected_frame_seq)
                 chat.updated_at = now
                 await notify(db, SessionEventKind.UPDATE, turn.session_id)
@@ -849,10 +828,10 @@ class SessionStore:
     async def list_turns(self, session_id: UUID, *, cursor: TurnCursor | None, limit: int) -> list[TurnRecord]:
         """A session's exchanges from *cursor*, newest first, for the `haku_conversations` tools.
 
-        Keyset on `(started_at, turn_id)`, and the tiebreak is what makes it one: two turns of one
-        session can share a start instant, and a cursor naming only the timestamp would hand a
-        tied pair out twice or step over one. Inclusive of the row the cursor names, which is the
-        first row the previous page did not return.
+        Keyset on `(started_at, turn_id)`: two turns of one session can share a start instant, and
+        a cursor naming only the timestamp would hand a tied pair out twice or step over one.
+        Inclusive of the row the cursor names, which is the first row the previous page did not
+        return.
         """
         query = select(SessionTurn).where(SessionTurn.session_id == session_id)
         if cursor is not None:
@@ -896,13 +875,12 @@ class SessionStore:
         *kind* is passed rather than read out of the payload: a CLI frame keeps its discriminator
         in `type` and the bridge envelope keeps it in `kind`, and this table holds both.
 
-        *runner_seq* is the runner's own number for the frame, where the frame came from a runner
-        that numbers. It is written down and nothing here orders by it; what reads it is
-        `highest_runner_seq`. Default None because most writers have no such number to give — this
-        console's writes to the CLI, and the rows it authors itself.
+        *runner_seq* is the runner's own number for the frame, where one came from a runner that
+        numbers. Nothing here orders by it; what reads it is `highest_runner_seq`. Default None
+        because most writers have no such number to give — this console's writes to the CLI, and
+        the rows it authors itself.
 
-        Failures are not swallowed — a rollout with quiet holes is the record that looks complete
-        while being wrong.
+        Failures are not swallowed — a rollout with quiet holes looks complete while being wrong.
         """
         uid = frame_uid(kind, payload)
         now = datetime.now(UTC)
@@ -924,8 +902,7 @@ class SessionStore:
                 )
                 # `index_where` as well as the columns, because the index is partial and Postgres
                 # will not infer one without its predicate. A row whose `frame_uid` is NULL does
-                # not satisfy that predicate, so it is simply inserted — which is the behaviour
-                # "no identity is not the same as the last one" needs.
+                # not satisfy that predicate, so it is simply inserted.
                 .on_conflict_do_nothing(
                     index_elements=["session_id", "frame_uid"], index_where=text("frame_uid IS NOT NULL")
                 )
@@ -934,9 +911,8 @@ class SessionStore:
             if (inserted_seq := inserted.scalar_one_or_none()) is not None:
                 return RecordedFrame(fresh=True, frame_seq=int(inserted_seq))
             # Nothing was inserted, so the partial index found this frame's identity already in
-            # the log — which is the only way `DO NOTHING` fires, since an identity-less frame
-            # does not satisfy the index predicate. Read back the row it collided with, so a
-            # replay still names the frame it duplicates.
+            # the log. Read back the row it collided with, so a replay still names the frame it
+            # duplicates.
             existing_seq = await db.scalar(
                 select(SessionFrame.frame_seq).where(
                     SessionFrame.session_id == session_id, SessionFrame.frame_uid == uid
@@ -949,17 +925,15 @@ class SessionStore:
     async def highest_runner_seq(self, session_id: UUID) -> int | None:
         """The resume cursor for one session: the highest number a runner gave a frame in it.
 
-        **Per session, not per connection**, which is the property the whole scheme rests on: two
-        consoles can be adopting one runner's window during a roll, and both compute this from the
-        same rows, so they agree on what has been recorded. None is a session whose log holds
-        nothing a runner numbered — a fresh session, or one served entirely by a runner image
-        predating the field — and the runner reading it replays its whole window as before.
+        **Per session, not per connection**: two consoles can be adopting one runner's window
+        during a roll, and both compute this from the same rows, so they agree on what has been
+        recorded. None is a session whose log holds nothing a runner numbered, and the runner
+        reading it replays its whole window.
 
         It is a **floor**, and the runner treats it as one (`OutboundLog.seed`). A `setup_output`
-        row cannot carry its number here (the runner numbers the frame, the console records the
-        lines it decoded into, and one is not the other), so the cursor can sit below what the
-        console truly holds. That costs a re-sent frame the log already has, which the `frame_uid`
-        dedup refuses — never a frame skipped, which is the direction that would lose one.
+        row cannot carry its number here — the runner numbers the frame, the console records the
+        lines it decoded into — so the cursor can sit below what the console truly holds. That
+        costs a re-sent frame the `frame_uid` dedup refuses, never a frame skipped.
         """
         async with self._sessions() as db:
             return await db.scalar(
@@ -969,15 +943,13 @@ class SessionStore:
     async def list_sessions(self, *, cursor: SessionCursor | None, limit: int) -> list[SessionRecord]:
         """Past sessions from *cursor*, newest first, for the `haku_conversations` read tools.
 
-        Keyset paging on `(created_at, session_id)`, for the same reason `read_frames` pages on
-        `frame_seq`: an offset counts from the top of the order, and this order grows at the top
-        while a reader walks it, so every session created mid-walk would push a row across a page
-        boundary — skipping it or repeating it. `session_id` is in the key because `created_at`
-        alone is not a total order; a pair created in one instant would straddle the boundary.
+        Keyset paging on `(created_at, session_id)`: an offset counts from the top of an order that
+        grows at the top while a reader walks it, so every session created mid-walk would push a
+        row across a page boundary. `session_id` is in the key because `created_at` alone is not a
+        total order.
 
         Deliberately unscoped: every session, whichever room it served. Inclusive of the row the
-        cursor names, which is the first row the previous page did not return — so a caller
-        resumes with the cursor it was handed and no arithmetic.
+        cursor names, which is the first row the previous page did not return.
         """
         query = select(Session).order_by(Session.created_at.desc(), Session.session_id.desc())
         if cursor is not None:
@@ -1031,18 +1003,11 @@ class SessionStore:
     ) -> TranscriptSlice:
         """A window of the session's projected transcript, for the `haku_conversations` reader.
 
-        **The fold always runs from the session's first frame**, whatever the cursor says — which
-        is what `project_log` is: the reducer seeded empty and told the stream ends here. A window
+        **The fold always runs from the session's first frame**, whatever the cursor says. A window
         would need the state the frames before it left behind, and this reader has nowhere to keep
         one; seeding empty from a suffix instead would let a page boundary close a message the
-        whole session does not end there, and the same entry would read differently depending on
-        which page it landed on. Determinism is the property the projection exists for
-        (<claude_code/projection.py>), and it is not a property of a suffix read cold. A stored
-        cursor is what turns this into a window, and it is deliberately not part of this change.
-
-        That costs one read of the session's projectable frames per page — the last O(session)
-        read on any path, now that the SPA's detail view reads stored events instead of re-parsing
-        the log (`session_views.tool_calls`).
+        whole session does not end there, so the same entry would read differently depending on
+        which page it landed on. That costs one read of the session's projectable frames per page.
 
         Two kinds are excluded in SQL rather than by the fold. `setup_output` is the console's own
         envelope and carries no protocol `type` at all, so the fold would refuse it; deltas are
@@ -1077,14 +1042,12 @@ class SessionStore:
         Two things differ from `read_frames`, which serves the MCP reader. It is scoped, because a
         browser surface must never read another Operator's session. And its keyset runs backwards:
         the frames an operator opens this for are a session's *last* ones — an answer that was cut
-        off, a turn that died — so paging forward from frame one to reach them is exactly the
-        punishment a long session must not carry. The rows still come back in wire order; only
-        which page is the first one differs.
+        off, a turn that died — so paging forward from frame one to reach them punishes a long
+        session. The rows still come back in wire order; only which page is the first one differs.
 
-        **Where per-message provenance hooks in** (`agent/claude-frame-provenance`, #4105): a
-        message's inclusive `frame_seq` range is a bound on this same query, and `before_seq` is
-        already its upper half — so linking a message to its frames stays a filter over this view
-        rather than a second read path.
+        A message's inclusive `frame_seq` range is a bound on this same query and `before_seq` is
+        already its upper half, so per-message provenance is a filter over this view rather than a
+        second read path.
         """
         query = _frames_of_kinds(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
         if before_seq is not None:
@@ -1105,16 +1068,13 @@ class SessionStore:
 
         **One transaction, and the cursor is inside it.** The message row, the neutral event rows,
         the room's outbox row, the turn's state and `sessions.projected_frame_seq` commit or do not
-        commit as one, which
-        is the whole of what makes those effects exactly-once: a process that dies anywhere leaves
-        the cursor naming the last frame whose effects are durable, so whoever adopts the session
-        re-projects from there and redoes exactly the frames whose effects did not commit
-        (<README.md> § The cursor).
+        commit as one, which is what makes those effects exactly-once: a process that dies anywhere
+        leaves the cursor naming the last frame whose effects are durable, so whoever adopts the
+        session redoes exactly the frames whose effects did not commit (<README.md> § The cursor).
 
         **A frame that ends the turn does not come here.** Closing the turn is `end_turn`'s
         transaction and the turn's last word is written before it, so advancing the cursor here for
-        that frame would put it ahead of writes still to come; `end_turn` takes it instead. Under
-        per-frame projection the ending frame produces exactly that one event and nothing else.
+        that frame would put it ahead of writes still to come; `end_turn` takes it instead.
 
         The returned state is the turn's after these writes, so the caller holds no message
         identity or accumulated prose of its own between frames.
@@ -1151,8 +1111,8 @@ class SessionStore:
                         message.status = ChatMessageStatus.COMPLETE
                         message.updated_at = now
                         # Each message is queued for the room as it finishes rather than only the
-                        # final answer, so a turn that narrates, works and reports back is
-                        # three messages in the room and not just its conclusion.
+                        # final answer, so a turn that narrates, works and reports back is three
+                        # messages in the room and not just its conclusion.
                         owed = await _enqueue_reply(
                             db,
                             chat,
@@ -1167,14 +1127,11 @@ class SessionStore:
                         turn.queued_reply = turn.queued_reply or owed
                         message = None
                     case _:
-                        # Every event is stored below, whatever the transcript row does with it.
-                        # This arm is what the *message* row makes of one — nothing, for reasoning,
-                        # a tool call, its answer and the harness's narration.
+                        # Every event is stored below; this arm is only what the *message* row
+                        # makes of one — nothing, for reasoning, a tool call and its answer.
                         pass
             # In this transaction, so a row exists here exactly when the cursor says its frame was
-            # projected: a process that dies leaves no half-written stream to reconcile, and the
-            # frames whose effects did not commit are re-projected into rows that were never
-            # written.
+            # projected: a process that dies leaves no half-written stream to reconcile.
             db.add_all(
                 stored
                 for event in events
@@ -1197,11 +1154,11 @@ class SessionStore:
         dying with a message row nothing names would leave its replacement to guess which of the
         session's messages it was in the middle of.
 
-        *source_first_frame_seq* is the frame that opened the message, written here rather than on
-        every update: this is the one moment that knows where the message began, and a resumed turn
-        picks its message up from the turn row without passing through here — so leaving `first` to
-        a later write would walk it forward past the frames the earlier process already projected.
-        Required, because `ck_session_messages_assistant_pointed` refuses a row without it.
+        *source_first_frame_seq* is written here rather than on every update: this is the one
+        moment that knows where the message began, and a resumed turn picks its message up from the
+        turn row without passing through here, so a later write would walk `first` forward past
+        frames the earlier process already projected. Required, because
+        `ck_session_messages_assistant_pointed` refuses a row without it.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -1222,15 +1179,12 @@ class SessionStore:
     ) -> bool:
         """Write what this assistant message says so far. True once the room owes it.
 
-        **A completed message queues the room's copy in this same transaction** — the two facts
-        commit together or not at all, and `session_outbox` is what says the room is still owed
-        one. Writing it at delivery time instead loses the answer whenever the turn raises in
-        between (<../debug/message_drops.md> E4).
-
-        **And it closes the turn's state in that same transaction** — the turn that this message
-        belongs to is the one pointing at it, so no caller has to name it and the three writes
-        cannot come apart. Which is the property `spoke` needs: `queued_reply` is set by the
-        statement that inserts the outbox row, never by one that merely tried.
+        **A completed message queues the room's copy in this same transaction** — writing it at
+        delivery time instead loses the answer whenever the turn raises in between
+        (<../debug/message_drops.md> E4) — **and closes the turn's state in it too**. The turn is
+        the one pointing at this message, so no caller has to name it and the three writes cannot
+        come apart: `queued_reply` is set by the statement that inserts the outbox row, never by
+        one that merely tried.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -1292,10 +1246,10 @@ class SessionStore:
         One caller, at most once per turn: `result.result` on a turn whose completed assistant
         messages were all empty — a turn that completed none at all has a row minted for it
         instead. `turn_id` is the idempotence key that makes re-derivation by a replacement replica
-        a no-op rather than a second copy in the room — see `session_outbox.turn_id`.
+        a no-op rather than a second copy in the room.
 
         False for an empty body and for a session serving no room; the SPA reads the message rows
-        this turn already wrote, so it is owed nothing here.
+        this turn already wrote.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -1332,9 +1286,8 @@ class SessionStore:
         """Ask this session to end, and wake whoever is running it.
 
         `CLOSING` is an ended status, so the turn loop stops as soon as it re-reads one — but it
-        re-reads only after a wake, and is otherwise parked in a 30-second prompt timeout. So the
-        `PROMPT` notify is what makes teardown prompt rather than eventual; without it a closing
-        session's runner holds its sandbox for the rest of that wait.
+        re-reads only after a wake, and is otherwise parked in a 30-second prompt timeout. Without
+        the `PROMPT` notify a closing session's runner holds its sandbox for the rest of that wait.
         """
         async with self._sessions.begin() as db:
             chat = await db.scalar(
@@ -1371,8 +1324,8 @@ class SessionStore:
     async def operator_status(self, operator_id: UUID, session_id: UUID) -> SessionStatus:
         """The stored status of this Operator's session, raising `KeyError` for one that is not theirs.
 
-        Ownership and status in one query, so a route that needs both asks once. Stored, never the
-        derived `responding` — that is `session_view` reading an open turn, and no path writes it.
+        Stored, never the derived `responding` — that is `session_view` reading an open turn, and
+        no path writes it.
         """
         async with self._sessions() as db:
             status = await db.scalar(
@@ -1399,23 +1352,17 @@ class SessionStore:
         """Fail every leased session nobody came back for, and report how many.
 
         A held status is only ever corrected by the replica that wrote it, so a replica dying
-        without its finalizer — SIGKILL, OOM, node loss — leaves a row claiming a turn is in
-        flight that `supervise_once` reads as healthy. This is the only observer that is not that
-        process.
+        without its finalizer — SIGKILL, OOM, node loss — leaves a row claiming a turn is in flight
+        that `supervise_once` reads as healthy. This is the only observer that is not that process.
 
-        **An expired lease means unowned, not dead**, and the threshold below is the whole of that
-        distinction. `authenticate_bridge` already admits any runner once the lease has lapsed —
-        it refuses only while somebody else's is still valid — so an expired session is adoptable
-        without anything having to hand it back. What it is not is *instantly* adopted: the runner
-        redials on a backoff, and failing the row the moment the lease lapses beats that redial
-        every time.
+        **An expired lease means unowned, not dead**, and the threshold below is that distinction.
+        `authenticate_bridge` admits any runner once the lease has lapsed, so an expired session is
+        adoptable without anything having to hand it back — but not *instantly* adopted, since the
+        runner redials on a backoff. A session is therefore dead only once it has been adoptable
+        for a whole `ADOPTION_GRACE` and nobody took it.
 
-        So a session is dead only once it has been adoptable for a whole `ADOPTION_GRACE` and
-        nobody took it. `release_lease` is the fast path that skips that wait, not the thing
-        correctness rests on, which no finalizer can be.
-
-        Set-based and idempotent, like `node_daemons._expire`: any replica may run it, concurrent
-        runners converge, and a merely slow owner renews well before the TTL.
+        Set-based and idempotent: any replica may run it, concurrent runners converge, and a merely
+        slow owner renews well before the TTL.
         """
         async with self._sessions.begin() as db:
             expired = (
@@ -1432,9 +1379,8 @@ class SessionStore:
                 chat = await db.get(Session, session_id, with_for_update=True)
                 if chat is None or chat.status not in LEASED_SESSION_STATUSES:
                     continue
-                # Which of the three ended it is read off two columns that the failure itself then
-                # leaves behind, so it is recorded as an event rather than only rendered into the
-                # error prose the operator sees.
+                # Read off two columns the failure below then overwrites, so it is recorded as an
+                # event rather than only rendered into the error prose the operator sees.
                 if chat.lease_holder is not None:
                     reason = LeaseExpiryReason.HOLDER_GONE
                 elif chat.bridge_connected_at is not None:
@@ -1479,10 +1425,9 @@ class SessionStore:
     async def request_abort(self, session_id: UUID) -> bool:
         """Ask whichever replica is running this session's turn to interrupt it.
 
-        Returns False when no turn is in flight. This goes through NOTIFY rather than an
-        in-process registry because the two ends land on different replicas: the abort event
-        belongs to the pod holding the runner's bridge websocket, while the operator's HTTP
-        request is balanced across all of them.
+        Returns False when no turn is in flight. Over NOTIFY rather than an in-process registry
+        because the two ends land on different replicas: the abort event belongs to the pod holding
+        the runner's bridge websocket, while the operator's HTTP request is balanced across all.
         """
         async with self._sessions.begin() as db:
             if await _open_turn(db, session_id) is None:
@@ -1505,10 +1450,9 @@ def _expiry_detail(reason: LeaseExpiryReason, holder: str | None) -> str:
 def _advance_cursor(chat: Session, frame_seq: int | None) -> None:
     """Move the session's projection cursor to *frame_seq*, never backwards.
 
-    Monotone because two writers can reach it out of order: `end_turn` carries the frame that
-    ended the turn while the turn's last word — written a moment earlier and through
-    `update_assistant` — carries none, and a retried adoption re-projects frames the cursor has
-    already passed.
+    Monotone because two writers can reach it out of order: `end_turn` carries the frame that ended
+    the turn while the turn's last word carries none, and a retried adoption re-projects frames the
+    cursor has already passed.
     """
     if frame_seq is not None and (chat.projected_frame_seq is None or chat.projected_frame_seq < frame_seq):
         chat.projected_frame_seq = frame_seq
@@ -1517,9 +1461,9 @@ def _advance_cursor(chat: Session, frame_seq: int | None) -> None:
 async def _unprojected_frames(db: AsyncSession, session_id: UUID, cursor: int) -> tuple[ReceivedFrame, ...]:
     """The recorded frames past *cursor* — the ones whose effects did not commit.
 
-    Deltas are in it, because their effects are message content and the cursor is what says
-    whether that content landed. What is left out is what the console authored rather than
-    received: `setup_output`, which carries no protocol `type` for the fold to read.
+    Deltas are in it, because their effects are message content and the cursor is what says whether
+    that content landed. `setup_output` is not: the console authored it, and it carries no protocol
+    `type` for the fold to read.
     """
     rows = await db.scalars(
         select(SessionFrame)
@@ -1593,11 +1537,11 @@ async def _enqueue_reply(
     whose text is empty.
 
     **Every row carries exactly one identity, and the insert is idempotent on it**, because both
-    ways a reply can be produced twice are ways a *replacement* replica produces it. A completed
-    `assistant` frame is identified by its transcript row and can be replayed out of the runner's
-    rollout; a turn's last word is identified by the turn and is re-derived by whoever adopts a
-    turn left open. Postgres infers one index per statement, so the conflict target follows
-    whichever identity this row has.
+    ways a reply can be produced twice are ways a *replacement* replica produces it: a completed
+    `assistant` frame replayed out of the runner's rollout is identified by its transcript row, and
+    a turn's last word re-derived by whoever adopts an open turn is identified by the turn.
+    Postgres infers one index per statement, so the conflict target follows whichever identity this
+    row has.
     """
     if chat.room_id is None or not (queued := body.strip()):
         return False
@@ -1626,7 +1570,7 @@ async def _open_turn(db: AsyncSession, session_id: UUID) -> UUID | None:
 
     The one question behind three: whether a prompt may be accepted, whether there is anything to
     abort, and what the SPA should be told. A partial unique index makes "at most one" a schema
-    property, so this is a lookup rather than a scan with a rule attached.
+    property.
     """
     turn_id: UUID | None = await db.scalar(
         select(SessionTurn.turn_id).where(SessionTurn.session_id == session_id, SessionTurn.ended_at.is_(None))
@@ -1639,14 +1583,13 @@ async def _prompt_left(db: AsyncSession, session_id: UUID, first_frame_seq: int)
 
     **The console's own record is the evidence, not the CLI's acknowledgement.** `sent()` records
     the frame before `channel.write` (`cli_client._write`), so a row here means this end committed
-    to sending the prompt, and the CLI's `command_lifecycle` — the only thing that would say
-    whether the *CLI* has it — may still be sitting in the runner's replay window, unrecorded,
-    because replay does not begin until the socket is accepted and this runs before that. Asking a
-    question the record cannot yet answer would re-ask a prompt the agent already has, which is the
-    worse of the two failures: a duplicate turn instead of a lost one.
+    to sending the prompt. The CLI's `command_lifecycle` — the only thing that would say whether
+    the *CLI* has it — may still be sitting unrecorded in the runner's replay window, since replay
+    does not begin until the socket is accepted and this runs before that.
 
     So the ambiguous middle — recorded, and then the write or the replica died — is deliberately
-    treated as delivered, and what this closes is the window where nothing was recorded at all.
+    treated as delivered: a duplicate turn is the worse of the two failures. What this closes is
+    the window where nothing was recorded at all.
     """
     written = await db.scalar(
         select(SessionFrame.frame_seq)
@@ -1664,11 +1607,10 @@ async def _prompt_left(db: AsyncSession, session_id: UUID, first_frame_seq: int)
 async def _requeue(db: AsyncSession, turn_id: UUID) -> None:
     """Put the prompts *turn_id* claimed back where `next_prompt` will find them again.
 
-    Three writes because the claim is recorded in three places, and a prompt left in any of them
-    is one the queue no longer offers: the queue row's `claimed_at`, the transcript row's status,
-    and the link saying this turn answered it — which has to go, or the turn that finally does
-    answer cannot record that it did (`(turn_id, message_id)` is the primary key, and the message
-    half of it would repeat).
+    Three writes because the claim is recorded in three places, and a prompt left in any of them is
+    one the queue no longer offers: the queue row's `claimed_at`, the transcript row's status, and
+    the link saying this turn answered it — which has to go, or the turn that finally does answer
+    cannot record that it did (`(turn_id, message_id)` is the primary key).
     """
     message_ids = list(
         (await db.scalars(select(SessionTurnPrompt.message_id).where(SessionTurnPrompt.turn_id == turn_id))).all()

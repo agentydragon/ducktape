@@ -1,10 +1,9 @@
 """The stream's two categories as `session_events` rows.
 
 The one place the vocabularies meet the table in <../database_schema.py>: a `ConversationEvent`
-from <conversation_events.py> in and a row out, one of the console's own facts about a session in
-and a row out, or an accepted prompt in and a row out. Nothing else reads or writes
-`session_events.body`, so the stored spelling of an event is settled here and is a boundary shape
-rather than a second vocabulary — the events themselves stay dataclasses.
+from <conversation_events.py>, one of the console's own facts about a session, or an accepted
+prompt, in — and a row out. Nothing else reads or writes `session_events.body`, so the stored
+spelling of an event is settled here.
 
 **Three of an event's fields are columns rather than body, because readers address rows by them**:
 the provenance union, the frame range it discriminates, and a tool call's `call_id`. What is left
@@ -54,7 +53,7 @@ class ResultShape(StrEnum):
     """Which spelling of a result's content a stored row carries.
 
     One member, and it stays an enum because every stored row carries the discriminator and
-    `TextResultBody` forbids extras. `0068` rewrote the two older spellings into this one.
+    `TextResultBody` forbids extras.
     """
 
     TEXT = "text"
@@ -139,9 +138,8 @@ class TurnAbortedBody(BaseModel):
 
 type AuthoredBody = PromptRejectedBody | UnreadableInputBody | SessionAdoptedBody | LeaseExpiredBody
 
-# Every shape `session_events.body` is ever written from, over both categories. A reader dispatches
-# on these rather than on `kind`, which is what keeps the discriminator and the payload from
-# disagreeing.
+# Every shape `session_events.body` is ever written from. A reader dispatches on these rather than
+# on `kind`, which keeps the discriminator and the payload from disagreeing.
 type StoredBody = (
     MessageBody
     | ReasoningBody
@@ -160,8 +158,7 @@ def authored(body: AuthoredBody, *, session_id: UUID, now: datetime) -> SessionE
     """The row one of the console's own facts about *session_id* is stored as.
 
     No frame range because it crossed no wire, and no turn because none of these belongs to an
-    exchange — a refused prompt least of all, since what refused it is the turn it is not part of.
-    Written in the transaction that makes the fact true, like every other row in this table.
+    exchange. Written in the transaction that makes the fact true, like every other row here.
     """
     return SessionEvent(
         session_id=session_id,
@@ -220,9 +217,8 @@ def turn_aborted(*, session_id: UUID, turn_id: UUID, now: datetime) -> SessionEv
     the turn's own events and a channel folding the stream in order renders the notice after the
     prose it interrupted.
 
-    The kind and the turn are the whole fact, so the body is empty: who asked is not carried
-    (`request_abort` reaches the running replica as a NOTIFY), and when it took effect is
-    `created_at`.
+    The kind and the turn are the whole fact, so the body is empty: who asked is not carried, and
+    when it took effect is `created_at`.
     """
     return SessionEvent(
         session_id=session_id,
@@ -240,9 +236,8 @@ def turn_aborted(*, session_id: UUID, turn_id: UUID, now: datetime) -> SessionEv
 def body_of(row: SessionEvent) -> StoredBody:
     """What a stored row says, back in the shape it was written from.
 
-    The read half of `row` and `authored`, and the only one there is: nothing else parses
-    `session_events.body`, so the stored spelling stays settled here whichever direction it is
-    crossed in. A kind added without an arm fails the type check rather than the read.
+    The read half of `row` and `authored`, and the only one there is. A kind added without an arm
+    fails the type check rather than the read.
     """
     match row.kind:
         case ConversationEventKind.MESSAGE_COMPLETED:

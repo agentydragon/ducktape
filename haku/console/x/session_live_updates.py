@@ -1,29 +1,25 @@
 """Session changes, delivered to open tabs as console-socket invalidations.
 
-The console's surfaces read a session over REST and, until now, learned that it had changed only
-by being reloaded (or, on the `/chat` page alone, by holding an SSE stream of its own). This is
-the other half of <../console_events.py>'s contract applied to sessions: the socket the shell
-already holds says *which session* changed, and the page refetches.
+<../console_events.py>'s contract applied to sessions: the socket the shell already holds says
+*which session* changed, and the page refetches.
 
 **Where the publish happens.** Nowhere new. Every write that changes a session already emits
 `SessionEventKind.UPDATE` inside the transaction that makes the change (`notify` fires on commit),
-so a change that rolled back never announces itself and a sweep is never needed to notice one.
-This module only listens.
+so a change that rolled back never announces itself. This module only listens.
 
 **No second channel and no second NOTIFY.** `LISTEN` is broadcast, so every replica's
 `SessionNotifications` already hears every `session_events` notification. Each replica therefore
 turns what it hears into sends on the console sockets **it** holds; relaying through
 `ConsoleEventHub.broadcast` would `NOTIFY` a second time for one change and deliver it twice.
 
-**Coalescing is load-bearing, not tidiness.** `UPDATE` fires per stream delta — hundreds in a
-turn — and each event costs every open tab a full transcript refetch, which is far more than the
-notification it came from. So the fan-out is the coalescing point: one event per session per
-`COALESCE_WINDOW`, however many changes landed inside it. The client half of the same discipline
-is one refresh in flight per page, so a burst that outruns even this collapses further there.
+**Coalescing is load-bearing, not tidiness.** `UPDATE` fires per stream delta — hundreds in a turn
+— and each event costs every open tab a full transcript refetch. So the fan-out is the coalescing
+point: one event per session per `COALESCE_WINDOW`, however many changes landed inside it. The
+client half of the same discipline is one refresh in flight per page.
 
 **Lossy on purpose.** A missed notification (a listener reconnect, a replica that was mid-roll)
-delays a refresh; it never loses one, because the browser also resyncs on a bounded timer and on
-every socket reconnect. That is the property that lets this be a set of ids rather than a queue.
+delays a refresh and never loses one, because the browser also resyncs on a bounded timer and on
+every socket reconnect. That is what lets this be a set of ids rather than a queue.
 """
 
 from __future__ import annotations
@@ -46,13 +42,11 @@ logger = logging.getLogger(__name__)
 
 # How long changes to one session pile up before that session's tabs are told once.
 #
-# The floor is set by what an update costs, not by what it is worth: a refetch reads the whole
-# transcript, so a window near zero would hand a streaming turn's per-delta notifications straight
-# through to every open tab. Half a second bounds that at two refetches per second per tab —
-# roughly two orders of magnitude below the delta rate — while staying under the second or so at
-# which an arriving message stops reading as live. It is deliberately not tuned finer than that:
-# below it the client's own one-refresh-in-flight rule, and the server's response time, decide the
-# real rate anyway.
+# The floor is set by what an update costs: a refetch reads the whole transcript, so a window near
+# zero would hand a streaming turn's per-delta notifications straight through to every open tab.
+# Half a second bounds that at two refetches per second per tab while staying under the second or
+# so at which an arriving message stops reading as live. Below that the client's own
+# one-refresh-in-flight rule and the server's response time decide the real rate anyway.
 COALESCE_WINDOW = timedelta(milliseconds=500)
 
 
@@ -102,8 +96,8 @@ class SessionLiveUpdates:
             try:
                 await self._publish(changed)
             except Exception:
-                # An invalidation is lossy by construction (see the module docstring), so one that
-                # fails must not take the loop — and with it every later session — down with it.
+                # An invalidation is lossy by construction, so one that fails must not take the
+                # loop — and with it every later session — down with it.
                 logger.exception("failed to publish session invalidations for %d sessions", len(changed))
 
     async def _publish(self, changed: set[UUID]) -> None:
@@ -119,11 +113,10 @@ class SessionLiveUpdates:
     async def _operator_of(self, session_id: UUID) -> UUID | None:
         """Whose tabs this session's invalidation goes to.
 
-        `SessionEvent` carries no operator and the hub routes by one, so this lookup is what joins
-        them — once per session rather than once per event, which is the other reason the window
-        above matters. A cache with no invalidation is honest here: a session's owner is written
-        when the row is created and never updated. It grows by one entry per session this replica
-        sees change while it lives.
+        `SessionEvent` carries no operator and the hub routes by one, so this lookup joins them —
+        once per session rather than once per event, which is the other reason the window above
+        matters. The cache needs no invalidation: a session's owner is written when the row is
+        created and never updated.
         """
         if (cached := self._operators.get(session_id)) is not None:
             return cached

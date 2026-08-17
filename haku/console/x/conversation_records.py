@@ -1,20 +1,17 @@
 """The records a conversation read hands back, and the cursors that page them.
 
 The store produces these — a session row, a rollout frame, a turn, a transcript entry — and
-<../tools/conversations.py> is the MCP surface that serialises them. They live at the runtime
-level because the store is their only producer: before this the store imported them from the tool
-that reads it, which is the dependency running backwards.
+<../tools/conversations.py> is the MCP surface that serialises them. They live at the runtime level
+because the store is their only producer.
 
-**A record, not a page.** What the tool owns is how records are handed out — the `Page` envelope
-every listing shares, the byte budget a page spends, and the clipping that budget forces — and
-that stayed with the tool. What is here is what one read produced, whatever a page later does
-with it.
+**A record, not a page.** How records are handed out — the `Page` envelope every listing shares,
+the byte budget a page spends, and the clipping that budget forces — belongs to the tool. What is
+here is what one read produced.
 
-**Pydantic rather than dataclasses, because the boundary needs it.** Every model here is either
-an MCP tool's return type, whose JSON schema is generated from the class, or a cursor that
-arrives back as a tool argument and is parsed out of the wire. `TranscriptSlice` is the one
-exception — nothing serialises it; it is the store's hand-off to the tool's byte budget — and it
-stays a model only because a conversion is its own change rather than part of a move.
+**Pydantic rather than dataclasses, because the boundary needs it.** Every model here is either an
+MCP tool's return type, whose JSON schema is generated from the class, or a cursor that arrives
+back as a tool argument and is parsed out of the wire. `TranscriptSlice` is the one exception:
+nothing serialises it, and it is the store's hand-off to the tool's byte budget.
 """
 
 from __future__ import annotations
@@ -63,13 +60,11 @@ class SessionRecord(BaseModel):
 class SessionCursor(BaseModel):
     """A position in the `(created_at, session_id)` order `list_sessions` walks.
 
-    **Both columns, because one does not order the corpus.** Sessions are created in bursts — a
-    Matrix room and the SPA can open one in the same instant, and `created_at` alone leaves that
-    pair unordered. A cursor naming only the timestamp would then either hand back a session the
-    previous page already carried or step over one it never did, depending on which side of the
-    tie the database happened to return first. `session_id` breaks it, and the key is spelled out
-    here rather than hidden behind an opaque string so a reader can see what the page boundary
-    actually is.
+    **Both columns, because one does not order the corpus.** A Matrix room and the SPA can open a
+    session in the same instant, and a cursor naming only `created_at` would then either hand back
+    a session the previous page already carried or step over one it never did. `session_id` breaks
+    the tie, and the key is spelled out rather than hidden behind an opaque string so a reader can
+    see what the page boundary is.
     """
 
     created_at: datetime.datetime
@@ -83,9 +78,8 @@ class SessionCursor(BaseModel):
 class RolloutFrame(BaseModel):
     """One frame of a named backend's wire — Claude Code's — not of the neutral conversation.
 
-    Everything else here is the vocabulary that names no backend. This is the sanctioned exception,
-    and it carries the label so a reader cannot mistake the two: `kind` and `payload` are the CLI's
-    own words, and a transcript entry is what they were projected to.
+    The sanctioned exception among the models here, labelled so a reader cannot mistake the two:
+    `kind` and `payload` are the CLI's own words, and a transcript entry is what they projected to.
     """
 
     frame_seq: int
@@ -104,8 +98,7 @@ class FrameCursor(BaseModel):
     """Where a read of the frame log starts — inclusively, so this is a frame that exists.
 
     Inclusive rather than "after this one" so that a transcript entry's `first_frame_seq` is
-    already a cursor: appealing a normalization to the frames behind it needs no arithmetic, and
-    an off-by-one there reads the wrong frame while looking right.
+    already a cursor: appealing a normalization to the frames behind it needs no arithmetic.
     """
 
     frame_seq: int
@@ -174,12 +167,11 @@ class Outcome(StrEnum):
     """How a step ended, where "cannot tell" is a first-class answer rather than a default.
 
     `UNKNOWN` is the common case, not the corner: the field a provider would report failure in is
-    routinely absent, and collapsing that into `SUCCEEDED` reports every unanswerable case as
-    fine. The shares are measured in <../debug/frame_shape_census.md>, which is dated; this is not.
+    routinely absent, and collapsing that into `SUCCEEDED` reports every unanswerable case as fine.
+    The shares are measured in <../debug/frame_shape_census.md>.
 
     Spelled here rather than shared with <conversation_events.py>'s enum of the same members: that
-    one is the fold's own vocabulary, and whether the two are one type is a decision about the
-    vocabulary rather than about where a model lives.
+    one is the fold's own vocabulary.
     """
 
     SUCCEEDED = "succeeded"
@@ -282,12 +274,11 @@ class TranscriptCursor(BaseModel):
 
     An ordinal rather than a keyset, and safe here for the one reason an offset is ever safe: this
     order only ever grows at its *end*. The frame log is append-only and the projection is a
-    deterministic left-to-right fold of it, so entry *n* is the same entry on every read. The one
-    entry that can change is the last, when it belongs to a turn still in flight — which is a fact
-    about that turn rather than about the cursor.
+    deterministic left-to-right fold of it, so entry *n* is the same entry on every read; the one
+    entry that can change is the last, when it belongs to a turn still in flight.
 
-    A keyset on the frame the entry came from would not do: a console-authored entry has no
-    frames at all (see `ConsoleAuthored`) and so has no position in that key.
+    A keyset on the frame the entry came from would not do: a console-authored entry has no frames
+    at all (see `ConsoleAuthored`) and so has no position in that key.
     """
 
     index: int

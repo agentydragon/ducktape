@@ -85,7 +85,7 @@ def test_a_tool_call_and_its_answer_are_two_rows_sharing_the_correlation_column(
 
 
 def test_every_result_is_now_stored_as_text() -> None:
-    """The variant collapsed to its one arm, which `0068` rewrote the surviving rows into."""
+    """The variant has one arm, and every row is written into it."""
     rendered = stored(
         ToolCallCompleted(
             call_id="toolu_2",
@@ -111,9 +111,9 @@ def test_a_prompt_is_conversation_on_the_authored_arm() -> None:
 
 
 def test_a_fact_the_console_authored_names_no_turn_and_no_frames() -> None:
-    """The second category: what happened *to* the session. It crossed no wire, so it is its own
-    evidence — and it is the session's fact rather than an exchange's, which is what lets a session
-    that never reached a turn have a stream at all."""
+    """The second category: what happened *to* the session. It crossed no wire, and it is the
+    session's fact rather than an exchange's — which is what lets a session that never reached a
+    turn have a stream at all."""
     taken = session_events.authored(
         session_events.SessionAdoptedBody(previous_holder="haku-console-a", holder="haku-console-b"),
         session_id=SESSION_ID,

@@ -11,8 +11,7 @@ bb run //haku/console/x:frame_export_bin -- \\
 ```
 
 The written file is a **proposal**: read it before checking it in. Redaction is fail-closed by key,
-so what it keeps is a short list rather than a judgement about a particular session, and the review
-is the second half of that.
+so what it keeps is a short list rather than a judgement about a particular session.
 """
 
 from __future__ import annotations

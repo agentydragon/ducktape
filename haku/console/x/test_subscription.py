@@ -1,12 +1,11 @@
 """Contracts of a subscription: what a position addresses, and who keeps it.
 
-No channel is imported here. A durable cursor is one implementation and lives beneath a channel
-boundary, so its own contract is tested where it lives
-(<channels/matrix/test_room_subscription.py>); what this file holds is the stream itself and the
-client-held position, which is what every consumer shares.
+No channel is imported here. A durable cursor lives beneath a channel boundary and is tested there
+(<channels/matrix/test_room_subscription.py>); this file holds the stream itself and the
+client-held position, which every consumer shares.
 
 The events are the operator's own prompts, because `prompt_enqueued` is the one kind a test can
-write without a runner: `enqueue_prompt` records it in its own transaction.
+write without a runner.
 """
 
 from __future__ import annotations
@@ -75,8 +74,8 @@ def prompts(read: Read) -> list[str]:
 async def test_two_subscribers_at_different_positions_read_only_what_each_has_not_seen(
     chat_store, operator_id, stream
 ) -> None:
-    """The point of the position belonging to the subscriber: one conversation, two readers, no
-    agreement needed between them and nothing stored about either."""
+    """One conversation, two readers, no agreement needed between them and nothing stored about
+    either."""
     thread = await a_thread(chat_store, operator_id, "one", "two", "three")
     whole = await stream.read(thread.conversation_id, after=START)
 
@@ -91,7 +90,7 @@ async def test_a_client_held_subscriber_resumes_from_whatever_position_it_sends(
     chat_store, operator_id, stream
 ) -> None:
     """A tab's position survives nothing but the tab, so a reload reads from wherever its next
-    request says — including from the start, which is the whole transcript rather than an error."""
+    request says — including from the start, which is the whole transcript and not an error."""
     thread = await a_thread(chat_store, operator_id, "one", "two")
     caught_up = await stream.read(thread.conversation_id, after=START)
 
@@ -151,8 +150,8 @@ async def test_a_read_that_stops_at_its_limit_says_there_is_more(chat_store, ope
 
 
 async def test_a_replacement_session_continues_the_same_stream(chat_store, operator_id, stream) -> None:
-    """Why the stream is keyed by the thread and not by the session running it: a subscriber
-    holding a position from before the sandbox died reads on into its replacement's rows."""
+    """The stream is keyed by the thread, so a subscriber holding a position from before the sandbox
+    died reads on into its replacement's rows."""
     thread = await a_thread(chat_store, operator_id, "before")
     replacement, token = await chat_store.create(operator_id, SpaSession(), conversation_id=thread.conversation_id)
     await chat_store.authenticate_bridge(replacement.session_id, token)

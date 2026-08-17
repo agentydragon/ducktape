@@ -7,9 +7,7 @@ from typing import Any
 # TODO(frame-vocabulary): `session_frames.kind` holds two discriminator vocabularies at once, and
 # there is deliberately no enum over the union. This literal is the *bridge* envelope's; the CLI's
 # own top-level `type` (<claude_code/frames.py>) is put in the same column by a different sink.
-# Naming the union would name a concept the schema does not have — see `SessionFrame`, and
-# <../plans/conversation_layers.md> § 13, where the CLI's type gets its own column and this
-# becomes one thing.
+# Naming the union would name a concept the schema does not have.
 SETUP_OUTPUT_KIND = "setup_output"
 
 
@@ -19,8 +17,8 @@ def setup_output_frame(text: str) -> dict[str, Any]:
     **Console-authored, and it says so with its discriminator.** The bridge's own frame is
     `SetupOutput(data: bytes)` — raw, unsplit, base64 on the wire — and what arrives here is one
     line the transport has already decoded (`errors="replace"`) and split for the room. So this is
-    a rendering, not the wire, and putting it under `kind` rather than the CLI's `type` is what
-    keeps it from reading as a protocol frame that never existed.
+    a rendering rather than the wire, and it goes under `kind` rather than the CLI's `type` so it
+    cannot read as a protocol frame that never existed.
 
     It lives in the frame log because it **is** runner→console traffic: a `SetupOutput` envelope
     crossed the wire and only the splitting is ours. A fact the console is the sole witness to — a

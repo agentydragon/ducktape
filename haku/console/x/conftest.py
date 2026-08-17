@@ -1,10 +1,9 @@
 """Shared setup for the runtime's tests — sessions, turns, frames, sandboxes.
 
-Fixtures more than one module needs, fixtures handing out stand-ins for what is genuinely
-outside the process (the stand-ins themselves live in `testing/`, so a non-pytest process can
-reach them too), and the reads more than one module makes of the test database directly — the
-store's tests and the runtime's both ask what a lease says and what the room is owed. Stores are
-never stood in for — see <README.md> § Tests run against a real database.
+Fixtures more than one module needs, stand-ins for what is genuinely outside the process (the
+stand-ins themselves live in `testing/`, so a non-pytest process can reach them too), and the reads
+more than one module makes of the test database directly. Stores are never stood in for — see
+<README.md> § Tests run against a real database.
 
 **Nothing here may import a channel.** A second channel has to inherit this file unchanged, so
 anything a room has — the homeserver identities, the room/session binding — belongs in
@@ -84,21 +83,15 @@ def chat_service(
 
 @pytest.fixture
 async def operator_id(migrated_identity_store: PostgresOperatorIdentityStore) -> UUID:
-    """The canonical Operator these tests act as.
-
-    One key for every test rather than a per-test string: the database is per-test, so the
-    keys were only ever distinct out of caution.
-    """
+    """The canonical Operator these tests act as. One key for every test; the database is per-test."""
     return await migrated_identity_store.resolve_configured_external_user_key(OPERATOR_SUBJECT)
 
 
 async def queued_for_the_room(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> list[str]:
     """What this session put in the room's outbox, oldest first.
 
-    The turn no longer hands its answer to anything: it writes a row with the message the answer
-    is, and `channels/matrix/outbox.py` says it. So the assertion that used to read a delivery sink
-    reads the rows, which is the same question asked of the record that actually survives the
-    process.
+    A turn hands its answer to nothing: it writes a row with the message, and
+    `channels/matrix/outbox.py` says it. So what the room is owed is asked of the rows.
     """
     async with sessions() as db:
         return list(

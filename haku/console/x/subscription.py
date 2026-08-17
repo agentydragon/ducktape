@@ -5,16 +5,14 @@ A conversation is an ordered stream of `session_events` rows addressed by `event
 never "the next one after N", and a gap is undetectable by construction rather than being a loss to
 notice. A **subscription** is one consumer reading that stream from a position.
 
-**Where the position lives is the subscriber's business, and it is not this layer's** (operator,
-2026-08-17). A browser tab holds no copy that outlives it: several tabs can watch one conversation
-at different points, and persisting any of those would be storing rows for something a refresh
-destroys — so a tab's position is the read's own argument and the console keeps nothing
-(`ClientHeldCursor`). A Matrix room holds a federated copy that outlives every console process, so
-after a restart the channel has to know what it already put in the room — its position is durable,
-and it lives in the channel's own storage below the channel boundary
-(<channels/matrix/room_subscription.py>).
+**Where the position lives is the subscriber's business, not this layer's.** A browser tab holds no
+copy that outlives it — several tabs can watch one conversation at different points — so a tab's
+position is the read's own argument and the console keeps nothing (`ClientHeldCursor`). A Matrix
+room holds a federated copy that outlives every console process, so after a restart the channel has
+to know what it already put in the room: its position is durable and lives in the channel's own
+storage (<channels/matrix/room_subscription.py>).
 
-So what is shared is this interface and the read behind it. There is deliberately **no
+What is shared is this interface and the read behind it. There is deliberately **no
 `conversation_cursor` table**: durability is one `Cursor` implementation's concern, not a property
 of subscribing.
 
@@ -63,8 +61,8 @@ START = StreamPosition(event_seq=0)
 class StreamedEvent:
     """One row of the stream, as a subscriber reads it.
 
-    The kind is not carried beside `body`: the body's type *is* the kind, so a consumer dispatches
-    on it with `isinstance` and cannot be handed a pair that disagrees.
+    No kind beside `body`: the body's type *is* the kind, so a consumer dispatches on it with
+    `isinstance` and cannot be handed a pair that disagrees.
     """
 
     position: StreamPosition
@@ -93,8 +91,7 @@ class Unstarted:
     Only a kept position can be absent — a request always carries one, even if it is `START` — so
     this is the state a durable cursor is in before its first read. Its whole content is where the
     stream is now, because what a subscriber joining a conversation already in progress does with
-    the backlog is its own decision: a channel already holding a copy of it keeps the head and says
-    nothing, a fresh reader starts from `START` instead.
+    the backlog is its own decision.
     """
 
     head: StreamPosition
@@ -106,10 +103,9 @@ type Read = Backlog | Unstarted
 class ConversationStream:
     """The conversation layer's half of a subscription: everything after a position.
 
-    Keyed by the thread rather than by the session running it, which is what makes a position
-    survive a session being replaced: the events of the session that died and of the one that took
-    over are one stream, and reading only the live session's rows would skip whatever its
-    predecessor wrote after the subscriber's position.
+    Keyed by the thread rather than by the session running it, so a position survives a session
+    being replaced: reading only the live session's rows would skip whatever its predecessor wrote
+    after the subscriber's position.
     """
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
@@ -157,8 +153,7 @@ def _streamed(row: SessionEvent) -> StreamedEvent:
 class Cursor(Protocol):
     """Where one subscriber's position is kept.
 
-    The one thing implementations differ in, which is why it is the only port here: reading the
-    stream is shared, keeping a place in it is not.
+    The only port here, because reading the stream is shared and keeping a place in it is not.
     """
 
     async def position(self) -> StreamPosition | None: ...
@@ -170,10 +165,9 @@ class Cursor(Protocol):
 class ClientHeldCursor:
     """The position a subscriber carries itself: the read's own argument, and no server state.
 
-    This is the SPA's form — `?after=N` on the request, with the answer's own position going back
-    in the response. Several tabs can watch one conversation at once, each at a different point,
-    and the console stores nothing about any of them; that is the whole reason the position is a
-    parameter rather than a row.
+    The SPA's form — `?after=N` on the request, with the answer's own position going back in the
+    response — so several tabs can watch one conversation at different points and the console
+    stores nothing about any of them.
 
     Never `Unstarted`: a request that names no position names `START`, which is a position.
     """
@@ -186,8 +180,8 @@ class ClientHeldCursor:
     async def keep(self, position: StreamPosition) -> None:
         """Nothing is kept, and that is the implementation rather than an omission.
 
-        The position went back with the events that produced it; where it is kept is the client's
-        own memory, and its next request is the only place it reappears.
+        The position went back with the events that produced it, and the client's next request is
+        the only place it reappears.
         """
 
 

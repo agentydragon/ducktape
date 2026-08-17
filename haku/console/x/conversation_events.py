@@ -138,13 +138,12 @@ class ToolCallCompleted:
 
     **`content` is the result rendered, not the result.** A tool result's structure is the
     provider's — one tool's block shape on one harness — so an adapter reduces it to the text a
-    transcript prints and the structure stays in the frames, which is the surface allowed to be
-    provider-shaped. A channel that had a variant to branch on would be branching on a shape only
-    one backend produces.
+    transcript prints, and a channel branching on a variant would be branching on a shape only one
+    backend produces.
 
     `structured` is the exit code, the patch, the MCP `structuredContent` — an open set of per-tool
-    shapes no string carries — and is None when the provider carried none. It stays because it is
-    not derivable from `content`: a rendered result and a tool's own output are different answers.
+    shapes no string carries — and is None when the provider carried none. It is not derivable from
+    `content`: a rendered result and a tool's own output are different answers.
     """
 
     call_id: str
@@ -156,11 +155,7 @@ class ToolCallCompleted:
 
 @dataclass(frozen=True, slots=True)
 class TurnCompleted:
-    """The exchange ended.
-
-    `TurnOutcome` is the console's existing durable vocabulary rather than a second enum meaning
-    the same thing.
-    """
+    """The exchange ended. `TurnOutcome` is the console's own durable vocabulary."""
 
     outcome: TurnOutcome
     provenance: Provenance
@@ -174,10 +169,9 @@ class Projection:
     """What a stretch of a backend's frames meant, plus what it held that this release cannot read.
 
     `unprojected` counts by whatever the adapter calls a frame class — for the Claude adapter,
-    `tool_progress`, `system/vcs_state_changed`, `user/text`. It is how the default branch stays
+    `tool_progress`, `system/vcs_state_changed`, `user/text` — so the default branch stays
     observable without costing an event per frame. An adapter's *deliberately* ignored classes are
-    not in it: the actionable signal is "the backend is sending something we do not map", not "the
-    heartbeat beat again".
+    not in it: the actionable signal is "the backend is sending something we do not map".
     """
 
     events: tuple[ConversationEvent, ...]
@@ -186,9 +180,8 @@ class Projection:
     def then(self, later: Projection) -> Projection:
         """This stretch of frames followed by the next one, as a single projection.
 
-        The anti-drift invariant as an operation: frames read in one batch and the same frames read
-        in any split, combined this way, are equal. Events concatenate because the stream is
-        ordered; counts sum because `unprojected` tallies frames read, not a set of what exists.
+        Frames read in one batch and the same frames read in any split, combined this way, are
+        equal. Counts sum because `unprojected` tallies frames read, not a set of what exists.
         """
         return Projection(
             events=self.events + later.events,
@@ -215,9 +208,9 @@ class OpenMessage:
 class ProjectionState:
     """What a fold carries from one batch of frames to the next.
 
-    A value, not a session: it says only what is mid-flight when a batch ends, which is why one
-    state serves both a live consumer between frames and a cursor-driven one reloading. The default
-    is a stream nothing has been read from yet.
+    A value, not a session: it says only what is mid-flight when a batch ends, so one state serves
+    both a live consumer between frames and a cursor-driven one reloading. The default is a stream
+    nothing has been read from yet.
 
     Only an open message is in flight. Everything else the fold decides — a tool call's identity,
     an activity's pairing, a turn's outcome — is settled by the frame that produced it.

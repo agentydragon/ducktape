@@ -1,19 +1,18 @@
 """The neutral conversation vocabulary as `haku_conversations` hands it out.
 
 <conversation_events.py> is what a conversation *is*, in dataclasses the console's own code folds
-and renders. <conversation_records.py> is what a read hands back, in Pydantic models with
-discriminators and descriptions that <../tools/conversations.py> serialises. This is the one place
-the two are the same conversation, so a change to either shows up here rather than as a surface
-quietly drifting from the vocabulary it claims to expose.
+and renders; <conversation_records.py> is what a read hands back, in Pydantic models
+<../tools/conversations.py> serialises. This is the one place the two are the same conversation, so
+a change to either shows up here rather than as a surface quietly drifting from the vocabulary it
+claims to expose.
 
-**Deltas do not cross.** `TextDelta` is sub-message transport, and by the vocabulary's own
-contract a message's deltas concatenate to exactly the `text` its `MessageCompleted` carries — so
-on a conversation being read back they are the same prose twice. A reader that wants the typing
-asks `read_rollout` for `stream_event` frames by name.
+**Deltas do not cross.** A message's deltas concatenate to exactly the `text` its
+`MessageCompleted` carries, so on a conversation being read back they are the same prose twice. A
+reader that wants the typing asks `read_rollout` for `stream_event` frames by name.
 
-**What remains is numbered.** The index is the entry's position in the whole session's
-transcript, and it is what `read_transcript`'s cursor names; see `TranscriptCursor` for why an
-ordinal is a safe key for this one order.
+**What remains is numbered.** The index is the entry's position in the whole session's transcript
+and is what `read_transcript`'s cursor names; see `TranscriptCursor` for why an ordinal is a safe
+key for this one order.
 """
 
 from __future__ import annotations

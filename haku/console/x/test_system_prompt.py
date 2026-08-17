@@ -14,8 +14,8 @@ from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, Sy
 
 SESSION = UUID("11111111-2222-4333-8444-555555555555")
 
-# The file the ConfigMap mounts. Rendering the real one is the point: a fixture copy would
-# let the shipped template break while the test stayed green.
+# The file the ConfigMap mounts. Rendering the real one is the point: a fixture copy would let the
+# shipped template break while the test stayed green.
 DEPLOYED_TEMPLATE = Path("cluster/k8s/haku/console/matrix_system_prompt.md.j2")
 
 
@@ -84,8 +84,8 @@ def test_deployed_template_carries_both_sides_of_the_history(deployed: SystemPro
 
 
 def test_deployed_template_points_at_the_index_whether_or_not_history_was_replayed(deployed: SystemPromptTemplate):
-    """Recall is the standing instruction. Mentioning it only where history happened to be
-    replayed would teach it as a special case of re-awakening."""
+    """Recall is the standing instruction: mentioning it only where history was replayed would teach
+    it as a special case of re-awakening."""
     for rendered in (
         deployed.render(introduction()),
         deployed.render(introduction(history("@rai:allegedly.works", "did the OA thing happen?"))),

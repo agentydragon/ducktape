@@ -85,8 +85,7 @@ _STORED_CONTENT = {"toolu_text": {"shape": "text", "text": "a.py\nb.py"}, "toolu
 
 
 async def test_a_stored_result_reads_back_as_its_text(chat_store, migrated_sessions, operator_id) -> None:
-    """`text` is the only shape left — `0068` rewrote the other two into it — and an empty result is
-    a result, not an absent one."""
+    """`text` is the only stored shape, and an empty result is a result rather than an absent one."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "list the files")
@@ -141,8 +140,8 @@ _INSPECTED = [
 
 
 def test_the_inspector_says_which_frames_the_fold_had_no_branch_for() -> None:
-    """The actionable half of a debug surface: a frame class this release does not map is the one
-    thing a transcript is silently missing, and the key is the string to add a branch for."""
+    """A frame class this release does not map is what a transcript is silently missing, and the key
+    is the string to add a branch for."""
     page = session_views.frame_page(_INSPECTED, limit=len(_INSPECTED), conversation_id=uuid4())
 
     assert {frame.frame_seq: frame.unprojected for frame in page.frames} == {
@@ -157,7 +156,7 @@ def test_the_inspector_says_which_frames_the_fold_had_no_branch_for() -> None:
 def test_the_per_frame_counts_are_what_a_whole_session_fold_reports() -> None:
     """Per frame is exact rather than an approximation of the session-wide tally: a count keys off
     the frame's own class, never off what the fold accumulated before it. `setup_output` is the
-    bridge's own envelope, which the fold refuses, so it is excluded from both sides."""
+    bridge's own envelope, which the fold refuses, so both sides exclude it."""
     page = session_views.frame_page(_INSPECTED, limit=len(_INSPECTED), conversation_id=uuid4())
     whole = projection.project_log(
         projection.RecordedFrame(frame_seq=row.frame_seq, payload=row.payload)

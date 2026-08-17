@@ -1,17 +1,14 @@
 """The console's Claude bridge end to end: a real runner process on a real websocket.
 
-Everything else covering this path calls `handle_runner` with a websocket stub and replaces
-`cli_over_websocket` with a scripted double, so the runner-facing route, the ASGI handshake, the
-version negotiation and the envelope protocol were only ever exercised as halves that never met.
-Here the runner is `//haku/runtime/x/bridge:runner_bin` as a subprocess, the console is
-uvicorn on a real port, and the only stand-in is the `claude` binary — a script that speaks the
-CLI's newline-delimited JSON and nothing else.
+Everything else covering this path calls `handle_runner` with a websocket stub and a scripted
+`cli_over_websocket`, so the runner-facing route, the ASGI handshake, the version negotiation and
+the envelope protocol only ever meet here. The runner is `//haku/runtime/x/bridge:runner_bin` as a
+subprocess, the console is uvicorn on a real port, and the only stand-in is the `claude` binary.
 
-The case is the one a console roll produces: a turn is in flight, the console goes away, the
-runner redials the same address, and whichever console answers finishes the exchange the departed
-one started. It is also why each console builds its own store and listener: they stand for
-separate replicas, and a store shared with the test would be one asyncpg pool driven from two
-event loops.
+The case is the one a console roll produces: a turn is in flight, the console goes away, the runner
+redials the same address, and whichever console answers finishes the exchange the departed one
+started. Each console builds its own store and listener because they stand for separate replicas,
+and a store shared with the test would be one asyncpg pool driven from two event loops.
 """
 
 from __future__ import annotations
@@ -82,8 +79,7 @@ def _console_app(database_url: str, workspace: Path) -> FastAPI:
 async def _runner_seqs(database_url: str, session_id: UUID) -> list[int]:
     """The runner's own numbers for one session's frames, in the order the console recorded them.
 
-    Read off the rows rather than through a store method because the question is about the column,
-    and the console's readers deliberately do not expose it yet.
+    Read off the rows because the question is about the column, which no reader exposes.
     """
     engine = create_async_engine(database_url)
     try:
@@ -132,9 +128,8 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     runner = await asyncio.create_subprocess_exec(
         str(get_required_path(RUNNER_BIN)),
         # The nested binary needs the test's RUNFILES_* to find its own runfiles, and the stub
-        # inherits this environment in turn (`backend.child_environment`), which is how it
-        # learns where to leave its handshake files. `HAKU_CLAUDE_SETUP` stays unset: there is no
-        # sandbox bootstrap to run here.
+        # inherits this environment in turn (`backend.child_environment`), which is how it learns
+        # where to leave its handshake files. `HAKU_CLAUDE_SETUP` stays unset: no bootstrap here.
         env=os.environ
         | {
             "HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL": f"ws://127.0.0.1:{port}/internal/claude/runner",
@@ -199,16 +194,15 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
         # the runner's replay window.
         (ChatMessageRole.ASSISTANT, "re: second question"),
     ]
-    # The sandbox's own account of itself, which is only durable because it is in the rollout —
-    # the pod's log is reaped with the sandbox. Whole path: the CLI's stderr, the runner's
-    # forwarding, the `setup_output` frame, and the transport reassembling it into a line.
+    # The sandbox's own account of itself, durable only because it is in the rollout: the pod's log
+    # is reaped with the sandbox. Whole path — the CLI's stderr, the runner's forwarding, the
+    # `setup_output` frame, and the transport reassembling it into a line.
     narration = await chat_store.read_frames(session_id, cursor=None, limit=10, kinds=[SETUP_OUTPUT_KIND])
     assert [frame.payload for frame in narration] == [{"kind": SETUP_OUTPUT_KIND, "text": GREETING}]
     # The resume cursor, end to end. The second console computed it from the rows the first left
-    # and sent it on `start`, so the runner replayed only what was above it — which is why each of
-    # these numbers appears once. Without a cursor the whole window comes back, and the classes
-    # with no agent-assigned id (a `control_response`) are recorded a second time, because
-    # `frame_uid` has nothing to recognise them by.
+    # and sent it on `start`, so the runner replayed only what was above it. Without a cursor the
+    # whole window comes back and the classes with no agent-assigned id (a `control_response`) are
+    # recorded a second time, because `frame_uid` has nothing to recognise them by.
     numbered = await _runner_seqs(migrated_db_url, session_id)
     assert numbered == sorted(set(numbered)), "a frame was recorded twice, or out of the order it was sent in"
     assert await chat_store.highest_runner_seq(session_id) == numbered[-1]
