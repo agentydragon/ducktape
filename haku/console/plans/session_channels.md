@@ -78,10 +78,11 @@ reconciler for the console out of a taste for symmetry.
 
 What it needs, concretely:
 
-- **A per-attachment cursor**, on a table that **does not exist yet**:
-  `chat_attachment(session_id, surface, address, attached_at, detached_at)` is proposed by
-  <../../plans/chat_runtime_cleanup.md> § stage 7 and nothing has built it. This adds "delivered
-  through" to that proposal, which is then the entire durable state of a channel.
+- **A per-attachment cursor**, on `chat_attachment`, which exists as of migration `0063` —
+  `(attachment_id, conversation_id, surface, address, attached_at, detached_at)`, keyed on the
+  conversation rather than on the session so that replacing a session leaves the attachment alone.
+  The cursor column is what this section adds to it, and with that the row is the entire durable
+  state of a channel.
 - **A per-channel projection**, because not every recorded event belongs on every channel — and
   "nothing to show" is a valid answer that still advances the cursor.
 
@@ -383,8 +384,9 @@ rather than a viewer, from rows that already existed. What remains:
    first two writers — a lease taken over and a lease lapsing; `_SessionStatusAnnouncer`'s
    transitions are what remain.
 4. **The reconcile loop** (§1) — the cursor on `chat_attachment`, and Matrix delivery moved onto
-   it. Wants cleanup stage 7's schema half, which is unbuilt; everything above is possible without
-   it.
+   it. Cleanup stage 7's schema half landed as migration `0063`; what it still wants is the readers
+   moved onto it, which waits a release for `sessions.conversation_id` to be written by every
+   replica. Everything above is possible without either.
 5. **The Matrix relay** (§5, Matrix half) — one more thing the loop already does, once it exists.
 
 Two items sit outside that spine. **The session link in the R7.2 notice** (§6) is small and can
