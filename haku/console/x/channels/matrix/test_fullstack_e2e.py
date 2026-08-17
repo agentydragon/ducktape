@@ -286,8 +286,7 @@ async def test_a_message_accepted_by_a_dying_session_is_not_offered_to_its_repla
     await room.say("two")
     await deployment.wait_until_queued(doomed, "two")
 
-    replacement = await deployment.serving()
-    assert replacement != doomed, "the supervisor never replaced the session this test killed"
+    await deployment.serving(after=doomed)
     await room.say("three")
     await room.wait_for_reply("re: three")
 
@@ -317,7 +316,7 @@ async def test_a_replacement_session_wakes_from_our_transcript_rather_than_from_
     await deployment.kill_sandbox(doomed)
     two = await room.say("two")
     await deployment.wait_until_queued(doomed, "two")
-    assert await deployment.serving() != doomed
+    await deployment.serving(after=doomed)
 
     launched = deployment.system_prompts()
     assert len(launched) >= 2, "no replacement session was ever started"

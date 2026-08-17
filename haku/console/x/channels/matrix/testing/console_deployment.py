@@ -205,14 +205,18 @@ class Deployment:
 
         await self._wait_until(f"{body!r} to be queued against session {session_id}", queued)
 
-    async def serving(self) -> UUID:
+    async def serving(self, *, after: UUID | None = None) -> UUID:
         """Wait until the room has a sandbox behind it with the bridge up, and say which session.
 
         Also the barrier every test needs before its first message: a first `/sync` establishes a
         position rather than replaying backlog (R1.7a), so a message sent before the console has
         joined the room is one it is entitled never to see.
+
+        `after` names a session being replaced. The supervisor mints the replacement only once the
+        dead one's lease has lapsed, so without it a test that has just killed a sandbox reads its
+        own victim back and believes the replacement is already serving.
         """
-        await self._wait_until("a session to be provisioned", self._provisioned)
+        await self._wait_until("a session to be provisioned", lambda: self._provisioned(after))
         session_id = self._session_ids[-1]
         await self._wait_until("the bridge to connect", lambda: self._ready(session_id))
         return session_id
@@ -281,8 +285,8 @@ class Deployment:
         writer.close()
         return True
 
-    async def _provisioned(self) -> bool:
-        return bool(self._session_ids)
+    async def _provisioned(self, after: UUID | None = None) -> bool:
+        return bool(self._session_ids) and self._session_ids[-1] != after
 
     async def _ready(self, session_id: UUID) -> bool:
         return await self._store.status(session_id) == SessionStatus.READY
