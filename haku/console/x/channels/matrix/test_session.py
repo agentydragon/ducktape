@@ -219,13 +219,12 @@ async def test_the_pointer_moves_while_each_session_keeps_the_room_it_served(
 
 
 async def test_a_replacement_session_joins_the_room_s_conversation_and_the_attachment_stays_put(
-    supervisor, conversations, chat_store, recording_claims, migrated_sessions
+    supervisor, conversations, chat_store, operator_id, migrated_sessions
 ) -> None:
     """Session replacement is the supervisor's normal job, and the room's attachment is not touched
     by it: the successor joins the thread the attachment names."""
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-    await supervisor.supervise_once()
-    [first] = recording_claims.created
+    first = await asked_for_a_sandbox(supervisor, conversations, chat_store, operator_id)
     await chat_store.fail(first, "the sandbox went away")
 
     await supervisor.supervise_once()

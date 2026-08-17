@@ -17,7 +17,7 @@ import pytest_bazel
 from more_itertools import one
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from haku.console.chat_models import (
     OPEN_SESSION_STATUSES,

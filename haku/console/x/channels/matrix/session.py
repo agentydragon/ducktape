@@ -595,8 +595,7 @@ class MatrixSessionSupervisor:
             # specific sentence in `error`, and the room is where the operator is looking.
             reason = f" — {outcome.error}" if outcome is not None and outcome.error else ""
             await self._report(
-                f"ended:{status}",
-                f"session {session_id} ended ({status or 'gone'}){reason}; starting a new one",
+                f"ended:{status}", f"session {session_id} ended ({status or 'gone'}){reason}; starting a new one"
             )
             # The claim may already be gone — `handle_runner` deletes it on the way out — so
             # this is the idempotent sweep rather than a targeted delete.
