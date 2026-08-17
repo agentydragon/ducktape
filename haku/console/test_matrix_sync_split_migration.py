@@ -19,7 +19,7 @@ def test_both_live_values_are_carried_across_and_a_null_becomes_no_row(db_url: s
     """The data is worth keeping in both directions: a lost watermark replays or skips events, and a
     lost token spends a `/login` Synapse rate-limits. A column that was NULL says nothing was there,
     which in the new shape is no row rather than a row with a null in it."""
-    apply_migrations(db_url, "0058")
+    apply_migrations(db_url, "0059")
     engine = create_engine(sync_database_url(db_url))
     try:
         with engine.begin() as conn:

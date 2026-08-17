@@ -25,7 +25,7 @@ images do diverge while both are up, in the direction that costs rather than los
 `database_schema.UNMAPPED_TABLES_PENDING_DROP` carries the tombstone.
 
 Revision ID: 0060
-Revises: 0058
+Revises: 0059
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0060"
-down_revision: str | None = "0058"
+down_revision: str | None = "0059"
 branch_labels: str | None = None
 depends_on: str | None = None
 
