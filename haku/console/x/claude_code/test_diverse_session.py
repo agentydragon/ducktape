@@ -86,12 +86,9 @@ def test_the_capture_folds_to_the_session_it_recorded(projection: Projection):
     assert len({message.agent_message_id for message in messages}) == len(messages)
     assert all(event.summary for event in projection.events if isinstance(event, Reasoning))
 
-    turn = one(event for event in projection.events if isinstance(event, TurnCompleted))
-    assert turn.outcome is TurnOutcome.ANSWERED
     # The turn ran a command that failed on purpose, and the CLI still called the turn a success —
     # which is why `TurnCompleted` is read off `subtype` and a failing call is not a failing turn.
-    assert turn.usage is not None
-    assert turn.usage.output_tokens > 0
+    assert one(event for event in projection.events if isinstance(event, TurnCompleted)).outcome is TurnOutcome.ANSWERED
 
 
 def test_a_message_outlives_the_tool_results_inside_it(projection: Projection):

@@ -33,7 +33,6 @@ from haku.console.chat_models import (
 from haku.console.database_schema import Session, SessionEvent, SessionFrame, SessionMessage
 from haku.console.x import session_events
 from haku.console.x.conversation_events import Outcome
-from haku.console.x.conversation_records import TurnUsage
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 
@@ -127,11 +126,7 @@ class SetupNarrationView(BaseModel):
 
 
 class ConversationTurnView(BaseModel):
-    """A turn summary, without exposing the raw frame range yet.
-
-    `usage` is the neutral shape every backend's adapter produces, not the CLI's own accounting
-    object: the SPA renders what an exchange cost without knowing which harness ran it.
-    """
+    """A turn summary, without exposing the raw frame range yet."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -139,7 +134,6 @@ class ConversationTurnView(BaseModel):
     started_at: datetime
     ended_at: datetime | None
     outcome: TurnOutcome | None
-    usage: TurnUsage | None
 
 
 class ConversationSessionView(BaseModel):

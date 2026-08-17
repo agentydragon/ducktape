@@ -18,7 +18,6 @@ import pytest_bazel
 from haku.console.chat_models import TurnOutcome
 from haku.console.x.claude_code.projection import DeltaSource, RecordedFrame, finish, project, project_log
 from haku.console.x.claude_code.testing.wire import (
-    CENSUS_ACCOUNTING,
     assistant,
     command_lifecycle,
     heartbeat,
@@ -50,7 +49,6 @@ from haku.console.x.conversation_events import (
     ToolCallStarted,
     ToolReferences,
     TurnCompleted,
-    Usage,
 )
 
 BASH_RESULT = {"interrupted": False, "isImage": False, "noOutputExpected": False, "stderr": "", "stdout": "3\n"}
@@ -62,7 +60,7 @@ def test_a_message_is_a_run_of_frames_not_a_frame():
         [
             recorded(1, assistant(thinking_block("The census says the fold is wrong here."), message_id="msg_A")),
             recorded(2, assistant(tool_use_block("toolu_1", "Bash", {"command": "ls"}), message_id="msg_A")),
-            recorded(3, result(accounting=CENSUS_ACCOUNTING)),
+            recorded(3, result()),
         ]
     ).events
 
@@ -83,13 +81,7 @@ def test_a_message_is_a_run_of_frames_not_a_frame():
         MessageCompleted(
             message=MessageKey(opened_at_frame_seq=1), text=None, agent_message_id="msg_A", provenance=FrameRange(1, 2)
         ),
-        TurnCompleted(
-            outcome=TurnOutcome.ANSWERED,
-            usage=Usage(
-                input_tokens=19, output_tokens=1_204, cached_input_tokens=133_907, cost_usd=0.4213, duration_ms=41_902
-            ),
-            provenance=FrameRange(3, 3),
-        ),
+        TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=FrameRange(3, 3)),
     )
 
 
@@ -160,7 +152,7 @@ def test_every_did_this_go_wrong_field_is_uninformative():
             recorded(4, tool_result("toolu_3", "No such file", structured=BASH_RESULT, is_error=True)),
             # `subtype` is the CLI's own statement about the turn; `is_error` is false on this
             # frame as it is on every real one, and reading it would call this turn fine.
-            recorded(5, result(subtype="error_during_execution", accounting=CENSUS_ACCOUNTING)),
+            recorded(5, result(subtype="error_during_execution")),
         ]
     ).events
 
@@ -177,10 +169,7 @@ def test_most_of_the_wire_is_system_and_projects_to_nothing():
     projection = project_log(
         [recorded(seq, heartbeat()) for seq in range(1, 40)]
         + [recorded(seq, system("status", status="working")) for seq in range(40, 80)]
-        + [
-            recorded(80, assistant(text_block("done"), message_id="msg_A")),
-            recorded(81, result(accounting=CENSUS_ACCOUNTING)),
-        ]
+        + [recorded(80, assistant(text_block("done"), message_id="msg_A")), recorded(81, result())]
     )
 
     assert [type(event) for event in projection.events] == [TextDelta, MessageCompleted, TurnCompleted]
@@ -226,7 +215,7 @@ def test_command_lifecycle_is_not_a_clean_triple():
     conversation = [
         recorded(1, prompt("count the files")),
         recorded(3, assistant(text_block("3"), message_id="msg_A")),
-        recorded(6, result(accounting=CENSUS_ACCOUNTING)),
+        recorded(6, result()),
     ]
     lifecycle = [
         recorded(2, command_lifecycle("cmd_sent", "started")),  # no `queued` — 7 real commands begin here
@@ -301,7 +290,7 @@ def test_text_arrives_as_increments_and_as_a_finished_message():
         [
             recorded(1, assistant(text_block("Looking at "), message_id="msg_A")),
             recorded(2, assistant(text_block("the migration."), message_id="msg_A")),
-            recorded(3, result(accounting=CENSUS_ACCOUNTING)),
+            recorded(3, result()),
         ]
     ).events
 
@@ -390,7 +379,7 @@ def census_session() -> list[RecordedFrame]:
         recorded(9, system("vcs_state_changed", cwd="/w", kind="commit")),
         recorded(10, assistant(text_block("Split, "), message_id="msg_B")),
         recorded(11, assistant(text_block("and the second one now runs."), message_id="msg_B")),
-        recorded(12, result(accounting=CENSUS_ACCOUNTING)),
+        recorded(12, result()),
     ]
 
 

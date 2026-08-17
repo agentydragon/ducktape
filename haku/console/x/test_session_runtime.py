@@ -35,7 +35,6 @@ from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import Session, SessionFrame
 from haku.console.x.claude_code.frames import DELTA_FRAME_KIND
 from haku.console.x.claude_code.testing.wire import (
-    Accounting,
     assistant,
     prompt,
     result,
@@ -45,7 +44,6 @@ from haku.console.x.claude_code.testing.wire import (
     tool_use_block,
 )
 from haku.console.x.conftest import MCP_TOKEN, age_lease, lease_of, queued_for_the_room, runtime_config
-from haku.console.x.conversation_records import TurnUsage
 from haku.console.x.frame_projection import projected
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import ABORTED_NOTICE, GOING_AWAY_CODE, RolloutRecorder, SessionService, _replaying
@@ -469,17 +467,7 @@ async def test_adoption_closes_a_turn_whose_result_nobody_projected(
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
     assert await chat_store.next_prompt(session_id) is not None
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
-    await chat_store.record_frame(
-        session_id,
-        FrameDirection.FROM_AGENT,
-        "result",
-        result(
-            uuid="res-1",
-            accounting=Accounting(
-                input_tokens=7, output_tokens=13, cache_read_input_tokens=2, total_cost_usd=0.5, duration_ms=1200
-            ),
-        ),
-    )
+    await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "result", result(uuid="res-1"))
 
     resumed = await chat_store.adopt_open_turn(session_id)
     assert resumed is not None
@@ -497,11 +485,6 @@ async def test_adoption_closes_a_turn_whose_result_nobody_projected(
 
     [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
     assert turn.outcome == TurnOutcome.ANSWERED
-    # Closed through the same adapter the live path uses, so what a turn nobody closed cost is the
-    # same shape — and the same numbers — as one that closed itself.
-    assert turn.usage == TurnUsage(
-        input_tokens=7, output_tokens=13, cached_input_tokens=2, cost_usd=0.5, duration_ms=1200
-    )
 
 
 async def test_adoption_reads_a_failed_result_as_a_failed_turn(
@@ -541,7 +524,6 @@ async def test_adoption_reads_a_failed_result_as_a_failed_turn(
 
     [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
     assert turn.outcome == TurnOutcome.FAILED
-    assert turn.usage is None, "the frame accounted for nothing, which is not the same as zero"
 
 
 async def test_a_turn_whose_cursor_is_behind_it_is_failed_rather_than_resumed(
@@ -1159,14 +1141,9 @@ async def test_a_message_the_agent_finished_before_stopping_survives_the_drain(
     assert queued == ["Looking at the logs now.", "Found it: a bad config.", ABORTED_NOTICE]
 
 
-async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(
-    chat_store, chat_service, operator_id
-) -> None:
-    """The `result` frame's cost, usage and duration exist nowhere else — they were read for the
-    error check and dropped — and the bracket is what makes them findable afterwards.
-
-    What the row keeps is the *neutral* reading of them: the adapter's `Usage`, in columns a
-    second backend fills by producing the same event, rather than that CLI's own payload."""
+async def test_a_turn_brackets_the_frames_it_produced(chat_store, chat_service, operator_id) -> None:
+    """The bracket is what makes a turn's own frames findable afterwards — including the numbers
+    the console keeps no account of, which live only in the `result` frame's payload."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     # A frame from before this turn, so a bracket that started at the log's beginning would show.
@@ -1175,12 +1152,7 @@ async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
     answer = assistant(text_block("a bad config"))
-    ending = result(
-        text="a bad config",
-        accounting=Accounting(
-            input_tokens=12, output_tokens=91, cache_read_input_tokens=640, total_cost_usd=0.0125, duration_ms=4200
-        ),
-    )
+    ending = result(text="a bad config")
     # Written by the real socket wrapper in production, where the recorder and the turn loop see
     # the same frames; here the double is handed the numbers the log gave them.
     recorded_answer = await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, "assistant", answer)
@@ -1193,11 +1165,6 @@ async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(
 
     [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=10)
     assert record.outcome == TurnOutcome.ANSWERED
-    # Claude spells the cached counter `cache_read_input_tokens`; what the row keeps is the
-    # neutral name, so a reader summing a day's exchanges never learns which CLI produced them.
-    assert record.usage == TurnUsage(
-        input_tokens=12, output_tokens=91, cached_input_tokens=640, cost_usd=0.0125, duration_ms=4200
-    )
     assert (record.first_frame_seq, record.last_frame_seq) == (recorded_answer.frame_seq, recorded_ending.frame_seq)
     assert record.ended_at is not None
 

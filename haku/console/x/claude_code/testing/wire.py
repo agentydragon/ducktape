@@ -10,12 +10,9 @@ whether or not anything reads them, because what the projection ignores is as mu
 as what it reads. What varies between real frames is a parameter; what is constant on the wire is
 not.
 
-Two absences are deliberate rather than laziness, and both are states the wire really produces:
-
-- `message_id` defaults to absent. 1,417 production assistant rows carry none, and a frame with no
-  id cannot be grouped, so it is its own message.
-- `result` accounts for nothing unless given an `Accounting`. `Usage` is `None` where a frame
-  reported no cost at all, which is not the same as a turn that cost zero.
+One absence is deliberate rather than laziness, and it is a state the wire really produces:
+`message_id` defaults to absent, since 1,417 production assistant rows carry none and a frame with
+no id cannot be grouped, so it is its own message.
 
 Frames deliberately outside a builder: a class no release has seen (the point of a test is that
 the shape is unknown), and a frame missing the very field its test is about. Both are clearer
@@ -25,7 +22,6 @@ written out.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 from typing import Any
 
 from haku.console.x.claude_code.projection import RecordedFrame
@@ -170,47 +166,17 @@ def stream_event(event: dict[str, Any]) -> dict[str, Any]:
     return {"event": event, "type": "stream_event"}
 
 
-@dataclass(frozen=True, slots=True)
-class Accounting:
-    """What a `result` frame reported a turn cost, in the CLI's own field names.
-
-    Its own type rather than loose keywords, because the three sources travel together: cost and
-    duration are top-level fields of the result while the counters live inside `usage`, and keying
-    the whole shape on that object's presence would let one field's absence delete another's
-    value.
-    """
-
-    input_tokens: int
-    output_tokens: int
-    cache_read_input_tokens: int
-    total_cost_usd: float
-    duration_ms: int
-
-    def fields(self) -> dict[str, Any]:
-        return {
-            "duration_ms": self.duration_ms,
-            "total_cost_usd": self.total_cost_usd,
-            "usage": {
-                "cache_read_input_tokens": self.cache_read_input_tokens,
-                "input_tokens": self.input_tokens,
-                "output_tokens": self.output_tokens,
-            },
-        }
-
-
-# What the census's own `result` frame reported.
-CENSUS_ACCOUNTING = Accounting(
-    input_tokens=19, output_tokens=1_204, cache_read_input_tokens=133_907, total_cost_usd=0.4213, duration_ms=41_902
-)
+# What the census's own `result` frame reported it cost. Read by nothing — the console keeps no
+# account of what an exchange cost — and emitted because every production result carries it.
+_RESULT_ACCOUNTING: dict[str, Any] = {
+    "duration_ms": 41_902,
+    "total_cost_usd": 0.4213,
+    "usage": {"cache_read_input_tokens": 133_907, "input_tokens": 19, "output_tokens": 1_204},
+}
 
 
 def result(
-    *,
-    text: str = "",
-    subtype: str = "success",
-    uuid: str | None = None,
-    is_error: bool = False,
-    accounting: Accounting | None = None,
+    *, text: str = "", subtype: str = "success", uuid: str | None = None, is_error: bool = False
 ) -> dict[str, Any]:
     """The frame that ends a turn.
 
@@ -230,10 +196,11 @@ def result(
         "subtype": subtype,
         "terminal_reason": "completed",
         "type": "result",
+        **_RESULT_ACCOUNTING,
     }
     if uuid is not None:
         frame["uuid"] = uuid
-    return frame | (accounting.fields() if accounting is not None else {})
+    return frame
 
 
 def system(subtype: str, **fields: Any) -> dict[str, Any]:

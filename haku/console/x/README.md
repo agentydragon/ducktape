@@ -79,25 +79,12 @@ existing, deliberately not `sent_at` — an unsent row still means the room is o
 turn that re-queued it would post the answer twice — and `said_anything` is a separate column
 rather than the same one read twice, because a session with no room queues nothing.
 
-**And what the exchange cost is neutral, in columns rather than in one CLI's payload.**
-`end_turn` takes a `Usage` — the backend adapter's own reading of its own frames — and writes
-`input_tokens`, `output_tokens`, `cached_input_tokens`, `cost_usd` and `duration_ms`. It used to
-take Claude's `result` payload and mine it by key, which made "this turn cost X" mean "whatever
-that one CLI reported" and left a second backend nothing to fill
-(<../../plans/chat_runtime_projection.md> § Does a turn live over frames or over neutral events).
-Two consequences worth knowing before changing it:
-
-- **The counters and the cost sum; the duration does not.** A turn is one invocation today and may
-  be several later, so what a session or a day spent is a `SUM` over these columns — which is the
-  whole reason they are columns. Wall clock is not additive: two invocations of one exchange may
-  overlap or be separated by console-side waiting, so `duration_ms` stays what the backend says one
-  invocation took and an exchange's own span is `ended_at - started_at`. A NULL cost is unknown,
-  never zero; a 0 counter is a counter the backend reported as nothing, and a NULL one is a backend
-  that reported no usage at all.
-- **The payload is evidence, and it is in `session_frames`.** The whole `result` frame is in the
-  log verbatim and the turn's range points at it, so any of these numbers can be appealed to what
-  crossed the wire. That is why `session_turns.usage` — a JSONB copy of Claude's own `usage` object
-  — could be dropped outright in `0056` rather than migrated anywhere.
+**What the exchange cost is not recorded at all.** `session_turns` still has
+`input_tokens`, `output_tokens`, `cached_input_tokens`, `cost_usd` and `duration_ms`, and nothing
+writes or reads them — they are mapped only until the release that stopped writing them has
+converged (the tombstone on the columns names the sequence). The numbers stay recoverable: they
+were read off the `result` frame's payload, which is in `session_frames` verbatim and inside the
+turn's own frame range.
 
 **The rollout is recorded by `RolloutRecorder`, a `FrameSink` the protocol client calls.** Every
 frame either way, both channels, verbatim — the control channel included, since an interrupt that

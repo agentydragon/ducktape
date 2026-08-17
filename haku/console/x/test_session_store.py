@@ -9,14 +9,13 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
 from more_itertools import one
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -34,7 +33,7 @@ from haku.console.chat_models import (
     SessionStatus,
     TurnOutcome,
 )
-from haku.console.database_schema import Session, SessionEvent, SessionMessage, SessionPrompt, SessionTurn
+from haku.console.database_schema import Session, SessionEvent, SessionMessage, SessionPrompt
 from haku.console.x.claude_code.testing.wire import assistant, result, text_block, text_delta
 from haku.console.x.conftest import age_lease, lease_of, queued_for_the_room
 from haku.console.x.conversation_events import (
@@ -45,7 +44,6 @@ from haku.console.x.conversation_events import (
     TextContent,
     ToolCallCompleted,
     ToolCallStarted,
-    Usage,
 )
 from haku.console.x.conversation_records import ConversationCursor, FrameCursor, TranscriptCursor, TurnCursor
 from haku.console.x.session_notifications import SessionEventKind
@@ -417,57 +415,6 @@ async def test_exchanges_page_by_their_own_keyset(chat_store, operator_id) -> No
 
     assert len(page) == 2
     assert [turn.turn_id for turn in rest] == [resume.turn_id]
-
-
-async def test_what_a_session_spent_is_a_sum_over_its_exchanges(chat_store, migrated_sessions, operator_id) -> None:
-    """The property the neutral usage shape was required to have. A turn is one CLI invocation
-    today and may be several later, so cost and tokens have to add up across rows — which they can
-    only do as columns. As one provider's JSON object, "what did today cost" was a fold in
-    application code over whatever that CLI called its fields."""
-    view, token = await chat_store.create(operator_id, SpaSession())
-    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    for index, usage in enumerate(
-        [
-            Usage(input_tokens=10, output_tokens=100, cached_input_tokens=1_000, cost_usd=0.25, duration_ms=900),
-            Usage(input_tokens=3, output_tokens=7, cached_input_tokens=11, cost_usd=0.5, duration_ms=1_500),
-        ]
-    ):
-        await chat_store.enqueue_prompt(operator_id, view.session_id, f"prompt {index}")
-        turn = await chat_store.next_prompt(view.session_id)
-        assert turn is not None
-        await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED, usage)
-
-    async with migrated_sessions() as db:
-        spent = (
-            await db.execute(
-                select(
-                    func.sum(SessionTurn.input_tokens),
-                    func.sum(SessionTurn.output_tokens),
-                    func.sum(SessionTurn.cached_input_tokens),
-                    func.sum(SessionTurn.cost_usd),
-                ).where(SessionTurn.session_id == view.session_id)
-            )
-        ).one()
-
-    assert spent == (13, 107, 1_011, Decimal("0.750000"))
-    # And deliberately not `sum(duration_ms)`: invocations can overlap, so the exchange's own
-    # elapsed time is the bracket the console measured around it.
-
-
-async def test_a_turn_whose_backend_reported_nothing_says_so(chat_store, operator_id) -> None:
-    """Zero is what a backend counted; absent is what it never said. A failed turn has no usage at
-    all, and reading that back as zeros would report a session that spent nothing as one that ran
-    for free."""
-    view, token = await chat_store.create(operator_id, SpaSession())
-    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
-    turn = await chat_store.next_prompt(view.session_id)
-    assert turn is not None
-    await chat_store.end_turn(turn.turn_id, TurnOutcome.FAILED)
-
-    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=5)
-
-    assert record.usage is None
 
 
 async def test_a_turn_ends_at_the_frame_it_names_rather_than_at_the_head_of_the_log(chat_store, operator_id) -> None:

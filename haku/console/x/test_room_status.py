@@ -31,7 +31,6 @@ from haku.console.x.conversation_events import (
     TextDelta,
     ToolCallStarted,
     TurnCompleted,
-    Usage,
 )
 from haku.console.x.room_status import (
     STATUS_AFTER_SECONDS,
@@ -101,11 +100,7 @@ def test_prose_and_thinking_are_both_just_writing() -> None:
 
 def test_events_the_room_has_no_use_for_produce_no_status() -> None:
     finished: list[ConversationEvent] = [
-        TurnCompleted(
-            outcome=TurnOutcome.ANSWERED,
-            usage=Usage(input_tokens=1, output_tokens=1, cached_input_tokens=0, cost_usd=None, duration_ms=None),
-            provenance=_WHERE,
-        ),
+        TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=_WHERE),
         ActivityCompleted(activity_id="task-1", summary=None, outcome=Outcome.SUCCEEDED, provenance=_WHERE),
     ]
 

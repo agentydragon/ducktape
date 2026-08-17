@@ -34,7 +34,6 @@ from haku.console.x.conversation_records import (
     TranscriptSlice,
     TurnCursor,
     TurnRecord,
-    TurnUsage,
 )
 
 SESSION = UUID("11111111-1111-1111-1111-111111111111")
@@ -140,15 +139,7 @@ class _Reader:
         self.queries.append({"session_id": session_id, "cursor": cursor, "limit": limit})
         return [
             TurnRecord(
-                turn_id=TURN,
-                first_frame_seq=1,
-                last_frame_seq=4,
-                started_at=NOW,
-                ended_at=NOW,
-                outcome="answered",
-                usage=TurnUsage(
-                    input_tokens=12, output_tokens=91, cached_input_tokens=640, cost_usd=0.0125, duration_ms=4200
-                ),
+                turn_id=TURN, first_frame_seq=1, last_frame_seq=4, started_at=NOW, ended_at=NOW, outcome="answered"
             )
         ][:limit]
 
@@ -329,16 +320,15 @@ async def test_a_frame_seq_that_does_not_exist_is_an_error_not_the_next_frame() 
     assert result.is_error
 
 
-async def test_a_turn_carries_the_range_to_read_and_what_it_cost() -> None:
-    """The point of listing exchanges is to pick one and then read its frames, so the bracket has
-    to come back with the accounting rather than instead of it."""
+async def test_a_turn_carries_the_range_to_read() -> None:
+    """The point of listing exchanges is to pick one and then read its frames, so the bracket is
+    what a listing has to come back with."""
     async with Client(build_mcp(_Reader())) as client:
         result = await client.call_tool("list_turns", {"session_id": str(SESSION)})
 
     [turn] = result.data.items
     assert (turn.first_frame_seq, turn.last_frame_seq) == (1, 4)
     assert turn.outcome == "answered"
-    assert turn.usage.cost_usd == 0.0125
 
 
 async def test_a_transcript_entry_reads_as_the_conversation_rather_than_the_protocol() -> None:

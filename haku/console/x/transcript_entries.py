@@ -86,9 +86,7 @@ def _entry(event: conversation_events.ConversationEvent, index: int) -> conversa
                 outcome=conversation_records.Outcome(event.outcome),
             )
         case conversation_events.TurnCompleted():
-            return conversation_records.TurnEndEntry(
-                index=index, provenance=provenance, outcome=event.outcome, usage=_usage(event.usage)
-            )
+            return conversation_records.TurnEndEntry(index=index, provenance=provenance, outcome=event.outcome)
         # `TextDelta` is the remaining member of the union and never reaches here; a member added
         # to the vocabulary without a case lands on this line rather than being dropped in silence.
         case _:
@@ -117,15 +115,3 @@ def _content(content: conversation_events.ToolResultContent) -> conversation_rec
             return conversation_records.ResultToolReferences(tool_names=list(content.tool_names))
         case conversation_events.OpaqueContent():
             return conversation_records.ResultOpaque(payload=content.payload)
-
-
-def _usage(usage: conversation_events.Usage | None) -> conversation_records.TurnUsage | None:
-    if usage is None:
-        return None
-    return conversation_records.TurnUsage(
-        input_tokens=usage.input_tokens,
-        output_tokens=usage.output_tokens,
-        cached_input_tokens=usage.cached_input_tokens,
-        cost_usd=usage.cost_usd,
-        duration_ms=usage.duration_ms,
-    )

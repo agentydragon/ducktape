@@ -1,8 +1,8 @@
 """A turn's token accounting stops being one CLI's payload.
 
 `session_turns.usage` held Claude's own `usage` sub-object verbatim, so "this exchange used X
-tokens" meant "whatever that one CLI called it". These three columns are the neutral shape
-(`x/conversation_events.Usage`) the backend adapter produces, beside `cost_usd` and `duration_ms`,
+tokens" meant "whatever that one CLI called it". These three columns are the neutral shape the
+backend adapter produced, beside `cost_usd` and `duration_ms`,
 which the store used to mine out of the same payload by key name
 (<../../../plans/chat_runtime_projection.md> § Does a turn live over frames or over neutral
 events).
@@ -14,7 +14,7 @@ sum — so an exchange's elapsed time stays `ended_at - started_at`.
 
 The backfill reads the JSONB the columns replace, which is why it can be exact rather than
 archaeological: `cache_read_input_tokens` is the key Claude spells the cached counter with, and a
-key the payload never carried is 0, exactly as `Usage` defines an unreported counter. Rows carrying
+key the payload never carried is 0, which is what an unreported counter meant. Rows carrying
 a cost or a duration but no usage object get zeros rather than NULLs, so no historical exchange
 loses its cost to the reader's "usage present" test.
 

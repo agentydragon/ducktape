@@ -41,16 +41,12 @@ function surfaceLabel(summary: { surface: ConversationSessionSummary["surface"] 
   return summary.surface === "matrix" ? "Matrix" : "Console chat";
 }
 
-/** Where one exchange began, and what it cost, drawn across the transcript.
+/** Where one exchange began, drawn across the transcript.
  *
  * No start time: the boundary's own position already says when, and the narrow viewport has no
  * room for a wall-clock value that would only repeat it.
  */
 function TurnBoundary({ turn, number }: { turn: ConversationTurn; number: number }) {
-  const facts = [
-    turn.usage?.duration_ms == null ? null : `${(turn.usage.duration_ms / 1000).toFixed(1)}s`,
-    turn.usage?.cost_usd == null ? null : `$${turn.usage.cost_usd.toFixed(4)}`,
-  ].filter((fact) => fact !== null);
   return (
     <Divider
       className="haku-conversation-turn-boundary"
@@ -63,11 +59,6 @@ function TurnBoundary({ turn, number }: { turn: ConversationTurn; number: number
           <Badge size="xs" color={turn.outcome === "failed" ? "red" : "teal"} variant="light">
             {turn.outcome ?? "running"}
           </Badge>
-          {facts.length > 0 && (
-            <Text size="xs" c="dimmed">
-              {facts.join(" · ")}
-            </Text>
-          )}
         </Group>
       }
     />

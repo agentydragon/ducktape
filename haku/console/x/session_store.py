@@ -13,7 +13,6 @@ The incidents behind this file's invariants are in <../debug/2026_08_16_runtime_
 
 from __future__ import annotations
 
-import decimal
 import hashlib
 import logging
 import os
@@ -55,7 +54,7 @@ from haku.console.database_schema import (
 from haku.console.x import session_events, transcript_entries
 from haku.console.x.claude_code import projection
 from haku.console.x.claude_code.frames import DELTA_FRAME_KIND, PROMPT_FRAME_KIND
-from haku.console.x.conversation_events import ConversationEvent, MessageCompleted, TextDelta, Usage
+from haku.console.x.conversation_events import ConversationEvent, MessageCompleted, TextDelta
 from haku.console.x.conversation_records import (
     Conversation,
     ConversationCursor,
@@ -65,7 +64,6 @@ from haku.console.x.conversation_records import (
     TranscriptSlice,
     TurnCursor,
     TurnRecord,
-    TurnUsage,
 )
 from haku.console.x.session_notifications import SessionEventKind, notify
 from haku.console.x.session_views import (
@@ -341,11 +339,7 @@ class SessionStore:
             messages=view.messages,
             turns=[
                 ConversationTurnView(
-                    turn_id=turn.turn_id,
-                    started_at=turn.started_at,
-                    ended_at=turn.ended_at,
-                    outcome=turn.outcome,
-                    usage=turn.usage,
+                    turn_id=turn.turn_id, started_at=turn.started_at, ended_at=turn.ended_at, outcome=turn.outcome
                 )
                 for turn in turns
             ],
@@ -663,19 +657,11 @@ class SessionStore:
         self,
         turn_id: UUID,
         outcome: TurnOutcome,
-        usage: Usage | None = None,
         *,
         last_frame_seq: int | None = None,
         projected_frame_seq: int | None = None,
     ) -> None:
-        """Close *turn_id* at the frame it ended on, with what the exchange cost.
-
-        **The cost is the neutral one**: a backend's adapter has already read its own payload into
-        `Usage`, so this method knows no CLI's field names and a second backend fills the same
-        columns by producing the same event. The payload those numbers were read from stays in
-        `session_frames`, which is the evidence they can be appealed to
-        (<../../plans/chat_runtime_projection.md> § Does a turn live over frames or over neutral
-        events).
+        """Close *turn_id* at the frame it ended on.
 
         *last_frame_seq* is the turn's own last frame, and only the caller knows which that is: the
         CLI emits a `command_lifecycle` frame just after the `result` one, so a bound re-derived
@@ -711,15 +697,6 @@ class SessionStore:
             )
             turn.ended_at = now
             turn.outcome = outcome
-            if usage is not None:
-                turn.input_tokens = usage.input_tokens
-                turn.output_tokens = usage.output_tokens
-                turn.cached_input_tokens = usage.cached_input_tokens
-                # A float in the neutral shape, because that is what every backend puts on the
-                # wire; through `Decimal(str(...))` rather than `Decimal(float)`, which would
-                # carry the binary representation's noise into a column that is exact on purpose.
-                turn.cost_usd = None if usage.cost_usd is None else decimal.Decimal(str(usage.cost_usd))
-                turn.duration_ms = usage.duration_ms
             chat = await db.get(Session, turn.session_id)
             if chat is not None:
                 # `responding` is derived from this turn being open, so closing it is what retires
@@ -754,7 +731,6 @@ class SessionStore:
                 started_at=row.started_at,
                 ended_at=row.ended_at,
                 outcome=row.outcome,
-                usage=_turn_usage(row),
             )
             for row in rows
         ]
@@ -1494,24 +1470,6 @@ async def _enqueue_reply(
         else inserted.on_conflict_do_nothing(index_elements=["turn_id"], index_where=SessionOutbox.turn_id.isnot(None))
     )
     return True
-
-
-def _turn_usage(turn: SessionTurn) -> TurnUsage | None:
-    """What a closed turn cost, or None where its backend reported nothing at all.
-
-    A counter that is NULL beside a cost or a duration reads as 0 rather than as "no usage": that
-    is already what `Usage` says an unreported counter means, and it is the state a turn closed by
-    a replica on the image before these columns existed leaves behind for the length of a roll.
-    """
-    if turn.input_tokens is None and turn.cost_usd is None and turn.duration_ms is None:
-        return None
-    return TurnUsage(
-        input_tokens=turn.input_tokens or 0,
-        output_tokens=turn.output_tokens or 0,
-        cached_input_tokens=turn.cached_input_tokens or 0,
-        cost_usd=None if turn.cost_usd is None else float(turn.cost_usd),
-        duration_ms=turn.duration_ms,
-    )
 
 
 async def _open_turn(db: AsyncSession, session_id: UUID) -> UUID | None:

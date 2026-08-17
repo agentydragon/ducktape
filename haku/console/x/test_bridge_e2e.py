@@ -190,8 +190,6 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     assert await finished_turns() == [TurnOutcome.ANSWERED, TurnOutcome.ANSWERED]
     turns = sorted(await chat_store.list_turns(session_id, cursor=None, limit=10), key=lambda turn: turn.started_at)
     assert turns[1].turn_id == in_flight.turn_id, "the second console finished that turn rather than opening its own"
-    # Cost lives only on the `result` frame, so this is that frame having crossed the real bridge.
-    assert [turn.usage.cost_usd if turn.usage else None for turn in turns] == [0.01, 0.01]
     conversation = await chat_store.get(operator_id, session_id)
     assert [(message.role, message.content) for message in conversation.messages] == [
         (ChatMessageRole.USER, "first question"),

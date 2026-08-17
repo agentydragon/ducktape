@@ -176,7 +176,7 @@ def test_the_two_events_with_a_durable_home_elsewhere_get_no_row() -> None:
         session_events.row(event, session_id=SESSION_ID, turn_id=TURN_ID, now=NOW)
         for event in (
             TextDelta(message=MESSAGE, text="par", provenance=WHERE),
-            TurnCompleted(outcome=TurnOutcome.ANSWERED, usage=None, provenance=WHERE),
+            TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=WHERE),
         )
     ]
 

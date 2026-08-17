@@ -179,8 +179,7 @@ class _CompletedTurn:
     # Still read for the two things the neutral event does not carry: the failure's reason (an
     # outcome is not a message) and the prose of a turn that said nothing anywhere else. Appealing
     # an event to the frame behind it is the design's own escape hatch, so this is the seam working
-    # rather than leaking. The turn's cost is not among them — that is `event.usage`, in columns
-    # that mean the same thing whichever backend filled them.
+    # rather than leaking.
     frame: ReceivedFrame
 
 
@@ -672,13 +671,9 @@ class SessionService:
                 await self._speak(session_id, frontend, turn_id, final_text)
             elif abort_event.is_set() and not carried_final:
                 await self._speak(session_id, frontend, turn_id, ABORTED_NOTICE)
-            # Both halves are the event's: the outcome, and the usage the backend's adapter read
-            # out of its own payload. Nothing about a turn's cost passes through here as a CLI's
-            # frame any more.
             await self._store.end_turn(
                 turn_id,
                 TurnOutcome.ABORTED if abort_event.is_set() else completed.event.outcome,
-                completed.event.usage,
                 # One frame, said twice because it means two things here: where this turn's frames
                 # end, and that this transaction is the one taking the cursor past it.
                 last_frame_seq=completed.frame.frame_seq,

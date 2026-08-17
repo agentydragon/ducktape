@@ -211,42 +211,14 @@ class ActivityCompleted:
 
 
 @dataclass(frozen=True, slots=True)
-class Usage:
-    """What one exchange cost, in terms that mean the same thing on every backend.
-
-    **Aggregatable**, because a neutral turn may one day span several provider invocations, and the
-    three quantities aggregate differently:
-
-    - **Counters sum.** An unreported counter is 0 and contributes nothing to a sum, which is why
-      they are `int` rather than `int | None`.
-    - **Cost sums, and unknown propagates.** None is *not* zero here: a backend reporting no cost
-      leaves the exchange's cost unknown rather than free.
-    - **Duration does not sum.** It is what the backend says *one invocation* took, and two may
-      overlap or be separated by waiting on this side, so adding them reports a duration nothing
-      lasted. An exchange's own elapsed time is the console's bracket around it
-      (`session_turns.started_at`/`ended_at`), which needs no backend cooperation at all.
-
-    These are the terms `session_turns` stores, one column each, so the aggregate a reader wants is
-    a `SUM` over rows rather than a fold over a provider's JSON.
-    """
-
-    input_tokens: int
-    output_tokens: int
-    cached_input_tokens: int
-    cost_usd: float | None
-    duration_ms: int | None
-
-
-@dataclass(frozen=True, slots=True)
 class TurnCompleted:
     """The exchange ended.
 
     `TurnOutcome` is the console's existing durable vocabulary rather than a second enum meaning
-    the same thing. `usage` is None for a backend that reported none.
+    the same thing.
     """
 
     outcome: TurnOutcome
-    usage: Usage | None
     provenance: Provenance
 
 

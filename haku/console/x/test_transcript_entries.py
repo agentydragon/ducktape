@@ -11,7 +11,6 @@ from more_itertools import one
 from haku.console.x import conversation_records, transcript_entries
 from haku.console.x.claude_code.projection import RecordedFrame, project_log
 from haku.console.x.claude_code.testing.wire import (
-    CENSUS_ACCOUNTING,
     assistant,
     recorded,
     result,
@@ -23,7 +22,7 @@ from haku.console.x.claude_code.testing.wire import (
 
 
 def _result(frame_seq: int) -> RecordedFrame:
-    return recorded(frame_seq, result(accounting=CENSUS_ACCOUNTING))
+    return recorded(frame_seq, result())
 
 
 def test_deltas_do_not_reach_the_read_surface() -> None:
@@ -109,16 +108,13 @@ def test_an_absent_is_error_stays_unknown_rather_than_reading_as_fine() -> None:
     assert entry.outcome == conversation_records.Outcome.UNKNOWN
 
 
-def test_a_turn_end_carries_the_accounting_in_neutral_terms() -> None:
+def test_a_result_frame_reaches_the_read_surface_as_the_turn_ending() -> None:
     projection = project_log([_result(9)])
 
     entry = one(transcript_entries.entries(projection))
 
     assert isinstance(entry, conversation_records.TurnEndEntry)
     assert entry.outcome == "answered"
-    assert entry.usage == conversation_records.TurnUsage(
-        input_tokens=19, output_tokens=1_204, cached_input_tokens=133_907, cost_usd=0.4213, duration_ms=41_902
-    )
 
 
 def test_frame_classes_this_release_cannot_read_are_reported_rather_than_dropped() -> None:

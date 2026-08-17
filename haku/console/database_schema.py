@@ -1070,31 +1070,17 @@ class SessionTurn(Base):
     started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     outcome: Mapped[TurnOutcome | None] = mapped_column(TextBackedStrEnumColumn(TurnOutcome), nullable=True)
-    # What the exchange cost, in the neutral terms of `x/conversation_events.Usage`: a backend's
-    # adapter produces one and `end_turn` lands it here, so filling these columns takes no
-    # knowledge of any CLI's field names. The store used to mine them out of Claude's `result`
-    # payload itself, which made "this turn cost X" mean "whatever that one CLI reported"
-    # (<../plans/chat_runtime_projection.md> § Does a turn live over frames or over neutral
-    # events). That payload stays in `session_frames`, whole and verbatim, which is where an
-    # operator appeals any of these numbers to what actually crossed the wire.
-    #
-    # **The counters sum**, which is the property the neutral shape was required to have: a turn
-    # is one invocation today and may be several later, so a session's or a day's token total is
-    # `SUM` over these columns. They are one fact and move together — NULL is "the backend
-    # reported no usage", 0 is "it reported this counter as nothing"
-    # (`ck_session_turns_usage_counters`).
+    # CLEANUP(added 2026-08-17): unmap these five once the release that stopped writing them has
+    #   converged, and drop them a release after that. Nothing reads or writes them: the console no
+    #   longer accounts for what an exchange cost. All five are nullable with no server default, so
+    #   ceasing to write them is legal and so is unmapping them; leaving all three counters NULL
+    #   satisfies `ck_session_turns_usage_counters` below, which is what an open turn has always
+    #   done. The numbers are still recoverable — they were read off the `result` frame's payload,
+    #   which stays whole in `session_frames`.
     input_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     output_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     cached_input_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    # Money sums the same way, and NULL propagates rather than reading as zero: a backend that
-    # reports no cost leaves an exchange's cost unknown, not free. Exact rather than binary
-    # floating point, which is why `end_turn` goes through `Decimal(str(...))`.
     cost_usd: Mapped[decimal.Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
-    # **The one figure that does not sum**: wall clock. This is what the backend says one
-    # invocation took, and two invocations of one exchange may overlap or be separated by
-    # console-side waiting, so adding them would report a duration nothing lasted. The exchange's
-    # own elapsed time is `ended_at - started_at`, which the console measures and no backend has
-    # to supply.
     duration_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # The assistant message this turn is streaming into, set when the message is opened and
     # cleared when it completes — so on an open turn it is non-NULL exactly while an answer is

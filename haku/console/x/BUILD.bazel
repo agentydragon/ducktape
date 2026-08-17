@@ -146,7 +146,6 @@ py_library(
     srcs = ["session_views.py"],
     deps = [
         ":conversation_events",
-        ":conversation_records",
         ":sandbox_claims",
         ":session_events",
         ":setup_output",
@@ -256,7 +255,6 @@ py_test(
     srcs = ["test_session_runtime.py"],
     deps = [
         ":conftest",
-        ":conversation_records",
         ":frame_projection",
         ":session_notifications",
         ":session_runtime",
