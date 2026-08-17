@@ -79,10 +79,19 @@ all.
 - `message_provenance.py` and its binary, whose whole subject was the 1,417 assistant rows that
   migration `0045` could not point
 
-It also removed the reason `sessions.frame_numbering` was ever going to be needed: that column exists
-in <../../plans/chat_runtime_projection.md> § 2b only to stop one session mixing identity-numbered
-and runner-numbered frames, and with no identity-numbered rows left there is nothing to keep
-coherent.
+## What it did not clear
+
+**The frame log is not permanently empty, and the difference matters.** Production is stamped `0056`
+on a pre-cutover image, so `session_frames.frame_seq` is still `Identity(always=True)`: the
+replacement session has been writing identity-numbered rows since 23:56:30, and every session created
+before the numbering cutover will. The corpus refills.
+
+What this run established is therefore not an empty table but a **demonstrated, authorised,
+one-statement disposal**, which is what <../../plans/chat_runtime_projection.md> § 2 can lean on
+instead. `sessions.frame_numbering` still goes, but not because the population is empty — the
+population it exists for is the cutover's **own roll window**, where an old replica creates a session,
+records identity frames, and a new replica adopts it. The purge does not remove that window; it makes
+the consequence cheap to dispose of afterwards.
 
 ## What was not deleted
 
