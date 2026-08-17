@@ -336,9 +336,18 @@ own attachment", which is exactly one comparison against the pointer § 9 step 5
   room's. Once `chat_attachment` exists the honest shape is the attachment's own id plus the
   channel's opaque ref; until then it carries the address alongside the ref and the conversation
   treats both as opaque.
-- **Absence means the SPA.** A prompt typed into a tab has no channel event behind it, so `None` is
-  a defined state rather than a missing value — and it is the case that must be posted to every
-  room, which is the whole of what the operator asked for.
+- **The SPA is named, not implied by absence** (operator, 2026-08-17). A prompt typed into a tab
+  gets an origin that says so, rather than being the null case — so the pointer is a closed union
+  over the surfaces a prompt can come from, and `enqueue_prompt`'s two callers are exactly its two
+  live variants. The reason to prefer this over `None` is that absence has a second meaning it
+  cannot shed: a row written before the field existed. Overloading one value with "typed in a
+  browser" and "we do not know" makes the echo test silently wrong on old rows — it would post
+  them to every room. Give the legacy state its own variant and tombstone it, gated on no row
+  predating the field.
+
+  The SPA's variant needs no address, and that is not an inconsistency: an address exists so a
+  channel can tell its own copy from a sibling's, and a tab holds no copy to confuse. The Matrix
+  variant carries address and ref; the SPA variant carries the surface alone.
 
 **Rendering it is the channel's own decision**, like everything else in § 4: a room may want a
 prompt from elsewhere marked as such, since an operator reading the room sees a message they did
@@ -448,12 +457,27 @@ reading.
 
 - **The conversation becomes a real table**, identity only, with `chat_attachment` keyed on it.
   § 6 gives the case that forces it and what it costs.
-- **The SPA is not an attachment, and is allowed to be special.** It may open any session, and
-  nothing about it is recorded. That follows from § 2's test rather than excepting it: an
-  attachment row exists to hold a cursor, a cursor exists because a channel holds a copy the
-  console owes work against, and a tab holds no copy. So `chat_attachment` is for copy-holding
-  channels only, and "the browser is looking at this conversation" is an absence — no row to key by
-  an address a tab does not have, and nothing to close when it goes away.
+- **The SPA is a channel like any other, and differs on exactly one axis** (operator, 2026-08-17:
+  "the spa should mostly use the same affordances/operations/protocol as the matrix channel
+  uses"). Same `ChatFrontend` port, same subscription, same operations, same neutral vocabulary,
+  same provenance pointer on the prompts it sends. The one difference is **whether its position is
+  durable**, which is the difference § 2 already names — and it is the reason it gets no
+  `chat_attachment` row: an attachment exists to hold a cursor, a cursor exists because a channel
+  holds a copy the console owes work against, and a tab holds no copy. So "the browser is looking
+  at this conversation" is an absence, with no row to key by an address a tab does not have and
+  nothing to close when it goes away.
+
+  Read that as narrow. It is a statement about **delivery state**, not a licence for the SPA to
+  have its own protocol — which is what it has today (§ 8) and what this whole model exists to
+  end. Anything the SPA does that Matrix cannot is either this one axis or a bug.
+
+  **The one sanctioned exception is the debug escape hatch** (operator, 2026-08-17): the SPA may
+  show the underlying frames. That is § 11's carve-out already — a debug surface may show the raw
+  wire and nothing else may — and it survives the "same protocol" rule because it is addressed
+  separately (`/api/conversations/{id}/frames`, never inside the conversation stream), never
+  load-bearing, and labelled as one backend's wire. A channel that cannot reach it loses a
+  debugging affordance and nothing else.
+
 - **A conversation never ends.** No `ended_at`, no terminal state — it is an id, sessions come and
   go under it, attachments hold and detach. Two consequences: the list surface (§ 9 step 3) needs
   keyset paging from the day it ships, since the list only grows, and "start this room over" is
@@ -876,7 +900,9 @@ architecture rather than the features, and each is the acceptance test for the t
 4. **Both surfaces show the operator's own prompts, wherever they were sent from** (§ 4). A prompt
    typed in the SPA appears in the room; one sent from the room appears in the tab; neither appears
    twice on the surface it was typed on. The first case does not work at all today, and the third is
-   what the provenance pointer exists to make true.
+   what the provenance pointer exists to make true. **A prompt whose origin predates the pointer is
+   shown where it already is and nowhere else** — the conservative answer, since the alternative
+   re-posts history into a room.
 5. **One conversation, two surfaces.** A room and a browser both open, either can prompt, both
    show the same account. This is what the conversation entity is for, so it is its test.
 6. **A session replacement is invisible to both.** The sandbox is killed mid-turn, a new session
