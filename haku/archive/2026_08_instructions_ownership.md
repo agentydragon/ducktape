@@ -34,7 +34,7 @@ entrypoints under <../runtime/>. Haku's `haku-state` repo holds its method — `
 
 ## What raises it
 
-The Matrix runtime (<matrix_chat_runtime.md> § Phase 2) clones `haku-state` into the session's
+The Matrix runtime clones `haku-state` into the session's
 sandbox. If the manual stays in ducktape, that sandbox needs a **second** repo and a second
 credential path purely to tell the agent who it is — or the console has to render 52 KB into a
 system prompt on every session start. Both are worse than the thing they buy.

@@ -4,9 +4,8 @@ Structure only — every prose payload here has been replaced by its shape, leng
 example helps it is synthetic, written in the observed shape. Read against
 <../../cli_protocol/protocol.md>, which this both confirms and contradicts.
 
-Written to give the provider-neutral message format in
-<../../plans/chat_runtime_projection.md> § stage 4 fixtures drawn from what occurs rather than from
-what anyone remembers occurring.
+Written to give the provider-neutral message format fixtures drawn from what occurs rather than
+from what anyone remembers occurring.
 
 ## Method
 

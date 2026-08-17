@@ -322,10 +322,10 @@ should not see exists, ranked retrieval is where that leaks first, and this is t
 would have to change.
 
 **The chat corpus is unscoped: every session, whichever room or operator it served.**
-That inherits `haku/plans/matrix_chat_runtime.md` R5.3a, which left the policy deliberately open
-for `list_sessions`/`read_rollout` — "the eventual policy about which Haku may read which
-past conversation is not settled, and guessing at one here would be a scoping rule nobody
-stated."
+That inherits the Matrix channel's own rule (<../console/x/channels/matrix/SPEC.md> § The agent's
+own view), which leaves the policy deliberately open for `list_sessions`/`read_rollout` — the
+eventual policy about which Haku may read which past conversation is not settled, and guessing at
+one here would be a scoping rule nobody stated.
 
 Semantic search is not the same exposure as that drilldown, and the difference is why this is
 written down rather than left inherited. A keyword drilldown makes reading another room's
@@ -366,9 +366,10 @@ What settling it touches:
 - **`cluster/k8s/haku/console/config.yaml`** — which agents get the tool at all, and under which
   auto-approval policy. An unscoped read tool on the unconditional auto-approve list is the
   configuration this section exists to prevent.
-- **`haku/plans/matrix_chat_runtime.md`** — R5.3a is where the decision belongs once made, and
-  its Open questions section already carries the alternative worth weighing: an RLS-scoped
-  Postgres role, which pushes scoping into the database instead of into each tool.
+- **<../plans/information_trust_tiers.md>** — where the decision belongs once made, since the fence
+  that replaces "unscoped" is the information tier rather than the room. The alternative worth
+  weighing against it is an RLS-scoped Postgres role, which pushes scoping into the database
+  instead of into each tool.
 - **`haku/docs/security.md`** — if the answer is "an agent may read any conversation", that is a
   confidentiality claim about the console's data and belongs in the enforcement inventory rather
   than in a default nobody chose.
@@ -376,8 +377,8 @@ What settling it touches:
 ## Frames
 
 `session_frames` — the console's verbatim record of the agent protocol — is **not indexed**.
-`haku/plans/matrix_chat_runtime.md` names frames as the granularity search should eventually use,
-and they are the only place a tool call and the result it got both appear. Two reasons to do the
+Frames are the granularity search should eventually use, and they are the only place a tool call
+and the result it got both appear. Two reasons to do the
 messages first and the frames later, both of which should be re-checked against a real index
 rather than argued:
 

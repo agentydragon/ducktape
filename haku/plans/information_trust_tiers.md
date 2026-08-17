@@ -94,10 +94,10 @@ inadvertent detail actually lives — out of mixed rooms by construction.
 ## Corpus separation covers past conversations, not just repos
 
 Operator, 2026-08-15: an agent reads only the transcripts and conversations its tier gives it
-access to. That **settles a deferral that has been open on purpose** — R5.3a of
-<matrix_chat_runtime.md> left reads unscoped, and said so explicitly, on the grounds that with one
-operator, one Haku and one room a fence "would separate Haku from its own history and nothing
-else". Several agents at several tiers is exactly the condition that premise was waiting on.
+access to. That **settles a deferral that has been open on purpose** — the Matrix channel leaves
+reads unscoped and says so explicitly (<../console/x/channels/matrix/SPEC.md> § The agent's own
+view), on the grounds that with one operator, one Haku and one room a fence would separate Haku
+from its own history and nothing else. Several agents at several tiers is exactly the condition that premise was waiting on.
 
 Note what the fence is and is not: **the tier, not the room.** Cross-room and cross-session reads
 stay open _within_ a tier, which keeps an agent's own history reachable and only cuts the edges
@@ -254,8 +254,9 @@ credential and a per-account sync lock rather than a schema change.
 
 **Budget for the sandboxes before doing this.** Sessions are always-up, so N rooms hold N sandboxes
 continuously — at ~1 CPU / 2Gi against an 8 CPU / 16Gi quota, two idle rooms is a quarter of it
-doing nothing. <chat_runtime_cleanup.md> § stage 6 (allocate because there is something to do) is
-what makes this scale, and it is worth landing with multi-session rather than after it.
+doing nothing. <../console/plans/conversation_layers.md> § 9 step 3 (allocate because there is
+something to do) is what makes this scale, and it is worth landing with multi-session rather than
+after it.
 
 ### Talking to a particular agent: one Matrix account each
 
@@ -285,7 +286,8 @@ operator gesture — which keeps the common case free. Only a multi-party room n
 declared, and that is exactly where declaring one is worth the friction.
 
 One console consequence, small but worth catching early: the sessions surface
-(<../console/plans/session_channels.md>) shows `surface` and `room_id` per session, and with
+(<../console/plans/conversation_layers.md> § 9 step 2) shows `surface` and `room_id` per session,
+and with
 several agent kinds it needs to show **which agent** too, or two rooms' sessions become
 indistinguishable in the list.
 
@@ -313,10 +315,9 @@ Six consequences, in the order they will bite:
   the coordination room"). Hanging them off `session_id` loses every subscription at each
   rotation — the same data-losing shape R11.3a already flags for room bindings. The attachment
   behaves as `matrix_conversation` does now: owned by the agent, with a session pointer that moves.
-- **Cleanup stage 7's `chat_attachment` is the right table, with a role.** It is **specified and
-  unbuilt** — <chat_runtime_cleanup.md> § stage 7 designs it as
-  `(session_id, surface, address, attached_at, detached_at)` with a partial unique index on the
-  address, and no migration creates it. What this section asks of that design: add `role`, and a
+- **`chat_attachment` is the right table, with a role.** Migration `0064` creates it as
+  `(attachment_id, conversation_id, surface, address, attached_at, detached_at)` with a partial
+  unique index on the address. What this section asks of that design: add `role`, and a
   second partial unique index enforcing **at most one attached room per agent**. One table, and
   the invalid state — two transcript homes — is unrepresentable rather than checked.
 - **Wake on everything, and cap rather than gate** (operator, 2026-08-15). An earlier draft made
@@ -485,9 +486,8 @@ Four properties it needs, and one of them is not obvious:
   stopping that agent stops the source; other agents in the room continuing is a feature, not a
   gap. Widen only if a failure is ever found that is not attributable to one sender.
 - **The queue is the room outbox, and it is not new.**
-  <chat_runtime_projection.md> § stage 5 turned the Matrix pacer's deque into rows for delivery
-  reliability, and <../console/plans/session_channels.md> § 1 wants the same rows for channel
-  reconciliation. This makes a third consumer, and the one that changes the priority: an outbox is
+  `session_outbox` turned the Matrix pacer's deque into rows for delivery reliability, and
+  <../console/plans/conversation_layers.md> § 5 wants the same rows for channel reconciliation. This makes a third consumer, and the one that changes the priority: an outbox is
   a prerequisite for the classifier rather than a tidy-up, because a classifier needs somewhere
   durable to **hold** a message while it decides.
 
@@ -596,8 +596,8 @@ property R5.1 already establishes for one agent and this generalizes — **the c
 agent's Matrix credential**, no agent has a join tool (R5.4), so no agent can put itself in a
 room. That leaves the operator's own mistaken invite, which wants **membership reconciliation**:
 the console compares each room's members against its tier and removes one that should not be
-there. That is the same reconcile loop <../console/plans/session_channels.md> § 1 describes, over
-membership instead of messages.
+there. That is the same reconcile loop <../console/plans/conversation_layers.md> § 2 describes,
+over membership instead of messages.
 
 **Operator presence is detection, not prevention.** By the time the operator reads a leak, the
 event has federated to every member's homeserver and its provider has already seen it. That is

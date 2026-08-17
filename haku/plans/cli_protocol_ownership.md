@@ -39,9 +39,10 @@ Worth taking up, in rough order of value:
 
 - **`sdkMcpServers`** — the console hosts an MCP server itself, over the control channel, and
   the CLI speaks JSON-RPC to it. No second process, no port, no credential on the wire, and the
-  tool implementation stays where the data already is. <matrix_chat_runtime.md> R5.2a passed on
-  this when it bought structural session scoping we then decided against (R5.3a); as a way to
-  give Haku console-side tools it stands on its own. This is the strongest candidate on the list
+  tool implementation stays where the data already is. The Matrix read tools passed on this when
+  it bought structural session scoping that was then decided against — reads are unscoped on
+  purpose (<../console/x/channels/matrix/SPEC.md> § The agent's own view) — but as a way to give
+  Haku console-side tools it stands on its own. This is the strongest candidate on the list
   for the transcript-reading API.
 - **`jsonSchema`** — a bare JSON Schema the answer must satisfy, returned parsed on the `result`
   frame. Anywhere the console today parses Haku's prose, this replaces it with a structure.
@@ -95,8 +96,9 @@ a fresh CLI in the same pod with `--resume`. `CLAUDE_CONFIG_DIR=/claude-config` 
 in the runner image, so the session state is on disk there. Cheap: no runner protocol change.
 Loses the in-flight turn.
 
-Worth noting even if B is what gets built: resume is strictly better than the re-awakening in
-<matrix_chat_runtime.md> (R3.3a), which reconstructs context from the last N room messages.
+Worth noting even if B is what gets built: resume is strictly better than re-awakening
+(<../console/x/channels/matrix/SPEC.md>), which reconstructs context from the last N transcript
+messages.
 Resume restores the actual context rather than an approximation of it, and needs no summary.
 
 **B — keep the process alive across the gap.** The runner stops killing Claude on disconnect,
@@ -126,8 +128,8 @@ accident. **Adding a hook, a `can_use_tool` callback, or a client-hosted MCP ser
 re-adoption qualitatively harder**, and whoever adds one should come back to this note.
 
 **Called in once, and the warning above turned out to be too broad.** The Matrix read tools
-were designed against a client-hosted server (<matrix_chat_runtime.md> R5.2a). Working through
-it sharpened what the hard part actually is:
+were designed against a client-hosted server. Working through it sharpened what the hard part
+actually is:
 
 **The problem is not inbound control traffic. It is an unanswered inbound request whose
 replay has side effects.** The runner is already buffering and redialling for B, so it can
@@ -300,9 +302,8 @@ checks. `test_transport.py` and `test_runner.py` are where that matrix goes.
 ### The lifecycle opens a protocol horizon
 
 A session's outer bound is no longer a fixed `shutdownTime`: the console slides the SandboxClaim's
-deadline while the session is tended and deletes the claim on a clean end
-(<matrix_chat_runtime.md> R3.2a/b, <chat_runtime_cleanup.md>), so a conversation in full flow no
-longer dies on a clock. What that leaves for this document is the protocol consequence.
+deadline while the session is tended and deletes the claim on a clean end, so a conversation in
+full flow no longer dies on a clock. What that leaves for this document is the protocol consequence.
 
 **A tended session now has no upper bound on its lifetime, and that bound was the
 protocol-compatibility window.** A runner's image is fixed when its claim is created, so the oldest

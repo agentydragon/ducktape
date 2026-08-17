@@ -399,7 +399,7 @@ confuse.**
 
 - **Nothing is retracted.** All 123 frames before the boundary are still in the log, unedited, and
   no uuid is reused. A cursor at any offset replays exactly the frames it replayed before, so the
-  durable cursor of <../plans/chat_runtime_projection.md> — "project from the stored cursor, which
+  durable cursor of `sessions.projected_frame_seq` — "project from the stored cursor, which
   happens to be behind" — keeps its guarantee, and so does the `project(state, frame)` fold it
   advances in the same transaction.
 - **What changes is what the _model_ holds.** After the boundary its context is the summary plus

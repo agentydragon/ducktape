@@ -1,6 +1,6 @@
 # Purge phase 1 — what was deleted, and what it cleared
 
-Phase 1 of the legacy purge (<../../plans/next_month.md> § 1), run against production on 2026-08-16 between 23:52 and
+Phase 1 of the legacy purge, run against production on 2026-08-16 between 23:52 and
 23:57 UTC through the approval-gated `kubectl-passthrough-mcp` exec. This is the record of the run:
 what the tables held, what made it safe to delete them, and which gates the deletion cleared.
 
@@ -87,7 +87,8 @@ replacement session has been writing identity-numbered rows since 23:56:30, and 
 before the numbering cutover will. The corpus refills.
 
 What this run established is therefore not an empty table but a **demonstrated, authorised,
-one-statement disposal**, which is what <../../plans/chat_runtime_projection.md> § 2 can lean on
+one-statement disposal**, which is what the frame-numbering cutover
+(<../plans/conversation_layers.md> § 13) can lean on
 instead. `sessions.frame_numbering` still goes, but not because the population is empty — the
 population it exists for is the cutover's **own roll window**, where an old replica creates a session,
 records identity frames, and a new replica adopts it. The purge does not remove that window; it makes

@@ -8,7 +8,7 @@ actionable checklist. Remove entries once done.
 Direction set 2026-08-15: Matrix and the console frontend should be two **messaging channels**
 onto one session, each able to do broadly what the other can. Today the console is split across
 two pages that are the same object, cannot show a session's lifecycle at all, and cannot speak.
-Design, the parity gaps it closes, and the traps in each: <plans/session_channels.md>.
+Design, the parity gaps it closes, and the traps in each: <plans/conversation_layers.md>.
 
 1. **Merge `/chat` into `/conversations`** as one sessions surface — list plus detail, with new /
    compose / abort / close as actions on a session. Costs the per-token SSE stream; take it
@@ -211,9 +211,10 @@ nio behaviour (<docs/chat_runtime_facts.md>), and the `*_FRAME_KIND` strings are
 Making those configurable would invite a deploy that contradicts a protocol. Move the timings;
 leave the facts where the code that depends on them can be read beside them.
 
-Two things worth settling in the same change, since they are the same question: the three values
-<../plans/matrix_chat_runtime.md> § Open questions never chose — **batch cap** (R2.6), **debounce
-window** (R2.7) and **age fence** (R2.8) — should arrive as config with a default rather than as
+Two things worth settling in the same change, since they are the same question: the three ingress
+values nobody has chosen — the **batch size cap**, the **debounce window** and the **age fence**
+that makes a very old message context rather than work — should arrive as config with a default
+rather than as
 another constant, because the whole reason they are unchosen is that the right value is an
 operational finding. And a value read per use rather than at startup is what makes tuning a
 ConfigMap edit instead of a roll.
@@ -243,14 +244,14 @@ Nothing writes one now.
   not have, and an enum over the union of two vocabularies is what made the first attempt confusing
   enough to back out.
 - The loose `*_FRAME_KIND` constants in `x/claude_code/frames.py` stay loose, with a pointer to
-  `SessionFrame` and to the projection plan's stage 2.
+  `SessionFrame` and to <plans/conversation_layers.md> § 13.
 - The table's own docstring says the same thing, since that is where a reader meets it first.
 
 The `partial` row is gone: `0068` dropped the column, its index and the rows. What is left is the
 two-vocabulary problem.
 
-`../plans/chat_runtime_projection.md` § stage 2 holds the intended shape — the table becomes the log
-of the bridge, `kind` becomes the envelope discriminator, and the CLI's type gets its own column —
+<plans/conversation_layers.md> § 13 holds the intended shape — the table becomes the log of the
+bridge, `kind` becomes the envelope discriminator, and the CLI's type gets its own column —
 along with what that costs (the sink has to move down to `WebSocketTransport`, and it is a two-release
 expand/contract because flipping a column's meaning under a rolling deploy is not additive).
 

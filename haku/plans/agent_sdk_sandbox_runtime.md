@@ -8,7 +8,7 @@ TLS-intercepting forced proxy — and the runtime that answer unblocked is runni
 (<../../cluster/k8s/haku/workspaces/app/sandboxtemplate-haku-claude.yaml>), the in-sandbox bridge
 (<../runtime/x/bridge/>), the console's session runtime and its chat surface
 (<../console/x/session_runtime.py>, `frontend/x/`), and a Matrix room in front of all of it
-(<matrix_chat_runtime.md>). One decision below was reversed by the build: no Python imports the
+(<../console/x/channels/matrix/SPEC.md>). One decision below was reversed by the build: no Python imports the
 Agent SDK any more — the console drives Claude Code's wire itself
 (<cli_protocol_ownership.md>) — so the SDK survives only as the wheel the CLI binary is
 extracted from.
@@ -277,5 +277,5 @@ MCP path) and the behavioral gotchas recorded in <../TODO.md> § haku-traces.
   beside it as a claim (`x/sandbox_claims.py`).
 - Whether an idle session should dispose its sandbox automatically, and what the operator sees
   when it does. **Still open, and now designed rather than merely asked:**
-  <chat_runtime_cleanup.md> § stage 6 is the answer this question was waiting for; today an idle
-  room holds a sandbox indefinitely.
+  <../console/plans/conversation_layers.md> § 9 step 3 is the answer this question was waiting
+  for; today an idle room holds a sandbox indefinitely.

@@ -4,9 +4,8 @@ The chat runtime depends on a handful of behaviours that are not in any spec we 
 visible from the code that relies on them, and are expensive to re-derive. The code keeps the
 invariant; this keeps the evidence and where it was checked.
 
-Nothing here is a plan — design work lives in <../../plans/chat_runtime_cleanup.md> and
-<../../plans/chat_runtime_projection.md> — and nothing here is an incident note; those stay dated
-in `debug/`.
+Nothing here is a plan — design work lives in <../plans/conversation_layers.md> — and nothing here
+is an incident note; those stay dated in `debug/`.
 
 ## Synapse deduplicates a transaction per device, for 30–60 minutes
 

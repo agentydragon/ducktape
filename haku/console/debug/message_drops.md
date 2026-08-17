@@ -77,7 +77,8 @@ never reached the delivery layer at all.
 Fixed by **deleting the second loop**: the interrupt now sets a flag that stops the one loop racing
 the abort event, and every frame after it is folded in by the same `match` as every frame before it.
 So there is no separate account of what an `assistant` frame means, which is the failure mode that
-produced this one (<../../plans/chat_runtime_projection.md>'s two state machines). A drained message
+produced this one — the live path and the recovery path each deciding what an `assistant` frame
+meant. A drained message
 counts towards `spoke` and `saw_assistant_message` exactly as a mid-loop one does, so the room is not
 also owed `result.result` (which repeats it) and no second message row is minted for it. Abort
 semantics are unchanged: the turn still ends, the notice is still said, the session survives.

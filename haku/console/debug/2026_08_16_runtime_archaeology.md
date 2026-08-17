@@ -26,9 +26,9 @@ are pointed at rather than retold — one incident, one write-up.
 | `session_runtime._run_turn`, `spoke`                         | The outbox row's existence, never a report from the delivery layer and never `sent_at`                    | <message_drops.md> § The one structural fact, and E2                                                            |
 | `session_runtime._run_turn`, `saw_assistant_message`         | Its own fact rather than `spoke` again                                                                    | [Two facts under one flag](#two-facts-under-one-flag)                                                           |
 | `session_store.fail`, `handle_runner`'s `except*`            | Logged as well as persisted; the traceback is what says which call produced it                            | <session_failure_status.md> § Verdict, and `x/session_notifications.py`                                         |
-| `session_store.ResumedTurn`, `TurnState`                     | Adoption reads how far the turn got off its row, rather than rebuilding it from the frame log             | <../../plans/chat_runtime_projection.md> § stage 3                                                              |
+| `session_store.ResumedTurn`, `TurnState`                     | Adoption reads how far the turn got off its row, rather than rebuilding it from the frame log             | <../x/README.md> § `session_store.py` and `session_runtime.py`                                                  |
 | `session_store.SpaSession.surface_column`                    | What the row records, carried on the variant                                                              | [Small ones](#small-ones)                                                                                       |
-| `session_runtime._run_turn`, `result`                        | The frame the completion was projected from, kept because the code below still reads Claude's own payload | <../../plans/chat_runtime_projection.md> § stage 4                                                              |
+| `session_runtime._run_turn`, `result`                        | The frame the completion was projected from, kept because the code below still reads Claude's own payload | <../plans/conversation_layers.md> § 9 step 4                                                                    |
 
 ## A queued prompt that claimed to be a turn
 
@@ -124,7 +124,7 @@ which belongs to no message row.
 - **The session view's `responding`.** Derived from the open turn, not read off the column — the
   same single-fact rule as the abort above. The column is still written back in `end_turn` when it
   carries the old meaning, which only a replica on the previous image would have put there; that
-  is roll compatibility, tombstoned in <../../plans/chat_runtime_cleanup.md> rather than here.
+  is roll compatibility, tombstoned beside the column rather than here.
 - **`update_assistant` and the per-delta session write.** It set `status = RESPONDING` on every
   stream delta, which is one session-row write per token batch to hold true a flag the open turn
   already stated.
@@ -132,5 +132,4 @@ which belongs to no message row.
   projection each time, because a
   projector held across the turn would merge the frames sharing a `message.id` into a single row
   and defer every completion by one frame. Both are improvements; both change what is stored, so
-  neither belongs to a change that stores nothing new (<../../plans/chat_runtime_projection.md>
-  § stage 4).
+  neither belongs to a change that stores nothing new.

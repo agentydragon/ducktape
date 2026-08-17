@@ -4,8 +4,8 @@ In-flux work that the console runs but does not yet promise. Nothing here has a 
 and the console must keep serving with any of it switched off.
 
 Two chat surfaces live here, deliberately. They are separate experiments over one piece of
-session machinery, not a migration in progress: Matrix is not replacing the SPA view, and
-whether either survives is open (<../../plans/matrix_chat_runtime.md> § Open questions).
+session machinery, not a migration in progress: Matrix is not replacing the SPA view. Both are
+headed for one subscription off one record (<../plans/conversation_layers.md>).
 
 ## The directory says which axis a module varies on
 
@@ -37,9 +37,8 @@ value out of one are `claude_code/frames.py`, while `setup_output.py` holds the 
 **One column still carries both**, which no placement fixes: `session_frames.kind` takes the CLI's
 `type` from `RolloutRecorder` and `setup_output` from the progress reporter, so `session_store.py`
 names two of the CLI's kinds in SQL predicates and imports them across that line — the same
-direction `claude_code/projection.py` is already imported in. Stage 2 of
-<../../plans/chat_runtime_projection.md> gives the CLI's type its own column, which is what retires
-those predicates.
+direction `claude_code/projection.py` is already imported in. Giving the CLI's type its own column
+is what retires those predicates (<../plans/conversation_layers.md> § 13).
 
 ## `session_store.py` and `session_runtime.py` — the rows, and the turn loop over them
 
@@ -73,8 +72,8 @@ message being streamed into, `said_anything` whether one has completed, `queued_
 room's outbox holds a reply from this turn — each written in the same transaction as the effect it
 describes, so none of them can claim something that did not commit. `_run_turn` reads them at the
 top of every turn (`turn_state`), which is why adopting a half-finished exchange is a read rather
-than a reconstruction: `adopt_open_turn` says _which_ turn, and the row says how far it got
-(<../../plans/chat_runtime_projection.md> § stage 3). **Gotcha:** `queued_reply` is the outbox row
+than a reconstruction: `adopt_open_turn` says _which_ turn, and the row says how far it got.
+**Gotcha:** `queued_reply` is the outbox row
 existing, deliberately not `sent_at` — an unsent row still means the room is owed that text, so a
 turn that re-queued it would post the answer twice — and `said_anything` is a separate column
 rather than the same one read twice, because a session with no room queues nothing.
@@ -89,7 +88,7 @@ turn's own frame range.
 **The rollout is recorded by `RolloutRecorder`, a `FrameSink` the protocol client calls.** Every
 frame either way, both channels, verbatim — the control channel included, since an interrupt that
 did not take is diagnosable from nothing else. **Deltas included** — a log with a hole in it cannot
-be folded over (<../../plans/chat_runtime_projection.md> § stage 1), so "do not bury the reader" is
+be folded over, so "do not bury the reader" is
 answered at the read instead: `read_frames` leaves `stream_event` out of its default view. They are
 also what makes an interrupted turn's half-answer survive: an answer no `assistant` frame ever
 completed is in the log as the deltas that wrote it.
@@ -113,7 +112,7 @@ carrying no agent-assigned id escape. Two properties worth knowing before changi
   yet**: a hole in the recorded numbers is what narration leaves behind, and the runner's replay
   window retains only replayable frames, so an adopted connection's own sequence is sparse too.
   "A hole means loss" becomes true at the release that makes this the log's ordering
-  (<../../plans/chat_runtime_projection.md> § 2b, R2), not before.
+  (<../plans/conversation_layers.md> § 13, R2), not before.
 
 Both surfaces run on it at once. They are ordinary separate sessions — separate rows,
 separate sandboxes — so a browser conversation and the Matrix conversation coexist rather
@@ -128,7 +127,7 @@ machinery goes with it.
 
 Each is a module nothing in `session_runtime.py` reaches into — so the store, the service and
 the turn loop kept their shape while the file lost the parts that never needed to be beside them
-(<../../plans/chat_runtime_cleanup.md> § Anytime). `session_store.py` is not one of them: the
+(<../plans/conversation_layers.md> § 9). `session_store.py` is not one of them: the
 service calls it on every path, so that split is a seam and not a leaf.
 
 | Path               | Role                                                                                                                                                           |
@@ -169,8 +168,8 @@ operator's text, because until the console accepts a prompt its only copy is in 
 
 ## The frame inspector — reading the record the transcript is a projection of
 
-`session_messages` is a **lossy projection** of `session_frames`
-(<../../plans/chat_runtime_projection.md> § stage 4), and a projection nobody can appeal is a
+`session_messages` is a **lossy projection** of `session_frames`, and a projection nobody can
+appeal is a
 projection nobody can debug. So a conversation in the console carries a **Raw frames** button, and
 `GET /api/sessions/{session_id}/frames` is what it reads: one page of the rollout, in wire
 order, each frame's payload whole. Frontend: `frontend/x/session_frames_page.tsx`, at its own route
@@ -220,7 +219,7 @@ missing on thousands of production rows, which is why that change exists.
 `conversation_events.py` is the provider-neutral vocabulary a conversation is read as — text,
 messages, reasoning, a tool-call lifecycle, a completed turn — and
 `claude_code/projection.py` is the reducer from Claude's frames into it. Together they are the
-one interpreter that <../../plans/chat_runtime_projection.md> § stage 4 replaces four with.
+one interpreter that replaced the four that each read Claude's frames independently.
 
 **The two halves sit on different levels, which is the placement rule doing its job.** The
 vocabulary names no backend and every surface renders it, so it stays at the runtime level; the
@@ -645,10 +644,6 @@ What it is deliberate about:
 Routing costs a lookup: `SessionEvent` carries no operator and the hub delivers per operator, so
 the session's owner is resolved once per session and kept (a session's owner never changes).
 
-The SPA chat page's SSE stream is untouched and stays until a coalesced refetch is proven in
-practice (<../plans/session_channels.md> § 2) — a worse-feeling result should cost a revert of the
-surfaces, not of the transport.
-
 ## Cross-replica state, and the trap it sets
 
 `replicas: 2` means any given HTTP request reaches an arbitrary pod, while a session's live
@@ -682,8 +677,8 @@ The code keeps the invariant; the evidence behind it is linked rather than resta
 - <../docs/chat_runtime_facts.md> — behaviours of Synapse, nio, uvicorn and the CLI that this
   surface depends on, with where each was checked. Read it before changing anything that looks
   like belt and braces.
-- <../../plans/chat_runtime_cleanup.md> and <../../plans/chat_runtime_projection.md> — what is
-  still wrong and the order to fix it.
+- <../plans/conversation_layers.md> — what is still wrong and the order to fix it, and
+  <channels/matrix/SPEC.md> — what the Matrix channel already guarantees.
 - [The runtime archaeology note](../debug/2026_08_16_runtime_archaeology.md) — which bug each
   invariant in `session_runtime.py` and `session_store.py` was written against, indexed by the line
   in the code that keeps it.

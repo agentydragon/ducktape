@@ -2,7 +2,8 @@
 
 In-flux runtime code with no stable API, in the sense <../../../README.md> § `x/` gives the
 convention. The originating design note is <../../plans/agent_sdk_sandbox_runtime.md>; the shape
-the runtime actually took is <../../plans/matrix_chat_runtime.md>.
+the runtime actually took is <../../console/x/channels/matrix/SPEC.md>, and where it is going is
+<../../console/plans/conversation_layers.md>.
 
 `bridge` is the sandbox side of the Claude chat experiment: the wire protocol between
 console and sandbox, the CLI protocol client, the launch construction, the WebSocket transport, and

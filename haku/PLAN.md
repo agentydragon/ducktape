@@ -109,8 +109,9 @@ The ask was a chat-like surface instead of only the console's fire-and-forget la
 quick dispatch, follow-ups without re-stating context, and separate threads per topic. Matrix
 answers all three — a message in Element drives a real turn and the answer comes back into the
 room, one long-running session per room, with the console still owning the session, the
-credentials and the approval gate. Requirements and what is still owed:
-<plans/matrix_chat_runtime.md>. The notification half was answered separately and differently:
+credentials and the approval gate. What the channel guarantees:
+<console/x/channels/matrix/SPEC.md>; what is still owed:
+<console/plans/conversation_layers.md>. The notification half was answered separately and differently:
 Web Push from the console's own origin (`console/web_push.py`), with Approve/Deny rendered by
 the OS from console-authored content, because a third-party service with action buttons would
 have to carry a deciding credential outside the trust boundary (`docs/security.md` invariant #4).

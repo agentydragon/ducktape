@@ -55,7 +55,7 @@ it is evidence of loss — which a database sequence, sparse by design, can neve
 
 The console **records** that number today (`session_frames.runner_seq`) and computes its cursor from
 it. Making it the log's own ordering is the schema step after, and the reason for the whole scheme
-(<../../../plans/chat_runtime_projection.md> § 2b).
+(<../../../console/plans/conversation_layers.md> § 13).
 
 `start` carries the other half, `resume_from`: the highest `seq` the **console** holds for this
 session. The runner replays only what is above it and continues numbering from there. Per session

@@ -72,8 +72,8 @@ once `room_send` has returned. A second channel could be handed these rows tomor
 `MatrixSurface.report`, which queues an unrelated in-process closure carrying the same text. So
 the fact is durable and the delivery is not: a replica dying between the two loses the room's copy
 with nothing to notice it is missing. It is the right classification — the fact is in our store —
-but it is fan-out, not projection, and it is the shape §1 of
-<../plans/session_channels.md> exists to replace.
+but it is fan-out, not projection, and it is the shape the reconciler
+(<../plans/conversation_layers.md> § 2) exists to replace.
 
 **Row 15, the abort notice, is the only one that is a projection.** `end_turn` writes a
 `turn_aborted` row into `session_events` under the lock that closes the turn, and the surface
@@ -87,16 +87,14 @@ kept and kept it in the channel's table.
 The typing indicator (3) and the status line (4–6) are **renderings of live state**, and I claim
 ephemerality for them on a stronger basis than "it is only a typing indicator":
 
-- **They are already argued out in writing, twice.** `../plans/session_channels.md` §3 says
-  recording the status text would be recording a rendering and calls it "the one mistake this
-  section exists to prevent"; `haku/plans/matrix_chat_runtime.md:817-819` says the status line and
-  typing indicator "stay Matrix-only renderings of live state, and stay unrecorded".
+- **They are already argued out in writing.** Recording the status text would be recording a
+  rendering: the status line and the typing indicator stay Matrix-only renderings of live state,
+  and stay unrecorded (<../plans/conversation_layers.md> § 4).
 - **The state behind them is recorded.** `room_status.coarse_status` derives the status text from
   the CLI frames that `RolloutRecorder` is writing to `session_frames` anyway. So the invariant
   holds in the form that matters: nothing in the room is a fact the database does not have. What
   is not recorded is the _rendering_ of it, which is per-channel by construction.
-- **They have no convergent form.** `session_channels.md` §1 makes this point about the
-  reconciler: redacting a status message and clearing a typing indicator have no cheap "what does
+- **They have no convergent form.** The same point holds for the reconciler: redacting a status message and clearing a typing indicator have no cheap "what does
   the room currently show" to compare against, so they are driven by the turn rather than by a
   cursor.
 
@@ -104,8 +102,8 @@ ephemerality for them on a stronger basis than "it is only a typing indicator":
 channel cannot reuse any of this. It gets the recorded frames and must write its own
 `coarse_status` equivalent — and `coarse_status` reads Claude's wire format (`assistant` frames,
 `system`/`task_started` subtypes), so today the derivation is welded to one AI backend as well as
-one channel. That is the coupling `session_channels.md` §1 names as the way to get the reconciler
-wrong, and it already exists on the rendering side.
+one channel. That is the coupling <../plans/conversation_layers.md> § 2 names as the way to get
+the reconciler wrong, and it already exists on the rendering side.
 
 > **Half of that has since been fixed** (the neutral projection, `x/README.md` § The neutral
 > projection): `coarse_status` takes a run of `ConversationEvent`s, so the derivation is no longer
@@ -126,8 +124,7 @@ room and **nothing else**. Three separate consequences, which is why this is the
   record, and it is federated to servers we do not own.
 - **The dedup is a per-process local.** `_last_announced` (`matrix_session.py:342`) means a leader
   handover re-announces the current status, which reads in the room as the session having changed
-  when only the supervisor did. `session_channels.md` §3 already names this: under a cursor, the
-  cursor _is_ the record of having announced it.
+  when only the supervisor did. Under a cursor, the cursor _is_ the record of having announced it.
 - **Before a room is bound they are dropped entirely.** `announce` logs "no room bound yet,
   dropping notice" and returns (`matrix_sync.py:364-367`). A session that was provisioned, failed
   and replaced before the operator ever invited Haku leaves no account of itself anywhere — the
@@ -141,7 +138,8 @@ lifecycle transition is not that. `setup_output` is not the counter-example it l
 `SetupOutput` envelope does cross the wire.
 
 **Why it is not fixed here.** The row needs a `kind`, and choosing one is choosing what a lifecycle
-event _means_ channel-neutrally — `session_channels.md` §3 is explicit that `lifecycle` and
+event _means_ channel-neutrally — <../plans/conversation_layers.md> § 4 is explicit that
+`lifecycle` and
 `narration` become channel-neutral session events while `status`, `holding` and `room` stay
 Matrix's own, and warns against promoting the whole `RoomEventKind` enum. `AuthoredEventKind` is
 where that vocabulary now goes; it carries the two lease facts and not yet a status transition.
@@ -182,8 +180,8 @@ rather than a count of messages waiting.
 
 **One case still bypasses**, and it is not fixable here: a room whose session has not been
 provisioned yet has no session for the row to name, so that rejection is announced and kept
-nowhere. It wants the entity above the session that `session_channels.md` §1's attachment implies
-and nothing has built.
+nowhere. It wants the conversation to own the event, which
+<../plans/conversation_layers.md> § 7 names and nothing has built.
 
 ### Rows 8, 9, 10 — the room-binding notices
 
@@ -193,8 +191,8 @@ this room — Haku had no room bound". The binding _decision_ behind each of the
 `on_conflict_do_nothing` is what decides the refusal (`matrix_session.py:112-130`). The
 announcement of it is not.
 
-**Where they belong: nowhere neutral.** `session_channels.md` §3 puts `room` on the Matrix side of
-the vocabulary split — a room binding is not a session event, it is this channel's attachment
+**Where they belong: nowhere neutral.** A room binding sits on the Matrix side of the vocabulary
+split — a room binding is not a session event, it is this channel's attachment
 changing. Under §1 that is the per-attachment cursor's business
 (`chat_attachment(session_id, surface, address, attached_at, detached_at)`), which does not exist
 yet. Recording them today means either a Matrix-shaped table or a Matrix-flavoured frame kind,
@@ -228,7 +226,7 @@ scope, and the blockage is structural rather than incidental:
 - **The only durable "this happened" record is `session_frames`, whose `kind` is free text — and
   choosing a value for it is choosing what a neutral session event means.** That is
   `claude/haku-neutral-events`'s decision, and pre-empting it with a Matrix-flavoured kind is the
-  specific mistake `session_channels.md` §3 was written to prevent.
+  specific mistake <../plans/conversation_layers.md> § 4 warns against.
 
 There is no bypassing write with an obvious home that recording would leave behaviourally
 identical. The nearest miss is row 14, which fits `session_outbox.turn_id` mechanically and would
@@ -270,8 +268,9 @@ inherit.
 
 **5. Self-exclusion is a sender field.** `MatrixClient._read` drops everything whose sender is us
 (R1.5), which is the first of the two guards against a self-feeding loop; `m.notice` being ignored
-is the second. Both are Matrix affordances. `session_channels.md` §5's relay message — the console
-posting the operator's own text — works _only_ because it goes out under `@haku` and is therefore
+is the second. Both are Matrix affordances. The relay message
+(<../plans/conversation*layers.md> § 9 step 8) — the console posting the operator's own text —
+works \_only* because it goes out under `@haku` and is therefore
 excluded from ingress by construction. A channel where the console posts as the operator would
 loop, and there is no second guard to catch it.
 
