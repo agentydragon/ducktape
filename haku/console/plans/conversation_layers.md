@@ -498,11 +498,31 @@ having even if the loop is never built.
     kinds may exist, the column is parsed rather than read as text, and a previous image still
     writes them for the length of the roll.
 11. **Delete the rows and narrow the kind**, a release after 10 has converged: `DELETE FROM
-session_events WHERE kind IN (…)`, drop the two enum members, narrow the CHECK. Deleting the
-    members before the rows would make reading one raise rather than degrade.
+session_events WHERE kind IN ('activity_started','activity_completed')`, drop the two enum
+    members, narrow the CHECK — one migration, the shape `0059`'s downgrade already uses. Deleting
+    the members before the rows would make reading one raise rather than degrade, and deleting the
+    rows earlier is harmless but pointless: the previous image is still writing them.
 12. **Audit the rest of `ConversationEvent` against the same question**: could a second backend
     produce this, or is it one provider's concept renamed? Do this before a second backend exists,
     because afterwards every answer is retrofitted to what that backend happens to emit.
+
+13. **Delete `Usage`** (operator, 2026-08-17), for a different reason from 10: not that it fails
+    the neutrality test — it passes, being a reduction to quantities every backend reports — but
+    that nobody wants the feature. `Usage` leaves `TurnCompleted`, `_usage` leaves the projection,
+    `TurnUsage`/`_turn_usage` leave `session_views`, `ConversationTurnView.usage` leaves the API,
+    and the frontend stops rendering cost. Pure code.
+14. **Unmap the `session_turns` usage columns**, a release after 13. **Check each for a server
+    default first** — a `NOT NULL` column without one breaks every `INSERT` the moment it is
+    unmapped, which is the trap `session_frames.partial` walked into and the reason its own
+    sequence grew a step. Find that out here, not at the drop.
+15. **Drop them**, a release after 14 has converged.
+
+Steps 10–15 are a separate lane from 1–9: nothing in the layering depends on them and they do not
+wait on it. **Both deletions lose something recoverable rather than something gone.** `Usage` is
+read straight off the `result` frame's payload — `usage.input_tokens`, `cache_read_input_tokens`,
+`total_cost_usd`, `duration_ms` — and what `ActivityStarted` recorded came off `task_started` the
+same way. Both payloads stay in `session_frames`, the surface allowed to be provider-shaped, so
+wanting either back is a re-fold over frames. That is what makes these cheap rather than a bet.
 
 Steps 1, 4–6, 10 and 12 are independent of each other and of step 2; 3 and 7 depend on 2; 8 depends
 on 6 and 7; 9 depends on 8; 11 depends on 10 converging. Step 12 may reorder 10 and 11 by finding
