@@ -1726,10 +1726,10 @@ async def test_a_cluster_that_cannot_be_read_says_so_instead_of_failing_the_requ
 ) -> None:
     """The third of the three answers: not "nothing here" and not "the claim is gone", but "I could
     not look" — which is the one a reader must not act on."""
-    session = await chat_service.create(operator_id, SpaSession())
+    session_id = await sandboxed(chat_service, operator_id, SpaSession())
     recording_claims.fail(RuntimeError("kubernetes: connection refused"))
 
-    view = await chat_service.sandbox_provisioning(operator_id, session.session_id)
+    view = await chat_service.sandbox_provisioning(operator_id, session_id)
 
     assert view.sandbox is not None
     assert view.sandbox.observation_error == "kubernetes: connection refused"
@@ -1740,16 +1740,16 @@ async def test_polling_provisioning_reads_the_cluster_at_a_bounded_rate(
 ) -> None:
     """One poll is up to three Kubernetes reads, and the browser's refresh rate is not the API
     server's problem — so polls inside one observation's budget cost one look at the cluster."""
-    session = await chat_service.create(operator_id, SpaSession())
+    session_id = await sandboxed(chat_service, operator_id, SpaSession())
 
     with patch("haku.console.x.session_runtime.OBSERVATION_TTL", timedelta(hours=1)):
         for _ in range(5):
-            await chat_service.sandbox_provisioning(operator_id, session.session_id)
-    assert recording_claims.inspected == [session.session_id]
+            await chat_service.sandbox_provisioning(operator_id, session_id)
+    assert recording_claims.inspected == [session_id]
 
     with patch("haku.console.x.session_runtime.OBSERVATION_TTL", timedelta(0)):
-        await chat_service.sandbox_provisioning(operator_id, session.session_id)
-    assert recording_claims.inspected == [session.session_id] * 2, (
+        await chat_service.sandbox_provisioning(operator_id, session_id)
+    assert recording_claims.inspected == [session_id] * 2, (
         "a view past its budget is taken again rather than served stale"
     )
 
