@@ -477,13 +477,13 @@
   line-height: 1.35;
 }
 
-.haku-claude-composer {
+.haku-chat-composer {
   flex: 0 0 auto;
   border-top: 1px solid var(--haku-border);
   background: var(--haku-panel-bg);
 }
 
-.haku-claude-composer-inner {
+.haku-chat-composer-inner {
   width: 100%;
   max-width: 56rem;
   margin: 0 auto;

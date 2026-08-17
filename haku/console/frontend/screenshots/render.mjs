@@ -202,6 +202,18 @@ const SCENES = [
     expectVisible: "::-p-text(Workspace ready at)",
     frame: true,
   },
+  // A prompt the console would not take. The mocked 409 (mock_api.ts) is the interesting half of
+  // sending from this surface: the operator's text is still in the box below the notice, because
+  // nothing anywhere else has a copy of it.
+  {
+    name: "conversation-prompt-refused",
+    viewport: { width: 1200, height: 900 },
+    closeApprovals: true,
+    typeInto: { selector: 'textarea[aria-label="Message"]', text: "Did the degraded server recover?" },
+    clicks: ["button::-p-text(Send)"],
+    expectVisible: "::-p-text(a prompt is already queued)",
+    frame: true,
+  },
   {
     // The frame inspector, which opens on the tail of the log — so the visible rows are the last
     // ones, `partial` badge included.
@@ -375,6 +387,7 @@ try {
       fullPage = false,
       frame,
       scrollToBottom,
+      typeInto,
     } of SCENES) {
       const page = await browser.newPage();
       // Matches visual-test-lib.mjs's fixed epoch: harness.tsx's chromeProps feeds the real
@@ -413,6 +426,12 @@ try {
         const drawerClose = await page.$('.haku-shell-drawer [aria-label="Close approvals"]');
         if (drawerClose) await drawerClose.click();
         await page.waitForSelector(".haku-shell-drawer", { hidden: true, timeout: 5_000 });
+      }
+      // A scene whose subject is what a control does with operator input has to supply that input
+      // first — a composer's Send stays disabled until something is typed.
+      if (typeInto) {
+        await page.type(typeInto.selector, typeInto.text);
+        await settle(150);
       }
       // Some scenes need clicks to reveal state internal to a component: a popover's open state
       // (location-sharing control) or history rows toggled into their detailed view.

@@ -132,13 +132,37 @@ export async function fetchSessionFrames(
   return data;
 }
 
-export async function sendClaudeChatMessage(sessionId: string, text: string): Promise<ClaudeChatMessage> {
-  const { data, error } = await api.POST("/api/sessions/{session_id}/messages", {
+/** The console would not take the prompt, and recorded nothing.
+ *
+ * `SessionStore.enqueue_prompt` refuses a session that is not `ready`, one whose turn is still in
+ * flight, and one that already has a prompt queued; it holds none of them. Distinct from a
+ * transport failure because the operator's text still exists only in their composer — a caller
+ * that catches this must keep it.
+ */
+export class PromptRefused extends Error {}
+
+export async function sendChatPrompt(sessionId: string, text: string): Promise<ClaudeChatMessage> {
+  const { data, error, response } = await api.POST("/api/sessions/{session_id}/messages", {
     params: { path: { session_id: sessionId } },
     body: { text },
   });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to send Claude chat message"));
+  if (response.status === 409) throw new PromptRefused(errorDetail(error, "The session would not take that prompt"));
+  if (error || !data) throw new Error(errorDetail(error, "Failed to send the prompt"));
   return data;
+}
+
+/** Interrupt the running turn; false when the console found none open.
+ *
+ * Not an error: the turn can end between the operator seeing the button and pressing it, and
+ * "there was nothing left to stop" is the outcome they wanted either way.
+ */
+export async function abortSessionTurn(sessionId: string): Promise<boolean> {
+  const { error, response } = await api.POST("/api/sessions/{session_id}/abort", {
+    params: { path: { session_id: sessionId } },
+  });
+  if (response.status === 409) return false;
+  if (error) throw new Error(errorDetail(error, "Failed to abort the turn"));
+  return true;
 }
 
 export async function deleteClaudeChatSession(sessionId: string): Promise<void> {

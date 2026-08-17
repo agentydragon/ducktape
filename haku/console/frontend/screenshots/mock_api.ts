@@ -562,6 +562,15 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
   if (url.includes("/frames")) return jsonResponse(conversationFrames);
   if (url.includes("/api/conversations/")) return jsonResponse(conversationDetailForScene);
   if (url.includes("/api/conversations")) return jsonResponse(conversationSummaries);
+  // The refusal the composer exists to render clearly: `enqueue_prompt` answers 409 and records
+  // nothing, so the operator's text has to survive it. Before the session read below, whose path
+  // this one extends.
+  if (scene === "conversation-prompt-refused" && url.includes("/messages")) {
+    return new Response(JSON.stringify({ detail: "a prompt is already queued" }), {
+      status: 409,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   if (url.includes("/api/sessions")) return jsonResponse(claudeSession);
   // Push is configured on this console, and one *other* device is enrolled — the two facts the
   // Notifications section exists to show. The headless browser has no real subscription, so

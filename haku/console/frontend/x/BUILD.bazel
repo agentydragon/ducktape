@@ -91,12 +91,25 @@ ts_library(
 )
 
 ts_library(
+    name = "conversation_composer",
+    srcs = ["conversation_composer.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//haku/console/frontend:client",
+    ],
+)
+
+ts_library(
     name = "conversations_page",
     srcs = ["conversations_page.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":bootstrap_narration",
         ":chat_scroll",
+        ":conversation_composer",
         ":conversation_timeline",
         ":markdown",
         ":tool_call",
@@ -168,6 +181,7 @@ filegroup(
     name = "tailwind_content_srcs",
     srcs = [
         "claude_chat_page.tsx",
+        "conversation_composer.tsx",
         "conversations_page.tsx",
         "session_frames_page.tsx",
     ],

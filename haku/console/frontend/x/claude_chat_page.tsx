@@ -4,11 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { isNearChatBottom } from "./chat_scroll";
 import { ToolCallView } from "./tool_call";
 import {
+  abortSessionTurn,
   createClaudeChatSession,
   deleteClaudeChatSession,
   displayableError,
   fetchClaudeChatSession,
-  sendClaudeChatMessage,
+  sendChatPrompt,
   type ClaudeChatSession,
 } from "../client";
 import { Markdown } from "./markdown";
@@ -153,7 +154,7 @@ export function ClaudeChatPage() {
     setBusy(true);
     setError(null);
     try {
-      await sendClaudeChatMessage(session.session_id, text);
+      await sendChatPrompt(session.session_id, text);
       setPrompt("");
       setSession(await fetchClaudeChatSession(session.session_id));
     } catch (e: unknown) {
@@ -167,11 +168,7 @@ export function ClaudeChatPage() {
     if (!session) return;
     setAborting(true);
     try {
-      const resp = await fetch(`/api/sessions/${session.session_id}/abort`, { method: "POST" });
-      if (!resp.ok && resp.status !== 409) {
-        const body = await resp.json().catch(() => null);
-        setError(body?.detail ?? "Failed to abort");
-      }
+      await abortSessionTurn(session.session_id);
     } catch (e: unknown) {
       setError(displayableError(e));
     } finally {
@@ -362,8 +359,8 @@ export function ClaudeChatPage() {
         </div>
 
         {session && !["closed", "failed"].includes(session.status) && (
-          <div className="haku-claude-composer">
-            <Stack gap="xs" className="haku-claude-composer-inner">
+          <div className="haku-chat-composer">
+            <Stack gap="xs" className="haku-chat-composer-inner">
               <Textarea
                 aria-label="Message"
                 placeholder={session.status === "ready" ? "Ask Claude…" : "Wait for the current turn to finish…"}

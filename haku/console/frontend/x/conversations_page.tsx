@@ -15,8 +15,12 @@ import { conversationPath, CONVERSATIONS_PATH, navigateToConsolePath, sessionFra
 import { bootstrapNarration, type BootstrapNarration } from "./bootstrap_narration";
 import { isNearChatBottom } from "./chat_scroll";
 import { ToolCallView } from "./tool_call";
+import { ConversationComposer } from "./conversation_composer";
 import { conversationTimeline, type ConversationTurn } from "./conversation_timeline";
 import { Markdown } from "./markdown";
+
+/** A session that has ended takes no more prompts, so it gets no composer. */
+const SETTLED = new Set<ConversationSessionSummary["status"]>(["closing", "closed", "failed"]);
 
 function openConversation(sessionId: string): void {
   navigateToConsolePath(conversationPath(sessionId));
@@ -386,6 +390,18 @@ function ConversationDetailPage({ sessionId }: { sessionId: string }) {
             )}
           </div>
         </div>
+        {!SETTLED.has(conversation.status) && (
+          <ConversationComposer
+            sessionId={conversation.session_id}
+            status={conversation.status}
+            onSent={() => {
+              // The accepted prompt is the operator's own, so the transcript follows it down
+              // rather than holding whatever they had scrolled back to.
+              stickToBottomRef.current = true;
+              refresh();
+            }}
+          />
+        )}
       </div>
     </section>
   );

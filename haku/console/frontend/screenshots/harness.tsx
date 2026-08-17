@@ -140,6 +140,7 @@ function sceneElement(scene: string) {
     case "conversation-bootstrap":
     case "conversation-bootstrap-mobile":
     case "conversation-narration-collapsed":
+    case "conversation-prompt-refused":
       return <ConsoleScene view="conversations" conversationId={CONVERSATION_ID} />;
     case "session-frames":
     case "session-frames-mobile":

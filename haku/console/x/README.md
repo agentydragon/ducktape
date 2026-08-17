@@ -165,6 +165,23 @@ surprises: everything else outside `x/` that names a module inside it is the com
 it drags in no runtime — but if the tools catalog ever has to build without `x/`, moving this
 module to the console level is the fix, not reinstating the models on the tool.
 
+## Prompting a session the browser did not create
+
+`POST /api/sessions/{session_id}/messages` and `/abort` ask **who owns the session**, never which
+surface opened it: `enqueue_prompt` checks `operator_id`, `READY`, no open turn and no queued
+prompt, and nothing in the route or the store reads `sessions.surface`. So the conversation detail
+view carries a composer (`frontend/x/conversation_composer.tsx`) for any session it can read,
+Matrix-surfaced ones included — the reply then goes wherever that session's channel sends replies,
+so a prompt typed in the browser also lands in the room. This is the first half of the merge
+<../plans/session_channels.md> § 2 describes; the list still lists sessions and `/_console/chat`
+still exists.
+
+**A refusal is the case the surface has to render, not the send.** The route holds nothing:
+`enqueue_prompt` refuses a prompt arriving mid-turn and refuses a second prompt while one is
+queued, and the queued case leaves the session `READY`, so no disabled button can pre-empt it.
+Both come back as `409`, which the client raises as `PromptRefused`; the composer keeps the
+operator's text, because until the console accepts a prompt its only copy is in that box.
+
 ## The frame inspector — reading the record the transcript is a projection of
 
 `session_messages` is a **lossy projection** of `session_frames`
