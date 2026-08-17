@@ -21,6 +21,13 @@ spec:
       serviceAccountName: props-executor
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
       # Props main image is on GHCR (public, no pull secret needed).
       # Agent images live in Forgejo's registry (git.allegedly.works/props/*),
       # reached through the standalone props-registry-proxy service.

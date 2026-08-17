@@ -23,6 +23,13 @@ spec:
       automountServiceAccountToken: false
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
       containers:
         - name: registry-proxy
           image: ghcr.io/agentydragon/props-registry-proxy:devel-20260816062715-226cccb # {"$imagepolicy": "flux-system:props-registry-proxy"}
