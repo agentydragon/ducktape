@@ -132,6 +132,17 @@ def test_the_harness_narrating_a_step_is_a_pair_of_rows() -> None:
     assert (started.call_id, completed.call_id) == (None, None)
 
 
+def test_a_prompt_is_conversation_on_the_authored_arm() -> None:
+    """The operator's half of the transcript, which no fold produces: a prompt is accepted before
+    it crosses the wire, so it has frames nowhere and a turn not yet."""
+    message_id = uuid4()
+    asked = session_events.prompt_enqueued(session_id=SESSION_ID, message_id=message_id, text="list the files", now=NOW)
+
+    assert (asked.kind, asked.provenance) == (ConversationEventKind.PROMPT_ENQUEUED, EventProvenance.AUTHORED)
+    assert (asked.turn_id, asked.source_first_frame_seq, asked.source_last_frame_seq, asked.call_id) == (None,) * 4
+    assert asked.body == {"message_id": str(message_id), "text": "list the files"}
+
+
 def test_a_fact_the_console_authored_names_no_turn_and_no_frames() -> None:
     """The second category: what happened *to* the session. It crossed no wire, so it is its own
     evidence — and it is the session's fact rather than an exchange's, which is what lets a session

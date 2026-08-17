@@ -126,11 +126,17 @@ class RecordedToolCall(BaseModel):
 class ConversationEventKind(StrEnum):
     """Which neutral event a `session_events` row records — the conversation category.
 
-    The vocabulary is `x/conversation_events.ConversationEvent` less its two members that already
-    have a durable home: a `TextDelta` is an increment of prose the completed message carries
-    whole, and a `TurnCompleted` is the `session_turns` row.
+    Membership is decided by what the row is about — the conversation rather than the session —
+    and not by where it came from, which is `EventProvenance`'s column to answer.
+
+    Most of it is `x/conversation_events.ConversationEvent`, less its two members that already have
+    a durable home: a `TextDelta` is an increment of prose the completed message carries whole, and
+    a `TurnCompleted` is the `session_turns` row. `PROMPT_ENQUEUED` is the member with no
+    `ConversationEvent`, because no fold produces it: the operator's question is accepted before it
+    crosses any wire, so it is authored rather than projected.
     """
 
+    PROMPT_ENQUEUED = "prompt_enqueued"
     MESSAGE_COMPLETED = "message_completed"
     REASONING = "reasoning"
     TOOL_CALL_STARTED = "tool_call_started"
@@ -144,7 +150,7 @@ TOOL_CALL_EVENT_KINDS = frozenset({ConversationEventKind.TOOL_CALL_STARTED, Conv
 
 
 class AuthoredEventKind(StrEnum):
-    """Which console-authored fact a `session_events` row records — the second category.
+    """Which fact about the session itself a `session_events` row records — the second category.
 
     What happened *to* the session rather than in the conversation
     (<../plans/chat_runtime_projection.md> § stage 4). These cross no wire: the console is their

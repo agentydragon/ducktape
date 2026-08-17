@@ -545,6 +545,13 @@ class SessionStore:
             db.add(
                 SessionPrompt(prompt_id=uuid4(), session_id=session_id, message_id=message.message_id, queued_at=now)
             )
+            # In this transaction, so the ordered stream gains the operator's turn exactly when the
+            # transcript does. Without it `session_events` holds only the agent's half.
+            db.add(
+                session_events.prompt_enqueued(
+                    session_id=session_id, message_id=message.message_id, text=prompt_text, now=now
+                )
+            )
             # No status write: a queued prompt is not a turn in flight.
             chat.updated_at = now
             await notify(db, SessionEventKind.PROMPT, session_id)

@@ -928,7 +928,7 @@ async def test_a_room_cannot_be_recorded_without_the_matrix_surface(migrated_ses
 
 
 async def authored_events(migrated_sessions, session_id: UUID) -> list[SessionEvent]:
-    """What the console recorded about *session_id* itself, oldest first."""
+    """Every row of *session_id*'s stream the console authored rather than folded, oldest first."""
     async with migrated_sessions() as db:
         return list(
             await db.scalars(
@@ -1005,6 +1005,40 @@ async def test_a_lease_that_lapsed_names_the_replica_that_held_it(chat_store, mi
 
     lapsed = one(await authored_events(migrated_sessions, view.session_id))
     assert lapsed.body == {"reason": LeaseExpiryReason.HOLDER_GONE, "last_holder": REPLICA}
+
+
+async def test_an_accepted_prompt_is_a_row_in_the_stream_as_well_as_in_the_transcript(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """The operator's own question, addressed by `event_seq` like the agent's answer is.
+
+    Until this row `session_events` held one side of a conversation, so a reader following the
+    stream saw answers to questions that were not in it.
+    """
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+
+    prompt = await chat_store.enqueue_prompt(operator_id, view.session_id, "list the files")
+
+    asked = one(await authored_events(migrated_sessions, view.session_id))
+    assert asked.kind == ConversationEventKind.PROMPT_ENQUEUED
+    assert asked.body == {"message_id": str(prompt.message_id), "text": "list the files"}
+    # No frames because nothing has been sent yet, and no turn because admission refuses a prompt
+    # while one is open — so a prompt is accepted exactly when there is none to name.
+    assert (asked.turn_id, asked.source_first_frame_seq) == (None, None)
+
+
+async def test_a_refused_prompt_is_not_in_the_stream(chat_store, migrated_sessions, operator_id) -> None:
+    """The row and the event commit together, so what is not accepted is not recorded."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "first")
+
+    with pytest.raises(RuntimeError, match="already queued"):
+        await chat_store.enqueue_prompt(operator_id, view.session_id, "second")
+
+    asked = one(await authored_events(migrated_sessions, view.session_id))
+    assert asked.body["text"] == "first"
 
 
 async def test_a_live_session_whose_holder_stopped_renewing_is_failed(
@@ -1232,11 +1266,12 @@ async def test_a_frames_events_land_as_rows_with_the_cursor_that_says_they_did(
         )
         assert (await db.get(Session, session_id)).projected_frame_seq == 8
     assert [row.kind for row in rows] == [
+        ConversationEventKind.PROMPT_ENQUEUED,
         ConversationEventKind.TOOL_CALL_STARTED,
         ConversationEventKind.MESSAGE_COMPLETED,
         ConversationEventKind.TOOL_CALL_COMPLETED,
     ]
-    assert {row.turn_id for row in rows} == {started.turn_id}
+    assert {row.turn_id for row in rows if row.provenance is EventProvenance.FRAME_RANGE} == {started.turn_id}
     answered = one(row for row in rows if row.kind == ConversationEventKind.TOOL_CALL_COMPLETED)
     assert answered.call_id == "toolu_1"
     assert answered.body["content"] == {"shape": "text", "text": "a.py"}

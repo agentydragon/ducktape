@@ -1204,6 +1204,10 @@ class SessionEvent(Base):
     message's own row carries whole, at hundreds per turn; the `stream_event` frames it was cut
     from are in `session_frames`, which is where an operator appeals the joined text to the wire.
 
+    **The operator's own prompt is a row here and is not the fold's**: it is accepted before it
+    crosses any wire (`x/session_store.enqueue_prompt`), so it takes the `authored` arm and names
+    no turn. Without it `event_seq` addresses only the half of a transcript the agent wrote.
+
     **One ordered stream, two categories.** Beside the conversation are the facts the console
     authors about the session itself — a lease changing hands, a lease lapsing — which cross no
     wire and so are their own evidence (`AuthoredEventKind`). They are here rather than in the
@@ -1247,8 +1251,8 @@ class SessionEvent(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('message_completed','reasoning','tool_call_started','tool_call_completed',"
-            "'activity_started','activity_completed','session_adopted','lease_expired')",
+            "kind IN ('prompt_enqueued','message_completed','reasoning','tool_call_started',"
+            "'tool_call_completed','activity_started','activity_completed','session_adopted','lease_expired')",
             name="ck_session_events_kind",
         ),
         CheckConstraint("provenance IN ('frame_range','authored')", name="ck_session_events_provenance"),

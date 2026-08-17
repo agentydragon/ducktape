@@ -1,10 +1,10 @@
 """The stream's two categories as `session_events` rows.
 
 The one place the vocabularies meet the table in <../database_schema.py>: a `ConversationEvent`
-from <conversation_events.py> in and a row out, or one of the console's own facts about a session
-in and a row out. Nothing else reads or writes `session_events.body`, so the stored spelling of an
-event is settled here and is a boundary shape rather than a second vocabulary — the events
-themselves stay dataclasses.
+from <conversation_events.py> in and a row out, one of the console's own facts about a session in
+and a row out, or an accepted prompt in and a row out. Nothing else reads or writes
+`session_events.body`, so the stored spelling of an event is settled here and is a boundary shape
+rather than a second vocabulary — the events themselves stay dataclasses.
 
 **Three of an event's fields are columns rather than body, because readers address rows by them**:
 the provenance union, the frame range it discriminates, and a tool call's `call_id`. What is left
@@ -15,7 +15,7 @@ survives it is the frame range, which is also what `session_messages` records it
 so what joins the two tables.
 
 **An authored row names no turn**, which is what keeps `reprojection.check_session` from having to
-know about the second category at all: it reads a turn's rows, and these belong to none.
+know about anything but the fold's output: it reads a turn's rows, and these belong to none.
 """
 
 from __future__ import annotations
@@ -128,6 +128,13 @@ class ActivityCompletedBody(BaseModel):
     outcome: Outcome
 
 
+class PromptBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    message_id: UUID = Field(description="The `session_messages` row this prompt is — its only join.")
+    text: str
+
+
 class SessionAdoptedBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -173,6 +180,29 @@ def _authored_kind(body: AuthoredBody) -> AuthoredEventKind:
             return AuthoredEventKind.SESSION_ADOPTED
         case LeaseExpiredBody():
             return AuthoredEventKind.LEASE_EXPIRED
+
+
+def prompt_enqueued(*, session_id: UUID, message_id: UUID, text: str, now: datetime) -> SessionEvent:
+    """The row an accepted prompt is stored as, written in `enqueue_prompt`'s own transaction.
+
+    Conversation — it is half of what a transcript renders — on the `authored` arm, because the
+    prompt has not crossed the wire when it is accepted: `next_prompt` hands it to the CLI later,
+    and a session that ends first never hands it over at all (`PromptFate.LOST`).
+
+    **No turn**, and not for the reason an authored session fact has none: admission refuses a
+    prompt while a turn is open, so at this moment there is no turn to name.
+    """
+    return SessionEvent(
+        session_id=session_id,
+        turn_id=None,
+        kind=ConversationEventKind.PROMPT_ENQUEUED,
+        provenance=EventProvenance.AUTHORED,
+        source_first_frame_seq=None,
+        source_last_frame_seq=None,
+        call_id=None,
+        body=PromptBody(message_id=message_id, text=text).model_dump(mode="json"),
+        created_at=now,
+    )
 
 
 def row(event: ConversationEvent, *, session_id: UUID, turn_id: UUID, now: datetime) -> SessionEvent | None:

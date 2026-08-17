@@ -230,7 +230,7 @@ call and every result on every request — is deleted, because the events are ro
 `session_events.py` maps a `ConversationEvent` onto a row and `apply_frame` writes it inside the
 transaction that moves the cursor, so a row exists exactly when the cursor says its frame was
 projected. The same module maps the console's own facts about a session onto rows, written in the
-transaction that makes each true. What the table holds that nothing else does is a **tool call's answer**:
+transaction that makes each true, and the operator's prompt onto one written in `enqueue_prompt`'s. What the table holds that nothing else does is a **tool call's answer**:
 `session_messages.tool_calls` records what was asked, and the reply used to exist only as frames
 that `session_views.rollout_calls` re-parsed on every read.
 
@@ -247,6 +247,11 @@ that `session_views.rollout_calls` re-parsed on every read.
   record of runner↔console traffic and nothing else (operator, 2026-08-16). Such a row names no
   turn: the fact is the session's, and a session that died before it reached a turn is the case
   the category exists to record.
+- **The operator's prompt is a row on that arm and is not that category.** It is conversation, so
+  its kind is a `ConversationEventKind` — the two enums split the stream by what a row is _about_,
+  and who wrote it is what `provenance` already says. It is authored because `enqueue_prompt`
+  accepts a prompt before it crosses any wire, and turn-less because admission refuses one while a
+  turn is open. Without it `event_seq` addresses only the agent's half of a transcript.
 - **Two members of the vocabulary have no row.** A `TextDelta` is an increment of prose the
   completed message carries whole; a `TurnCompleted` is the `session_turns` row, which already
   holds the exchange's outcome, its cost and its bracket.
