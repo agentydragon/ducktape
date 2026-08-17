@@ -395,7 +395,8 @@ only _which channels are told_. Events on sessions, fan-out by conversation.
 (<../README.md> § Perimeter / deploy). The backfill is one conversation per session, except Matrix
 sessions grouped by `room_id` and ordered by `created_at`, which the purge left small. It subsumes
 `matrix_conversation` entirely — including its `user_id` primary key, which is what makes one bot
-user serve exactly one room ever.
+user serve exactly one room ever. Losing that rule is **the point rather than the cost** (§ 7): the
+bot is meant to hold several rooms, and rooms held at once are sessions run in parallel.
 
 ### What does not wait for it
 
@@ -466,6 +467,34 @@ reading.
   replicas act as one Matrix user, and it is one position where R2.5 needs two. This does **not**
   retire reading the room; § 3's correspondence reader is how the reconciler learns what the room
   currently shows, and that is a read, not a store.
+- **One bot serves many rooms, and that is what parallel sessions are** (operator, 2026-08-17).
+  This answers the question #4285 raised: `matrix_conversation`'s `user_id` primary key — one room
+  per bot user, ever (R3.6a) — was an artifact of the key, not a constraint anyone wanted.
+  `chat_attachment`'s partial unique index expresses the rule that is actually wanted: **one live
+  conversation per address**, which permits a bot in many rooms at once. Nothing needs to
+  re-express R3.6a; it is retired.
+
+  "Only one session holds a conversation at a time" is unchanged and is a **per-conversation**
+  rule. What changes is that the console now runs N of them, one per attached room.
+
+  Four things assume the old rule and have to move:
+  - **`claim_room` refuses the second room by design** — it binds the first and returns whichever
+    is live. It becomes "resolve or create this room's attachment", so an invite mints a
+    conversation rather than being turned away.
+  - **The supervisor supervises one binding** (`MatrixSessionSupervisor`, "keeps one live chat
+    session bound to the one room Haku services"). It becomes a fan-out over live attachments.
+  - **The `MXSE` advisory lock is global.** One election that supervises every attachment is
+    cheaper than a lock per conversation and keeps the count at one, which § 8 wants anyway; the
+    thing that must not be global is the _lease_, and that is already per session.
+  - **`MatrixSessionFrontend` takes no address "by construction", citing R3.6a.** With the
+    citation gone the port must be bound per attachment — which is what the `ChatFrontend` port
+    change was going to do regardless, now for a load-bearing reason rather than tidiness.
+
+  **This promotes idle sessions from tidy-up to prerequisite.** One room could afford a sandbox
+  held open; ten cannot, and a room nobody is talking to must not hold one. So `create()` stopping
+  in `idle` and a prompt being what buys a sandbox (#4231) stops being a nicety and becomes what
+  makes many rooms affordable at all.
+
 - **An abort is an event.** It goes into `session_events` the way "this replica took the session"
   does, and the room's "this was aborted" notice is a projection of that row rather than its
   record. Today the abort notice is the one non-reply artifact that is durable, and it is durable
@@ -477,14 +506,6 @@ reading.
 - **Which notices exist, and what does each summarise?** § 4 proposes one per turn and one per
   session and leaves the set open, along with retire-or-seal for each.
 - **Does `sessions.status` survive?** § 10.
-- **What refuses the second room?** Raised by #4285, and it blocks step 2's reader half rather
-  than its schema. § 6 says the conversation subsumes `matrix_conversation` entirely, **including
-  its `user_id` primary key — the thing that makes one bot user serve exactly one room ever**
-  (R3.6a). `chat_attachment`'s partial unique index does not reproduce that rule: it says one
-  _live conversation per address_, which permits one bot serving two rooms. So either R3.6a was a
-  constraint worth keeping and something must re-express it, or it was an artifact of the old
-  key and the bot may hold several rooms. The answer binds the sync loop's invite handling, so it
-  is wanted before the reader-move PR is written.
 
 ## 8. Where this stands
 
@@ -647,6 +668,13 @@ session_events WHERE kind IN ('activity_started','activity_completed')`, drop th
     sequence grew a step. Find that out here, not at the drop.
 16. **Drop them**, a release after 15 has converged.
 
+17. **Many rooms at once** (§ 7's ruling). `claim_room` stops refusing the second room and becomes
+    "resolve or create this room's attachment"; the supervisor fans out over live attachments
+    instead of supervising one binding; `MatrixSessionFrontend` takes its address rather than
+    claiming it has one by construction. Depends on 2's reader half, since "which conversations
+    have a live attachment" is the query the fan-out runs. **Do not schedule it before idle
+    sessions land** — ten rooms each holding a sandbox is the failure this would ship.
+
 Steps 11–16 are a separate lane from 1–10: nothing in the layering depends on them and they do not
 wait on it. **Both deletions lose something recoverable rather than something gone.** `Usage` is
 read straight off the `result` frame's payload — `usage.input_tokens`, `cache_read_input_tokens`,
@@ -655,9 +683,9 @@ same way. Both payloads stay in `session_frames`, the surface allowed to be prov
 wanting either back is a re-fold over frames. That is what makes these cheap rather than a bet.
 
 Steps 1, 4–7, 11 and 13 are independent of each other and of step 2; 3 and 8 depend on 2; 9 depends
-on 7 and 8; 10 depends on 9; 12 depends on 11 converging; 15 on 14, and 16 on 15. Step 13 may
-reorder 11 and 12 by finding more members that fail, which argues for doing it early rather than
-waiting.
+on 7 and 8; 10 depends on 9; 12 depends on 11 converging; 15 on 14, and 16 on 15; 17 on 2's reader
+half and on idle sessions. Step 13 may reorder 11 and 12 by finding more members that fail, which
+argues for doing it early rather than waiting.
 
 ## 10. `sessions.status` is derived, and lossy
 
