@@ -278,10 +278,19 @@ locals {
     allowSchedulingOnControlPlanes = true
   })
 
+  # Restore the default NoSchedule control-plane taint on the HDD etcd anchor
+  # first. The SSD control planes remain temporarily schedulable until every
+  # allowed resident has an explicit toleration and ownership decision.
+  kimsufi_controlplane_cluster_config_base_by_node = {
+    for k, v in merge(local.kimsufi_servers, local.kimsufi_cp_servers) :
+    k => k == "ovh-ns103656" ? local.common_cluster_config : local.kimsufi_controlplane_cluster_config
+    if v.role == "controlplane"
+  }
+
   kimsufi_controlplane_cluster_config_by_node = {
     for k, v in merge(local.kimsufi_servers, local.kimsufi_cp_servers) :
-    k => merge(local.kimsufi_controlplane_cluster_config, {
-      etcd = merge(local.kimsufi_controlplane_cluster_config.etcd, {
+    k => merge(local.kimsufi_controlplane_cluster_config_base_by_node[k], {
+      etcd = merge(local.kimsufi_controlplane_cluster_config_base_by_node[k].etcd, {
         extraArgs = {
           "listen-metrics-urls" = "http://${v.nebula_ip}:2381"
         }
