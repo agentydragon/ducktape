@@ -20,21 +20,24 @@ Operator's framing: something collects what changed since the subagent's last ru
 Grocy, and possibly other sources) and decides whether to trigger; when it does trigger, it
 processes the whole batch of changes at once rather than reacting edit-by-edit.
 
-**Historical implementation note:** the former `haku/x/dispatch/app.py` launcher was
-Haku-initiated only — `POST /jobs` (Haku's own bearer token), with no externally-triggered
-job creation path. That dispatch plane is now archived; this plan does not assume it is
-deployed.
+**Implementation note:** `haku/x/dispatch/app.py` is Haku-initiated only — `POST /jobs` (Haku's
+own bearer token), with no externally-triggered job creation path. The plane is **still in the
+tree** (`haku/x/dispatch/`, wired at `cluster/k8s/x/haku/dispatch/`) but **not deployed**: none of
+its `flux-kustomization.yaml` files are listed in the root `cluster/k8s/kustomization.yaml`, and its
+design note has moved to <../archive/2026_08_multi_agent.md>. So option (1) below reuses code that
+exists and a service that does not currently run.
 Sensors (`changedetection.io` → webhook → `haku-state intake/`) are step 6 in
 `2026_08_multi_agent.md`'s build order and not built; even once they exist, they land findings in
 Haku's own intake for Haku to act on, not a direct dispatch trigger.
 
 Two ways to get the "batch since last run" behavior without waiting on sensor infra:
 
-1. **Haku-initiated batching (buildable today, no new infra):** each Haku pass reads Grocy's
-   `stock_log` since a bookmark (exactly what `kitchen/grocy_log.py` already does), and when
+1. **Haku-initiated batching (no new code, but the plane has to be running):** each Haku pass reads
+   Grocy's `stock_log` since a bookmark (exactly what `kitchen/grocy_log.py` already does), and when
    there's a nonempty delta, Haku itself calls `POST /jobs` with the batch as the prompt. This
    reuses 100% of existing dispatch-plane machinery; the "trigger decision" just lives in
-   Haku's own run cadence rather than a standalone watcher.
+   Haku's own run cadence rather than a standalone watcher. What it is not free of, per the note
+   above, is redeploying that plane.
 2. **A real collector/watcher (new infra):** a small always-on or cron-triggered component
    polls Grocy's `stock_log` (or a webhook, if Grocy has one — unverified) independent of
    Haku's own run cadence, and calls `POST /jobs` directly once it has a batch worth acting on.
@@ -43,8 +46,8 @@ Two ways to get the "batch since last run" behavior without waiting on sensor in
    already has full CRUD there) and its own bookmark storage (could reuse
    `haku-state`'s `kitchen/board.yaml:grocy_bookmark`, or keep its own).
 
-Start with (1) — it's free — and only build (2) if latency (Haku's own run cadence isn't
-tight enough) turns out to matter.
+Start with (1) — it is the cheaper of the two once the plane is up — and only build (2) if
+latency (Haku's own run cadence isn't tight enough) turns out to matter.
 
 ## Zone / trust fit
 
