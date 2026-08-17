@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
@@ -548,6 +549,15 @@ async def test_resumes_from_the_stored_watermark(service, matrix, sync_store, bo
     await service.sync_once("tok")
 
     assert matrix.since == "s4"
+
+
+async def test_the_token_and_the_watermark_can_be_first_written_at_once(sync_store):
+    """This row's two columns have two concurrent writers — a queued send logging in, and the sync
+    pass advancing the watermark — and until one of them has run there is no row to update, so both
+    try to create it."""
+    await asyncio.gather(sync_store.save_token(MATRIX_USER, "cached"), sync_store.save_batch(MATRIX_USER, "s2"))
+
+    assert (await cached_token(sync_store), await watermark(sync_store)) == ("cached", "s2")
 
 
 async def test_reuses_a_valid_cached_token(service, matrix, sync_store, bound_room):

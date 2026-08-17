@@ -36,6 +36,7 @@ from uuid import UUID
 
 from pydantic import SecretStr
 from sqlalchemy import delete, select, text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ChatMessageRole, PromptFate
@@ -115,11 +116,19 @@ class MatrixSyncStore:
             return row
 
     async def save_token(self, user_id: str, token: str) -> None:
+        """Cache the access token, leaving the watermark beside it alone.
+
+        Upserted rather than read-then-inserted because this row has two concurrent writers: this
+        one runs inside the pacer's queue, on whichever replica is speaking into the room, and
+        `_advance` runs in the sync pass. A read-then-insert lets both try to create it, and the
+        loser fails on the primary key — which on the pacer's side is the queued send lost.
+        """
         async with self._sessions() as db, db.begin():
-            if (row := await db.scalar(select(MatrixSyncState).where(MatrixSyncState.user_id == user_id))) is None:
-                db.add(MatrixSyncState(user_id=user_id, access_token=token, next_batch=None))
-            else:
-                row.access_token = token
+            await db.execute(
+                insert(MatrixSyncState)
+                .values(user_id=user_id, access_token=token, next_batch=None)
+                .on_conflict_do_update(index_elements=["user_id"], set_={"access_token": token})
+            )
 
     async def position(self, user_id: str) -> SyncPosition:
         async with self._sessions() as db:
@@ -166,11 +175,12 @@ class MatrixSyncStore:
 
     @staticmethod
     async def _advance(db: AsyncSession, user_id: str, next_batch: str) -> None:
-        row = await db.scalar(select(MatrixSyncState).where(MatrixSyncState.user_id == user_id))
-        if row is None:
-            db.add(MatrixSyncState(user_id=user_id, access_token=None, next_batch=next_batch))
-        else:
-            row.next_batch = next_batch
+        """Move the watermark, leaving the cached token alone — see `save_token` for why."""
+        await db.execute(
+            insert(MatrixSyncState)
+            .values(user_id=user_id, access_token=None, next_batch=next_batch)
+            .on_conflict_do_update(index_elements=["user_id"], set_={"next_batch": next_batch})
+        )
 
 
 class MatrixSyncService:
