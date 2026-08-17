@@ -33,8 +33,6 @@ from haku.console.x.claude_code.testing.wire import (
     tool_use_block,
 )
 from haku.console.x.conversation_events import (
-    ActivityCompleted,
-    ActivityStarted,
     FrameRange,
     MessageCompleted,
     MessageKey,
@@ -229,10 +227,11 @@ def test_command_lifecycle_is_not_a_clean_triple():
     assert with_lifecycle.unprojected == {}
 
 
-def test_activity_is_the_step_with_no_tool_name():
-    """`task_started` and its terminal report pair by `task_id` and by nothing else — the call that
-    opened the step is on the opening frame only."""
-    events = project_log(
+def test_a_background_task_says_nothing_to_the_neutral_vocabulary():
+    """`task_started` and its terminal report are Claude's own concept — the harness's prose for a
+    step in flight, keyed by identifiers no other backend has — so they are counted rather than
+    projected. The frames stay in `session_frames` for anyone who wants them back."""
+    projection = project_log(
         [
             recorded(
                 1,
@@ -255,34 +254,10 @@ def test_activity_is_the_step_with_no_tool_name():
                 ),
             ),
         ]
-    ).events
-
-    assert events == (
-        ActivityStarted(
-            activity_id="task_9",
-            call_id="toolu_9",
-            description="npm run build 2>&1 | tail -40",
-            provenance=FrameRange(1, 1),
-        ),
-        ActivityCompleted(
-            activity_id="task_9", summary="Build finished", outcome=Outcome.SUCCEEDED, provenance=FrameRange(2, 2)
-        ),
-    )
-
-
-def test_a_task_that_names_no_call_is_counted_rather_than_started_without_one():
-    """Both captured `task_started` frames carry `tool_use_id`, so a release that stops sending it
-    is a shape this fold cannot read — not an activity with the link left blank."""
-    projection = project_log(
-        [
-            RecordedFrame(
-                1, {"type": "system", "subtype": "task_started", "task_id": "task_9", "description": "npm run build"}
-            )
-        ]
     )
 
     assert projection.events == ()
-    assert projection.unprojected == {"system/task_started": 1}
+    assert projection.unprojected == {"system/task_started": 1, "system/task_notification": 1}
 
 
 def test_text_arrives_as_increments_and_as_a_finished_message():

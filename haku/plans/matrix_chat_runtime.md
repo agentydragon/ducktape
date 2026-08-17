@@ -633,9 +633,10 @@ input to a running turn**. Interrupt exists; steer does not.
   mapping table to maintain as the tool surface grows.
 - **R6.4 [built]** Status is derived by the console from the frame stream it is already
   consuming — **any** frame, not specifically `PreToolUse`. In the event it is derived from
-  two: the `tool_use` names on an `assistant` frame, and the `description` the CLI itself
-  writes on `system/task_started` and `task_progress`. The console never asks the model what
-  it is doing.
+  the tool names a turn's events carry, and otherwise says only that the agent is writing.
+  The prose the CLI writes on `system/task_started` is deliberately not read: it is one
+  provider's concept, and the status line reads the neutral vocabulary. The console never
+  asks the model what it is doing.
 - **R6.5 [built]** Status editing is rate-limited, and the status message is removed or
   replaced when the answer posts. One `m.replace` edit at most every five seconds; redacted
   on every terminal path, failure included.

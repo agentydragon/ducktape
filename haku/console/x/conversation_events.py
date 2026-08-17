@@ -181,36 +181,6 @@ class ToolCallCompleted:
 
 
 @dataclass(frozen=True, slots=True)
-class ActivityStarted:
-    """The harness's own prose for a step in flight — the case with no tool name at all.
-
-    `call_id` is the tool call that opened the step, and nothing else recovers it: an activity id
-    and a call id are different identifier spaces, and the step's own end carries only the former.
-    Required rather than nullable — an opening frame naming no call is a shape a release cannot
-    read, and lands in `Projection.unprojected` rather than minting a step with the link blank.
-
-    `description` is not a label: real ones run past 500 characters and span lines, so a status
-    line needs its own truncation.
-    """
-
-    activity_id: str
-    call_id: str
-    description: str
-    provenance: Provenance
-
-
-@dataclass(frozen=True, slots=True)
-class ActivityCompleted:
-    """That step finished. Paired to `ActivityStarted` by `activity_id` and by nothing else —
-    the terminal report carries no description of its own."""
-
-    activity_id: str
-    summary: str | None
-    outcome: Outcome
-    provenance: Provenance
-
-
-@dataclass(frozen=True, slots=True)
 class TurnCompleted:
     """The exchange ended.
 
@@ -222,16 +192,7 @@ class TurnCompleted:
     provenance: Provenance
 
 
-type ConversationEvent = (
-    TextDelta
-    | MessageCompleted
-    | Reasoning
-    | ToolCallStarted
-    | ToolCallCompleted
-    | ActivityStarted
-    | ActivityCompleted
-    | TurnCompleted
-)
+type ConversationEvent = TextDelta | MessageCompleted | Reasoning | ToolCallStarted | ToolCallCompleted | TurnCompleted
 
 
 @dataclass(frozen=True, slots=True)

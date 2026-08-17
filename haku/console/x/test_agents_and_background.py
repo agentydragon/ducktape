@@ -43,8 +43,6 @@ from haku.console.x.claude_code.testing.wire import (
     tool_use_block,
 )
 from haku.console.x.conversation_events import (
-    ActivityCompleted,
-    ActivityStarted,
     ConversationEvent,
     FrameRange,
     MessageCompleted,
@@ -205,26 +203,17 @@ def test_a_backgrounded_call_completes_while_its_command_is_still_running():
     assert completed.structured == BACKGROUND_SHELL
 
 
-def test_the_background_task_names_the_call_that_started_it():
-    """`activity_id` and `call_id` are different identifier spaces, and `ActivityStarted` carries
-    both — so the event that says the command finished leads back to the call that asked for it.
+def test_the_background_tasks_own_frames_say_nothing_to_the_fold():
+    """The command's start and end reach the default branch, so nothing in the conversation says
+    the command finished — only that the call which asked for it returned.
 
-    The join runs through the *opening* event: `task_notification` names the call too, but an end
-    is paired to its start by `activity_id`, so reading it twice would buy nothing. Without it the
-    only lead is `description`, which the census measured as the command itself — past 500
-    characters and sometimes spanning lines — rather than as a label.
+    That is the deliberate loss: a task's identifiers and the harness's prose about it are Claude's
+    concepts, and the neutral vocabulary carries none. The frames stay in `session_frames`.
     """
-    events = project_log(_background_bash_frames()).events
+    projection = project_log(_background_bash_frames())
 
-    started = one(event for event in events if isinstance(event, ActivityStarted))
-    finished = one(event for event in events if isinstance(event, ActivityCompleted))
-    call = one(event for event in events if isinstance(event, ToolCallStarted))
-
-    assert started.activity_id == finished.activity_id == "task_1"
-    assert finished.outcome is Outcome.SUCCEEDED
-    assert started.call_id == call.call_id == "toolu_bg"
-    assert started.activity_id != call.call_id
-    assert started.description == call.arguments["command"]
+    assert projection.unprojected == {"system/task_started": 1, "system/task_notification": 1}
+    assert not [event for event in projection.events if event.provenance in (FrameRange(3, 3), FrameRange(5, 5))]
 
 
 def _monitor_frames(polls: int) -> list[RecordedFrame]:
@@ -287,14 +276,13 @@ def test_the_two_folds_produce_a_monitor_loops_events_in_different_orders():
     assert [type(event).__name__ for event in write][:3] == ["ToolCallStarted", "MessageCompleted", "ToolCallCompleted"]
 
 
-def test_a_background_activity_lands_inside_whichever_message_was_open():
+def test_a_foreground_message_spans_the_background_frames_the_fold_ignores():
     """The interleaving, and the range crossing it produces.
 
     The foreground message spans frames 1 to 4 because the wire kept sending frames under one
-    `message.id`; the background task's `task_started` is at frame 2, so its span sits *inside* that
-    message's, while the `task_notification` at frame 5 sits inside no message at all. Range
-    containment — how a reader finds the message an event belongs to — therefore attributes half a
-    background activity to a foreground message and the other half to nothing.
+    `message.id` — the background task's own frames at 2 and 5 project to nothing and end nothing.
+    So a reader finding an event's message by range containment sees a span with holes in it, and
+    what happened in those holes is only in `session_frames`.
     """
     frames = [
         recorded(
@@ -325,17 +313,15 @@ def test_a_background_activity_lands_inside_whichever_message_was_open():
         event for event in events if isinstance(event, MessageCompleted) and event.agent_message_id == "msg_A"
     )
     assert foreground.provenance == FrameRange(1, 4)
-    assert one(event for event in events if isinstance(event, ActivityStarted)).provenance == FrameRange(2, 2)
-    assert one(event for event in events if isinstance(event, ActivityCompleted)).provenance == FrameRange(5, 5)
+    assert not [event for event in events if event.provenance in (FrameRange(2, 2), FrameRange(5, 5))]
 
 
 def test_the_write_path_splits_that_message_in_two_and_keeps_one_id_on_both():
     """The same interleaved turn through the fold that actually writes rows.
 
-    Seeded per frame, `msg_A` completes twice — once at frame 1 and once at frame 4 — so
-    `session_messages` holds two rows carrying one `agent_message_id`, with the background
-    activity's own rows between them. A reader keying on that id gets two answers, which is why
-    nothing does.
+    Seeded per frame, `msg_A` completes twice — once at frame 1 and once at frame 3 — so
+    `session_messages` holds two rows carrying one `agent_message_id`. A reader keying on that id
+    gets two answers, which is why nothing does.
     """
     frames = [
         recorded(
@@ -367,7 +353,6 @@ def test_the_write_path_splits_that_message_in_two_and_keeps_one_id_on_both():
     assert _rows(events) == [
         ConversationEventKind.TOOL_CALL_STARTED,
         ConversationEventKind.MESSAGE_COMPLETED,
-        ConversationEventKind.ACTIVITY_STARTED,
         ConversationEventKind.MESSAGE_COMPLETED,
     ]
 

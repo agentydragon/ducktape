@@ -142,6 +142,12 @@ class ConversationEventKind(StrEnum):
     REASONING = "reasoning"
     TOOL_CALL_STARTED = "tool_call_started"
     TOOL_CALL_COMPLETED = "tool_call_completed"
+    # CLEANUP(added 2026-08-17): drop both members, delete the rows they name, and narrow
+    #   `ck_session_events_kind` — one migration, a release after the image that stopped writing
+    #   them has converged. Nothing produces them now: the vocabulary's `ActivityStarted` was one
+    #   provider's `task_started` wearing neutral clothes. They stay because the column is parsed
+    #   rather than read as text, so a member removed while rows survive makes reading one raise
+    #   instead of degrade.
     ACTIVITY_STARTED = "activity_started"
     ACTIVITY_COMPLETED = "activity_completed"
 

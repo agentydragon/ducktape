@@ -1205,6 +1205,8 @@ class SessionEvent(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
+        # `activity_*` is wider than `ConversationEventKind` needs: nothing writes those rows any
+        # more, and narrowing waits on the migration the enum's own tombstone names.
         CheckConstraint(
             "kind IN ('message_completed','reasoning','tool_call_started',"
             "'tool_call_completed','activity_started','activity_completed',"

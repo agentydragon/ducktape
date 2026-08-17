@@ -186,7 +186,7 @@ missing on thousands of production rows, which is why that change exists.
 ## The neutral projection — what reads it
 
 `conversation_events.py` is the provider-neutral vocabulary a conversation is read as — text,
-messages, reasoning, a tool-call lifecycle, harness activity, a completed turn — and
+messages, reasoning, a tool-call lifecycle, a completed turn — and
 `claude_code/projection.py` is the reducer from Claude's frames into it. Together they are the
 one interpreter that <../../plans/chat_runtime_projection.md> § stage 4 replaces four with.
 
@@ -245,13 +245,19 @@ used to exist only as frames that `session_views.rollout_calls` re-parsed on eve
   completed message carries whole; a `TurnCompleted` is the `session_turns` row, which already
   holds the exchange's outcome, its cost and its bracket.
 
-**One status source did not survive that, and it is worth knowing before it is missed.**
-`coarse_status` used to answer for `system/task_progress` as well as `task_started`; the adapter
-projects only `task_started`, so a `task_progress` frame now lands in `Projection.unprojected` and
-says nothing to the room. It has never been observed — zero of 10,903 `system` frames in
-<../debug/frame_shape_census.md>, and absent from the direct capture too — so its `task_id` and
-`description` shapes are unverified, and minting a second `ActivityStarted` for one activity would
-give every transcript reader a duplicate row on a guess. The branch is gone rather than approximated.
+**A status source did not survive the neutral vocabulary, and it is worth knowing before it is
+missed.** `coarse_status` used to render the prose the CLI writes on `system/task_started` — a
+background command's own command line, better than anything the console could reconstruct. That
+prose is Claude's concept keyed by Claude's identifiers, so nothing in the vocabulary carries it and
+`task_started` now lands in `Projection.unprojected`. A turn that would have shown it shows
+`writing` instead, and the frames stay in `session_frames` for a reader that wants the detail.
+
+**Two `session_events` kinds outlive their events.** `ConversationEventKind.ACTIVITY_STARTED` and
+`ACTIVITY_COMPLETED`, and `ck_session_events_kind` with them: rows written by earlier releases exist,
+`kind` is parsed rather than read as text, and a member removed while its rows survive makes reading
+one raise rather than degrade. Deleting the rows and narrowing the constraint is a later migration.
+Until then `reprojection.check_session` reports a `RowCountMismatch` on any old turn holding one,
+because the fold no longer produces what the row records — a true report, not a false alarm.
 
 ### The cursor — where the fold resumes, and what makes its effects exactly-once
 

@@ -71,6 +71,7 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console/x:conversation_events",
         "//util/bazel:runfiles",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

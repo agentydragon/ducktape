@@ -69,22 +69,6 @@ def _entry(event: conversation_events.ConversationEvent, index: int) -> conversa
                 structured=event.structured,
                 outcome=conversation_records.Outcome(event.outcome),
             )
-        case conversation_events.ActivityStarted():
-            return conversation_records.ActivityStartedEntry(
-                index=index,
-                provenance=provenance,
-                activity_id=event.activity_id,
-                call_id=event.call_id,
-                description=event.description,
-            )
-        case conversation_events.ActivityCompleted():
-            return conversation_records.ActivityFinishedEntry(
-                index=index,
-                provenance=provenance,
-                activity_id=event.activity_id,
-                summary=event.summary,
-                outcome=conversation_records.Outcome(event.outcome),
-            )
         case conversation_events.TurnCompleted():
             return conversation_records.TurnEndEntry(index=index, provenance=provenance, outcome=event.outcome)
         # `TextDelta` is the remaining member of the union and never reaches here; a member added

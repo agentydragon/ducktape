@@ -17,8 +17,6 @@ from haku.console.chat_models import (
 from haku.console.database_schema import SessionEvent
 from haku.console.x import session_events
 from haku.console.x.conversation_events import (
-    ActivityCompleted,
-    ActivityStarted,
     Authored,
     ConversationEvent,
     FrameRange,
@@ -112,24 +110,6 @@ def test_a_result_that_named_tools_is_not_stored_as_prose() -> None:
 
     assert references.body["content"] == {"shape": "tool_references", "tool_names": ["Read", "Grep"]}
     assert opaque.body["content"] == {"shape": "opaque", "payload": {"unknown": True}}
-
-
-def test_the_harness_narrating_a_step_is_a_pair_of_rows() -> None:
-    started = stored(
-        ActivityStarted(activity_id="task_1", call_id="toolu_1", description="searching", provenance=WHERE)
-    )
-    completed = stored(
-        ActivityCompleted(activity_id="task_1", summary="found it", outcome=Outcome.SUCCEEDED, provenance=WHERE)
-    )
-
-    assert (started.kind, completed.kind) == (
-        ConversationEventKind.ACTIVITY_STARTED,
-        ConversationEventKind.ACTIVITY_COMPLETED,
-    )
-    # The call that opened the step rides in the body, because `ck_session_events_call_id` reserves
-    # the correlation column for the two tool kinds and this is neither of them.
-    assert started.body["call_id"] == "toolu_1"
-    assert (started.call_id, completed.call_id) == (None, None)
 
 
 def test_a_prompt_is_conversation_on_the_authored_arm() -> None:

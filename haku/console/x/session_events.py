@@ -30,8 +30,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from haku.console.chat_models import AuthoredEventKind, ConversationEventKind, EventProvenance, LeaseExpiryReason
 from haku.console.database_schema import SessionEvent
 from haku.console.x.conversation_events import (
-    ActivityCompleted,
-    ActivityStarted,
     ConversationEvent,
     FrameRange,
     Json,
@@ -106,25 +104,6 @@ class ToolResultBody(BaseModel):
 
     content: ResultContentBody = Field(discriminator="shape", description="The part a transcript prints.")
     structured: Json = Field(description="The exit code, the patch, the MCP structuredContent — an open set.")
-    outcome: Outcome
-
-
-class ActivityStartedBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    activity_id: str
-    # In the body rather than the row's `call_id` column: `ck_session_events_call_id` states that
-    # the column is set on exactly the two tool-call kinds, so an activity writing it would need
-    # that constraint widened and `session_views.tool_calls`' kind filter re-audited.
-    call_id: str = Field(description="The tool call that opened this step.")
-    description: str
-
-
-class ActivityCompletedBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    activity_id: str
-    summary: str | None
     outcome: Outcome
 
 
@@ -245,16 +224,6 @@ def _stored(event: ConversationEvent) -> tuple[ConversationEventKind, BaseModel,
                 content=_result_content(event.content), structured=event.structured, outcome=event.outcome
             )
             return ConversationEventKind.TOOL_CALL_COMPLETED, result, event.call_id
-        case ActivityStarted():
-            started = ActivityStartedBody(
-                activity_id=event.activity_id, call_id=event.call_id, description=event.description
-            )
-            return ConversationEventKind.ACTIVITY_STARTED, started, None
-        case ActivityCompleted():
-            completed = ActivityCompletedBody(
-                activity_id=event.activity_id, summary=event.summary, outcome=event.outcome
-            )
-            return ConversationEventKind.ACTIVITY_COMPLETED, completed, None
 
 
 def _result_content(content: ToolResultContent) -> ResultContentBody:

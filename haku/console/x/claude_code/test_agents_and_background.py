@@ -20,12 +20,12 @@ from typing import Any
 
 import pytest
 import pytest_bazel
+from more_itertools import one
 
 from haku.console.chat_models import TurnOutcome
 from haku.console.x.claude_code.projection import RecordedFrame, project_log
 from haku.console.x.conversation_events import (
-    ActivityCompleted,
-    ActivityStarted,
+    FrameRange,
     MessageCompleted,
     Outcome,
     Projection,
@@ -61,7 +61,7 @@ def projection() -> Projection:
     return project_log(_FRAMES)
 
 
-def test_the_capture_folds_to_two_turns_with_two_background_activities(projection: Projection):
+def test_the_capture_folds_to_two_turns(projection: Projection):
     """Two turns, because the CLI re-initialised mid-capture (a second `system/init` at record 185)
     rather than because the subagent's completion closed anything — both `result` frames have a null
     `parent_tool_use_id`."""
@@ -71,8 +71,6 @@ def test_the_capture_folds_to_two_turns_with_two_background_activities(projectio
         MessageCompleted: 7,
         ToolCallStarted: 4,
         ToolCallCompleted: 4,
-        ActivityStarted: 2,
-        ActivityCompleted: 2,
         TurnCompleted: 2,
     }
     assert [event.outcome for event in projection.events if isinstance(event, TurnCompleted)] == [
@@ -81,54 +79,51 @@ def test_the_capture_folds_to_two_turns_with_two_background_activities(projectio
     ]
 
 
-def test_background_and_subagent_frame_classes_are_unprojected(projection: Projection):
-    """`background_tasks_changed` and `task_updated` reach the fold's default branch.
+def test_the_background_task_frame_classes_are_all_unprojected(projection: Projection):
+    """Every frame the CLI sends about a background task reaches the fold's default branch — the
+    live task list, a patch carrying a terminal status, and the task's own start and end.
 
-    Both are the CLI's own bookkeeping — the live task list, and a patch carrying a task's terminal
-    status — and both are new here: neither appears in `test_diverse_session.py`'s capture. Named so
-    that a release which starts carrying something the projection needs fails here rather than
-    silently incrementing a counter."""
-    assert projection.unprojected == {"system/background_tasks_changed": 4, "system/task_updated": 2}
+    The last two are the deliberate loss: what a `task_started` said about a step in flight was
+    Claude's concept keyed by Claude's identifiers, so it has no neutral spelling. Named here so
+    that a release carrying something the projection needs fails rather than silently incrementing
+    a counter."""
+    assert projection.unprojected == {
+        "system/background_tasks_changed": 4,
+        "system/task_updated": 2,
+        "system/task_started": 2,
+        "system/task_notification": 2,
+    }
 
 
-def test_a_backgrounded_call_completes_while_its_command_still_runs(projection: Projection):
-    """The `Bash` call is answered long before the command it started finishes.
+def test_a_backgrounded_call_succeeds_long_before_its_command_ends(projection: Projection):
+    """`ToolCallCompleted` means the call returned a shell id, not that the command finished — and
+    it says `succeeded`, so a reader treating a completed call as finished work is told so
+    explicitly.
 
-    `ToolCallCompleted` is the call returning a shell id, not the command ending; the command's end
-    is the `ActivityCompleted` two messages later. Anything reading tool-call completion as "the
-    work is done" is wrong for a backgrounded call, and this is the fixture that says so."""
-    order = [
+    Nothing folded says when the command actually ended: the `task_notification` reporting it,
+    sixty frames later, is unprojected. A background command's end is in `session_frames` alone."""
+    started = one(e for e in projection.events if isinstance(e, ToolCallStarted) and e.call_id == _BASH_CALL)
+    completed = one(e for e in projection.events if isinstance(e, ToolCallCompleted) and e.call_id == _BASH_CALL)
+    assert (started.tool_name, completed.outcome) == ("Bash", Outcome.SUCCEEDED)
+
+    ended = one(
         index
-        for index, event in enumerate(projection.events)
-        if (isinstance(event, ToolCallCompleted) and event.call_id == _BASH_CALL)
-        or (isinstance(event, ActivityCompleted) and event.activity_id == _BASH_TASK)
-    ]
-    call_completed, activity_completed = order
-    assert call_completed < activity_completed
-
-    started = [e for e in projection.events if isinstance(e, ToolCallStarted) and e.call_id == _BASH_CALL]
-    assert [e.tool_name for e in started] == ["Bash"]
+        for index, record in enumerate(_RECORDS)
+        if record["frame"].get("subtype") == "task_notification" and record["frame"]["task_id"] == _BASH_TASK
+    )
+    assert isinstance(completed.provenance, FrameRange)
+    assert completed.provenance.last_frame_seq < ended
 
 
-def test_the_activity_carries_the_call_the_frame_named(projection: Projection):
-    """**The link on the wire survives the fold.**
-
-    `task_started` carries both `task_id` and `tool_use_id`, so the frame says exactly which call
-    opened which background task, and `ActivityStarted` now keeps both — which is what lets a
-    reader pair the activity that reports the command's end with the `Bash` call that started it.
-    Asserting the frame half too, and for both task types the capture holds — the backgrounded
-    shell and the subagent — because those two frames are the whole of the evidence that
-    `tool_use_id` is always there, which is what makes `call_id` a required field rather than a
-    nullable one."""
-    frames = {
+def test_the_capture_holds_a_task_frame_for_each_task_type():
+    """The evidence the fixture exists to hold, asserted off the records rather than the fold:
+    `task_started` carries `tool_use_id` beside `task_id` on both the backgrounded shell and the
+    subagent, so the link is on the wire for whatever reads it next."""
+    assert {
         record["frame"]["task_id"]: record["frame"]["tool_use_id"]
         for record in _RECORDS
         if record.get("frame", {}).get("subtype") == "task_started"
-    }
-    assert frames == {_BASH_TASK: _BASH_CALL, _AGENT_TASK: _AGENT_CALL}
-
-    activities = {e.activity_id: e.call_id for e in projection.events if isinstance(e, ActivityStarted)}
-    assert activities == frames
+    } == {_BASH_TASK: _BASH_CALL, _AGENT_TASK: _AGENT_CALL}
 
 
 def test_the_subagent_is_a_tool_named_agent_whose_work_is_attributed_to_the_session(projection: Projection):
@@ -153,14 +148,19 @@ def test_the_subagent_is_a_tool_named_agent_whose_work_is_attributed_to_the_sess
     assert len([e for e in projection.events if isinstance(e, MessageCompleted)]) == 7
 
 
-def test_the_subagent_activity_reports_success_but_its_call_outcome_is_unknown(projection: Projection):
-    """The `Agent` call's own completion carries no outcome the CLI made explicit, while the task
-    behind it reports `completed`. So what tells you a subagent succeeded is the activity, not the
-    tool call — the opposite of the `Bash` case above, where the call is what carries it."""
-    call = next(e for e in projection.events if isinstance(e, ToolCallCompleted) and e.call_id == _AGENT_CALL)
-    activity = next(e for e in projection.events if isinstance(e, ActivityCompleted) and e.activity_id == _AGENT_TASK)
+def test_no_folded_event_says_whether_the_subagent_succeeded(projection: Projection):
+    """The `Agent` call completes with no outcome the CLI made explicit, and the `task_notification`
+    that reported `completed` is unprojected — so a subagent's success is in the frames only. That
+    is the accepted cost of the neutral vocabulary carrying no provider's task concept."""
+    call = one(e for e in projection.events if isinstance(e, ToolCallCompleted) and e.call_id == _AGENT_CALL)
     assert call.outcome is Outcome.UNKNOWN
-    assert activity.outcome is Outcome.SUCCEEDED
+
+    reported = one(
+        record["frame"]
+        for record in _RECORDS
+        if record.get("frame", {}).get("subtype") == "task_notification" and record["frame"]["task_id"] == _AGENT_TASK
+    )
+    assert reported["status"] == "completed"
 
 
 if __name__ == "__main__":

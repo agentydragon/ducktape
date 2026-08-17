@@ -20,13 +20,10 @@ from haku.console.x.claude_code.testing.wire import (
     tool_use_block,
 )
 from haku.console.x.conversation_events import (
-    ActivityCompleted,
-    ActivityStarted,
     ConversationEvent,
     FrameRange,
     MessageCompleted,
     MessageKey,
-    Outcome,
     Reasoning,
     TextDelta,
     ToolCallStarted,
@@ -82,14 +79,6 @@ def test_a_message_completing_beside_its_tool_call_does_not_bury_the_tool() -> N
     assert coarse_status([_tool_call("Bash"), _message_completed()]) == "running Bash"
 
 
-def test_an_activity_reuses_the_description_the_harness_already_wrote() -> None:
-    activity = ActivityStarted(
-        activity_id="task-1", call_id="toolu_1", description="Running the test suite", provenance=_WHERE
-    )
-
-    assert coarse_status([activity]) == "Running the test suite"
-
-
 def test_prose_and_thinking_are_both_just_writing() -> None:
     """A session that streams no deltas produces only the completed message, and one that streams
     produces the deltas — the room is told the same thing either way."""
@@ -99,10 +88,7 @@ def test_prose_and_thinking_are_both_just_writing() -> None:
 
 
 def test_events_the_room_has_no_use_for_produce_no_status() -> None:
-    finished: list[ConversationEvent] = [
-        TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=_WHERE),
-        ActivityCompleted(activity_id="task-1", summary=None, outcome=Outcome.SUCCEEDED, provenance=_WHERE),
-    ]
+    finished: list[ConversationEvent] = [TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=_WHERE)]
 
     assert coarse_status(finished) is None
     assert coarse_status([]) is None
@@ -111,17 +97,19 @@ def test_events_the_room_has_no_use_for_produce_no_status() -> None:
 def test_a_claude_turn_still_reads_the_way_it_did_off_the_frames() -> None:
     """The one test here that names a backend, and the only place the claim can be made.
 
-    `room_status.py` used to match on Claude's own `type`, `subtype`s and content blocks; this is
-    what it read then, projected through the adapter and read as events now. The frames are the
-    census's shapes (<../debug/frame_shape_census.md>: one content block per `assistant` frame), and
-    the cut is `_run_turn`'s — one frame, `STREAM_EVENTS`, fresh state — so what this asserts is
-    exactly the sequence a room sees.
+    The frames are the census's shapes (<../debug/frame_shape_census.md>: one content block per
+    `assistant` frame), and the cut is `_run_turn`'s — one frame, `STREAM_EVENTS`, fresh state — so
+    what this asserts is exactly the sequence a room sees.
+
+    `task_started` says nothing now: the harness's own prose for a step in flight was one provider's
+    concept in the neutral vocabulary, so the frame is unprojected and the line stays on whatever it
+    last said until the agent writes again.
     """
     frames: list[tuple[dict[str, Any], str | None]] = [
         (assistant(thinking_block("hm"), message_id="msg_A"), "writing"),
         (assistant(text_block("Looking."), message_id="msg_A"), "writing"),
         (assistant(tool_use_block("toolu_1", "Bash", {"command": "ls"}), message_id="msg_A"), "running Bash"),
-        (system("task_started", task_id="task_9", tool_use_id="toolu_1", description="npm run build"), "npm run build"),
+        (system("task_started", task_id="task_9", tool_use_id="toolu_1", description="npm run build"), None),
         (tool_result("toolu_1", "ok"), None),
         (text_delta("A"), "writing"),
         (result(), None),

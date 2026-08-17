@@ -320,7 +320,6 @@ def build_mcp(reader: ConversationReader) -> FastMCP:
         A tool call and its result are two entries, joined by `call_id`, not one entry with the
         answer folded in: the call is real while it is still running, and a page that waited for
         the result would have to look arbitrarily far ahead or stop where it did not mean to.
-        Activities pair the same way, by `activity_id`.
         """
         slice_ = await reader.read_transcript(session_id, cursor=cursor, limit=limit + 1)
         entries, more = take_page(slice_.entries, limit=limit, size=entry_bytes, clip=clip_entry)

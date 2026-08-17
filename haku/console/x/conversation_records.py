@@ -260,45 +260,13 @@ class ToolResultEntry(_EntryBase):
     outcome: Outcome
 
 
-class ActivityStartedEntry(_EntryBase):
-    """The harness's own prose for a step in flight — the case with no tool name at all.
-
-    `description` is whatever the harness wrote and is not a label: real ones run past 500
-    characters and span lines, so a status line needs its own truncation.
-    """
-
-    kind: Literal["activity_started"] = "activity_started"
-    activity_id: str
-    call_id: str = Field(
-        description="The `tool_call` entry this step was opened by; the step's own end names only `activity_id`."
-    )
-    description: str
-
-
-class ActivityFinishedEntry(_EntryBase):
-    """That step finished. Paired to its `activity_started` by `activity_id` and by nothing else —
-    the terminal report carries no description of its own."""
-
-    kind: Literal["activity_finished"] = "activity_finished"
-    activity_id: str
-    summary: str | None
-    outcome: Outcome
-
-
 class TurnEndEntry(_EntryBase):
     kind: Literal["turn_end"] = "turn_end"
     outcome: str = Field(description="`answered`, `aborted` or `failed`, as `list_turns` also reports it.")
 
 
 type TranscriptEntry = Annotated[
-    MessageEntry
-    | ReasoningEntry
-    | ToolCallEntry
-    | ToolResultEntry
-    | ActivityStartedEntry
-    | ActivityFinishedEntry
-    | TurnEndEntry,
-    Field(discriminator="kind"),
+    MessageEntry | ReasoningEntry | ToolCallEntry | ToolResultEntry | TurnEndEntry, Field(discriminator="kind")
 ]
 
 

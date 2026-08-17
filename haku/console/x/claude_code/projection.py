@@ -47,8 +47,6 @@ from typing import Any
 from haku.console.chat_models import TurnOutcome
 from haku.console.x.claude_code import frames
 from haku.console.x.conversation_events import (
-    ActivityCompleted,
-    ActivityStarted,
     ConversationEvent,
     FrameRange,
     Json,
@@ -337,34 +335,8 @@ class _Projector:
 
     def _system(self, frame: RecordedFrame) -> None:
         subtype = frame.payload.get("subtype")
-        if subtype in _IGNORED_SYSTEM_SUBTYPES:
-            return
-        where = FrameRange(frame.frame_seq, frame.frame_seq)
-        match subtype:
-            # `tool_use_id` is the call that opened the task, and only this frame carries it: the
-            # terminal report is paired to here by `task_id`, so a link dropped here is gone.
-            case "task_started" if (
-                isinstance(task_id := frame.payload.get("task_id"), str)
-                and isinstance(call_id := frame.payload.get("tool_use_id"), str)
-                and isinstance(description := frame.payload.get("description"), str)
-            ):
-                self.events.append(
-                    ActivityStarted(activity_id=task_id, call_id=call_id, description=description, provenance=where)
-                )
-            case "task_notification" if isinstance(task_id := frame.payload.get("task_id"), str):
-                summary = frame.payload.get("summary")
-                self.events.append(
-                    ActivityCompleted(
-                        activity_id=task_id,
-                        summary=summary if isinstance(summary, str) else None,
-                        # The one status field in the protocol that discriminates: `completed`
-                        # ×24 and `failed` ×1 across the corpus.
-                        outcome=_activity_outcome(frame.payload.get("status")),
-                        provenance=where,
-                    )
-                )
-            case _:
-                self._unprojected(f"system/{subtype}")
+        if subtype not in _IGNORED_SYSTEM_SUBTYPES:
+            self._unprojected(f"system/{subtype}")
 
     def _unprojected(self, key: str) -> None:
         self.unprojected[key] = self.unprojected.get(key, 0) + 1
@@ -397,14 +369,4 @@ def _result_outcome(is_error: Any) -> Outcome:
             return Outcome.SUCCEEDED
         case _:
             # Routinely absent rather than false, so `"is_error" in block` tests nothing.
-            return Outcome.UNKNOWN
-
-
-def _activity_outcome(status: Any) -> Outcome:
-    match status:
-        case "completed":
-            return Outcome.SUCCEEDED
-        case "failed":
-            return Outcome.FAILED
-        case _:
             return Outcome.UNKNOWN

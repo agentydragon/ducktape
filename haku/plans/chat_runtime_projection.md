@@ -517,8 +517,6 @@ than as completed records stapled to a finished message:
 
 - `TextDelta`, `MessageCompleted` — what was said.
 - `ToolCallStarted(call_id, name, input)` → `ToolCallCompleted(call_id, result, is_error)`.
-- `Activity` — the harness's own prose for a step in flight (`task_started`'s `description`), which
-  is the case that has no tool name at all.
 - `Reasoning` — the agent thought, with a summary where it gave one. A distinct state rather than
   empty text: Claude emits `thinking` blocks and Codex emits reasoning summaries, and a thinking-only
   message currently renders blank, which is a live bug rather than a hypothetical.

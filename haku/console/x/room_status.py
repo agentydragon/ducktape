@@ -19,7 +19,6 @@ from collections.abc import Sequence
 from typing import Protocol
 
 from haku.console.x.conversation_events import (
-    ActivityStarted,
     ConversationEvent,
     MessageCompleted,
     Reasoning,
@@ -56,18 +55,11 @@ def coarse_status(events: Sequence[ConversationEvent]) -> str | None:
     worth, which is what makes this the same decision the per-frame version made.
 
     Coarse by rule, not by taste (R6.3): where a tool is named, the backend's own identifier is
-    passed through verbatim, and where the harness wrote its own prose for a step it is used
-    as-is. There is deliberately no per-tool copy and no mapping table, because both would need
-    maintaining every time the tool surface grows.
+    passed through verbatim. There is deliberately no per-tool copy and no mapping table, because
+    both would need maintaining every time the tool surface grows.
     """
     if names := [event.tool_name for event in events if isinstance(event, ToolCallStarted)]:
         return f"running {', '.join(names)}"
-    # `description` is the harness's own prose for the step in flight, e.g. "Running Count regular
-    # files in the directory" — better than anything the console could reconstruct from a tool name
-    # and its arguments. It is not a label and runs long (<../debug/frame_shape_census.md>), which
-    # is the renderer's problem rather than this one's.
-    if activity := next((event for event in events if isinstance(event, ActivityStarted)), None):
-        return activity.description or "working"
     # Prose, thinking, or a message that ended: all of it is the agent writing rather than acting,
     # and the room is told no more than that. `MessageCompleted` is in here because a session that
     # streams no deltas produces no `TextDelta` at all, and its answers would otherwise say nothing.
