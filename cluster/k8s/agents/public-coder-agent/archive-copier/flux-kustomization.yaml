@@ -9,7 +9,7 @@ metadata:
       Kept suspended until the source node is sufficiently reachable for a
       deliberate rescue window.
 spec:
-  suspend: true
+  suspend: false
   interval: 1h
   retryInterval: 5m
   timeout: 12h
