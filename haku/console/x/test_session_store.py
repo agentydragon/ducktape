@@ -1021,7 +1021,7 @@ async def test_an_accepted_prompt_is_a_row_in_the_stream_as_well_as_in_the_trans
     prompt = await chat_store.enqueue_prompt(operator_id, view.session_id, "list the files")
 
     asked = one(await authored_events(migrated_sessions, view.session_id))
-    assert asked.kind == ConversationEventKind.PROMPT_ENQUEUED
+    assert asked.kind == AuthoredEventKind.PROMPT_ENQUEUED
     assert asked.body == {"message_id": str(prompt.message_id), "text": "list the files"}
     # No frames because nothing has been sent yet, and no turn because admission refuses a prompt
     # while one is open — so a prompt is accepted exactly when there is none to name.
@@ -1266,7 +1266,7 @@ async def test_a_frames_events_land_as_rows_with_the_cursor_that_says_they_did(
         )
         assert (await db.get(Session, session_id)).projected_frame_seq == 8
     assert [row.kind for row in rows] == [
-        ConversationEventKind.PROMPT_ENQUEUED,
+        AuthoredEventKind.PROMPT_ENQUEUED,
         ConversationEventKind.TOOL_CALL_STARTED,
         ConversationEventKind.MESSAGE_COMPLETED,
         ConversationEventKind.TOOL_CALL_COMPLETED,

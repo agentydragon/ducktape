@@ -138,7 +138,7 @@ def test_a_prompt_is_conversation_on_the_authored_arm() -> None:
     message_id = uuid4()
     asked = session_events.prompt_enqueued(session_id=SESSION_ID, message_id=message_id, text="list the files", now=NOW)
 
-    assert (asked.kind, asked.provenance) == (ConversationEventKind.PROMPT_ENQUEUED, EventProvenance.AUTHORED)
+    assert (asked.kind, asked.provenance) == (AuthoredEventKind.PROMPT_ENQUEUED, EventProvenance.AUTHORED)
     assert (asked.turn_id, asked.source_first_frame_seq, asked.source_last_frame_seq, asked.call_id) == (None,) * 4
     assert asked.body == {"message_id": str(message_id), "text": "list the files"}
 

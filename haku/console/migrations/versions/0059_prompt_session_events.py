@@ -43,7 +43,7 @@ _AUTHORED_KINDS = "'session_adopted','lease_expired'"
 
 def upgrade() -> None:
     op.drop_constraint(_KIND, _TABLE, type_="check")
-    op.create_check_constraint(_KIND, _TABLE, f"kind IN ('prompt_enqueued',{_CONVERSATION_KINDS},{_AUTHORED_KINDS})")
+    op.create_check_constraint(_KIND, _TABLE, f"kind IN ({_CONVERSATION_KINDS},{_AUTHORED_KINDS},'prompt_enqueued')")
 
 
 def downgrade() -> None:

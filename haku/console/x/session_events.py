@@ -185,9 +185,8 @@ def _authored_kind(body: AuthoredBody) -> AuthoredEventKind:
 def prompt_enqueued(*, session_id: UUID, message_id: UUID, text: str, now: datetime) -> SessionEvent:
     """The row an accepted prompt is stored as, written in `enqueue_prompt`'s own transaction.
 
-    Conversation — it is half of what a transcript renders — on the `authored` arm, because the
-    prompt has not crossed the wire when it is accepted: `next_prompt` hands it to the CLI later,
-    and a session that ends first never hands it over at all (`PromptFate.LOST`).
+    Authored because no frame carries it at this point: `next_prompt` hands the prompt to the CLI
+    later, and a session that ends first never hands it over at all (`PromptFate.LOST`).
 
     **No turn**, and not for the reason an authored session fact has none: admission refuses a
     prompt while a turn is open, so at this moment there is no turn to name.
@@ -195,7 +194,7 @@ def prompt_enqueued(*, session_id: UUID, message_id: UUID, text: str, now: datet
     return SessionEvent(
         session_id=session_id,
         turn_id=None,
-        kind=ConversationEventKind.PROMPT_ENQUEUED,
+        kind=AuthoredEventKind.PROMPT_ENQUEUED,
         provenance=EventProvenance.AUTHORED,
         source_first_frame_seq=None,
         source_last_frame_seq=None,

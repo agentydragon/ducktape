@@ -1251,8 +1251,9 @@ class SessionEvent(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('prompt_enqueued','message_completed','reasoning','tool_call_started',"
-            "'tool_call_completed','activity_started','activity_completed','session_adopted','lease_expired')",
+            "kind IN ('message_completed','reasoning','tool_call_started',"
+            "'tool_call_completed','activity_started','activity_completed',"
+            "'prompt_enqueued','session_adopted','lease_expired')",
             name="ck_session_events_kind",
         ),
         CheckConstraint("provenance IN ('frame_range','authored')", name="ck_session_events_provenance"),

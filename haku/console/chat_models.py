@@ -124,19 +124,18 @@ class RecordedToolCall(BaseModel):
 
 
 class ConversationEventKind(StrEnum):
-    """Which neutral event a `session_events` row records — the conversation category.
+    """What a `session_events` row records that came off the runner↔console wire.
 
-    Membership is decided by what the row is about — the conversation rather than the session —
-    and not by where it came from, which is `EventProvenance`'s column to answer.
+    **Membership is decided by where the row came from, not by what it is about.** Every kind here
+    is produced by folding a recorded frame, so every row carries `EventProvenance.FRAME_RANGE` and
+    a frame range that says which frames it was read from. A fact the console holds but no frame
+    carries belongs in `AuthoredEventKind`, however conversational it reads.
 
-    Most of it is `x/conversation_events.ConversationEvent`, less its two members that already have
-    a durable home: a `TextDelta` is an increment of prose the completed message carries whole, and
-    a `TurnCompleted` is the `session_turns` row. `PROMPT_ENQUEUED` is the member with no
-    `ConversationEvent`, because no fold produces it: the operator's question is accepted before it
-    crosses any wire, so it is authored rather than projected.
+    The vocabulary is `x/conversation_events.ConversationEvent` less its two members that already
+    have a durable home: a `TextDelta` is an increment of prose the completed message carries
+    whole, and a `TurnCompleted` is the `session_turns` row.
     """
 
-    PROMPT_ENQUEUED = "prompt_enqueued"
     MESSAGE_COMPLETED = "message_completed"
     REASONING = "reasoning"
     TOOL_CALL_STARTED = "tool_call_started"
@@ -150,15 +149,23 @@ TOOL_CALL_EVENT_KINDS = frozenset({ConversationEventKind.TOOL_CALL_STARTED, Conv
 
 
 class AuthoredEventKind(StrEnum):
-    """Which fact about the session itself a `session_events` row records — the second category.
+    """What a `session_events` row records that no frame carries — the other category.
 
-    What happened *to* the session rather than in the conversation
-    (<../plans/chat_runtime_projection.md> § stage 4). These cross no wire: the console is their
-    only witness, so they carry `EventProvenance.AUTHORED`, no frame range, and no turn — the
-    facts here are the session's, and a session that never reached a turn is exactly the case they
-    exist to record.
+    **The console is the only witness**, so these carry `EventProvenance.AUTHORED` and no frame
+    range (<../plans/chat_runtime_projection.md> § stage 4). That is the whole membership test:
+    not whether the fact is about the session rather than the conversation, but whether it reached
+    the console over the wire. A session that never had a runner at all is exactly the case this
+    category exists to record.
+
+    `PROMPT_ENQUEUED` is here for that reason and not because a prompt is a lifecycle fact. It is
+    conversation — half of what a transcript renders — but a prompt is accepted before it is asked:
+    a session holds no sandbox until a prompt buys one, so at acceptance there is no runner to send
+    it to, and a session that ends before the prompt is claimed never sends it at all
+    (`PromptFate.LOST`). The frame that eventually carries it, if one does, projects to nothing —
+    the console already holds the text (`x/claude_code/projection._user`), so it is recorded once.
     """
 
+    PROMPT_ENQUEUED = "prompt_enqueued"
     SESSION_ADOPTED = "session_adopted"
     LEASE_EXPIRED = "lease_expired"
 
