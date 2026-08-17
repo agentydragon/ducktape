@@ -711,3 +711,56 @@ Two behaviours, both testable end to end:
   happened**, including that the restart happened, without either having been told twice.
 - A replica is killed while a turn is streaming. Nothing in the room is orphaned or duplicated, and
   the operator is told everything they would have been told had it lived.
+
+## 12. How this executes
+
+§ 9 is the dependency order. This is how it is worked: what fans out, what cannot, and where the
+position is kept so a session that dies mid-flight loses nothing but its own context.
+
+### The bottleneck is migrations, and it is narrower than the step list suggests
+
+**At most one migration-bearing PR open at a time, or stacked.** Two agents independently declared
+`revision = "0062"` off `0061` within an hour of each other — a duplicate id _and_ a fork, both
+invisible to `git merge-tree`, both stopping the console booting. With N agents that is the default
+outcome, not bad luck. Stacking is fine (declare the parent's revision and say so in the body);
+racing is not.
+
+**But four steps needing a migration is not four migrations.** Steps 4, 5 and 6 all widen the same
+`ck_session_events_kind` or add one column beside it, so they collapse into one permissive schema
+change. That matters because of what it unlocks:
+
+> **Land the permissive schema first, then fan out the writers.** A widened CHECK forbids nothing
+> the previous image writes and has no reader, so it is safe alone and can merge on its own. Once
+> it has, the rejection writer, the abort writer and the provenance writer are three independent
+> pure-code PRs that can be written at once.
+
+That turns the longest serial stretch in § 9 into two migrations and a wide fan.
+
+### The lanes
+
+| Lane          | Steps                                  | Shape                                                                                                           |
+| ------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| **Schema**    | 2, then the kinds+provenance migration | Serial. One open at a time or stacked. Everything else waits on lane head only where it truly needs the column. |
+| **Surfaces**  | 1, 3                                   | Parallel. 3 needs lane Schema's first migration; 1 needs nothing.                                               |
+| **Writers**   | 4, 5, 6, 7                             | Parallel behind the kinds migration. Each is one fact recorded where it belongs.                                |
+| **Reduction** | 11→12, 13, 15→16                       | Parallel with everything. Gated within itself on release convergence, not on other lanes.                       |
+| **The chain** | 8, then 9, then 10                     | Genuinely serial and last. 9 is the reconciler; 10 is what it makes possible.                                   |
+
+### What every agent is told
+
+- **Never merge.** The operator merges. Say plainly when a merge has an ordering constraint.
+- **Amend this plan in your own PR** when implementation shows it is wrong, and say so in the body.
+  It has been wrong four times: `partial`'s missing server default, the index that needed its own
+  exclusion, phase 2 never having landed, and `task_notification` producing an activity event.
+- **Abort and report** rather than deciding anything architecture-level — what a session or
+  conversation _is_, a new table, or a decision that binds other steps.
+- **Collisions are expected**, and coordination is not the fix. Whoever lands second rebases, and
+  a conflict between two deletions resolves to _both_ deletions — taking one side wholesale
+  silently reverts the other and CI goes green anyway, which is the failure mode to watch for.
+
+### Where the position lives
+
+This document. A session running this loses its context; the plan, the rulings and the order are
+what survive, which is the argument for landing it early rather than holding it until the work is
+done. Each PR that completes a step deletes that step here, so what remains is the work that
+remains.
