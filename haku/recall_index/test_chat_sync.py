@@ -12,7 +12,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSurface, SessionStatus
-from haku.console.database_schema import Base as ConsoleBase, Operator, Session, SessionMessage
+from haku.console.database_schema import Base as ConsoleBase, Conversation, Operator, Session, SessionMessage
 from haku.console.operator_identity import OperatorStatus
 from haku.recall_index.chat_sync import ChatSyncReport, sync_chat
 from haku.recall_index.fake_embedder import FakeEmbedder
@@ -53,10 +53,15 @@ async def new_operator(source: AsyncSession) -> UUID:
 
 async def new_session(source: AsyncSession, operator_id: UUID) -> UUID:
     session_id = uuid.uuid4()
+    conversation_id = uuid.uuid4()
+    source.add(Conversation(conversation_id=conversation_id, operator_id=operator_id, created_at=_NOW))
+    # Before the session that points at it: a bare `ForeignKey` does not order the unit of work.
+    await source.flush()
     source.add(
         Session(
             session_id=session_id,
             operator_id=operator_id,
+            conversation_id=conversation_id,
             surface=ChatSurface.SPA,
             status=SessionStatus.CLOSED,
             bridge_token_fingerprint=b"fingerprint",

@@ -17,23 +17,42 @@ from haku.console.database_migrate import apply_migrations, sync_database_url
 _NOW = datetime.datetime(2026, 8, 15, tzinfo=datetime.UTC)
 
 
-def _session(conn: Connection) -> UUID:
-    """One operator serving one session: the two foreign keys a message hangs off."""
+def _conversation(conn: Connection, operator_id: UUID) -> UUID:
+    conversation_id = uuid4()
+    conn.execute(
+        text("INSERT INTO conversation (conversation_id, operator_id, created_at) VALUES (:id, :operator_id, :n)"),
+        {"id": conversation_id, "operator_id": operator_id, "n": _NOW},
+    )
+    return conversation_id
+
+
+def _session(conn: Connection, *, threaded: bool = True) -> UUID:
+    """One operator serving one session: the two foreign keys a message hangs off.
+
+    *threaded* is False for a revision older than `0064`, which is where `conversation` and the
+    column pointing at it begin; from `0072` on, naming it is the only way to insert a session.
+    """
     operator_id, session_id = uuid4(), uuid4()
     conn.execute(
         text("INSERT INTO operators (operator_id, status, created_at, updated_at) VALUES (:id, 'active', :n, :n)"),
         {"id": operator_id, "n": _NOW},
     )
+    columns: dict[str, object] = {
+        "session_id": session_id,
+        "operator_id": operator_id,
+        "surface": "spa",
+        "status": "ready",
+        "bridge_token_fingerprint": b"fingerprint",
+    }
+    if threaded:
+        columns["conversation_id"] = _conversation(conn, operator_id)
+    named = ", ".join(columns)
     conn.execute(
         text(
-            """
-            INSERT INTO sessions (
-                session_id, operator_id, surface, status, bridge_token_fingerprint,
-                lease_expires_at, created_at, updated_at
-            ) VALUES (:session_id, :operator_id, 'spa', 'ready', :fingerprint, :n, :n, :n)
-            """
+            f"INSERT INTO sessions ({named}, lease_expires_at, created_at, updated_at) "
+            f"VALUES ({', '.join(f':{name}' for name in columns)}, :n, :n, :n)"
         ),
-        {"session_id": session_id, "operator_id": operator_id, "fingerprint": b"fingerprint", "n": _NOW},
+        columns | {"n": _NOW},
     )
     return session_id
 
@@ -67,7 +86,7 @@ def test_message_provenance_migration_backfills_observed_assistant_frames(db_url
     """The historical pointer is rescued only when the old row names its wire message."""
     apply_migrations(db_url, "0044")
     with engine.begin() as conn:
-        session_id = _session(conn)
+        session_id = _session(conn, threaded=False)
         message_id = uuid4()
         conn.execute(
             text(
@@ -115,7 +134,7 @@ def test_unpointed_history_survives_the_constraint(db_url: str, engine: Engine) 
     """
     apply_migrations(db_url, "0045")
     with engine.begin() as conn:
-        message_id = _insert_message(conn, _session(conn), role="assistant")
+        message_id = _insert_message(conn, _session(conn, threaded=False), role="assistant")
 
     apply_migrations(db_url, "0046")
 

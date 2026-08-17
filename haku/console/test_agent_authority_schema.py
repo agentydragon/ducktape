@@ -1620,7 +1620,7 @@ def test_a_chat_session_cannot_be_written_without_a_lease(db_url: str) -> None:
     """
     apply_migrations(db_url)
     engine = create_engine(db_url)
-    operator_id = uuid4()
+    operator_id, conversation_id = uuid4(), uuid4()
     now = _now()
     try:
         with engine.begin() as conn:
@@ -1633,20 +1633,36 @@ def test_a_chat_session_cannot_be_written_without_a_lease(db_url: str) -> None:
                 ),
                 {"operator_id": operator_id, "now": now},
             )
+            # Named so the insert below is rejected for the lease it omits rather than the thread.
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO conversation (conversation_id, operator_id, created_at)
+                    VALUES (:conversation_id, :operator_id, :now)
+                    """
+                ),
+                {"conversation_id": conversation_id, "operator_id": operator_id, "now": now},
+            )
         with pytest.raises(IntegrityError, match="lease_expires_at"), engine.begin() as conn:
             conn.execute(
                 text(
                     """
                     INSERT INTO sessions (
-                        session_id, operator_id, surface, status, bridge_token_fingerprint,
+                        session_id, operator_id, conversation_id, surface, status, bridge_token_fingerprint,
                         bridge_connected_at, error, lease_expires_at, created_at, updated_at
                     ) VALUES (
-                        :session_id, :operator_id, 'spa', 'responding', :fingerprint,
+                        :session_id, :operator_id, :conversation_id, 'spa', 'responding', :fingerprint,
                         NULL, NULL, NULL, :now, :now
                     )
                     """
                 ),
-                {"session_id": uuid4(), "operator_id": operator_id, "fingerprint": b"fp", "now": now},
+                {
+                    "session_id": uuid4(),
+                    "operator_id": operator_id,
+                    "conversation_id": conversation_id,
+                    "fingerprint": b"fp",
+                    "now": now,
+                },
             )
     finally:
         engine.dispose()

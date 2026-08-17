@@ -36,30 +36,38 @@ def _operator(conn: Connection) -> UUID:
     return operator_id
 
 
-def _insert_session(conn: Connection, status: str) -> None:
+def _insert_session(conn: Connection, status: str, *, threaded: bool = True) -> None:
+    """*threaded* is False for a revision older than `0064`, which is where `conversation` and the
+    column pointing at it begin; from `0072` on, naming it is the only way to insert a session."""
+    operator_id = _operator(conn)
+    columns: dict[str, object] = {
+        "session_id": uuid4(),
+        "operator_id": operator_id,
+        "surface": "spa",
+        "status": status,
+        "bridge_token_fingerprint": b"fingerprint",
+    }
+    if threaded:
+        conversation_id = uuid4()
+        conn.execute(
+            text("INSERT INTO conversation (conversation_id, operator_id, created_at) VALUES (:id, :o, :n)"),
+            {"id": conversation_id, "o": operator_id, "n": _NOW},
+        )
+        columns["conversation_id"] = conversation_id
+    named = ", ".join(columns)
     conn.execute(
         text(
-            """
-            INSERT INTO sessions (
-                session_id, operator_id, surface, status, bridge_token_fingerprint,
-                lease_expires_at, created_at, updated_at
-            ) VALUES (:session_id, :operator_id, 'spa', :status, :fingerprint, :n, :n, :n)
-            """
+            f"INSERT INTO sessions ({named}, lease_expires_at, created_at, updated_at) "
+            f"VALUES ({', '.join(f':{name}' for name in columns)}, :n, :n, :n)"
         ),
-        {
-            "session_id": uuid4(),
-            "operator_id": _operator(conn),
-            "status": status,
-            "fingerprint": b"fingerprint",
-            "n": _NOW,
-        },
+        columns | {"n": _NOW},
     )
 
 
 def test_idle_is_what_the_widening_adds(db_url: str, engine: Engine) -> None:
     apply_migrations(db_url, "0052")
     with engine.begin() as conn, pytest.raises(IntegrityError, match="ck_sessions_status"):
-        _insert_session(conn, "idle")
+        _insert_session(conn, "idle", threaded=False)
 
     apply_migrations(db_url)
     with engine.begin() as conn:

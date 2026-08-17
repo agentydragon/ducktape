@@ -85,27 +85,6 @@ def test_matrix_sessions_share_a_room_s_conversation_and_every_other_session_get
         engine.dispose()
 
 
-def test_the_previous_image_can_still_create_a_session(db_url: str) -> None:
-    """The roll-safety half, and why `sessions.conversation_id` is nullable for one release: the
-    previous image's `INSERT` does not name the column, so a `NOT NULL` would reject the first
-    session of the roll — which is what `session_frames.partial` hit from the unmapping side."""
-    apply_migrations(db_url)
-    engine = create_engine(sync_database_url(db_url))
-    try:
-        with engine.begin() as conn:
-            session_id = _session(conn, _operator(conn), room_id=None, minutes=6)
-
-        with engine.connect() as conn:
-            assert (
-                conn.execute(
-                    text("SELECT conversation_id FROM sessions WHERE session_id = :s"), {"s": session_id}
-                ).scalar_one()
-                is None
-            )
-    finally:
-        engine.dispose()
-
-
 def test_one_conversation_holds_an_address_at_a_time_and_detaching_frees_it(db_url: str) -> None:
     """A conversation never ends, so "start this room over" has to be a detach and a re-attach —
     which the partial unique index is what permits."""

@@ -888,10 +888,14 @@ async def test_a_session_opens_its_own_conversation_unless_it_is_given_one(
 async def test_a_room_cannot_be_recorded_without_the_matrix_surface(migrated_sessions, operator_id) -> None:
     """The pairing is a schema rule, not only a call-signature one — the columns outlive it."""
     async with migrated_sessions.begin() as db:
+        conversation_id = uuid4()
+        db.add(Conversation(conversation_id=conversation_id, operator_id=operator_id, created_at=datetime.now(UTC)))
+        await db.flush()
         db.add(
             Session(
                 session_id=uuid4(),
                 operator_id=operator_id,
+                conversation_id=conversation_id,
                 surface=ChatSurface.SPA,
                 room_id="!room:allegedly.works",
                 status=SessionStatus.PROVISIONING,

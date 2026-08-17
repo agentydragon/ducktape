@@ -13,6 +13,16 @@ from haku.console.database_migrate import apply_migrations, sync_database_url
 _NOW = datetime.datetime(2026, 8, 16, tzinfo=datetime.UTC)
 
 
+def _conversation(conn: Connection, operator_id: UUID) -> UUID:
+    """The thread a session runs, which `0064` made every session carry and `0072` made it owe."""
+    conversation_id = uuid4()
+    conn.execute(
+        text("INSERT INTO conversation (conversation_id, operator_id, created_at) VALUES (:id, :operator_id, :n)"),
+        {"id": conversation_id, "operator_id": operator_id, "n": _NOW},
+    )
+    return conversation_id
+
+
 def _session(conn: Connection) -> UUID:
     operator_id, session_id = uuid4(), uuid4()
     conn.execute(
@@ -23,12 +33,18 @@ def _session(conn: Connection) -> UUID:
         text(
             """
             INSERT INTO sessions (
-                session_id, operator_id, surface, status, bridge_token_fingerprint,
+                session_id, operator_id, conversation_id, surface, status, bridge_token_fingerprint,
                 lease_expires_at, created_at, updated_at
-            ) VALUES (:session_id, :operator_id, 'spa', 'ready', :fingerprint, :n, :n, :n)
+            ) VALUES (:session_id, :operator_id, :conversation_id, 'spa', 'ready', :fingerprint, :n, :n, :n)
             """
         ),
-        {"session_id": session_id, "operator_id": operator_id, "fingerprint": b"digest", "n": _NOW},
+        {
+            "session_id": session_id,
+            "operator_id": operator_id,
+            "conversation_id": _conversation(conn, operator_id),
+            "fingerprint": b"digest",
+            "n": _NOW,
+        },
     )
     return session_id
 

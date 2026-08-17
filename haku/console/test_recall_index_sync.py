@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from haku.console import recall_index_sync
 from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSurface, SessionStatus
 from haku.console.config import HakuStateGitConfig, RecallIndexConfig
-from haku.console.database_schema import Operator, Session, SessionMessage
+from haku.console.database_schema import Conversation, Operator, Session, SessionMessage
 from haku.console.operator_identity import OperatorStatus
 from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import CHAT_ADVISORY_LOCK, RecallIndexMaintenance
@@ -68,11 +68,15 @@ async def operator_id(migrated_sessions: async_sessionmaker[AsyncSession]) -> UU
 async def say(sessions: async_sessionmaker[AsyncSession], operator_id: UUID, content: str) -> UUID:
     """One chat session holding one message, as the console would have written it."""
     session_id = uuid.uuid4()
+    conversation_id = uuid.uuid4()
     async with sessions.begin() as session:
+        session.add(Conversation(conversation_id=conversation_id, operator_id=operator_id, created_at=_NOW))
+        await session.flush()
         session.add(
             Session(
                 session_id=session_id,
                 operator_id=operator_id,
+                conversation_id=conversation_id,
                 surface=ChatSurface.SPA,
                 status=SessionStatus.CLOSED,
                 bridge_token_fingerprint=b"fingerprint",

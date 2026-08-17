@@ -138,19 +138,6 @@ class PromptRefusedError(RuntimeError):
         self.reason = reason
 
 
-def _thread_of(session: Session) -> UUID:
-    """The conversation this session runs.
-
-    The column is nullable only for the length of the roll that added it: `0064` backfilled every
-    row that predated it and every writer since names it. A NULL here is therefore a writer that
-    forgot, not a state to render around — and reading it as one would silently drop the session
-    from every listing keyed on the thread.
-    """
-    if session.conversation_id is None:
-        raise ValueError(f"a session belongs to no conversation: {session.session_id=}")
-    return session.conversation_id
-
-
 async def _live_attachments(db: AsyncSession, conversations: set[UUID]) -> dict[UUID, list[ChannelAttachment]]:
     """The channels currently holding a copy of each of *conversations*, keyed by conversation.
 
@@ -212,9 +199,7 @@ async def _live_sessions(db: AsyncSession, conversations: set[UUID]) -> dict[UUI
         ).all()
     )
     return {
-        # `conversation_id` is non-NULL on anything this query can return, since the argument is a
-        # set of conversation ids.
-        cast(UUID, row.conversation_id): LiveSession(
+        row.conversation_id: LiveSession(
             session_id=row.session_id, status=SessionStatus.RESPONDING if row.session_id in responding else row.status
         )
         for row in rows
@@ -406,7 +391,7 @@ class SessionStore:
             record = await db.get(Session, session_id)
             if record is None:
                 raise KeyError(session_id)
-            return _thread_of(record)
+            return record.conversation_id
 
     async def list_operator_conversations(
         self, operator_id: UUID, *, cursor: ConversationCursor | None, limit: int
@@ -1001,7 +986,7 @@ class SessionStore:
                 <= tuple_(literal(cursor.created_at), literal(cursor.session_id))
             )
         async with self._sessions() as db:
-            threads = [(row, _thread_of(row)) for row in (await db.scalars(query.limit(limit))).all()]
+            threads = [(row, row.conversation_id) for row in (await db.scalars(query.limit(limit))).all()]
             attachments = await _live_attachments(db, {thread for _, thread in threads})
         return [
             SessionRecord(
@@ -1111,7 +1096,7 @@ class SessionStore:
             if owned is None:
                 raise KeyError(session_id)
             rows = (await db.scalars(query.order_by(SessionFrame.frame_seq.desc()).limit(limit))).all()
-        return frame_page(list(reversed(rows)), limit=limit, conversation_id=_thread_of(owned))
+        return frame_page(list(reversed(rows)), limit=limit, conversation_id=owned.conversation_id)
 
     async def apply_frame(
         self, session_id: UUID, turn_id: UUID, frame_seq: int, events: Sequence[ConversationEvent]

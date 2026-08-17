@@ -15,26 +15,38 @@ _CLEANED_AT = datetime.datetime(2026, 8, 14, 9, 30, tzinfo=datetime.UTC)
 
 
 def _session(
-    conn: Connection, operator_id: UUID, *, status: str, fingerprint: bytes, updated_at: datetime.datetime
+    conn: Connection,
+    operator_id: UUID,
+    *,
+    status: str,
+    fingerprint: bytes,
+    updated_at: datetime.datetime,
+    threaded: bool = True,
 ) -> UUID:
+    """*threaded* is False for a revision older than `0064`, which is where `conversation` and the
+    column pointing at it begin; from `0072` on, naming it is the only way to insert a session."""
     session_id = uuid4()
+    columns: dict[str, object] = {
+        "session_id": session_id,
+        "operator_id": operator_id,
+        "surface": "spa",
+        "status": status,
+        "bridge_token_fingerprint": fingerprint,
+    }
+    if threaded:
+        conversation_id = uuid4()
+        conn.execute(
+            text("INSERT INTO conversation (conversation_id, operator_id, created_at) VALUES (:id, :o, :n)"),
+            {"id": conversation_id, "o": operator_id, "n": _NOW},
+        )
+        columns["conversation_id"] = conversation_id
+    named = ", ".join(columns)
     conn.execute(
         text(
-            """
-            INSERT INTO sessions (
-                session_id, operator_id, surface, status, bridge_token_fingerprint,
-                lease_expires_at, created_at, updated_at
-            ) VALUES (:session_id, :operator_id, 'spa', :status, :fingerprint, :n, :n, :updated_at)
-            """
+            f"INSERT INTO sessions ({named}, lease_expires_at, created_at, updated_at) "
+            f"VALUES ({', '.join(f':{name}' for name in columns)}, :n, :n, :updated_at)"
         ),
-        {
-            "session_id": session_id,
-            "operator_id": operator_id,
-            "status": status,
-            "fingerprint": fingerprint,
-            "n": _NOW,
-            "updated_at": updated_at,
-        },
+        columns | {"n": _NOW, "updated_at": updated_at},
     )
     return session_id
 
@@ -54,9 +66,13 @@ def test_the_backfill_settles_already_cleaned_rows_and_leaves_the_rest_pending(d
                 ),
                 {"id": operator_id, "n": _NOW},
             )
-            cleaned = _session(conn, operator_id, status="closed", fingerprint=b"", updated_at=_CLEANED_AT)
-            pending = _session(conn, operator_id, status="failed", fingerprint=b"digest", updated_at=_NOW)
-            live = _session(conn, operator_id, status="ready", fingerprint=b"digest", updated_at=_NOW)
+            cleaned = _session(
+                conn, operator_id, status="closed", fingerprint=b"", updated_at=_CLEANED_AT, threaded=False
+            )
+            pending = _session(
+                conn, operator_id, status="failed", fingerprint=b"digest", updated_at=_NOW, threaded=False
+            )
+            live = _session(conn, operator_id, status="ready", fingerprint=b"digest", updated_at=_NOW, threaded=False)
 
         apply_migrations(db_url)
 

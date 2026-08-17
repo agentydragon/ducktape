@@ -993,16 +993,8 @@ class Session(Base):
     )
     # The thread this session runs. Successive sessions serving one Matrix room share it, which is
     # what makes a replacement session inherit the room's attachments instead of being re-pointed at.
-    #
-    # CLEANUP(added 2026-08-17): `ALTER COLUMN conversation_id SET NOT NULL` once every haku-console
-    #   pod runs an image at or after this commit — `kubectl get pods -n haku-console -o
-    #   jsonpath='{.items[*].spec.containers[0].image}'` reporting a single tag at or after it.
-    #   Nullable only because the previous image's `INSERT INTO sessions` does not name the column,
-    #   so a `NOT NULL` would reject the first session of the roll. **Nothing may key a read on this
-    #   until that same gate**: a session created by the previous image has no conversation, so a
-    #   reader that joined through it would silently omit that session's rows.
-    conversation_id: Mapped[UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("conversation.conversation_id", ondelete="CASCADE"), nullable=True
+    conversation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("conversation.conversation_id", ondelete="CASCADE"), nullable=False
     )
     surface: Mapped[ChatSurface] = mapped_column(TextBackedStrEnumColumn(ChatSurface), nullable=False)
     # The Matrix room this session serves — the *history* half of the binding, where
