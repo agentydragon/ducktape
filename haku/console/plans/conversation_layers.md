@@ -518,3 +518,73 @@ listing statuses, so adding a member no longer edits an index.
 **Split it.** Adding the terminal timestamps and deriving `closing`/`closed`/`failed` is one change;
 dropping the column is the follow-up once every member computes. Both are expand/contract on the
 hottest table, and `idle` is being added to the enum right now (#4231), so this waits for that.
+
+## 11. What it looks like when it is done
+
+### The shape
+
+A **conversation** is an id. Under it, sessions run one at a time and end; attachments hold at the
+same time and detach. Both point at the conversation; neither points at the other.
+
+```text
+conversation ──< session   (serial: one runner each, replaced when the sandbox goes)
+             └─< attachment (concurrent: a room, a browser, whatever comes next)
+```
+
+Every fact is written once, on the session that produced it, into `session_events` and the
+transcript. Every channel reads that record through one subscription (§ 2) and renders it in its own
+vocabulary. Nothing is pushed at a channel; a channel is told to look.
+
+### The invariants to hold it to
+
+These are the acceptance criteria, and each names something that is false today:
+
+- **No code outside a channel names a channel's address.** `_enqueue_reply` stops branching on
+  `chat.room_id`; the turn writes the record and nothing else.
+- **Nothing is announced that is not recorded.** Every notice body is a function of rows, so there
+  is no fact whose only copy is a stack frame and no notice that a SIGKILL can silently swallow.
+- **A replica death costs latency and nothing else.** No orphaned status line, no second status
+  line, no acknowledged-but-unreported message.
+- **Adding a channel is implementing two things** — how to render the stream, and where to keep a
+  cursor if it holds a copy. Nothing else in the console changes.
+- **Adding a backend is implementing one thing** — an adapter producing `ConversationEvent`.
+
+The last two are what "N backends × M channels, additively" actually means, and they are the reason
+for the whole exercise.
+
+### What disappears
+
+**Tables and columns**
+
+| Gone                                                              | Replaced by                                                                                                              |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `matrix_conversation` (all four columns)                          | `chat_attachment`, whose partial unique index is what "one session holds it" means                                       |
+| `sessions.room_id`, `sessions.surface`, `ck_sessions_matrix_room` | the attachment (<../../plans/chat_runtime_cleanup.md> § stage 7 already says so)                                         |
+| `session_outbox`                                                  | the reconciler derives what it owes by comparing the record to the room; a queue that holds no facts need not be durable |
+| `sessions.status`                                                 | the timestamps of § 10, with the enum computed                                                                           |
+
+Not gone, and deliberately: `matrix_sync_watermark` and `matrix_held_batch` (ingress's two positions
+are already right), `session_events`, `session_frames`, the lease.
+
+**Mechanisms**
+
+- `RoomOutboxDrain` and its `MXOB` advisory lock — one election instead of three.
+- `TurnStatus._run`'s in-process poll, and the turn loop calling `show_status`/`set_typing` at all.
+- Every per-process latch that stands in for durable state: `_status_event_id`, `_status_body`,
+  `_holding`, `_last_announced`.
+- `RoomPacer` as a queue of opaque callables — a budget the reconciler spends, not a deque of
+  closures it cannot inspect or squash.
+- `claude_chat_page.tsx` and `/api/sessions/{session_id}/stream`, at step 3.
+- `RoomTranscript.recent`'s join on `Session.room_id` — the tail handed to a replacement session
+  becomes a conversation read, which is what it always meant.
+- Parsing `[event_id]` out of prompt text to learn what a prompt answered.
+
+### How to tell it is finished
+
+Two behaviours, both testable end to end:
+
+- A Matrix room and a browser are open on one conversation. Either can prompt. The sandbox is
+  killed mid-turn; a new session takes over; **both surfaces show the same account of what
+  happened**, including that the restart happened, without either having been told twice.
+- A replica is killed while a turn is streaming. Nothing in the room is orphaned or duplicated, and
+  the operator is told everything they would have been told had it lived.
