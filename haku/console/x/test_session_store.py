@@ -1322,6 +1322,10 @@ async def test_an_event_row_cannot_be_written_without_a_provenance_union(
     `authored` with one, are both refused by the table rather than by whoever remembers. The turn
     goes the same way — required of a projected row, since the fold only runs inside one, and
     optional on the arm the console authors about the session itself.
+
+    Which arm a row may take follows from its kind, so the arms are not interchangeable: a
+    `ConversationEventKind` is what folding a frame produced and cannot claim the console authored
+    it.
     """
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -1350,18 +1354,21 @@ async def test_an_event_row_cannot_be_written_without_a_provenance_union(
         event(source_first_frame_seq=9),
         event(call_id="toolu_1"),
         event(turn_id=None),
+        event(provenance=EventProvenance.AUTHORED, source_first_frame_seq=None, source_last_frame_seq=None),
     ):
         async with migrated_sessions() as db:
             db.add(unwritable)
             with pytest.raises(IntegrityError):
                 await db.commit()
 
-    for writable in (
-        event(provenance=EventProvenance.AUTHORED, source_first_frame_seq=None, source_last_frame_seq=None),
-        event(
-            provenance=EventProvenance.AUTHORED, source_first_frame_seq=None, source_last_frame_seq=None, turn_id=None
-        ),
-    ):
+    authored = {
+        "kind": AuthoredEventKind.SESSION_ADOPTED,
+        "provenance": EventProvenance.AUTHORED,
+        "source_first_frame_seq": None,
+        "source_last_frame_seq": None,
+        "body": {"previous_holder": None, "holder": "haku-console-a"},
+    }
+    for writable in (event(**authored), event(**authored, turn_id=None)):
         async with migrated_sessions() as db:
             db.add(writable)
             await db.commit()
