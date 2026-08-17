@@ -16,7 +16,7 @@ from uuid import UUID
 import pytest
 import pytest_bazel
 
-from haku.console.chat_models import TurnOutcome
+from haku.console.chat_models import SPA_ORIGIN, TurnOutcome
 from haku.console.x.session_events import PromptBody
 from haku.console.x.session_store import SessionStore, SpaSession
 from haku.console.x.subscription import (
@@ -59,7 +59,7 @@ async def say(chat_store: SessionStore, operator_id: UUID, thread: Thread, promp
     Admission refuses a second prompt while one is queued, so each has to be claimed before the
     next is accepted; the turn ends answered, which records nothing of its own.
     """
-    await chat_store.enqueue_prompt(operator_id, thread.session_id, prompt)
+    await chat_store.enqueue_prompt(operator_id, thread.session_id, prompt, SPA_ORIGIN)
     turn = await chat_store.next_prompt(thread.session_id)
     assert turn is not None
     await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
@@ -155,7 +155,7 @@ async def test_a_replacement_session_continues_the_same_stream(chat_store, opera
     thread = await a_thread(chat_store, operator_id, "before")
     replacement, token = await chat_store.create(operator_id, SpaSession(), conversation_id=thread.conversation_id)
     await chat_store.authenticate_bridge(replacement.session_id, token)
-    await chat_store.enqueue_prompt(operator_id, replacement.session_id, "after")
+    await chat_store.enqueue_prompt(operator_id, replacement.session_id, "after", SPA_ORIGIN)
 
     assert prompts(await stream.read(thread.conversation_id, after=START)) == ["before", "after"]
 

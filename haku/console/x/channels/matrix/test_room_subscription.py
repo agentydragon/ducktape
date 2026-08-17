@@ -13,7 +13,7 @@ import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import TurnOutcome
+from haku.console.chat_models import MatrixOrigin, TurnOutcome
 from haku.console.database_schema import MatrixRoomCursor
 from haku.console.x.channels.matrix.conftest import MATRIX_ROOM
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore
@@ -69,7 +69,9 @@ async def served(chat_store: SessionStore, operator_id: UUID, conversations: Mat
 
 
 async def abort_a_turn(chat_store: SessionStore, operator_id: UUID, session_id: UUID) -> None:
-    await chat_store.enqueue_prompt(operator_id, session_id, "do the thing")
+    await chat_store.enqueue_prompt(
+        operator_id, session_id, "do the thing", MatrixOrigin(address=MATRIX_ROOM, refs=("$asked",))
+    )
     turn = await chat_store.next_prompt(session_id)
     assert turn is not None
     await chat_store.end_turn(turn.turn_id, TurnOutcome.ABORTED)
