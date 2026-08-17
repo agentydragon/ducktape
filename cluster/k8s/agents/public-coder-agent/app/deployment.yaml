@@ -33,6 +33,21 @@ spec:
     spec:
       securityContext:
         fsGroup: 1000
+      # Retain the current local-PV holder through the control-plane taint, but
+      # prefer a worker for any subsequent placement before the explicit PVC
+      # migration.
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
       # Both containers use the Flux-pinned image produced by the Nix image workflow.
       initContainers:
         # The gateway reads its config from the state dir, which is the PVC, so

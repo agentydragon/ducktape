@@ -263,6 +263,21 @@ spec:
         # Chart auto-generates podAntiAffinity when replicas > 1
         nodeSelector:
           topology.kubernetes.io/zone: hil-ovh
+        # The replica with its local PVC on a control plane must survive the
+        # default taint until monitoring-state migration. Prefer workers for
+        # any placement not constrained by that PVC.
+        tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            operator: Exists
+            effect: NoSchedule
+        affinity:
+          nodeAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                preference:
+                  matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist
         resources:
           requests:
             cpu: 10m
