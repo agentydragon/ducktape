@@ -509,10 +509,9 @@ user serve exactly one room ever. Losing that rule is **the point rather than th
   and labelled as one backend's wire.
 
 - **A conversation never ends.** No `ended_at`, no terminal state — it is an id, sessions come and
-  go under it, attachments hold and detach. Two consequences: the list surface (step 2) needs keyset
-  paging from the day it ships, since the list only grows, and "start this room over" is detaching
-  the address and attaching it to a new conversation rather than ending the old one, which the
-  partial unique index already permits.
+  go under it, attachments hold and detach. The consequence still to build on: "start this room
+  over" is detaching the address and attaching it to a new conversation rather than ending the old
+  one, which the partial unique index already permits.
 
 - **A prompt arriving mid-turn is rejected, not held.** The channel says so and the operator
   re-sends; nothing queues behind a running turn. The cost is accepted deliberately: a message sent
