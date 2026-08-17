@@ -1195,10 +1195,11 @@ class SessionStore:
     async def enqueue_turn_reply(self, session_id: UUID, turn_id: UUID, text: str) -> bool:
         """Queue a turn's last word, the one reply no transcript row holds. True if it is owed.
 
-        Two callers, and at most one of them per turn: text that arrived only on the `result`
-        frame after the turn's last assistant message said nothing, and the notice an aborted
-        turn leaves. `turn_id` is the idempotence key that makes re-derivation by a replacement
-        replica a no-op rather than a second copy in the room — see `session_outbox.turn_id`.
+        Two callers, and at most one of them per turn: `result.result` on a turn whose completed
+        assistant messages were all empty — a turn that completed none at all has a row minted for
+        it instead — and the notice an aborted turn leaves. `turn_id` is the idempotence key that
+        makes re-derivation by a replacement replica a no-op rather than a second copy in the
+        room — see `session_outbox.turn_id`.
 
         False for an empty body and for a session serving no room; the SPA reads the message rows
         this turn already wrote, so it is owed nothing here.
@@ -1411,10 +1412,11 @@ async def _unprojected_frames(db: AsyncSession, session_id: UUID, cursor: int) -
     """The recorded frames past *cursor* — the ones whose effects did not commit.
 
     Deltas are in it, because their effects are message content and the cursor is what says
-    whether that content landed. What is left out is the two rows the console authored rather than
-    received: `setup_output` carries no protocol `type` for the fold to read, and a `partial` row
-    is this console's own reconstruction of an answer in flight, which projecting would turn into
-    a message the agent never sent.
+    whether that content landed. What is left out is what the console authored rather than
+    received: `setup_output`, which carries no protocol `type` for the fold to read, and a
+    `partial` row — this console's own reconstruction of an answer in flight, which projecting
+    would turn into a message the agent never sent. Nothing writes `partial` any more; the filter
+    goes with the column (`SessionFrame.partial`'s CLEANUP note).
     """
     rows = await db.scalars(
         select(SessionFrame)

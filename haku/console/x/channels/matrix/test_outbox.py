@@ -242,10 +242,11 @@ async def test_a_turns_last_word_is_queued_once_however_often_the_turn_is_adopte
 ) -> None:
     """The duplicate the `message_id` index cannot catch, because these rows have none.
 
-    A turn's last word — an abort notice, or text that arrived only on the `result` frame — is
-    written *before* the turn is closed, so a replica dying in that window leaves the turn open
-    and its replacement re-derives the same reply. `turn_id` is what makes the second derivation a
-    no-op; without it the fix for a lost reply would have introduced a duplicated one.
+    A turn's last word — an abort notice, or `result.result` on a turn whose completed messages
+    were all empty — is written *before* the turn is closed, so a replica dying in that window
+    leaves the turn open and its replacement re-derives the same reply. `turn_id` is what makes the
+    second derivation a no-op; without it the fix for a lost reply would have introduced a
+    duplicated one.
     """
     for _ in range(3):
         assert await chat_store.enqueue_turn_reply(session_id, turn_id, "[stopped by the operator]")

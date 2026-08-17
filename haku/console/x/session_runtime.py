@@ -711,8 +711,9 @@ class SessionService:
         """Queue the turn's last word for the room, or report that it had none (R11.2).
 
         Only ever the end of a turn: a completed assistant message queues its own copy in the same
-        transaction. What is left over belongs to no message row — an abort notice, or an answer
-        that arrived only on the `result` frame.
+        transaction, and a turn that completed none at all has one minted for it above. What is
+        left over belongs to no message row — an abort notice, or `result.result` on a turn whose
+        completed messages were all empty.
 
         A session attached to no frontend needs nothing here; the SPA reads the message rows the
         turn already wrote. An empty body is not a silence token (R11.2): the room is told the turn

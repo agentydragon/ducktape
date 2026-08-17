@@ -49,9 +49,6 @@ logger = logging.getLogger(__name__)
 # Distinct from the sync loop's lock in `sync` and the OAuth refresh lock.
 _SUPERVISOR_ADVISORY_LOCK = 0x4D58_5345  # "MXSE"
 
-# A session is worth keeping while it is in one of these; anything else (including a
-# missing row) means the room has no working sandbox behind it.
-
 # What the room hears when a turn ends with no text at all (R11.2). Phrased as an outcome the
 # operator can act on rather than as an error, because a turn that only ran tools is a legitimate
 # thing to have happened — it just must not look like the console lost the answer.

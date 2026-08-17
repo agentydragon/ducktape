@@ -114,8 +114,8 @@ class RecordedFrame:
     """One row of the frame log: a CLI protocol frame and where it sits in the session.
 
     `payload` is the wire verbatim, hence `.get` and type guards throughout — an unseen frame is a
-    new CLI feature, not a bug here. A row the CLI did not author (the bridge's `setup_output`, the
-    console's own `partial`) does not belong here, and `payload["type"]` is what says so.
+    new CLI feature, not a bug here. A row the CLI did not author — the bridge's `setup_output` —
+    does not belong here, and `payload["type"]` is what says so.
     """
 
     frame_seq: int

@@ -16,11 +16,11 @@ SETUP_OUTPUT_KIND = "setup_output"
 def setup_output_frame(text: str) -> dict[str, Any]:
     """One line the sandbox printed, as a rollout row.
 
-    **Console-authored, like `partial`, and it says so with its discriminator.** The bridge's
-    own frame is `SetupOutput(data: bytes)` — raw, unsplit, base64 on the wire — and what
-    arrives here is one line the transport has already decoded (`errors="replace"`) and split
-    for the room. So this is a rendering, not the wire, and putting it under `kind` rather than
-    the CLI's `type` is what keeps it from reading as a protocol frame that never existed.
+    **Console-authored, and it says so with its discriminator.** The bridge's own frame is
+    `SetupOutput(data: bytes)` — raw, unsplit, base64 on the wire — and what arrives here is one
+    line the transport has already decoded (`errors="replace"`) and split for the room. So this is
+    a rendering, not the wire, and putting it under `kind` rather than the CLI's `type` is what
+    keeps it from reading as a protocol frame that never existed.
 
     It lives in the frame log because it **is** runner→console traffic: a `SetupOutput` envelope
     crossed the wire and only the splitting is ours. A fact the console is the sole witness to — a

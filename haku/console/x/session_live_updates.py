@@ -2,7 +2,7 @@
 
 The console's surfaces read a session over REST and, until now, learned that it had changed only
 by being reloaded (or, on the `/chat` page alone, by holding an SSE stream of its own). This is
-the other half of <console_events.py>'s contract applied to sessions: the socket the shell
+the other half of <../console_events.py>'s contract applied to sessions: the socket the shell
 already holds says *which session* changed, and the page refetches.
 
 **Where the publish happens.** Nowhere new. Every write that changes a session already emits

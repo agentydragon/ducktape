@@ -96,11 +96,7 @@ class SessionView(BaseModel):
 
 
 class ConversationSessionSummary(BaseModel):
-    """The operator-facing inventory entry for one conversation.
-
-    Deliberately generic: Claude/Matrix are the only current producer values, but neither should
-    become part of the read surface's navigation or response shape.
-    """
+    """The operator-facing inventory entry for one conversation."""
 
     model_config = ConfigDict(extra="forbid")
 

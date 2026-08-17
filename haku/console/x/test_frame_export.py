@@ -43,8 +43,8 @@ def _tool_result(call_id: str, text: str) -> dict[str, Any]:
     }
 
 
-# A turn that backgrounds a command and then dies mid-answer, which is what leaves the console's own
-# `partial` row behind — one of the two row kinds the export has to drop.
+# A turn that backgrounds a command and then dies mid-answer: thinking, a `tool_use` carrying a
+# secret, its result, the harness narrating the step, and a delta of an answer that never completed.
 SESSION_FRAMES: list[dict[str, Any]] = [
     _assistant({"type": "thinking", "thinking": "which shell"}, message_id="msg_1"),
     _assistant(
@@ -73,7 +73,11 @@ SESSION_FRAMES: list[dict[str, Any]] = [
 
 @pytest.fixture
 async def exported(chat_store, migrated_sessions, operator_id) -> frame_export.ExportedSession:
-    """One session recorded through the write path, with both console-authored row kinds in it."""
+    """One session recorded through the write path, with a console-authored `setup_output` row in it.
+
+    No `partial` row, because nothing writes one any more — so the export's other exclusion is
+    covered by `foldable_frames`' query alone, not by this fixture.
+    """
     view, token = await chat_store.create(operator_id, SpaSession())
     session_id: UUID = view.session_id
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
@@ -116,9 +120,10 @@ def test_a_secret_in_a_tool_argument_does_not_reach_the_fixture(exported) -> Non
 
 
 def test_the_two_row_kinds_the_console_authored_are_left_out(exported) -> None:
-    """`setup_output` carries no protocol `type` and a `partial` row is the console's own
+    """`setup_output` carries no protocol `type` and a `partial` row was the console's own
     reconstruction, so the fold reads neither — and a fixture holding them would be a fixture of
-    something the wire never sent."""
+    something the wire never sent. Only `setup_output` is exercised here; nothing writes `partial`
+    any more."""
     assert [frame.payload["type"] for frame in _reread(exported)] == [
         "assistant",
         "assistant",

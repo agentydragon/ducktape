@@ -1,7 +1,7 @@
 """One paced outbound queue per Matrix room.
 
 Synapse limits how fast a user may send events into a room (`rc_message`), and
-<../../../cluster/k8s/matrix/app/helmrelease.yaml> does not override it — so the upstream
+<../../../../../cluster/k8s/matrix/app/helmrelease.yaml> does not override it — so the upstream
 defaults are the whole budget: a burst of ten sends, refilling at one every five seconds.
 Every sender the console has shares that one budget: a turn's answer, the status line's
 edits, lifecycle notices, and the bootstrap narration, which is the loudest of them at one

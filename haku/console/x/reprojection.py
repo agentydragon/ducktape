@@ -261,12 +261,12 @@ def _expected(turn_id: UUID, frame: SessionFrame) -> tuple[SessionEvent, ...]:
 
 
 def foldable_frames(session_id: UUID) -> Select[tuple[SessionFrame]]:
-    """One session's recorded frames in order, less the two rows the console authored.
+    """One session's recorded frames in order, less what the console authored.
 
-    `setup_output` carries no protocol `type` for the fold to read and a `partial` row is the
+    `setup_output` carries no protocol `type` for the fold to read, and a `partial` row was the
     console's own reconstruction of an answer in flight — the same exclusions adoption replays
-    under (`session_store._unprojected_frames`). Returned as a query so a caller can bound it
-    further.
+    under (`session_store._unprojected_frames`), and `partial` outlives its last writer only until
+    the column goes. Returned as a query so a caller can bound it further.
     """
     return (
         select(SessionFrame)

@@ -4,11 +4,10 @@ The driver alone — it is handed a frontend and told what the conversation did,
 which room that frontend speaks to, how a line is created and edited, or which backend the events
 came off. `channels/matrix/session.py` owns the middle one.
 
-**It reads <conversation_events.py>, not a provider's wire.** It used to match on Claude's own
-top-level `type`, its `system` subtypes and its content blocks, which made the module that is
-supposed to be the channel-neutral driver the fourth of the frame interpreters stage 4 of
-<../../plans/chat_runtime_projection.md> exists to replace — and meant a second backend's room went
-silent while its agent worked.
+**It reads <conversation_events.py>, not a provider's wire.** Matching here on one backend's own
+top-level `type`, `system` subtypes and content blocks would make the channel-neutral driver a
+frame interpreter (<../../plans/chat_runtime_projection.md> § stage 4), and leave a second
+backend's room silent while its agent worked.
 """
 
 from __future__ import annotations

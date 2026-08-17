@@ -1213,8 +1213,8 @@ async def test_a_frames_events_land_as_rows_with_the_cursor_that_says_they_did(
 ) -> None:
     """The projection's own output, stored — and stored in the transaction that moves the cursor.
 
-    A tool call's answer is the row nothing has ever held: `session_messages.tool_calls` keeps what
-    was asked and the frames carrying the reply are re-parsed on every read.
+    A tool call's answer is the row nothing had ever held: `session_messages.tool_calls` keeps what
+    was asked, and until these rows the frames carrying the reply were re-parsed on every read.
     """
     view, token = await chat_store.create(operator_id, SpaSession())
     session_id = view.session_id
