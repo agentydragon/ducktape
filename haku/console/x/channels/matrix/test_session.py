@@ -127,7 +127,7 @@ async def test_a_freshly_bound_room_gets_a_session_and_no_sandbox(
 async def test_the_first_message_provisions_a_sandbox(
     supervisor, conversations, chat_store, recording_claims, operator_id, announced
 ) -> None:
-    """Stage 6's acceptance criterion, in one test: an idle room holds none, and a message buys one.
+    """The acceptance criterion, in one test: an idle room holds no sandbox, and a message buys one.
 
     Admission on `idle` is what makes it possible for the batch to be in the durable queue rather
     than left on the homeserver, and an unclaimed prompt there is the only demand signal a room
