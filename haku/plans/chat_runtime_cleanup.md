@@ -66,27 +66,23 @@ rewrite._
 
 ### The frontend seam — first, and mostly refactoring
 
-`RoomSurface` takes `room_id` on all six methods and `MatrixSurface` opens five of them with
-`del room_id`, because its channel is already bound to the one room. So the port reads as multi-room
-and behaves as one-room-globally, and `room_id: str | None` threads through the turn loop making four
-call sites re-ask a question answered once per connection — plus three no-op coroutines so
-`_TurnStatus` has something to call.
+The port is `ChatFrontend`, with **no address parameter**: `MatrixSurface` is bound at construction
+as it effectively always was, and the turn loop carries the frontend a session is attached to
+instead of a room id. What is left of the seam:
 
-1. A `ChatFrontend` port with **no address parameter**: `MatrixSurface` bound at construction as it
-   effectively already is. Every `or room_id is None` and all three no-ops go.
-
-   **The SPA's implementation is no longer a null one.** This step used to say the SPA needs none
-   of the port because its client reads the message rows — true of a view, false of a channel, and
-   the console is being driven toward the latter (<../console/plans/session_channels.md>): it wants
-   the lifecycle and narration the room gets today, pushed rather than polled. The port is
-   unchanged and still right; what changes is that both sides implement it. That plan's
-   `chat_attachment` need is this step's schema half, not a separate table.
+1. **The SPA implements it.** This step used to say the SPA needs none of the port because its
+   client reads the message rows — true of a view, false of a channel, and the console is being
+   driven toward the latter (<../console/plans/session_channels.md>): it wants the lifecycle and
+   narration the room gets today, pushed rather than polled. So both sides implement it, and until
+   one does the SPA session is the port's `None` — one seam rather than the four the address
+   parameter cost.
 
 2. Then the schema half — `chat_attachment(session_id, surface, address, attached_at, detached_at)`
    with a partial unique index on `(surface, address) where detached_at is null`. It subsumes
    `sessions.surface`, `.room_id`, both check constraints tying them together, and
    `matrix_conversation.session_id`; the pointer/history distinction those two tables document in
-   prose becomes `detached_at IS NULL`. Attach/detach within one session becomes a row.
+   prose becomes `detached_at IS NULL`. Attach/detach within one session becomes a row, and
+   <../console/plans/session_channels.md>'s `chat_attachment` need is this table, not a second one.
 
 ### The backend seam
 

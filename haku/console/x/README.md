@@ -53,7 +53,7 @@ so a method whose job is "these writes commit together or not at all" is in `ses
 outbox write and the turn-state transitions included, because each of those commits beside the
 effect it describes and moving one out would be the drop it exists to prevent. What is left in
 `session_runtime.py` is what drives one turn against a CLI: the client wiring, the room and status
-plumbing, the sandbox lifecycle, the `RoomSurface` port and the SPA's own routes. A second channel
+plumbing, the sandbox lifecycle, the `ChatFrontend` port and the SPA's own routes. A second channel
 inherits the store unchanged, which is why it stays at the runtime level and imports nothing under
 `channels/`.
 
@@ -481,7 +481,7 @@ never back: `OPERATOR_SUBJECT` is imported down rather than restated, because
 `MATRIX_CONFIG.operator_subject` and the `operator_id` fixture have to name the same operator.
 
 The test files divide on the same seam. `test_session_runtime.py` and `test_session_store.py` reach
-a room only through the `RoomSurface` port and the `room_id` string a session records — never
+a room only through the `ChatFrontend` port and the `room_id` string a session records — never
 `matrix-nio` — so what they cover (the turn loop, the outbox row, provenance, adoption, the abort
 drain, prompt fate) is what a second channel inherits. A message _arriving_ from a room and becoming
 a turn is the crossing itself and cannot be written without both halves, so `MatrixTurns.offer` is
@@ -645,8 +645,10 @@ dependency:
 - `Session`, `SessionMessage`, `MatrixSyncState`, and `MatrixConversation` in
   <../database_schema.py>, plus their Alembic revisions — migrations are one lineage for the
   whole database.
-- The `RoomSurface` port is defined next to the service that calls it (`session_runtime.py`), and
-  the composition in <../app.py> is what ties a surface to a session.
+- The `ChatFrontend` port is defined next to the service that calls it (`session_runtime.py`);
+  the three methods the status driver drives are `StatusFrontend`, declared beside that driver in
+  `room_status.py`, and a frontend satisfies both by implementing one port. The composition in
+  <../app.py> is what ties a frontend to the sessions it serves.
 
 ## Where the reasoning lives
 

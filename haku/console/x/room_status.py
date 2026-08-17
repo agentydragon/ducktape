@@ -1,9 +1,8 @@
 """What a room is shown while one turn runs: the typing indicator and the status line.
 
-The driver alone — it is handed two coroutines and told what the conversation did, and never
-learns which room it is speaking to, how a line is created and edited, or which backend the events
-came off. `channels/matrix/session.py` owns the middle one, and a session with no room gets the
-same driver with the no-op sinks below.
+The driver alone — it is handed a frontend and told what the conversation did, and never learns
+which room that frontend speaks to, how a line is created and edited, or which backend the events
+came off. `channels/matrix/session.py` owns the middle one.
 
 **It reads <conversation_events.py>, not a provider's wire.** It used to match on Claude's own
 top-level `type`, its `system` subtypes and its content blocks, which made the module that is
@@ -17,7 +16,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Sequence
+from typing import Protocol
 
 from haku.console.x.conversation_events import (
     ActivityStarted,
@@ -77,16 +77,19 @@ def coarse_status(events: Sequence[ConversationEvent]) -> str | None:
     return None
 
 
-async def ignore_status(text: str) -> None:
-    del text
+class StatusFrontend(Protocol):
+    """The half of a chat frontend this driver drives, declared beside the driver.
 
+    `session_runtime.ChatFrontend` is this plus what the turn loop says for itself, so a frontend
+    satisfies both by implementing one port; keeping the three methods here is what lets the
+    driver name what it is given without depending on the runtime it is called from.
+    """
 
-async def ignore_clear() -> None:
-    pass
+    async def show_status(self, text: str) -> None: ...
 
+    async def clear_status(self) -> None: ...
 
-async def ignore_typing(active: bool) -> None:
-    del active
+    async def set_typing(self, active: bool) -> None: ...
 
 
 class TurnStatus:
@@ -100,17 +103,13 @@ class TurnStatus:
     The two differ in when they start. Typing goes on immediately, because "Haku is working on
     it" is the whole message and it is worth nothing after the fact; the status line waits for
     `STATUS_AFTER_SECONDS`, because a status/answer pair for a five-second exchange is clutter.
+
+    A session no frontend is attached to gets the same driver with nothing to drive, rather than a
+    `None` the turn loop has to branch on three times.
     """
 
-    def __init__(
-        self,
-        show: Callable[[str], Awaitable[None]],
-        clear: Callable[[], Awaitable[None]],
-        typing: Callable[[bool], Awaitable[None]] = ignore_typing,
-    ):
-        self._show = show
-        self._clear = clear
-        self._typing = typing
+    def __init__(self, frontend: StatusFrontend | None):
+        self._frontend = frontend
         self._state: str | None = None
         # What the room was last told, so an unchanged state is not re-sent every tick. The sync
         # service drops a repeat anyway, but a driver that says the same thing once a second is
@@ -126,9 +125,10 @@ class TurnStatus:
             self._state = state
 
     def start(self) -> None:
-        self._task = asyncio.create_task(self._run())
+        if self._frontend is not None:
+            self._task = asyncio.create_task(self._run(self._frontend))
 
-    async def _run(self) -> None:
+    async def _run(self, frontend: StatusFrontend) -> None:
         while True:
             # Refreshed rather than set once: the homeserver expires a typing notice by itself,
             # which is what stops a dead console from leaving one stuck on — so a live turn has
@@ -136,7 +136,7 @@ class TurnStatus:
             # leave a gap the operator can see.
             if time.monotonic() - self._typed_at >= TYPING_REFRESH_SECONDS:
                 self._typed_at = time.monotonic()
-                await self._typing(True)
+                await frontend.set_typing(True)
             # One owner for the pace, and it defers rather than drops: a sink that discarded what
             # arrived inside its floor would leave the room reading a stale state until the *next*
             # change, which on a turn settling into one long tool call is the rest of the turn.
@@ -147,7 +147,7 @@ class TurnStatus:
                 and time.monotonic() - self._shown_at >= STATUS_EDIT_INTERVAL_SECONDS
             ):
                 self._shown, self._shown_at = self._state, time.monotonic()
-                await self._show(self._state)
+                await frontend.show_status(self._state)
             await asyncio.sleep(1.0)
 
     async def finish(self) -> None:
@@ -157,5 +157,6 @@ class TurnStatus:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
-        await self._typing(False)
-        await self._clear()
+        if self._frontend is not None:
+            await self._frontend.set_typing(False)
+            await self._frontend.clear_status()

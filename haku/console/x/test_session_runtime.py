@@ -1,6 +1,6 @@
 """Focused contracts for the Agent Sandbox Claude chat runtime.
 
-**No channel is imported here, deliberately.** A room reaches this file only as the `RoomSurface`
+**No channel is imported here, deliberately.** A room reaches this file only as the `ChatFrontend`
 port `session_runtime.py` defines and the `room_id` string a `MatrixSession` records — never as
 `matrix-nio`, ingress or the room/session binding. What a homeserver's messages become is
 <channels/matrix/test_session.py>, beside the `MatrixTurns` that makes them turns.
@@ -176,7 +176,7 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
 
     client = _FakeCli(_TOOL_USE_SCRIPT)
     await chat_service._run_turn(
-        client, client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
+        client, client.frames().__aiter__(), view.session_id, turn, frontend=None, abort_event=asyncio.Event()
     )
 
     messages = [
@@ -220,7 +220,7 @@ async def test_projected_assistant_message_points_to_the_frames_that_built_it(
 
     client = _FakeCli(script, frame_seqs=frame_seqs, prompt_frame_seq=prompt_frame_seq)
     await chat_service._run_turn(
-        client, client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
+        client, client.frames().__aiter__(), view.session_id, turn, frontend=None, abort_event=asyncio.Event()
     )
 
     messages = (await chat_store.get(operator_id, view.session_id)).messages
@@ -431,7 +431,7 @@ async def test_a_turn_that_said_something_the_room_could_not_hear_still_knows_it
             client.frames().__aiter__(),
             session_id,
             resumed,
-            room_id=None,
+            frontend=None,
             abort_event=asyncio.Event(),
         )
 
@@ -477,7 +477,7 @@ async def test_adoption_closes_a_turn_whose_result_nobody_projected(
             _replaying(resumed.replay, client.frames().__aiter__()),
             session_id,
             resumed,
-            room_id=None,
+            frontend=None,
             abort_event=asyncio.Event(),
         )
 
@@ -521,7 +521,7 @@ async def test_adoption_reads_a_failed_result_as_a_failed_turn(
                 _replaying(resumed.replay, client.frames().__aiter__()),
                 session_id,
                 resumed,
-                room_id=None,
+                frontend=None,
                 abort_event=asyncio.Event(),
             )
 
@@ -647,8 +647,8 @@ _NARRATED_TURN = [
 ]
 
 
-class _RecordingRoomSurface:
-    """A `RoomSurface` that keeps what it was told instead of talking to a homeserver.
+class _RecordingFrontend:
+    """A `ChatFrontend` that keeps what it was told instead of talking to a homeserver.
 
     Answers are not among it: they are `session_outbox` rows the turn writes with the message
     they copy, so what the room is owed is read out of the database (`_queued_for_the_room`)
@@ -659,23 +659,22 @@ class _RecordingRoomSurface:
     def __init__(self) -> None:
         self.silent_turns = 0
 
-    async def system_prompt(self, session_id: UUID, room_id: str) -> str:
+    async def system_prompt(self, session_id: UUID) -> str:
         return "you are Haku"
 
-    async def report_silent_turn(self, room_id: str) -> None:
-        assert room_id == ROOM
+    async def report_silent_turn(self) -> None:
         self.silent_turns += 1
 
-    async def report(self, room_id: str, detail: str) -> None:
+    async def report(self, detail: str) -> None:
         return None
 
-    async def show_status(self, room_id: str, text: str, session_id: UUID | None = None) -> None:
+    async def show_status(self, text: str) -> None:
         return None
 
-    async def clear_status(self, room_id: str) -> None:
+    async def clear_status(self) -> None:
         return None
 
-    async def set_typing(self, room_id: str, active: bool) -> None:
+    async def set_typing(self, active: bool) -> None:
         return None
 
 
@@ -735,12 +734,12 @@ async def _turn_into_a_room(
     client: _FakeCli,
     *,
     abort_event: asyncio.Event | None = None,
-    room: _RecordingRoomSurface | None = None,
+    frontend: _RecordingFrontend | None = None,
 ) -> list[str]:
     """Run one turn against *client* for a room-backed session and return what the room is owed."""
-    room = room or _RecordingRoomSurface()
+    frontend = frontend or _RecordingFrontend()
     service = SessionService(
-        runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, room_surface=room
+        runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend
     )
     view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -753,10 +752,28 @@ async def _turn_into_a_room(
             client.frames().__aiter__(),
             view.session_id,
             turn,
-            room_id=ROOM,
+            frontend=frontend,
             abort_event=abort_event or asyncio.Event(),
         )
     return await queued_for_the_room(migrated_sessions, view.session_id)
+
+
+async def test_only_the_sessions_that_serve_a_room_are_attached_to_the_frontend(
+    chat_store, recording_claims, notifications, operator_id
+) -> None:
+    """One console serves both surfaces, and the frontend is bound to its room — so which sessions
+    it speaks for is the session's own record of what it serves, read once per connection."""
+    frontend = _RecordingFrontend()
+    service = SessionService(
+        runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend
+    )
+    spa, _ = await chat_store.create(operator_id, SpaSession())
+    room_backed, _ = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+
+    assert (await service._frontend_for(spa.session_id), await service._frontend_for(room_backed.session_id)) == (
+        None,
+        frontend,
+    )
 
 
 async def test_a_resumed_turn_finishes_the_answer_it_inherited(
@@ -764,9 +781,9 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
 ) -> None:
     """The whole point of routing by turn: the replacement replica finishes the exchange the dead
     one started, in the message it started, and the room is owed the answer once."""
-    room = _RecordingRoomSurface()
+    frontend = _RecordingFrontend()
     service = SessionService(
-        runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, room_surface=room
+        runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend
     )
     view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
     session_id = view.session_id
@@ -798,7 +815,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
             _replaying(resumed.replay, client.frames().__aiter__()),
             session_id,
             resumed,
-            room_id=ROOM,
+            frontend=frontend,
             abort_event=asyncio.Event(),
         )
 
@@ -820,9 +837,9 @@ async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
     while not redoing the unprojected answer would lose it outright — the runner will not offer a
     frame this session already recorded, so nothing else is coming to write it down.
     """
-    room = _RecordingRoomSurface()
+    frontend = _RecordingFrontend()
     service = SessionService(
-        runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, room_surface=room
+        runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend
     )
     view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
     session_id = view.session_id
@@ -852,7 +869,7 @@ async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
             _replaying(resumed.replay, client.frames().__aiter__()),
             session_id,
             resumed,
-            room_id=ROOM,
+            frontend=frontend,
             abort_event=asyncio.Event(),
         )
 
@@ -871,13 +888,9 @@ async def test_a_resumed_turn_does_not_say_again_what_it_had_already_queued(
     already owed it. `queued_reply` is that, written by the transaction that inserted the row
     rather than inferred from an `assistant` frame having been recorded.
     """
+    frontend = _RecordingFrontend()
     service = SessionService(
-        runtime_config(),
-        chat_store,
-        recording_claims,
-        notifications,
-        mcp_token=MCP_TOKEN,
-        room_surface=_RecordingRoomSurface(),
+        runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend
     )
     view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
     session_id = view.session_id
@@ -899,7 +912,7 @@ async def test_a_resumed_turn_does_not_say_again_what_it_had_already_queued(
             client.frames().__aiter__(),
             session_id,
             resumed,
-            room_id=ROOM,
+            frontend=frontend,
             abort_event=asyncio.Event(),
         )
 
@@ -942,13 +955,9 @@ async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
     now written with the message, in one transaction, so the answer outlives the turn that
     produced it and the drain says it whatever the turn went on to do.
     """
+    frontend = _RecordingFrontend()
     service = SessionService(
-        runtime_config(),
-        chat_store,
-        recording_claims,
-        notifications,
-        mcp_token=MCP_TOKEN,
-        room_surface=_RecordingRoomSurface(),
+        runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend
     )
     view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -960,7 +969,12 @@ async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
     with pytest.raises(RuntimeError):
         async with asyncio.timeout(30):
             await service._run_turn(
-                client, client.frames().__aiter__(), view.session_id, turn, room_id=ROOM, abort_event=asyncio.Event()
+                client,
+                client.frames().__aiter__(),
+                view.session_id,
+                turn,
+                frontend=frontend,
+                abort_event=asyncio.Event(),
             )
 
     assert await queued_for_the_room(migrated_sessions, view.session_id) == [
@@ -985,7 +999,7 @@ async def test_a_turn_the_cli_ended_badly_fails_even_though_is_error_says_it_did
 
     with pytest.raises(RuntimeError, match="error_max_turns"):
         await chat_service._run_turn(
-            client, client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
+            client, client.frames().__aiter__(), view.session_id, turn, frontend=None, abort_event=asyncio.Event()
         )
 
     [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=5)
@@ -1014,7 +1028,7 @@ async def test_a_turn_with_nothing_at_all_to_say_reports_it_rather_than_queueing
 ) -> None:
     """R11.2 has no silence token, and an empty answer is not one: the room is told the turn
     finished without saying anything, as a notice, and no row is written for the empty string."""
-    room = _RecordingRoomSurface()
+    frontend = _RecordingFrontend()
 
     queued = await _turn_into_a_room(
         chat_store,
@@ -1023,10 +1037,10 @@ async def test_a_turn_with_nothing_at_all_to_say_reports_it_rather_than_queueing
         notifications,
         operator_id,
         _FakeCli([result(text="")]),
-        room=room,
+        frontend=frontend,
     )
 
-    assert (queued, room.silent_turns) == ([], 1)
+    assert (queued, frontend.silent_turns) == ([], 1)
 
 
 async def test_an_aborted_turn_says_so_on_its_own(
@@ -1130,7 +1144,7 @@ async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(
     client = _FakeCli([answer, ending], frame_seqs=[recorded_answer.frame_seq, recorded_ending.frame_seq])
 
     await chat_service._run_turn(
-        client, client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
+        client, client.frames().__aiter__(), view.session_id, turn, frontend=None, abort_event=asyncio.Event()
     )
 
     [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=10)
@@ -1164,7 +1178,7 @@ async def test_a_turn_ends_at_its_own_result_rather_than_at_what_the_cli_logs_af
     client = _FakeCli([ending], frame_seqs=[recorded.frame_seq])
 
     await chat_service._run_turn(
-        client, client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
+        client, client.frames().__aiter__(), view.session_id, turn, frontend=None, abort_event=asyncio.Event()
     )
 
     [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=10)
@@ -1193,7 +1207,7 @@ async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_s
         ]
     )
     await chat_service._run_turn(
-        client, client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
+        client, client.frames().__aiter__(), view.session_id, turn, frontend=None, abort_event=asyncio.Event()
     )
 
     calls = {
@@ -1228,7 +1242,7 @@ async def test_the_calls_come_from_the_events_and_need_no_id_from_the_agent(
         ]
     )
     await chat_service._run_turn(
-        client, client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
+        client, client.frames().__aiter__(), view.session_id, turn, frontend=None, abort_event=asyncio.Event()
     )
     # Whatever the column says is now beside the point, so make it say something wrong.
     async with migrated_sessions.begin() as db:

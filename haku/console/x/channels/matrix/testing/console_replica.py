@@ -183,7 +183,7 @@ async def _serve() -> None:
         FileSandboxClaims(Path(_environment("HAKU_E2E_CLAIMS_DIR"))),
         notifications,
         mcp_token=MCP_TOKEN,
-        room_surface=surface,
+        chat_frontend=surface,
     )
     supervisor = MatrixSessionSupervisor(
         matrix, conversations, service, store, notifications, identities, sync.announce, engine

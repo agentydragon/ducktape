@@ -242,10 +242,14 @@ class _RecordingRoom:
 
     def __init__(self, history: RecentHistory) -> None:
         self._history = history
+        self.room_id: str | None = MATRIX_ROOM
         self.shown: list[str] = []
         self.cleared = 0
         self.typing: list[bool] = []
         self.announced: list[tuple[str, RoomEventKind]] = []
+
+    async def bound_room(self) -> str | None:
+        return self.room_id
 
     async def recent_history(self, before_session: UUID, limit: int) -> Sequence[HistoryMessage]:
         return await self._history(before_session, limit)
@@ -285,13 +289,23 @@ def said(sender: str, body: str) -> HistoryMessage:
     return HistoryMessage(sender=sender, body=body, sent_at=datetime.datetime.now(datetime.UTC))
 
 
-async def test_prompt_describes_the_room_it_is_given(bound: UUID) -> None:
+async def test_prompt_describes_the_room_the_channel_is_bound_to(bound: UUID) -> None:
     """No session filtering here any more: being called at all says this session serves it.
 
-    The console selects this surface from the session's own `surface` column, so the room is
-    an argument rather than something to look up and check.
+    The console selects this surface from the session's own `surface` column, and the room the
+    prompt names comes from the channel, which is the object that knows which room this is.
     """
-    assert await surface(served()).system_prompt(bound, MATRIX_ROOM) == f"{MATRIX_ROOM} {bound} 0"
+    assert await surface(served()).system_prompt(bound) == f"{MATRIX_ROOM} {bound} 0"
+
+
+async def test_a_prompt_cannot_be_built_before_a_room_is_bound(bound: UUID) -> None:
+    """A session serving this channel while the channel serves no room is a contradiction, not a
+    prompt with the room left out of it."""
+    built, room = surface_and_room(served())
+    room.room_id = None
+
+    with pytest.raises(RuntimeError):
+        await built.system_prompt(bound)
 
 
 async def test_prompt_survives_a_transcript_that_will_not_answer(bound: UUID) -> None:
@@ -300,13 +314,13 @@ async def test_prompt_survives_a_transcript_that_will_not_answer(bound: UUID) ->
     async def unreadable(before_session: UUID, limit: int) -> tuple[HistoryMessage, ...]:
         raise RuntimeError("the database said no")
 
-    assert await surface(unreadable).system_prompt(bound, MATRIX_ROOM) == f"{MATRIX_ROOM} {bound} 0"
+    assert await surface(unreadable).system_prompt(bound) == f"{MATRIX_ROOM} {bound} 0"
 
 
 async def test_prompt_carries_both_sides_of_the_conversation(bound: UUID) -> None:
     history = served(said(MATRIX_OPERATOR, "hi"), said(MATRIX_USER, "hello"))
 
-    assert await surface(history).system_prompt(bound, MATRIX_ROOM) == f"{MATRIX_ROOM} {bound} 2"
+    assert await surface(history).system_prompt(bound) == f"{MATRIX_ROOM} {bound} 2"
 
 
 async def test_the_history_is_read_for_the_session_being_started(bound: UUID) -> None:
@@ -317,7 +331,7 @@ async def test_the_history_is_read_for_the_session_being_started(bound: UUID) ->
         asked.append(before_session)
         return ()
 
-    await surface(recording).system_prompt(bound, MATRIX_ROOM)
+    await surface(recording).system_prompt(bound)
 
     assert asked == [bound]
 
@@ -326,7 +340,7 @@ async def test_building_a_prompt_says_nothing_into_the_room(bound: UUID) -> None
     """Reading the room's history is not a reason to post in it."""
     built, room = surface_and_room(served())
 
-    await built.system_prompt(bound, MATRIX_ROOM)
+    await built.system_prompt(bound)
 
     assert room.announced == []
 
@@ -344,7 +358,7 @@ async def test_a_turn_with_nothing_to_say_says_so(bound: UUID) -> None:
     del bound
     reporting, room = surface_and_room(served())
 
-    await reporting.report_silent_turn(MATRIX_ROOM)
+    await reporting.report_silent_turn()
 
     assert room.announced == [(NOTHING_SAID, RoomEventKind.NARRATION)]
 

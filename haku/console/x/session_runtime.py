@@ -31,7 +31,7 @@ from haku.console.operator_auth import OperatorActorDep
 from haku.console.x import frame_projection
 from haku.console.x.claude_code.frames import frame_kind
 from haku.console.x.conversation_events import TurnCompleted
-from haku.console.x.room_status import TurnStatus, ignore_clear, ignore_status
+from haku.console.x.room_status import StatusFrontend, TurnStatus
 from haku.console.x.sandbox_claims import ProvisioningStep, SandboxClaims, provisioning_view
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.session_store import (
@@ -143,11 +143,17 @@ class RolloutRecorder:
         )
 
 
-class RoomSurface(Protocol):
-    """The front end for sessions that serve a room, for the parts a turn cannot do itself.
+class ChatFrontend(StatusFrontend, Protocol):
+    """The chat channel a session is attached to, for the parts a turn cannot do itself.
 
-    The SPA needs none of this — its client reads the message rows over SSE, so a finished turn is
-    delivered by being written down. A room has to be spoken to.
+    **Bound to its address at construction**, never asked for one per call: a channel serves one
+    room and a session serves one channel, so an address parameter on every method would be this
+    loop re-asking what is answered once per connection. The three methods a running turn's
+    status line and typing indicator need are `StatusFrontend`, declared beside the driver that
+    calls them (<room_status.py>).
+
+    The SPA needs none of this today — its client reads the message rows over SSE, so a finished
+    turn is delivered by being written down. A room has to be spoken to.
 
     **The service picks this by reading the session's `surface`**, rather than offering every
     session to every listener and having each re-derive whether it is its own.
@@ -157,17 +163,11 @@ class RoomSurface(Protocol):
     is left here is what describes a moment and is worthless afterwards.
     """
 
-    async def system_prompt(self, session_id: UUID, room_id: str) -> str: ...
+    async def system_prompt(self, session_id: UUID) -> str: ...
 
-    async def report_silent_turn(self, room_id: str) -> None: ...
+    async def report_silent_turn(self) -> None: ...
 
-    async def report(self, room_id: str, detail: str) -> None: ...
-
-    async def show_status(self, room_id: str, text: str) -> None: ...
-
-    async def clear_status(self, room_id: str) -> None: ...
-
-    async def set_typing(self, room_id: str, active: bool) -> None: ...
+    async def report(self, detail: str) -> None: ...
 
 
 class SessionService:
@@ -179,14 +179,14 @@ class SessionService:
         notifications: SessionNotifications,
         *,
         mcp_token: SecretStr,
-        room_surface: RoomSurface | None = None,
+        chat_frontend: ChatFrontend | None = None,
     ):
         self._config = config
         self._store = store
         self._claims = claims
         self._notifications = notifications
         self._mcp_token = mcp_token
-        self._room_surface = room_surface
+        self._chat_frontend = chat_frontend
 
     async def request_abort(self, operator_id: UUID, session_id: UUID) -> bool:
         """Interrupt this session's turn, or answer False when it has none.
@@ -253,43 +253,28 @@ class SessionService:
         await self._store.complete_claim_cleanup(session_id)
         return True
 
-    async def _room_of(self, session_id: UUID) -> str | None:
-        """The room this session serves, or None for one that serves no room.
+    async def _frontend_for(self, session_id: UUID) -> ChatFrontend | None:
+        """The chat frontend this session is attached to, or None for one attached to none.
 
-        Read once per runner connection and carried for the session's life: immutable on the row,
-        so re-reading it would only add round trips.
+        The frontend is bound to its room, so what is asked here is which sessions it serves — the
+        session's own `surface`, immutable on the row. Read once per runner connection and carried
+        for the session's life, so re-reading it would only add round trips.
         """
-        return None if self._room_surface is None else await self._store.room_of(session_id)
+        if self._chat_frontend is None:
+            return None
+        return self._chat_frontend if await self._store.room_of(session_id) is not None else None
 
-    async def _appended_prompt(self, session_id: UUID, room_id: str | None) -> str | None:
+    async def _appended_prompt(self, session_id: UUID, frontend: ChatFrontend | None) -> str | None:
         """Who this session is, appended to Claude Code's own system prompt.
 
         Appended, not replacing: the built-ins (Read, Bash, Edit) are live in the sandbox and the
         preset is what tells the model how to drive them. Hence `--append-system-prompt` and never
         `--system-prompt`.
         """
-        if self._room_surface is None or room_id is None:
-            return None
-        return await self._room_surface.system_prompt(session_id, room_id)
+        return None if frontend is None else await frontend.system_prompt(session_id)
 
-    def _turn_status(self, room_id: str | None) -> TurnStatus:
-        """A status driver for one turn, wired to the room if this session serves one.
-
-        A session with no room still gets a driver rather than a `None` to branch on: the SPA reads
-        the message rows, so its status has nothing to do, and the turn loop should not have to know
-        which surface it is on.
-        """
-        surface, room = self._room_surface, room_id
-        if surface is None or room is None:
-            return TurnStatus(ignore_status, ignore_clear)
-        return TurnStatus(
-            lambda text: surface.show_status(room, text),
-            lambda: surface.clear_status(room),
-            lambda active: surface.set_typing(room, active),
-        )
-
-    def _progress_reporter(self, session_id: UUID, room_id: str | None) -> Callable[[str], Awaitable[None]]:
-        """Record every sandbox progress report, log it, and show it to the room if there is one.
+    def _progress_reporter(self, session_id: UUID, frontend: ChatFrontend | None) -> Callable[[str], Awaitable[None]]:
+        """Record every sandbox progress report, log it, and show it to the frontend if there is one.
 
         Recorded first because the rollout is the only durable copy: the pod's log is reaped with
         the sandbox, and a session that died before its first CLI frame has its whole account here.
@@ -300,8 +285,8 @@ class SessionService:
             await self._store.record_frame(
                 session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, setup_output_frame(detail)
             )
-            if self._room_surface is not None and room_id is not None:
-                await self._room_surface.report(room_id, detail)
+            if frontend is not None:
+                await frontend.report(detail)
 
         return report
 
@@ -347,8 +332,8 @@ class SessionService:
         # session that silently started without its identity is the generic-assistant bug this
         # prompt exists to fix, and it would be invisible.
         try:
-            room_id = await self._room_of(session_id)
-            appended = await self._appended_prompt(session_id, room_id)
+            frontend = await self._frontend_for(session_id)
+            appended = await self._appended_prompt(session_id, frontend)
         except Exception as error:
             logger.exception("Claude system prompt failed to render for session %s", session_id)
             await self._store.fail(session_id, f"system prompt failed to render: {error}")
@@ -372,7 +357,7 @@ class SessionService:
             # adopting a session mid-turn asks for what it is missing rather than being handed the
             # runner's whole replay window (<../../plans/chat_runtime_projection.md> § 2b).
             build_claude_launch(session, resume_from=await self._store.highest_runner_seq(session_id)),
-            self._progress_reporter(session_id, room_id),
+            self._progress_reporter(session_id, frontend),
             RolloutRecorder(self._store, session_id),
         )
         abort_event = asyncio.Event()
@@ -430,7 +415,7 @@ class SessionService:
                             abort_event.clear()
                             try:
                                 await self._run_turn(
-                                    client, frames, session_id, turn, room_id=room_id, abort_event=abort_event
+                                    client, frames, session_id, turn, frontend=frontend, abort_event=abort_event
                                 )
                             except Exception as error:
                                 logger.exception("turn failed for session %s", session_id)
@@ -538,7 +523,7 @@ class SessionService:
         session_id: UUID,
         turn: TurnStart | ResumedTurn,
         *,
-        room_id: str | None,
+        frontend: ChatFrontend | None,
         abort_event: asyncio.Event,
     ) -> None:
         """Ask *turn*'s question if it has not been asked, then consume the stream until the turn
@@ -586,7 +571,7 @@ class SessionService:
         # so this is the seam working rather than leaking.
         result: dict[str, Any] | None = None
         result_frame_seq: int | None = None
-        status = self._turn_status(room_id)
+        status = TurnStatus(frontend)
         status.start()
         aborted = asyncio.ensure_future(abort_event.wait())
         # Set once the abort has been seen and the CLI interrupted, from which point this loop
@@ -691,9 +676,9 @@ class SessionService:
             # it. This way the window leaves the turn open, and what the replacement re-derives
             # collides with the row already there (`session_outbox.turn_id`).
             if not spoke:
-                await self._speak(session_id, room_id, turn_id, final_text)
+                await self._speak(session_id, frontend, turn_id, final_text)
             elif abort_event.is_set() and not carried_final:
-                await self._speak(session_id, room_id, turn_id, ABORTED_NOTICE)
+                await self._speak(session_id, frontend, turn_id, ABORTED_NOTICE)
             # Both halves are the event's: the outcome, and the usage the backend's adapter read
             # out of its own payload. Nothing about a turn's cost passes through here as a CLI's
             # frame any more.
@@ -720,22 +705,22 @@ class SessionService:
             # the turn died is the stuck-typing-indicator bug R6.1 calls out, in another form.
             await status.finish()
 
-    async def _speak(self, session_id: UUID, room_id: str | None, turn_id: UUID, text: str) -> None:
+    async def _speak(self, session_id: UUID, frontend: ChatFrontend | None, turn_id: UUID, text: str) -> None:
         """Queue the turn's last word for the room, or report that it had none (R11.2).
 
         Only ever the end of a turn: a completed assistant message queues its own copy in the same
         transaction. What is left over belongs to no message row — an abort notice, or an answer
         that arrived only on the `result` frame.
 
-        A session with no room needs nothing here; the SPA reads the message rows the turn already
-        wrote. An empty body is not a silence token (R11.2): the room is told the turn said nothing,
-        as a notice rather than a reply, because it is the console reporting and not the agent
-        talking.
+        A session attached to no frontend needs nothing here; the SPA reads the message rows the
+        turn already wrote. An empty body is not a silence token (R11.2): the room is told the turn
+        said nothing, as a notice rather than a reply, because it is the console reporting and not
+        the agent talking.
         """
-        if self._room_surface is None or room_id is None:
+        if frontend is None:
             return
         if not await self._store.enqueue_turn_reply(session_id, turn_id, text):
-            await self._room_surface.report_silent_turn(room_id)
+            await frontend.report_silent_turn()
 
     async def aclose(self) -> None:
         # Called from the lifespan on the way down. Handing every held lease back here is the

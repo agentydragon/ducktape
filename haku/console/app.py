@@ -325,7 +325,7 @@ def create_app(
             sandbox_claims.KubernetesSandboxClaims(claude_runtime),
             session_notifications,
             mcp_token=mcp_agent.token,
-            room_surface=matrix_surface,
+            chat_frontend=matrix_surface,
         )
     # The supervisor comes after the Claude runtime it provisions through, and announces via
     # the sync service, which holds the only Matrix credential — one login, one device,

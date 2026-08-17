@@ -83,10 +83,13 @@ class RoomChannel(Protocol):
     is the only way a producer can be told that the room actually heard one.
 
     Implemented by the sync loop, the only holder of the credential and the only object that
-    knows which room is bound. `recent_history` is the one method that asks it for something
-    rather than telling it something, and it is answered out of our own transcript — the channel
-    is still who to ask, because it knows which room this is, but not where the answer comes from.
+    knows which room is bound. `bound_room` and `recent_history` are the two methods that ask it
+    for something rather than telling it something, and the second is answered out of our own
+    transcript — the channel is still who to ask, because it knows which room this is, but not
+    where the answer comes from.
     """
+
+    async def bound_room(self) -> str | None: ...
 
     async def recent_history(self, before_session: UUID, limit: int) -> Sequence[HistoryMessage]: ...
 
@@ -301,7 +304,7 @@ class MatrixSurface:
 
     One class rather than three sinks, and no session filtering in any of them: the console
     picks this by reading the session's own `surface` (R11.3a), so being called at all is the
-    statement that this session serves `room_id`. Each method used to begin by loading the
+    statement that this session serves the bound room. Each method used to begin by loading the
     current room binding and comparing its `session_id` — the row's own fact, re-derived per
     delivery, in a form where getting it wrong meant silently saying nothing.
 
@@ -317,8 +320,7 @@ class MatrixSurface:
     redacted after we recorded it stays here after the room has forgotten it.
 
     The `RoomChannel` is the sync service, which holds the only Matrix credential and services
-    one room (R3.6a) — so `room_id` names the room it already speaks to rather than choosing
-    between rooms.
+    one room (R3.6a) — so this frontend is bound to its address by construction and takes none.
     """
 
     def __init__(
@@ -329,7 +331,15 @@ class MatrixSurface:
         self._template = template
         self._room = room
 
-    async def system_prompt(self, session_id: UUID, room_id: str) -> str:
+    async def system_prompt(self, session_id: UUID) -> str:
+        """Introduce the session to itself, naming the room it was started to serve.
+
+        The room id is prompt text rather than an address — the channel is what knows where to
+        speak — so it is asked for here rather than threaded through the turn loop.
+        """
+        room_id = await self._room.bound_room()
+        if room_id is None:
+            raise RuntimeError("a session serves this channel but no room is bound to it")
         return self._template.render(
             SessionIntroduction(
                 session_id=session_id,
@@ -340,7 +350,7 @@ class MatrixSurface:
             )
         )
 
-    async def report_silent_turn(self, room_id: str) -> None:
+    async def report_silent_turn(self) -> None:
         """Say that a turn finished with nothing to show for it (R11.2).
 
         Every turn speaks, and there is deliberately no silence token — an empty answer that
@@ -348,28 +358,23 @@ class MatrixSurface:
         that requirement rules out. A notice rather than a reply, because nothing was said: this
         is the console reporting an outcome, not the agent talking.
         """
-        del room_id  # This channel is already bound to the one room the console services.
         logger.warning("Matrix: a turn finished with no text to send")
         await self._room.announce(NOTHING_SAID, RoomEventKind.NARRATION)
 
-    async def report(self, room_id: str, detail: str) -> None:
+    async def report(self, detail: str) -> None:
         """Narrate the sandbox's setup into the room (R7.1)."""
-        del room_id
         await self._room.announce(detail, RoomEventKind.NARRATION)
 
-    async def show_status(self, room_id: str, text: str, session_id: UUID | None = None) -> None:
+    async def show_status(self, text: str) -> None:
         """Say what the turn is doing now, on the room's one status line (R6.2)."""
-        del room_id
-        await self._room.show_status(text, session_id)
+        await self._room.show_status(text)
 
-    async def clear_status(self, room_id: str) -> None:
+    async def clear_status(self) -> None:
         """Retire that line once the turn is over, however it ended (R6.5)."""
-        del room_id
         await self._room.clear_status()
 
-    async def set_typing(self, room_id: str, active: bool) -> None:
+    async def set_typing(self, active: bool) -> None:
         """Show a turn in progress without the agent doing anything about it (R6.1)."""
-        del room_id
         await self._room.set_typing(active)
 
     async def _recent(self, session_id: UUID) -> Sequence[HistoryMessage]:

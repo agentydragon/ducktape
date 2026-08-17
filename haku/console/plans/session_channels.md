@@ -131,7 +131,7 @@ decides which become rows:
 | What                    | Written by                                             | Recorded today                    |
 | ----------------------- | ------------------------------------------------------ | --------------------------------- |
 | Lifecycle transitions   | `_SessionStatusAnnouncer` (channels/matrix/session.py) | **nowhere**                       |
-| Bootstrap narration     | `_progress_reporter` → `RoomSurface.report`            | **already** — `setup_output` rows |
+| Bootstrap narration     | `_progress_reporter` → `ChatFrontend.report`           | **already** — `setup_output` rows |
 | The in-turn status line | `_TurnStatus` → `show_status`/`clear_status`           | no, and deliberately              |
 | The typing indicator    | `_TurnStatus` → `set_typing`                           | no, and deliberately              |
 
@@ -349,7 +349,7 @@ under a route chosen to survive it.
 Two places state that the SPA needs nothing from the room-facing port. That premise was true of a
 surface whose client only read message rows; it is not true of a channel:
 
-- **`RoomSurface`'s docstring** — "The SPA needs none of this — its client reads the message rows
+- **`ChatFrontend`'s docstring** — "The SPA needs none of this — its client reads the message rows
   over SSE, so a finished turn is delivered by being written down." Under §3 the console channel
   wants lifecycle and narration, and under §4 it wants to be told when.
 - **<../../plans/chat_runtime_cleanup.md> § The frontend seam** — "a null implementation for the
