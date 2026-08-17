@@ -485,8 +485,8 @@ attachment rows. That is what an SPA session is, and it costs one row and no dec
 rows keyed by `session_id`. The conversation answers only _which channels are told_. Events on
 sessions, fan-out by conversation.
 
-**What is left is the reader move** (step 1). `sessions.conversation_id` is nullable and
-authoritative reads still go through `sessions.room_id` and `matrix_conversation`; the attachment
+**What is left is the reader move** (step 1). Authoritative reads still go through
+`sessions.room_id` and `matrix_conversation`; the attachment
 subsumes both, including `matrix_conversation`'s `user_id` primary key — the rule that makes one bot
 user serve exactly one room ever. Losing that rule is **the point rather than the cost** (§ 7).
 
@@ -639,12 +639,10 @@ exists to remove:
 having even if the loop is never built. The dependency edges are at the end.
 
 1.  **Read through `conversation_id`, then unmap what it subsumes.** `0064` is additive, so
-    `matrix_conversation`, `sessions.room_id` and `sessions.surface` are still authoritative and
-    `sessions.conversation_id` is nullable. **A reader keyed on `conversation_id` waits for the
-    write half to converge**, because for the length of a roll the previous image inserts sessions
-    with it NULL and any join through it silently omits them — `RoomTranscript.recent` losing a
-    room's re-awakening history is the concrete case. Same gate as the `SET NOT NULL` the tombstone
-    on `sessions.conversation_id` names.
+    `matrix_conversation`, `sessions.room_id` and `sessions.surface` are still authoritative. The
+    gate that held a reader back is discharged: `0072` takes the `NOT NULL`, so a join through
+    `conversation_id` can no longer silently omit a session the previous image inserted without
+    one — `RoomTranscript.recent` losing a room's re-awakening history was the concrete case.
 
     **Two nullability traps sit on the columns this subsumes**, and they make it four steps rather
     than three:
