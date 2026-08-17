@@ -1,10 +1,10 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  # Retry after the first Job correctly demonstrated that its bucket-scoped
-  # identity cannot create buckets. Jobs have immutable pod templates, so a
-  # fresh name is required for the fixed configuration.
-  name: public-coder-agent-state-archive-20260817-retry1
+  # rclone's first path component is the S3 bucket, so the first two Jobs
+  # inadvertently attempted to write to a bucket named "rescue". Jobs have
+  # immutable pod templates, so this corrected retry needs a fresh name.
+  name: public-coder-agent-state-archive-20260817-retry2
   namespace: public-coder-agent
   labels:
     app.kubernetes.io/name: public-coder-agent-archive-copier
@@ -44,6 +44,7 @@ spec:
               set -o pipefail
               umask 077
               stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+              bucket=public-coder-agent-archive
               prefix="rescue/${stamp}"
               partial="${prefix}/public-coder-agent-state.tar.partial"
               archive="${prefix}/public-coder-agent-state.tar"
@@ -53,12 +54,12 @@ spec:
               mkfifo "$fifo"
               sha256sum "$fifo" | sed 's#  .*#  -#' > "$hash_file" &
               hasher_pid=$!
-              tar -C /state -cf - . | tee "$fifo" | rclone --config '' rcat --bwlimit 2M archive:"$partial"
+              tar -C /state -cf - . | tee "$fifo" | rclone --config '' rcat --bwlimit 2M --s3-chunk-size 64M --s3-upload-concurrency 1 archive:"$bucket/$partial"
               wait "$hasher_pid"
-              rclone --config '' moveto archive:"$partial" archive:"$archive"
-              rclone --config '' copyto "$hash_file" archive:"$checksum"
-              rclone --config '' cat archive:"$archive" | sha256sum -c "$hash_file"
-              rclone --config '' cat archive:"$archive" | tar -tf - >/dev/null
+              rclone --config '' moveto archive:"$bucket/$partial" archive:"$bucket/$archive"
+              rclone --config '' copyto "$hash_file" archive:"$bucket/$checksum"
+              rclone --config '' cat archive:"$bucket/$archive" | sha256sum -c "$hash_file"
+              rclone --config '' cat archive:"$bucket/$archive" | tar -tf - >/dev/null
           env:
             - name: RCLONE_CONFIG_ARCHIVE_TYPE
               value: s3
