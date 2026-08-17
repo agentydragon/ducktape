@@ -64,7 +64,7 @@ equivalence, `VALIDATE CONSTRAINT ck_session_messages_source_anchored`,
 `unpointable_reason` — `x/message_provenance.py`, its `_main` and their tests — went with it, since
 `0058` makes the shape it recorded unwritable.
 
-**`session_messages.{unpointable_reason,tool_calls}` are unmapped** (#4256), with the
+**`session_messages.{unpointable_reason,tool_calls}` are unmapped** (#4266), with the
 `ck_session_messages_unpointable_{reason,exclusive}` declarations, `MessageUnpointable`,
 `message_view`'s `recorded or message.tool_calls` fallback, and the two writers the plan did not
 know were still there — `apply_frame`'s `message.tool_calls = tool_calls` and `update_assistant`'s
