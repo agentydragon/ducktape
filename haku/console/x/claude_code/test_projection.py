@@ -9,6 +9,7 @@ The shapes themselves come from <testing/wire.py>; what is written out here is a
 release has seen, which is the one thing a builder cannot supply.
 """
 
+import json
 from collections.abc import Iterable, Iterator, Sequence
 from functools import reduce
 from itertools import product
@@ -41,11 +42,9 @@ from haku.console.x.conversation_events import (
     Projection,
     ProjectionState,
     Reasoning,
-    TextContent,
     TextDelta,
     ToolCallCompleted,
     ToolCallStarted,
-    ToolReferences,
     TurnCompleted,
 )
 
@@ -110,7 +109,7 @@ def test_the_frames_of_one_message_are_not_always_contiguous():
 
 
 def test_the_tool_result_you_can_render_is_not_the_tool_result():
-    """`content` is prose or names; the exit code, the patch and the MCP payload are elsewhere."""
+    """`content` is text; the exit code, the patch and the MCP payload are elsewhere."""
     deferred_search = {"matches": [{"name": "Bash"}], "query": "shell", "total_deferred_tools": 112}
     events = project_log(
         [
@@ -132,12 +131,23 @@ def test_the_tool_result_you_can_render_is_not_the_tool_result():
     ).events
 
     completions = [event for event in events if isinstance(event, ToolCallCompleted)]
-    assert completions[0].content == TextContent(text="3\n")
+    assert completions[0].content == "3\n"
     assert completions[0].structured == BASH_RESULT
-    # The 5.6% that a `content`-only model renders as empty: the blocks name tools and carry no
-    # payload, and everything the call produced is in `structured`.
-    assert completions[1].content == ToolReferences(tool_names=("Bash", "BashOutput"))
+    # The 5.6% that carry no prose at all: one harness's own block shape, rendered rather than
+    # given a variant of its own, with everything the call produced in `structured`.
+    assert completions[1].content == json.dumps(
+        [{"tool_name": "Bash", "type": "tool_reference"}, {"tool_name": "BashOutput", "type": "tool_reference"}]
+    )
     assert completions[1].structured == deferred_search
+
+
+def test_a_result_that_is_a_list_of_text_blocks_is_still_prose():
+    """The shape an MCP tool's result arrives in, and the one list shape that is not JSON here."""
+    events = project_log(
+        [recorded(1, tool_result("toolu_1", [{"type": "text", "text": "one "}, {"type": "text", "text": "two"}]))]
+    ).events
+
+    assert [event.content for event in events if isinstance(event, ToolCallCompleted)] == ["one two"]
 
 
 def test_every_did_this_go_wrong_field_is_uninformative():

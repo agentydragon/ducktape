@@ -65,7 +65,7 @@ def _entry(event: conversation_events.ConversationEvent, index: int) -> conversa
                 index=index,
                 provenance=provenance,
                 call_id=event.call_id,
-                content=_content(event.content),
+                content=event.content,
                 structured=event.structured,
                 outcome=conversation_records.Outcome(event.outcome),
             )
@@ -89,13 +89,3 @@ def _provenance(provenance: conversation_events.Provenance) -> conversation_reco
             )
         case conversation_events.Authored():
             return conversation_records.ConsoleAuthored()
-
-
-def _content(content: conversation_events.ToolResultContent) -> conversation_records.ResultContent:
-    match content:
-        case conversation_events.TextContent():
-            return conversation_records.ResultText(text=content.text)
-        case conversation_events.ToolReferences():
-            return conversation_records.ResultToolReferences(tool_names=list(content.tool_names))
-        case conversation_events.OpaqueContent():
-            return conversation_records.ResultOpaque(payload=content.payload)

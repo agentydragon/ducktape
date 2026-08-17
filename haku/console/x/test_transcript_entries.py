@@ -93,7 +93,7 @@ def test_a_tool_call_and_its_answer_are_joined_by_call_id_and_nothing_else() -> 
     assert isinstance(answer, conversation_records.ToolResultEntry)
     assert (call.tool_name, call.call_id) == ("Read", "toolu_1")
     assert answer.call_id == "toolu_1"
-    assert answer.content == conversation_records.ResultText(text="file contents")
+    assert answer.content == "file contents"
     assert answer.structured == {"filePath": "/x"}
 
 

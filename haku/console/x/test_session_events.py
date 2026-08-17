@@ -22,14 +22,11 @@ from haku.console.x.conversation_events import (
     FrameRange,
     MessageCompleted,
     MessageKey,
-    OpaqueContent,
     Outcome,
     Reasoning,
-    TextContent,
     TextDelta,
     ToolCallCompleted,
     ToolCallStarted,
-    ToolReferences,
     TurnCompleted,
 )
 
@@ -71,7 +68,7 @@ def test_a_tool_call_and_its_answer_are_two_rows_sharing_the_correlation_column(
     completed = stored(
         ToolCallCompleted(
             call_id="toolu_1",
-            content=TextContent(text="a.py\nb.py"),
+            content="a.py\nb.py",
             structured={"exit_code": 0},
             outcome=Outcome.SUCCEEDED,
             provenance=FrameRange(15, 15),
@@ -87,29 +84,37 @@ def test_a_tool_call_and_its_answer_are_two_rows_sharing_the_correlation_column(
     }
 
 
-def test_a_result_that_named_tools_is_not_stored_as_prose() -> None:
-    """The shape a renderer reading `content` as a string shows empty, kept as what it is."""
-    references = stored(
+def test_the_two_shapes_this_release_stopped_writing_still_read() -> None:
+    """Rows of both survive in production, and `ToolResultBody` is parsed on every SPA read of a
+    stored result — so an arm removed while its rows exist makes reading history raise."""
+    references = session_events.ToolResultBody.model_validate(
+        {
+            "content": {"shape": "tool_references", "tool_names": ["Read", "Grep"]},
+            "structured": None,
+            "outcome": "unknown",
+        }
+    )
+    opaque = session_events.ToolResultBody.model_validate(
+        {"content": {"shape": "opaque", "payload": {"unknown": True}}, "structured": None, "outcome": "unknown"}
+    )
+
+    assert references.content == session_events.ToolReferencesResultBody(tool_names=["Read", "Grep"])
+    assert opaque.content == session_events.OpaqueResultBody(payload={"unknown": True})
+
+
+def test_every_result_is_now_stored_as_text() -> None:
+    """The variant collapsed, so the shape discriminator has one live value and two legacy ones."""
+    rendered = stored(
         ToolCallCompleted(
             call_id="toolu_2",
-            content=ToolReferences(tool_names=("Read", "Grep")),
-            structured=None,
-            outcome=Outcome.UNKNOWN,
-            provenance=WHERE,
-        )
-    )
-    opaque = stored(
-        ToolCallCompleted(
-            call_id="toolu_3",
-            content=OpaqueContent(payload={"unknown": True}),
+            content='[{"tool_name": "Read", "type": "tool_reference"}]',
             structured=None,
             outcome=Outcome.UNKNOWN,
             provenance=WHERE,
         )
     )
 
-    assert references.body["content"] == {"shape": "tool_references", "tool_names": ["Read", "Grep"]}
-    assert opaque.body["content"] == {"shape": "opaque", "payload": {"unknown": True}}
+    assert rendered.body["content"] == {"shape": "text", "text": '[{"tool_name": "Read", "type": "tool_reference"}]'}
 
 
 def test_a_prompt_is_conversation_on_the_authored_arm() -> None:

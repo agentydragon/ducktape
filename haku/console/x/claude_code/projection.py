@@ -22,7 +22,7 @@ share of production frames is a dated observation and belongs in a dated documen
 | One block per `assistant` frame, so a message spans several      | A message is the run of frames sharing `message.id`, closed by a *different* id, a `result`, or the caller saying the stream ended — never by a clock or a batch boundary |
 | `stop_reason` is never set                                       | Nothing reads it; there is no "the provider said it was done" branch to be wrong                                                           |
 | A `user` frame can land between two frames of one message        | A `user` frame never closes a message. Its `FrameRange` spans the interruption, which is what a range means                                |
-| `content` is usually prose, sometimes tool names and no payload  | `content` is a variant, and the real output rides beside it as `structured` (`tool_use_result`, many per-tool shapes)                      |
+| `content` is usually prose, sometimes tool names and no payload  | `content` is rendered to text whatever shape it arrived in, and the real output rides beside it as `structured` (`tool_use_result`, many per-tool shapes) |
 | `is_error` is often absent, and `result.is_error` is never true  | `Outcome.UNKNOWN` where it is absent, and a turn's outcome comes from `subtype` — `is_error` is read nowhere                               |
 | Most of the wire is `system`, and most of that is one constant   | `_IGNORED_KINDS` / `_IGNORED_SYSTEM_SUBTYPES` are frozenset lookups that return before anything is allocated                               |
 | Frame classes and `system` subtypes exist that `protocol.md` omits | The default branch counts into `Projection.unprojected` — neither a crash nor a silent drop                                                |
@@ -38,6 +38,7 @@ worth being able to see.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
@@ -52,18 +53,14 @@ from haku.console.x.conversation_events import (
     Json,
     MessageCompleted,
     MessageKey,
-    OpaqueContent,
     OpenMessage,
     Outcome,
     Projection,
     ProjectionState,
     Reasoning,
-    TextContent,
     TextDelta,
     ToolCallCompleted,
     ToolCallStarted,
-    ToolReferences,
-    ToolResultContent,
     TurnCompleted,
 )
 
@@ -342,23 +339,27 @@ class _Projector:
         self.unprojected[key] = self.unprojected.get(key, 0) + 1
 
 
-def _result_content(content: Any) -> ToolResultContent:
-    """The renderable half of a tool result.
+def _result_content(content: Any) -> str:
+    """The renderable half of a tool result, as the text a transcript prints.
 
-    Usually a bare string; the rest is a list, and every list in the corpus is `tool_reference`
-    blocks naming a tool and carrying nothing else — hence a renderer reading `content` alone shows
-    them as empty.
+    Prose in the two shapes that carry prose — a bare string, and a list of `text` blocks, which is
+    what an MCP tool's result arrives as. Everything else is rendered as its JSON rather than given
+    an arm of its own: a `tool_result`'s block set is the provider's to extend, and the one other
+    shape production sends is a list of `tool_reference` blocks, which is one built-in search's
+    result on one harness. What the call actually produced is in `structured` either way.
     """
     if isinstance(content, str):
-        return TextContent(text=content)
-    if isinstance(content, list) and content:
-        blocks = [block for block in content if isinstance(block, dict)]
-        if len(blocks) == len(content):
-            if all(block.get("type") == "tool_reference" for block in blocks):
-                return ToolReferences(tool_names=tuple(str(block.get("tool_name")) for block in blocks))
-            if all(block.get("type") == "text" and isinstance(block.get("text"), str) for block in blocks):
-                return TextContent(text="".join(str(block["text"]) for block in blocks))
-    return OpaqueContent(payload=content)
+        return content
+    if (
+        isinstance(content, list)
+        and content
+        and all(
+            isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str)
+            for block in content
+        )
+    ):
+        return "".join(block["text"] for block in content)
+    return json.dumps(content)
 
 
 def _result_outcome(is_error: Any) -> Outcome:

@@ -211,44 +211,21 @@ class ToolCallEntry(_EntryBase):
     arguments: dict[str, Any]
 
 
-class ResultText(BaseModel):
-    kind: Literal["text"] = "text"
-    text: str
-
-
-class ResultToolReferences(BaseModel):
-    """The result named tools and carried no output of its own.
-
-    A real shape rather than a defensive one: production tool results take it routinely, and a
-    reader treating them as prose reads them as empty. What the call produced is in `structured`.
-    """
-
-    kind: Literal["tool_references"] = "tool_references"
-    tool_names: list[str]
-
-
-class ResultOpaque(BaseModel):
-    """Content with no prose reading, kept verbatim. `structured` still carries the result."""
-
-    kind: Literal["opaque"] = "opaque"
-    payload: Any
-
-
-type ResultContent = Annotated[ResultText | ResultToolReferences | ResultOpaque, Field(discriminator="kind")]
-
-
 class ToolResultEntry(_EntryBase):
     """What a call answered: the part a transcript can print, and the part it cannot.
 
-    **The renderable content is not the result.** `content` is prose; `structured` is the exit
-    code, the patch, the MCP `structuredContent` — an open set of per-tool shapes. Both are
+    **`content` is the result rendered, not the result.** `structured` is the exit code, the patch,
+    the MCP `structuredContent` — an open set of per-tool shapes no string carries. Both are
     carried because neither is derivable from the other, and `structured` is absent when the
     provider carried none.
     """
 
     kind: Literal["tool_result"] = "tool_result"
     call_id: str
-    content: ResultContent
+    content: str = Field(
+        description="The result as text: what the provider sent where it sent prose, and its JSON otherwise. "
+        "`provenance` names the frames to read the original blocks from."
+    )
     structured: Any = Field(
         default=None, description="The call's structured output, verbatim; absent when it had none or was clipped."
     )

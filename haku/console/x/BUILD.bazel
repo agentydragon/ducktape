@@ -406,10 +406,13 @@ py_test(
     deps = [
         ":conftest",
         ":session_store",
+        ":session_views",
         ":setup_output",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],

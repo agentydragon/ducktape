@@ -133,48 +133,22 @@ class Outcome(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class TextContent:
-    text: str
-
-
-@dataclass(frozen=True, slots=True)
-class ToolReferences:
-    """The result named tools and carried no output of its own.
-
-    A real shape, not a defensive one: production results take it routinely, and a renderer that
-    reads them as prose renders them empty. The output itself is in `ToolCallCompleted.structured`.
-    """
-
-    tool_names: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class OpaqueContent:
-    """Content this projection has no prose reading for, kept verbatim.
-
-    The branch exists because the block set is the provider's to extend, not because anything has
-    been seen here. `structured` still carries the result.
-    """
-
-    payload: Json
-
-
-type ToolResultContent = TextContent | ToolReferences | OpaqueContent
-
-
-@dataclass(frozen=True, slots=True)
 class ToolCallCompleted:
     """What a call answered: the part a channel can show, and the part it cannot.
 
-    **The renderable content is not the result.** `content` is what a transcript prints;
-    `structured` is the exit code, the patch, the MCP `structuredContent` — an open set of per-tool
-    shapes a `str | list[Block]` model drops in silence. Neither is derivable from the other.
+    **`content` is the result rendered, not the result.** A tool result's structure is the
+    provider's — one tool's block shape on one harness — so an adapter reduces it to the text a
+    transcript prints and the structure stays in the frames, which is the surface allowed to be
+    provider-shaped. A channel that had a variant to branch on would be branching on a shape only
+    one backend produces.
 
-    `structured` is None when the provider carried no structured result.
+    `structured` is the exit code, the patch, the MCP `structuredContent` — an open set of per-tool
+    shapes no string carries — and is None when the provider carried none. It stays because it is
+    not derivable from `content`: a rendered result and a tool's own output are different answers.
     """
 
     call_id: str
-    content: ToolResultContent
+    content: str
     structured: Json
     outcome: Outcome
     provenance: Provenance

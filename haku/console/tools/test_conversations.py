@@ -26,7 +26,6 @@ from haku.console.x.conversation_records import (
     MessageEntry,
     MessageRef,
     Outcome,
-    ResultText,
     RolloutFrame,
     ToolResultEntry,
     TranscriptCursor,
@@ -96,7 +95,7 @@ def _tool_result(index: int, *, structured: object) -> ToolResultEntry:
         index=index,
         provenance=FromFrames(first_frame_seq=index + 1, last_frame_seq=index + 1),
         call_id=f"toolu_{index}",
-        content=ResultText(text="ok"),
+        content="ok",
         structured=structured,
         outcome=Outcome.UNKNOWN,
     )

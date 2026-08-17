@@ -41,7 +41,6 @@ from haku.console.x.conversation_events import (
     MessageCompleted,
     MessageKey,
     Outcome,
-    TextContent,
     ToolCallCompleted,
     ToolCallStarted,
 )
@@ -1162,7 +1161,7 @@ async def test_a_frames_events_land_as_rows_with_the_cursor_that_says_they_did(
         [
             ToolCallCompleted(
                 call_id="toolu_1",
-                content=TextContent(text="a.py"),
+                content="a.py",
                 structured={"exit_code": 0},
                 outcome=Outcome.SUCCEEDED,
                 provenance=FrameRange(8, 8),

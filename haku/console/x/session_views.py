@@ -8,6 +8,7 @@ routes hand back.
 
 from __future__ import annotations
 
+import json
 from bisect import bisect_left, bisect_right
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -40,13 +41,14 @@ from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 class SessionToolResultView(BaseModel):
     """What a tool answered — the renderable half, out of the event that recorded it.
 
-    `content` is a string for most tools, the tool names for a result that named tools and carried
-    nothing else, and the payload verbatim for a shape this release has no prose reading for.
+    Always text: what the provider sent where it sent prose, and its JSON otherwise. A row stored
+    before a result's content became a string is rendered to the same text rather than handed to
+    the SPA as two further shapes to branch on.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    content: Any
+    content: str
     # `Outcome.UNKNOWN` reads here as "not an error", which is what the frame parser this replaced
     # also did: a provider routinely reports nothing, and the SPA has one boolean with no third
     # state to render. Carrying the outcome through is a frontend change rather than this one.
@@ -277,15 +279,20 @@ def _answered(row: SessionEvent) -> tuple[str, SessionToolResultView]:
     return row.call_id, SessionToolResultView(content=_rendered(body.content), is_error=body.outcome is Outcome.FAILED)
 
 
-def _rendered(content: session_events.ResultContentBody) -> Any:
-    """The half of a result a transcript prints, out of the variant the event stored it as."""
+def _rendered(content: session_events.ResultContentBody) -> str:
+    """The half of a result a transcript prints, out of the spelling the event stored it as.
+
+    Everything written from now on takes the first arm. The other two are rows older than the
+    collapse to a string, and they are rendered here rather than passed through: a stored shape
+    this release no longer writes is not a reason for the SPA's contract to be wider than a string.
+    """
     match content:
         case session_events.TextResultBody():
             return content.text
         case session_events.ToolReferencesResultBody():
-            return content.tool_names
+            return json.dumps(content.tool_names)
         case session_events.OpaqueResultBody():
-            return content.payload
+            return json.dumps(content.payload)
 
 
 async def setup_narration(db: AsyncSession, session_id: UUID) -> list[SetupNarrationView]:

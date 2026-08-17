@@ -34,23 +34,25 @@ from haku.console.x.conversation_events import (
     FrameRange,
     Json,
     MessageCompleted,
-    OpaqueContent,
     Outcome,
     Reasoning,
-    TextContent,
     TextDelta,
     ToolCallCompleted,
     ToolCallStarted,
-    ToolReferences,
-    ToolResultContent,
     TurnCompleted,
 )
 
 
 class ResultShape(StrEnum):
-    """Which arm of `ToolResultContent` a stored result carries."""
+    """Which spelling of a result's content a stored row carries."""
 
     TEXT = "text"
+    # CLEANUP(added 2026-08-17): drop both members and their bodies once no `session_events` row
+    #   carries either shape. A tool result's content is a string now, so nothing writes them — but
+    #   they are history the SPA still renders, so what gets there is a migration rewriting each
+    #   row to `{shape: text}`, not a delete that would blank an old session's results. Until then
+    #   both stay readable: `ToolResultBody` is parsed on every SPA read of a stored result, so an
+    #   arm removed while its rows survive makes reading one raise rather than degrade.
     TOOL_REFERENCES = "tool_references"
     OPAQUE = "opaque"
 
@@ -63,6 +65,8 @@ class TextResultBody(BaseModel):
 
 
 class ToolReferencesResultBody(BaseModel):
+    """Rows written while a result that named tools was its own shape; read, never written."""
+
     model_config = ConfigDict(extra="forbid")
 
     shape: Literal[ResultShape.TOOL_REFERENCES] = ResultShape.TOOL_REFERENCES
@@ -70,6 +74,8 @@ class ToolReferencesResultBody(BaseModel):
 
 
 class OpaqueResultBody(BaseModel):
+    """Rows written while content with no prose reading was its own shape; read, never written."""
+
     model_config = ConfigDict(extra="forbid")
 
     shape: Literal[ResultShape.OPAQUE] = ResultShape.OPAQUE
@@ -221,16 +227,6 @@ def _stored(event: ConversationEvent) -> tuple[ConversationEventKind, BaseModel,
             return ConversationEventKind.TOOL_CALL_STARTED, call, event.call_id
         case ToolCallCompleted():
             result = ToolResultBody(
-                content=_result_content(event.content), structured=event.structured, outcome=event.outcome
+                content=TextResultBody(text=event.content), structured=event.structured, outcome=event.outcome
             )
             return ConversationEventKind.TOOL_CALL_COMPLETED, result, event.call_id
-
-
-def _result_content(content: ToolResultContent) -> ResultContentBody:
-    match content:
-        case TextContent():
-            return TextResultBody(text=content.text)
-        case ToolReferences():
-            return ToolReferencesResultBody(tool_names=list(content.tool_names))
-        case OpaqueContent():
-            return OpaqueResultBody(payload=content.payload)

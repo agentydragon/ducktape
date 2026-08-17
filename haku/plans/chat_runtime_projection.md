@@ -503,11 +503,12 @@ census has never seen (<../console/x/README.md> § The neutral projection).
 #### A message is provider-neutral, and tool calls are in it — **built**
 
 The vocabulary below is `x/conversation_events.py` (#4145), event for event, and
-`x/claude_code/projection.py` produces it. Two shapes the argument did not anticipate and the wire
-forced: a tool result's content is a variant (`TextContent | ToolReferences | OpaqueContent`)
-rather than a string, and `Outcome.UNKNOWN` exists because `is_error` is _absent_ rather than false
-on most real results. Both are findings from <../console/debug/frame_shape_census.md>. The
-reasoning below is kept because it is what the vocabulary answers to.
+`x/claude_code/projection.py` produces it. One shape the argument did not anticipate and the wire
+forced: `Outcome.UNKNOWN` exists because `is_error` is _absent_ rather than false on most real
+results, a finding from <../console/debug/frame_shape_census.md>. A tool result's content was also
+modelled as a variant for a while, and is a string again — the variants were one tool's block shape
+on one harness, so the structure belongs in the frames and the neutral layer carries the rendering.
+The reasoning below is kept because it is what the vocabulary answers to.
 
 The alternative — messages as prose only, tool activity left in frames — was considered and
 rejected, on an argument from what the channels already do (operator, 2026-08-16). **Matrix shows
