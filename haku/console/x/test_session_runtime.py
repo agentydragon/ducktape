@@ -3,7 +3,7 @@
 **No channel is imported here, deliberately.** A room reaches this file only as the `ChatFrontend`
 port `session_runtime.py` defines and the `room_id` string a `MatrixSession` records — never as
 `matrix-nio`, ingress or the room/session binding. What a homeserver's messages become is
-<channels/matrix/test_session.py>, beside the `MatrixTurns` that makes them turns.
+<channels/matrix/test_conversation.py>, beside the `MatrixTurns` that makes them turns.
 """
 
 from __future__ import annotations
