@@ -275,15 +275,149 @@ channel onto one conversation cannot be expressed; and "only one session holds i
 a property of the supervisor and its advisory lock rather than a partial unique index over open
 sessions.
 
-## 7. Open questions
+## 7. Settled, and still open
+
+**Settled by the operator, 2026-08-17.**
+
+- **Channel state lives in Postgres, not in the room.** The watermark stays a row; `m.fully_read`
+  and per-room `account_data` are not pursued. The reason given was preference for the known
+  quantity — "postgres is known, state in matrix, who knows" — and it is reinforced by the
+  mechanics § 3 already lists: account data is per-user with no compare-and-set while several
+  replicas act as one Matrix user, and it is one position where R2.5 needs two. This does **not**
+  retire reading the room; § 3's correspondence reader is how the reconciler learns what the room
+  currently shows, and that is a read, not a store.
+- **An abort is an event.** It goes into `session_events` the way "this replica took the session"
+  does, and the room's "this was aborted" notice is a projection of that row rather than its
+  record. Today the abort notice is the one non-reply artifact that is durable, and it is durable
+  in the _channel's_ table (`session_outbox`, keyed by `turn_id`) rather than in the record — which
+  is exactly the inversion § 5 says the move must fix.
+
+**Still open.**
 
 - **Does the conversation become a real table, or does `chat_attachment` re-key onto one?** § 6
-  prices both. Deciding it also decides where the reconciler's cursor lives.
-- **Does the inbound watermark move into Matrix?** `m.fully_read` or per-room `account_data` would
-  put it where recovery needs no console database, and the console sends no receipts today at all
-  (<../debug/channel_write_audit.md>). Against: account data is per-user with no compare-and-set
-  while the console runs several replicas as one Matrix user — a Postgres advisory lock serialises
-  the writer today — and it is one position where R2.5 needs two. The credential stays in Postgres
-  either way (§ 3).
+  prices both. Deciding it also decides where the reconciler's cursor lives. This is the one
+  question that blocks § 9's sequence rather than sitting beside it.
 - **Which notices exist, and what does each summarise?** § 4 proposes one per turn and one per
   session and leaves the set open, along with retire-or-seal for each.
+- **Does `sessions.status` survive?** § 10.
+
+## 8. Where this stands
+
+Read against `devel` on 2026-08-17. The three layers exist; the boundaries are drawn in the wrong
+places, and the channel is not one thing.
+
+### The channel is three mechanisms with three durabilities
+
+| What                                                                    | Driven by                                                              | Durable?                                                                                                      |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Assistant replies                                                       | `session_outbox` rows, drained by a leader polling at `IDLE_POLL = 1s` | **Yes** — the row is the delivery, redriven after a crash, deduplicated at the homeserver by the row's own id |
+| Status line, typing                                                     | `TurnStatus._run`, a 1s poll **inside the turn loop's process**        | No                                                                                                            |
+| Lifecycle notices                                                       | `MatrixSessionSupervisor`, woken by `SessionNotifications`             | No                                                                                                            |
+| Setup narration, holding, unreadable, silent-turn, room-binding notices | called from the stack frame that noticed                               | No                                                                                                            |
+
+Everything in the "No" rows lives in `RoomPacer._queue`, an in-process deque given `FLUSH_SECONDS`
+on a graceful shutdown and nothing on a SIGKILL.
+
+Three consequences, each a thing the reconciler exists to remove:
+
+- **The status line is orphaned by a replica death.** Its `event_id` is a plain instance attribute,
+  so the adopting replica cannot edit or redact the line its predecessor posted — it posts a
+  second. Typing self-heals only because the homeserver expires it after 30s.
+- **A dropped notice is silently gone.** `RoomPacer.send` logs and returns once 200 sends are
+  queued. A reply survives that (the row is re-claimed); a notice does not.
+- **`_report_unreadable` advances the watermark and queues its notice in-process.** A crash in that
+  window acknowledges the message _and_ never tells the operator it was ignored.
+
+### Three leader elections, not one
+
+`MXSY` (the sync loop), `MXOB` (the outbox drain) and the session lease are independent, so three
+different replicas can hold them. That is why `RoomPacer`'s token bucket documents itself as an
+estimate: two buckets can each believe they own the whole room budget, and only the homeserver's
+`retry_after_ms` corrects them. A reconciler per `(channel, conversation)` collapses these to one
+holder, which is the point at which a rate budget can be real rather than estimated.
+
+### What is already the right shape
+
+- **Ingress's two positions.** `matrix_sync_watermark` is a promise and `matrix_held_batch` is what
+  is being read from — exactly the read-position/acknowledgement-position pair § 2 generalises, and
+  the batch is acknowledged after the turn completes rather than at enqueue (R2.5). Keep as is.
+- **The ordered address.** `session_events.event_seq`, with `PROMPT_ENQUEUED` now on it, so the
+  stream carries both halves of a conversation.
+- **The wake with no payload.** `session_changed` names a session and nothing else, coalesced at
+  500ms. Built for the SPA; the same wake is what replaces the outbox drain's 1s poll.
+- **A position-addressed read.** `GET /api/conversations/{id}/changes?after=` (#4257) is the
+  conversation→subscriber half working end to end for one consumer kind.
+- **The correspondence key.** `EventTag` rides on every event the console sends. Write-only today.
+
+### What is missing
+
+1. **The conversation has no identity.** Every cross-session read is keyed by `Session.room_id`;
+   `matrix_conversation` is one row per bot user, so one room ever, and its `session_id` pointer is
+   maintained by the supervisor with no constraint tying it to a session whose `room_id` matches.
+2. **Nothing records what we sent.** No table holds a Matrix `event_id`; `post_reply` discards the
+   one it gets back. Correspondence must therefore be re-read from the room, or stored.
+3. **A prompt does not record where it came from.** The Matrix event ids survive only as the text
+   `"[{event_id}] {body}"` inside `session_messages.content` — recoverable by parsing brackets out
+   of prose, which is not a join. This is the provenance the operator asked for on 2026-08-17.
+4. **Facts that exist only in a stack frame.** The holding count and an unreadable event's msgtypes
+   are announced and kept nowhere, so they cannot be projected — only sent.
+5. **Egress has no wake.** The outbox drain polls; nothing listens for `session_changed` on the
+   channel side.
+
+## 9. The order
+
+**Do not start with the reconciler.** Each step below is independently reviewable, and every one of
+them is worth having even if the loop is never built.
+
+1. **Give the conversation an identity.** § 6's open question first, because every cursor hangs off
+   the answer. Either a `conversation` table with a foreign key from `sessions`, or `chat_attachment`
+   re-keyed onto one — cleanup stage 7 specifies that table and nothing builds it yet.
+2. **Record a prompt's provenance** (missing item 3). A structured link from the transcript row to
+   the channel event it came from, rather than brackets in prose. Small, additive, and it is what
+   makes "answer the message that asked" expressible at all.
+3. **Move the artifacts that are durable in the wrong layer.** The abort notice is a `session_outbox`
+   row keyed by `turn_id`; § 7 settles that it is an event. Doing this is also what gives a
+   reconciler the conversation-side identity it needs to be at-least-once, which § 3 names as a
+   prerequisite rather than a follow-up.
+4. **Give the facts in stack frames a writer** (missing item 4), so a notice body can be a pure
+   function of the record.
+5. **Record what we sent** (missing item 2), or turn on the correspondence reader. § 7's ruling
+   says channel state lives in Postgres, which argues for storing the `event_id` beside the
+   attachment rather than deriving it from the room on every pass; the room read stays available
+   for repair. Deciding this decides how idempotence works, so it wants its own PR.
+6. **One loop per `(channel, conversation)`**, woken by `session_changed` and by inbound events,
+   with the 1s poll demoted to a fallback. This is where the three elections collapse to one, the
+   three egress mechanisms become one difference calculation, and the pacer's bucket stops being an
+   estimate.
+7. **Notices as spans** (§ 4), once 4 and 6 exist: one work notice per turn, one lifecycle notice
+   per session, each a pure function of its span, each retired or sealed.
+
+Steps 2, 3 and 4 are independent of each other and of step 1; step 5 depends on 1; step 6 depends
+on 4 and 5; step 7 depends on 6.
+
+## 10. `sessions.status` is derived, and lossy
+
+Not a layer question, but it lands on the session layer's own record and came up deciding it
+(2026-08-17).
+
+**Derived.** `responding` already is: no path writes it to the column, and `session_view` computes
+it from an open `session_turns` row — the SPA switches on the API field, so the column stopped
+carrying it with no frontend release. Of the rest, `provisioning`/`ready` follow from
+`bridge_connected_at`, and `failed` from `error IS NOT NULL`. Only `closing` and `closed` have no
+evidence in the row today, and `idle` has none until the writer lands.
+
+**Lossy, which is the stronger argument.** `provisioning` stands for several distinct facts — claim
+submitted, pod scheduled, sandbox running, runner dialled back — and the row records exactly one of
+them. So a session that never came up reports `failed` plus free text, where the operator wants
+"the claim was never satisfied" told apart from "the sandbox ran and the runner never dialled".
+
+**The shape that replaces it** is the timestamps that actually happened —
+`claim_submitted_at`, `sandbox_ready_at`, `bridge_connected_at`, `close_requested_at`, `ended_at` —
+with the enum computed in one place and kept as the wire vocabulary. Two things fall out: the
+invalid states the current shape permits (`closed` beside an open turn, `ready` beside a non-null
+`error`) stop being representable, and `idx_sessions_expired_lease`'s partial predicate stops
+listing statuses, so adding a member no longer edits an index.
+
+**Split it.** Adding the terminal timestamps and deriving `closing`/`closed`/`failed` is one change;
+dropping the column is the follow-up once every member computes. Both are expand/contract on the
+hottest table, and `idle` is being added to the enum right now (#4231), so this waits for that.
