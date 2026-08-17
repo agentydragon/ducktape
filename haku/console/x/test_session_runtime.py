@@ -300,7 +300,8 @@ class _ClosingClaudeClient(_LifecycleClaudeClient):
 
 
 async def test_creating_a_session_provisions_nothing(chat_service, recording_claims, operator_id) -> None:
-    """The two steps are separate so a room can take the first and defer the second indefinitely."""
+    """The two steps are separate so any surface can take the first and defer the second until
+    something is said (<README.md> § An idle session)."""
     session = await chat_service.create(operator_id, SpaSession())
 
     assert session.status == SessionStatus.IDLE
@@ -322,7 +323,7 @@ async def test_allocating_creates_the_claim_the_runner_dials_into(
 
 
 async def test_allocating_twice_leaves_one_sandbox(chat_service, recording_claims, operator_id) -> None:
-    """Two supervisors racing, or one retrying a pass: the store's transition is the arbiter."""
+    """Two replicas racing, or one sweep retrying a pass: the store's transition is the arbiter."""
     session = await chat_service.create(operator_id, SpaSession())
 
     await chat_service.allocate(session.session_id)

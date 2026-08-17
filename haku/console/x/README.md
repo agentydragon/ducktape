@@ -509,7 +509,7 @@ Behaviours worth knowing before reading the code:
   carries the reason and the text, and `MatrixSyncStore.advance` inserts it in the transaction
   that acknowledges the batch — so a crash cannot acknowledge a message while losing both the
   record of it and the operator's only account of what happened. The room notice is a rendering of
-  that row. The one rejection with no row is a room whose session has not been provisioned yet:
+  that row. The one rejection with no row is a room with no session bound to it yet:
   a `session_events` row names a session, and there is none to name.
 - **An accepted batch is acknowledged at once, and that has a cost.** A prompt is a row on the
   session that took it, so a session ending before it claims that prompt leaves the message
