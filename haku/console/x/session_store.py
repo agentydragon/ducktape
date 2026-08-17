@@ -1216,7 +1216,8 @@ class SessionStore:
         session mine?" answers about the room's present, not about the session.
         """
         async with self._sessions() as db:
-            return await db.scalar(select(Session.surface).where(Session.session_id == session_id))
+            chat = await db.get(Session, session_id)
+            return None if chat is None else chat.surface
 
     async def outcome(self, session_id: UUID) -> SessionOutcome | None:
         async with self._sessions() as db:
