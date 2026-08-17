@@ -97,11 +97,30 @@ snapshot and carries its `watermark`, `…/changes?after=N` is the changes, and 
 the wake that says to ask again. What is missing is not a new protocol but a second consumer —
 Matrix reading the record rather than being handed events by the turn loop.
 
-**What the stream carries is the record, so its granularity is the record's.** A `TextDelta` is not
-a row, so no subscriber gets one; a message being written arrives as its open row, re-sent. Pushing
-deltas to the browser as a payload on the wake was considered and dropped: it would make one channel
-a partial replica of a stream the others read, which is the duplication this primitive exists to
-remove.
+**The stream carries two kinds of message, and a delta is one of them** (operator, 2026-08-17).
+State changes are whole rows, merged by id. A **delta** is `{message_id, append}` — the neutral
+`TextDelta` the fold already produces and never stores — and every consumer receives it: a room
+ignores it because it cannot edit per token, a tab applies it and shows prose as the model writes
+it. That is one mechanism with two message kinds, not a side channel; an earlier draft proposed
+pushing deltas as a payload on the wake, and _that_ would have been a second mechanism.
+
+**The row is the resync, which is what makes it safe.** `session_messages.content` is mutated in
+place per delta, so a subscriber that misses deltas, joins mid-message or reconnects reads the
+message row and is correct. No exactly-once, no ordering guarantee, no gap detection — the same
+property that made whole-row replacement the right payload for state changes.
+
+**Deltas are never stored.** The completed message carries the prose whole; a stored delta would
+double the transcript for no reader. And note what this changes about pacing: `COALESCE_WINDOW`
+stops being the rate prose arrives at and bounds only the state messages.
+
+**v0 may ship without the delta kind** (operator, 2026-08-17). The increment already carries the
+open message row whose `content` is the prose so far, so a subscriber that ignores deltas still
+watches a message grow — at `COALESCE_WINDOW` granularity rather than per token. That is the
+fallback if the delta kind costs more than it looks like it will, and it is a fallback rather than
+the design because the design above is what the layering owes: the fold produces `TextDelta`
+already, nothing about it is provider-shaped, and the row-is-the-resync argument is what makes it
+cheap. Adding the kind later changes no schema and no stored row — only what the socket emits
+between coalesced increments — so v0 shipping without it costs a follow-up, not a redesign.
 
 **Conversation → subscriber.**
 
@@ -117,10 +136,11 @@ remove.
   nothing. A room holds its own copy, so its position is a durable cursor: a position behind the
   record is work the console still owes. Same stream, two consumer kinds, and the test that
   separates them is <session_channels.md> § 1's — does this subscriber hold a copy?
-- **The address does not cover an open message.** A `TextDelta` is deliberately not a row, so a
-  message being written is invisible in the log until `message_completed` while
-  `session_messages.content` is mutated in place. A tab is sent that row whole; a room cannot be
-  (§ 4).
+- **The address does not cover an open message, and deltas are why that is survivable.** A
+  `TextDelta` is deliberately not a row, so a message being written is invisible in the log until
+  `message_completed` while `session_messages.content` is mutated in place. The delta kind rides
+  the socket outside the address, which is exactly why it needs no gap detection: whoever misses
+  one reads the row.
 
 **Channel → conversation.**
 
@@ -704,13 +724,41 @@ deliberately: `matrix_sync_watermark`, `session_events`, `session_frames`, the l
 
 ### How to tell it is finished
 
-Two behaviours, both testable end to end:
+Five behaviours. The first three are the surfaces working; the last two are what proves the
+architecture rather than the features, and each is the acceptance test for the thing that forced it.
 
-- A Matrix room and a browser are open on one conversation. Either can prompt. The sandbox is
-  killed mid-turn; a new session takes over; **both surfaces show the same account of what
-  happened**, including that the restart happened, without either having been told twice.
-- A replica is killed while a turn is streaming. Nothing in the room is orphaned or duplicated, and
-  the operator is told everything they would have been told had it lived.
+1. **The Matrix surface still works.** `x/channels/matrix/test_fullstack_e2e.py` against real
+   Synapse stays green throughout. A regression gate, not a new test — if it goes red, something
+   in the layering broke the channel that already worked.
+2. **The web surface works**: one merged surface lists conversations, creates one, sends, aborts,
+   and shows a transcript.
+3. **The web surface streams.** A message being written grows in place, without a whole-transcript
+   refetch. Per token is what § 2 designs and what this test should assert once the delta kind
+   exists; a v0 that only carries the open row at `COALESCE_WINDOW` granularity passes the weaker
+   form of it, and the follow-up tightens the assertion.
+4. **One conversation, two surfaces.** A room and a browser both open, either can prompt, both
+   show the same account. This is what the conversation entity is for, so it is its test.
+5. **A session replacement is invisible to both.** The sandbox is killed mid-turn, a new session
+   takes over, and both surfaces show the restart without either being told twice. This is the
+   case that forced the entity (§ 6), and a replica killed mid-turn leaves nothing orphaned or
+   duplicated in the room.
+
+**Write these per step, not at the end.** A failing test cannot land on `devel`, so each step's PR
+carries the test that proves its own part, and 4 and 5 land as end-to-end tests with the steps that
+make them passable — 3 and 9. Saving them for the end means running blind until then, which is the
+particular difficulty of working this unattended.
+
+**Encode § 11's invariants as tests too**, because each is false today and would otherwise creep
+back silently:
+
+- `session_store` contains no reference to `room_id` — one structural test, and it is the whole of
+  "no code outside a channel names a channel's address".
+- The Matrix channel's Bazel target cannot depend on `//haku/console/x/claude_code:*`. Restricting
+  that package's `default_visibility` to `//haku/console/x:__pkg__` enforces "no channel knows a
+  provider's frame shape" at build time in one line. The one exception it surfaces —
+  `x/channels/matrix/testing` depending on `stub_claude_bin` and `:frames` to drive a fake backend
+  — is worth having to write down, because a channel _test_ knowing Claude's frames is how a
+  channel comes to know them.
 
 ## 12. How this executes
 
