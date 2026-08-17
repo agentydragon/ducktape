@@ -43,7 +43,7 @@ def projected(*, frame_seq: int, payload: dict[str, Any]) -> tuple[ConversationE
     carries nothing across a frame boundary, so the state at any cursor position is the empty one
     and resuming needs no state beside the position. Threading changes that, and the answer it
     needs is already on the row — `session_turns.first_frame_seq` bounds a re-projection to one
-    turn (<../../plans/chat_runtime_projection.md> § stage 4).
+    turn (<README.md> § The cursor).
 
     Two consequences an aligner can rely on: every event's frame range is `(frame_seq, frame_seq)`,
     and a `result` frame produces exactly one `TurnCompleted` and nothing else — there is no open

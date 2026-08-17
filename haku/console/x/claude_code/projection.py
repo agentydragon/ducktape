@@ -2,8 +2,8 @@
 
 A **reducer**: `project(state, frames)` returns the state after those frames and what they
 produced. The state is neutral (`ProjectionState`, in <../conversation_events.py>), the frames are
-Claude's — generic over its state, not over its wire
-(<../../../plans/chat_runtime_projection.md> § The shape).
+Claude's — generic over its state, not over its wire. It is resumable from a cursor: a position
+in the frame log is the whole of what a fold needs to carry on from.
 
 That is what makes live and recovery one code path: steady state projects each frame as it lands,
 adoption projects from a cursor that is behind, and the two agree because one batch and any split

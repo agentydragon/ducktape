@@ -7,8 +7,8 @@ multiplies the rows it has to scan past by roughly the length of an answer, whic
 inefficiency into a quadratic one while the SPA is streaming.
 
 This does not fix the O(session) re-read — that wants incremental indexing on the agent's message
-id (<../../../plans/chat_runtime_cleanup.md>, "Anytime"). It removes the growth, by letting the
-read touch only the rows it wants instead of filtering the session's whole log.
+id. It removes the growth, by letting the read touch only the rows it wants instead of filtering
+the session's whole log.
 
 Revision ID: 0036
 Revises: 0035

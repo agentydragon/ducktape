@@ -3,7 +3,7 @@
 What `_run_turn` held in locals — the assistant message it is streaming into, whether it has
 completed one, whether it has put a reply in the room's outbox — is now three columns, written in
 the same transaction as the effect each describes. A replacement replica reads them instead of
-reconstructing them from the frame log (<../../../plans/chat_runtime_projection.md> § stage 3).
+reconstructing them from the frame log.
 
 **Additive, and safe for the length of a roll.** A replica on the previous image never selects or
 writes these columns, and their defaults are exactly the state it leaves behind, so it keeps

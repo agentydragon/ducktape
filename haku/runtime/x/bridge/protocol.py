@@ -127,11 +127,11 @@ class ClaudeMessage(_Frame):
     # **The runner's own number for this frame, dense and monotonic per session.** Set only on the
     # runner → console direction; None on the console's writes, which the runner does not number.
     #
-    # The console's log takes its ordering from this rather than from a database sequence, which is
-    # what makes a reconnect "send me everything after N": the number is the peer's, so the peer can
-    # act on a cursor built from it, and it is dense, so a hole in it is evidence of loss rather than
-    # of a gap an `Identity` was always free to leave
-    # (<../../../plans/chat_runtime_projection.md> § 2b).
+    # This is what makes a reconnect "send me everything after N": the number is the peer's, so the
+    # peer can act on a cursor built from it, and it is dense, so a hole in it is evidence of loss
+    # rather than of a gap an `Identity` was always free to leave. The console records it and still
+    # orders its log by its own `frame_seq`; the release that swaps those two over is
+    # <../../../console/plans/conversation_layers.md> § 13.
     #
     # Assigned where the frame is put on the wire, not where it is built, so a frame re-sent from
     # the replay window keeps the number it first went out under.
@@ -181,8 +181,9 @@ class SetupOutput(_Frame):
     Every line rather than a marked subset, because the bootstrap's own output already *is* the
     account of what it did — three lines on this box, since git writes no progress bar to a
     pipe — and on a failure the error text is the thing worth having in the room. Curation
-    would buy a tidiness the plan explicitly does not want yet: "while this is new, a room that
-    over-explains itself is the debugging surface" (`haku/plans/matrix_chat_runtime.md` R7.1).
+    would buy a tidiness the room deliberately does not want yet: while this is new, a room that
+    over-explains itself is the debugging surface
+    (<../../../console/x/channels/matrix/SPEC.md> § What the room shows while a turn runs).
     """
 
     kind: Literal["setup_output"] = "setup_output"

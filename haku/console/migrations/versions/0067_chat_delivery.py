@@ -2,9 +2,8 @@
 
 No table held a Matrix `event_id`: `post_reply` discarded the one the homeserver returned and the
 status line's id was an instance attribute, so which room event shows which recorded thing could
-only be recovered by reading the room back and parsing the tag off every event
-(<../../plans/session_channels.md> § 1). `chat_delivery` stores that correspondence beside the
-attachment whose channel wrote it — one row per `(attachment, subject)` the channel still shows,
+only be recovered by reading the room back and parsing the tag off every event. `chat_delivery`
+stores that correspondence beside the attachment whose channel wrote it — one row per `(attachment, subject)` the channel still shows,
 with the subject and the reference both opaque outside that channel.
 
 **Additive, and safe for the length of a roll** (<../../README.md> § Perimeter / deploy). A new

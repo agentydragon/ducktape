@@ -55,8 +55,8 @@ class Outbound:
     class that cannot survive being sent twice is a fact about one CLI's protocol.
 
     The frame is carried as a model rather than serialized text because it is not finished yet:
-    `OutboundLog.stamp` numbers it as it goes out, and that number is the log's ordering at the
-    other end (<../../../plans/chat_runtime_projection.md> § 2b).
+    `OutboundLog.stamp` numbers it as it goes out, and that number is what the other end's resume
+    cursor is built from.
     """
 
     frame: ClaudeMessage | SetupOutput
@@ -89,7 +89,7 @@ class OutboundLog:
     replaced on every roll, while this process holds the CLI across as many sockets as that takes.
     A cursor a reconnecting console hands back has to name a number its peer assigned, or the peer
     cannot answer it — which is what makes catch-up a filter over this deque instead of a
-    reconciliation against the console's database (<../../../plans/chat_runtime_projection.md> § 2b).
+    reconciliation against the console's database.
 
     Dense and monotonic over **everything** sent, replayable or not, so a hole the console sees is
     evidence of loss rather than of a class this end declined to count. Which frames are *retained*

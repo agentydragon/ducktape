@@ -12,7 +12,7 @@ Two-phase idempotent provisioning:
 This deliberately does **not** mint an access token for the bot. haku-console
 holds the bot password and logs in for itself, so it can replace its own token
 the moment Synapse stops accepting one, rather than waiting for this Job to run
-again. See haku/plans/matrix_chat_runtime.md R10.3.
+again.
 
 Requires: REGISTRATION_SECRET, ADMIN_PASSWORD, BOT_PASSWORD, and one password
 environment variable per bot in BOT_SPECS.

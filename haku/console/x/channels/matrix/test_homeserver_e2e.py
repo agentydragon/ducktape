@@ -6,7 +6,7 @@ code did:
 
 - a `/sync` resumed across a gap larger than `TIMELINE_LIMIT` really does come back truncated,
   and the pagination that closes it really does land on every missed message, once, in order
-  (R1.7 — the requirement this whole module exists for);
+  (downtime recovery — the property this whole module exists for);
 - a `/sync` watermark really is accepted as a `/messages` pagination token, at both ends;
 - a repeated transaction id really is refused as a second event
   (<../../../docs/chat_runtime_facts.md>);
@@ -86,14 +86,14 @@ async def bot(synapse: Synapse) -> AsyncIterator[Bot]:
 
 @pytest.fixture
 async def joined_room(bot: Bot, operator: AsyncClient) -> OperatorRoom:
-    """A room the operator invited Haku into and Haku is in (R3.6)."""
+    """A room the operator invited Haku into and Haku is in."""
     room = await OperatorRoom.invite(operator, bot_user_id=bot.user_id)
     await bot.client.join(bot.token, room.room_id)
     return room
 
 
 async def test_login_lands_on_the_pinned_device_and_whoami_rejects_a_stale_token(bot: Bot, synapse: Synapse) -> None:
-    """R10.3a — the console caches its token and re-logs in only when it stops working.
+    """The console caches its token and re-logs in only when it stops working.
 
     `whoami` is what decides between the two, so it has to answer no for a token the homeserver
     has never heard of rather than raising, and yes for one it issued. The device is pinned
@@ -121,12 +121,12 @@ async def test_login_lands_on_the_pinned_device_and_whoami_rejects_a_stale_token
 async def test_an_invite_from_the_operator_becomes_a_serviced_room(
     bot: Bot, operator: AsyncClient, operator_user_id: str
 ) -> None:
-    """R3.6 — the operator puts Haku in the room, and only then is Haku in it."""
+    """The operator puts Haku in the room, and only then is Haku in it."""
     room = await OperatorRoom.invite(operator, bot_user_id=bot.user_id)
 
     invited = await bot.client.sync(bot.token, since=None)
     assert invited.invites == (Invite(room_id=room.room_id, inviter=operator_user_id),)
-    assert invited.messages == (), "an invite is not a message, and a first sync replays no backlog (R1.7a)"
+    assert invited.messages == (), "an invite is not a message, and a first sync replays no backlog"
 
     await bot.client.join(bot.token, room.room_id)
     await room.say("hello")
@@ -139,10 +139,10 @@ async def test_an_invite_from_the_operator_becomes_a_serviced_room(
 async def test_a_gap_larger_than_the_timeline_limit_delivers_every_message_once(
     bot: Bot, joined_room: OperatorRoom, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """R1.7 — no message is lost across console downtime, however long the gap.
+    """No message is lost across console downtime, however long the gap.
 
-    This is the one property a fake homeserver cannot be trusted about, and the one the
-    requirement's gotcha is about: past `TIMELINE_LIMIT` events, a resumed `/sync` answers with a
+    This is the one property a fake homeserver cannot be trusted about, and its gotcha is the
+    reason: past `TIMELINE_LIMIT` events, a resumed `/sync` answers with a
     **truncated** view and flags it rather than erroring, so a reader that does not check the flag
     skips the difference silently. Nothing about the response looks wrong.
 
@@ -170,7 +170,8 @@ async def test_a_gap_larger_than_the_timeline_limit_delivers_every_message_once(
 async def test_an_unreadable_event_is_reported_and_the_report_cannot_become_one(
     bot: Bot, operator_user_id: str, joined_room: OperatorRoom
 ) -> None:
-    """R1.6 against the real thing, and the loop it would create if the guard were wrong.
+    """An unreadable event is reported against the real thing, and the loop that would follow if
+    the guard were wrong.
 
     The notice Haku posts about an event it cannot read is itself an event in the room, and comes
     back on the very next `/sync`. If a notice were reportable, one screenshot would produce a
@@ -214,7 +215,7 @@ async def test_a_tag_and_its_rendering_survive_the_homeserver(bot: Bot, joined_r
         event_id=event_id,
         sender=bot.user_id,
         kind=MessageKind.TEXT,
-        body="**bold** answer",  # the Markdown source stays the fallback (R11.7)
+        body="**bold** answer",  # the Markdown source stays the fallback
         formatted_body="<p><strong>bold</strong> answer</p>",
     )
     # Off the raw content, because nothing in the console reads a tag back any more and a person
@@ -240,7 +241,7 @@ async def test_the_same_transcript_row_cannot_post_twice(bot: Bot, joined_room: 
 
 
 async def test_an_edit_replaces_the_status_line_rather_than_adding_one(bot: Bot, joined_room: OperatorRoom) -> None:
-    """R6.5 — one status line per turn, which is an `m.replace` and not a second notice."""
+    """One status line per turn, which is an `m.replace` and not a second notice."""
     room = joined_room.room_id
     tag = EventTag(kind=RoomEventKind.STATUS, session_id=uuid4())
     event_id = await bot.client.send_notice(bot.token, room, "thinking", txn_id=tag.transaction_id(), tag=tag)
@@ -258,7 +259,7 @@ async def test_an_edit_replaces_the_status_line_rather_than_adding_one(bot: Bot,
 
 
 async def test_a_redacted_event_is_gone_from_the_room(bot: Bot, joined_room: OperatorRoom) -> None:
-    """R6.5 — a retired status line leaves nothing behind, and leaves it nowhere the room reads.
+    """A retired status line leaves nothing behind, and leaves it nowhere the room reads.
 
     It does still leave something in the console's transcript, which is where a re-awakened
     session now reads from (`sync.recent_history`) — a redaction is the one thing the room
@@ -275,7 +276,7 @@ async def test_a_redacted_event_is_gone_from_the_room(bot: Bot, joined_room: Ope
 
 
 async def test_the_typing_notice_starts_and_stops(bot: Bot, joined_room: OperatorRoom) -> None:
-    """R6.1 — the room shows Haku thinking, and stops showing it when Haku stops."""
+    """The room shows Haku thinking, and stops showing it when Haku stops."""
     await bot.client.set_typing(bot.token, joined_room.room_id, active=True)
     await joined_room.wait_for_typing([bot.user_id])
 

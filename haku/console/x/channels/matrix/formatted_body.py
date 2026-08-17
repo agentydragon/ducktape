@@ -2,8 +2,9 @@
 
 Haku writes Markdown because that is what models write well; Element shows `body` verbatim,
 so without this a reply arrives with its asterisks and backticks intact. The conversion lives
-here rather than in the prompt for the reason recorded in <../../../../plans/matrix_chat_runtime.md>
-R11.7: formatting is a property of the surface, not a choice the agent makes.
+here rather than in the prompt because formatting is a property of the surface, not a choice the
+agent makes: telling the model to emit Matrix's HTML subset would make every reply a chance to emit
+a tag that is silently dropped, and would cost the tag list in prompt budget on every turn.
 
 Everything not on the spec's allowlist is dropped, and the dropping is the point — a tag
 Element would strip anyway is better removed here, where the fallback is deliberate, than

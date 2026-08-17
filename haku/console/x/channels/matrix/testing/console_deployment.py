@@ -209,7 +209,7 @@ class Deployment:
         """Wait until the room has a sandbox behind it with the bridge up, and say which session.
 
         Also the barrier every test needs before its first message: a first `/sync` establishes a
-        position rather than replaying backlog (R1.7a), so a message sent before the console has
+        position rather than replaying backlog, so a message sent before the console has
         joined the room is one it is entitled never to see.
 
         `after` names a session being replaced. The supervisor mints the replacement only once the

@@ -1,9 +1,8 @@
 """An abort becomes an event: one more `session_events` kind, and the first authored one with a turn.
 
 The operator stopping a turn was durable only as a `turn_id`-keyed `session_outbox` row — the one
-non-reply artifact the console kept, kept in the channel's table rather than in the record
-(<../../plans/session_channels.md> § 1). `turn_aborted` puts it in the ordered stream beside the
-lease facts, and the room's "aborted" line becomes a projection of that row.
+non-reply artifact the console kept, kept in the channel's table rather than in the record.
+`turn_aborted` puts it in the ordered stream beside the lease facts, and the room's "aborted" line becomes a projection of that row.
 
 **No column change.** `session_events.turn_id` is already nullable and
 `ck_session_events_provenance_frames` already permits an authored row that names a turn — it

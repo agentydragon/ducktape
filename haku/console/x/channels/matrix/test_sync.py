@@ -246,7 +246,7 @@ async def test_hands_an_operator_message_to_the_session(service, matrix, turns, 
 
 
 async def test_a_batch_is_offered_as_one_prompt(service, matrix, turns, bound_room):
-    """R2.1 — several messages in one sync response are one turn, not several."""
+    """Several messages in one sync response are one turn, not several."""
     matrix.result = SyncResult("s2", (_message("first", event_id="$a"), _message("second", event_id="$b")), ())
 
     await service.sync_once("tok")
@@ -323,8 +323,9 @@ async def test_a_pass_with_nothing_to_reject_says_nothing(service, matrix, turns
 
 
 async def test_a_message_arriving_mid_turn_is_told_it_was_not_delivered(service, matrix, turns, bound_room):
-    """R2.2 reversed. Holding this batch until the turn ended answered it a turn late and needed a
-    second ingress position to do it; rejecting it costs the operator a re-send and nothing else."""
+    """A batch that arrives mid-turn is rejected, not held. Holding it until the turn ended answered
+    it a turn late and needed a second ingress position to do it; rejecting it costs the operator a
+    re-send and nothing else."""
     matrix.result = SyncResult("s2", (_message("hello"),), ())
     await service.sync_once("tok")
 
@@ -343,8 +344,8 @@ async def test_a_rejection_with_no_session_is_announced_and_not_recorded(
 ):
     """The one rejection with nowhere to write itself: a `session_events` row names a session, and
     a room whose session has not been provisioned yet has none. The operator still hears it, the
-    watermark still moves, and the record keeps nothing — which is what the conversation entity is
-    for (<../../../plans/session_channels.md> § 3)."""
+    watermark still moves, and the record keeps nothing, for want of an entity above the session to
+    key the fact to."""
     matrix.result = SyncResult("s2", (_message("hello"),), ())
     turns.accepts = False
     turns.reason = PromptRejection.NO_SESSION
@@ -362,7 +363,7 @@ async def test_a_rejection_with_no_session_is_announced_and_not_recorded(
 async def test_an_unreadable_event_is_announced_recorded_and_the_batch_moves_on(
     service, matrix, turns, sync_store, migrated_sessions, bound_room
 ):
-    """R1.6, the half a refusal cannot serve. Nothing about a sent `m.image` will ever change, so
+    """The half a refusal cannot serve. Nothing about a sent `m.image` will ever change, so
     holding the batch for it would wedge ingress on one screenshot forever; the operator is told in
     the room they sent it to, the fact is written down, and the watermark advances."""
     matrix.result = SyncResult("s2", (), (), (_unreadable(),))
@@ -410,7 +411,7 @@ async def test_the_text_of_a_mixed_batch_is_serviced_and_the_rest_announced(serv
 
 async def test_an_unreadable_event_from_an_unserviced_room_is_not_announced(service, matrix, bound_room):
     """The notice goes to the room the operator sent it to, and only the bound room is that
-    room (R3.6a)."""
+    room."""
     matrix.result = SyncResult("s2", (), (), (_unreadable(room_id="!stray:allegedly.works"),))
 
     await service.sync_once("tok")
@@ -428,7 +429,7 @@ async def test_joins_an_invite_from_the_operator(service, matrix):
 
 
 async def test_refuses_a_second_room_and_says_so_in_the_first(service, matrix, bound_room):
-    """R3.6a — joining would put Haku in a room nothing services, which reads as listening."""
+    """Joining would put Haku in a room nothing services, which reads as listening."""
     other = "!other:allegedly.works"
     matrix.result = SyncResult("s2", (), (Invite(room_id=other, inviter=MATRIX_OPERATOR),))
 
@@ -442,7 +443,7 @@ async def test_refuses_a_second_room_and_says_so_in_the_first(service, matrix, b
 
 
 async def test_leaves_an_invite_from_anybody_else_pending(service, matrix):
-    """R3.6 — only the operator's invites are joined; others are surfaced, not acted on."""
+    """Only the operator's invites are joined; others are surfaced, not acted on."""
     stranger = Invite(room_id="!other:allegedly.works", inviter="@stranger:allegedly.works")
     matrix.result = SyncResult("s2", (), (stranger,))
 
@@ -466,7 +467,7 @@ async def test_adopts_an_unbound_room_from_operator_traffic(service, matrix, tur
 
 
 async def test_does_not_adopt_from_a_sender_who_is_not_the_operator(service, matrix, turns):
-    """Adoption inherits R3.6's rule: only the operator can cause Haku to bind a room."""
+    """Adoption inherits the invite rule: only the operator can cause Haku to bind a room."""
     stray = InboundMessage("!elsewhere:allegedly.works", "$e", "@stranger:allegedly.works", "hi", 1)
     matrix.result = SyncResult("s2", (stray,), ())
 
@@ -565,7 +566,7 @@ async def test_the_token_and_the_watermark_can_be_first_written_at_once(sync_sto
 
 
 async def test_reuses_a_valid_cached_token(service, matrix, sync_store, bound_room):
-    """Synapse rate-limits /login, so a working token must not be re-minted (R10.3a)."""
+    """Synapse rate-limits /login, so a working token must not be re-minted."""
     matrix.result = SyncResult("s2", (), ())
     await sync_store.save_token(MATRIX_USER, "cached")
 
@@ -599,8 +600,8 @@ async def test_auth_error_surfaces_so_the_loop_can_re_login(service, matrix, bou
 
 
 async def test_the_turn_status_is_one_line_that_gets_edited(service, matrix, bound_room) -> None:
-    """R6.5. A notice per update would make a busy turn unreadable, which is the whole point
-    of having a status line rather than progress messages."""
+    """One line per turn, edited in place. A notice per update would make a busy turn unreadable,
+    which is the whole point of having a status line rather than progress messages."""
     await service.show_status("running Bash")
     await settled(service)
     await service.show_status("running Read")

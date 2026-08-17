@@ -1,9 +1,8 @@
 """Let the ordered stream carry the operator's question: one more `session_events` kind.
 
 `enqueue_prompt` wrote a `session_messages` row and no event, so `session_events` held the agent's
-half of a conversation and not the operator's, and `event_seq` addressed only that half
-(<../../plans/session_channels.md> § 4). The prompt is `authored` for the same reason a lease
-change is — it has crossed no wire when it is accepted, and `next_prompt` hands it to the CLI
+half of a conversation and not the operator's, and `event_seq` addressed only that half. The prompt
+is `authored` for the same reason a lease change is — it has crossed no wire when it is accepted, and `next_prompt` hands it to the CLI
 later. It reads as conversation rather than as a fact about the session, but membership is decided
 by whether a frame carried the row, so its kind is an `AuthoredEventKind` (`chat_models`).
 

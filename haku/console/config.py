@@ -229,23 +229,23 @@ class ProviderOAuthClientConfig(BaseModel):
 
 
 class MatrixConfig(BaseModel):
-    """Wiring for the Matrix chat surface (haku/plans/matrix_chat_runtime.md).
+    """Wiring for the Matrix chat surface (<x/channels/matrix/SPEC.md>).
 
     Optional on Settings: the console must start and serve without it, because the bot
     password is reflected in from another namespace and is legitimately absent on a first
-    deploy (R10.3b). Absent config means no sync loop, not a failed startup.
+    deploy. Absent config means no sync loop, not a failed startup.
     """
 
     model_config = ConfigDict(frozen=True)
 
     homeserver: str
     user_id: str
-    operator_user_id: str = Field(description="The only MXID whose room invitations are joined (R3.6).")
+    operator_user_id: str = Field(description="The only MXID whose room invitations are joined.")
     operator_subject: str = Field(
         description=(
             "The Authentik `sub_mode=user_id` value for `operator_user_id`, resolved once to a "
             "canonical Operator UUID. Matrix has no OIDC identity of its own, so this deploy-time "
-            "pair is the whole sender-to-Operator mapping (R9.3); the MXID never carries authority "
+            "pair is the whole sender-to-Operator mapping; the MXID never carries authority "
             "on its own."
         )
     )
@@ -395,7 +395,7 @@ class Settings(BaseSettings):
     launch_routine: LaunchRoutineConfig | None = None
 
     matrix: MatrixConfig | None = Field(
-        default=None, description="Matrix chat surface. None → the sync loop does not run (R10.3b)."
+        default=None, description="Matrix chat surface. None → the sync loop does not run."
     )
 
     # The Authentik-gated origin of Haku's own UI service (runs in haku-sandbox), which the

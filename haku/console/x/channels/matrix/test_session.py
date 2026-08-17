@@ -369,7 +369,8 @@ async def test_building_a_prompt_says_nothing_into_the_room(bound: UUID) -> None
 
 
 async def test_a_turn_with_nothing_to_say_says_so(bound: UUID) -> None:
-    """R11.2 has no silence token, and the empty string was quietly working as one: a turn that
+    """Every turn speaks and there is no silence token, but the empty string was quietly working as
+    one: a turn that
     produced no text left the room with nothing at all, which from the operator's side is
     indistinguishable from an answer the console lost.
 
@@ -444,7 +445,7 @@ async def test_the_transcript_spans_every_session_that_served_the_room(
     """The point of reading by room: the session that holds the context is the one that is gone.
 
     `sessions.room_id` is what makes the chain readable — it is written once and never moves,
-    where `matrix_conversation.session_id` only ever names the live session (R11.3a).
+    where `matrix_conversation.session_id` only ever names the live session.
     """
     first = await serving_session(chat_store, operator_id)
     await exchange(chat_store, operator_id, first, "[$a] hi", "hello")

@@ -107,8 +107,8 @@ spec:
             # Matrix chat surface. The password is reflected in from the matrix
             # namespace, so it is legitimately absent before that reflection lands —
             # optional:true keeps the console serving its approval queue meanwhile, and
-            # the sync loop simply does not start (haku/plans/matrix_chat_runtime.md
-            # R10.3b). The console mints and caches its own access token from it.
+            # the sync loop simply does not start. The console mints and caches its own
+            # access token from it.
             - name: HAKU_CONSOLE_MATRIX__HOMESERVER
               value: http://matrix-synapse.matrix.svc.cluster.local:8008
             - name: HAKU_CONSOLE_MATRIX__USER_ID

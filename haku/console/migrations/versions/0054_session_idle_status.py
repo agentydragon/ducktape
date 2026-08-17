@@ -1,8 +1,8 @@
 """`sessions.status` admits `idle`, a release before anything writes it.
 
 An idle session is one that exists and holds no sandbox, so a room nobody is speaking in stops
-paying for one (<../../../plans/chat_runtime_cleanup.md> § Stage 6). This migration is only the
-schema half: the member and the `CHECK` widen here, the writer lands next release.
+paying for one. This migration is only the schema half: the member and the `CHECK` widen here, the
+writer lands next release.
 
 **The split is what makes it safe.** `TextBackedStrEnumColumn` parses `sessions.status`, so a
 replica on the previous image raises on a value it cannot name rather than degrading, and the

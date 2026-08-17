@@ -118,9 +118,8 @@ class RolloutRecorder:
     """One session's `FrameSink`: every protocol frame either way, into `session_frames`.
 
     **No exclusions.** Control frames, because an interrupt that did not take is diagnosable from
-    nothing else; deltas, because a log with a hole in it cannot be folded over
-    (<../../plans/chat_runtime_projection.md>). "Do not bury the reader" is answered at the read
-    instead: `read_frames` leaves deltas out of its default view.
+    nothing else; deltas, because a log with a hole in it cannot be folded over. "Do not bury the
+    reader" is answered at the read instead: `read_frames` leaves deltas out of its default view.
     """
 
     def __init__(self, store: SessionStore, session_id: UUID):
@@ -457,7 +456,7 @@ class SessionService:
             StarletteTextWebSocket(websocket),
             # The cursor is read here, per connection, off the session's own rows — so a replica
             # adopting a session mid-turn asks for what it is missing rather than being handed the
-            # runner's whole replay window (<../../plans/chat_runtime_projection.md> § 2b).
+            # runner's whole replay window (<README.md> § `session_store.py` and `session_runtime.py`).
             build_claude_launch(session, resume_from=await self._store.highest_runner_seq(session_id)),
             self._progress_reporter(session_id, frontend),
             RolloutRecorder(self._store, session_id),
@@ -634,7 +633,7 @@ class SessionService:
         **Project, then act.** Every frame goes through `claude_code.projection` and this loop acts on
         the neutral events that come back, so what it knows about is prose, messages, tool calls
         and a completed turn — not `assistant`, `stream_event` and `result`
-        (<../../plans/chat_runtime_projection.md> § stage 4).
+        (<README.md> § The neutral projection).
 
         *frames* belongs to the session, not to this call — see `handle_runner`. This call is the
         turn's span and the only thing that closes it, so a turn left open is not a bookkeeping leak:
@@ -646,7 +645,7 @@ class SessionService:
         (`SessionStore.apply_frame`) — so a process dying anywhere in this loop leaves
         `session_turns` saying what had happened and the session saying which frame it had got
         through, which is what makes adoption a read and its effects exactly-once
-        (<../../plans/chat_runtime_projection.md> § The shape).
+        (<README.md> § The cursor).
         """
         turn_id = turn.turn_id
         if isinstance(turn, TurnStart):
@@ -774,11 +773,11 @@ class SessionService:
             # The event outlives the turn (it is the session's), so only this turn's waiter goes.
             aborted.cancel()
             # Every terminal path, failure included: a line still saying "running Bash" after
-            # the turn died is the stuck-typing-indicator bug R6.1 calls out, in another form.
+            # the turn died is the stuck-typing-indicator bug in another form.
             await status.finish()
 
     async def _speak(self, session_id: UUID, frontend: ChatFrontend | None, turn_id: UUID, text: str) -> None:
-        """Queue the turn's last word for the room, or report that it had none (R11.2).
+        """Queue the turn's last word for the room, or report that it had none.
 
         Only ever the end of a turn: a completed assistant message queues its own copy in the same
         transaction, and a turn that completed none at all has one minted for it above. What is
@@ -786,7 +785,7 @@ class SessionService:
         were all empty.
 
         A session attached to no frontend needs nothing here; the SPA reads the message rows the
-        turn already wrote. An empty body is not a silence token (R11.2): the room is told the turn
+        turn already wrote. An empty body is not a silence token: the room is told the turn
         said nothing, as a notice rather than a reply, because it is the console reporting and not
         the agent talking.
         """
@@ -815,9 +814,9 @@ async def _replaying(
     **This is what makes adoption and steady state one call.** The turn loop consumes one iterator
     and cannot tell which half a frame came from, so "project each frame as it lands" and "project
     from the stored cursor, which happens to be behind" are the same code with a different starting
-    cursor (<../../plans/chat_runtime_projection.md> § The shape). A turn whose ending is among the
-    recorded frames therefore closes without the socket being consulted, which is what used to be a
-    separate question asked of the log.
+    cursor (<README.md> § The cursor). A turn whose ending is among the recorded frames therefore
+    closes without the socket being consulted, which is what used to be a separate question asked
+    of the log.
     """
     for frame in recorded:
         yield frame

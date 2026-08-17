@@ -1,4 +1,4 @@
-"""A batch handed to a session is not a batch acknowledged (R2.5).
+"""A batch handed to a session is not a batch acknowledged.
 
 `matrix_held_batch` holds the `/sync` token of a batch that has reached a session, until the turn
 answering it has ended. The watermark in `matrix_sync_state` stays where a crash would have to
@@ -10,10 +10,9 @@ inserts this table and keeps acknowledging at enqueue exactly as before, and onl
 syncs at a time (the `MXSY` advisory lock), so the two behaviours never interleave within a batch.
 The one skew is a row the new image wrote that an *old* leader then ran past: when a new leader
 takes over it publishes the older token it was holding, so the batches the old replica
-acknowledged in between are delivered a second time. Re-delivery is the failure R2.5 asks the
-system to be safe against ("re-running a batch must be safe"), where a skip is the one it
-forbids — and it needs leadership to move new → old → new, which a `maxUnavailable: 0` roll does
-not do.
+acknowledged in between are delivered a second time. Re-running a batch is the failure the system
+is built to be safe against, where a skip is the one it cannot survive — and it needs leadership
+to move new → old → new, which a `maxUnavailable: 0` roll does not do.
 
 Revision ID: 0043
 Revises: 0042

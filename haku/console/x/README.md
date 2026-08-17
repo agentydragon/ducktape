@@ -112,7 +112,7 @@ carrying no agent-assigned id escape. Two properties worth knowing before changi
   yet**: a hole in the recorded numbers is what narration leaves behind, and the runner's replay
   window retains only replayable frames, so an adopted connection's own sequence is sparse too.
   "A hole means loss" becomes true at the release that makes this the log's ordering
-  (<../plans/conversation_layers.md> § 13, R2), not before.
+  (<../plans/conversation_layers.md> § 13), not before.
 
 Both surfaces run on it at once. They are ordinary separate sessions — separate rows,
 separate sandboxes — so a browser conversation and the Matrix conversation coexist rather
@@ -120,7 +120,7 @@ than contend. **Gotcha:** that also means two live sandboxes, and only the Matri
 announces itself, so the browser one is the easy one to forget you are paying for.
 
 Delta streaming (`StreamEvent`) exists for the SPA alone. The Matrix path forwards whole
-assistant messages, each as it completes (R11.1), so if the SPA view is ever retired that
+assistant messages, each as it completes, so if the SPA view is ever retired that
 machinery goes with it.
 
 ### What has been lifted out of it
@@ -501,12 +501,12 @@ Behaviours worth knowing before reading the code:
   same way a rejection is, one `AuthoredEventKind.UNREADABLE_INPUT` row per event.
   `m.notice` is neither serviced nor announced: it is the
   msgtype Haku's own status, lifecycle and unreadable-event lines go out under, and excluding it
-  from any sender is the second of two independent guards (the first is the R1.5 sender rule)
+  from any sender is the second of two independent guards (the first is the sender rule)
   against a notice about an event that is itself an event.
 - **One replica syncs.** The loop holds a Postgres advisory lock (`MXSY`) for its lifetime —
   `/sync` is a long poll, so releasing between passes would let two replicas double-process a
   batch. The supervisor is a sibling task holding a **second** lock (`MXSE`), so provisioning
-  is single too, while a stalled claim cannot wedge ingress (R1.4). Two locks, not one: they
+  is single too, while a stalled claim cannot wedge ingress. Two locks, not one: they
   are elected independently and can land on different replicas.
 
 ## Tests run against a real database
@@ -578,8 +578,8 @@ directions a prompt carries (`[hold]`, `[narrate=N]`, `[silent]`) and by `HAKU_S
 `MatrixClient` against it, with the room's other side driven straight through the client-server
 API rather than through the client under test. It exists for the questions a canned response can
 only agree with: whether a resumed `/sync` across a gap larger than `TIMELINE_LIMIT` really comes
-back truncated and really paginates back to every missed message once (R1.7 — the reason the
-target exists), whether a sync watermark really is a `/messages` token, whether a repeated
+back truncated and really paginates back to every missed message once (downtime recovery — the
+reason the target exists), whether a sync watermark really is a `/messages` token, whether a repeated
 transaction id really is refused, and whether the `works.allegedly.haku` tag survives the wire on
 both halves of an edit.
 
@@ -597,8 +597,8 @@ the real sync loop and supervisor), a runner process per sandbox behind a stub `
 and a real Postgres. It asserts one operator-facing property — every message the operator sent has
 exactly one reply in the final room — which is what nothing below the whole stack can answer.
 
-**Three of its four tests were written failing**, because that property did not hold (R11.6, "a
-produced reply must never be lost silently"): a delivery that raised was logged and dropped while
+**Three of its four tests were written failing**, because that property did not hold — a produced
+reply must never be lost silently: a delivery that raised was logged and dropped while
 `spoke` was set anyway, the pacer was an in-process queue that died with its replica, and a
 console adopting a session skipped the replayed frame as one already recorded.
 `channels/matrix/outbox.py` is what closes all three. The fourth is quiet-path and passed throughout, which is what made the
@@ -731,7 +731,7 @@ dependency:
 
 - `MatrixConfig` and `Settings.matrix` in <../config.py>. Absent config, or a config whose
   reflected bot password has not landed yet, means the surface does not start and the
-  console does (R10.3b).
+  console does.
 - `Session`, `SessionMessage`, `MatrixAccessToken`, `MatrixSyncWatermark`, and `MatrixConversation` in
   <../database_schema.py>, plus their Alembic revisions — migrations are one lineage for the
   whole database.

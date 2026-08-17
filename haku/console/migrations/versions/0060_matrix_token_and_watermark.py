@@ -16,7 +16,7 @@ images do diverge while both are up, in the direction that costs rather than los
 - **The watermark.** Only the `MXSY` lock holder advances one, so during the roll that is still the
   old replica, writing the old table; the new leader resumes from the copy taken here. That copy is
   behind, never ahead, so the batches acknowledged in between are delivered a second time.
-  Re-delivery is the failure R2.5 requires the system to survive; a skip is the one it forbids.
+  Re-delivery is the failure the system has to survive; a skip is the one it cannot.
 - **The cached token.** The pacer runs on every replica, so the two images cache to different
   tables. Each validates its own copy with `/whoami` and logs in only if that fails, which costs at
   most an extra login or two against Synapse's `/login` limit for the length of the roll.

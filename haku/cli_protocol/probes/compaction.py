@@ -1,7 +1,7 @@
 """What does a compaction look like on the wire, and does it invalidate a stored cursor?
 
 The question with consequences. Haku's projection contract is that *a prefix of the frame log
-determines the transcript* (<../../plans/chat_runtime_projection.md>), and compaction is the only
+determines the transcript*, and compaction is the only
 event that rewrites what the conversation **is**. Either the pre-compaction frames stay in the log
 and a stored cursor still reproduces what the model saw, or they do not — and the durable cursor
 has a hazard nobody has costed.

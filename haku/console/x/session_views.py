@@ -382,8 +382,7 @@ async def tool_calls(db: AsyncSession, session_id: UUID) -> SessionToolCalls:
     """Read the calls and their answers out of the session's stored events.
 
     Until `session_events` the reply existed in no row at all: it was re-parsed out of the frame
-    log on every request by a Claude frame parser — the last of the four interpreters
-    (<../../plans/chat_runtime_projection.md> § The four interpreters, counted).
+    log on every request by a Claude frame parser — the last of the four interpreters, all now gone.
     """
     rows = (
         await db.scalars(

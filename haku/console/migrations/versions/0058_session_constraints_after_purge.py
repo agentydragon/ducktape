@@ -1,6 +1,6 @@
 """Say what the runtime already guarantees, now that the rows written otherwise are gone.
 
-Every `sessions` row was deleted on 2026-08-16 (<../../../plans/next_month.md> § 1),
+Every `sessions` row was deleted on 2026-08-16 (<../../debug/2026_08_16_legacy_purge.md>),
 taking `session_{messages,frames,turns,events,prompts,outbox}` with it by cascade. What is left is
 what the current writers put there, so four accommodations for older shapes become statements the
 schema can make:

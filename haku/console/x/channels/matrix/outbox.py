@@ -95,7 +95,7 @@ class PendingReply:
         **The record's identity, never the outbox row's**, because the queue is the channel's
         private implementation and a reconciler re-deriving this reply from the transcript has to
         arrive at the same subject after the table is gone
-        (<../../../plans/session_channels.md> § 1).
+        (<../../../plans/conversation_layers.md> § 5).
         """
         match self.message_id, self.turn_id:
             case UUID() as message_id, _:

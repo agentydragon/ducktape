@@ -1,9 +1,10 @@
 """haku-console's in-process `haku_conversations` MCP server — reading past sessions.
 
 Lets Haku consult what it actually did in an earlier session, rather than starting each one
-from the last twenty room messages and nothing else (`haku/plans/matrix_chat_runtime.md` R5.4a,
-Phase 5). The corpus is `session_frames`, the console's verbatim record of the agent
-protocol, so a tool call and the result it got are both there — which no other table has.
+from the last twenty room messages and nothing else: the room is not the only corpus and it is the
+smaller one (<../x/channels/matrix/SPEC.md> § The agent's own view). The corpus is
+`session_frames`, the console's verbatim record of the agent protocol, so a tool call and the
+result it got are both there — which no other table has.
 
 **Two readings of one corpus, and the drilldown runs between them.** `read_transcript` is what a
 conversation *meant* — messages, reasoning, tool calls and their results, as one vocabulary that
@@ -53,7 +54,7 @@ that produces it (`haku/console/x/conversation_records.py`). What is here is how
 are handed out: the `Page` envelope, the byte budget a page spends, and the clipping that budget
 forces.
 
-**Reads are unscoped** (R5.3a): any session, whichever room it served. Deliberate for now —
+**Reads are unscoped**: any session, whichever room it served. Deliberate for now —
 the eventual policy about which Haku may read which past conversation is not settled, and
 guessing at one here would be a scoping rule nobody stated.
 """

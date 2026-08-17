@@ -287,7 +287,7 @@ class ResumedTurn:
     `replay` is the rest of that account — the frames recorded past the session's projection cursor,
     whose effects therefore did not commit. Feeding them to the turn loop ahead of the live stream
     is what makes adoption the same call as steady state with a cursor that happens to be behind
-    (<../../plans/chat_runtime_projection.md> § The shape). Empty for a session with no cursor,
+    (<README.md> § The cursor). Empty for a session with no cursor,
     where adoption falls back to reading the frames itself.
     """
 
@@ -990,7 +990,7 @@ class SessionStore:
         boundary — skipping it or repeating it. `session_id` is in the key because `created_at`
         alone is not a total order; a pair created in one instant would straddle the boundary.
 
-        Unscoped by R5.3a: every session, whichever room it served. Inclusive of the row the
+        Deliberately unscoped: every session, whichever room it served. Inclusive of the row the
         cursor names, which is the first row the previous page did not return — so a caller
         resumes with the cursor it was handed and no arithmetic.
         """
@@ -1124,7 +1124,7 @@ class SessionStore:
         is the whole of what makes those effects exactly-once: a process that dies anywhere leaves
         the cursor naming the last frame whose effects are durable, so whoever adopts the session
         re-projects from there and redoes exactly the frames whose effects did not commit
-        (<../../plans/chat_runtime_projection.md> § The shape).
+        (<README.md> § The cursor).
 
         **A frame that ends the turn does not come here.** Closing the turn is `end_turn`'s
         transaction and the turn's last word is written before it, so advancing the cursor here for
@@ -1166,7 +1166,7 @@ class SessionStore:
                         message.status = ChatMessageStatus.COMPLETE
                         message.updated_at = now
                         # Each message is queued for the room as it finishes rather than only the
-                        # final answer (R11.1), so a turn that narrates, works and reports back is
+                        # final answer, so a turn that narrates, works and reports back is
                         # three messages in the room and not just its conclusion.
                         owed = await _enqueue_reply(
                             db,

@@ -7,7 +7,7 @@ it has a live sandbox"* — this.
 
 A sibling task to the sync loop, under an advisory lock of its own. The lock keeps exactly one
 replica provisioning; being a separate task from `/sync` keeps a slow or stalled claim from wedging
-ingress, which must keep accepting messages while no sandbox is up (R1.4). Its own lock rather than
+ingress, which must keep accepting messages while no sandbox is up. Its own lock rather than
 the sync loop's, because the two need single-execution but not co-location — sharing one would mean
 a supervisor stall could only be resolved by giving up ingress leadership too.
 """
@@ -59,7 +59,7 @@ logger = logging.getLogger(__name__)
 # Distinct from the sync loop's lock in `sync` and the OAuth refresh lock.
 _SUPERVISOR_ADVISORY_LOCK = 0x4D58_5345  # "MXSE"
 
-# What the room hears when a turn ends with no text at all (R11.2). Phrased as an outcome the
+# What the room hears when a turn ends with no text at all. Phrased as an outcome the
 # operator can act on rather than as an error, because a turn that only ran tools is a legitimate
 # thing to have happened — it just must not look like the console lost the answer.
 NOTHING_SAID = "the turn finished without saying anything"
@@ -73,7 +73,7 @@ PROVISION_BACKOFF = datetime.timedelta(seconds=60)
 
 # Emits a lifecycle line into the live room. Supplied by the sync service, which owns the
 # access token and the send path — the supervisor never gets a Matrix credential of its own,
-# so there is still exactly one login and one device (R10.3a).
+# so there is still exactly one login and one device.
 Announce = Callable[[str], Awaitable[None]]
 
 
@@ -111,7 +111,8 @@ class RoomChannel(Protocol):
 
 # How much of the conversation a replacement session is handed. Enough to pick up a thread
 # mid-topic, not enough to be a transcript — anything older is indexed, and the prompt points the
-# agent at `haku_index` for it (R3.3a, [v1] "start without the summary").
+# agent at `haku_index` for it. There is deliberately no summarisation step: a rotation mid-topic
+# loses the earlier reasoning, and the operator can say so and be answered from the room.
 #
 # Counted in **recorded rows**, where it used to count room events: a batch the operator sent as
 # three messages is one prompt row, so twenty here is twenty exchanges' worth rather than twenty
@@ -159,9 +160,9 @@ class MatrixConversationStore:
     async def claim_room(self, user_id: str, room_id: str) -> str:
         """Bind `room_id` if no room is bound yet; return whichever room is live.
 
-        A caller that gets back a different room than it asked for has been refused
-        (R3.6a). The insert-or-nothing is what makes that decision atomic — two replicas
-        racing on the same invite cannot each conclude they bound it.
+        A caller that gets back a different room than it asked for has been refused. The
+        insert-or-nothing is what makes that decision atomic — two replicas racing on the same
+        invite cannot each conclude they bound it.
         """
         async with self._sessions() as db, db.begin():
             await db.execute(
@@ -258,8 +259,8 @@ class RoomTranscript:
     separate object from `SessionStore`: this question is keyed by **room** and spans every
     session that has served it, where a store scoped to one session cannot answer it — a
     replacement session's whole problem is that the rows it needs belong to its predecessor.
-    `sessions.room_id` is what makes that chain readable, since it is written once and never moves
-    (R11.3a), unlike the pointer in `matrix_conversation`.
+    `sessions.room_id` is what makes that chain readable, since it is written once and never
+    moves, unlike the pointer in `matrix_conversation`.
 
     **A row is here once it was said, and the two sides say that differently.** An operator row
     exists from the moment ingress accepted the batch, which is the only statement we have that it
@@ -316,7 +317,7 @@ class PromptRejected:
     `event` is None only where there is no session row to key the fact to — nothing provisioned
     yet, or the supervisor between sessions — so there the room notice is the only account of it.
     Giving that case a home needs an entity above the session to own the event, which does not
-    exist yet; a `session_events` row names a session (<../../../plans/session_channels.md> § 3).
+    exist yet; a `session_events` row names a session, and there is none to name.
     """
 
     reason: PromptRejection
@@ -409,7 +410,7 @@ def _as_prompt(messages: Sequence[InboundMessage]) -> str:
     """Render a batch as one prompt.
 
     Event IDs are carried inline so the agent can cite a specific message back, which is
-    the cheap half of treating the room as a source (R11.2) — the read tools are not built
+    the cheap half of treating the room as a source — the read tools are not built
     yet, but referring to what it was told does not need them.
     """
     return "\n".join(f"[{message.event_id}] {message.body}" for message in messages)
@@ -419,15 +420,15 @@ class MatrixSurface:
     """Everything the turn loop does that is specific to a session serving a Matrix room.
 
     One class rather than three sinks, and no session filtering in any of them: the console
-    picks this by reading the session's own `surface` (R11.3a), so being called at all is the
+    picks this by reading the session's own `surface`, so being called at all is the
     statement that this session serves the bound room. Each method used to begin by loading the
     current room binding and comparing its `session_id` — the row's own fact, re-derived per
     delivery, in a form where getting it wrong meant silently saying nothing.
 
     History is read here rather than carried forward from the previous session, because by
     the time a replacement session starts, the one that held the context is gone. **Our own
-    transcript is the source, not the homeserver's copy of the room** (R3.3a, as amended by the
-    invariant in <../../../debug/channel_write_audit.md>, #4130): Matrix is one channel among several, and a
+    transcript is the source, not the homeserver's copy of the room** (the invariant in
+    <../../../debug/channel_write_audit.md>, #4130): Matrix is one channel among several, and a
     session re-awakened from the channel's record is a session whose memory a second channel
     could not reproduce.
 
@@ -436,7 +437,7 @@ class MatrixSurface:
     redacted after we recorded it stays here after the room has forgotten it.
 
     The `RoomChannel` is the sync service, which holds the only Matrix credential and services
-    one room (R3.6a) — so this frontend is bound to its address by construction and takes none.
+    one room — so this frontend is bound to its address by construction and takes none.
     """
 
     def __init__(
@@ -467,30 +468,30 @@ class MatrixSurface:
         )
 
     async def report_silent_turn(self) -> None:
-        """Say that a turn finished with nothing to show for it (R11.2).
+        """Say that a turn finished with nothing to show for it.
 
         Every turn speaks, and there is deliberately no silence token — an empty answer that
         produced no room event at all made the empty string into one, which is the single thing
-        that requirement rules out. A notice rather than a reply, because nothing was said: this
-        is the console reporting an outcome, not the agent talking.
+        that rule forbids. A notice rather than a reply, because nothing was said: this is the
+        console reporting an outcome, not the agent talking.
         """
         logger.warning("Matrix: a turn finished with no text to send")
         await self._room.announce(NOTHING_SAID, RoomEventKind.NARRATION)
 
     async def report(self, detail: str) -> None:
-        """Narrate the sandbox's setup into the room (R7.1)."""
+        """Narrate the sandbox's setup into the room."""
         await self._room.announce(detail, RoomEventKind.NARRATION)
 
     async def show_status(self, text: str) -> None:
-        """Say what the turn is doing now, on the room's one status line (R6.2)."""
+        """Say what the turn is doing now, on the room's one status line."""
         await self._room.show_status(text)
 
     async def clear_status(self) -> None:
-        """Retire that line once the turn is over, however it ended (R6.5)."""
+        """Retire that line once the turn is over, however it ended."""
         await self._room.clear_status()
 
     async def set_typing(self, active: bool) -> None:
-        """Show a turn in progress without the agent doing anything about it (R6.1)."""
+        """Show a turn in progress without the agent doing anything about it."""
         await self._room.set_typing(active)
 
     async def _recent(self, session_id: UUID) -> Sequence[HistoryMessage]:
@@ -511,7 +512,7 @@ class MatrixSurface:
 
 
 class MatrixSessionSupervisor:
-    """Provisions and replaces the session behind the live room (R3.1)."""
+    """Provisions and replaces the session behind the live room."""
 
     def __init__(
         self,
@@ -535,7 +536,7 @@ class MatrixSessionSupervisor:
         self._last_announced: str | None = None
 
     async def _operator_id(self) -> UUID:
-        """The canonical Operator behind the configured MXID (R9.3).
+        """The canonical Operator behind the configured MXID.
 
         Resolved per pass rather than cached at startup: the console must come up with the
         Matrix surface configured even if identity resolution is not yet possible, and a

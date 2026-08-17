@@ -225,7 +225,7 @@ class OperatorRoom:
     async def invite(
         cls, client: AsyncClient, *, bot_user_id: str, check_alive: Callable[[], None] | None = None
     ) -> OperatorRoom:
-        """A fresh private room with Haku invited to it. Haku joins it itself, on its own `/sync` (R3.6)."""
+        """A fresh private room with Haku invited to it. Haku joins it itself, on its own `/sync`."""
         created = _ok(
             await client.room_create(preset=RoomPreset.private_chat, invite=[bot_user_id]), RoomCreateResponse
         )

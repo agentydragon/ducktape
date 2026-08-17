@@ -2,8 +2,8 @@
 
 The `type` values Claude Code puts at the top of a frame, and the shapes underneath them. The
 console stores these in `session_frames.kind` alongside the bridge's own envelope discriminator
-(<../setup_output.py>), which is the two-vocabulary collision stage 2 of
-<../../../plans/chat_runtime_projection.md> resolves by giving the CLI's type its own column.
+(<../setup_output.py>), which is the two-vocabulary collision that giving the CLI's type its own
+column resolves (<../../plans/conversation_layers.md> § 13).
 
 Everything here is about the wire's shapes, so it holds no session state and touches no table.
 """

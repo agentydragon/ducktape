@@ -1053,7 +1053,7 @@ async def test_a_turn_whose_answer_arrived_only_on_the_result_is_still_spoken(
 async def test_a_turn_with_nothing_at_all_to_say_reports_it_rather_than_queueing_nothing(
     chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
-    """R11.2 has no silence token, and an empty answer is not one: the room is told the turn
+    """There is no silence token, and an empty answer is not one: the room is told the turn
     finished without saying anything, as a notice, and no row is written for the empty string."""
     frontend = _RecordingFrontend()
 

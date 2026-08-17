@@ -61,9 +61,8 @@ class FrameChannel(Protocol):
     bridge.
 
     **A read yields the envelope, not the payload alone**, because the runner puts its own number
-    on each frame (`ClaudeMessage.seq`) and that number has to reach the sink — it is the log's
-    ordering and the cursor a reconnect hands back
-    (<../../../plans/chat_runtime_projection.md> § 2b). A channel with no runner behind it — a
+    on each frame (`ClaudeMessage.seq`) and that number has to reach the sink — it is what a
+    reconnect's cursor is built from. A channel with no runner behind it — a
     scripted double, a local subprocess — leaves `seq` None, which is the honest answer: nobody
     numbered those frames.
     """
@@ -103,8 +102,7 @@ class FrameSink(Protocol):
     *runner_seq* is the other number: the one the **peer** minted for a frame it sent, dense over
     everything that runner put on the wire, and None for a frame no runner numbered — this end's
     writes, and anything from a runner image predating the field. It is recorded beside the sink's
-    own number rather than replacing it; what reads it is the resume cursor
-    (<../../../plans/chat_runtime_projection.md> § 2b).
+    own number rather than replacing it; what reads it is the resume cursor.
 
     Called from the client's write path and from its reader, so an implementation that raises
     takes the session down — which is the intent where the sink is the rollout: a record with

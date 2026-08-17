@@ -68,8 +68,7 @@ def test_one_session_may_hold_the_same_runner_number_twice(db_url: str) -> None:
     Postgres infers one conflict target, so uniqueness here would turn a replayed frame with no
     agent-assigned identity — a `control_response`, a `system` with no `task_id` — from one
     duplicate row into a violation raised inside the reader, ending the session. That is the
-    behaviour this pins until dedup keys on position
-    (<../plans/chat_runtime_projection.md> § 2b, R4).
+    behaviour this pins until dedup keys on position (<plans/conversation_layers.md> § 13).
     """
     apply_migrations(db_url)
     engine = create_engine(sync_database_url(db_url))

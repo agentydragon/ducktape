@@ -2,10 +2,8 @@
 
 `session_turns.usage` held Claude's own `usage` sub-object verbatim, so "this exchange used X
 tokens" meant "whatever that one CLI called it". These three columns are the neutral shape the
-backend adapter produced, beside `cost_usd` and `duration_ms`,
-which the store used to mine out of the same payload by key name
-(<../../../plans/chat_runtime_projection.md> § Does a turn live over frames or over neutral
-events).
+backend adapter produced, beside `cost_usd` and `duration_ms`, which the store used to mine out of
+the same payload by key name.
 
 **They are counters, and counters sum**, which is what a turn spanning several invocations will
 need: a session's token total is a `SUM` over rows rather than a fold over JSON. `cost_usd` sums

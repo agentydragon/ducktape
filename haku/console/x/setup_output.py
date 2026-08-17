@@ -7,8 +7,8 @@ from typing import Any
 # TODO(frame-vocabulary): `session_frames.kind` holds two discriminator vocabularies at once, and
 # there is deliberately no enum over the union. This literal is the *bridge* envelope's; the CLI's
 # own top-level `type` (<claude_code/frames.py>) is put in the same column by a different sink.
-# Naming the union would name a concept the schema does not have — see `SessionFrame` and stage 2
-# of <../../plans/chat_runtime_projection.md>, where the CLI's type gets its own column and this
+# Naming the union would name a concept the schema does not have — see `SessionFrame`, and
+# <../plans/conversation_layers.md> § 13, where the CLI's type gets its own column and this
 # becomes one thing.
 SETUP_OUTPUT_KIND = "setup_output"
 
@@ -25,6 +25,6 @@ def setup_output_frame(text: str) -> dict[str, Any]:
     It lives in the frame log because it **is** runner→console traffic: a `SetupOutput` envelope
     crossed the wire and only the splitting is ours. A fact the console is the sole witness to — a
     lease changing hands — is a `session_events` row on the `authored` arm instead
-    (<../../plans/chat_runtime_projection.md> § stage 4).
+    (<README.md> § The events, stored).
     """
     return {"kind": SETUP_OUTPUT_KIND, "text": text}

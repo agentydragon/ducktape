@@ -3,8 +3,7 @@
 The store produces these — a session row, a rollout frame, a turn, a transcript entry — and
 <../tools/conversations.py> is the MCP surface that serialises them. They live at the runtime
 level because the store is their only producer: before this the store imported them from the tool
-that reads it, which is the dependency running backwards
-(<../../plans/chat_runtime_cleanup.md> § Anytime).
+that reads it, which is the dependency running backwards.
 
 **A record, not a page.** What the tool owns is how records are handed out — the `Page` envelope
 every listing shares, the byte budget a page spends, and the clipping that budget forces — and

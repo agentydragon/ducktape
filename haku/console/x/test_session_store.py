@@ -334,7 +334,7 @@ async def test_the_frame_inspector_leaves_deltas_out_until_they_are_asked_for(ch
 
 
 async def test_the_frame_inspector_refuses_a_session_another_operator_owns(chat_store, operator_id) -> None:
-    """The MCP reader is deliberately unscoped (R5.3a); a browser surface must never be."""
+    """The MCP reader is deliberately unscoped; a browser surface must never be."""
     session, _ = await chat_store.create(operator_id, SpaSession())
     await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "result", {"type": "result"})
 

@@ -12,8 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class SessionStatus(StrEnum):
     # CLEANUP(added 2026-08-16): `idle` deliberately has no writer yet — a session that exists and
-    #   holds no sandbox (<../plans/chat_runtime_cleanup.md> § Stage 6). This column is parsed
-    #   (`database_schema.TextBackedStrEnumColumn`), so a replica on the previous image reading an
+    #   holds no sandbox. This column is parsed (`database_schema.TextBackedStrEnumColumn`), so a
+    #   replica on the previous image reading an
     #   `idle` row raises rather than degrading, and the console rolls with `maxUnavailable: 0`
     #   (<README.md> § Perimeter / deploy). Write the first `idle` row only once every pod runs an
     #   image at or after the release carrying migration 0054 — one tag out of
@@ -37,7 +37,7 @@ class ChatSurface(StrEnum):
     Not cosmetic: a past conversation is only findable if the row says what it was, and until
     this existed the room binding lived in `matrix_conversation`, which holds exactly one
     `session_id` — so a replaced Matrix session became indistinguishable from an SPA one the
-    moment the supervisor moved on (matrix_chat_runtime.md R11.3a).
+    moment the supervisor moved on.
     """
 
     SPA = "spa"
@@ -148,9 +148,8 @@ class AuthoredEventKind(StrEnum):
     """What a `session_events` row records that no frame carries — the other category.
 
     **The console is the only witness**, so these carry `EventProvenance.AUTHORED` and no frame
-    range (<../plans/chat_runtime_projection.md> § stage 4). That is the whole membership test:
-    not whether the fact is about the session rather than the conversation, but whether it reached
-    the console over the wire. A session that never had a runner at all is exactly the case this
+    range. That is the whole membership test: not whether the fact is about the session rather than
+    the conversation, but whether it reached the console over the wire. A session that never had a runner at all is exactly the case this
     category exists to record.
 
     `PROMPT_ENQUEUED` is here for that reason and not because a prompt is a lifecycle fact. It is

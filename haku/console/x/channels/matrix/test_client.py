@@ -81,7 +81,7 @@ async def test_parses_an_operator_message():
 
 
 async def test_skips_our_own_messages():
-    """R1.5 — the bot's own posts come back through /sync and are not input."""
+    """The bot's own posts come back through /sync and are not input."""
     client, _ = _client(_sync_body(_message(USER, "echo: hello")))
 
     result = await client.sync("tok", since="s1")
@@ -90,7 +90,7 @@ async def test_skips_our_own_messages():
 
 
 async def test_an_image_is_reported_rather_than_dropped():
-    """R1.6 — Haku cannot read an attachment, but the operator has to learn that it tried."""
+    """Haku cannot read an attachment, but the operator has to learn that it tried."""
     client, _ = _client(_sync_body(_message(OPERATOR, "photo.png", event_id="$img", msgtype="m.image")))
 
     result = await client.sync("tok", since="s1")
@@ -129,7 +129,7 @@ async def test_an_emote_is_read_as_prose():
 async def test_a_notice_produces_neither_a_message_nor_a_report():
     """The loop guard. Everything Haku says that is not an answer is an `m.notice`, including the
     notice it posts *about* an unreadable event — so a notice must never be reportable, from any
-    sender. The bot's own events are excluded a second time by sender (R1.5); this covers the
+    sender. The bot's own events are excluded a second time by sender; this covers the
     case where that is not what saves us."""
     client, _ = _client(
         _sync_body(
@@ -144,7 +144,7 @@ async def test_a_notice_produces_neither_a_message_nor_a_report():
 
 
 async def test_our_own_image_is_not_reported():
-    """R1.5 first, mapping second: an attachment Haku itself posted is not an event to tell the
+    """Sender first, mapping second: an attachment Haku itself posted is not an event to tell the
     operator about."""
     client, _ = _client(_sync_body(_message(USER, "chart.png", msgtype="m.image")))
 
@@ -214,7 +214,7 @@ async def test_the_text_of_a_mixed_batch_still_arrives():
 
 
 async def test_a_gap_full_of_attachments_is_recovered_as_reportable():
-    """R1.7's backfill has the same filter as the live timeline, so it had the same hole."""
+    """Downtime recovery's backfill has the same filter as the live timeline, so it had the same hole."""
     client, _ = _client(
         _sync_body(limited=True),
         pages=[
@@ -254,7 +254,7 @@ async def test_empty_sync_still_yields_the_watermark():
 
 
 async def test_backfills_a_truncated_timeline_in_order():
-    """R1.7 — a `limited` timeline is a gap; without paginating it, downtime silently eats messages."""
+    """A `limited` timeline is a gap; without paginating it, downtime silently eats messages."""
     client, homeserver = _client(
         _sync_body(_message(OPERATOR, "third", event_id="$c"), limited=True),
         pages=[

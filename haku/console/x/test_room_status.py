@@ -69,7 +69,7 @@ def _message_completed() -> MessageCompleted:
 
 
 def test_a_tool_call_becomes_a_status_naming_the_tool_verbatim() -> None:
-    """R6.3: the backend's own identifier, with no per-tool copy to maintain."""
+    """The backend's own identifier, with no per-tool copy to maintain."""
     assert coarse_status([_tool_call("Bash")]) == "running Bash"
 
 
@@ -124,7 +124,7 @@ def test_a_claude_turn_still_reads_the_way_it_did_off_the_frames() -> None:
 
 
 async def test_a_short_turn_leaves_no_status_behind() -> None:
-    """R6.2: below the threshold the answer is the status, and a pair of them is clutter."""
+    """Below the threshold the answer is the status, and a pair of them is clutter."""
     frontend = _RecordingFrontend()
     status = TurnStatus(frontend)
     status.start()
@@ -200,8 +200,9 @@ async def test_the_line_is_retired_even_when_the_turn_fails() -> None:
 
 
 async def test_typing_starts_with_the_turn_rather_than_waiting_for_the_status_threshold() -> None:
-    """R6.1: "Haku is working on it" is worth nothing after the fact, so unlike the status line
-    it does not wait — a turn shorter than `STATUS_AFTER_SECONDS` still shows it."""
+    """The room hears that Haku is working on it, and hearing it after the fact is worth nothing —
+    so unlike the status line the typing notice does not wait — a turn shorter than
+    `STATUS_AFTER_SECONDS` still shows it."""
     frontend = _RecordingFrontend()
 
     status = TurnStatus(frontend)

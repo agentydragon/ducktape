@@ -3,16 +3,17 @@
 `frame_seq` is an `Identity` — sparse and global. The runner mints a dense per-session number
 where a frame goes on the wire (`ClaudeMessage.seq`, #4166); `runner_seq` is where the console
 keeps it, so a reconnect can say "send me everything after N"
-(<../../../plans/chat_runtime_projection.md> § 2b).
+(<../../plans/conversation_layers.md> § 13).
 
 Nullable, and no backfill: no stored row carries the number. Sessions live at most
 `session_ttl_seconds`, so the un-numbered population ages out on its own — which is the gate on
 ever making this `NOT NULL`.
 
-**The index is deliberately not unique**, where § 2b's R1 line says it would be. The insert infers
-one conflict target and today's is `frame_uid`, so a unique index here would turn a replayed frame
-with no agent-assigned identity — a `control_response`, a `system` without a `task_id` — into a
-`UniqueViolation` that ends the session. Uniqueness belongs with the dedup that keys on it (R4).
+**The index is deliberately not unique**, though the release that makes this number the log's own
+ordering calls for uniqueness. The insert infers one conflict target and today's is `frame_uid`, so
+a unique index here would turn a replayed frame with no agent-assigned identity — a
+`control_response`, a `system` without a `task_id` — into a `UniqueViolation` that ends the session.
+Uniqueness belongs with the release that moves the dedup onto this number.
 The index serves the cursor read: `max(runner_seq)` for one session.
 
 Revision ID: 0050

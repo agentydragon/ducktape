@@ -11,7 +11,7 @@ own clone, and `haku_conversations` already owns reading past sessions. A second
 server would be a second answer to "what does this file say", and the two would drift.
 
 **Reads are unscoped**: any session, whichever room or operator it served — the same open decision
-as `conversations.py` (R5.3a). Ranked retrieval is a sharper edge on it than a drilldown, because
+as `conversations.py`. Ranked retrieval is a sharper edge on it than a drilldown, because
 it surfaces another room's conversation without anyone naming it. See
 `haku/recall_index/README.md` § Read scoping before widening who holds this tool.
 

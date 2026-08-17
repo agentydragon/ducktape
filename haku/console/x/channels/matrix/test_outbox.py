@@ -226,7 +226,7 @@ async def test_a_refused_send_leaves_the_row_for_the_next_attempt(
 async def test_a_reply_the_room_refused_is_said_once_the_homeserver_relents(
     chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id
 ) -> None:
-    """R11.6: a produced reply is retried rather than lost. The wait is skipped by hand, because
+    """A produced reply is retried rather than lost. The wait is skipped by hand, because
     what is under test is that the row comes back at all and not how long it waits first."""
     homeserver = _Homeserver(refuses={"the answer"})
     pacer, drain = _unpaced(migrated_engine, outbox, homeserver)

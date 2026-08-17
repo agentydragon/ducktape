@@ -19,7 +19,7 @@ a rendering of a recorded fact and needs none of that. Moving the outbox is the 
 
 **The position is kept after the notice, never before.** A crash in that window says the notice
 again on the next pass, which is the same trade `delivery_log.retire` takes and the right way round:
-a room told twice is odd, a room never told is the failure R1.6 rules out. What is left unguarded is
+a room told twice is odd, a room silently never told is the failure that matters. What is left unguarded is
 the pacer's in-process queue — a notice queued and not yet sent is lost with the replica, exactly as
 every other notice is today.
 """

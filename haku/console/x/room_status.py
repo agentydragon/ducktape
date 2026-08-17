@@ -6,8 +6,7 @@ came off. `channels/matrix/session.py` owns the middle one.
 
 **It reads <conversation_events.py>, not a provider's wire.** Matching here on one backend's own
 top-level `type`, `system` subtypes and content blocks would make the channel-neutral driver a
-frame interpreter (<../../plans/chat_runtime_projection.md> § stage 4), and leave a second
-backend's room silent while its agent worked.
+frame interpreter, and leave a second backend's room silent while its agent worked.
 """
 
 from __future__ import annotations
@@ -26,7 +25,7 @@ from haku.console.x.conversation_events import (
     ToolCallStarted,
 )
 
-# How long a turn runs before the room is told anything about it (R6.2). Below this the
+# How long a turn runs before the room is told anything about it. Below this the
 # answer itself is the status, and a status/answer pair for a five-second exchange is
 # clutter.
 STATUS_AFTER_SECONDS = 8.0
@@ -54,7 +53,7 @@ def coarse_status(events: Sequence[ConversationEvent]) -> str | None:
     them is worth saying. The caller decides what a run is; the turn loop hands it one frame's
     worth, which is what makes this the same decision the per-frame version made.
 
-    Coarse by rule, not by taste (R6.3): where a tool is named, the backend's own identifier is
+    Coarse by rule, not by taste: where a tool is named, the backend's own identifier is
     passed through verbatim. There is deliberately no per-tool copy and no mapping table, because
     both would need maintaining every time the tool surface grows.
     """

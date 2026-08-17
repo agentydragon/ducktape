@@ -938,7 +938,7 @@ class ChatDelivery(Base):
     Correspondence, stored rather than re-read: a channel that holds a copy has to know whether it
     has already shown a thing before it shows it again, and the alternative — reading the room back
     and parsing the tag off every event — is a round trip per pass. The room read stays the repair
-    path for a copy that drifted; this is the cheap one (<plans/session_channels.md> § 1).
+    path for a copy that drifted; this is the cheap one (<plans/conversation_layers.md> § 5).
 
     **Both columns are opaque outside the channel that wrote them**, and for the same reason
     `chat_attachment.address` is: `sent_ref` is where the channel put it — a Matrix `event_id`
@@ -1028,7 +1028,7 @@ class Session(Base):
     # committed. It is written in the same transaction as those effects, which is the whole of what
     # makes them exactly-once — a replica that dies leaves this naming the last frame that landed,
     # and whoever adopts the session re-projects from here, redoing exactly the frames whose
-    # effects did not commit (<../plans/chat_runtime_projection.md> § The shape).
+    # effects did not commit.
     #
     # A bound like `session_turns.first_frame_seq`, not a pointer: `Identity` leaves gaps, and
     # `next_prompt` anchors it at the frame before the turn it opens, which is a value no row has.
@@ -1107,7 +1107,8 @@ class SessionMessage(Base):
     # never pointed at all if no turn claims it — the session ended first. That is a live state rather
     # than an era, so the range is required by role in the constraint below rather than on these
     # columns.
-    # See <../plans/chat_runtime_projection.md> § "The projection is not a one-way door".
+    # The range is what makes the rendering appealable: a projection nobody can read back to the
+    # frames it came from is a projection nobody can debug.
     source_first_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     source_last_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -1191,9 +1192,8 @@ class SessionTurn(Base):
     are what `_run_turn` used to hold in locals and a second body of code used to reconstruct out
     of the frames when the process holding them died. They are written in the same transaction as
     the effect each one describes, so a turn adopted by another replica is *read* rather than
-    guessed at (<../plans/chat_runtime_projection.md> § stage 3). Together with `first_frame_seq`
-    the row is now both halves of what the fold needs — where the turn's frames start, and what
-    projecting them has produced so far.
+    guessed at. Together with `first_frame_seq` the row is now both halves of what the fold needs —
+    where the turn's frames start, and what projecting them has produced so far.
     """
 
     __tablename__ = "session_turns"
@@ -1364,8 +1364,7 @@ class SessionFrame(Base):
 
     The rollout — what the agent *did*, tool calls with their results — exists nowhere else.
     `session_messages` keeps an assistant message's `tool_use` blocks and not the frames
-    carrying the results, so on its own it records every question and no answer
-    (haku/plans/matrix_chat_runtime.md R5.5).
+    carrying the results, so on its own it records every question and no answer.
 
     **The payload is the wire, not our parse of it.** Storing the SDK's dataclasses instead
     would silently inherit whatever the reader unpacks — thinking blocks are on the wire and
@@ -1376,8 +1375,8 @@ class SessionFrame(Base):
     `RolloutRecorder` puts the CLI's own top-level ``type`` in it, and the setup reporter puts the
     *bridge* envelope's ``setup_output`` literal in it. So "what is this row" has two answers and
     neither field gives both, which is why there is no enum over ``kind``: one would name a concept
-    this table does not have. <../plans/chat_runtime_projection.md> holds the intended shape;
-    nothing is scheduled.
+    this table does not have. The intended shape — the CLI's type in a column of its own — is
+    <plans/conversation_layers.md> § 13.
     """
 
     __tablename__ = "session_frames"
@@ -1404,7 +1403,7 @@ class SessionFrame(Base):
     # the runner gave one. Dense and monotonic over everything one runner process sent, which
     # `frame_seq` above is deliberately not — so this is the number a reconnect is computed from:
     # the console hands back the highest it holds and the runner replays only what is above it
-    # (<../plans/chat_runtime_projection.md> § 2b).
+    # (<plans/conversation_layers.md> § 13).
     #
     # NULL means no runner numbered this row, and there are three ways to mean it: a frame this
     # console wrote to the CLI, a `setup_output` row the console authored itself, and every frame
@@ -1440,12 +1439,12 @@ class SessionFrame(Base):
         # connection. Partial because most rows have no runner number, and the reader always
         # excludes them.
         #
-        # **Not unique, deliberately, and § 2b's R1 line says otherwise.** Uniqueness is what
-        # position-keyed dedup will be built on, but the insert can infer only one conflict
-        # target and today's is `frame_uid` — so a second index would turn a replayed frame with
-        # no agent-assigned identity (a `control_response`, a `system` without a `task_id`) from
-        # today's known cost, one duplicate row, into a raised `UniqueViolation` that ends the
-        # session. It lands with the dedup that keys on it (R4), not before.
+        # **Not unique, deliberately, though the design it serves calls for uniqueness.**
+        # Uniqueness is what position-keyed dedup will be built on, but the insert can infer only
+        # one conflict target and today's is `frame_uid` — so a second index would turn a replayed
+        # frame with no agent-assigned identity (a `control_response`, a `system` without a
+        # `task_id`) from today's known cost, one duplicate row, into a raised `UniqueViolation`
+        # that ends the session. It lands with the release that moves the dedup onto position, not before.
         Index(
             "idx_session_frames_runner_seq", "session_id", "runner_seq", postgresql_where=text("runner_seq IS NOT NULL")
         ),
@@ -1464,13 +1463,13 @@ class SessionOutbox(Base):
     it sent only once the send has returned is what makes "answered" mean answered.
 
     **Replies only.** The console's narration — status line, lifecycle notices, holding and
-    bootstrap lines — stays on `x/channels/matrix/pacer.py`'s in-process queue: R11.6 is about a
-    reply the agent produced, and a notice that describes a moment is not worth redelivering
-    minutes later. That is also why there is no `kind` column: every row here is a `REPLY`.
+    bootstrap lines — stays on `x/channels/matrix/pacer.py`'s in-process queue: what must never be
+    lost silently is a reply the agent produced, and a notice that describes a moment is not worth
+    redelivering minutes later. That is also why there is no `kind` column: every row here is a `REPLY`.
 
     **One target, one channel.** `room_id` is a Matrix room because that is the only channel
     there is; a second one joins by adding a discriminator beside it rather than by overloading
-    this column (<plans/session_channels.md> § 1).
+    this column (<plans/conversation_layers.md> § 5).
     """
 
     __tablename__ = "session_outbox"
@@ -1615,9 +1614,11 @@ class MatrixConversation(Base):
       — `rg MatrixConversation haku/` naming only this file — and drop the table a release after
       that unmapping has converged.
 
-    Keyed by bot user rather than by room, which is what makes "one room at a time"
-    (R3.6a) a property of the schema instead of a rule the code has to remember: a second
-    room cannot be recorded without displacing the first.
+    Keyed by bot user rather than by room, which is what makes "one room at a time" a property of
+    the schema instead of a rule the code has to remember: a second room cannot be recorded without
+    displacing the first. That singleton is the thing on its way out, not a guarantee to build on —
+    one bot serving several rooms is where this goes, and `ChatAttachment`'s partial unique index is
+    the form of the rule that survives it.
 
     Deliberately separate from `matrix_sync_watermark` even though both are singletons keyed
     the same way. The sync loop and the session supervisor run as independent tasks under
@@ -1637,9 +1638,8 @@ class MatrixConversation(Base):
     # which session the room is talking to *now* and moves every time the supervisor replaces
     # one, while the session's own `room_id` says which room that session served and never
     # changes — which is what makes a past Matrix conversation findable after its successor has
-    # taken over (matrix_chat_runtime.md R11.3a). Asking this column "was this session mine?"
-    # answers about the room's present instead, and reads as no for every session but the live
-    # one.
+    # taken over. Asking this column "was this session mine?" answers about the room's present
+    # instead, and reads as no for every session but the live one.
     #
     # No constraint enforces that this points at a session whose `room_id` is this room: it is
     # an agreement between two rows, which SQL cannot state (a CHECK sees one row, and a

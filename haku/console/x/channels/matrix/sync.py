@@ -1,6 +1,6 @@
 """The console's Matrix sync loop.
 
-Logs in as the bot, long-polls `/sync`, binds the one room Haku services (R3.6a), and
+Logs in as the bot, long-polls `/sync`, binds the one room Haku services, and
 hands what the operator types to the session behind that room.
 
 **Every pass acknowledges what it read.** A batch the session will not take is rejected rather
@@ -11,7 +11,7 @@ voice memo — is the same shape, and always was, because re-offering one could 
 Both are **recorded in the transaction that advances the watermark**, as `session_events` rows the
 room notice is a rendering of. Advancing first and announcing afterwards would let one crash lose
 the message and the notice together, which is the whole of what "nothing is silently dropped"
-(R1.6) rules out.
+rules out.
 
 It is also the only holder of a Matrix credential, so the supervisor's lifecycle notices go out
 through `announce` rather than a second login, and an answer — a row until it has been said — is
@@ -143,7 +143,7 @@ class MatrixSyncStore:
         watermark first would let a crash acknowledge a message to the homeserver while losing
         both the record of it and the operator's only account of what happened to it.
 
-        The watermark is what makes an outage replay rather than skip (R1.7), so what is written
+        The watermark is what makes an outage replay rather than skip, so what is written
         here must be a position genuinely finished with.
         """
         async with self._sessions() as db, db.begin():
@@ -171,7 +171,7 @@ class MatrixSyncService:
         deliveries: DeliveryLog,
     ):
         # Taken separately from `config`, which carries it as optional: the service is
-        # only ever constructed once the password is known to be there (R10.3b).
+        # only ever constructed once the password is known to be there.
         self._config = config
         self._password = password
         self._engine = engine
@@ -194,7 +194,7 @@ class MatrixSyncService:
         """A working access token, logging in only when the cached one is not.
 
         Synapse rate-limits `/login`, so re-authenticating on every pass would get the
-        console throttled — hence the cache (R10.3a).
+        console throttled — hence the cache.
         """
         cached = await self._store.cached_token(self._config.user_id)
         if cached is not None and await self._client.whoami(cached):
@@ -205,15 +205,15 @@ class MatrixSyncService:
         return token
 
     async def _handle_invite(self, token: str, invite: Invite) -> None:
-        """Join invites from the operator, and only into the one live room (R3.6, R3.6a)."""
+        """Join invites from the operator, and only into the one live room."""
         if invite.inviter != self._config.operator_user_id:
             logger.warning(
                 "Matrix: leaving invite to %s from %s pending — not the operator", invite.room_id, invite.inviter
             )
             return
         if (live_room := await self._conversations.claim_room(self._config.user_id, invite.room_id)) != invite.room_id:
-            # Joining would put Haku in a room nothing services, which reads as listening
-            # (R3.6a). Say so where we can actually speak: the room already bound.
+            # Joining would put Haku in a room nothing services, which reads as listening.
+            # Say so where we can actually speak: the room already bound.
             logger.warning("Matrix: refusing invite to %s — already serving %s", invite.room_id, live_room)
             self._queue_notice(
                 live_room, f"invited to another room; still serving this one ({live_room})", RoomEventKind.ROOM
@@ -224,7 +224,7 @@ class MatrixSyncService:
         self._queue_notice(invite.room_id, "joined — this is now Haku's room", RoomEventKind.ROOM)
 
     async def post_reply(self, reply: PendingReply) -> str:
-        """Post one queued answer into the room as ordinary text (R11.1).
+        """Post one queued answer into the room as ordinary text.
 
         Called by `RoomOutboxDrain`, from inside the pacer's queue, so this is the send itself —
         it raises when the homeserver refuses, and that is what leaves the row unsent and
@@ -241,7 +241,7 @@ class MatrixSyncService:
         return None if conversation is None else conversation.room_id
 
     async def show_status(self, body: str, session_id: UUID | None = None) -> None:
-        """Make the room's single status line say *body*, creating or editing it (R6.2, R6.5).
+        """Make the room's single status line say *body*, creating or editing it.
 
         One line per turn rather than a notice per step: a room where every tool call is a
         message is a room nobody reads. The turn loop says what the state is and never learns how
@@ -285,7 +285,7 @@ class MatrixSyncService:
         self.pacer.set_status(post)
 
     async def set_typing(self, active: bool) -> None:
-        """Show or hide Haku's typing indicator in the live room (R6.1).
+        """Show or hide Haku's typing indicator in the live room.
 
         Best effort by construction: a failed typing notice is cosmetic, and a turn that died
         because the room could not be told it was thinking would be a strictly worse outcome
@@ -301,7 +301,7 @@ class MatrixSyncService:
             logger.warning("Matrix: typing notification failed (active=%s)", active, exc_info=True)
 
     async def clear_status(self) -> None:
-        """Retire the status line, if one was ever created (R6.5).
+        """Retire the status line, if one was ever created.
 
         Called on every terminal path, including failure — a status line left saying "running
         Bash" after the turn died is the stuck-typing-indicator bug in another costume.
@@ -387,7 +387,7 @@ class MatrixSyncService:
         """The events of a batch that are ours to act on — read or report.
 
         Haku's own posts are not among them, and are already gone: `MatrixClient._read`
-        drops everything the bot sent (R1.5). This used to check them again against a set of
+        drops everything the bot sent. This used to check them again against a set of
         every event id this process had ever sent — a filter that could not match, since every
         entry in it was excluded one layer down, and that cost memory for as long as the replica
         lived and was empty again the moment it restarted.
@@ -395,7 +395,7 @@ class MatrixSyncService:
         serviced = []
         for event in events:
             if event.room_id != live_room:
-                # Only the bound room is serviced (R3.6a). Reachable for a room joined
+                # Only the bound room is serviced. Reachable for a room joined
                 # before the binding existed, and for anything that gets Haku into a room
                 # by a path other than an invite.
                 logger.warning("Matrix: ignoring %s from unserviced room %s", event.event_id, event.room_id)
@@ -439,7 +439,7 @@ class MatrixSyncService:
     async def _live_room(self, token: str, messages: tuple[InboundMessage, ...]) -> str | None:
         """The room being serviced, adopting one from traffic when nothing is bound.
 
-        Membership already required an operator invite (R3.6), so a room Haku is joined to
+        Membership already required an operator invite, so a room Haku is joined to
         and being spoken to in is one the operator put it in — adopting it is recovering a
         binding, not granting access. Without this, a room joined before the binding existed
         goes quiet forever with no way for the operator to revive it from a Matrix client.
@@ -455,7 +455,7 @@ class MatrixSyncService:
         return room
 
     def _report_rejected(self, live_room: str | None, count: int, reason: PromptRejection) -> None:
-        """Tell the room its messages were not delivered, and what to wait for (R1.6).
+        """Tell the room its messages were not delivered, and what to wait for.
 
         Every pass that rejects says so, because every rejection is a different message: nothing
         is re-offered, so there is no repetition to suppress.
@@ -471,10 +471,10 @@ class MatrixSyncService:
         )
 
     def _report_unreadable(self, live_room: str | None, events: list[UnmappableEvent]) -> None:
-        """Say in the room that something arrived which Haku has no way to read (R1.6).
+        """Say in the room that something arrived which Haku has no way to read.
 
         Said in the room and not only logged, because the room is where the operator is: a
-        screenshot that disappears with a line in a pod's stdout is the failure R1.6 names.
+        screenshot that disappears with a line in a pod's stdout is the drop this exists to prevent.
         """
         if not events or live_room is None:
             return

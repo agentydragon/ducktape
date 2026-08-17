@@ -7,12 +7,12 @@ so a replica still on the mapping image would fail on every statement the moment
 four gates were read off one deployment (`devel-20260817092449-3da90ff`, both replicas on one tag):
 
 - `session_messages.{tool_calls,unpointable_reason}` and the two `unpointable_*` constraints,
-  unmapped by #4266 — <../../plans/next_month.md> § 1 phase 3.
+  unmapped by #4266 (<../../debug/2026_08_16_legacy_purge.md>).
 - `session_frames.partial` and `uq_session_frames_partial`, unmapped by #4277, a release behind the
   other two. The rows it marked go with it: they outlived their writer (#4230), and until they are
   deleted the fold reads them as ordinary `assistant` frames.
-- `ConversationEventKind.ACTIVITY_{STARTED,COMPLETED}`, whose last writer went in #4279 — step 12
-  of the conversation-layers plan, which is still on its own branch.
+- `ConversationEventKind.ACTIVITY_{STARTED,COMPLETED}`, whose last writer went in #4279, still on
+  its own branch.
 - The `tool_references` and `opaque` spellings of a stored tool result's content, whose writer went
   in #4284.
 

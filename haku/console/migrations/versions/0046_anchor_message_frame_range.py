@@ -2,13 +2,14 @@
 
 `0045` added `session_messages`' inclusive frame range and checked only its *ordering*, so two
 shapes stayed writable: a row with no range at all, and a row with a far end and no near end. This
-closes the second, `NOT VALID`, and does not close the first — see
-<../../../plans/chat_runtime_projection.md> § "The projection is not a one-way door" for why the
-plan's "new and updated rows must carry a range" is not expressible against this table, and where
-it belongs instead.
+closes the second, `NOT VALID`, and deliberately not the first: "every row carries a range" is not
+expressible here, because NULL means two things on this table — a row whose frames are not yet
+known, and the operator's own prompt, which crosses no wire and legitimately has none. The table
+that can state it is `session_events`, whose provenance is `NOT NULL` and whose CHECK makes a frame
+range and an authored row the only two possibilities.
 
-A far end with no near end is nonsense in either direction the plan's `frame_range | authored`
-union allows: it is neither a range nor the absence of one. Every writer already satisfies it —
+A far end with no near end is nonsense in either direction that `frame_range | authored` union
+allows: it is neither a range nor the absence of one. Every writer already satisfies it —
 `begin_assistant` writes the near end at insert and `update_assistant` only ever widens from
 there, and `set_message_source_frames` writes both ends in one statement — so adding it under a
 `maxUnavailable: 0` roll cannot reject a write from the image still serving.

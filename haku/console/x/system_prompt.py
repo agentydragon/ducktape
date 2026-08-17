@@ -52,7 +52,7 @@ class SessionIntroduction:
     room_id: str
     operator_user_id: str
     workspace: str
-    # Oldest first, so the template renders them in reading order (R3.3a).
+    # Oldest first, so the template renders them in reading order.
     recent_messages: Sequence[HistoryMessage]
 
 

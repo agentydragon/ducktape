@@ -63,7 +63,7 @@ function FrameRow({ frame }: { frame: SessionFrame }) {
 }
 
 /** Claude Code's raw protocol frames behind one conversation — what the console's transcript is a
- * lossy projection *of* (haku/plans/chat_runtime_projection.md § stage 4). Reached from the
+ * lossy projection *of*. Reached from the
  * conversation it belongs to and deep-linkable at its own route, so "look at frame 412" is a link.
  *
  * **The one surface in the console that shows a backend's own shapes, and it says so.** Every other

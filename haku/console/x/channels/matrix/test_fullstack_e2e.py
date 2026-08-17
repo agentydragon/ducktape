@@ -27,7 +27,7 @@ a closure to an in-process queue:
    read the same row as `spoke=True` — which its own docstring admits it cannot tell from
    delivered. Permanently recorded, permanently unspoken.
 
-R11.6 says the opposite: "a produced reply must never be lost silently". What closes all three is
+The property says the opposite: a produced reply must never be lost silently. What closes all three is
 the durable room outbox (`outbox.py`): the reply is a row written with the message it
 copies, and a drain says it and marks it sent only once the homeserver has taken it.
 `test_a_quiet_run_replies_once_to_every_message` is the control, and it passed throughout.
@@ -274,8 +274,8 @@ async def test_a_message_accepted_by_a_dying_session_is_not_offered_to_its_repla
     so nothing offers it again: the replacement session answers the next thing said, and `two`
     survives only as a transcript row it is woken with (the test below).
 
-    This is `message_drops.md` I3's window, deliberately reopened — R2.5's held batch is what used
-    to close it, and holding is what the ruling removes.
+    This is `message_drops.md` I3's window, deliberately reopened — holding the batch until its turn
+    ended is what used to close it, and holding is what the rejection ruling removes.
     """
     await deployment.start_console("console-1")
     doomed = await deployment.serving()
@@ -296,7 +296,7 @@ async def test_a_message_accepted_by_a_dying_session_is_not_offered_to_its_repla
 async def test_a_replacement_session_wakes_from_our_transcript_rather_than_from_the_room(
     deployment: Deployment, room: OperatorRoom
 ) -> None:
-    """R3.3a, answered out of the console's own record: **which copy of the conversation is this?**
+    """Answered out of the console's own record: **which copy of the conversation is this?**
 
     The two copies are distinguishable here, which is why this can assert provenance rather than
     only content. Our transcript holds the operator's message as the wakeup ingress wrote —

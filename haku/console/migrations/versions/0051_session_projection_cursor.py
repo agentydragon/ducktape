@@ -3,7 +3,7 @@
 `sessions.projected_frame_seq` is the durable per-session position the fold resumes from: the
 `frame_seq` of the last frame whose projected effects — the message rows, the room's outbox row,
 the turn's state — are committed. It is written in the same transaction as those effects, which is
-what makes them exactly-once (<../../../plans/chat_runtime_projection.md> § The shape).
+what makes them exactly-once.
 
 **Additive, and safe for the length of a roll.** A replica on the previous image (README §
 Perimeter / deploy) neither selects nor writes this column, so its INSERTs and UPDATEs are

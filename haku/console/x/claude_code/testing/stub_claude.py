@@ -42,8 +42,8 @@ The launch argv is **not acted on**: what the console passes is pinned by
 `haku/runtime/x/bridge/test_options.py`, and duplicating it here would be a second copy to
 keep in step. One value is copied out of it rather than obeyed — `--append-system-prompt`, appended
 to `system-prompts.jsonl` in `HAKU_STUB_STATE`, one line per CLI this run launched. It is the only
-way a test can see what a session was woken with, and what a *replacement* session is woken with is
-the whole of R3.3a.
+way a test can see what a session was woken with, and what a *replacement* session is woken with
+is the whole of what re-awakening promises.
 """
 
 from __future__ import annotations

@@ -1,8 +1,8 @@
 """`session_frames.partial` gets a server default, so unmapping it does not stop the log.
 
 `0030` created the column `NOT NULL` with no default, which was right while every writer named it.
-The last one, `_write_partial_frame`, is gone (#4230), and the column is on its way out:
-<../../../plans/next_month.md> § 1 unmaps it in phase 2 and drops it in phase 3. SQLAlchemy names
+The last one, `_write_partial_frame`, is gone (#4230), and the column is on its way out — unmapped
+by #4277 and dropped by `0068` (<../../debug/2026_08_16_legacy_purge.md>). SQLAlchemy names
 only *mapped* columns in an `INSERT`, so the release that unmaps it would omit `partial` from every
 `INSERT INTO session_frames` and Postgres would reject the first frame of the roll. That is the step
 the three-release sequence was missing: a `NOT NULL` column an expand/contract is about to unmap

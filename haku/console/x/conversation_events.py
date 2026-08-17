@@ -2,7 +2,7 @@
 
 The vocabulary every surface renders and every backend adapter produces. Nothing in it is
 Claude-shaped: no `assistant`, no content block, no `msg_…`, no `tool_use_result`. The Claude
-adapter is <claude_code/projection.py> (<../../plans/chat_runtime_projection.md> § stage 4).
+adapter is <claude_code/projection.py> (<README.md> § The neutral projection).
 
 **Tool calls are conversation, not debug**, and a lifecycle rather than records stapled to a
 finished message — the room renders a call while it is still running.

@@ -286,7 +286,7 @@ def create_app(
 
     # Matrix chat surface. Absent config is a supported state, not a failure: the bot
     # password is reflected in from the matrix namespace and is legitimately missing on a
-    # first deploy, and the console must serve its approval queue regardless (R10.3b).
+    # first deploy, and the console must serve its approval queue regardless.
     # Split around the Claude runtime below: ingress has to exist before the service, which
     # takes the reply sink, and the supervisor has to come after it.
     matrix_sync_service: matrix_sync.MatrixSyncService | None = None
@@ -510,7 +510,7 @@ def create_app(
         matrix_running = matrix_sync_service.run() if matrix_sync_service is not None else contextlib.nullcontext()
         # A sibling of the sync loop, not a child of it: sharing the advisory lock keeps one
         # replica provisioning, while staying a separate task keeps a stalled sandbox claim
-        # from wedging ingress, which must keep enqueueing with no sandbox up (R1.4).
+        # from wedging ingress, which must keep enqueueing with no sandbox up.
         supervising = matrix_supervisor.run() if matrix_supervisor is not None else contextlib.nullcontext()
         # Its own lock and its own task, like the two above: what it does is bounded by the room's
         # send budget, and a room that is refusing sends must not hold up ingress or provisioning.
