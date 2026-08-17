@@ -113,8 +113,8 @@ carrying no agent-assigned id escape. Two properties worth knowing before changi
 Both surfaces run on it at once. They are ordinary separate sessions — separate rows,
 separate sandboxes — so a browser conversation and the Matrix conversation coexist rather
 than contend. **Gotcha:** that means up to two live sandboxes, and only the Matrix one
-announces itself, so the browser one is the easy one to forget you are paying for — and it is now
-also the only one a quiet day leaves running, since the room's is allocated on demand (below).
+announces itself, so the browser one is the easy one to forget you are paying for — though a quiet
+day now leaves neither running, since both are allocated on demand (below).
 
 Delta streaming (`StreamEvent`) exists for the SPA alone. The Matrix path forwards whole assistant
 messages, each as it completes, so if the SPA view is ever retired that machinery goes with it.
@@ -123,16 +123,25 @@ messages, each as it completes, so if the SPA view is ever retired that machiner
 
 **A session and its sandbox are two things, and `create` makes only the first.** A created session
 is `idle`: a row, no credential, no `SandboxClaim`. `allocate` is what mints the rendezvous bearer,
-creates the claim and moves the row to `provisioning`. The SPA does both in one call
-(`SessionService.provision`), because a browser posting to `/api/sessions` has already said it
-wants a session; a Matrix room has no such gesture, so the supervisor waits for one.
+creates the claim and moves the row to `provisioning`.
 
-**The substitute for that gesture is an unclaimed prompt**, which is why `enqueue_prompt` admits
-`idle` — a refusal is terminal, so the room's first message after quiet would be rejected outright
-and the room would have no way of ever asking. Admitted, it is a `session_prompts` row, and
-`MatrixSessionSupervisor` allocates when it sees one, waking on `SessionEventKind.PROMPT` as well
-as `UPDATE` (a queued prompt changes no status, so waiting on `UPDATE` alone would defer the
-sandbox to the poll interval).
+**A prompt nobody has claimed is what buys the second, on every surface.** That is why
+`enqueue_prompt` admits `idle` — a refusal is terminal, so a first message after quiet would be
+rejected outright and the session would have no way of ever asking. Admitted, it is a
+`session_prompts` row, and `sandbox_allocation.py` is the one thing that reads it as demand: a
+sweep over every session with a queued prompt and no sandbox, under an advisory lock of its own,
+woken by `SessionEventKind.PROMPT` and backstopped by an interval.
+
+**No surface is special**, and the browser used to be: `POST /api/conversations` created and
+allocated in one call, so the SPA never saw an idle session and this rule was Matrix's alone. Both
+now open a conversation that costs a row and pay for a sandbox when something is said in it
+(operator, 2026-08-17). A channel's supervisor creates the session behind its room and announces
+what it sees; it does not decide this.
+
+**Allocation is never on the request path**, because `allocate` talks to Kubernetes: inside
+`POST /api/sessions/{session_id}/messages` the operator's first message would wait out the cold
+start, and a claim that failed would have nowhere to record it. In the sweep it has one — the
+failure is on the row, and the next pass reads whatever is still waiting.
 
 Three consequences worth knowing before changing any of it:
 
@@ -147,7 +156,7 @@ Three consequences worth knowing before changing any of it:
   random verifier no bearer matches, which is what makes an unallocated session unreachable from
   `authenticate_bridge` without a second guard restating it.
 - **The first message after quiet pays the full cold start**, since the warm pool is `replicas: 0`.
-  That is the trade: a standing ~1 CPU / 2Gi for a room nobody is using, against latency on the
+  That is the trade: a standing ~1 CPU / 2Gi for a session nobody is using, against latency on the
   message that ends the quiet.
 
 ### What has been lifted out of it
@@ -156,11 +165,12 @@ Each is a module nothing in `session_runtime.py` reaches into
 (<../plans/conversation_layers.md> § 9). `session_store.py` is not one of them: the service calls it
 on every path, so that split is a seam and not a leaf.
 
-| Path               | Role                                                                                                                                                           |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `setup_output.py`  | The bridge envelope's `kind` and the sandbox-narration row the console authors under it.                                                                       |
-| `session_views.py` | The read models the API returns for a session or a conversation, and the projection that assembles one out of the session row, its transcript and its rollout. |
-| `room_status.py`   | The per-turn status driver: what the room is shown while a turn runs, and when. It is handed two coroutines and never learns which room it speaks to.          |
+| Path                    | Role                                                                                                                                                           |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setup_output.py`       | The bridge envelope's `kind` and the sandbox-narration row the console authors under it.                                                                       |
+| `session_views.py`      | The read models the API returns for a session or a conversation, and the projection that assembles one out of the session row, its transcript and its rollout. |
+| `room_status.py`        | The per-turn status driver: what the room is shown while a turn runs, and when. It is handed two coroutines and never learns which room it speaks to.          |
+| `sandbox_allocation.py` | The sweep that turns an unclaimed prompt into a sandbox, for every session whatever surface opened it. Its own advisory lock; never the request path.          |
 
 ### The records a read hands back — `conversation_records.py`
 
@@ -487,7 +497,7 @@ Behaviours worth knowing before reading the code:
 
 - **A rejected batch is not queued anywhere.** `enqueue_prompt` accepts on an idle or a ready
   session with no turn open and nothing pending — idle among them because that acceptance is what
-  asks for a sandbox (§ An idle session) — and a refusal is the answer: the room is told the messages
+  buys a sandbox (§ An idle session) — and a refusal is the answer: the room is told the messages
   were not delivered and what to wait for, and the watermark advances past them so the homeserver
   does not offer them again. **Admission is that one transaction's alone**: `MatrixTurns.offer` asks no
   status question of its own, because an answer read outside `enqueue_prompt`'s
@@ -518,9 +528,9 @@ Behaviours worth knowing before reading the code:
   itself an event.
 - **One replica syncs.** The loop holds a Postgres advisory lock (`MXSY`) for its lifetime —
   `/sync` is a long poll, so releasing between passes would let two replicas double-process a batch.
-  The supervisor is a sibling task holding a **second** lock (`MXSE`), so provisioning is single too
-  while a stalled claim cannot wedge ingress. Two locks, not one: they are elected independently and
-  can land on different replicas.
+  The supervisor is a sibling task holding a **second** lock (`MXSE`), so the room's session is
+  created once while a stalled pass cannot wedge ingress. The allocator holds its own (`SBOX`) and is
+  not a Matrix object at all. Each is elected independently and they can land on different replicas.
 
 ## Tests run against a real database
 

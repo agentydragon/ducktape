@@ -19,11 +19,12 @@ from uuid import UUID
 import pytest
 from pydantic import SecretStr
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import Session, SessionOutbox
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.x.sandbox_allocation import SandboxAllocator
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import SessionStore, SessionSurface
@@ -83,6 +84,17 @@ def chat_service(
 
 
 @pytest.fixture
+def allocator(
+    chat_service: SessionService,
+    chat_store: SessionStore,
+    notifications: SessionNotifications,
+    migrated_engine: AsyncEngine,
+) -> SandboxAllocator:
+    """The sweep that buys sandboxes, over the same database every other fixture here writes to."""
+    return SandboxAllocator(chat_service, chat_store, notifications, migrated_engine)
+
+
+@pytest.fixture
 async def operator_id(migrated_identity_store: PostgresOperatorIdentityStore) -> UUID:
     """The canonical Operator these tests act as. One key for every test; the database is per-test."""
     return await migrated_identity_store.resolve_configured_external_user_key(OPERATOR_SUBJECT)
@@ -91,7 +103,7 @@ async def operator_id(migrated_identity_store: PostgresOperatorIdentityStore) ->
 async def provisioned(store: SessionStore, operator_id: UUID, surface: SessionSurface) -> tuple[SessionView, str]:
     """A session with a sandbox credential — what `create` alone used to hand back.
 
-    `create` now writes an idle row and `allocate` is what mints the bearer and moves it to
+    `create` writes an idle row and `allocate` is what mints the bearer and moves it to
     `provisioning`, so the two calls together are what a test needing a session a runner can dial
     into asks for. Tests about the idle state itself call `create` directly.
     """
@@ -99,6 +111,18 @@ async def provisioned(store: SessionStore, operator_id: UUID, surface: SessionSu
     token = await store.allocate(view.session_id)
     assert token is not None
     return await store.get(operator_id, view.session_id), token
+
+
+async def sandboxed(service: SessionService, operator_id: UUID, surface: SessionSurface) -> UUID:
+    """A session a runner can dial into, with the claim `SessionService.allocate` makes for it.
+
+    `provisioned` above is the same thing one layer down, for a test that needs the bearer and no
+    claim. Both are the two calls the allocator sweep makes, made directly: a test that needs a
+    running session is not testing how demand is noticed — <test_sandbox_allocation.py> is.
+    """
+    view = await service.create(operator_id, surface)
+    await service.allocate(view.session_id)
+    return view.session_id
 
 
 async def queued_for_the_room(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> list[str]:

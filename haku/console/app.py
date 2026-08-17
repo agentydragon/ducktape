@@ -84,6 +84,7 @@ from haku.console.x.channels.matrix import (
     session as matrix_session,
     sync as matrix_sync,
 )
+from haku.console.x.sandbox_allocation import SandboxAllocator
 from haku.console.x.session_live_updates import SessionLiveUpdates
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_store import SessionStore
@@ -350,7 +351,15 @@ def create_app(
             mcp_token=mcp_agent.token,
             chat_frontend=matrix_surface,
         )
-    # The supervisor comes after the Claude runtime it provisions through, and announces via
+    # The one thing that turns a queued prompt into a sandbox, whichever surface queued it
+    # (<x/sandbox_allocation.py>). Only with the Claude runtime, since without it there is
+    # nothing to allocate through.
+    sandbox_allocator = (
+        SandboxAllocator(session_service, session_store, session_notifications, db_engine)
+        if session_service is not None
+        else None
+    )
+    # The supervisor comes after the Claude runtime whose sessions it creates, and announces via
     # the sync service, which holds the only Matrix credential — one login, one device,
     # whoever is speaking.
     matrix_supervisor: matrix_session.MatrixSessionSupervisor | None = None
@@ -512,13 +521,16 @@ def create_app(
         if session_service is not None:
             await session_service.reconcile_terminal_claims()
         matrix_running = matrix_sync_service.run() if matrix_sync_service is not None else contextlib.nullcontext()
-        # A sibling of the sync loop, not a child of it: sharing the advisory lock keeps one
-        # replica provisioning, while staying a separate task keeps a stalled sandbox claim
-        # from wedging ingress, which must keep enqueueing with no sandbox up.
+        # A sibling of the sync loop, not a child of it: its own advisory lock keeps one replica
+        # creating the room's sessions, while staying a separate task keeps a stalled pass from
+        # wedging ingress, which must keep enqueueing with no sandbox up.
         supervising = matrix_supervisor.run() if matrix_supervisor is not None else contextlib.nullcontext()
         # Its own lock and its own task, like the two above: what it does is bounded by the room's
         # send budget, and a room that is refusing sends must not hold up ingress or provisioning.
         noticing = matrix_notices.run() if matrix_notices is not None else contextlib.nullcontext()
+        # Its own lock again, because a sweep that is slow talking to Kubernetes must not be what
+        # costs the room its supervisor or the console its ingress.
+        allocating = sandbox_allocator.run() if sandbox_allocator is not None else contextlib.nullcontext()
         indexing = index_maintenance.run() if index_maintenance is not None else contextlib.nullcontext()
         async with (
             agent_authority.expiry_maintenance(),
@@ -526,6 +538,7 @@ def create_app(
             matrix_running,
             supervising,
             noticing,
+            allocating,
             indexing,
         ):
             await console_event_hub.start()

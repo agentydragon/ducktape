@@ -189,6 +189,17 @@ py_library(
 )
 
 py_library(
+    name = "sandbox_allocation",
+    srcs = ["sandbox_allocation.py"],
+    deps = [
+        ":session_notifications",
+        ":session_runtime",
+        ":session_store",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "session_live_updates",
     srcs = ["session_live_updates.py"],
     deps = [
@@ -220,6 +231,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":sandbox_allocation",
         ":session_notifications",
         ":session_runtime",
         ":session_store",
@@ -415,6 +427,21 @@ py_test(
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_sandbox_allocation",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_sandbox_allocation.py"],
+    deps = [
+        ":conftest",
+        ":session_store",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console:conftest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
     ],
 )
 

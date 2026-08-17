@@ -33,6 +33,7 @@ from haku.console.x.channels.matrix.session import (
     RoomTranscript,
 )
 from haku.console.x.conftest import provisioned, runtime_config
+from haku.console.x.sandbox_allocation import SandboxAllocator
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, MatrixSession, SessionStore, SpaSession
@@ -55,19 +56,20 @@ async def supervised_session(supervisor: MatrixSessionSupervisor, conversations:
 
 async def asked_for_a_sandbox(
     supervisor: MatrixSessionSupervisor,
+    allocator: SandboxAllocator,
     conversations: MatrixConversationStore,
     chat_store: SessionStore,
     operator_id: UUID,
 ) -> UUID:
-    """A room whose session has a sandbox, acquired the only way a room can ask for one.
+    """A room whose session has a sandbox, acquired the only way any session gets one.
 
-    Two passes with a prompt between them, because that is the whole mechanism: the supervisor
-    creates an idle session, the message is admitted against it, and the next pass reads the
-    unclaimed prompt as the demand a room has no other gesture for.
+    Three steps, and only the first is the channel's: the supervisor creates an idle session, the
+    message is admitted against it, and the allocator's sweep reads that unclaimed prompt as
+    demand — the same three a browser conversation takes (<../../sandbox_allocation.py>).
     """
     session_id = await supervised_session(supervisor, conversations)
     await chat_store.enqueue_prompt(operator_id, session_id, "[$0] are you there?")
-    await supervisor.supervise_once()
+    await allocator.allocate_once()
     return session_id
 
 
@@ -124,32 +126,30 @@ async def test_a_freshly_bound_room_gets_a_session_and_no_sandbox(
     assert "no sandbox" in announced[0]
 
 
-async def test_the_first_message_provisions_a_sandbox(
-    supervisor, conversations, chat_store, recording_claims, operator_id, announced
+async def test_the_first_message_buys_the_room_a_sandbox(
+    supervisor, allocator, conversations, chat_store, recording_claims, operator_id, announced
 ) -> None:
     """The acceptance criterion, in one test: an idle room holds no sandbox, and a message buys one.
 
     Admission on `idle` is what makes it possible for the batch to be in the durable queue rather
-    than left on the homeserver, and an unclaimed prompt there is the only demand signal a room
-    has (<../../README.md> § An idle session).
+    than left on the homeserver, and the sweep that reads it there is channel-neutral — the room's
+    half is announcing what it sees (<../../README.md> § An idle session).
     """
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-    session_id = await supervised_session(supervisor, conversations)
-    assert recording_claims.created == []
+    session_id = await asked_for_a_sandbox(supervisor, allocator, conversations, chat_store, operator_id)
 
-    await chat_store.enqueue_prompt(operator_id, session_id, "[$1] are you there?")
     await supervisor.supervise_once()
 
     assert recording_claims.created == [session_id], "the message did not buy the room a sandbox"
     assert await chat_store.status(session_id) == SessionStatus.PROVISIONING
-    assert any("provisioning a sandbox" in line for line in announced)
+    assert any("provisioning" in line for line in announced)
 
 
 async def test_leaves_a_live_session_alone(
-    supervisor, conversations, chat_store, recording_claims, operator_id
+    supervisor, allocator, conversations, chat_store, recording_claims, operator_id
 ) -> None:
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-    live = await asked_for_a_sandbox(supervisor, conversations, chat_store, operator_id)
+    live = await asked_for_a_sandbox(supervisor, allocator, conversations, chat_store, operator_id)
 
     await supervisor.supervise_once()
 
@@ -175,11 +175,11 @@ async def test_an_idle_session_is_not_replaced_either(supervisor, conversations,
 
 
 async def test_replaces_a_failed_session(
-    supervisor, conversations, chat_store, recording_claims, operator_id, announced
+    supervisor, allocator, conversations, chat_store, recording_claims, operator_id, announced
 ) -> None:
     """A dead session over Matrix is invisible — the room would just stop answering."""
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-    dead = await asked_for_a_sandbox(supervisor, conversations, chat_store, operator_id)
+    dead = await asked_for_a_sandbox(supervisor, allocator, conversations, chat_store, operator_id)
     await chat_store.fail(dead, "the sandbox went away")
 
     await supervisor.supervise_once()
@@ -219,12 +219,12 @@ async def test_the_pointer_moves_while_each_session_keeps_the_room_it_served(
 
 
 async def test_a_replacement_session_joins_the_room_s_conversation_and_the_attachment_stays_put(
-    supervisor, conversations, chat_store, operator_id, migrated_sessions
+    supervisor, allocator, conversations, chat_store, operator_id, migrated_sessions
 ) -> None:
     """Session replacement is the supervisor's normal job, and the room's attachment is not touched
     by it: the successor joins the thread the attachment names."""
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-    first = await asked_for_a_sandbox(supervisor, conversations, chat_store, operator_id)
+    first = await asked_for_a_sandbox(supervisor, allocator, conversations, chat_store, operator_id)
     await chat_store.fail(first, "the sandbox went away")
 
     await supervisor.supervise_once()
@@ -240,7 +240,7 @@ async def test_a_replacement_session_joins_the_room_s_conversation_and_the_attac
 
 
 async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(
-    supervisor, conversations, chat_store, operator_id, migrated_sessions, announced
+    supervisor, allocator, conversations, chat_store, operator_id, migrated_sessions, announced
 ) -> None:
     """A replica that went away without recording anything leaves a live status nothing is working
     on, and supervision has to reclaim it rather than believe it — but only once the lease has been
@@ -248,7 +248,7 @@ async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(
     roll survivable rather than fatal.
     """
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-    orphan = await asked_for_a_sandbox(supervisor, conversations, chat_store, operator_id)
+    orphan = await asked_for_a_sandbox(supervisor, allocator, conversations, chat_store, operator_id)
     async with migrated_sessions.begin() as db:
         chat = await db.get(Session, orphan)
         assert chat is not None
@@ -282,12 +282,12 @@ async def test_replaces_a_session_whose_row_is_gone(supervisor, conversations, m
 
 
 async def test_does_not_repeat_an_unchanged_status(
-    supervisor, conversations, chat_store, recording_claims, operator_id, announced
+    supervisor, allocator, conversations, chat_store, recording_claims, operator_id, announced
 ) -> None:
     """Every transition is reported, but a poll that changes nothing must not spam the room."""
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-    session_id = await asked_for_a_sandbox(supervisor, conversations, chat_store, operator_id)
-    # Provisioning already announced itself; the runner connecting is the next transition.
+    session_id = await asked_for_a_sandbox(supervisor, allocator, conversations, chat_store, operator_id)
+    # The room has heard that a session exists; the runner connecting is the next transition.
     assert (
         await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
         == BridgeAuthentication.ACCEPTED
@@ -625,8 +625,8 @@ async def test_a_batch_offered_to_a_session_with_no_sandbox_is_taken(
     """Refusing here would leave the room unable to ask for the sandbox it needs.
 
     Rejected, the batch is gone and the console has heard nothing about it; in the durable queue it
-    is the demand the supervisor allocates for, which is Matrix's substitute for the SPA's "I want
-    a session" gesture (<../../README.md> § An idle session).
+    is the demand the allocator sweep reads, on the same terms as a prompt typed into the browser
+    (<../../README.md> § An idle session).
     """
     view = await chat_store.create(operator_id, MatrixSession(room_id=MATRIX_ROOM))
     await serving_room(conversations, view.session_id)
@@ -634,7 +634,7 @@ async def test_a_batch_offered_to_a_session_with_no_sandbox_is_taken(
     admitted = await turns.offer([operator_message("are you there?", event_id="$1", at=1)])
 
     assert isinstance(admitted, PromptAccepted), "the batch was rejected, leaving the room nothing to ask with"
-    assert await chat_store.has_queued_prompt(view.session_id)
+    assert await chat_store.sessions_awaiting_sandbox() == (view.session_id,)
 
 
 async def test_a_batch_a_ready_session_takes_becomes_its_prompt(

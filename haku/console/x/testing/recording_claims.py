@@ -53,9 +53,16 @@ class RecordingClaims:
     def fail(self, error: Exception) -> None:
         """Make inspection raise, as an unreachable Kubernetes does."""
         self._failure = error
+        self._refused: set[UUID] = set()
+
+    def refuse(self, session_id: UUID) -> None:
+        """Make this session's claim creation raise, the way a cluster that will not take it does."""
+        self._refused.add(session_id)
 
     async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None:
         assert expires_at > datetime.now(expires_at.tzinfo)
+        if session_id in self._refused:
+            raise RuntimeError(f"the cluster refused the claim for {session_id=}")
         self.created.append(session_id)
         # The claim is where a test reaches the bridge credential: `SessionStore.allocate` mints it
         # and `SessionService.allocate` does not hand it back.

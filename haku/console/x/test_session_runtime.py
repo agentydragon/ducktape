@@ -43,7 +43,15 @@ from haku.console.x.claude_code.testing.wire import (
     tool_result,
     tool_use_block,
 )
-from haku.console.x.conftest import MCP_TOKEN, age_lease, lease_of, provisioned, queued_for_the_room, runtime_config
+from haku.console.x.conftest import (
+    MCP_TOKEN,
+    age_lease,
+    lease_of,
+    provisioned,
+    queued_for_the_room,
+    runtime_config,
+    sandboxed,
+)
 from haku.console.x.frame_projection import projected
 from haku.console.x.sandbox_claims import ProvisioningStep, provisioning_view
 from haku.console.x.session_notifications import SessionNotifications
@@ -323,13 +331,17 @@ async def test_allocating_twice_leaves_one_sandbox(chat_service, recording_claim
     assert recording_claims.created == [session.session_id]
 
 
-async def test_the_browser_s_post_provisions_at_once(chat_service, recording_claims, operator_id) -> None:
-    """A POST is already the gesture Matrix lacks, so deferring would only move the cold start."""
-    session = await chat_service.provision(operator_id, SpaSession())
+async def test_a_conversation_the_browser_opened_holds_no_sandbox(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    """The SPA's own `POST /api/conversations`, and the rule it now obeys: opening a chat is not
+    saying anything in it, so the thread starts idle exactly as a bound room's does
+    (<README.md> § An idle session)."""
+    conversation = await chat_service.create_conversation(operator_id)
 
-    assert session.status == SessionStatus.PROVISIONING
-    assert recording_claims.created == [session.session_id]
-    assert session.provisioning is not None, "the SPA is shown what it is waiting for"
+    assert conversation.session.status == SessionStatus.IDLE
+    assert recording_claims.created == [], "opening a conversation bought a sandbox nobody asked for"
+    assert await chat_store.status(conversation.session.session_id) == SessionStatus.IDLE
 
 
 async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim(
@@ -337,8 +349,7 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
 ) -> None:
     websocket = _LifecycleWebSocket()
 
-    session = await chat_service.provision(operator_id, SpaSession())
-    session_id = session.session_id
+    session_id = await sandboxed(chat_service, operator_id, SpaSession())
     _ClosingClaudeClient.on_connect = lambda: chat_store.request_close(operator_id, session_id)
     with patch("haku.console.x.session_runtime.cli_over_websocket", _ClosingClaudeClient):
         await chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])
@@ -383,8 +394,7 @@ async def test_a_rolling_replica_hands_the_session_back_instead_of_ending_it(
     conversation."""
     websocket = _LifecycleWebSocket()
 
-    session = await chat_service.provision(operator_id, SpaSession())
-    session_id = session.session_id
+    session_id = await sandboxed(chat_service, operator_id, SpaSession())
     with (
         patch("haku.console.x.session_runtime.cli_over_websocket", _RollingClaudeClient),
         pytest.raises(asyncio.CancelledError),
@@ -402,8 +412,7 @@ async def test_a_returning_runner_is_admitted_and_takes_the_lease(
     chat_store, chat_service, recording_claims, operator_id
 ) -> None:
     """A runner whose replica went away is admitted by the next one, which keeps the sandbox."""
-    session = await chat_service.provision(operator_id, SpaSession())
-    session_id = session.session_id
+    session_id = await sandboxed(chat_service, operator_id, SpaSession())
     token = recording_claims.tokens[session_id]
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
 
@@ -424,8 +433,7 @@ async def test_adoption_picks_the_answer_up_where_it_stopped(
     turn starting from an empty string would write the tail of the answer as a second message.
     Adoption says which turn; the turn's own row says how far it got.
     """
-    session = await chat_service.provision(operator_id, SpaSession())
-    session_id = session.session_id
+    session_id = await sandboxed(chat_service, operator_id, SpaSession())
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
     started = await chat_store.next_prompt(session_id)
@@ -489,8 +497,7 @@ async def test_adoption_closes_a_turn_whose_result_nobody_projected(
     `record_frame` refuses it as one this session already has — so adoption hands it back as a
     frame to project, and projecting it closes the turn through the loop a live frame goes through.
     """
-    session = await chat_service.provision(operator_id, SpaSession())
-    session_id = session.session_id
+    session_id = await sandboxed(chat_service, operator_id, SpaSession())
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
     assert await chat_store.next_prompt(session_id) is not None
@@ -523,8 +530,7 @@ async def test_adoption_reads_a_failed_result_as_a_failed_turn(
     ended badly as answered. The projection of the frame closes the turn instead, so recovery fails
     exactly as the live path fails on the same frame.
     """
-    session = await chat_service.provision(operator_id, SpaSession())
-    session_id = session.session_id
+    session_id = await sandboxed(chat_service, operator_id, SpaSession())
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
     assert await chat_store.next_prompt(session_id) is not None
@@ -564,8 +570,7 @@ async def test_a_turn_whose_cursor_is_behind_it_is_failed_rather_than_resumed(
     `first_frame_seq - 1`, so a turn opening at 1 anchors at 0 — which is also "nothing has ever
     projected" — and there is no position below it to put the cursor.
     """
-    session = await chat_service.provision(operator_id, SpaSession())
-    session_id = session.session_id
+    session_id = await sandboxed(chat_service, operator_id, SpaSession())
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "system", {"type": "system"})
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
@@ -587,8 +592,7 @@ async def test_a_turn_that_never_asked_its_prompt_gives_it_back(
     """`next_prompt` claims the prompt; `_run_turn` writes it afterwards. A replica dying between
     the two asked nothing, so the prompt is owed a second offer rather than a silent burial.
     """
-    session = await chat_service.provision(operator_id, SpaSession())
-    session_id = session.session_id
+    session_id = await sandboxed(chat_service, operator_id, SpaSession())
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
     claimed = await chat_store.next_prompt(session_id)
@@ -605,8 +609,7 @@ async def test_a_turn_that_never_asked_its_prompt_gives_it_back(
 
 async def test_a_turn_that_asked_its_prompt_keeps_it(chat_store, chat_service, recording_claims, operator_id) -> None:
     """The agent has it and the runner will replay its answer, so re-offering would ask twice."""
-    session = await chat_service.provision(operator_id, SpaSession())
-    session_id = session.session_id
+    session_id = await sandboxed(chat_service, operator_id, SpaSession())
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
     assert await chat_store.next_prompt(session_id) is not None
@@ -624,8 +627,7 @@ async def test_a_held_session_tells_the_runner_to_retry_rather_than_refusing_it(
     while the dying one's lease is still valid. Closing before `accept()` reaches it as 403 whatever
     code is passed, and 403 is a refusal it correctly gives up on — costing the sandbox. 503 is what
     it waits out."""
-    session = await chat_service.provision(operator_id, SpaSession())
-    session_id = session.session_id
+    session_id = await sandboxed(chat_service, operator_id, SpaSession())
     token = recording_claims.tokens[session_id]
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
     websocket = _LifecycleWebSocket()
@@ -643,10 +645,10 @@ async def test_a_bad_credential_is_still_refused_outright(
 ) -> None:
     """The other side of the distinction: a runner that will never be admitted must not spend its
     redial budget finding that out."""
-    session = await chat_service.provision(operator_id, SpaSession())
+    session_id = await sandboxed(chat_service, operator_id, SpaSession())
     websocket = _LifecycleWebSocket()
 
-    await chat_service.handle_runner(cast(Any, websocket), session.session_id, "wrong")
+    await chat_service.handle_runner(cast(Any, websocket), session_id, "wrong")
 
     assert websocket.denied is None
     assert websocket.closed == (NOT_ADMITTED_CODE, "invalid or consumed runner credential")
@@ -658,16 +660,14 @@ async def test_terminal_runner_retry_deletes_its_stale_claim(
     """A runner presenting a valid credential for an already-closed session is turned away."""
     websocket = _LifecycleWebSocket()
 
-    session = await chat_service.provision(operator_id, SpaSession())
-    await chat_store.request_close(operator_id, session.session_id)
+    session_id = await sandboxed(chat_service, operator_id, SpaSession())
+    await chat_store.request_close(operator_id, session_id)
 
-    await chat_service.handle_runner(
-        cast(Any, websocket), session.session_id, recording_claims.tokens[session.session_id]
-    )
+    await chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])
 
-    assert recording_claims.deleted == [session.session_id]
+    assert recording_claims.deleted == [session_id]
     assert await chat_store.claim_cleanup_candidates() == []
-    assert await chat_store.status(session.session_id) == SessionStatus.CLOSED
+    assert await chat_store.status(session_id) == SessionStatus.CLOSED
     assert websocket.closed == (1008, "runner session is already terminal")
 
 
@@ -678,9 +678,9 @@ async def test_startup_reconciliation_retries_terminal_claim_cleanup(
 
     session_ids = []
     for _ in range(2):
-        session = await chat_service.provision(operator_id, SpaSession())
-        await chat_store.request_close(operator_id, session.session_id)
-        session_ids.append(session.session_id)
+        session_id = await sandboxed(chat_service, operator_id, SpaSession())
+        await chat_store.request_close(operator_id, session_id)
+        session_ids.append(session_id)
 
     await chat_service.reconcile_terminal_claims()
 
@@ -1566,8 +1566,7 @@ async def test_a_returning_runner_beats_the_sweep(
 ) -> None:
     """A runner that redials inside the adoption window is admitted, and the session keeps running
     under its new holder rather than being failed."""
-    session = await chat_service.provision(operator_id, SpaSession())
-    session_id = session.session_id
+    session_id = await sandboxed(chat_service, operator_id, SpaSession())
     token = recording_claims.tokens[session_id]
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
     await age_lease(migrated_sessions, session_id, seconds_ago=1)
@@ -1613,14 +1612,14 @@ async def test_a_released_session_nobody_readopted_is_not_called_never_attached(
     """A runner attached, then its lease was handed back (a roll, or the sandbox reaching its TTL)
     and no runner returned. `release` clears `lease_holder`, so the reason must not fall through to
     "never attached" for a session that was attached for hours."""
-    session = await chat_service.provision(operator_id, SpaSession())
-    token = recording_claims.tokens[session.session_id]
-    assert await chat_store.authenticate_bridge(session.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.release_lease(session.session_id)
-    await age_lease(migrated_sessions, session.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
+    session_id = await sandboxed(chat_service, operator_id, SpaSession())
+    token = recording_claims.tokens[session_id]
+    assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.release_lease(session_id)
+    await age_lease(migrated_sessions, session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 
     assert await chat_store.expire_stale_leases() == 1
-    error = (await chat_store.get(operator_id, session.session_id)).error
+    error = (await chat_store.get(operator_id, session_id)).error
     assert "never attached" not in error, "it was attached; the runner went away"
     assert "runner went away" in error
 

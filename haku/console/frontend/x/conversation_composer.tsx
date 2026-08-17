@@ -3,8 +3,16 @@ import { useState } from "react";
 
 import { abortSessionTurn, displayableError, PromptRefused, sendChatPrompt, type ConversationSession } from "../client";
 
+/** The statuses `enqueue_prompt` admits — `idle` among them, because that is what buys a sandbox.
+ *
+ * A new conversation is idle, so gating Send on `ready` alone would leave the browser unable to
+ * send the one message that would ever start a session (`x/README.md` § An idle session).
+ */
+const PROMPTABLE = new Set<ConversationSession["status"]>(["idle", "ready"]);
+
 function placeholder(status: ConversationSession["status"]): string {
   if (status === "ready") return "Send a message…";
+  if (status === "idle") return "Send a message — the first one starts the sandbox…";
   if (status === "responding") return "A turn is running — a message sent now would be refused.";
   return "The session is not ready for a message yet.";
 }
@@ -20,6 +28,9 @@ function placeholder(status: ConversationSession["status"]): string {
  * second prompt while one is queued; the queued case leaves the session `ready`, so the disabled
  * Send below cannot pre-empt it. The operator's text exists nowhere but this box until the console
  * accepts it, so a refusal keeps it and says why.
+ *
+ * **An idle session takes a prompt too**, and that send is what allocates its sandbox — see
+ * `PROMPTABLE`.
  */
 export function ConversationComposer({
   sessionId,
@@ -106,7 +117,11 @@ export function ConversationComposer({
               Abort
             </Button>
           )}
-          <Button onClick={() => void send()} disabled={status !== "ready" || text.trim().length === 0} loading={busy}>
+          <Button
+            onClick={() => void send()}
+            disabled={!PROMPTABLE.has(status) || text.trim().length === 0}
+            loading={busy}
+          >
             Send
           </Button>
         </Group>

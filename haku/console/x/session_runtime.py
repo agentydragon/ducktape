@@ -218,8 +218,9 @@ class SessionService:
     ) -> SessionView:
         """A session row and nothing else — no credential, no claim, nothing to pay for.
 
-        `allocate` is what gives it a sandbox, and the two are separate calls because a Matrix room
-        only earns the second once somebody speaks in it (<README.md> § An idle session).
+        `allocate` is what gives it a sandbox, and the two are separate calls because neither
+        surface earns the second by opening a session: a prompt is what buys one, and the sweep
+        that reads that demand is <sandbox_allocation.py> (<README.md> § An idle session).
         """
         return await self._store.create(operator_id, surface, conversation_id=conversation_id)
 
@@ -246,20 +247,15 @@ class SessionService:
             await self._cleanup_terminal_claim(session_id)
             raise
 
-    async def provision(self, operator_id: UUID, surface: SessionSurface) -> SessionView:
-        """A session with a sandbox already on its way — the whole of what the SPA's POST asks for.
-
-        The browser opening a chat has said it wants one, which is the gesture Matrix has no
-        equivalent of, so there is nothing here to wait for: deferring would only move the cold
-        start to the operator's first message.
-        """
-        view = await self.create(operator_id, surface)
-        await self.allocate(view.session_id)
-        return await self.get(operator_id, view.session_id)
-
     async def create_conversation(self, operator_id: UUID) -> ConversationView:
-        """Open a thread and the session that runs it, and read the thread back."""
-        view = await self.provision(operator_id, SpaSession())
+        """Open a thread and the idle session that will run it, and read the thread back.
+
+        **Idle, like every other session.** Opening a chat is not the same gesture as saying
+        something in it, and the second is what buys a sandbox on every surface now
+        (<README.md> § An idle session); a browser that opens a conversation and closes the tab
+        costs a row.
+        """
+        view = await self.create(operator_id, SpaSession())
         return await self.conversation(operator_id, await self._store.conversation_of(view.session_id))
 
     async def conversation(self, operator_id: UUID, conversation_id: UUID) -> ConversationView:
@@ -844,14 +840,13 @@ async def list_conversations(
 
 @router.post("/api/conversations", status_code=201)
 async def create_conversation(actor: OperatorActorDep, service: SessionServiceDep) -> ConversationView:
-    """Open a new thread and the first session to run it.
+    """Open a new thread and the idle session that will run it.
 
-    One call, because a conversation with no session is a thread nothing can be said to.
+    One call, because a conversation with no session is a thread nothing can be said to. Two rows
+    and no sandbox: this route reaches nothing outside the database, because a browser opening a
+    chat is not yet an operator saying anything in it.
     """
-    try:
-        return await service.create_conversation(actor.operator_id)
-    except Exception as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
+    return await service.create_conversation(actor.operator_id)
 
 
 @router.get("/api/conversations/{conversation_id}")

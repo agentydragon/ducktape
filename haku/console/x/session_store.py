@@ -714,10 +714,10 @@ class SessionStore:
         """Accept a prompt against this session, or refuse it naming the state that refused.
 
         **`idle` is admitted, and that is what creates demand.** A session with no sandbox is the
-        state a room nobody is speaking in sits in, and the prompt is what asks for one: the
-        supervisor allocates on the `PROMPT` notify below (<README.md> § An idle session). Refusing
-        here instead would reject every first message a room sends, and leave that room with
-        nothing that could ever start a sandbox for it.
+        state every session starts in, and the prompt is what asks for one: the allocator sweep
+        wakes on the `PROMPT` notify below and buys it (<sandbox_allocation.py>). Refusing here
+        instead would reject every first message a room sends, and leave that room with nothing
+        that could ever start a sandbox for it.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -767,15 +767,27 @@ class SessionStore:
             await notify(db, SessionEventKind.UPDATE, session_id)
         return user_message_view(message)
 
-    async def has_queued_prompt(self, session_id: UUID) -> bool:
-        """Whether anything is waiting on this session that no turn has claimed.
+    async def sessions_awaiting_sandbox(self) -> tuple[UUID, ...]:
+        """Every session holding a prompt no turn has claimed and no sandbox to answer it with.
 
-        The supervisor's demand signal. A room has no gesture meaning "I want a sandbox", so an
-        unclaimed prompt is the honest substitute: it is the one thing that cannot be answered
-        without one (<README.md> § An idle session).
+        The demand signal, and the whole of it: a session is `idle` until something buys it a
+        sandbox, and an unclaimed prompt is the one thing that cannot be answered without one. It
+        names no surface, because neither does the rule — a room that was spoken in and a browser
+        conversation that was typed into leave the same two rows (<README.md> § An idle session).
         """
         async with self._sessions() as db:
-            return await _queued_prompt(db, session_id) is not None
+            return tuple(
+                (
+                    await db.scalars(
+                        select(Session.session_id)
+                        .join(SessionPrompt, SessionPrompt.session_id == Session.session_id)
+                        .where(Session.status == SessionStatus.IDLE, SessionPrompt.claimed_at.is_(None))
+                        # Longest-waiting first, so a pass that cannot finish serves the session
+                        # that has been waiting rather than an arbitrary one.
+                        .order_by(SessionPrompt.queued_at)
+                    )
+                ).all()
+            )
 
     async def next_prompt(self, session_id: UUID) -> TurnStart | None:
         """Take the queued prompt and open the turn that will answer it, or None if there is none.

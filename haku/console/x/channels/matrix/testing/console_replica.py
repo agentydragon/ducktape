@@ -3,8 +3,8 @@
 <../test_fullstack_e2e.py> is about what the room ends up containing across a console going away,
 so the console has to be something that can *go away* — a process the test starts, stops and starts
 again, on one port, against one database. Everything it composes is the production wiring from
-`haku.console.app`. What is replaced is what would otherwise be Kubernetes, plus one deliberate
-fault:
+`haku.console.app`, the sandbox allocator among it. What is replaced is what would otherwise be
+Kubernetes, plus one deliberate fault:
 
 - **`FileSandboxClaims`** writes the claim a `SandboxClaim` controller would have acted on. The
   sandbox must outlive this process — that is the whole subject of the adoption case — so the
@@ -53,6 +53,7 @@ from haku.console.x.channels.matrix.session import (
 )
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.delivery_log import DeliveryLog
+from haku.console.x.sandbox_allocation import SandboxAllocator
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService, internal_router
@@ -189,12 +190,13 @@ async def _serve() -> None:
     supervisor = MatrixSessionSupervisor(
         matrix, conversations, service, store, notifications, identities, sync.announce, engine
     )
+    allocator = SandboxAllocator(service, store, notifications, engine)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         del app
         try:
-            async with sync.run(), supervisor.run():
+            async with sync.run(), supervisor.run(), allocator.run():
                 yield
         finally:
             await service.aclose()

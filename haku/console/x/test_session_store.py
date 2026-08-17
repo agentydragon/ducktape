@@ -162,20 +162,37 @@ async def test_a_prompt_is_admitted_by_a_session_with_no_sandbox(chat_store, ope
 
     await chat_store.enqueue_prompt(operator_id, view.session_id, "are you there?")
 
-    assert await chat_store.has_queued_prompt(view.session_id)
+    assert await chat_store.sessions_awaiting_sandbox() == (view.session_id,)
     assert await chat_store.status(view.session_id) == SessionStatus.IDLE, "a queued prompt is not a sandbox"
 
 
-async def test_a_claimed_prompt_is_no_longer_demand(chat_store, operator_id) -> None:
-    """The signal is *unclaimed*: a prompt a turn is already running must not re-ask for a sandbox."""
-    view, token = await provisioned(chat_store, operator_id, SpaSession())
-    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+async def test_a_session_that_has_its_sandbox_is_no_longer_waiting_for_one(chat_store, operator_id) -> None:
+    """The sweep reads this set every pass, so allocating has to be what takes a session out of it —
+    otherwise every pass would make a second claim for the session the last one served."""
+    view = await chat_store.create(operator_id, SpaSession())
     await chat_store.enqueue_prompt(operator_id, view.session_id, "hello")
-    assert await chat_store.has_queued_prompt(view.session_id)
+    assert await chat_store.sessions_awaiting_sandbox() == (view.session_id,)
+
+    assert await chat_store.allocate(view.session_id) is not None
+
+    assert await chat_store.sessions_awaiting_sandbox() == ()
+
+
+async def test_a_claimed_prompt_is_no_longer_demand(chat_store, operator_id) -> None:
+    """The signal is *unclaimed*: a prompt a turn has already taken must not buy a second sandbox."""
+    view = await chat_store.create(operator_id, SpaSession())
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "hello")
 
     assert await chat_store.next_prompt(view.session_id) is not None
 
-    assert not await chat_store.has_queued_prompt(view.session_id)
+    assert await chat_store.sessions_awaiting_sandbox() == ()
+
+
+async def test_a_session_nobody_has_prompted_is_not_waiting_for_a_sandbox(chat_store, operator_id) -> None:
+    """An idle row is not demand: a conversation opened and left alone must cost a row and nothing else."""
+    await chat_store.create(operator_id, SpaSession())
+
+    assert await chat_store.sessions_awaiting_sandbox() == ()
 
 
 async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
@@ -688,9 +705,8 @@ async def test_a_conversation_a_channel_holds_takes_a_prompt_typed_in_the_browse
     thread, and nothing may start to: a room's session admits a prompt on exactly the terms an SPA
     session does.
     """
-    matrix, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    matrix = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
     await _attach(migrated_sessions, matrix.session_id, ROOM)
-    assert await chat_store.authenticate_bridge(matrix.session_id, token) == BridgeAuthentication.ACCEPTED
 
     await chat_store.enqueue_prompt(operator_id, matrix.session_id, "typed into the tab")
     detail = await chat_store.get_operator_conversation(
@@ -706,11 +722,11 @@ async def test_a_replacement_session_leaves_the_thread_and_its_attachment_where_
 ) -> None:
     """The successor runs the same thread, so the attachment is untouched and the transcript of the
     session that died stays reachable beside it."""
-    first, _ = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    first = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
     await _attach(migrated_sessions, first.session_id, ROOM)
     conversation_id = await chat_store.conversation_of(first.session_id)
     await chat_store.fail(first.session_id, "the sandbox went away")
-    second, _ = await chat_store.create(operator_id, MatrixSession(room_id=ROOM), conversation_id=conversation_id)
+    second = await chat_store.create(operator_id, MatrixSession(room_id=ROOM), conversation_id=conversation_id)
 
     page = await chat_store.list_operator_conversations(operator_id, cursor=None, limit=10)
     detail = await chat_store.get_operator_conversation(operator_id, conversation_id)
@@ -725,8 +741,8 @@ async def test_a_conversation_created_between_two_pages_cannot_shift_what_the_se
     chat_store, operator_id
 ) -> None:
     """A conversation never ends, so this order only grows and only at its top."""
-    older, _ = await chat_store.create(operator_id, SpaSession())
-    newer, _ = await chat_store.create(operator_id, SpaSession())
+    older = await chat_store.create(operator_id, SpaSession())
+    newer = await chat_store.create(operator_id, SpaSession())
 
     first = await chat_store.list_operator_conversations(operator_id, cursor=None, limit=1)
     await chat_store.create(operator_id, SpaSession())
