@@ -361,6 +361,7 @@ resources:
   - x/browsertrix/namespace/flux-kustomization.yaml
   - x/browsertrix/app/flux-kustomization.yaml
   - x/browsertrix/bucket/flux-kustomization.yaml
+  - x/browsertrix/retained/flux-kustomization.yaml
   - x/harbor/namespace/flux-kustomization.yaml
   - x/harbor/secrets/flux-kustomization.yaml
   - x/harbor/db/flux-kustomization.yaml

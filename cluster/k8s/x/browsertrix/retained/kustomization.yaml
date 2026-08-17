@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - browsertrix.s3-identity.sops.yaml
+  - browsertrix-httproute.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  # Keep the Authentik blueprint as generator input: it intentionally uses
+  # Authentik's !Find YAML tag and is not a Kubernetes resource.
+  - name: browsertrix-retained-sso-blueprints
+    files:
+      - blueprints/browsertrix-sso.yaml.disabled
+    namespace: authentik
