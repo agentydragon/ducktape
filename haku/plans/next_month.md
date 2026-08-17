@@ -268,8 +268,8 @@ of which want C's route settled first because a posted Matrix event is permanent
 
 - **Whether a coalesced refetch feels as good as the SSE stream.** C's ordering makes this moot if
   the increment lands first, and nobody has compared them on the real page.
-- **Whether the neutral turn's usage shape survives a second backend.** #4169 designed an
-  aggregatable shape from one example, which is the failure mode the neutral vocabulary exists to
-  avoid, and nothing can check it until there is a second backend or a second stub.
+- ~~**Whether the neutral turn's usage shape survives a second backend.**~~ Moot: #4278 deleted
+  `Usage`, on the ruling that nobody wants the feature. The uncertainty was real — #4169 designed an
+  aggregatable shape from one example — and deleting the shape is one way to resolve it.
 - **Whether "a second backend works" is worth more code before anything can check it.** The stub
   harness is the cheapest test of that question and may still not be worth its cost.

@@ -243,7 +243,7 @@ used to exist only as frames that `session_views.rollout_calls` re-parsed on eve
   of a transcript.
 - **Two members of the vocabulary have no row.** A `TextDelta` is an increment of prose the
   completed message carries whole; a `TurnCompleted` is the `session_turns` row, which already
-  holds the exchange's outcome, its cost and its bracket.
+  holds the exchange's outcome and its bracket.
 
 **A status source did not survive the neutral vocabulary, and it is worth knowing before it is
 missed.** `coarse_status` used to render the prose the CLI writes on `system/task_started` — a

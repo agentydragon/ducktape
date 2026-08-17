@@ -501,12 +501,14 @@ corroborated by production, which carries the same `task_started`/`task_notifica
 What it caught that nothing else had:
 
 - **`task_started` and `task_notification` carry `tool_use_id` beside `task_id`**, so the frame says
-  which call opened which background task. `ActivityStarted` kept only the task and discarded that
-  link; it now carries the call too, off the `task_started` frame.
+  which call opened which background task. The vocabulary kept only the task and discarded that
+  link, then carried the call too — and then lost both, because #4279 deleted the activity events
+  as one provider's concept. The link is still in the frames.
 - **`background_tasks_changed` and `task_updated` are frame classes the fold has never seen** — 4
   and 2 occurrences, both landing in `unprojected`.
 - **A backgrounded call is answered before its command ends.** `ToolCallCompleted` fires when the
-  call returned a shell id; the command's end is an `ActivityCompleted` two messages later.
+  call returned a shell id; the command's end is a `task_notification` frame two messages later,
+  which since #4279 the fold does not project at all.
 - **The subagent's own frames carry `parent_tool_use_id`** (records 158–159) and the projection
   never reads it, so its message folds as the session's own.
 - **Two turns, not one.** A second `system/init` at record 185 re-initialised the CLI mid-capture.

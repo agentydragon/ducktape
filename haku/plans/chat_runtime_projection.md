@@ -520,8 +520,9 @@ than as completed records stapled to a finished message:
 - `Reasoning` — the agent thought, with a summary where it gave one. A distinct state rather than
   empty text: Claude emits `thinking` blocks and Codex emits reasoning summaries, and a thinking-only
   message currently renders blank, which is a live bug rather than a hypothetical.
-- `TurnCompleted` — with a **neutral** usage shape. Today `end_turn` stores Claude's `result` payload
-  as it arrived; leave that and "turn completed" quietly means "whatever that one CLI sent".
+- `TurnCompleted` — the exchange's outcome and bracket. This asked for a **neutral usage shape**
+  too; that half was built and then removed (#4278), because nobody wanted the feature. What a turn
+  cost is recoverable from the `result` frame, which stays in `session_frames`.
 
 This is not a second copy of the wire. It is a normalization, and the difference is that a copy
 duplicates a shape while a projection **replaces** one — the harness's content-block encodings,
@@ -749,7 +750,7 @@ Neither is implemented; both are read from documentation rather than measured, i
 <../runtime/x/bridge/docs/second_backend.md>.
 
 **A Codex backend.** Forces the four points above: identity cannot be borrowed; reasoning is a state
-both harnesses have; `TurnCompleted` needs its own usage shape; and the status line has to derive
+both harnesses have; a turn's boundary cannot be Claude's `result` frame; and the status line has to derive
 from neutral events or the room goes quiet. What it does **not** force is an approval concept —
 approval requests and responses travel over MCP to the console's queue, not over this channel
 (operator, 2026-08-16), and a harness that wants to ask about commands is configured not to in its
@@ -773,8 +774,8 @@ that, so the channels share a source and not a rendering.
 Over the neutral events (operator's question, 2026-08-16) — but the question is worth answering
 carefully, because today the two are indistinguishable and the code picks the wrong one.
 
-`session_turns` opens when a prompt is claimed and closes on Claude's `result` frame, whose payload
-is stored as-is for cost, usage and duration. So the boundary is currently **one CLI invocation**.
+`session_turns` opens when a prompt is claimed and closes on Claude's `result` frame. So the
+boundary is currently **one CLI invocation**.
 Every consumer, though, is neutral: the room's typing indicator and status line bracket a turn, the
 SPA renders turn boundaries inline in the transcript, the outbox keys a turn's last word by
 `turn_id`, adoption asks whether a turn is open, and I3 wants a batch acknowledged when its turn
@@ -806,21 +807,20 @@ usage per invocation across an exchange that spans more than one.
 
 So the turn is neutral, its boundaries are **produced by the backend adapter** (`TurnCompleted`), and
 if the two ever diverge the neutral turn is the conversational one while "which invocations made it"
-becomes frame-level detail — reachable through the same `frame_seq` range as everything else. Two
-consequences: the neutral usage shape should be **aggregatable** rather than one payload, since an
-exchange may sum several invocations; and `end_turn` storing the raw `result` stops being "what the
-turn cost" and becomes evidence, with the cost living in columns that mean the same thing on every
-backend.
+becomes frame-level detail — reachable through the same `frame_seq` range as everything else. The
+consequence that matters: `end_turn` storing the raw `result` stops being "what the turn cost" and
+becomes evidence.
 
-**Both have landed** (migration `0049`). `end_turn` takes the adapter's `Usage` and writes
-`input_tokens`, `output_tokens`, `cached_input_tokens`, `cost_usd` and `duration_ms`; the raw
-`result` payload is evidence in `session_frames` and nothing reads it as the answer any more —
-`adopt_open_turn` included, which used to close a recovered turn on `is_error` and so reported
-every finished turn as answered. Aggregation is not uniform, which is the part the requirement
-hid: the counters and the cost sum (a NULL cost makes a total unknown rather than smaller), while
-`duration_ms` does not — wall clock of invocations that may overlap is not their sum, so an
-exchange's own span stays `ended_at - started_at`, which the console measures and no backend
-supplies.
+**That landed** (migration `0049`), and nothing reads the `result` payload as the answer any more —
+`adopt_open_turn` included, which used to close a recovered turn on `is_error` and so reported every
+finished turn as answered.
+
+**The cost half was built and then removed** (#4278). `0049` gave `session_turns` its
+`input_tokens`, `output_tokens`, `cached_input_tokens`, `cost_usd` and `duration_ms`, and the
+neutral `Usage` that filled them; the operator's ruling is that nobody wants the feature, so
+`Usage` is gone from the vocabulary and the columns are on their way out. It cost nothing
+irrecoverable — the numbers were read straight off the `result` frame, which is still in
+`session_frames` inside the turn's own frame range, so wanting them back is a re-fold.
 
 #### Two decisions this leaves open
 
