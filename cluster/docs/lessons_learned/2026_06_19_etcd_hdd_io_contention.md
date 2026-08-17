@@ -9,6 +9,30 @@ bursts; etcd health checks occasionally fail `context deadline exceeded`. No dat
 no quorum loss observed. **Recurred 2026-06-28 as a full outage** (two control planes
 NotReady, Forgejo 500s) — see the dated section below.
 
+## 2026-08-17 follow-up — isolate `ovh-ns103656` while measuring the effect
+
+`ovh-ns103656` again flapped `NotReady`; the two SSD-backed control planes preserved
+etcd quorum. Treat this as an active reliability incident, not a clean drain.
+
+- Replaced four _verified non-primary_ local-PV CNPG replicas pinned to this node:
+  Haku Console (2 GiB), Haku Mailbox (10 GiB), LiteLLM (5 GiB), and Matrix (10 GiB).
+  Each was removed only after confirming a healthy primary, then reseeded onto worker
+  `ovh-ns102453`; its cluster returned to the expected healthy replication count before
+  continuing. Plaid MCP and other local state were left in place.
+- Set `allowSchedulingOnControlPlanes = false` in the Talos config for this node only,
+  and added `node-role.kubernetes.io/control-plane:NoSchedule` to its existing Node as
+  an immediate bridge. The taint blocks new ordinary placements; it does not evict
+  existing Pods. The declarative change must remain merged so future registration keeps
+  the policy.
+- Kept SeaweedFS on its separate `/dev/sdb` data volume. Public Coder, Haku OpenClaw,
+  and Alertmanager remain temporary, explicit control-plane exceptions pending their own
+  migration decisions.
+
+Compare subsequent `NotReady` frequency/duration, lease-PUT and apiserver latency, and
+`/dev/sda` utilization/queue/bytes against this baseline. Only restore the default
+control-plane taint on every CP after each intentionally permitted CP workload has a
+named toleration and owner.
+
 ## 2026-06-28 recurrence — escalated to a real outage
 
 The same mechanism recurred and this time **flapped two control planes NotReady**
