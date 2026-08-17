@@ -490,9 +490,23 @@ having even if the loop is never built.
 9. **Notices as spans** (§ 4), once 6 and 8 exist: one work notice per turn, one lifecycle notice
    per session, each a pure function of its span, each retired or sealed. This is Matrix's
    streaming — the granularity a channel that holds a permanent, federated copy can afford.
+10. **Delete `ActivityStarted`/`ActivityCompleted` from the vocabulary** (operator, 2026-08-17):
+    the `case "task_started"` arm of the projection, both dataclasses, the `session_events` bodies
+    that store them, and `room_status.coarse_status`'s arm — so a status line that would have shown
+    the harness's prose shows `writing`. That loss is the price of the invariant. **Keep
+    `ConversationEventKind.ACTIVITY_*` and `ck_session_events_kind` as they are**: rows of those
+    kinds may exist, the column is parsed rather than read as text, and a previous image still
+    writes them for the length of the roll.
+11. **Delete the rows and narrow the kind**, a release after 10 has converged: `DELETE FROM
+session_events WHERE kind IN (…)`, drop the two enum members, narrow the CHECK. Deleting the
+    members before the rows would make reading one raise rather than degrade.
+12. **Audit the rest of `ConversationEvent` against the same question**: could a second backend
+    produce this, or is it one provider's concept renamed? Do this before a second backend exists,
+    because afterwards every answer is retrofitted to what that backend happens to emit.
 
-Steps 1 and 4–6 are independent of each other and of step 2; 3 and 7 depend on 2; 8 depends on 6
-and 7; 9 depends on 8.
+Steps 1, 4–6, 10 and 12 are independent of each other and of step 2; 3 and 7 depend on 2; 8 depends
+on 6 and 7; 9 depends on 8; 11 depends on 10 converging. Step 12 may reorder 10 and 11 by finding
+more members that fail, which is an argument for doing it early rather than a reason to wait.
 
 ## 10. `sessions.status` is derived, and lossy
 
@@ -572,6 +586,20 @@ Three conditions keep that from becoming a hole:
   it. A channel that cannot reach the inspector must lose nothing but a debugging affordance.
 - **It is labelled as one backend's wire**, not as the conversation. A reader of that surface is
   looking at Claude's frames and should be told so.
+
+**The neutral vocabulary is not audited against this rule, and at least one member fails it.**
+`ActivityStarted`/`ActivityCompleted` are produced by exactly one arm of `x/claude_code/projection.py`
+— `case "task_started"`, reading `task_id`, `tool_use_id` and `description`, which are Claude's own
+field names — and the dataclass docstring says as much: "the harness's own prose". A channel
+rendering one is knowing a provider's concept at one remove, which is the rule broken by a member
+of the vocabulary rather than by a channel. Retiring it is § 9's steps 10 and 11; what it records is
+recoverable from `session_frames`, which is the surface allowed to be provider-shaped.
+
+Nothing has ever asked the same question of the rest. `TextDelta`, `MessageCompleted`, `Reasoning`,
+`ToolCallStarted`/`Completed`, `TurnCompleted` and `Usage` read as genuinely general;
+`ToolReferences`, as an arm of `ToolResultContent`, is the next one to look at, since "a result that
+lists tool names" may be one provider's `tool_result` shape. That is a guess, which is the reason
+the audit is its own step rather than a claim here.
 
 **What enforces the rule does not exist yet.** `x/frame_projection.py` imports
 `x/claude_code/projection` directly, so there is no seam at which a second backend's adapter could
