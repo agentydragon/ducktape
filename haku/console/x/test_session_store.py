@@ -168,7 +168,8 @@ async def test_a_prompt_is_admitted_by_a_session_with_no_sandbox(chat_store, ope
 
 async def test_a_claimed_prompt_is_no_longer_demand(chat_store, operator_id) -> None:
     """The signal is *unclaimed*: a prompt a turn is already running must not re-ask for a sandbox."""
-    view, _ = await provisioned(chat_store, operator_id, SpaSession())
+    view, token = await provisioned(chat_store, operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "hello")
     assert await chat_store.has_queued_prompt(view.session_id)
 

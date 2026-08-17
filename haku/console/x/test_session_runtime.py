@@ -1426,9 +1426,14 @@ async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas
     # Every frame either way and no exceptions left — the delta included, which is what makes
     # this a log rather than a selection.
     recorded = await _frames(migrated_sessions, view.session_id)
-    assert [(frame.direction, frame.kind) for frame in recorded] == [
+    # The control pair as a pair: the writer records what it sent and the reader records what
+    # arrived, in transactions that overlap, so which of the two rows Postgres numbers first is not
+    # the log's to promise. Everything after it is written by one side at a time, so it is ordered.
+    assert {(frame.direction, frame.kind) for frame in recorded[:2]} == {
         (FrameDirection.TO_AGENT, "control_request"),
         (FrameDirection.FROM_AGENT, "control_response"),
+    }
+    assert [(frame.direction, frame.kind) for frame in recorded[2:]] == [
         (FrameDirection.TO_AGENT, "user"),
         (FrameDirection.FROM_AGENT, "stream_event"),
         (FrameDirection.FROM_AGENT, "user"),
