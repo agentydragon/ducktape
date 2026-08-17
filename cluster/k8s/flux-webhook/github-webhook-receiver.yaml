@@ -39,9 +39,6 @@ spec:
       namespace: ducktape-flux
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: activitywatch
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
       name: airlock
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
