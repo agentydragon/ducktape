@@ -229,8 +229,8 @@ async def test_inspect_distinguishes_ready_pod_from_runner_bridge_wait(
 
 
 async def test_inspect_says_a_claim_is_gone_rather_than_newly_made(sandbox_claims, custom_objects_api) -> None:
-    """A 404 is a claim that was never created or has been reclaimed, and it used to report
-    `claim_created` — an ended session's reclaimed sandbox reading as one just being built."""
+    """A 404 is a claim that was never created or has been reclaimed — not the neighbouring step,
+    a claim that has just been made and whose sandbox has not been assigned yet."""
     custom_objects_api.get_namespaced_custom_object = _raise_api_error(404)
 
     info = await sandbox_claims.inspect(session_id=UUID("10000000-0000-4000-8000-000000000002"))

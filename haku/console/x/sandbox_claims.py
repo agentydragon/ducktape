@@ -46,7 +46,7 @@ class ProvisioningStep(StrEnum):
     # Kubernetes does not have this session's claim: it was never created, or it has been reclaimed
     # (`session_runtime._cleanup_terminal_claim` deletes it once the session ends). Distinct from
     # `CLAIM_CREATED`, which is what the console knows when it created a claim and could not observe
-    # past it — collapsing the two reported a claim that is gone as one that had just been made.
+    # past it.
     CLAIM_ABSENT = "claim_absent"
     CLAIM_CREATED = "claim_created"
     WAITING_FOR_SANDBOX = "waiting_for_sandbox"
