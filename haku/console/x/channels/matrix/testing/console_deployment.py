@@ -218,7 +218,7 @@ class Deployment:
         return session_id
 
     async def wait_until_recorded(self, session_id: UUID, text: str) -> None:
-        """Wait until *text* is a completed `assistant` frame in the session's rollout.
+        """Wait until *text* is an `assistant` frame in the session's rollout.
 
         This is the moment the console has the answer and has written it down — which every path
         downstream treats as interchangeable with the room having heard it.
@@ -226,11 +226,7 @@ class Deployment:
 
         async def recorded() -> bool:
             frames = await self._store.read_frames(session_id, cursor=None, limit=200, kinds=[ASSISTANT_FRAME_KIND])
-            return any(
-                _assistant_text(frame.payload) == text
-                for frame in frames
-                if not frame.partial and frame.payload is not None
-            )
+            return any(_assistant_text(frame.payload) == text for frame in frames if frame.payload is not None)
 
         await self._wait_until(f"{text!r} to be recorded in the rollout", recorded)
 

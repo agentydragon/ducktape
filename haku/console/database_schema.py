@@ -1248,8 +1248,8 @@ class SessionEvent(Base):
 
 
 class SessionFrame(Base):
-    """The agent's newline-delimited JSON protocol as it crossed the wire — and two things that
-    are not that, which is a defect.
+    """The agent's newline-delimited JSON protocol as it crossed the wire — and rows that are not
+    that, which is a defect.
 
     The rollout — what the agent *did*, tool calls with their results — exists nowhere else.
     `session_messages` keeps an assistant message's `tool_use` blocks and not the frames
@@ -1282,11 +1282,6 @@ class SessionFrame(Base):
     # without scanning JSONB.
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    # CLEANUP(added 2026-08-17): no writer sets this True any more — the recorded deltas are the
-    #   answer in flight — so unmap this column with `uq_session_frames_partial` and the readers
-    #   still filtering on it once the release that stopped writing it has converged, and drop both
-    #   a release later (<../plans/next_month.md> § 1 phases 2 and 3).
-    partial: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # The agent's own identity for this frame, where it has one — see
     # <../cli_protocol/frame_identity.py> for which kinds do and why deltas must not.
     #
@@ -1301,9 +1296,9 @@ class SessionFrame(Base):
     # (<../plans/chat_runtime_projection.md> § 2b).
     #
     # NULL means no runner numbered this row, and there are three ways to mean it: a frame this
-    # console wrote to the CLI, a row the console authored itself (`setup_output`, `partial`), and
-    # every frame from a runner image predating the field. Nothing reads it as the log's ordering
-    # yet — `frame_seq` still is — so this release only writes it down.
+    # console wrote to the CLI, a `setup_output` row the console authored itself, and every frame
+    # from a runner image predating the field. Nothing reads it as the log's ordering yet —
+    # `frame_seq` still is — so this release only writes it down.
     runner_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -1330,9 +1325,6 @@ class SessionFrame(Base):
             unique=True,
             postgresql_where=text("frame_uid IS NOT NULL"),
         ),
-        # One in-flight reconstruction per session, as a schema property rather than a rule the
-        # turn loop has to keep: there is only ever one assistant message streaming at a time.
-        Index("uq_session_frames_partial", "session_id", unique=True, postgresql_where=text("partial")),
         # What the resume cursor is read off: `max(runner_seq)` for one session, on every runner
         # connection. Partial because most rows have no runner number, and the reader always
         # excludes them.
@@ -1474,14 +1466,28 @@ UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset({"matrix_sync_state"})
 # tables that stay. A separate set rather than an entry in the one above, which hides a whole
 # table — naming `session_messages` there would stop the comparison noticing any drift in it.
 #
-# CLEANUP(added 2026-08-17): `DROP COLUMN` both once every haku-console pod runs an image at or
-#   after this commit — `kubectl get pods -n haku-console -o
-#   jsonpath='{.items[*].spec.containers[0].image}'` reporting a single tag at or after it. With
-#   `unpointable_reason` go `ck_session_messages_unpointable_{reason,exclusive}`, which this
+# The two gates below are different commits and converge separately, which is why each names its
+# own. The convergence check is the same either way: `kubectl get pods -n haku-console -o
+# jsonpath='{.items[*].spec.containers[0].image}'` reporting a single tag at or after the commit.
+#
+# CLEANUP(added 2026-08-17): `DROP COLUMN session_messages.{tool_calls,unpointable_reason}` once
+#   every haku-console pod runs an image at or after #4266, which unmapped them. With
+#   `unpointable_reason` go `ck_session_messages_unpointable_{reason,exclusive}`, which that
 #   release also stopped declaring. <../plans/next_month.md> § 1 phase 3.
+#
+# CLEANUP(added 2026-08-17): `DROP COLUMN session_frames.partial` once every pod runs an image at
+#   or after this commit, and `DELETE FROM session_frames WHERE partial` with it. Those rows
+#   outlived their writer (#4230) and this release stopped marking them, so until the delete runs
+#   the fold reads them as ordinary `assistant` frames. Same § 1 phase 3.
 UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
-    {("session_messages", "tool_calls"), ("session_messages", "unpointable_reason")}
+    {("session_messages", "tool_calls"), ("session_messages", "unpointable_reason"), ("session_frames", "partial")}
 )
+
+# Indexes the database has and no ORM class declares. Reachable only through a column above: an
+# index over columns that are all still mapped would be drift rather than an unfinished drop.
+#
+# CLEANUP(added 2026-08-17): goes with `session_frames.partial`, on the same gate.
+UNMAPPED_INDEXES_PENDING_DROP: frozenset[str] = frozenset({"uq_session_frames_partial"})
 
 
 class MatrixAccessToken(Base):

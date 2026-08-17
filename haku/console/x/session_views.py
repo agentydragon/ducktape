@@ -179,7 +179,6 @@ class SessionFrameView(BaseModel):
     frame_seq: int
     direction: FrameDirection
     kind: str
-    partial: bool
     created_at: datetime
     payload: dict[str, Any]
 
@@ -204,7 +203,6 @@ def frame_page(rows: Sequence[SessionFrame], *, limit: int) -> SessionFramePage:
             frame_seq=row.frame_seq,
             direction=row.direction,
             kind=row.kind,
-            partial=row.partial,
             created_at=row.created_at,
             payload=row.payload,
         )

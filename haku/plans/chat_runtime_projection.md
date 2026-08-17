@@ -117,11 +117,11 @@ sinks write to it:
 | `RolloutRecorder._record`, a `FrameSink` on `ClaudeCli` | CLI protocol frames only, by construction | `payload["type"]` — the CLI's vocabulary       |
 | `_progress_reporter.report`, by hand                    | one decoded line of a `SetupOutput`       | `"setup_output"` — the bridge's `kind` literal |
 
-Plus a `partial` row, the console's own reconstruction of a streaming answer, which wears
-`assistant` and is told apart by a boolean column. That one leaves regardless: stage 1 removed its
-reason to exist, #4230 deleted its writer, and the tombstone now sits on the column itself
-(`SessionFrame.partial` in `database_schema.py`), pointing at <next_month.md> § 1 phases 2 and 3
-for the unmap and the drop.
+Plus a `partial` row, the console's own reconstruction of a streaming answer, which wore
+`assistant` and was told apart by a boolean column. That one leaves regardless: stage 1 removed its
+reason to exist, #4230 deleted its writer, and the column is now unmapped — so those rows are no
+longer distinguishable, and `database_schema.UNMAPPED_COLUMNS_PENDING_DROP` holds the tombstone for
+the `DROP` and the `DELETE` that go with it (<next_month.md> § 1 phase 3).
 
 **The intended shape, if and when this is picked up: the table is the log of the bridge.** Nothing
 here is scheduled, and the rest of this plan does not depend on it — stage 3 onward can proceed with
@@ -348,11 +348,10 @@ in R3 (<../console/README.md> § Perimeter / deploy). Nothing about the rows alr
 `session_frames` extends the schedule past that: they are deleted, not migrated.
 
 **`partial` has left this schedule and the table above is stale about it.** #4230 deleted its
-writer, so it is not a column an old replica still writes, and its unmap and drop are now
-<next_month.md> § 1 phases 2 and 3 — which run against the purged database on their own gate rather
-than waiting on R2's cutover. Read R2's "the `partial` row … stops being written and is unmapped"
-and R3's "the `partial` column and its index dropped" as already reassigned; `runner_seq` is the
-only part of those two lines this plan still owns.
+writer and the column is unmapped; its drop is now <next_month.md> § 1 phase 3 — which runs against
+the purged database on its own gate rather than waiting on R2's cutover. Read R2's "the `partial`
+row … stops being written and is unmapped" and R3's "the `partial` column and its index dropped" as
+already reassigned; `runner_seq` is the only part of those two lines this plan still owns.
 
 **The gate is one fact, checked in two places.** Every `haku-console` pod is running an image at or
 after R2. The desired tag is in

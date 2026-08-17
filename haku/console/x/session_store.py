@@ -800,7 +800,6 @@ class SessionStore:
                     direction=direction,
                     kind=kind,
                     payload=payload,
-                    partial=False,
                     frame_uid=uid,
                     runner_seq=runner_seq,
                     created_at=now,
@@ -905,7 +904,6 @@ class SessionStore:
                 kind=row.kind,
                 created_at=row.created_at,
                 payload=row.payload,
-                partial=row.partial,
             )
             for row in rows
         ]
@@ -1390,17 +1388,13 @@ async def _unprojected_frames(db: AsyncSession, session_id: UUID, cursor: int) -
 
     Deltas are in it, because their effects are message content and the cursor is what says
     whether that content landed. What is left out is what the console authored rather than
-    received: `setup_output`, which carries no protocol `type` for the fold to read, and a
-    `partial` row — this console's own reconstruction of an answer in flight, which projecting
-    would turn into a message the agent never sent. Nothing writes `partial` any more; the filter
-    goes with the column (`SessionFrame.partial`'s CLEANUP note).
+    received: `setup_output`, which carries no protocol `type` for the fold to read.
     """
     rows = await db.scalars(
         select(SessionFrame)
         .where(
             SessionFrame.session_id == session_id,
             SessionFrame.frame_seq > cursor,
-            SessionFrame.partial.is_(False),
             SessionFrame.kind != SETUP_OUTPUT_KIND,
         )
         .order_by(SessionFrame.frame_seq)

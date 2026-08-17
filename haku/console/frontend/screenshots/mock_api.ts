@@ -386,15 +386,13 @@ const conversationDetailForScene = scene?.startsWith("conversation-bootstrap")
     ? conversationNarrationCollapsed
     : conversationDetail;
 // The rollout behind that conversation, as the frame inspector reads it: one exchange in wire
-// order, with a tool call and the result it got — the pair `session_messages` cannot show — plus a
-// `partial` row for the answer that was still streaming when the turn died.
+// order, with a tool call and the result it got — the pair `session_messages` cannot show.
 const conversationFrames = {
   frames: [
     {
       frame_seq: 412,
       direction: "to_agent",
       kind: "user",
-      partial: false,
       created_at: "2026-08-01T03:00:20Z",
       payload: { type: "user", message: { role: "user", content: "Now check whether the degraded server recovered." } },
     },
@@ -402,7 +400,6 @@ const conversationFrames = {
       frame_seq: 413,
       direction: "from_agent",
       kind: "assistant",
-      partial: false,
       created_at: "2026-08-01T03:00:21Z",
       payload: {
         type: "assistant",
@@ -426,7 +423,6 @@ const conversationFrames = {
       frame_seq: 414,
       direction: "from_agent",
       kind: "user",
-      partial: false,
       created_at: "2026-08-01T03:00:23Z",
       payload: {
         type: "user",
@@ -444,21 +440,9 @@ const conversationFrames = {
       },
     },
     {
-      frame_seq: 415,
-      direction: "from_agent",
-      kind: "assistant",
-      partial: true,
-      created_at: "2026-08-01T03:00:24Z",
-      payload: {
-        type: "assistant",
-        message: { role: "assistant", content: [{ type: "text", text: "The reflection call timed out before" }] },
-      },
-    },
-    {
       frame_seq: 416,
       direction: "from_agent",
       kind: "result",
-      partial: false,
       created_at: "2026-08-01T03:00:24Z",
       payload: {
         type: "result",

@@ -71,21 +71,15 @@ writer of `session_frames.partial`, went in #4230.
 know were still there — `apply_frame`'s `message.tool_calls = tool_calls` and `update_assistant`'s
 `tool_calls` parameter, both writing what `session_events` already holds.
 
-**`session_frames.partial` cannot be unmapped in a code-only release**, and this is the plan's own
-gap rather than a discovery about the deploy. `0030` created the column `NOT NULL` **with no server
-default** and nothing has altered it since, so an image that does not map it emits an `INSERT`
-naming no `partial` and every `record_frame` fails. The three-release shape for it therefore gains a step
-in front:
-
-1. `ALTER TABLE session_frames ALTER COLUMN partial SET DEFAULT false` — additive, and safe against
-   the previous image for the usual reason: `record_frame` passes an explicit `false`, which a
-   default does not contradict. It can ride with any release.
-2. Unmap the column and the `uq_session_frames_partial` index, and delete the readers
-   (`reprojection.foldable_frames`, `session_store._unprojected_frames`, `SessionFrameView.partial`
-   and `RolloutFrame.partial` with the frontend's frame inspector badge).
-3. `DROP COLUMN`, as phase 3 already says.
-
-Step 1 is the only thing blocking step 2, and nothing blocks step 1.
+**`session_frames.partial` needed a step in front of its unmapping**, which was the plan's own gap
+rather than a discovery about the deploy. `0030` created the column `NOT NULL` **with no server
+default**, so an image that does not map it emits an `INSERT` naming no `partial` and
+`record_frame` fails on the first frame of the roll. `0062` (#4274) gave the column
+`DEFAULT false`; the unmapping then took the `uq_session_frames_partial` index and the readers with
+it — `reprojection.foldable_frames`, `session_store._unprojected_frames`, `SessionFrameView.partial`,
+`RolloutFrame.partial`, and the frontend's frame inspector badge.
+`database_schema.UNMAPPED_COLUMNS_PENDING_DROP` carries the tombstone; what is left is the `DROP`,
+in phase 3.
 
 **`ck_session_frames_wire_numbered` is not in phase 2**, and the reason is rows rather than old data:
 `_write_partial_frame` wrote a `from_agent`/`assistant` row carrying no runner number on every stream
@@ -118,8 +112,8 @@ SELECT count(*) FROM session_frames WHERE runner_seq IS NOT NULL AND direction <
 
 #### Phase 3 — the drop release
 
-Once each column's unmapping has converged — separately, since `partial`'s is behind its own
-`SET DEFAULT`: `DROP COLUMN session_messages.{unpointable_reason,tool_calls}` with the two
+Once each column's unmapping has converged — separately, since `partial` was unmapped a release
+behind the other two: `DROP COLUMN session_messages.{unpointable_reason,tool_calls}` with the two
 `unpointable_*` constraints, then `DROP COLUMN session_frames.partial` with
 `DROP INDEX uq_session_frames_partial`, `DELETE FROM session_frames WHERE partial`, and
 `ck_session_frames_wire_numbered` — which needs those rows gone, not just the writer. Afterwards:

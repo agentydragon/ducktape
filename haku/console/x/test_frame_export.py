@@ -73,11 +73,7 @@ SESSION_FRAMES: list[dict[str, Any]] = [
 
 @pytest.fixture
 async def exported(chat_store, migrated_sessions, operator_id) -> frame_export.ExportedSession:
-    """One session recorded through the write path, with a console-authored `setup_output` row in it.
-
-    No `partial` row, because nothing writes one any more — so the export's other exclusion is
-    covered by `foldable_frames`' query alone, not by this fixture.
-    """
+    """One session recorded through the write path, with a console-authored `setup_output` row in it."""
     view, token = await chat_store.create(operator_id, SpaSession())
     session_id: UUID = view.session_id
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
@@ -121,8 +117,7 @@ def test_a_secret_in_a_tool_argument_does_not_reach_the_fixture(exported) -> Non
 
 def test_the_console_authored_row_is_left_out(exported) -> None:
     """`setup_output` carries no protocol `type`, so the fold does not read it — and a fixture
-    holding it would be a fixture of something the wire never sent. It is the only one of the
-    export's two exclusions this exercises; nothing writes a `partial` row any more."""
+    holding it would be a fixture of something the wire never sent."""
     assert [frame.payload["type"] for frame in _reread(exported)] == [
         "assistant",
         "assistant",

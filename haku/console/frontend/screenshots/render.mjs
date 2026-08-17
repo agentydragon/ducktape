@@ -204,7 +204,7 @@ const SCENES = [
   },
   {
     // The frame inspector, which opens on the tail of the log — so the visible rows are the last
-    // ones, `partial` badge included.
+    // ones.
     name: "session-frames",
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,

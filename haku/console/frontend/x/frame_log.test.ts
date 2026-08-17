@@ -9,7 +9,6 @@ function frame(frame_seq: number, kind: string, payload: Record<string, unknown>
     kind,
     payload,
     direction: "from_agent",
-    partial: false,
     created_at: "2026-08-01T03:00:00Z",
   };
 }

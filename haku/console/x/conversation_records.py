@@ -68,10 +68,6 @@ class RolloutFrame(BaseModel):
     clipped_bytes: int | None = Field(
         default=None, description="Set instead of `payload` when the frame was too large to return; its size in bytes."
     )
-    partial: bool = Field(
-        description="True for the console's reconstruction of an answer that was still streaming — "
-        "so a `partial` frame at the end of a session is a turn that never finished."
-    )
 
 
 class FrameCursor(BaseModel):

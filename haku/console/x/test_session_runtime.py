@@ -1452,7 +1452,6 @@ async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas
     ]
     # Verbatim: a reader gets the tool result the turn loop never kept.
     assert recorded[4].payload == answered
-    assert all(frame.partial is False for frame in recorded)
     # Each frame reaches its consumer carrying the row it was written to, so a projection built
     # from it can point back at that row and not at whichever frame the reader has since seen.
     assert [delta_received.frame_seq, result_received.frame_seq] == [recorded[3].frame_seq, recorded[4].frame_seq]

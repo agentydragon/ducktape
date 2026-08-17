@@ -33,13 +33,6 @@ function FrameRow({ frame }: { frame: SessionFrame }) {
           <Badge size="sm" variant="outline">
             {frame.kind}
           </Badge>
-          {/* Not a protocol frame: the console's own reconstruction of an answer still streaming,
-              so one left at the end of a log is a turn that never finished. */}
-          {frame.partial && (
-            <Badge size="sm" variant="light" color="orange">
-              partial
-            </Badge>
-          )}
         </Group>
         <Group gap="xs" wrap="nowrap">
           {/* Wall-clock rather than the relative form the tool-call surfaces use: frames are read

@@ -79,7 +79,6 @@ def _frame(seq: int, kind: str = "assistant", payload: dict | None = None) -> Ro
         kind=kind,
         created_at=NOW,
         payload=payload if payload is not None else {"type": kind},
-        partial=False,
     )
 
 
