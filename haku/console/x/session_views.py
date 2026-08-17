@@ -163,7 +163,11 @@ MAX_FRAME_PAGE = 200
 
 
 class SessionFrameView(BaseModel):
-    """One row of the rollout, as the console's frame inspector reads it.
+    """One row of the rollout, as the console's frame inspector reads it — Claude Code's own frame.
+
+    **This is one backend's wire and must be presented as such**, never as the conversation: it is
+    the only shape the console serves that names a backend, and a surface rendering it without
+    saying whose frames they are contradicts what every other read promises.
 
     The payload is the wire, whole: this surface exists because `session_messages` is a lossy
     projection of the frame log, so clipping here would reintroduce that one level down. Bounding a

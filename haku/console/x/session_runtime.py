@@ -797,7 +797,12 @@ async def read_conversation_frames(
     limit: Annotated[int, Query(ge=1, le=MAX_FRAME_PAGE)] = DEFAULT_FRAME_PAGE,
     kind: Annotated[list[str] | None, Query()] = None,
 ) -> SessionFramePage:
-    """The raw protocol frames behind a conversation, newest page first.
+    """Claude Code's own protocol frames behind a conversation, newest page first.
+
+    **One backend's wire, not the conversation.** Everything else the console serves is the neutral
+    vocabulary, which names no backend; these are the CLI's own frames, in the CLI's own shapes, and
+    a reader of this route is looking at what a transcript was projected *from* rather than at what
+    it means. Nothing renders, announces or delivers from them.
 
     What `session_messages` is a lossy projection *of*. Omitting `before_seq` opens on the end of
     the log; the response's `next_before_seq` walks back from there.

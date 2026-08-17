@@ -53,9 +53,15 @@ function FrameRow({ frame }: { frame: SessionFrame }) {
   );
 }
 
-/** The raw protocol frames behind one conversation — what the console's transcript is a lossy
- * projection *of* (haku/plans/chat_runtime_projection.md § stage 4). Reached from the conversation
- * it belongs to and deep-linkable at its own route, so "look at frame 412" is a link.
+/** Claude Code's raw protocol frames behind one conversation — what the console's transcript is a
+ * lossy projection *of* (haku/plans/chat_runtime_projection.md § stage 4). Reached from the
+ * conversation it belongs to and deep-linkable at its own route, so "look at frame 412" is a link.
+ *
+ * **The one surface in the console that shows a backend's own shapes, and it says so.** Every other
+ * surface renders the neutral vocabulary and cannot tell which backend produced it; this one is
+ * addressed separately, is read by no rendering or delivery decision, and is labelled as one
+ * backend's wire rather than as the conversation. Those three conditions are what keep it from
+ * being a hole in the layering, and the third is this page's own job.
  *
  * **A long session must not be expensive to open.** The first read is the *tail* of the log, so
  * the frames an operator came for — a cut-off answer, a turn that died — are on the first page
@@ -116,8 +122,12 @@ export function SessionFramesPage({ sessionId }: { sessionId: string }) {
               ← Conversation
             </Button>
             <Title order={1}>Raw frames</Title>
+            {/* Whose wire this is, said where the reader is: the frames are Claude Code's own and
+                nothing else in the console shows a backend's shapes, so a surface that only said
+                "the agent protocol" would read as the conversation itself. */}
             <Text c="dimmed" size="sm">
-              The agent protocol as it crossed the wire — what the transcript is a projection of.
+              Claude Code&apos;s own protocol as it crossed the wire — one backend&apos;s frames, which the transcript
+              is a neutral projection of.
             </Text>
           </div>
           <Group gap="sm" wrap="nowrap" align="center">

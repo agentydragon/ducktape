@@ -178,6 +178,16 @@ projection nobody can debug. So a conversation in the console carries a **Raw fr
 order, each frame's payload whole. Frontend: `frontend/x/session_frames_page.tsx`, at its own route
 (`/_console/conversations/<id>/frames`) so a frame is something an operator can link to.
 
+**It is the one surface in the console that shows a backend's own shapes, and it says whose.** Three
+conditions keep that from being a hole in the layering: it is addressed separately, so no channel can
+consume a provider payload by accident; it is never load-bearing, so a reader that cannot reach it
+loses a debugging affordance and nothing else; and it is **labelled as one backend's wire** rather
+than as the conversation. The third is the one a surface can quietly drop, so the label is written
+where each reader is — the route's description, `SessionFrameView`, the page's own subtitle, and
+`haku_conversations`' `read_rollout` / `read_frame`. A second backend makes "the agent protocol" an
+outright lie, but it is already misleading with one: every other read the console serves is the
+neutral vocabulary, so an unlabelled frame reads as the conversation itself.
+
 Decisions worth knowing before changing it:
 
 - **The first page is the tail, and the cursor walks backwards.** `read_operator_frames` is the

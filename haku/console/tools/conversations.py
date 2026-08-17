@@ -8,7 +8,9 @@ protocol, so a tool call and the result it got are both there — which no other
 **Two readings of one corpus, and the drilldown runs between them.** `read_transcript` is what a
 conversation *meant* — messages, reasoning, tool calls and their results, as one vocabulary that
 says nothing about which agent backend produced them. `read_rollout` and `read_frame` are the
-provider's own protocol frames, verbatim. The first is what a reader almost always wants; the
+frames a **named** backend actually sent, verbatim — Claude Code's today, since that is the one
+adapter there is, and a reader must be told which rather than left to read them as the
+conversation. The first is what a reader almost always wants; the
 second is the appeal, and every transcript entry carries the frame range to appeal to
 (`provenance`). That path is the whole reason the transcript records where it came from, so it is
 built to be walked: a `frames` provenance hands `first_frame_seq` straight to `read_frame`, or
@@ -253,9 +255,11 @@ def build_mcp(reader: ConversationReader) -> FastMCP:
         name=HAKU_CONVERSATIONS_SERVER_ID,
         instructions="Read Haku's own past sessions. `list_conversations` finds one and `list_turns` finds an "
         "exchange within it; `read_transcript` is what was said and done, in one vocabulary that names no "
-        "agent backend, and `read_rollout` / `read_frame` are the provider's raw protocol frames behind it. "
-        "Start with the transcript and follow an entry's `provenance` into the frames when a normalization "
-        "looks wrong. Every listing pages the same way: pass `next_cursor` back as `cursor`. Read-only.",
+        "agent backend, and `read_rollout` / `read_frame` are the raw frames one named backend sent — Claude "
+        "Code's — which is the one place here that is not neutral, so read them as that backend's wire rather "
+        "than as the conversation. Start with the transcript and follow an entry's `provenance` into the "
+        "frames when a normalization looks wrong. Every listing pages the same way: pass `next_cursor` back "
+        "as `cursor`. Read-only.",
     )
 
     @mcp.tool
@@ -354,8 +358,9 @@ def build_mcp(reader: ConversationReader) -> FastMCP:
     ) -> RolloutPage:
         """Read one session's raw protocol frames in order, a page at a time.
 
-        The provider's own wire format, verbatim. `read_transcript` is the same conversation
-        already read; this is what to check it against.
+        Claude Code's own wire format, verbatim — one backend's frames, not the conversation.
+        `read_transcript` is the same conversation already read, in the vocabulary that names no
+        backend; this is what to check it against.
         """
         frames, more = take_page(
             await reader.read_frames(session_id, cursor=cursor, limit=limit + 1, kinds=kinds),
@@ -372,7 +377,7 @@ def build_mcp(reader: ConversationReader) -> FastMCP:
             int, Field(description="From `read_rollout`, or from a transcript entry's `provenance.first_frame_seq`.")
         ],
     ) -> RolloutFrame:
-        """One frame in full, however large — including one too big for any page.
+        """One of Claude Code's frames in full, however large — including one too big for any page.
 
         A page spends a byte budget and stops, so a frame larger than the whole budget is the one
         thing it cannot hand over; naming a single frame bounds the response by that frame alone.

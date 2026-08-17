@@ -58,6 +58,13 @@ class ConversationCursor(BaseModel):
 
 
 class RolloutFrame(BaseModel):
+    """One frame of a named backend's wire — Claude Code's — not of the neutral conversation.
+
+    Everything else here is the vocabulary that names no backend. This is the sanctioned exception,
+    and it carries the label so a reader cannot mistake the two: `kind` and `payload` are the CLI's
+    own words, and a transcript entry is what they were projected to.
+    """
+
     frame_seq: int
     direction: str = Field(description="`to_agent` for what the console sent, `from_agent` for what came back.")
     kind: str = Field(description="The frame's protocol `type`: assistant, user, result, system, …")
