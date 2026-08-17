@@ -23,8 +23,8 @@ against the database rather than trusting this line. There is no `0053`: `0054`'
 
 One correction to what the existing tombstones claim, and it is load-bearing:
 
-- **`session_ttl_seconds` no longer bounds anything.** Three tombstones — <../console/x/session_store.py>
-  line 479, <../console/x/reprojection.py> line 214, <../runtime/x/bridge/transport.py> line 36 —
+- **`session_ttl_seconds` no longer bounds anything.** Two tombstones — <../console/x/session_store.py>
+  line 479 and <../console/x/reprojection.py> line 214 —
   say their gate clears "within two hours" because a sandbox ages out at `session_ttl_seconds`
   (7200). It does not: `_renew_lease` slides the claim's `shutdownTime` on every heartbeat
   (<../console/debug/2026_08_16_runtime_archaeology.md> § The sandbox deadline that did not move), so
@@ -76,7 +76,6 @@ yet converged. "Roll" means it needs no data change at all — only the release 
 | `sessions.surface` nullable; `ck_sessions_room_is_matrix` + `ck_sessions_matrix_has_room` split "because a legacy row has neither"                                  | Rows written before `0030`                                                                              | **Rows**                                                         | `surface NOT NULL` and one equivalence: `(surface = 'matrix') = (room_id IS NOT NULL)`        |
 | `EventProvenance.AUTHORED`, `conversation_events.Authored`, `conversation_records.ConsoleAuthored`, the `authored` arm in `session_events.row` and `reprojection`   | An arm with **no writer** — constructed only in tests                                                   | A **decision** (see below), then rows make it free               | If deleted: `provenance` is a constant column and drops; both frame columns become `NOT NULL` |
 | `reprojection`'s `SKIPPED` arm for a turn with no events                                                                                                            | Turns served before the release that writes `session_events`                                            | **Rows**                                                         | A turn with frames and no rows is drift, and is reported as drift                             |
-| `transport.py`'s `HELLO_SECONDS` wait and its fallback                                                                                                              | Runner images predating the `Hello` envelope                                                            | **Cycling the runner**                                           | The handshake is required                                                                     |
 | 80 of 99 `session_turns` whose `last_frame_seq` points at a trailing `command_lifecycle` frame                                                                      | #4189 fixed this forward and did not backfill                                                           | **Rows**                                                         | none — but `reprojection`'s per-turn alignment becomes meaningful                             |
 | `SessionStatus.IDLE` with no writer                                                                                                                                 | Nothing — a **forward** tombstone waiting on the `0054` roll, not legacy data                           | **Roll** (phase 0), then write the first `idle` row              | The split into `OPEN_SESSION_STATUSES` and `LEASED_SESSION_STATUSES` has a writer             |
 
@@ -86,7 +85,6 @@ yet converged. "Roll" means it needs no data change at all — only the release 
   at `0056`, so `0051` converged long ago and the gate is clear on its own terms — the branch is
   reachable only by a session with an open turn and a stale cursor, which the ordinary case cannot
   produce. It is still safest to take it in phase 2, but it is not blocked on the purge.
-- **`transport.py`'s `HELLO_SECONDS` wait** is blocked only on the runner image, not on any row.
 - **`include_in_schema=False` and `_legacy_pending`** are already gone from the tree.
 
 ## The target schema
@@ -208,7 +206,6 @@ One release, no `DROP COLUMN`:
 - Delete `reprojection`'s "no rows at all" `SKIPPED` arm — a turn with frames and no events is drift
   from here on.
 - Delete `message_view`'s `recorded or message.tool_calls` fallback.
-- Delete `transport.py`'s `HELLO_SECONDS` wait and its fallback.
 - Migration `0057`, additive only: `sessions.surface` `SET NOT NULL`; the surface/room equivalence;
   `VALIDATE CONSTRAINT ck_session_messages_source_anchored`;
   `ck_session_messages_assistant_pointed`; both `session_frames` runner-seq checks;

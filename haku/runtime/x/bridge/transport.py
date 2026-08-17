@@ -14,7 +14,6 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 import anyio
 
 from haku.runtime.x.bridge.protocol import (
-    PROTOCOL_VERSION,
     RUNNER_TO_CONSOLE,
     SUPPORTED_VERSIONS,
     ClaudeLaunch,
@@ -33,13 +32,10 @@ ProgressSink = Callable[[str], Awaitable[None]]
 
 logger = logging.getLogger(__name__)
 
-# CLEANUP(added 2026-08-14): Delete this wait, and the fallback below it, once no runner image
-#   predating `Hello` can still be running — i.e. once every live SandboxClaim was created after
-#   the release that added it, which `session_ttl_seconds` bounds at two hours. Until then a
-#   runner that never says hello is not broken, only older, and the console must not hang on it.
-#   The cost of keeping it is this wait on every legacy connection; the cost of deleting it early
-#   is every such session failing to start.
-HELLO_SECONDS = 2.0
+# A liveness bound on a handshake that is required, not a grace period for a peer that might not
+# send one: `Hello` is the runner's first write once the socket is open, so anything past a round
+# trip is a runner that is not going to speak at all.
+HELLO_TIMEOUT_SECONDS = 30.0
 
 
 class WebSocketTransport:
@@ -51,10 +47,18 @@ class WebSocketTransport:
     runner answers, not because a base class demands them.
     """
 
-    def __init__(self, websocket: TextWebSocket, launch: ClaudeLaunch, on_progress: ProgressSink | None = None):
+    def __init__(
+        self,
+        websocket: TextWebSocket,
+        launch: ClaudeLaunch,
+        on_progress: ProgressSink | None = None,
+        *,
+        hello_timeout: float = HELLO_TIMEOUT_SECONDS,
+    ):
         self._websocket = websocket
         self._launch = launch
         self._on_progress = on_progress
+        self._hello_timeout = hello_timeout
         # The runner ships bootstrap output as it arrives, so a line can span chunks and a
         # chunk can hold several. Reassembly is here because this is the end that knows what
         # a line is for.
@@ -77,28 +81,30 @@ class WebSocketTransport:
         self._ready = True
 
     async def _negotiate(self) -> int:
-        """The highest version both ends speak, or `PROTOCOL_VERSION` for a runner that is older.
+        """The highest version both ends speak.
 
-        Silence is the old runner: it waits for `start` and says nothing before it, so the only
-        way to tell it from a slow one is to stop waiting. See `HELLO_SECONDS`, which carries the
-        condition for deleting this whole branch.
+        Every runner says `Hello`, so silence is a runner that will never launch rather than one
+        this console has to guess a version for — and a guess is a `start` frame the peer may not
+        be able to parse, which fails later and for a stranger reason than saying so here.
         """
-        with anyio.move_on_after(HELLO_SECONDS):
-            match RUNNER_TO_CONSOLE.validate_json(await self._websocket.receive_text()):
-                case Hello(supported=supported):
-                    if not (common := set(supported) & set(SUPPORTED_VERSIONS)):
-                        raise RuntimeError(
-                            f"no protocol version in common: runner speaks {supported}, this console "
-                            f"speaks {SUPPORTED_VERSIONS}"
-                        )
-                    return max(common)
-                case first:
-                    # Not a version problem but a sequencing one, and worth saying so: a runner
-                    # that sends anything before its hello has skipped the handshake, and reading
-                    # its next frame as a launch response would compound the confusion.
-                    raise RuntimeError(f"runner sent {first.kind} before saying hello")
-        logger.info("Runner said no hello in %ss; assuming protocol %d", HELLO_SECONDS, PROTOCOL_VERSION)
-        return PROTOCOL_VERSION
+        try:
+            with anyio.fail_after(self._hello_timeout):
+                first = RUNNER_TO_CONSOLE.validate_json(await self._websocket.receive_text())
+        except TimeoutError as silence:
+            raise RuntimeError(f"runner sent no hello in {self._hello_timeout}s") from silence
+        match first:
+            case Hello(supported=supported):
+                if not (common := set(supported) & set(SUPPORTED_VERSIONS)):
+                    raise RuntimeError(
+                        f"no protocol version in common: runner speaks {supported}, this console "
+                        f"speaks {SUPPORTED_VERSIONS}"
+                    )
+                return max(common)
+            case other:
+                # Not a version problem but a sequencing one, and worth saying so: a runner that
+                # sends anything before its hello has skipped the handshake, and reading its next
+                # frame as a launch response would compound the confusion.
+                raise RuntimeError(f"runner sent {other.kind} before saying hello")
 
     async def write(self, data: str) -> None:
         if not self._ready:

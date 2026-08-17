@@ -11,7 +11,6 @@ from pydantic import ValidationError
 
 from haku.runtime.x.bridge.protocol import (
     CONSOLE_TO_RUNNER,
-    PROTOCOL_VERSION,
     RUNNER_TO_CONSOLE,
     SUPPORTED_VERSIONS,
     ClaudeLaunch,
@@ -21,7 +20,7 @@ from haku.runtime.x.bridge.protocol import (
     SetupOutput,
     encode_object,
 )
-from haku.runtime.x.bridge.transport import HELLO_SECONDS, WebSocketTransport
+from haku.runtime.x.bridge.transport import WebSocketTransport
 
 
 class MemoryWebSocket:
@@ -45,6 +44,16 @@ class MemoryWebSocket:
         self.closed = True
         await self._outgoing.aclose()
         await self._incoming.aclose()
+
+
+async def connected(transport: WebSocketTransport, runner_socket: MemoryWebSocket) -> None:
+    """Queue the runner's `Hello` and connect, for the tests whose subject is what happens after.
+
+    The hello goes in first so `connect` never blocks: the pair is buffered, so a send with
+    nothing reading yet still returns.
+    """
+    await runner_socket.send_text(Hello().model_dump_json())
+    await transport.connect()
 
 
 def memory_websocket_pair() -> tuple[MemoryWebSocket, MemoryWebSocket]:
@@ -144,19 +153,15 @@ async def test_the_console_settles_the_version_on_what_the_runner_said() -> None
     assert started.protocol_version == max(SUPPORTED_VERSIONS)
 
 
-async def test_a_runner_that_never_says_hello_is_still_launched() -> None:
-    """The transition shim. Silence is an older image, not a broken one — it waits for `start` and
-    says nothing before it, so the only way to tell it from a slow one is to stop waiting."""
-    console_socket, runner_socket = memory_websocket_pair()
+async def test_a_runner_that_never_says_hello_is_refused() -> None:
+    """Silence is a runner that will never launch, not one to guess a version for: every image that
+    can reach this console sends `Hello`, so a launch sent into the silence is one nothing reads."""
+    console_socket, _ = memory_websocket_pair()
     launch = ClaudeLaunch(arguments=(), cwd="/workspace", environment={})
-    transport = WebSocketTransport(console_socket, launch)
+    transport = WebSocketTransport(console_socket, launch, hello_timeout=0.05)
 
-    with anyio.fail_after(HELLO_SECONDS + 5):
+    with anyio.fail_after(5), pytest.raises(RuntimeError, match="sent no hello"):
         await transport.connect()
-        started = CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
-
-    assert isinstance(started, ClaudeLaunch)
-    assert started.protocol_version == PROTOCOL_VERSION
 
 
 async def test_a_runner_with_no_version_in_common_is_refused() -> None:
@@ -280,7 +285,7 @@ async def test_transport_rejects_non_object_frames() -> None:
     console_socket, runner_socket = memory_websocket_pair()
     launch = ClaudeLaunch(arguments=(), cwd="/workspace", environment={})
     transport = WebSocketTransport(console_socket, launch)
-    await transport.connect()
+    await connected(transport, runner_socket)
     assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text()) == launch
     await runner_socket.send_text("[]")
 
@@ -301,7 +306,7 @@ async def test_progress_reaches_the_sink_and_not_the_conversation() -> None:
     transport = WebSocketTransport(
         console_socket, ClaudeLaunch(arguments=(), cwd="/workspace", environment={}), on_progress
     )
-    await transport.connect()
+    await connected(transport, runner_socket)
     assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
 
     messages = transport.read_messages()
@@ -328,7 +333,7 @@ async def test_setup_output_is_reassembled_across_chunks() -> None:
     transport = WebSocketTransport(
         console_socket, ClaudeLaunch(arguments=(), cwd="/workspace", environment={}), on_progress
     )
-    await transport.connect()
+    await connected(transport, runner_socket)
     assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
 
     messages = transport.read_messages()
@@ -349,7 +354,7 @@ async def test_setup_output_is_reassembled_across_chunks() -> None:
 async def test_progress_with_nowhere_to_go_is_dropped_not_fatal() -> None:
     console_socket, runner_socket = memory_websocket_pair()
     transport = WebSocketTransport(console_socket, ClaudeLaunch(arguments=(), cwd="/workspace", environment={}))
-    await transport.connect()
+    await connected(transport, runner_socket)
     assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
 
     messages = transport.read_messages()
@@ -378,7 +383,7 @@ async def test_a_failing_progress_sink_does_not_end_the_conversation() -> None:
     transport = WebSocketTransport(
         console_socket, ClaudeLaunch(arguments=(), cwd="/workspace", environment={}), on_progress
     )
-    await transport.connect()
+    await connected(transport, runner_socket)
     assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
 
     messages = transport.read_messages()
@@ -401,7 +406,7 @@ async def test_transport_refuses_a_control_frame_from_the_runner() -> None:
     """
     console_socket, runner_socket = memory_websocket_pair()
     transport = WebSocketTransport(console_socket, ClaudeLaunch(arguments=(), cwd="/workspace", environment={}))
-    await transport.connect()
+    await connected(transport, runner_socket)
     assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
     await runner_socket.send_text(EndInput().model_dump_json())
 
