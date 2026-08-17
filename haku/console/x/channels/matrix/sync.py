@@ -70,14 +70,23 @@ LEADER_RETRY = datetime.timedelta(seconds=30)
 # Backoff after a failed sync, so a homeserver outage does not become a hot loop.
 ERROR_BACKOFF = datetime.timedelta(seconds=10)
 
-# What a rejection notice says the operator is waiting for. The channel's own rendering of
-# `PromptRejection`, which is why it is here and not beside the enum.
-_WHY_NOT = {
-    PromptRejection.NO_SESSION: "there is no session behind this room yet",
-    PromptRejection.SESSION_NOT_READY: "Haku's sandbox is not up yet",
-    PromptRejection.TURN_IN_FLIGHT: "Haku is still working on the previous message",
-    PromptRejection.PROMPT_QUEUED: "a message is already waiting to be answered",
-}
+
+def _why_not(reason: PromptRejection) -> str:
+    """What a rejection notice says the operator is waiting for.
+
+    The channel's own rendering of `PromptRejection`, which is why it is here and not beside the
+    enum — and a match rather than a lookup, so a member added later fails the type check instead
+    of the send.
+    """
+    match reason:
+        case PromptRejection.NO_SESSION:
+            return "there is no session behind this room yet"
+        case PromptRejection.SESSION_NOT_READY:
+            return "Haku's sandbox is not up yet"
+        case PromptRejection.TURN_IN_FLIGHT:
+            return "Haku is still working on the previous message"
+        case PromptRejection.PROMPT_QUEUED:
+            return "a message is already waiting to be answered"
 
 
 class MatrixSyncStore:
@@ -446,7 +455,7 @@ class MatrixSyncService:
         if live_room is None:
             return
         self._queue_notice(
-            live_room, f"{count} message(s) not delivered — {_WHY_NOT[reason]}; send them again", RoomEventKind.REJECTED
+            live_room, f"{count} message(s) not delivered — {_why_not(reason)}; send them again", RoomEventKind.REJECTED
         )
 
     def _report_unreadable(self, live_room: str | None, events: list[UnmappableEvent]) -> None:
