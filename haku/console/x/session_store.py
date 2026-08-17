@@ -252,6 +252,11 @@ class SessionStore:
             if conversation_id is None:
                 conversation_id = uuid4()
                 db.add(Conversation(conversation_id=conversation_id, operator_id=operator_id, created_at=now))
+                # Flushed before the session that points at it, for the reason spelled out in
+                # `MatrixConversationStore.conversation_for_room`: a `ForeignKey` carrying no
+                # `relationship()` does not order the unit of work, and `Conversation` preceding
+                # `Session` there is alphabetical luck rather than a rule.
+                await db.flush()
             db.add(
                 Session(
                     session_id=session_id,

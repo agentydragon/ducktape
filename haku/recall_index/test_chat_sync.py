@@ -22,8 +22,10 @@ from haku.recall_index.store import ChatSearchHit
 
 _NOW = datetime.datetime(2026, 8, 11, tzinfo=datetime.UTC)
 
-# `session_messages` is the corpus; the other two are the foreign keys it hangs off.
-_CHAT_SOURCE_TABLES = ("operators", "sessions", "session_messages")
+# `session_messages` is the corpus; the others are the foreign keys it hangs off. `conversation`
+# is one of them without holding anything the corpus reads: `sessions.conversation_id` points at
+# it, so `sessions` is not creatable without it.
+_CHAT_SOURCE_TABLES = ("operators", "conversation", "sessions", "session_messages")
 
 
 @pytest.fixture

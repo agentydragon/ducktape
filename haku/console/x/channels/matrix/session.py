@@ -174,6 +174,11 @@ class MatrixConversationStore:
             now = datetime.datetime.now(datetime.UTC)
             conversation_id = uuid4()
             db.add(Conversation(conversation_id=conversation_id, operator_id=operator_id, created_at=now))
+            # Flushed before the attachment that points at it. The unit of work orders a flush from
+            # `relationship()` dependencies and nothing else, so a bare `ForeignKey` between two
+            # mappers leaves their inserts in mapper-name order — `chat_attachment` ahead of
+            # `conversation`, which the constraint rejects.
+            await db.flush()
             db.add(
                 ChatAttachment(
                     attachment_id=uuid4(),
