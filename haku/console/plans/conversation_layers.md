@@ -309,6 +309,41 @@ notice whose subject is a fact that happened should be sealed with a final edit 
 it loses the account of what the agent did while working, which is what R11.1 was changed to stop
 the room losing. Which notices exist, and which of the two each is, is left open (§ 7).
 
+### The operator's own prompts are part of what a surface shows
+
+**A prompt is a conversation fact, so every attached surface shows it** (operator, 2026-08-17) —
+"send a prompt from the SPA and I'd expect the bot to deliver it to the Matrix conversation too",
+and it is displayed in the SPA as a matter of course. § 11's acceptance behaviour 4 already
+demanded this ("either can prompt, both show the same account"); this is the mechanism.
+
+It follows from the subscription rather than being a feature bolted onto it. `PROMPT_ENQUEUED` is
+already an `AUTHORED` event on the conversation, so a channel reading the record sees the operator's
+half as well as the agent's. What is new is only that a channel must **project a prompt it did not
+receive** — today the room shows the operator's messages because they were typed there, not because
+anything projected them.
+
+**The provenance pointer is what stops the echo, and that is its reader.** A prompt that arrived
+through this room is already in this room; re-posting it would duplicate it. A prompt from the SPA,
+or from another room, is not — so it must be posted. The test is "did this prompt originate on my
+own attachment", which is exactly one comparison against the pointer § 9 step 5 adds:
+
+- **Compare, never interpret.** The channel that minted the pointer is the only thing that reads
+  inside it; every other consumer compares it for equality. That keeps § 11's invariant — no code
+  outside a channel names a channel's address — while giving the field a real reader, which
+  otherwise it would not have.
+- **It must identify the attachment, not just the event.** Under § 7's ruling one bot holds several
+  rooms, so "an event id I did not mint" is not enough to tell a sibling room's prompt from this
+  room's. Once `chat_attachment` exists the honest shape is the attachment's own id plus the
+  channel's opaque ref; until then it carries the address alongside the ref and the conversation
+  treats both as opaque.
+- **Absence means the SPA.** A prompt typed into a tab has no channel event behind it, so `None` is
+  a defined state rather than a missing value — and it is the case that must be posted to every
+  room, which is the whole of what the operator asked for.
+
+**Rendering it is the channel's own decision**, like everything else in § 4: a room may want a
+prompt from elsewhere marked as such, since an operator reading the room sees a message they did
+not send there.
+
 ### What a notice does not need
 
 **No outbox row.** Its durable form is the span it summarises plus the room's own tagged copy, so
@@ -826,7 +861,7 @@ deliberately: `matrix_sync_watermark`, `session_events`, `session_frames`, the l
 
 ### How to tell it is finished
 
-Five behaviours. The first three are the surfaces working; the last two are what proves the
+Six behaviours. The first four are the surfaces working; the last two are what proves the
 architecture rather than the features, and each is the acceptance test for the thing that forced it.
 
 1. **The Matrix surface still works.** `x/channels/matrix/test_fullstack_e2e.py` against real
@@ -838,16 +873,21 @@ architecture rather than the features, and each is the acceptance test for the t
    refetch. Per token is what § 2 designs and what this test should assert once the delta kind
    exists; a v0 that only carries the open row at `COALESCE_WINDOW` granularity passes the weaker
    form of it, and the follow-up tightens the assertion.
-4. **One conversation, two surfaces.** A room and a browser both open, either can prompt, both
+4. **Both surfaces show the operator's own prompts, wherever they were sent from** (§ 4). A prompt
+   typed in the SPA appears in the room; one sent from the room appears in the tab; neither appears
+   twice on the surface it was typed on. The first case does not work at all today, and the third is
+   what the provenance pointer exists to make true.
+5. **One conversation, two surfaces.** A room and a browser both open, either can prompt, both
    show the same account. This is what the conversation entity is for, so it is its test.
-5. **A session replacement is invisible to both.** The sandbox is killed mid-turn, a new session
+6. **A session replacement is invisible to both.** The sandbox is killed mid-turn, a new session
    takes over, and both surfaces show the restart without either being told twice. This is the
    case that forced the entity (§ 6), and a replica killed mid-turn leaves nothing orphaned or
    duplicated in the room.
 
 **Write these per step, not at the end.** A failing test cannot land on `devel`, so each step's PR
-carries the test that proves its own part, and 4 and 5 land as end-to-end tests with the steps that
-make them passable — 3 and 9. Saving them for the end means running blind until then, which is the
+carries the test that proves its own part, and 5 and 6 land as end-to-end tests with the steps that
+make them passable — 3 and 9. Behaviour 4 lands with step 9, which is where a channel starts reading
+the record rather than being handed the half the turn loop produced. Saving them for the end means running blind until then, which is the
 particular difficulty of working this unattended.
 
 **Encode § 11's invariants as tests too**, because each is false today and would otherwise creep
