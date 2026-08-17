@@ -48,8 +48,12 @@ What is left is three releases.
 2. **Adding a `CHECK` needs no split** when the tables are empty and the previous image's writers
    already satisfy it — true after phase 1, verified per constraint below. So the tightening rides
    along with the code-only release rather than waiting for a third.
-3. **`SET NOT NULL` on `projected_frame_seq` does need the split**, because the previous image can
-   still insert a session with no cursor. `SET DEFAULT 0` first, `SET NOT NULL` a release later.
+3. **`projected_frame_seq` does _not_ need a split**, though it looks like it should. The previous
+   image can insert a session with no cursor — but `create()` never sets the attribute and it has no
+   Python default, so SQLAlchemy omits the column from the `INSERT` entirely and the new server
+   default applies. `SET DEFAULT 0` and `SET NOT NULL` can therefore land together. (Observing a
+   fresh session at `NULL` beforehand does not settle this: pre-default, an omitted column and an
+   explicit `NULL` are indistinguishable in the row. The ORM's emit behaviour is what settles it.)
 
 #### Phase 2 — the code-only release, plus the additive tightening
 
@@ -57,7 +61,14 @@ Unmap `session_messages.{unpointable_reason,tool_calls}` and `session_frames.par
 every reader; delete `message_view`'s `recorded or message.tool_calls` fallback; and one additive
 migration: `sessions.surface SET NOT NULL`, the surface/room equivalence,
 `VALIDATE CONSTRAINT ck_session_messages_source_anchored`, `ck_session_messages_assistant_pointed`,
-both `session_frames` runner-seq checks, and `projected_frame_seq SET DEFAULT 0`.
+`ck_session_frames_runner_seq_direction`, and `projected_frame_seq` `SET DEFAULT 0` **and**
+`SET NOT NULL`.
+
+**`ck_session_frames_wire_numbered` is not in phase 2**, and the reason is a live writer rather than
+old data: `_write_partial_frame` writes a `from_agent`/`assistant` row carrying no runner number on
+every stream delta, in the serving image and the next one alike. Adding the check would break
+streaming the moment it landed. It goes in phase 3, after the writer is deleted and its rows with
+it.
 
 Each addition is safe against the previous image for a specific reason, not a general one:
 
@@ -84,7 +95,8 @@ SELECT count(*) FROM session_frames WHERE runner_seq IS NOT NULL AND direction <
 #### Phase 3 — the drop release
 
 Once phase 2 has converged: the remaining `DROP COLUMN`s, `DROP INDEX uq_session_frames_partial`, the
-two `unpointable_*` constraints, and `projected_frame_seq SET NOT NULL`. Afterwards:
+two `unpointable_*` constraints, `DELETE FROM session_frames WHERE partial`, and then
+`ck_session_frames_wire_numbered` — which needs those rows gone, not just the writer. Afterwards:
 
 ```sql
 SELECT column_name FROM information_schema.columns
