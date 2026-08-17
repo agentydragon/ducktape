@@ -999,12 +999,22 @@ typed member is not. That bounds the leak surface exactly: `Json` marks three fi
 
 **`unprojected` is the one thing left, and it is not the leak it looks like.** Its keys are Claude's
 own frame class names (`system/vcs_state_changed`, `user/text`), but it is produced by the adapter —
-the one component allowed to be provider-shaped, since translating is its job — and **no production
-code reads it**: the readers are tests and this plan. So it reaches no channel and breaks no
-invariant. What it is instead is a **field with no reader**, which STYLE forbids for its own
-reasons: the actionable signal it exists to carry, "the backend is sending something we do not map",
-currently reaches nobody. Give it a reader — a log line or a metric at the fold's boundary — or
-delete it. Two other members were noticed in passing and neither is leakage: `Authored` is
+the one component allowed to be provider-shaped, since translating is its job — so it reaches no
+channel and breaks no invariant.
+
+**An earlier draft of this paragraph said no production code reads it. That was wrong**, and the
+way it was wrong is worth keeping: the field is _renamed_ downstream, so grepping the name finds
+only tests. `transcript_entries.unreadable` folds it, `SessionStore.read_transcript` carries it as
+`TranscriptSlice.unreadable`, and the MCP `read_transcript` tool serves it as
+`TranscriptPage.unreadable`. Deleting it would have removed a live wire field an agent already
+receives, not dead payload. **A name-based search does not establish that a field has no reader
+when a projection renames it at a layer boundary.**
+
+What was actually missing was a reader **a human** reaches, and #4303 gives it one: each row of the
+frame inspector carries its own `unprojected` and the SPA badges it. That satisfies § 11's
+carve-out rather than widening it — addressed separately, never load-bearing, labelled as one
+backend's wire (#4305) — and it costs no storage, since the page's own payloads are folded on
+read. Two other members were noticed in passing and neither is leakage: `Authored` is
 constructed nowhere outside a test, a shape waiting for the writer step 4 adds; and `Outcome`'s
 premise was wrong in the asking — `result.subtype` never reaches it, it is fed from `is_error` and
 `status`.
