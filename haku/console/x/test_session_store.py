@@ -879,6 +879,19 @@ async def test_a_lease_that_lapsed_names_the_replica_that_held_it(chat_store, mi
     assert lapsed.body == {"reason": LeaseExpiryReason.HOLDER_GONE, "last_holder": REPLICA}
 
 
+@pytest.fixture
+async def accepted_prompt(chat_store: SessionStore, operator_id: UUID) -> tuple[UUID, UUID]:
+    """A ready session with one prompt it has accepted, and no turn yet claiming it.
+
+    Room-backed because the tests using it are about what a channel reads back — but a room is a
+    `room_id` on the session row here, not a homeserver.
+    """
+    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    prompt = await chat_store.enqueue_prompt(operator_id, view.session_id, "what were we doing")
+    return view.session_id, prompt.message_id
+
+
 async def test_an_accepted_prompt_is_a_row_in_the_stream_as_well_as_in_the_transcript(
     chat_store, migrated_sessions, operator_id
 ) -> None:

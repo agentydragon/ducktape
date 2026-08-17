@@ -317,6 +317,11 @@ async def test_a_replacement_session_wakes_from_our_transcript_rather_than_from_
     two = await room.say("two")
     await deployment.wait_until_queued(doomed, "two")
     await deployment.serving(after=doomed)
+    # The replacement launches its CLI on its first prompt, and the launch is what renders the
+    # system prompt this test reads — so it has to be given something to answer. `two` is not
+    # that something: it was accepted by the session that died, and nothing offers it again.
+    await room.say("three")
+    await room.wait_for_reply("re: three")
 
     launched = deployment.system_prompts()
     assert len(launched) >= 2, "no replacement session was ever started"
