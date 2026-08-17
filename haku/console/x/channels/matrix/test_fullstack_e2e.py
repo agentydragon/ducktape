@@ -236,26 +236,46 @@ async def test_every_message_is_answered_exactly_once_across_a_console_roll(
     assert await room.replies() == ["re: one", "re: two", "re: three"]
 
 
-async def test_a_message_accepted_by_a_dying_session_is_answered_by_its_replacement(
+async def test_a_message_sent_mid_turn_is_rejected_in_the_room_rather_than_answered_late(
     deployment: Deployment, room: OperatorRoom
 ) -> None:
-    """The ingress half of the same lie: **accepted** was being treated as **answered**.
+    """The ruling, end to end: nothing queues behind a running turn.
 
-    `sync_once` acknowledged a batch the moment `enqueue_prompt` committed, and a prompt row is
-    keyed to the session it was queued against. So a session that ended before claiming it — its
-    sandbox gone, `expire_stale_leases` failing the row, the supervisor minting a *new*
-    `session_id` — left the message acknowledged on the homeserver and queued where nothing would
-    ever look: the replacement's `next_prompt` reads its own session, and the room heard only
-    "session … ended … starting a new one" (<../../../debug/message_drops.md> I3, R2.5).
+    The agent holds its answer to `two`, so `three` arrives while that turn is open. It is not
+    delivered and not held — the room is told so while the turn is still running, and the operator
+    sends it again once Haku is free. What proves it was a rejection rather than a delay is the
+    reply list: `re: three` is there once, and only after the re-send.
+    """
+    await deployment.start_console("console-1")
+    session_id = await deployment.serving()
+    await room.say("one")
+    await room.wait_for_reply("re: one")
 
-    The window needs no timing: a killed sandbox leaves the session `ready` for a whole
-    `ADOPTION_GRACE`, which is why `wait_until_queued` can assert the message really was accepted
-    by the doomed session rather than refused and held by the homeserver — the second of which
-    would have been answered correctly all along and would make this test prove nothing.
+    await room.say("two [hold]")
+    await deployment.wait_until_holding()
+    await room.say("three")
+    await room.wait_for_notice("not delivered")
 
-    What answers it now is the batch never having been acknowledged: the watermark stayed behind
-    it, the prompt's fate came back `LOST`, and the same messages were offered to the session that
-    replaced the one that died.
+    deployment.release_the_agent()
+    await deployment.wait_for_finished_turns(session_id, 2)
+    await room.say("three")
+    await room.wait_for_reply("re: three")
+
+    assert await room.replies() == ["re: one", "re: two", "re: three"]
+
+
+async def test_a_message_accepted_by_a_dying_session_is_not_offered_to_its_replacement(
+    deployment: Deployment, room: OperatorRoom
+) -> None:
+    """The cost the rejection ruling accepts, pinned so it is a decision rather than a surprise.
+
+    A killed sandbox leaves the session `ready` for a whole `ADOPTION_GRACE`, so `two` is
+    **accepted** by a session that will never claim it. Its batch is acknowledged at that moment,
+    so nothing offers it again: the replacement session answers the next thing said, and `two`
+    survives only as a transcript row it is woken with (the test below).
+
+    This is `message_drops.md` I3's window, deliberately reopened — R2.5's held batch is what used
+    to close it, and holding is what the ruling removes.
     """
     await deployment.start_console("console-1")
     doomed = await deployment.serving()
@@ -266,8 +286,12 @@ async def test_a_message_accepted_by_a_dying_session_is_answered_by_its_replacem
     await room.say("two")
     await deployment.wait_until_queued(doomed, "two")
 
-    await room.wait_for_reply("re: two")
-    assert await room.replies() == ["re: one", "re: two"]
+    replacement = await deployment.serving()
+    assert replacement != doomed, "the supervisor never replaced the session this test killed"
+    await room.say("three")
+    await room.wait_for_reply("re: three")
+
+    assert await room.replies() == ["re: one", "re: three"]
 
 
 async def test_a_replacement_session_wakes_from_our_transcript_rather_than_from_the_room(
@@ -283,9 +307,7 @@ async def test_a_replacement_session_wakes_from_our_transcript_rather_than_from_
 
     The killed sandbox is how a replacement session gets made at all, and it also puts the
     load-bearing case in the same test: `two` is accepted by the dying session and never answered
-    by it, so it sits past the sync watermark — exactly the messages the `/messages` read had to
-    reach back for with a held-batch cursor, and exactly the ones a history that stopped at the
-    watermark would have hidden from the session about to be handed them.
+    by it, so the only thing that can carry it into the replacement is the transcript.
     """
     await deployment.start_console("console-1")
     doomed = await deployment.serving()
@@ -295,14 +317,14 @@ async def test_a_replacement_session_wakes_from_our_transcript_rather_than_from_
     await deployment.kill_sandbox(doomed)
     two = await room.say("two")
     await deployment.wait_until_queued(doomed, "two")
-    await room.wait_for_reply("re: two")
+    assert await deployment.serving() != doomed
 
     launched = deployment.system_prompts()
     assert len(launched) >= 2, "no replacement session was ever started"
     woken = launched[-1]
     assert f"[{one}] one" in woken, "the operator's message, in the form only our record holds"
     assert "re: one" in woken, "half a conversation is not context — Haku's own reply is there too"
-    assert f"[{two}] two" in woken, "the batch its predecessor died holding"
+    assert f"[{two}] two" in woken, "the message its predecessor accepted and never answered"
 
 
 if __name__ == "__main__":

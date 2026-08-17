@@ -101,7 +101,7 @@ class RoomEventKind(StrEnum):
     STATUS = "status"
     NARRATION = "narration"
     LIFECYCLE = "lifecycle"
-    HOLDING = "holding"
+    REJECTED = "rejected"
     ROOM = "room"
     UNREADABLE = "unreadable"
 

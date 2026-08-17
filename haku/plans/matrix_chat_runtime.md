@@ -61,12 +61,17 @@ Matrix as a store of record for anything.
   filter is on both the sender MXID and the set of event IDs the console posted.
 - **R1.6 [built]** No inbound message is silently dropped. An event that cannot be mapped, or
   that fails processing, surfaces to the operator rather than vanishing. Both halves reach the
-  room: a batch the session cannot take yet is announced as `holding` once and left
-  unacknowledged, and an event Haku has no way to read — an `m.image`, a voice memo, an msgtype
-  invented after this release — is carried out of the sync as an `UnmappableEvent`, said out
-  loud, and only then acknowledged. **Surfaced rather than refused**, because refusing does not
+  room: a batch the session will not take is rejected and said so, naming what to wait for, and an
+  event Haku has no way to read — an `m.image`, a voice memo, an msgtype invented after this
+  release — is announced the same way. **Surfaced rather than refused**, because refusing does not
   converge: nothing about an already-sent screenshot ever changes, so the batch would be
   re-offered forever and one image would wedge ingress against every later message.
+
+  **Both are recorded**, as `session_events` rows written in the transaction that advances the
+  watermark, so the room's line is a rendering of a fact the console kept rather than the only
+  copy of it. Announcing after acknowledging is what let one crash lose the message and the notice
+  together.
+
 - **R1.7 [v1] Downtime recovery — no message is lost.** Messages that arrive while the
   console is down must still be processed once it returns, in order, exactly as if it had
   been up, however long the gap. If recovery cannot close a gap it must say so loudly; it
@@ -124,8 +129,12 @@ a handoff to another pod. How the gap is actually closed lives in
 
 - **R2.1 [v1]** Pending wakeups coalesce into a **single turn**. Three messages arriving
   together produce one turn, not three.
-- **R2.2 [v1]** Messages arriving while a turn is in flight are held and delivered as the
-  next turn's prompt. Turns are serialized.
+- **R2.2 [reversed]** Messages arriving while a turn is in flight are **rejected**, not held:
+  the room is told they were not delivered and the operator sends them again. Turns are still
+  serialized; what changed is that nothing queues behind one. Reversed by the operator
+  (2026-08-17) on the argument that a per-channel hold is the wrong home for a queue: if queueing
+  comes back it belongs in the conversation, once, for every channel — and mid-turn steering
+  (R2.2a) is the feature actually wanted, which a queue would not be a step towards.
 - **R2.2a [buildable] Mid-turn delivery.** A batch reaches the agent at the earliest point at
   which delivery is valid, **including inside a running turn** — an operator who adds
   "actually, skip the calendar part" while Haku is working should not have to wait out the
@@ -138,29 +147,21 @@ a handoff to another pod. How the gap is actually closed lives in
   a turn generating continuous prose has no boundary to absorb at, and there the prompt waits
   for the turn to end, which is today's behaviour anyway.
 
-  What it costs us: `MatrixTurns.offer` stops refusing batches while a turn runs (R2.2 becomes
-  fold-into-turn), `_run_turn` gains a way to write a prompt into a `receive_response()` it is
-  already draining, and **a turn stops owning exactly one prompt** — one `result` covered two
-  here, which is the concrete reason `session_turns` brackets a frame range rather than
-  labelling frames.
+  What it costs us: `MatrixTurns.offer` stops rejecting batches while a turn runs, `_run_turn`
+  gains a way to write a prompt into a `receive_response()` it is already draining, and **a turn
+  stops owning exactly one prompt** — one `result` covered two here, which is the concrete reason
+  `session_turns` brackets a frame range rather than labelling frames.
 
 - **R2.3 [v1]** Batch order follows the homeserver's stream order and is preserved in the
   rendered prompt.
 - **R2.4 [v1]** Each message in a batch carries its provenance into the prompt: sender,
   timestamp, `event_id`, and thread root.
-- **R2.5 [built]** A batch is acknowledged after its turn completes. **Losing an in-flight
-  turn to a crash is acceptable** — resuming partial turn state is not required. Losing a
-  _message_ is not acceptable: an unacknowledged batch is redelivered, so re-running a
-  batch must be safe.
-
-  The acknowledgement is deferred rather than the batch being queued anywhere: a
-  `matrix_held_batch` row carries the `/sync` token and the prompt row the batch became, and the
-  watermark moves only once that prompt's turn has **ended** — including when it failed or was
-  aborted, since a batch held until a turn succeeds is a batch held forever the first time one
-  does not. A prompt whose session ended before any turn ran is the case this exists for: the row
-  is dropped, the watermark is not, and the same messages are offered to the replacement session.
-  Two positions, because the loop must poll from past a batch it is still holding — see
-  <../console/x/README.md> and <../console/debug/message_drops.md> I3.
+- **R2.5 [reversed]** A batch was acknowledged only after its turn completed, so that a session
+  dying before it claimed the prompt left the message re-offerable. That is gone with the hold it
+  was built on: acceptance is the acknowledgement, and a prompt a session accepts and never
+  answers is carried into the replacement session as transcript rather than as a re-offer
+  (<../console/debug/message_drops.md> I3, whose window this deliberately reopens). One position
+  instead of two, reversed with R2.2 above and by the same ruling.
 
 - **R2.6 [v1]** Batches have a size cap. Overflow splits across consecutive turns
   preserving order; it never truncates.
@@ -1030,11 +1031,8 @@ Two of the three items that were still open here have since landed:
 Still Phase 3:
 
 - `event_id` dedupe (R1.2) and startup reconciliation from the last processed event (R1.7).
-  Unbuilt: duplicate suppression is still positional, and a crash between processing a batch and
-  persisting where it got to replays it. R2.5's `matrix_held_batch` narrows the window rather than
-  closing it — the batch a session took is remembered, so a crash mid-turn replays that batch and
-  nothing before it, but a crash between `enqueue_prompt` committing and the held row being written
-  still replays a batch the session already has.
+  Unbuilt: duplicate suppression is still positional, and a crash between `enqueue_prompt`
+  committing and the watermark advancing replays a batch the session already has.
 
 ### Phase 4 — Make it pleasant — the status half only
 

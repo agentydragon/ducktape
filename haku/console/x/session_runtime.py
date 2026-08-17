@@ -38,6 +38,7 @@ from haku.console.x.session_notifications import SessionEventKind, SessionNotifi
 from haku.console.x.session_store import (
     LEASE_RENEW_INTERVAL,
     BridgeAuthentication,
+    PromptRefusedError,
     ResumedTurn,
     SessionStore,
     SessionSurface,
@@ -891,7 +892,7 @@ async def send_message(
         return await store.enqueue_prompt(actor.operator_id, session_id, body.text)
     except KeyError as error:
         raise HTTPException(status_code=404, detail="session not found") from error
-    except RuntimeError as error:
+    except PromptRefusedError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 

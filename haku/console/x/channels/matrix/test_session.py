@@ -2,9 +2,9 @@
 read back what the room has been told, and take what is said in it into a turn.
 
 Ingress is here rather than beside the turn loop it feeds. `MatrixTurns.offer` takes homeserver
-events and hands them to `enqueue_prompt`, so a test of it is a test of the crossing — the refusals
-it turns into a held batch cannot be expressed without both sides. The turn loop's own admission
-rules are <../../test_session_runtime.py>, where no channel appears at all.
+events and hands them to `enqueue_prompt`, so a test of it is a test of the crossing — the
+rejections it turns into a row and a notice cannot be expressed without both sides. The turn
+loop's own admission rules are <../../test_session_runtime.py>, where no channel appears at all.
 """
 
 from __future__ import annotations
@@ -18,9 +18,9 @@ import pytest
 import pytest_bazel
 from sqlalchemy import delete, select
 
-from haku.console.chat_models import ChatMessageRole, SessionStatus, TurnOutcome
+from haku.console.chat_models import AuthoredEventKind, ChatMessageRole, PromptRejection, SessionStatus, TurnOutcome
 from haku.console.database_schema import ChatAttachment, Session
-from haku.console.x.channels.matrix.client import InboundMessage, RoomEventKind
+from haku.console.x.channels.matrix.client import InboundMessage, RoomEventKind, UnmappableEvent
 from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
 from haku.console.x.channels.matrix.session import (
     ABORTED_BY_OPERATOR,
@@ -29,6 +29,8 @@ from haku.console.x.channels.matrix.session import (
     MatrixSessionSupervisor,
     MatrixSurface,
     MatrixTurns,
+    PromptAccepted,
+    PromptRejected,
     RoomTranscript,
 )
 from haku.console.x.conftest import runtime_config
@@ -473,13 +475,10 @@ async def test_the_transcript_spans_every_session_that_served_the_room(
 async def test_a_batch_the_dying_session_never_answered_is_still_the_history(
     transcript: RoomTranscript, chat_store: SessionStore, operator_id: UUID
 ) -> None:
-    """The property the `/messages` read arranged with a cursor, and this one gets for free.
+    """What answers a message its session never got to: the replacement is handed it as context.
 
-    That read paginated back from the furthest position the sync loop had reached rather than from
-    the watermark, precisely so a session replacing one that died mid-batch was not handed a
-    history stopping short of the messages that killed it. Here the row is simply there: ingress
-    writes it when it **offers** the batch, which is also what makes the batch held rather than
-    acknowledged, so being past the watermark and being in the transcript are the same fact.
+    The batch is acknowledged the moment it is accepted, so nothing offers it again — the prompt
+    row ingress wrote is the whole of what survives, and this is the read that finds it.
     """
     doomed = await serving_session(chat_store, operator_id)
     await exchange(chat_store, operator_id, doomed, "[$a] hi", "hello")
@@ -493,11 +492,10 @@ async def test_a_batch_the_dying_session_never_answered_is_still_the_history(
 async def test_a_session_s_own_rows_are_not_its_history(
     transcript: RoomTranscript, chat_store: SessionStore, operator_id: UUID
 ) -> None:
-    """A re-offered batch reaches its replacement as a prompt; showing it twice is not context.
+    """A prompt this session has already been handed is not also its history; twice is not context.
 
     The window is real: a session goes `ready` when its runner authenticates, and its system
-    prompt is rendered a few statements later — so a batch abandoned by the session that died can
-    be offered to this one in between.
+    prompt is rendered a few statements later — so a batch can be accepted in between.
     """
     doomed = await serving_session(chat_store, operator_id)
     await exchange(chat_store, operator_id, doomed, "[$a] hi", "hello")
@@ -576,22 +574,61 @@ def operator_message(body: str, *, event_id: str, at: int) -> InboundMessage:
     )
 
 
-async def test_a_batch_offered_mid_turn_is_still_held(
+def _unmappable(msgtype: str) -> UnmappableEvent:
+    return UnmappableEvent(room_id=MATRIX_ROOM, event_id=f"${msgtype}", sender=MATRIX_OPERATOR, msgtype=msgtype)
+
+
+async def test_a_batch_a_ready_session_takes_becomes_its_prompt(
     turns: MatrixTurns, conversations: MatrixConversationStore, chat_store: SessionStore, operator_id: UUID
 ) -> None:
-    """The homeserver re-delivers what `offer` refuses, so refusing is how a message sent while
-    Haku is working waits for the next turn instead of being answered a turn late."""
+    """The accepted case, and what "one batch, one prompt" means: two events, one transcript row."""
+    session_id = await serving_session(chat_store, operator_id)
+    await serving_room(conversations, session_id)
+
+    admitted = await turns.offer(
+        [operator_message("hi", event_id="$1", at=1), operator_message("and this", event_id="$2", at=2)]
+    )
+
+    assert isinstance(admitted, PromptAccepted)
+    start = await chat_store.next_prompt(session_id)
+    assert start is not None
+    assert start.prompt == "[$1] hi\n[$2] and this"
+
+
+async def test_a_batch_offered_mid_turn_is_rejected_with_the_reason_and_the_text(
+    turns: MatrixTurns, conversations: MatrixConversationStore, chat_store: SessionStore, operator_id: UUID
+) -> None:
+    """A message sent while Haku is working is answered rather than queued behind the turn, and the
+    row it hands back is the only copy of what was said — the homeserver will not offer it again
+    once the caller acknowledges the batch."""
     session_id = await serving_session(chat_store, operator_id)
     await serving_room(conversations, session_id)
     await chat_store.enqueue_prompt(operator_id, session_id, "first")
     assert await chat_store.next_prompt(session_id) is not None
 
-    offered = await turns.offer([operator_message("and another thing", event_id="$2", at=2)])
+    admitted = await turns.offer([operator_message("and another thing", event_id="$2", at=2)])
 
-    assert offered is None
+    assert isinstance(admitted, PromptRejected)
+    assert admitted.reason is PromptRejection.TURN_IN_FLIGHT
+    assert admitted.event is not None
+    assert admitted.event.session_id == session_id
+    assert admitted.event.kind is AuthoredEventKind.PROMPT_REJECTED
+    assert admitted.event.body == {"reason": PromptRejection.TURN_IN_FLIGHT, "text": "[$2] and another thing"}
 
 
-async def test_a_batch_offered_to_a_session_that_is_gone_is_held_rather_than_raised(
+async def test_a_batch_offered_before_a_session_exists_is_rejected_with_nothing_to_record(
+    turns: MatrixTurns, conversations: MatrixConversationStore, chat_store: SessionStore, operator_id: UUID
+) -> None:
+    """A room bound before the supervisor has provisioned anything. There is no session to key an
+    event to, so the operator's only account of it is the notice."""
+    assert await conversations.claim_room(MATRIX_USER, MATRIX_ROOM) == MATRIX_ROOM
+
+    admitted = await turns.offer([operator_message("hi", event_id="$1", at=1)])
+
+    assert admitted == PromptRejected(reason=PromptRejection.NO_SESSION, event=None)
+
+
+async def test_a_batch_offered_to_a_session_that_is_gone_is_rejected_rather_than_raised(
     turns: MatrixTurns,
     conversations: MatrixConversationStore,
     chat_store: SessionStore,
@@ -602,17 +639,42 @@ async def test_a_batch_offered_to_a_session_that_is_gone_is_held_rather_than_rai
 
     `enqueue_prompt` answers a vanished session with `KeyError`, and `offer` used to catch only
     `RuntimeError` — so this raised into the sync loop, which logged something generic and slept.
-    The watermark stayed put, so nothing was lost, but ingress stalled in a retry loop and the
-    operator was told nothing. Refusing is the answer that gets them a "holding" notice.
+    Rejecting is what gets the operator an answer instead, and it reads as the case above: the row
+    that would carry it is the one that has gone.
     """
     session_id = await serving_session(chat_store, operator_id)
     await serving_room(conversations, session_id)
     async with migrated_sessions.begin() as db:
         await db.execute(delete(Session).where(Session.session_id == session_id))
 
-    offered = await turns.offer([operator_message("hi", event_id="$1", at=1)])
+    admitted = await turns.offer([operator_message("hi", event_id="$1", at=1)])
 
-    assert offered is None
+    assert admitted == PromptRejected(reason=PromptRejection.NO_SESSION, event=None)
+
+
+async def test_an_unreadable_event_is_a_row_per_event_on_the_live_session(
+    turns: MatrixTurns, conversations: MatrixConversationStore, chat_store: SessionStore, operator_id: UUID
+) -> None:
+    """The second fact that used to exist only in the stack frame that announced it
+    (<../../../debug/channel_write_audit.md> row 12). What the notice says is a count and a set of
+    types; what is kept is the events themselves."""
+    session_id = await serving_session(chat_store, operator_id)
+    await serving_room(conversations, session_id)
+
+    rows = await turns.unreadable([_unmappable("m.image"), _unmappable("m.audio")])
+
+    assert [(row.session_id, row.kind, row.body) for row in rows] == [
+        (session_id, AuthoredEventKind.UNREADABLE_INPUT, {"media_type": "m.image"}),
+        (session_id, AuthoredEventKind.UNREADABLE_INPUT, {"media_type": "m.audio"}),
+    ]
+
+
+async def test_an_unreadable_event_with_no_session_behind_the_room_records_nothing(
+    turns: MatrixTurns, conversations: MatrixConversationStore
+) -> None:
+    assert await conversations.claim_room(MATRIX_USER, MATRIX_ROOM) == MATRIX_ROOM
+
+    assert await turns.unreadable([_unmappable("m.image")]) == ()
 
 
 if __name__ == "__main__":

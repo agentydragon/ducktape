@@ -178,10 +178,12 @@ Two things fall out, both good:
   _is_ the record of having announced it, and the per-process local goes.
 
 **Vocabulary consequence.** `RoomEventKind` (`reply`, `status`, `narration`, `lifecycle`,
-`holding`, `room`) is Matrix-side today — what the console meant by an event _it sent to a room_.
-Under this design `lifecycle` and `narration` become channel-neutral session events and the
-Matrix tag derives from them; `status`, `holding` and `room` stay Matrix's own, because they
-describe that channel's rendering. Do not promote the whole enum.
+`rejected`, `room`, `unreadable`) is Matrix-side today — what the console meant by an event _it
+sent to a room_. Under this design `lifecycle` and `narration` become channel-neutral session
+events and the Matrix tag derives from them; `status` and `room` stay Matrix's own, because they
+describe that channel's rendering. `rejected` and `unreadable` are already the halfway case: the
+fact is an `AuthoredEventKind` row and the tag names the room's rendering of it. Do not promote
+the whole enum.
 
 ## 4. Live updates, over the socket the shell already holds — done
 

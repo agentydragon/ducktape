@@ -1,10 +1,15 @@
-"""One sync pass: what gets joined, what reaches the session, and when the watermark moves."""
+"""One sync pass: what gets joined, what reaches the session, and what is recorded about it.
+
+The watermark moves on every pass, so what these assert is the other half: a batch the session
+would not take is rejected, said so in the room, and written down — in the transaction that
+acknowledges it, which is what stops a crash losing the message and the notice together.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import datetime
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
 from uuid import UUID, uuid4
@@ -12,9 +17,12 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 from pydantic import SecretStr
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
-from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, PromptFate
-from haku.console.database_schema import SessionMessage
+from haku.console.chat_models import AuthoredEventKind, PromptRejection, StoredEventKind
+from haku.console.database_schema import SessionEvent
+from haku.console.x import session_events
 from haku.console.x.channels.matrix.client import (
     EventTag,
     InboundMessage,
@@ -27,8 +35,9 @@ from haku.console.x.channels.matrix.client import (
 from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
 from haku.console.x.channels.matrix.outbox import PendingReply
 from haku.console.x.channels.matrix.pacer import RoomPacer
-from haku.console.x.channels.matrix.session import RoomTranscript
+from haku.console.x.channels.matrix.session import Admission, PromptAccepted, PromptRejected, RoomTranscript
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
+from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
 from haku.console.x.session_store import BridgeAuthentication, MatrixSession, SessionStore, SpaSession
 
 
@@ -85,28 +94,36 @@ class _FakeMatrix:
 
 @dataclass
 class _FakeTurns:
-    """Accepts or refuses a batch, records what it was offered, and says what became of it."""
+    """Ingress as the loop sees it: it accepts or rejects a batch, and says what to record.
 
-    # Mints the transcript row an accepted batch became. A real row, because
-    # `matrix_held_batch.message_id` is a foreign key — a held batch always points at a prompt
-    # that exists, and a free UUID would describe a state the schema forbids.
-    mint: Callable[[], Awaitable[UUID]]
+    The rows it hands back are the real ones (`session_events.authored`), keyed to a real session,
+    because what the loop does with them is insert them — a fake row would test the call and not
+    the write. `session_id = None` is the room with nothing behind it, where there is no row to
+    key a fact to and the notice is all there is.
+    """
+
+    session_id: UUID | None
     accepts: bool = True
-    # What the session did with the batches it took, once the loop comes back to ask.
-    verdict: PromptFate = PromptFate.IN_FLIGHT
+    reason: PromptRejection = PromptRejection.TURN_IN_FLIGHT
     offered: list[list[str]] = field(default_factory=list)
-    accepted: list[UUID] = field(default_factory=list)
 
-    async def offer(self, messages: Sequence[InboundMessage]) -> UUID | None:
+    async def offer(self, messages: Sequence[InboundMessage]) -> Admission:
         self.offered.append([message.body for message in messages])
-        if not self.accepts:
-            return None
-        self.accepted.append(await self.mint())
-        return self.accepted[-1]
+        if self.accepts:
+            return PromptAccepted(message_id=uuid4())
+        return PromptRejected(
+            reason=self.reason,
+            event=self._authored(PromptRejectedBody(reason=self.reason, text="\n".join(self.offered[-1]))),
+        )
 
-    async def fate(self, message_id: UUID) -> PromptFate:
-        assert message_id in self.accepted, "the loop asked about a prompt it was never given"
-        return self.verdict
+    async def unreadable(self, events: Sequence[UnmappableEvent]) -> tuple[SessionEvent, ...]:
+        rows = (self._authored(UnreadableInputBody(media_type=event.msgtype)) for event in events)
+        return tuple(row for row in rows if row is not None)
+
+    def _authored(self, body: PromptRejectedBody | UnreadableInputBody) -> SessionEvent | None:
+        if self.session_id is None:
+            return None
+        return session_events.authored(body, session_id=self.session_id, now=datetime.datetime.now(datetime.UTC))
 
 
 @pytest.fixture
@@ -115,32 +132,10 @@ def sync_store(migrated_sessions) -> MatrixSyncStore:
 
 
 @pytest.fixture
-async def prompts(chat_store: SessionStore, operator_id: UUID, migrated_sessions) -> Callable[[], Awaitable[UUID]]:
-    """Hands out prompt rows on one real session, as `MatrixTurns.offer` would have made them."""
+async def turns(chat_store: SessionStore, operator_id: UUID) -> _FakeTurns:
+    """Ingress over a real session, since what it hands the loop are rows keyed to one."""
     view, _ = await chat_store.create(operator_id, SpaSession())
-
-    async def mint() -> UUID:
-        now = datetime.datetime.now(datetime.UTC)
-        message = SessionMessage(
-            message_id=uuid4(),
-            session_id=view.session_id,
-            role=ChatMessageRole.USER,
-            status=ChatMessageStatus.PENDING,
-            content="a batch, as one prompt",
-            error=None,
-            created_at=now,
-            updated_at=now,
-        )
-        async with migrated_sessions.begin() as db:
-            db.add(message)
-        return message.message_id
-
-    return mint
-
-
-@pytest.fixture
-def turns(prompts: Callable[[], Awaitable[UUID]]) -> _FakeTurns:
-    return _FakeTurns(prompts)
+    return _FakeTurns(view.session_id)
 
 
 @pytest.fixture
@@ -194,7 +189,14 @@ async def bound_room(conversations) -> str:
 
 
 async def watermark(store: MatrixSyncStore) -> str | None:
-    return (await store.position(MATRIX_USER)).watermark
+    return await store.watermark(MATRIX_USER)
+
+
+async def recorded(sessions) -> list[tuple[StoredEventKind, dict[str, Any]]]:
+    """The authored rows a pass wrote, oldest first — the durable half of what the room hears."""
+    async with sessions() as db:
+        rows = (await db.scalars(select(SessionEvent).order_by(SessionEvent.event_seq))).all()
+    return [(row.kind, row.body) for row in rows]
 
 
 SESSION = UUID("11111111-2222-3333-4444-555555555555")
@@ -238,22 +240,64 @@ async def test_a_batch_is_offered_as_one_prompt(service, matrix, turns, bound_ro
     assert turns.offered == [["first", "second"]]
 
 
-async def test_a_refused_batch_leaves_the_watermark_alone(service, matrix, turns, sync_store, bound_room):
-    """R2.2 — the homeserver holds the messages and re-delivers them, so nothing is queued here."""
+async def test_a_rejected_batch_is_acknowledged_and_recorded_in_one_go(
+    service, matrix, turns, sync_store, migrated_sessions, bound_room
+):
+    """The ruling this file was rewritten for: a prompt the session will not take is rejected.
+
+    Nothing is held anywhere — the watermark covers the batch, so the homeserver will not offer it
+    again — and the only surviving copy of what was said is the row written beside that watermark.
+    """
     matrix.result = SyncResult("s2", (_message("hello"),), ())
     turns.accepts = False
 
-    advanced = await service.sync_once("tok")
+    await service.sync_once("tok")
+    await settled(service)
 
-    assert advanced is False, "the caller backs off on a refusal — see UNADVANCED_BATCH_BACKOFF"
-    assert await watermark(sync_store) is None, "advancing here would drop the message the session refused"
-    assert turns.offered == [["hello"]]
+    assert await watermark(sync_store) == "s2"
+    assert await recorded(migrated_sessions) == [
+        (AuthoredEventKind.PROMPT_REJECTED, {"reason": PromptRejection.TURN_IN_FLIGHT, "text": "hello"})
+    ]
+    [(_, body)] = matrix.notices
+    assert body == "1 message(s) not delivered — Haku is still working on the previous message; send them again"
 
 
-async def test_a_batch_waiting_only_on_its_turn_says_nothing(service, matrix, turns, bound_room):
-    """The room hears about a message that is waiting, not about the console's bookkeeping. Every
-    turn now ends with a pass that is holding an acknowledgement, and announcing that would put a
-    "holding 0 message(s)" line under every answer."""
+async def test_a_recording_that_cannot_be_written_takes_the_watermark_with_it(sync_store, migrated_sessions):
+    """The transaction, tested by breaking it: an event naming a session that does not exist
+    violates the foreign key, and what must not survive that is the acknowledgement.
+
+    Advancing separately would leave the homeserver told the message was handled with nothing
+    written about it and nothing said — which is the failure the one transaction exists to rule
+    out, and the shape `_report_unreadable` had before this."""
+    orphan = session_events.authored(
+        UnreadableInputBody(media_type="m.image"), session_id=uuid4(), now=datetime.datetime.now(datetime.UTC)
+    )
+
+    with pytest.raises(IntegrityError):
+        await sync_store.advance(MATRIX_USER, "s2", [orphan])
+
+    assert await watermark(sync_store) is None
+    assert await recorded(migrated_sessions) == []
+
+
+async def test_every_rejected_batch_is_told_it_was_not_delivered(service, matrix, turns, bound_room):
+    """Once per rejection, not once per turn: nothing is re-offered, so each of these notices is
+    about a different message the operator has to send again."""
+    matrix.result = SyncResult("s2", (_message("hello"),), ())
+    turns.accepts = False
+    await service.sync_once("tok")
+
+    matrix.result = SyncResult("s3", (_message("and this", event_id="$b"),), ())
+    await service.sync_once("tok")
+    await settled(service)
+
+    assert len(matrix.notices) == 2
+    assert turns.offered == [["hello"], ["and this"]]
+
+
+async def test_a_pass_with_nothing_to_reject_says_nothing(service, matrix, turns, bound_room):
+    """A quiet pass and an accepted one are both silent — the room hears about its own messages,
+    not about the loop running."""
     matrix.result = SyncResult("s2", (_message("hello"),), ())
     await service.sync_once("tok")
 
@@ -264,49 +308,78 @@ async def test_a_batch_waiting_only_on_its_turn_says_nothing(service, matrix, tu
     assert matrix.notices == []
 
 
-async def test_a_message_arriving_mid_turn_is_told_it_is_waiting(service, matrix, turns, bound_room):
-    """R1.6 across the new hold: the batch in flight is behind the cursor, so what is left is
-    genuinely waiting and is said once, however long the turn runs."""
+async def test_a_message_arriving_mid_turn_is_told_it_was_not_delivered(service, matrix, turns, bound_room):
+    """R2.2 reversed. Holding this batch until the turn ended answered it a turn late and needed a
+    second ingress position to do it; rejecting it costs the operator a re-send and nothing else."""
     matrix.result = SyncResult("s2", (_message("hello"),), ())
     await service.sync_once("tok")
 
+    turns.accepts = False
     matrix.result = SyncResult("s3", (_message("and this", event_id="$b"),), ())
     await service.sync_once("tok")
-    await service.sync_once("tok")
     await settled(service)
 
-    assert [body for _, body in matrix.notices] == ["holding 1 message(s) until Haku is ready"]
-    assert turns.offered == [["hello"]], "a batch cannot be offered beside one still being answered"
+    assert [body for _, body in matrix.notices] == [
+        "1 message(s) not delivered — Haku is still working on the previous message; send them again"
+    ]
 
 
-async def test_a_refused_batch_says_so_once(service, matrix, turns, bound_room):
+async def test_a_rejection_with_no_session_is_announced_and_not_recorded(
+    service, matrix, turns, sync_store, migrated_sessions, bound_room
+):
+    """The one rejection with nowhere to write itself: a `session_events` row names a session, and
+    a room whose session has not been provisioned yet has none. The operator still hears it, the
+    watermark still moves, and the record keeps nothing — which is what the conversation entity is
+    for (<../../../plans/session_channels.md> § 3)."""
     matrix.result = SyncResult("s2", (_message("hello"),), ())
     turns.accepts = False
+    turns.reason = PromptRejection.NO_SESSION
+    turns.session_id = None
 
-    await service.sync_once("tok")
     await service.sync_once("tok")
     await settled(service)
 
-    assert len(matrix.notices) == 1, "a held batch is re-offered every pass; saying so every pass is spam"
+    assert await watermark(sync_store) == "s2"
+    assert await recorded(migrated_sessions) == []
+    [(_, body)] = matrix.notices
+    assert "no session behind this room yet" in body
 
 
-async def test_an_unreadable_event_is_announced_and_the_batch_moves_on(service, matrix, turns, sync_store, bound_room):
+async def test_an_unreadable_event_is_announced_recorded_and_the_batch_moves_on(
+    service, matrix, turns, sync_store, migrated_sessions, bound_room
+):
     """R1.6, the half a refusal cannot serve. Nothing about a sent `m.image` will ever change, so
-    holding the batch for it would wedge ingress on one screenshot forever; the operator is told
-    in the room they sent it to, and the watermark advances."""
+    holding the batch for it would wedge ingress on one screenshot forever; the operator is told in
+    the room they sent it to, the fact is written down, and the watermark advances."""
     matrix.result = SyncResult("s2", (), (), (_unreadable(),))
 
-    made_progress = await service.sync_once("tok")
+    await service.sync_once("tok")
     await settled(service)
 
-    assert made_progress is True
     assert await watermark(sync_store) == "s2"
     assert turns.offered == [], "there is no prose in this batch to hand over"
+    assert await recorded(migrated_sessions) == [(AuthoredEventKind.UNREADABLE_INPUT, {"media_type": "m.image"})]
     [(room_id, body)] = matrix.notices
     assert room_id == MATRIX_ROOM
     assert "m.image" in body
     assert "cannot read" in body
     assert [tag.kind for tag in matrix.tags] == [RoomEventKind.UNREADABLE]
+
+
+async def test_each_unreadable_event_is_a_row_of_its_own(service, matrix, turns, migrated_sessions, bound_room):
+    """One notice summarising them, and one row each: the count in the notice is a rendering, and
+    a rendering is not what a record keeps."""
+    matrix.result = SyncResult("s2", (), (), (_unreadable(), _unreadable(msgtype="m.audio", event_id="$memo")))
+
+    await service.sync_once("tok")
+    await settled(service)
+
+    assert [kind for kind, _ in await recorded(migrated_sessions)] == [
+        AuthoredEventKind.UNREADABLE_INPUT,
+        AuthoredEventKind.UNREADABLE_INPUT,
+    ]
+    [(_, body)] = matrix.notices
+    assert "2 message(s)" in body
 
 
 async def test_the_text_of_a_mixed_batch_is_serviced_and_the_rest_announced(service, matrix, turns, bound_room):
@@ -319,30 +392,6 @@ async def test_the_text_of_a_mixed_batch_is_serviced_and_the_rest_announced(serv
     assert turns.offered == [["look at this"]]
     [(_, body)] = matrix.notices
     assert "m.image" in body
-
-
-async def test_an_unreadable_event_is_announced_once_the_batch_is_taken_and_not_before(
-    service, matrix, turns, bound_room
-):
-    """A refused batch is re-offered every pass. Announcing the attachment before the prose next
-    to it has been accepted would repeat the announcement for the length of the turn in flight."""
-    matrix.result = SyncResult("s2", (_message("look at this"),), (), (_unreadable(),))
-    turns.accepts = False
-
-    await service.sync_once("tok")
-    await service.sync_once("tok")
-    await settled(service)
-
-    assert [body for _, body in matrix.notices] == ["holding 1 message(s) until Haku is ready"], (
-        "the attachment is not announced while its batch is still being re-offered"
-    )
-
-    turns.accepts = True
-    await service.sync_once("tok")
-    await settled(service)
-
-    [(_, announced)] = matrix.notices[1:]
-    assert "m.image" in announced
 
 
 async def test_an_unreadable_event_from_an_unserviced_room_is_not_announced(service, matrix, bound_room):
@@ -449,96 +498,43 @@ async def test_announce_is_a_no_op_with_no_room_bound(service, matrix):
     assert matrix.notices == []
 
 
-async def test_a_batch_with_nothing_to_hand_over_advances_the_watermark(service, matrix, sync_store, bound_room):
-    """The only pass that acknowledges as it goes: nothing was handed to a session, so there is no
-    turn for the acknowledgement to wait on."""
+async def test_a_quiet_batch_advances_the_watermark(service, matrix, sync_store, bound_room):
     matrix.result = SyncResult("s2", (), ())
 
-    assert await service.sync_once("tok") is True
+    await service.sync_once("tok")
+
     assert await watermark(sync_store) == "s2"
 
 
-async def test_a_batch_handed_over_is_not_acknowledged_yet(service, matrix, turns, sync_store, bound_room):
-    """R2.5, and the finding this file is the regression for (`message_drops.md` I3).
-
-    Acknowledging at the enqueue was acknowledging a prompt row, not an answer. A session dying
-    before it claimed that row left the message acknowledged on the homeserver and queued against
-    a session the replacement cannot see — answered by nobody, with the room told only that a
-    session had ended.
-    """
+async def test_a_batch_handed_over_is_acknowledged_at_once(service, matrix, turns, sync_store, bound_room):
+    """Acceptance is the acknowledgement now. What it costs is the recovery the held batch bought:
+    a prompt whose session ends before claiming it is not offered again, and what answers it is the
+    replacement session being handed the transcript it is already in
+    (`session.RoomTranscript.recent`)."""
     matrix.result = SyncResult("s2", (_message("hi"),), ())
 
-    advanced = await service.sync_once("tok")
+    await service.sync_once("tok")
 
-    assert (advanced, turns.offered) == (False, [["hi"]])
-    assert await watermark(sync_store) is None, "the batch is with a session, which is not the same as answered"
+    assert (await watermark(sync_store), turns.offered) == ("s2", [["hi"]])
 
 
-async def test_the_poll_runs_past_a_batch_the_session_is_working_on(service, matrix, turns, sync_store, bound_room):
-    """Holding the watermark must not mean re-reading the batch every pass: `/sync` long-polls only
-    for data the caller has not been sent, so asking from behind a delivered batch returns at once
-    and a turn taking minutes becomes a hot loop for its whole length."""
+async def test_the_next_poll_starts_from_the_watermark(service, matrix, turns, sync_store, bound_room):
+    """One position, so the cursor and the promise are the same token. `/sync` long-polls only for
+    data the caller has not been sent, so a loop reading from behind its own acknowledgement would
+    be handed the same batch every pass."""
     matrix.result = SyncResult("s2", (_message("hi"),), ())
     await service.sync_once("tok")
 
     matrix.result = SyncResult("s3", (), ())
     await service.sync_once("tok")
 
-    assert matrix.since == "s2", "the next poll starts past the batch already with the session"
-    assert await watermark(sync_store) is None, "which is not the same as promising it was answered"
+    assert matrix.since == "s2"
     assert turns.offered == [["hi"]], "and the batch it covers is not offered a second time"
-
-
-async def test_the_watermark_moves_when_the_turn_ends(service, matrix, turns, sync_store, bound_room):
-    """And moves to the batch whose turn ended, not to wherever the loop has since read."""
-    matrix.result = SyncResult("s2", (_message("hi"),), ())
-    await service.sync_once("tok")
-
-    turns.verdict = PromptFate.COMPLETED
-    turns.accepts = False  # what arrived after it is a second batch, and has its own turn to wait for
-    matrix.result = SyncResult("s3", (_message("and this", event_id="$b"),), ())
-    await service.sync_once("tok")
-
-    assert await watermark(sync_store) == "s2"
-
-
-async def test_a_batch_whose_session_died_is_offered_again_rather_than_acknowledged(
-    service, matrix, turns, sync_store, bound_room
-):
-    """The recovery the held watermark exists for. The prompt is not re-queued anywhere — the
-    homeserver still has the message, so offering it to the replacement session is what answers
-    it, and that can only happen from a position the batch is still ahead of."""
-    matrix.result = SyncResult("s2", (_message("hi"),), ())
-    await service.sync_once("tok")
-
-    turns.verdict = PromptFate.LOST
-    assert await service.sync_once("tok") is False
-    assert await watermark(sync_store) is None
-
-    turns.verdict = PromptFate.IN_FLIGHT
-    await service.sync_once("tok")
-
-    assert matrix.since is None, "the re-offer has to start from the watermark, not from past the batch"
-    assert turns.offered == [["hi"], ["hi"]]
-
-
-async def test_a_turn_that_failed_still_acknowledges_its_batch(service, matrix, turns, sync_store, bound_room):
-    """`COMPLETED` is the turn having ended, not having succeeded. Holding out for an answer would
-    wedge ingress behind the first turn that fails — the non-convergence that made an unreadable
-    event something to announce rather than refuse (#4087)."""
-    matrix.result = SyncResult("s2", (_message("hi"),), ())
-    await service.sync_once("tok")
-
-    turns.verdict = PromptFate.COMPLETED  # `TurnOutcome.FAILED` reaches the loop as this
-    matrix.result = SyncResult("s3", (), ())
-
-    assert await service.sync_once("tok") is True
-    assert await watermark(sync_store) == "s3"
 
 
 async def test_resumes_from_the_stored_watermark(service, matrix, sync_store, bound_room):
     matrix.result = SyncResult("s5", (), ())
-    await sync_store.save_batch(MATRIX_USER, "s4")
+    await sync_store.advance(MATRIX_USER, "s4")
 
     await service.sync_once("tok")
 
@@ -549,7 +545,7 @@ async def test_the_token_and_the_watermark_can_be_first_written_at_once(sync_sto
     """A queued send logging in and the sync pass advancing the watermark are two writers with
     nothing to say to each other, and each starts with no row to update. They own a table each, so
     the first write of one is not the other's primary-key collision."""
-    await asyncio.gather(sync_store.save_token(MATRIX_USER, "cached"), sync_store.save_batch(MATRIX_USER, "s2"))
+    await asyncio.gather(sync_store.save_token(MATRIX_USER, "cached"), sync_store.advance(MATRIX_USER, "s2"))
 
     assert (await sync_store.cached_token(MATRIX_USER), await watermark(sync_store)) == ("cached", "s2")
 
@@ -695,7 +691,7 @@ async def test_each_kind_of_notice_says_which_it_is(service, matrix, turns, boun
     await settled(service)
 
     assert [tag.kind for tag in matrix.tags] == [
-        RoomEventKind.HOLDING,
+        RoomEventKind.REJECTED,
         RoomEventKind.LIFECYCLE,
         RoomEventKind.NARRATION,
         RoomEventKind.STATUS,

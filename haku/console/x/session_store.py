@@ -32,13 +32,12 @@ from haku.cli_protocol.frame_identity import frame_uid
 from haku.console.chat_models import (
     ENDED_SESSION_STATUSES,
     LEASED_SESSION_STATUSES,
-    OPEN_SESSION_STATUSES,
     ChatMessageRole,
     ChatMessageStatus,
     ChatSurface,
     FrameDirection,
     LeaseExpiryReason,
-    PromptFate,
+    PromptRejection,
     SessionStatus,
     TurnOutcome,
 )
@@ -119,6 +118,19 @@ def _frames_of_kinds(query: Select[tuple[SessionFrame]], kinds: Sequence[str] | 
     inspector alike, which is why the policy lives here rather than in either one.
     """
     return query.where(SessionFrame.kind.in_(kinds) if kinds else SessionFrame.kind != DELTA_FRAME_KIND)
+
+
+class PromptRefusedError(RuntimeError):
+    """Admission would not take this prompt, and says which state refused it.
+
+    Typed because the refusal is now an answer a surface renders and records rather than a string
+    it logs: the room tells the operator what to wait for, and `AuthoredEventKind.PROMPT_REJECTED`
+    stores the same member.
+    """
+
+    def __init__(self, reason: PromptRejection):
+        super().__init__(f"the session cannot take a prompt right now ({reason})")
+        self.reason = reason
 
 
 class BridgeAuthentication(StrEnum):
@@ -535,14 +547,14 @@ class SessionStore:
             if chat is None:
                 raise KeyError(session_id)
             if chat.status != SessionStatus.READY:
-                raise RuntimeError(f"session is not ready (status={chat.status})")
+                raise PromptRefusedError(PromptRejection.SESSION_NOT_READY)
             # Admission asks about the turn, not the session's status: gating on `READY` alone
-            # would accept a prompt mid-turn, which is the fold-into-turn feature arriving by
-            # accident with no fold path wired (R2.2 holds a batch until the turn ends).
+            # would accept a prompt mid-turn, which is mid-turn steering arriving by accident with
+            # no fold path wired.
             if await _open_turn(db, session_id) is not None:
-                raise RuntimeError("a turn is already in flight")
+                raise PromptRefusedError(PromptRejection.TURN_IN_FLIGHT)
             if await _queued_prompt(db, session_id) is not None:
-                raise RuntimeError("a prompt is already queued")
+                raise PromptRefusedError(PromptRejection.PROMPT_QUEUED)
             # Still minted here, and still `pending`: the transcript row is what the SPA gets back
             # from this call, and `pending` is how it renders a prompt that has not started.
             message = SessionMessage(
@@ -570,39 +582,6 @@ class SessionStore:
             await notify(db, SessionEventKind.PROMPT, session_id)
             await notify(db, SessionEventKind.UPDATE, session_id)
         return user_message_view(message)
-
-    async def prompt_fate(self, message_id: UUID) -> PromptFate:
-        """Say whether an accepted prompt is still coming, has been through a turn, or is stranded.
-
-        For a surface that has not yet acknowledged the prompt's source — Matrix ingress holds its
-        `/sync` watermark on this (R2.5). What it is asking is the question `enqueue_prompt`
-        returning cannot answer: a session can accept a prompt and then end before anything claims
-        it, and the supervisor's replacement session is a different `session_id`, so the row is
-        left where nothing will ever look.
-
-        The turn is read through `session_turn_prompts`, which is the only durable statement that
-        *this* prompt was what a turn ran; the session's status decides the rest, because an open
-        turn on a session nobody holds is one nothing will close. A prompt whose transcript row
-        has gone (its session was deleted) is stranded by the same reasoning.
-        """
-        async with self._sessions() as db:
-            row = (
-                await db.execute(
-                    select(SessionTurn.ended_at, Session.status)
-                    .select_from(SessionMessage)
-                    .join(Session, Session.session_id == SessionMessage.session_id)
-                    .outerjoin(SessionTurnPrompt, SessionTurnPrompt.message_id == SessionMessage.message_id)
-                    .outerjoin(SessionTurn, SessionTurn.turn_id == SessionTurnPrompt.turn_id)
-                    .where(SessionMessage.message_id == message_id)
-                    .order_by(SessionTurn.ended_at.desc().nullslast())
-                )
-            ).first()
-        if row is None:
-            return PromptFate.LOST
-        ended_at, status = row
-        if ended_at is not None:
-            return PromptFate.COMPLETED
-        return PromptFate.IN_FLIGHT if status in OPEN_SESSION_STATUSES else PromptFate.LOST
 
     async def next_prompt(self, session_id: UUID) -> TurnStart | None:
         """Take the queued prompt and open the turn that will answer it, or None if there is none.

@@ -289,6 +289,23 @@ class OperatorRoom:
 
         await wait_until(f"{body!r} in the room", said, check_alive=self._check_alive)
 
+    async def wait_for_notice(self, fragment: str) -> None:
+        """Wait for a console notice containing *fragment*.
+
+        Separate from `wait_for_reply` because the two are different msgtypes and mean different
+        things: a reply is the agent talking, a notice is the console saying something about the
+        conversation. Matched on a fragment, since a notice carries counts and reasons a test
+        should not have to restate whole.
+        """
+
+        async def said() -> bool:
+            return any(
+                isinstance(event, Message) and event.kind is MessageKind.NOTICE and fragment in event.body
+                for event in await self.timeline()
+            )
+
+        await wait_until(f"a notice saying {fragment!r}", said, check_alive=self._check_alive)
+
     async def wait_for_typing(self, user_ids: list[str]) -> None:
         """Sync until the room's typing list is exactly *user_ids*.
 

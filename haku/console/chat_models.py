@@ -70,26 +70,22 @@ class TurnOutcome(StrEnum):
     FAILED = "failed"
 
 
-class PromptFate(StrEnum):
-    """What became of an accepted prompt, for a caller still owing an acknowledgement for it.
+class PromptRejection(StrEnum):
+    """Which state refused a prompt, in the vocabulary a surface answers its sender in.
 
-    `enqueue_prompt` accepting a prompt is not the same as anything working on it: the session it
-    was queued against can end before it is ever claimed, and the replacement session's
-    `next_prompt` never sees a row keyed to its predecessor. A surface that acknowledged the
-    prompt's source the moment it was accepted therefore has no way back to it — which is what
-    Matrix ingress asks this to avoid (R2.5).
+    Admission is `enqueue_prompt`'s decision under `SELECT … FOR UPDATE`, and a refusal is
+    terminal: nothing queues behind it and the sender is told to send again. The member is what
+    the answer says, so it is coarse on purpose — an operator acts on "Haku is busy" and on "there
+    is nothing behind this room yet" differently, and on nothing finer.
     """
 
-    IN_FLIGHT = "in_flight"
-    # Its turn ended, whatever the turn's `TurnOutcome` was. **A failed or aborted turn is a
-    # completed one here**: waiting for `ANSWERED` would hold a source's acknowledgement against
-    # a turn that will never produce one, and re-offering work that already crashed the runtime
-    # once converges no better than re-offering an unreadable event does (message_drops.md I1).
-    COMPLETED = "completed"
-    # Its session ended without it ever being claimed into a turn that ran, so nothing will
-    # answer it. The prompt is not re-queued anywhere: the source still holds it, and offering it
-    # again to the replacement session is the only thing that can answer it.
-    LOST = "lost"
+    # No session behind the surface at all: none has ever been provisioned, or the row has gone
+    # while the supervisor mints its replacement. The one member that cannot be recorded — a
+    # `session_events` row names a session, and here there is none to name.
+    NO_SESSION = "no_session"
+    SESSION_NOT_READY = "session_not_ready"
+    TURN_IN_FLIGHT = "turn_in_flight"
+    PROMPT_QUEUED = "prompt_queued"
 
 
 class ChatMessageRole(StrEnum):
@@ -168,8 +164,8 @@ class AuthoredEventKind(StrEnum):
     `PROMPT_ENQUEUED` is here for that reason and not because a prompt is a lifecycle fact. It is
     conversation — half of what a transcript renders — but a prompt is accepted before it is asked:
     a session holds no sandbox until a prompt buys one, so at acceptance there is no runner to send
-    it to, and a session that ends before the prompt is claimed never sends it at all
-    (`PromptFate.LOST`). The frame that eventually carries it, if one does, projects to nothing —
+    it to, and a session that ends before the prompt is claimed never sends it at all. The frame
+    that eventually carries it, if one does, projects to nothing —
     the console already holds the text (`x/claude_code/projection._user`), so it is recorded once.
 
     `TURN_ABORTED` is the one member that **names its turn**: the operator stopping an exchange is
@@ -178,6 +174,14 @@ class AuthoredEventKind(StrEnum):
     """
 
     PROMPT_ENQUEUED = "prompt_enqueued"
+    # A prompt admission refused. Recorded rather than only announced because the refusal is
+    # terminal — the message is not delivered and is not coming back — so this row is the only
+    # copy of what was said, and it is written in the transaction that acknowledges the message to
+    # the channel it arrived on.
+    PROMPT_REJECTED = "prompt_rejected"
+    # Something arrived on a channel that the console has no way to read: an image, a voice memo,
+    # a msgtype invented after this release. One row per event.
+    UNREADABLE_INPUT = "unreadable_input"
     SESSION_ADOPTED = "session_adopted"
     LEASE_EXPIRED = "lease_expired"
     TURN_ABORTED = "turn_aborted"

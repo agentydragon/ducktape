@@ -49,6 +49,7 @@ py_library(
         "//haku/console:config",
         "//haku/console:database_schema",
         "//haku/console:operator_identity_store",
+        "//haku/console/x:session_events",
         "//haku/console/x:session_notifications",
         "//haku/console/x:session_runtime",
         "//haku/console/x:session_store",
@@ -184,10 +185,13 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console/x:conftest",
+        "//haku/console/x:session_events",
         "//haku/console/x:session_store",
         "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 

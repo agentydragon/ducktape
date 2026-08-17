@@ -414,39 +414,41 @@ Behaviours worth knowing before reading the code:
   lock — claims the oldest, queues it into the pacer, and marks it `sent_at` only once
   `room_send` has returned (the drops this closes:
   <../debug/message_drops.md>). Everything else the console says — the
-  status line, lifecycle and holding notices, bootstrap narration — stays on the pacer's
+  status line, lifecycle and rejection notices, bootstrap narration — stays on the pacer's
   in-process queue, because a notice describing a moment is not worth redelivering ten minutes
   later. Two rules the drain is deliberate about: a failed reply **halts** the queue for its
   backoff rather than being overtaken, and the one row stepped over is one out of
   `MAX_SEND_ATTEMPTS`, kept unsent with its `last_error` and logged loudly rather than deleted.
 
-- **A refused batch is not queued here.** `enqueue_prompt` only accepts on a ready session with
-  no turn open and nothing pending, so when it refuses, the sync watermark is simply not advanced
-  and the homeserver re-delivers next pass. Queue-until-turn-end (R2.2) and "nothing is silently
-  dropped" (R1.6) come out of that, with no second durable queue. **Admission is that one
-  transaction's alone**: `MatrixTurns.offer` asks no status question of its own, because an answer
-  read outside `enqueue_prompt`'s `SELECT … FOR UPDATE` could only agree with a decision that had
-  not been made yet. It takes the refusal — `RuntimeError` for a session that cannot take the
-  batch, `KeyError` for a session row that has gone — and tells the room it is holding.
-- **An accepted batch is not acknowledged either, until its turn ends** (R2.5). Acceptance is a
-  prompt row, and a session that ends before claiming it leaves that row where its replacement
-  cannot see it, so acknowledging at the enqueue lost the message outright
-  (<../debug/message_drops.md> I3). The deferral is a `matrix_held_batch` row: the `/sync` token
-  the batch ended at, plus the transcript row it became, which is the durable link on to the turn.
-  A turn that **ended** publishes the token — failed and aborted turns included, because holding
-  out for an answer wedges ingress behind the first turn that never produces one — and a prompt
-  whose session ended without it drops the row and leaves the watermark, so the same messages are
-  offered to the replacement session. **The loop reads ahead of what it promises**: while the row
-  exists the poll starts from the held token, so a batch already with a session is not re-delivered
-  every pass (and `/sync` can still block, which it cannot when asked for data it has already
-  sent). There is still no local queue and no message-level dedupe — the homeserver holds the
-  batch, and the delivered events are simply behind the cursor.
+- **A rejected batch is not queued anywhere.** `enqueue_prompt` only accepts on a ready session
+  with no turn open and nothing pending, and a refusal is the answer: the room is told the messages
+  were not delivered and what to wait for, and the watermark advances past them so the homeserver
+  does not offer them again. Nothing queues behind a running turn, and there is one sync position
+  rather than two. **Admission is that one transaction's alone**: `MatrixTurns.offer` asks no
+  status question of its own, because an answer read outside `enqueue_prompt`'s
+  `SELECT … FOR UPDATE` could only agree with a decision that had not been made yet. It turns the
+  refusal into a `PromptRejected` carrying the reason and the row that records it — `PromptRefusedError`
+  for a session that cannot take the batch, `KeyError` for a session row that has gone.
+- **The rejection is a row, written with the watermark.** `AuthoredEventKind.PROMPT_REJECTED`
+  carries the reason and the text, and `MatrixSyncStore.advance` inserts it in the transaction
+  that acknowledges the batch — so a crash cannot acknowledge a message while losing both the
+  record of it and the operator's only account of what happened. The room notice is a rendering of
+  that row. The one rejection with no row is a room whose session has not been provisioned yet:
+  a `session_events` row names a session, and there is none to name.
+- **An accepted batch is acknowledged at once, and that has a cost.** A prompt is a row on the
+  session that took it, so a session ending before it claims that prompt leaves the message
+  unanswered by anything (<../debug/message_drops.md> I3). What carries it forward is the
+  replacement session's waking context: `RoomTranscript.recent` reads every session that served
+  the room, so an accepted-and-unanswered prompt is in the history the replacement is handed.
+  Holding the acknowledgement until the turn ended is what used to close that window, and it is
+  what the rejection ruling removed.
 - **An event Haku cannot read is announced, not held.** `m.text` and `m.emote` are prose and are
   serviced; an `m.image`, `m.file`, voice memo, or an msgtype invented after this release is
   carried out of the sync as an `UnmappableEvent`, said out loud in the room, and then
   acknowledged. Refusing the batch instead would never converge — nothing about an already-sent
-  screenshot changes, so it would wedge ingress against every later message — which is the one
-  case the paragraph above cannot cover. `m.notice` is neither serviced nor announced: it is the
+  screenshot changes, so it would wedge ingress against every later message. It is recorded the
+  same way a rejection is, one `AuthoredEventKind.UNREADABLE_INPUT` row per event.
+  `m.notice` is neither serviced nor announced: it is the
   msgtype Haku's own status, lifecycle and unreadable-event lines go out under, and excluding it
   from any sender is the second of two independent guards (the first is the R1.5 sender rule)
   against a notice about an event that is itself an event.

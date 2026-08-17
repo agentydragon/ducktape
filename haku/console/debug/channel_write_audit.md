@@ -44,21 +44,24 @@ half of the surface is empty here, and the whole audit is the six calls above.
 | 8   | `send_notice` — invite refused | `matrix_sync.py:231` `_handle_invite`         | `room`       | **bypassing**         |
 | 9   | `send_notice` — joined a room  | `matrix_sync.py:236` `_handle_invite`         | `room`       | **bypassing**         |
 | 10  | `send_notice` — adopted a room | `matrix_sync.py:480` `_live_room`             | `room`       | **bypassing**         |
-| 11  | `send_notice` — holding N      | `matrix_sync.py:500` `_report_holding`        | `holding`    | **bypassing**         |
-| 12  | `send_notice` — unreadable     | `matrix_sync.py:518` `_report_unreadable`     | `unreadable` | **bypassing**         |
+| 11  | `send_notice` — rejected N     | `sync.py` `_report_rejected`                  | `rejected`   | **recorded**          |
+| 12  | `send_notice` — unreadable     | `sync.py` `_report_unreadable`                | `unreadable` | **recorded**          |
 | 13  | `send_notice` — lifecycle      | `matrix_session.py:362,403` → `announce`      | `lifecycle`  | **bypassing** (worst) |
 | 14  | `send_notice` — silent turn    | `matrix_session.py:274` → `announce`          | `narration`  | **bypassing**         |
 | 15  | `send_notice` — turn aborted   | `session.py` `MatrixSurface.report_abort`     | `narration`  | **recorded** (§ 1)    |
 
-**Eight bypassing writes.** Rows 8–14 are all one code path — `MatrixSyncService._queue_notice`
-(`matrix_sync.py:370-376`), which builds an `EventTag`, closes over a `send_notice`, and hands the
-closure to `matrix_pacer`. Nothing durable is touched anywhere along it. They are listed
-separately because they are seven different facts with seven different homes, and lumping them
-would hide that some are session events and some are channel-binding events.
+**The bypassing writes are rows 7–10, 13 and 14.** Rows 8–14 share one send path —
+`MatrixSyncService._queue_notice`, which
+builds an `EventTag`, closes over a `send_notice`, and hands the closure to the pacer. What
+separates 11 and 12 from the rest is no longer the path but what stands behind it: each is now a
+`session_events` row committed before the notice is queued, so the send is a rendering rather than
+the fact. They are listed separately because they are seven different facts with seven different
+homes, and lumping them would hide that some are session events and some are channel-binding
+events.
 
-## 1. The three recorded writes
+## 1. The recorded writes
 
-**Row 1, a reply, is the pattern and the only thing that fully satisfies the invariant.** `#4104`
+**Row 1, a reply, is the pattern.** `#4104`
 put it there: `update_assistant` writes the transcript row and the `session_outbox` row in one
 transaction (`claude_chat.py:906-917`), and `RoomOutboxDrain` claims the row and sends _from it_
 (`matrix_outbox.py:227-250`). Record first, reach the channel from the record, mark `sent_at` only
@@ -162,26 +165,25 @@ tag, against the deliberate argument in `report_silent_turn`'s own docstring ("a
 a reply, because nothing was said") and against R7.4. Out of scope: it needs a `kind` on the
 outbox, which is a schema change.
 
-### Rows 11 and 12 — holding, and unreadable
+### Rows 11 and 12 — the rejection notice, and unreadable — **fixed**
 
-Both are the console reporting on ingress. Neither fact is in our store at the moment it is
-announced:
+Both were the console reporting on ingress with the fact in no store at the moment it was
+announced. Row 11 was `_report_holding`, whose count existed only in the stack frame that built
+it, deduplicated by a per-process `self._holding` with the same handover artefact as
+`_last_announced`; row 12 was `_report_unreadable`, whose `UnmappableEvent` was dropped after the
+notice was queued — so R1.6 rested on a room event and a log line, and a replica dying took the
+drop with it.
 
-- **Holding** (`_report_holding`) fires when `MatrixTurns.offer` refuses a batch. The refusal is
-  deliberately not recorded — the whole queue-until-turn-end mechanism is "do not advance the
-  watermark and let the homeserver redeliver", with no local queue (`matrix_sync.py:6-10`). So
-  the count in the notice exists only in the stack frame that built it. `self._holding` is
-  per-process, with the same handover artefact as `_last_announced`.
-- **Unreadable** (`_report_unreadable`) fires for an `m.image`/`m.audio`/unknown msgtype the
-  console acknowledges rather than re-offers. `UnmappableEvent` is carried out of the sync as a
-  dataclass and dropped after the notice is queued — so R1.6's "no inbound message is silently
-  dropped" currently rests on a room event and a log line, and if the pacer's replica dies the
-  drop becomes silent after all.
+Both are now `session_events` rows on the `authored` arm, written in the transaction that advances
+the sync watermark: `PROMPT_REJECTED` carrying the reason and the text, `UNREADABLE_INPUT` one per
+event carrying its media type. Holding as a state is gone with them — a batch the session will not
+take is rejected rather than held, so what row 11 announced is now one message being answered
+rather than a count of messages waiting.
 
-**Where they belong: `session_events` on the `authored` arm**, both — same correction as row 13.
-They are things that happened to a session and neither crossed the wire. Both need a `kind`, so
-both are blocked on the same vocabulary as row 13. The unreadable one additionally
-overlaps `claude/haku-inbound-unmappable-events`, which is live.
+**One case still bypasses**, and it is not fixable here: a room whose session has not been
+provisioned yet has no session for the row to name, so that rejection is announced and kept
+nowhere. It wants the entity above the session that `session_channels.md` §1's attachment implies
+and nothing has built.
 
 ### Rows 8, 9, 10 — the room-binding notices
 

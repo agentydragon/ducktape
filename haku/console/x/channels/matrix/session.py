@@ -33,16 +33,25 @@ from haku.console.chat_models import (
     ChatMessageRole,
     ChatMessageStatus,
     ChatSurface,
-    PromptFate,
+    PromptRejection,
     SessionStatus,
 )
 from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
-from haku.console.database_schema import ChatAttachment, Conversation, MatrixConversation, Session, SessionMessage
+from haku.console.database_schema import (
+    ChatAttachment,
+    Conversation,
+    MatrixConversation,
+    Session,
+    SessionEvent,
+    SessionMessage,
+)
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.x.channels.matrix.client import InboundMessage, RoomEventKind
+from haku.console.x import session_events
+from haku.console.x.channels.matrix.client import InboundMessage, RoomEventKind, UnmappableEvent
+from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.session_runtime import SessionService
-from haku.console.x.session_store import REPLICA, MatrixSession, SessionStore
+from haku.console.x.session_store import REPLICA, MatrixSession, PromptRefusedError, SessionStore
 from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, SystemPromptTemplate
 
 logger = logging.getLogger(__name__)
@@ -256,20 +265,43 @@ class RoomTranscript:
         )
 
 
+@dataclass(frozen=True)
+class PromptAccepted:
+    """The batch is a prompt row on the live session, and a turn will answer it."""
+
+    message_id: UUID
+
+
+@dataclass(frozen=True)
+class PromptRejected:
+    """The batch was refused, and is not coming back: what to say, and the row that records it.
+
+    `event` is None only where there is no session row to key the fact to — nothing provisioned
+    yet, or the supervisor between sessions — so there the room notice is the only account of it.
+    Giving that case a home needs an entity above the session to own the event, which does not
+    exist yet; a `session_events` row names a session (<../../../plans/session_channels.md> § 3).
+    """
+
+    reason: PromptRejection
+    event: SessionEvent | None
+
+
+type Admission = PromptAccepted | PromptRejected
+
+
 class MatrixTurns:
     """Ingress: hands the operator's messages to the session behind the live room.
 
-    Refusal is a first-class answer. `enqueue_prompt` accepts a prompt only on a `ready`
-    session with nothing already queued, so a message can arrive mid-turn, mid-provision,
-    or between a session dying and its replacement. The caller's contract is that a refused
-    batch leaves the sync watermark where it is, so Matrix itself holds the message and the
-    next pass re-offers it — which is what makes queue-until-turn-end (R2.2) and "no
-    message is silently dropped" (R1.6) fall out of machinery that already exists, with no
-    second durable queue to keep correct.
+    Refusal is a first-class answer and a terminal one. `enqueue_prompt` accepts a prompt only on
+    a `ready` session with nothing already queued, so a message can arrive mid-turn, mid-provision,
+    or between a session dying and its replacement — and in each case the message is rejected
+    rather than held: the operator is told so and sends it again, and nothing queues behind a
+    running turn. What the caller does with a rejection is acknowledge it, recording the row this
+    hands back in the same transaction (`sync.MatrixSyncStore.advance`).
 
-    **Acceptance is not delivery either**, which is why `offer` names the prompt it made and
-    `fate` reports on it: the same contract has to hold for a batch a session took and then died
-    without answering, and the only thing that can answer it is the caller offering it again.
+    Nothing here is delivery either. A prompt this accepts can still be stranded by a session that
+    ends before claiming it, and it is acknowledged all the same; what carries it forward is the
+    transcript the replacement session is woken with, where the unclaimed prompt row already is.
     """
 
     def __init__(
@@ -284,52 +316,56 @@ class MatrixTurns:
         self._chat_store = chat_store
         self._identities = identities
 
-    async def offer(self, messages: Sequence[InboundMessage]) -> UUID | None:
-        """Enqueue `messages` as one prompt, and name it. None if the session cannot take it yet.
+    async def offer(self, messages: Sequence[InboundMessage]) -> Admission:
+        """Enqueue `messages` as one prompt, or say why the session would not take them.
 
-        The whole batch or none of it: a partial enqueue followed by a refusal would be
-        re-offered on the next pass and deliver its accepted half twice.
-
-        What is returned is the transcript row the prompt became, which is the caller's durable
-        handle on it — the one thing that survives this process and can be asked, later and from
-        another replica, whether the batch was ever answered (`fate`).
+        The whole batch or none of it: a partial enqueue would leave half a sentence delivered and
+        half of it rejected, which is a worse answer than either.
         """
         conversation = await self._conversations.load(self._config.user_id)
         if conversation is None or conversation.session_id is None:
-            logger.info("Matrix: no session bound yet, holding %d message(s)", len(messages))
-            return None
+            logger.info("Matrix: no session behind the room, rejecting %d message(s)", len(messages))
+            return PromptRejected(reason=PromptRejection.NO_SESSION, event=None)
         operator_id = await self._identities.resolve_configured_external_user_key(self._config.operator_subject)
+        prompt_text = _as_prompt(messages)
         try:
-            prompt = await self._chat_store.enqueue_prompt(operator_id, conversation.session_id, _as_prompt(messages))
-        except (RuntimeError, KeyError) as error:
+            prompt = await self._chat_store.enqueue_prompt(operator_id, conversation.session_id, prompt_text)
+        except KeyError:
+            # The session row has gone under us — the supervisor is between sessions. Nothing to
+            # key an event to, so this reads to the operator like never having had one.
+            logger.info("Matrix: session %s is gone, rejecting the batch", conversation.session_id)
+            return PromptRejected(reason=PromptRejection.NO_SESSION, event=None)
+        except PromptRefusedError as refusal:
             # Admission is `enqueue_prompt`'s alone, and it decides under `SELECT … FOR UPDATE`.
             # A status read here first could only ever agree with a decision that had not been
             # made yet, so it was two answers to one question and the durable one always won.
-            #
-            # Both exceptions mean the same thing to a caller that holds its messages: not now.
-            # `RuntimeError` is an unready session, a turn in flight, or a prompt already queued;
-            # `KeyError` is a session row that has gone (the supervisor is between sessions).
-            # Refusing rather than raising is what keeps the watermark where it is and gets the
-            # room a "holding" notice, instead of stalling ingress in a retry loop that says
-            # nothing to the operator.
-            logger.info("Matrix: session %s refused the batch: %s", conversation.session_id, error)
-            return None
-        return prompt.message_id
+            logger.info("Matrix: session %s rejected the batch: %s", conversation.session_id, refusal.reason)
+            return PromptRejected(
+                reason=refusal.reason,
+                event=session_events.authored(
+                    PromptRejectedBody(reason=refusal.reason, text=prompt_text),
+                    session_id=conversation.session_id,
+                    now=datetime.datetime.now(datetime.UTC),
+                ),
+            )
+        return PromptAccepted(message_id=prompt.message_id)
 
-    async def fate(self, message_id: UUID) -> PromptFate:
-        """What became of a batch this accepted, for a caller that has not acknowledged it yet.
+    async def unreadable(self, events: Sequence[UnmappableEvent]) -> tuple[SessionEvent, ...]:
+        """The rows for events Haku has no way to read, one each, for the caller to write.
 
-        The three answers are three things the sync loop must do with its watermark, and the
-        mapping is the whole of R2.5:
-
-        - `IN_FLIGHT` — keep holding. The turn is still coming or still running.
-        - `COMPLETED` — acknowledge. The turn ended; a `FAILED` or `ABORTED` one counts, because
-          a batch held until it succeeds is a batch held forever the first time one does not.
-        - `LOST` — stop holding *without* acknowledging, so the next pass offers the batch to the
-          replacement session. This is the state that made the acknowledgement premature: the
-          prompt row is keyed to a session that has ended, where nothing will ever read it.
+        Empty where no session is bound, on the same terms as `PromptRejected.event`: what
+        arrived is still announced in the room, and the record keeps nothing.
         """
-        return await self._chat_store.prompt_fate(message_id)
+        conversation = await self._conversations.load(self._config.user_id)
+        if conversation is None or conversation.session_id is None:
+            return ()
+        now = datetime.datetime.now(datetime.UTC)
+        return tuple(
+            session_events.authored(
+                UnreadableInputBody(media_type=event.msgtype), session_id=conversation.session_id, now=now
+            )
+            for event in events
+        )
 
 
 def _as_prompt(messages: Sequence[InboundMessage]) -> str:

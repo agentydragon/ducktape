@@ -28,7 +28,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from haku.console.chat_models import AuthoredEventKind, ConversationEventKind, EventProvenance, LeaseExpiryReason
+from haku.console.chat_models import (
+    AuthoredEventKind,
+    ConversationEventKind,
+    EventProvenance,
+    LeaseExpiryReason,
+    PromptRejection,
+)
 from haku.console.database_schema import SessionEvent
 from haku.console.x.conversation_events import (
     ConversationEvent,
@@ -121,6 +127,19 @@ class PromptBody(BaseModel):
     text: str
 
 
+class PromptRejectedBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: PromptRejection
+    text: str = Field(description="What was said and not delivered — this row is its only copy.")
+
+
+class UnreadableInputBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_type: str = Field(description="The channel's own name for what arrived, verbatim: `m.image`, a MIME type.")
+
+
 class SessionAdoptedBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -137,15 +156,15 @@ class LeaseExpiredBody(BaseModel):
     last_holder: str | None = Field(description="The replica whose lease lapsed, where one held it.")
 
 
-type AuthoredBody = SessionAdoptedBody | LeaseExpiredBody
+type AuthoredBody = PromptRejectedBody | UnreadableInputBody | SessionAdoptedBody | LeaseExpiredBody
 
 
 def authored(body: AuthoredBody, *, session_id: UUID, now: datetime) -> SessionEvent:
     """The row one of the console's own facts about *session_id* is stored as.
 
-    No frame range because it crossed no wire, and no turn because it is the session's fact rather
-    than an exchange's. Written in the transaction that makes the fact true, like every other row
-    in this table.
+    No frame range because it crossed no wire, and no turn because none of these belongs to an
+    exchange — a refused prompt least of all, since what refused it is the turn it is not part of.
+    Written in the transaction that makes the fact true, like every other row in this table.
     """
     return SessionEvent(
         session_id=session_id,
@@ -162,6 +181,10 @@ def authored(body: AuthoredBody, *, session_id: UUID, now: datetime) -> SessionE
 
 def _authored_kind(body: AuthoredBody) -> AuthoredEventKind:
     match body:
+        case PromptRejectedBody():
+            return AuthoredEventKind.PROMPT_REJECTED
+        case UnreadableInputBody():
+            return AuthoredEventKind.UNREADABLE_INPUT
         case SessionAdoptedBody():
             return AuthoredEventKind.SESSION_ADOPTED
         case LeaseExpiredBody():
@@ -172,7 +195,7 @@ def prompt_enqueued(*, session_id: UUID, message_id: UUID, text: str, now: datet
     """The row an accepted prompt is stored as, written in `enqueue_prompt`'s own transaction.
 
     Authored because no frame carries it at this point: `next_prompt` hands the prompt to the CLI
-    later, and a session that ends first never hands it over at all (`PromptFate.LOST`).
+    later, and a session that ends first never hands it over at all.
 
     **No turn**, and not for the reason an authored session fact has none: admission refuses a
     prompt while a turn is open, so at this moment there is no turn to name.

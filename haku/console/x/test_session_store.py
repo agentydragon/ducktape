@@ -15,7 +15,7 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 from more_itertools import one
-from sqlalchemy import delete, select, update
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -29,7 +29,7 @@ from haku.console.chat_models import (
     EventProvenance,
     FrameDirection,
     LeaseExpiryReason,
-    PromptFate,
+    PromptRejection,
     SessionStatus,
     TurnOutcome,
 )
@@ -51,6 +51,7 @@ from haku.console.x.session_store import (
     REPLICA,
     BridgeAuthentication,
     MatrixSession,
+    PromptRefusedError,
     SessionStore,
     SpaSession,
 )
@@ -547,8 +548,8 @@ async def test_operator_conversation_read_surface_keeps_inventory_and_transcript
 async def test_a_second_prompt_is_refused_while_a_turn_is_open(chat_store, operator_id) -> None:
     """The gate `enqueue_prompt` used to keep was `status == READY`, which doubled as "not
     mid-turn" only because `enqueue_prompt` itself had written `responding`. Asking the turn
-    directly is what keeps R2.2 — hold a batch until the turn ends — from silently becoming
-    fold-into-turn with no fold path wired.
+    directly is what keeps a mid-turn prompt being rejected from silently becoming fold-into-turn
+    with no fold path wired.
     """
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -556,8 +557,9 @@ async def test_a_second_prompt_is_refused_while_a_turn_is_open(chat_store, opera
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
 
-    with pytest.raises(RuntimeError, match="turn is already in flight"):
+    with pytest.raises(PromptRefusedError) as refusal:
         await chat_store.enqueue_prompt(operator_id, view.session_id, "second")
+    assert refusal.value.reason is PromptRejection.TURN_IN_FLIGHT
 
     await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
     await chat_store.enqueue_prompt(operator_id, view.session_id, "second")
@@ -643,68 +645,6 @@ async def test_a_pending_row_with_no_queue_row_is_not_a_prompt(chat_store, migra
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
     assert turn.prompt == "mine"
-
-
-@pytest.fixture
-async def accepted_prompt(chat_store: SessionStore, operator_id: UUID) -> tuple[UUID, UUID]:
-    """A ready session and one prompt it has accepted — where `prompt_fate` starts from.
-
-    Room-backed because `prompt_fate` exists for a source that acknowledges — but a room is a
-    `room_id` on the session row here, not a homeserver: the caller that asks the question is
-    tested in <channels/matrix/test_session.py>.
-    """
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
-    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    prompt = await chat_store.enqueue_prompt(operator_id, view.session_id, "what were we doing")
-    return view.session_id, prompt.message_id
-
-
-async def test_a_prompt_still_waiting_for_its_turn_is_in_flight(chat_store, accepted_prompt) -> None:
-    _, message_id = accepted_prompt
-
-    assert await chat_store.prompt_fate(message_id) == PromptFate.IN_FLIGHT
-
-
-@pytest.mark.parametrize("outcome", list(TurnOutcome))
-async def test_a_prompt_is_complete_once_its_turn_ends_however_it_ended(
-    chat_store, accepted_prompt, outcome: TurnOutcome
-) -> None:
-    """The source of an acknowledgement is owed an answer about the turn, not a good one: a batch
-    held until its turn succeeds is a batch held forever the first time one does not."""
-    session_id, message_id = accepted_prompt
-    turn = await chat_store.next_prompt(session_id)
-    assert turn is not None
-    await chat_store.end_turn(turn.turn_id, outcome)
-
-    assert await chat_store.prompt_fate(message_id) == PromptFate.COMPLETED
-
-
-async def test_a_prompt_a_dead_session_never_claimed_is_lost(chat_store, accepted_prompt) -> None:
-    """`message_drops.md` I3, at the layer that can see it. The row is still there and still
-    unclaimed; what makes it unanswerable is that its session is over and the supervisor's
-    replacement has a different `session_id`, so `next_prompt` will never read it."""
-    session_id, message_id = accepted_prompt
-    await chat_store.fail(session_id, "the sandbox went away")
-
-    assert await chat_store.prompt_fate(message_id) == PromptFate.LOST
-
-
-async def test_a_turn_left_open_by_a_dead_session_is_lost_too(chat_store, accepted_prompt) -> None:
-    """An open turn is only in flight while something holds the session that would close it."""
-    session_id, message_id = accepted_prompt
-    assert await chat_store.next_prompt(session_id) is not None
-    await chat_store.fail(session_id, "the runtime failed")
-
-    assert await chat_store.prompt_fate(message_id) == PromptFate.LOST
-
-
-async def test_a_prompt_whose_session_was_deleted_is_lost(chat_store, accepted_prompt, migrated_sessions) -> None:
-    """The transcript row goes with its session, and a fate that cannot be read is not a hold."""
-    session_id, message_id = accepted_prompt
-    async with migrated_sessions.begin() as db:
-        await db.execute(delete(Session).where(Session.session_id == session_id))
-
-    assert await chat_store.prompt_fate(message_id) == PromptFate.LOST
 
 
 async def test_the_view_says_responding_for_as_long_as_the_turn_is_open(chat_store, operator_id) -> None:
@@ -1004,8 +944,9 @@ async def test_a_refused_prompt_is_not_in_the_stream(chat_store, migrated_sessio
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "first")
 
-    with pytest.raises(RuntimeError, match="already queued"):
+    with pytest.raises(PromptRefusedError) as refusal:
         await chat_store.enqueue_prompt(operator_id, view.session_id, "second")
+    assert refusal.value.reason is PromptRejection.PROMPT_QUEUED
 
     asked = one(await authored_events(migrated_sessions, view.session_id))
     assert asked.body["text"] == "first"
