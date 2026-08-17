@@ -206,8 +206,7 @@ class EarlierSession(BaseModel):
 
     A conversation outlives its sessions, so a thread whose sandbox died has more than one — and
     what each of them said is still in its own frame log. Merging their transcripts into one
-    reading is the reconciler's job (`plans/conversation_layers.md` § 9 step 9); until then this is
-    the handle that keeps them reachable.
+    reading is the reconciler's job; until then this is the handle that keeps them reachable.
     """
 
     model_config = ConfigDict(extra="forbid")

@@ -456,9 +456,8 @@ class SessionStore:
 
         The transcript is the current session's — the one holding the conversation, or the last one
         to have held it. Reading the thread as one transcript across a replacement is the
-        subscription's job (<../plans/conversation_layers.md> § 9 step 9); what this surface owes
-        until then is that the earlier sessions stay reachable rather than disappearing when the
-        sandbox they ran in did.
+        subscription's job; what this surface owes until then is that the earlier sessions stay
+        reachable rather than disappearing when the sandbox they ran in did.
 
         Not the raw frame log — the narration is the one projection of it this surface carries,
         because for a session that died before the CLI produced anything it is the whole account.
