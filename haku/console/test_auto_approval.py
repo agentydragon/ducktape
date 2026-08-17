@@ -49,6 +49,16 @@ _SERVER_CONFIGS = [
         "backend": {"kind": "remote_mcp", "url": f"https://{server_id}.test/mcp", "auth": {"kind": "none"}},
     }
     for server_id in _EXACT_TOOLS
+] + [{"id": "github", "backend": {"kind": "remote_mcp", "url": "https://github.test/mcp", "auth": {"kind": "none"}}}]
+_GITHUB_TOOLS = [
+    "actions_get",
+    "actions_list",
+    "get_file_contents",
+    "get_job_logs",
+    "issue_read",
+    "list_issues",
+    "list_pull_requests",
+    "pull_request_read",
 ]
 _POLICIES = AutoApprovalPolicyRegistry(
     ConsoleConfigFile.model_validate(
@@ -62,7 +72,19 @@ _POLICIES = AutoApprovalPolicyRegistry(
                     "server": "gmail",
                     "label_prefix": "haku/",
                 },
-                {"id": "haku_v1", "type": "any_of", "policies": ["safe_tools", "managed_gmail_labels"]},
+                {
+                    "id": "public_ducktape_reads",
+                    "type": "github_repository",
+                    "server": "github",
+                    "owner": "agentydragon",
+                    "repository": "ducktape",
+                    "tools": _GITHUB_TOOLS,
+                },
+                {
+                    "id": "haku_v1",
+                    "type": "any_of",
+                    "policies": ["safe_tools", "managed_gmail_labels", "public_ducktape_reads"],
+                },
                 {"id": "none", "type": "never"},
             ],
             "static_agents": [
@@ -343,6 +365,43 @@ async def _remote_decision(server_id: str, tool_name: str, arguments: dict) -> t
             mcp=None,
         )
     )
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [
+        ("issue_read", {"owner": "agentydragon", "repo": "ducktape", "issue_number": 123}),
+        ("pull_request_read", {"owner": "agentydragon", "repo": "ducktape", "pullNumber": 456, "method": "get"}),
+        ("actions_list", {"owner": "agentydragon", "repo": "ducktape", "method": "list_workflow_runs"}),
+        ("get_job_logs", {"owner": "agentydragon", "repo": "ducktape", "run_id": 789, "failed_only": True}),
+    ],
+)
+async def test_public_ducktape_reads_auto_approve(tool_name: str, arguments: dict) -> None:
+    policy_id, evaluation = await _remote_decision("github", tool_name, arguments)
+    assert policy_id == AGENT_AUTO_APPROVAL_ID
+    assert evaluation is not None
+    assert "reviewed read targets repository agentydragon/ducktape" in evaluation
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [
+        ("issue_read", {"owner": "agentydragon", "repo": "private", "issue_number": 123}),
+        ("get_job_logs", {"owner": "someone", "repo": "ducktape", "run_id": 789}),
+        ("get_file_contents", {"owner": "agentydragon", "path": "README.md"}),
+        ("search_code", {"query": "repo:agentydragon/ducktape policy"}),
+    ],
+)
+async def test_other_or_unprovable_github_reads_stay_manual(tool_name: str, arguments: dict) -> None:
+    policy_id, evaluation = await _remote_decision("github", tool_name, arguments)
+    assert policy_id is None
+    assert evaluation is not None
+
+
+async def test_github_write_stays_manual() -> None:
+    assert await _remote_decision(
+        "github", "create_issue", {"owner": "agentydragon", "repo": "ducktape", "title": "No"}
+    ) == (None, "manual: Agent policy 'haku_v1' did not auto-approve github/create_issue")
 
 
 async def test_grocy_reads_auto_approve() -> None:

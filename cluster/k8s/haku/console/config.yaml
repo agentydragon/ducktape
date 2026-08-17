@@ -110,6 +110,36 @@ auto_approval_policies:
         - search_commits
         - search_repositories
         - search_users
+  # public-coder-agent may inspect this public source repository, but not use the Operator's GitHub
+  # credential to read other public or private repositories. Search/global tools remain manual
+  # because their query strings do not provide a trustworthy repository boundary.
+  - id: public_ducktape_reads
+    type: github_repository
+    server: github
+    owner: agentydragon
+    repository: ducktape
+    tools:
+      - actions_get
+      - actions_list
+      - find_duplicate
+      - get_commit
+      - get_file_blame
+      - get_file_contents
+      - get_job_logs
+      - get_label
+      - get_latest_release
+      - get_release_by_tag
+      - get_tag
+      - issue_dependency_read
+      - issue_read
+      - list_branches
+      - list_commits
+      - list_issues
+      - list_pull_requests
+      - list_releases
+      - list_repository_collaborators
+      - list_tags
+      - pull_request_read
   - id: tana_safe_tools
     type: exact_tools
     tools:
@@ -228,9 +258,9 @@ static_agents:
     display_name: public-coder-agent
     token_env_var: HAKU_CONSOLE_AGENT_PUBLIC_CODER_AGENT_TOKEN
     operator_subject_env: HAKU_CONSOLE_AGENT_PUBLIC_CODER_AGENT_OPERATOR
-    # Coder may submit exact privileged calls for operator review, but receives no standing
-    # authority: every tool remains approval-wrapped and Coder cannot approve its own requests.
-    auto_approval_policy: manual_review
+    # Coder may read the public Ducktape repository without interrupting the Operator. Everything
+    # else remains approval-wrapped, and Coder cannot approve its own requests.
+    auto_approval_policy: public_ducktape_reads
 operator_connection_providers:
   google_mail:
     kind: google
@@ -262,6 +292,10 @@ mcp:
       backend:
         kind: remote_mcp
         url: https://api.githubcopilot.com/mcp/
+        # Actions is not in GitHub MCP's default toolsets. Keep the default catalog and add its
+        # read/write Actions catalog; policy still decides which calls receive standing authority.
+        headers:
+          X-MCP-Toolsets: default,actions
         auth:
           kind: remote_server_oauth
           scopes: [] # GitHub App permissions are the least-privilege boundary.

@@ -16,6 +16,7 @@ from haku.console.mcp_config import (
     AutoApprovalPolicy,
     ConsoleConfigFile,
     ExactToolsAutoApprovalPolicy,
+    GitHubRepositoryAutoApprovalPolicy,
     GmailLabelNamespaceAutoApprovalPolicy,
     NeverAutoApprovalPolicy,
 )
@@ -137,6 +138,12 @@ class AutoApprovalPolicyRegistry:
                     if server_id == server and tool_name in GMAIL_LABEL_NAMESPACE_TOOLS
                     else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
                 )
+            case GitHubRepositoryAutoApprovalPolicy(server=server, tools=tools):
+                return (
+                    ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED
+                    if server_id == server and tool_name in tools
+                    else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
+                )
             case AnyOfAutoApprovalPolicy(policies=members):
                 return max(
                     (self._policy_mode(member, server_id, tool_name) for member in members),
@@ -208,6 +215,10 @@ class AutoApprovalPolicyRegistry:
                     return
                 decision = await _evaluate_gmail_label_namespace(tool_name, arguments, label_prefix, gmail)
                 evaluation.record(current_path, decision)
+            case GitHubRepositoryAutoApprovalPolicy(server=server, owner=owner, repository=repository, tools=tools):
+                if server_id != server or tool_name not in tools:
+                    return
+                evaluation.record(current_path, _evaluate_github_repository(arguments, owner, repository))
             case AnyOfAutoApprovalPolicy(policies=members):
                 for member in members:
                     await self._evaluate_policy(
@@ -221,6 +232,16 @@ class AutoApprovalPolicyRegistry:
                     )
             case NeverAutoApprovalPolicy():
                 evaluation.record(current_path, NotAutoApproved("policy never auto-approves"))
+
+
+def _evaluate_github_repository(arguments: dict[str, Any], owner: str, repository: str) -> AutoApprovalDecision:
+    actual_owner = arguments.get("owner")
+    actual_repository = arguments.get("repo")
+    if not isinstance(actual_owner, str) or not isinstance(actual_repository, str):
+        return NotAutoApproved("call does not identify a repository with string owner/repo arguments")
+    if (actual_owner.casefold(), actual_repository.casefold()) != (owner.casefold(), repository.casefold()):
+        return NotAutoApproved(f"repository {actual_owner}/{actual_repository} is outside {owner}/{repository}")
+    return AutoApproved(f"reviewed read targets repository {owner}/{repository}")
 
 
 async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str, Any]) -> SchemaDenial | str | None:

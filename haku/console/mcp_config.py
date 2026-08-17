@@ -19,6 +19,7 @@ from uuid import UUID
 
 import yaml
 from fastmcp import FastMCP
+from fastmcp.client.transports import StreamableHttpTransport
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from haku.console.agents.naming import normalize_agent_name
@@ -167,6 +168,7 @@ type InProcessCredential = Annotated[
 class RemoteMcpBackend(BaseModel):
     kind: Literal["remote_mcp"] = "remote_mcp"
     url: str
+    headers: dict[str, str] = Field(default_factory=dict)
     auth: RemoteMcpAuth
 
 
@@ -225,6 +227,16 @@ class GmailLabelNamespaceAutoApprovalPolicy(AutoApprovalPolicyBase):
     label_prefix: str = Field(min_length=1)
 
 
+class GitHubRepositoryAutoApprovalPolicy(AutoApprovalPolicyBase):
+    """Conditionally auto-approve reviewed GitHub reads for one repository."""
+
+    type: Literal["github_repository"] = "github_repository"
+    server: Literal["github"] = "github"
+    owner: str = Field(min_length=1)
+    repository: str = Field(min_length=1)
+    tools: set[str] = Field(min_length=1)
+
+
 class AnyOfAutoApprovalPolicy(AutoApprovalPolicyBase):
     """Auto-approve when any referenced policy auto-approves."""
 
@@ -241,6 +253,7 @@ class NeverAutoApprovalPolicy(AutoApprovalPolicyBase):
 type AutoApprovalPolicy = Annotated[
     ExactToolsAutoApprovalPolicy
     | GmailLabelNamespaceAutoApprovalPolicy
+    | GitHubRepositoryAutoApprovalPolicy
     | AnyOfAutoApprovalPolicy
     | NeverAutoApprovalPolicy,
     Field(discriminator="type"),
@@ -369,7 +382,10 @@ class ConsoleConfigFile(BaseModel):
                     raise ValueError(
                         f"auto-approval policy {policy.id!r} references unknown MCP servers {sorted(unknown_servers)!r}"
                     )
-            elif isinstance(policy, GmailLabelNamespaceAutoApprovalPolicy) and policy.server not in server_ids:
+            elif (
+                isinstance(policy, (GmailLabelNamespaceAutoApprovalPolicy, GitHubRepositoryAutoApprovalPolicy))
+                and policy.server not in server_ids
+            ):
                 raise ValueError(f"auto-approval policy {policy.id!r} references unknown MCP server {policy.server!r}")
 
         for policy in policies.values():
@@ -551,7 +567,7 @@ def validate_in_process_server_bindings(config: ConsoleConfigFile, registrations
 
 def _transport(
     server: McpServerEntry, in_process: InProcessServers, auth_token: str | None
-) -> tuple[FastMCP | str, str | None]:
+) -> tuple[FastMCP | StreamableHttpTransport | str, str | None]:
     """Resolve the MCP transport and any transport-level authentication.
 
     In-process builders consume the backend credential while constructing their server, so the
@@ -564,5 +580,7 @@ def _transport(
             if registration is None:
                 raise RuntimeError(f"MCP server {server.id!r} has no in-process registration")
             return registration.builder(auth_token), None
-        case RemoteMcpBackend(url=url):
-            return url, auth_token
+        case RemoteMcpBackend(url=url, headers=headers):
+            return (
+                (StreamableHttpTransport(url, headers=headers, auth=auth_token), None) if headers else (url, auth_token)
+            )
