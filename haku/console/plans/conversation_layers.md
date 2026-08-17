@@ -845,7 +845,18 @@ having even if the loop is never built.
     `ck_session_turns_usage_counters` stops being declared and stays in the database until 16 drops
     it with the columns; an insert naming none of the three satisfies it trivially.
 
-16. **Drop them**, a release after 15 has converged.
+16. **Drop them** — **done (#4311).** 15 converged: the deployed image is `3d909fb`, which contains
+    #4306. `ck_session_turns_usage_counters` goes with the five columns, as 15 said it would.
+    One thing the drop moved that the step list did not anticipate:
+    `test_the_backfill_reads_the_payload_the_columns_replace` migrated **to head** and then selected
+    the counters, so head passing `0069` left that assertion with nothing to read; it is pinned to
+    `0056` instead — the revision its secondary claim was always about, and the last one where the
+    counters survive it.
+
+    **`matrix_held_batch`'s tombstone cleared at the same time and is not this PR's.** Its gate is
+    #4291, which is merged (`d1640f79df`) and an ancestor of the deployed image, so `DROP TABLE` is
+    now the third leg of the same rule. It is independently approvable, so it gets its own PR rather
+    than riding along with five columns of a different table.
 
 17. **Many rooms at once** (§ 7's ruling). `claim_room` stops refusing the second room and becomes
     "resolve or create this room's attachment"; the supervisor fans out over live attachments
