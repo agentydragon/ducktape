@@ -36,11 +36,10 @@ value out of one are `claude_code/frames.py`, while `setup_output.py` holds the 
 
 **One column still carries both**, which no placement fixes: `session_frames.kind` takes the CLI's
 `type` from `RolloutRecorder` and `setup_output` from the progress reporter, so `session_store.py`
-names four of the CLI's kinds in SQL predicates and imports them across that line — the same
+names two of the CLI's kinds in SQL predicates and imports them across that line — the same
 direction `claude_code/projection.py` is already imported in. Stage 2 of
 <../../plans/chat_runtime_projection.md> gives the CLI's type its own column, which is what retires
-those predicates; two of the five uses (`_write_partial_frame`, `_recorded_completion`) are already
-tombstoned on their own gates.
+those predicates.
 
 ## `session_store.py` and `session_runtime.py` — the rows, and the turn loop over them
 
@@ -104,9 +103,9 @@ Two consequences worth knowing before changing it:
 frame either way, both channels, verbatim — the control channel included, since an interrupt that
 did not take is diagnosable from nothing else. **Deltas included** — a log with a hole in it cannot
 be folded over (<../../plans/chat_runtime_projection.md> § stage 1), so "do not bury the reader" is
-answered at the read instead: `read_frames` leaves `stream_event` out of its default view. Beside
-them the store keeps a single rewritten `partial` row for the answer in flight, which is what makes
-an interrupted turn's half-answer survive.
+answered at the read instead: `read_frames` leaves `stream_event` out of its default view. They are
+also what makes an interrupted turn's half-answer survive: an answer no `assistant` frame ever
+completed is in the log as the deltas that wrote it.
 
 **A row carries two numbers, and only one of them is this end's.** `frame_seq` is Postgres's
 `Identity` and is still the log's ordering, its keyset cursors and every reference to a frame.
@@ -291,10 +290,10 @@ Four things to know before changing it:
 - **`end_turn` carries the cursor past the frame that ended the turn**, not `apply_frame`. The
   turn's last word is written between the two, so advancing when that frame was projected would
   put the cursor ahead of writes still to come.
-- **NULL means no cursor**, which is every session predating migration `0051`. Those take the
-  pre-cursor path, tombstoned on `adopt_open_turn`, and the population empties only when those
-  sessions are ended — `_renew_lease` slides the sandbox's `shutdownTime` on every heartbeat, so a
-  session a replica is tending never ages out.
+- **A turn is resumed from its cursor or not at all.** A cursor from before the turn — or none at
+  all — is a position re-projecting from would redo effects that did commit, so `adopt_open_turn`
+  ends such a turn as failed rather than resuming it. No session that can still acquire a frame is
+  in that state (<../debug/2026_08_16_legacy_purge.md>).
 
 **`read_transcript` has no cursor and is not this one.** It re-reads the session and seeds an empty
 state per page, so it folds from the first frame every time; that is a read path with nowhere to
@@ -327,14 +326,9 @@ with the report.
   `(frame_seq, frame_seq)`, so which rows a frame owns is a lookup. It reads a turn's rows, and an
   authored row names no turn, so the second category is out of scope by construction rather than by
   a filter — which is what stops a rebuild from deleting what it cannot re-derive.
-- **Two eras bound what it may speak about**, both per turn and both named by `SkipReason`: a turn
-  whose frames the cursor never reached (#4178's era) and a turn with frames and no rows at all —
-  which is what a replica on the image before these rows existed leaves, and is indistinguishable
-  from a projection that has stopped producing.
-
-The tombstone on the second of those is on the skip itself: once no session that can still acquire
-a frame predates the release that writes `session_events`, a turn with frames and no rows is drift
-and must be reported as one.
+- **One era bounds what it may speak about**, per turn and named by `SkipReason`: a turn whose
+  frames the cursor never reached (#4178's era). A turn with frames and no rows at all is not that
+  — nothing writes a projected frame without its rows — so it is drift, and is reported as drift.
 
 ### Recording a session as a fixture — `frame_export.py`
 

@@ -105,7 +105,6 @@ py_library(
         "//haku/console/x/claude_code:frames",
         "//haku/console/x/claude_code:projection",
         "//haku/runtime/x/bridge:cli_client",
-        "@pypi//more_itertools",
         "@pypi//sqlalchemy",
     ],
 )
@@ -267,6 +266,7 @@ py_test(
         "//haku/console:config",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "//haku/console/x/claude_code:frames",
         "//haku/console/x/claude_code/testing:wire",
         "//haku/console/x/testing:recording_claims",
         "//haku/runtime/x/bridge:protocol",

@@ -9,20 +9,13 @@ That alignment is **by frame**: a frame's rows are written in one transaction an
 write path produces carries `(frame_seq, frame_seq)` as its range, so which rows a frame owns is a
 lookup rather than a guess.
 
-**Two bounds keep an honest report from being a false one:**
+**One bound keeps an honest report from being a false one: the cursor.**
+`sessions.projected_frame_seq` is how far the fold committed, so a frame past it is one whose
+effects were never written — a replica that died mid-turn — and is counted rather than reported.
 
-- **The cursor.** `sessions.projected_frame_seq` is how far the fold committed, so a frame past it
-  is one whose effects were never written — a replica that died mid-turn — and is counted rather
-  than reported.
-- **The release.** A turn served before `session_events` had a writer has frames and no rows,
-  which is indistinguishable from a projection that has stopped producing. Such a turn is skipped
-  with its reason, per turn, so the check does not report drift on every live session predating
-  that release — a population that lasts until those sessions are ended, since a session a replica
-  is tending never ages out.
-
-The third case is genuinely ambiguous and is reported rather than guessed at: a turn whose rows
-begin part-way through it, which is what a replica on the new image adopting a turn the old one
-started produces — and also what a projection that dropped its first frames produces.
+The ambiguous case is reported rather than guessed at: a turn whose rows begin part-way through
+it, which is what a replica on the new image adopting a turn the old one started produces — and
+also what a projection that dropped its first frames produces.
 """
 
 from __future__ import annotations
@@ -112,9 +105,6 @@ class SkipReason(StrEnum):
     # `sessions.projected_frame_seq` is NULL or behind the turn (#4178's era), so nothing in it
     # claims to have been projected and re-folding would compare against a position no writer took.
     CURSOR_NEVER_REACHED = "cursor_never_reached"
-    # Frames and no rows at all: what a replica on the image before these rows existed leaves, and
-    # indistinguishable by any column from a projection that has stopped producing.
-    NO_ROWS_AT_ALL = "no_rows_at_all"
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,20 +204,9 @@ def _outcome(
     rows: Sequence[SessionEvent],
     cursor: int | None,
 ) -> Outcome:
-    """One turn's outcome: the two skips first, because both are eras rather than disagreements."""
+    """One turn's outcome: the skip first, because an era is not a disagreement."""
     if not within:
         return Skipped(reason=SkipReason.CURSOR_NEVER_REACHED)
-    if not rows and any(projected[seq] for seq in within):
-        # CLEANUP(added 2026-08-16): delete this arm once no session that can still acquire a
-        #   frame predates the release that writes `session_events`. That population does not empty
-        #   on its own — `_renew_lease` slides the sandbox's `shutdownTime` on every heartbeat, so a
-        #   session a replica is tending never ages out — so ending those sessions is the gate
-        #   (<../../plans/legacy_purge.md> phase 1):
-        #     SELECT count(*) FROM session_turns t JOIN sessions s USING (session_id)
-        #      WHERE NOT EXISTS (SELECT 1 FROM session_events e WHERE e.turn_id = t.turn_id)
-        #        AND s.status NOT IN ('closed', 'failed');
-        #   After that, a turn with frames and no rows is drift and must be reported as one.
-        return Skipped(reason=SkipReason.NO_ROWS_AT_ALL)
     findings: list[Finding] = [
         UnalignableRow(event_seq=row.event_seq, kind=row.kind)
         for row in rows

@@ -896,10 +896,10 @@ class Session(Base):
     # A bound like `session_turns.first_frame_seq`, not a pointer: `Identity` leaves gaps, and
     # `next_prompt` anchors it at the frame before the turn it opens, which is a value no row has.
     #
-    # **NULL means nothing here has ever projected for this session**, which is every row written
-    # before this column and every session a replica on the previous image is serving for the
-    # length of a roll. `adopt_open_turn` reads the frames itself in that case, exactly as it did
-    # before the cursor existed.
+    # **NULL means nothing here has ever projected for this session.** There is no position to
+    # resume from in that case, so `adopt_open_turn` ends the session's open turn as failed rather
+    # than re-projecting from one no writer took. <../plans/next_month.md> § 1 tightens the column to
+    # `NOT NULL DEFAULT 0`, at which point "nothing projected yet" is `0` rather than absent.
     projected_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Renewed by whichever replica currently holds this session's runner websocket. A live
@@ -1288,11 +1288,10 @@ class SessionFrame(Base):
     **TODO(frame-vocabulary): this schema is in a half state and does not map to one concept.**
     ``kind`` holds two discriminator vocabularies, because two unrelated sinks write here:
     `RolloutRecorder` puts the CLI's own top-level ``type`` in it, and the setup reporter puts the
-    *bridge* envelope's ``setup_output`` literal in it. A ``partial`` row is a third thing again —
-    the console's reconstruction of an answer still streaming — and wears ``assistant`` while being
-    told apart by its own column. So "what is this row" has three answers and no one field gives
-    them, which is why there is no enum over ``kind``: one would name a concept this table does not
-    have. <../plans/chat_runtime_projection.md> holds the intended shape; nothing is scheduled.
+    *bridge* envelope's ``setup_output`` literal in it. So "what is this row" has two answers and
+    neither field gives both, which is why there is no enum over ``kind``: one would name a concept
+    this table does not have. <../plans/chat_runtime_projection.md> holds the intended shape;
+    nothing is scheduled.
     """
 
     __tablename__ = "session_frames"
@@ -1308,16 +1307,10 @@ class SessionFrame(Base):
     # without scanning JSONB.
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    # The one row the console writes rather than observes: an assistant message still streaming,
-    # rebuilt from the deltas the log does not keep, rewritten in place as they arrive and
-    # deleted when the completed frame supersedes it. So a `partial` row that outlives its turn
-    # is not a bookkeeping leftover — it is the record of a turn that never finished, which is
-    # exactly the case a reader most wants explained.
-    #
-    # Written as it goes rather than reconstructed at the end, because the end does not always
-    # arrive: a replica losing its pod mid-turn raises `CancelledError` past any finalizer, and
-    # that is the turn worth having. It costs one extra write per delta, alongside the one
-    # `update_assistant` already does.
+    # CLEANUP(added 2026-08-17): no writer sets this True any more — the recorded deltas are the
+    #   answer in flight — so unmap this column with `uq_session_frames_partial` and the readers
+    #   still filtering on it once the release that stopped writing it has converged, and drop both
+    #   a release later (<../plans/next_month.md> § 1 phases 2 and 3).
     partial: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # The agent's own identity for this frame, where it has one — see
     # <../cli_protocol/frame_identity.py> for which kinds do and why deltas must not.

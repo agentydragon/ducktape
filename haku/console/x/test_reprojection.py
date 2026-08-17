@@ -135,14 +135,10 @@ async def test_a_row_that_is_gone_is_a_count_mismatch_rather_than_a_silent_pass(
     assert finding.stored == (ConversationEventKind.MESSAGE_COMPLETED,)
 
 
-async def test_a_turn_with_frames_and_no_rows_is_skipped_with_its_reason(
-    chat_store, migrated_sessions, operator_id
-) -> None:
-    """The era bound, and the reason it exists: this is what a replica on the previous image left.
-
-    Without it every live session predating the release that starts writing these rows reports
-    drift until that session ends.
-    """
+async def test_a_turn_with_frames_and_no_rows_is_drift(chat_store, migrated_sessions, operator_id) -> None:
+    """No writer leaves a projected frame without its rows, so a turn with none is the projection
+    having stopped producing — reported against the frame that should have written them, exactly as
+    a single missing row is."""
     session_id, _ = await _turn_through_the_write_path(
         chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
     )
@@ -151,7 +147,11 @@ async def test_a_turn_with_frames_and_no_rows_is_skipped_with_its_reason(
         await db.commit()
         report = await reprojection.check_session(db, session_id)
 
-    assert one(report.turns).outcome == reprojection.Skipped(reason=reprojection.SkipReason.NO_ROWS_AT_ALL)
+    outcome = one(report.turns).outcome
+    assert isinstance(outcome, reprojection.Drifted)
+    finding = one(outcome.findings)
+    assert isinstance(finding, reprojection.RowCountMismatch)
+    assert (finding.projected, finding.stored) == ((ConversationEventKind.MESSAGE_COMPLETED,), ())
 
 
 async def test_a_turn_the_cursor_never_reached_is_skipped_rather_than_re_projected(

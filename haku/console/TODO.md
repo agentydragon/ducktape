@@ -237,8 +237,9 @@ deliberately still holding the old name, each for its own reason.
 `type` there. `_progress_reporter` writes `setup_output`, which is the **bridge envelope's** `kind`
 literal, for one decoded line of a `SetupOutput`. Two unrelated sinks, one column, two vocabularies.
 
-A `partial` row is a third thing again: the console's own reconstruction of an answer still
-streaming, which wears `assistant` and is told apart by a boolean column rather than by `kind`.
+A `partial` row was a third thing again: the console's own reconstruction of an answer still
+streaming, which wore `assistant` and was told apart by a boolean column rather than by `kind`.
+Nothing writes one now.
 
 **Consequences, so this reads as a known state rather than an oversight:**
 
@@ -249,8 +250,8 @@ streaming, which wears `assistant` and is told apart by a boolean column rather 
   `SessionFrame` and to the projection plan's stage 2.
 - The table's own docstring says the same thing, since that is where a reader meets it first.
 
-The `partial` row leaves on its own: it is tombstoned on `_write_partial_frame`, and recording the
-stream deltas removed its reason to exist. What is left after that is the two-vocabulary problem.
+The `partial` row is on its way out: its writers are deleted, and the column and its index go with
+<../plans/next_month.md> § 1 phases 2 and 3. What is left after that is the two-vocabulary problem.
 
 `../plans/chat_runtime_projection.md` § stage 2 holds the intended shape — the table becomes the log
 of the bridge, `kind` becomes the envelope discriminator, and the CLI's type gets its own column —

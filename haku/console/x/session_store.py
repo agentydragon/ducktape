@@ -25,7 +25,6 @@ from enum import StrEnum
 from typing import Any, ClassVar, cast
 from uuid import UUID, uuid4
 
-from more_itertools import one
 from sqlalchemy import CursorResult, Select, delete, func, literal, or_, select, text, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -56,22 +55,8 @@ from haku.console.database_schema import (
 )
 from haku.console.x import session_events, transcript_entries
 from haku.console.x.claude_code import projection
-from haku.console.x.claude_code.frames import (
-    ASSISTANT_FRAME_KIND,
-    DELTA_FRAME_KIND,
-    PROMPT_FRAME_KIND,
-    RESULT_FRAME_KIND,
-    assistant_frame,
-)
-from haku.console.x.conversation_events import (
-    ConversationEvent,
-    FrameRange,
-    MessageCompleted,
-    TextDelta,
-    ToolCallStarted,
-    TurnCompleted,
-    Usage,
-)
+from haku.console.x.claude_code.frames import DELTA_FRAME_KIND, PROMPT_FRAME_KIND
+from haku.console.x.conversation_events import ConversationEvent, MessageCompleted, TextDelta, ToolCallStarted, Usage
 from haku.console.x.conversation_records import (
     Conversation,
     ConversationCursor,
@@ -478,7 +463,6 @@ class SessionStore:
             if turn is None:
                 return None
             turn_id, first_frame_seq = turn.turn_id, turn.first_frame_seq
-            closing: TurnCompleted | None = None
             if not await _prompt_left(db, session_id, first_frame_seq):
                 await _requeue(db, turn_id)
                 await notify(db, SessionEventKind.PROMPT, session_id)
@@ -492,26 +476,10 @@ class SessionStore:
                 # the turn, so the normal case satisfies this by construction.
                 if cursor is not None and cursor >= first_frame_seq - 1:
                     return ResumedTurn(turn_id=turn_id, replay=await _unprojected_frames(db, session_id, cursor))
-                # CLEANUP(added 2026-08-16): delete this branch, `_recorded_completion` and
-                #   `RESULT_FRAME_KIND`'s use here once no session that can still acquire a frame
-                #   has a NULL or pre-turn `projected_frame_seq`. That population does not empty on
-                #   its own — `_renew_lease` slides the sandbox's `shutdownTime` on every heartbeat,
-                #   so a session a replica is tending never ages out — so ending those sessions is
-                #   the gate (<../../plans/legacy_purge.md> phase 1):
-                #     SELECT count(*) FROM sessions s JOIN session_turns t USING (session_id)
-                #      WHERE t.ended_at IS NULL
-                #        AND (s.projected_frame_seq IS NULL OR s.projected_frame_seq < t.first_frame_seq - 1)
-                #        AND s.status NOT IN ('closed', 'failed');
-                if (closing := await _recorded_completion(db, session_id, first_frame_seq)) is None:
-                    return ResumedTurn(turn_id=turn_id, replay=())
-        # A turn that never asked has no completion to close with and no outcome but failure; one
-        # that finished carries its own outcome and the cost the previous holder never got to
-        # write — both read through the backend's adapter rather than out of its payload here, so
-        # this path says nothing about which CLI produced the frame.
-        if closing is None:
-            await self.end_turn(turn_id, TurnOutcome.FAILED)
-        else:
-            await self.end_turn(turn_id, closing.outcome, closing.usage, last_frame_seq=_ended_at_frame(closing))
+        # Two ways to arrive here, one outcome. A turn that never asked its prompt has nothing to
+        # finish, and a turn whose cursor sits before it has no position to resume from — so
+        # neither has an outcome but failure.
+        await self.end_turn(turn_id, TurnOutcome.FAILED)
         return None
 
     async def claim_cleanup_candidates(self) -> list[UUID]:
@@ -1057,10 +1025,6 @@ class SessionStore:
                         message.source_last_frame_seq = frame_seq
                         message.status = ChatMessageStatus.STREAMING
                         message.updated_at = now
-                        # The rollout keeps no deltas, so without this the text an interrupted turn
-                        # produced would exist only in the message row and the log would simply
-                        # stop mid-answer (R5.5b).
-                        await _write_partial_frame(db, session_id, message.content, now)
                     case ToolCallStarted():
                         tool_calls.append(
                             RecordedToolCall(
@@ -1095,9 +1059,6 @@ class SessionStore:
                         turn.assistant_message_id = None
                         turn.said_anything = True
                         turn.queued_reply = turn.queued_reply or owed
-                        # The real frame is already in the log — the recorder wrote it when the
-                        # socket delivered it — so the stand-in has nothing to stand for.
-                        await _clear_partial_frame(db, session_id)
                         message, tool_calls = None, []
                     case _:
                         # Every event is stored below, whatever the transcript row does with it.
@@ -1490,41 +1451,6 @@ async def _open_assistant(
     return message
 
 
-async def _write_partial_frame(db: AsyncSession, session_id: UUID, text: str, now: datetime) -> None:
-    """Record the assistant message streaming right now, replacing any earlier state of it.
-
-    Takes its `frame_seq` when the stream opens, so it sits where it belongs in the log even
-    though it is rewritten afterwards.
-
-    CLEANUP(added 2026-08-15): Superseded by the deltas themselves, which this row existed to
-    stand in for. Stop writing it — with `_clear_partial_frame`, the `partial` column and its two
-    indexes — once every replica runs an image that records them, one roll after that shipped. Not
-    yet: an old replica writing a row a new one never clears would leave a stray partial in the
-    rollout for good.
-    """
-    partial = await db.scalar(select(SessionFrame).where(SessionFrame.session_id == session_id, SessionFrame.partial))
-    if partial is None:
-        db.add(
-            SessionFrame(
-                session_id=session_id,
-                direction=FrameDirection.FROM_AGENT,
-                kind=ASSISTANT_FRAME_KIND,
-                payload=assistant_frame(text),
-                partial=True,
-                created_at=now,
-                updated_at=now,
-            )
-        )
-        return
-    partial.payload = assistant_frame(text)
-    partial.updated_at = now
-
-
-async def _clear_partial_frame(db: AsyncSession, session_id: UUID) -> None:
-    """Drop the reconstruction, now that the frame it stood in for has arrived."""
-    await db.execute(delete(SessionFrame).where(SessionFrame.session_id == session_id, SessionFrame.partial))
-
-
 async def _queued_prompt(db: AsyncSession, session_id: UUID, *, lock: bool = False) -> SessionPrompt | None:
     """The prompt *session_id* is waiting to run, if it has one.
 
@@ -1641,42 +1567,6 @@ async def _prompt_left(db: AsyncSession, session_id: UUID, first_frame_seq: int)
         .limit(1)
     )
     return written is not None
-
-
-async def _recorded_completion(db: AsyncSession, session_id: UUID, first_frame_seq: int) -> TurnCompleted | None:
-    """How this turn ended, if its holder recorded that and then died before closing the row.
-
-    The frame's presence means the exchange is over and nothing more is coming: the runner will
-    replay it, and `record_frame` will refuse it as one this session already has, so a resumed
-    turn would wait for an end that cannot arrive twice.
-
-    **Projected rather than parsed**, so the one reading of a backend's terminal frame is the
-    adapter's: the outcome here used to be `not payload["is_error"]`, and `is_error` is false on
-    every production result including those from sessions the console recorded as failed
-    (<../debug/frame_shape_census.md>), so recovery reported every finished turn as answered.
-    """
-    row = (
-        await db.execute(
-            select(SessionFrame.frame_seq, SessionFrame.payload)
-            .where(
-                SessionFrame.session_id == session_id,
-                SessionFrame.frame_seq >= first_frame_seq,
-                SessionFrame.direction == FrameDirection.FROM_AGENT,
-                SessionFrame.kind == RESULT_FRAME_KIND,
-            )
-            .limit(1)
-        )
-    ).first()
-    if row is None:
-        return None
-    frame_seq, payload = row
-    projected = projection.project_log([projection.RecordedFrame(frame_seq=frame_seq, payload=payload)])
-    return one(event for event in projected.events if isinstance(event, TurnCompleted))
-
-
-def _ended_at_frame(completed: TurnCompleted) -> int | None:
-    """The frame this ending was projected from, where the fold read it off one."""
-    return completed.provenance.last_frame_seq if isinstance(completed.provenance, FrameRange) else None
 
 
 async def _requeue(db: AsyncSession, turn_id: UUID) -> None:

@@ -64,11 +64,11 @@ migration: `sessions.surface SET NOT NULL`, the surface/room equivalence,
 `ck_session_frames_runner_seq_direction`, and `projected_frame_seq` `SET DEFAULT 0` **and**
 `SET NOT NULL`.
 
-**`ck_session_frames_wire_numbered` is not in phase 2**, and the reason is a live writer rather than
-old data: `_write_partial_frame` writes a `from_agent`/`assistant` row carrying no runner number on
-every stream delta, in the serving image and the next one alike. Adding the check would break
-streaming the moment it landed. It goes in phase 3, after the writer is deleted and its rows with
-it.
+**`ck_session_frames_wire_numbered` is not in phase 2**, and the reason is rows rather than old data:
+`_write_partial_frame` wrote a `from_agent`/`assistant` row carrying no runner number on every stream
+delta, and went on doing so in the serving image until #4230 deleted it — so phase 1 emptying the
+table did not leave it empty of them. It goes in phase 3, which deletes those rows; the writer being
+gone is not enough.
 
 Each addition is safe against the previous image for a specific reason, not a general one:
 
