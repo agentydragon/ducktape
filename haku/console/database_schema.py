@@ -978,7 +978,7 @@ class Session(Base):
     )
     # Every writer names this column, so no row is null today. Nullable is what an `INSERT` that
     # stops naming it gets instead of a `NOT NULL` violation, and absent is the honest record for a
-    # session whose channel the attachment holds instead (`0073`).
+    # session whose channel the attachment holds instead (`0075`).
     surface: Mapped[ChatSurface] = mapped_column(TextBackedStrEnumColumn(ChatSurface), nullable=True)
     # The Matrix room this session serves — the *history* half of the binding, where
     # `matrix_conversation.session_id` is the live pointer. Written once at creation and never

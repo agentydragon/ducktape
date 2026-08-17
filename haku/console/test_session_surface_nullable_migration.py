@@ -1,4 +1,4 @@
-"""0073 lets a session be inserted without naming `surface` or pairing it with `room_id`."""
+"""0075 lets a session be inserted without naming `surface` or pairing it with `room_id`."""
 
 from __future__ import annotations
 

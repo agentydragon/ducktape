@@ -16,8 +16,8 @@ The pairing rule itself stays enforced where it is decided — `SessionStore.cre
 `SpaSession | MatrixSession` variant and reads both columns off it, so the combinations the CHECK
 rejected are unrepresentable at the one writer, and neither column is ever updated afterwards.
 
-Revision ID: 0073
-Revises: 0072
+Revision ID: 0075
+Revises: 0074
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0073"
-down_revision: str | None = "0072"
+revision: str = "0075"
+down_revision: str | None = "0074"
 branch_labels: str | None = None
 depends_on: str | None = None
 
