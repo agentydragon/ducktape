@@ -8,7 +8,7 @@ spec:
   clusterRef:
     name: seaweedfs
     namespace: seaweedfs
-  reclaimPolicy: Retain
+  reclaimPolicy: Delete
   access:
     - user: browsertrix
       actions: [Read, Write, List, Tagging]

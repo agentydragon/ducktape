@@ -4,6 +4,7 @@ metadata:
   name: browsertrix
   namespace: browsertrix
 spec:
+  suspend: true
   interval: 15m
   timeout: 20m
   install:
