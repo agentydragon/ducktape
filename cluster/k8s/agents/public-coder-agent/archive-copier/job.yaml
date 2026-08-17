@@ -1,7 +1,10 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: public-coder-agent-state-archive-20260817
+  # Retry after the first Job correctly demonstrated that its bucket-scoped
+  # identity cannot create buckets. Jobs have immutable pod templates, so a
+  # fresh name is required for the fixed configuration.
+  name: public-coder-agent-state-archive-20260817-retry1
   namespace: public-coder-agent
   labels:
     app.kubernetes.io/name: public-coder-agent-archive-copier
@@ -63,6 +66,10 @@ spec:
               value: Other
             - name: RCLONE_CONFIG_ARCHIVE_ENDPOINT
               value: http://seaweedfs-s3.seaweedfs.svc:8333
+            # The bucket is provisioned declaratively. Do not ask S3 to create
+            # it: the scoped identity intentionally has no CreateBucket grant.
+            - name: RCLONE_CONFIG_ARCHIVE_NO_CHECK_BUCKET
+              value: "true"
             - name: RCLONE_CONFIG_ARCHIVE_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
