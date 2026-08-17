@@ -115,7 +115,11 @@ class MatrixSyncStore:
 
     async def cached_token(self, user_id: str) -> str | None:
         async with self._sessions() as db:
-            return await db.scalar(select(MatrixAccessToken.access_token).where(MatrixAccessToken.user_id == user_id))
+            # Annotated because `AsyncSession.scalar` is typed `Any`, which `warn_return_any` refuses.
+            token: str | None = await db.scalar(
+                select(MatrixAccessToken.access_token).where(MatrixAccessToken.user_id == user_id)
+            )
+            return token
 
     async def save_token(self, user_id: str, token: str) -> None:
         """Cache the access token.
@@ -133,7 +137,7 @@ class MatrixSyncStore:
 
     async def position(self, user_id: str) -> SyncPosition:
         async with self._sessions() as db:
-            watermark = await db.scalar(
+            watermark: str | None = await db.scalar(
                 select(MatrixSyncWatermark.next_batch).where(MatrixSyncWatermark.user_id == user_id)
             )
             held = await db.scalar(select(MatrixHeldBatch).where(MatrixHeldBatch.user_id == user_id))
