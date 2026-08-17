@@ -80,10 +80,17 @@ instead of a room id. What is left of the seam:
 
 2. Then the schema half — `chat_attachment(session_id, surface, address, attached_at, detached_at)`
    with a partial unique index on `(surface, address) where detached_at is null`. It subsumes
-   `sessions.surface`, `.room_id`, both check constraints tying them together, and
-   `matrix_conversation.session_id`; the pointer/history distinction those two tables document in
-   prose becomes `detached_at IS NULL`. Attach/detach within one session becomes a row, and
-   <../console/plans/session_channels.md>'s `chat_attachment` need is this table, not a second one.
+   `sessions.surface`, `.room_id`, `ck_sessions_matrix_room` (the equivalence `0058` collapsed the
+   two one-way rules into), and `matrix_conversation.session_id`; the pointer/history distinction
+   those two tables document in prose becomes `detached_at IS NULL`. Attach/detach within one
+   session becomes a row, and <../console/plans/session_channels.md>'s `chat_attachment` need is
+   this table, not a second one.
+
+   **The table does not exist.** This paragraph is its only specification: no migration creates it,
+   nothing in `database_schema.py` maps it, and every other plan naming it
+   (<chat_runtime_projection.md> § 5, <information_trust_tiers.md> § Attachment and subscription,
+   <next_month.md> § Not now) is citing this design rather than a schema. Live planned work, not a
+   fact about the database.
 
 ### The backend seam
 

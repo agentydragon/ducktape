@@ -687,11 +687,11 @@ instructions must convey, at minimum:
   stamped with room ids it has never heard of, making R2.4's provenance uninterpretable and any
   addressed reply a guess. Same class of fact as R8.7: handed over because it cannot be derived.
 
-Whether this lives in `base/instructions.md`, in `haku-state`, or in the per-turn wakeup
-rendering is a design question — but R8.2, R8.3, and R8.4 describe the harness, so they
-belong with the harness, not in operator-editable method. The source-facing half (R8.6,
-and the read tools behind it) belongs in `haku/base/sources/matrix.md`, alongside the
-other per-source docs.
+Whether this lives in the per-turn wakeup rendering or in `haku-state` is a design question —
+but R8.2, R8.3, and R8.4 describe the harness, so they belong with the harness, not in
+operator-editable method. The source-facing half (R8.6, and the read tools behind it) belongs
+with the other per-source docs, which are now `haku-state`'s: ducktape's `haku/base/` stopped
+holding Haku's manual in #3951 and `base/sources/` went with it.
 
 ### R9 — Trace, identity, approvals
 
@@ -774,16 +774,18 @@ that.
   (R5.3a). Its prerequisite was the attribution: `matrix_conversation` holds a single
   `session_id`, the current one, so when the supervisor replaces a session the link to the room is
   gone through that table alone. `sessions` therefore carries `surface` and `room_id` of its own
-  (migration `0030`, with the two check constraints tying them together) — the pointer and the
-  history being different questions. Every session created before it landed lost its attribution
+  (migration `0030`; the two one-way check constraints tying them together became the single
+  equivalence `ck_sessions_matrix_room` in `0058`) — the pointer and the history being different
+  questions. Every session created before it landed lost its attribution
   permanently, which is why it went first.
 - **R11.4 [v1] IDs are given, not guessed.** Every message the agent sees — in a batch
   (R2.4), in injected context, or from a read tool — carries its event ID in the form the
   read tools accept. A permalink is also accepted as input, since that is what a client
   produces on "copy link".
-- **R11.5 [v1] Citable like any other source.** Matrix is a source in the sense
-  `haku/base/sources/` means it: a finding drawn from a room message cites the message, and
-  the operator-facing form of that citation is clickable.
+- **R11.5 [v1] Citable like any other source.** Matrix is a source in the sense Haku's
+  per-source docs mean it (in `haku-state` since #3951, not ducktape's deleted `haku/base/sources/`):
+  a finding drawn from a room message cites the message, and the operator-facing form of that
+  citation is clickable.
 - **R11.6 [built, minus the marking] Forwarding failure is visible.** A reply that was produced but
   not delivered is retried; a produced reply must never be lost silently. The durable outbox
   (#4104) is what implements it — the reply is a row from the moment it is produced, and the drain

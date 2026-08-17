@@ -1,10 +1,20 @@
 # Agent SDK loop in a Haku sandbox, driven from haku-console
 
-Status: **compatibility spike passed; runtime implementation not started.** The 2026-07-31
-Kubernetes probe resolved the two architecture-blocking mechanical questions: subscription OAuth
+Status: **built, and this plan is the record of why rather than a queue of work.** The 2026-07-31
+Kubernetes probe resolved the two architecture-blocking mechanical questions — subscription OAuth
 works headlessly through the Agent SDK, and the bundled Claude CLI works through Haku's
-TLS-intercepting forced proxy. The remaining work is product/runtime construction rather than an
-authentication feasibility investigation.
+TLS-intercepting forced proxy — and the runtime that answer unblocked is running: the
+`haku-claude` `SandboxTemplate` and its warm pool
+(<../../cluster/k8s/haku/workspaces/app/sandboxtemplate-haku-claude.yaml>), the in-sandbox bridge
+(<../runtime/x/bridge/>), the console's session runtime and its chat surface
+(<../console/x/session_runtime.py>, `frontend/x/`), and a Matrix room in front of all of it
+(<matrix_chat_runtime.md>). One decision below was reversed by the build: no Python imports the
+Agent SDK any more — the console drives Claude Code's wire itself
+(<cli_protocol_ownership.md>) — so the SDK survives only as the wheel the CLI binary is
+extracted from.
+
+What is **not** built is named per item in _What this does not prove_ and _Open questions_; those
+are the live parts of this file.
 
 Companion to [runtime_options.md](runtime_options.md), which catalogues this as the
 "Runtime A variant — self-hosted Claude Code (Agent SDK)", and to
@@ -36,12 +46,13 @@ own subscription is the named-in-scope case. The Agent SDK overview's blunter "u
 authentication methods described in the Quickstart instead" is guidance for that developer
 audience, not a prohibition on the individual case.
 
-What remains is **mechanical, not legal**: `CLAUDE_CODE_OAUTH_TOKEN` appears nowhere in the
+What remained was **mechanical, not legal**: `CLAUDE_CODE_OAUTH_TOKEN` appears nowhere in the
 SDK's documented auth surface. `ClaudeAgentOptions` has no auth fields; credentials reach the
-CLI subprocess only through the inherited environment or `options.env`. Whether a token from
-`claude setup-token` authenticates a **headless container** is unverified — subscription OAuth
-is built around an interactive laptop login. That is step 1 of the build order below, and it
-is the thing that can still invalidate the plan.
+CLI subprocess only through the inherited environment or `options.env`, and subscription OAuth is
+built around an interactive laptop login — so whether a `claude setup-token` token authenticates a
+**headless container** was the thing that could still have invalidated the plan. It does;
+_Compatibility result_ below is the measurement, and the live session has exercised the same path
+continuously since.
 
 The real design cost is elsewhere and is covered in
 [runtime_options.md](runtime_options.md): running the loop in `haku-sandbox` **inverts a
@@ -110,17 +121,19 @@ environment.
 
 **Remote transport.** The Python SDK launches the CLI with `--input-format stream-json` and
 `--output-format stream-json`; its `Query` layer implements hooks, interrupts, SDK-hosted MCP, and
-message routing over an abstract `Transport`. Haku will keep `ClaudeSDKClient` and `Query` in the
-trusted console process and tunnel that existing JSON protocol over a WebSocket to a thin sandbox
-bridge around Claude Code's stdin/stdout. The executable bridge is
-`//haku/runtime/x/bridge:runner_bin`; it imports no Agent SDK code and starts the pinned
-Claude Code executable supplied by the sandbox image. The trusted process derives a versioned launch
-frame from `ClaudeAgentOptions`, preserving dynamic CLI arguments, working directory, and explicit
-environment without putting SDK orchestration in the sandbox. A compatibility test checks the launch
-command against the pinned SDK's `SubprocessCLITransport`. The WebSocket adds only launch and lifecycle
-framing such as end-of-input; it does not define a second prompt, turn, or tool protocol. This also lets
-SDK-hosted MCP handlers run
-inside haku-console and delegate directly to its actor-aware approval application service.
+message routing over an abstract `Transport`. The plan was to keep `ClaudeSDKClient` and `Query` in
+the trusted console process and tunnel that JSON protocol over a WebSocket to a thin sandbox bridge
+around Claude Code's stdin/stdout, deriving a versioned launch frame from `ClaudeAgentOptions` and
+pinning it against the SDK's `SubprocessCLITransport` with a compatibility test.
+
+**Built, and the SDK is out of the loop entirely** — <cli_protocol_ownership.md> is the decision and
+its reasoning. The bridge is `//haku/runtime/x/bridge:runner_bin`, which starts the pinned Claude
+Code executable the sandbox image supplies; the console drives the wire itself (`cli_client.py`
+replaces `ClaudeSDKClient`, `options.py` replaces `ClaudeAgentOptions` plus that private argv
+builder, and `test_options.py` pins the argv where the compatibility test used to). The WebSocket
+still adds only launch and lifecycle framing — it defines no second prompt, turn, or tool protocol —
+and the SDK wheel survives as a build dependency for one reason: `extract_claude.py` pulls the CLI
+binary out of it.
 
 The runtime explicitly enables both `include_partial_messages` and
 `CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING=1`. The former exposes raw Anthropic stream events;
@@ -235,9 +248,12 @@ described above.
    Job. Headless OAuth, intercepted egress, streaming, multi-turn state, same-pod disk resume,
    transcript creation, and Python hooks passed. OTel configuration passthrough passed; backend
    arrival remains to be checked.
-2. **Image + `SandboxTemplate`**, once the spike passes.
-3. **Proxy body capture**, which is a config change to already-deployed mitmproxy.
-4. **Thinnest console surface** — a "new session" button and one text box.
+2. **Image + `SandboxTemplate` — done.** `haku-claude-runner`, the `haku-claude` template and its
+   warm pool, in `cluster/k8s/haku/workspaces/app/`.
+3. **Proxy body capture**, which is a config change to already-deployed mitmproxy. **Not verified
+   here** — nothing in this repo records it landing.
+4. **Thinnest console surface — done, and long since overtaken.** The console has a full session
+   surface (`frontend/x/`) and a Matrix room in front of the same sessions.
 
 ## Out of scope
 
@@ -251,6 +267,15 @@ MCP path) and the behavioral gotchas recorded in <../TODO.md> § haku-traces.
 
 - Whether the console should render an approval queue for the in-sandbox agent's MCP calls, or
   whether an in-sandbox loop is trusted enough to auto-approve what the console currently gates.
-- Where the session record lives — a new table in the console DB, or derived from Sandbox CRs.
+  **Settled by construction, not by decision:** the session launches
+  `--permission-mode bypassPermissions` with no `setting_sources` (`bridge/options.py`), so the
+  CLI's own gate is off and MCP is reached as an external HTTP server the CLI contacts itself —
+  which puts every call through the console's existing approval path and `auto_approval.py`, not a
+  second queue.
+- **Answered:** the session record is a table in the console DB — `sessions` and the
+  `session_{messages,frames,turns,prompts,events,outbox}` around it — with the Sandbox CR held
+  beside it as a claim (`x/sandbox_claims.py`).
 - Whether an idle session should dispose its sandbox automatically, and what the operator sees
-  when it does.
+  when it does. **Still open, and now designed rather than merely asked:**
+  <chat_runtime_cleanup.md> § stage 6 is the answer this question was waiting for; today an idle
+  room holds a sandbox indefinitely.

@@ -24,7 +24,8 @@ Sequenced later than the common Agent lifecycle (H1–H3 there).
 3. **G3 (later — not scheduled):** retire Haku's _last_ Airlock dependency, the read-only
    `google-access-token` (`$TOK`) that the `google` Airlock grant reflects into `haku-sandbox`.
    Today the agent holds it directly for Drive/Tasks and as the Gmail/Calendar REST fallback
-   (`haku/base/sources/`). What replaces it is the target below.
+   (Haku's per-source docs, in the `haku-state` repo since #3951 deleted ducktape's
+   `haku/base/sources/`). What replaces it is the target below.
 
 Do not couple G1/G2/G3 to Airlock's unrelated Oura, BSC, or remaining credential consumers.
 
@@ -66,13 +67,13 @@ never added here.
 ### P1 — active today; direct blockers to dropping `$TOK`
 
 - **Drive — recency + activity** (`drive.readonly`, `drive.activity.readonly`): Haku's "what is the
-  operator working on right now" window (`haku/base/sources/drive.md`).
+  operator working on right now" window (its Drive source doc, `haku-state`).
   - `drive_files_list` — recent files by `modifiedTime desc` (`files.list`; id, name, modifiedTime,
     owners, shared, webViewLink; paged). The core recency scan.
   - `drive_activity_query` — change feed since a bookmark (`driveactivity.activity.query`): edits,
     shares, comments, moves.
   - `drive_file_get` — single file metadata (`files.get`) to enrich a referenced file.
-- **Tasks** (`tasks.readonly`) — overdue/stale to-do scan (`haku/base/sources/tasks.md`).
+- **Tasks** (`tasks.readonly`) — overdue/stale to-do scan (its Tasks source doc, `haku-state`).
   - `tasks_lists_list` (`tasklists.list`) and `tasks_list` (`tasks.list`, `showCompleted=false`, with
     `due`/`updated`).
 - **Gmail / Calendar** — already console-mediated (reads + bounded writes). Remaining REST-fallback
@@ -86,7 +87,7 @@ never added here.
     binary (`files.export` / `files.get?alt=media`), so Haku can actually _read_ a file it flagged
     (summarize before a meeting, extract an implied task).
   - `drive_comments_list` — comments + @-mentions on a file directed at the operator (`comments.list`);
-    a finding source called out in `drive.md`.
+    a finding source called out in the Drive source doc.
 - **Google Docs** (`documents.readonly`):
   - `docs_get` — structured document content (`documents.get`) for summarization / task extraction.
 - **Google Sheets** (`spreadsheets.readonly`):

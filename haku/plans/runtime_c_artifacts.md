@@ -8,6 +8,12 @@ on the in-cluster **LiteLLM**. Graduates into a real `haku/runtime/agent/` compo
 chosen. Kwarg/import names marked _(verify)_ move between Pydantic AI 1.x
 releases — pin a version and check.
 
+**One repo-side path in these sketches has since moved.** They bake Haku's manual and run
+procedure out of ducktape (`COPY haku/base`, `COPY haku/run.md`, and the system prompt pointing at
+`/opt/haku/base/instructions.md`). #3951 deleted both: the manual lives in the `haku-state` repo
+now, which this runtime already clones to `/workspace/haku-state`, so the image bakes nothing and
+the prompt points there instead. `haku/base/` still exists but holds only `agent_shared.yaml`.
+
 **Shape vs Runtime B:** there is no Anthropic-run loop and no separate worker —
 the agent loop runs in **your** process, so B's "worker + supervisor + session"
 collapse into **one** in-cluster service. MCP auth is in-process (pass the bearer

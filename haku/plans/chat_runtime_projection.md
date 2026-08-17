@@ -56,7 +56,7 @@ the property this paragraph exists for. It is now `project(state, frames) -> (st
 over a neutral `ProjectionState`, with the end of the stream an explicit `finish(state)` rather
 than a batch running out, and one batch equal to any split of batches asserted as a test.
 
-**The cursor is `sessions.projected_frame_seq` (migration `0050`)**, advanced by
+**The cursor is `sessions.projected_frame_seq` (migration `0051`)**, advanced by
 `SessionStore.apply_frame` in the same transaction as the frame's effects, and adoption hands the
 turn loop the frames past it rather than asking the log a second time what they meant. The
 question the shape left open — a reducer's cursor is only resumable if the state at that cursor is
@@ -118,8 +118,10 @@ sinks write to it:
 | `_progress_reporter.report`, by hand                    | one decoded line of a `SetupOutput`       | `"setup_output"` — the bridge's `kind` literal |
 
 Plus a `partial` row, the console's own reconstruction of a streaming answer, which wears
-`assistant` and is told apart by a boolean column. That one leaves regardless: it is tombstoned on
-`update_partial_frame`, and stage 1 removed its reason to exist.
+`assistant` and is told apart by a boolean column. That one leaves regardless: stage 1 removed its
+reason to exist, #4230 deleted its writer, and the tombstone now sits on the column itself
+(`SessionFrame.partial` in `database_schema.py`), pointing at <next_month.md> § 1 phases 2 and 3
+for the unmap and the drop.
 
 **The intended shape, if and when this is picked up: the table is the log of the bridge.** Nothing
 here is scheduled, and the rest of this plan does not depend on it — stage 3 onward can proceed with
@@ -339,11 +341,18 @@ channel rename).
 | **R3 — the contract** | Everything an old replica was still touching through R2's roll: `frame_seq`'s sequence default and the sequence behind it dropped, so an insert that names no number fails instead of inventing one; `runner_seq`, the `partial` column and their indexes dropped.                                                                                                                                                                                                                                                                                 | Removals, so gated on R2 converging.                                                                                                                                                                           |
 
 **Two releases, and it is replicas that force the second rather than rows.** An old replica inserts
-without naming `frame_seq`, and still writes `runner_seq` and `partial` — so R2 cannot drop what it
-would need. That is why `Identity` is demoted to a plain default rather than removed (§ _The
-primary-key question_), and why a column SQLAlchemy still names in every `SELECT` is unmapped in R2
-and dropped in R3 (<../console/README.md> § Perimeter / deploy). Nothing about the rows already in
+without naming `frame_seq`, and still writes `runner_seq` — so R2 cannot drop what it would need.
+That is why `Identity` is demoted to a plain default rather than removed (§ _The primary-key
+question_), and why a column SQLAlchemy still names in every `SELECT` is unmapped in R2 and dropped
+in R3 (<../console/README.md> § Perimeter / deploy). Nothing about the rows already in
 `session_frames` extends the schedule past that: they are deleted, not migrated.
+
+**`partial` has left this schedule and the table above is stale about it.** #4230 deleted its
+writer, so it is not a column an old replica still writes, and its unmap and drop are now
+<next_month.md> § 1 phases 2 and 3 — which run against the purged database on their own gate rather
+than waiting on R2's cutover. Read R2's "the `partial` row … stops being written and is unmapped"
+and R3's "the `partial` column and its index dropped" as already reassigned; `runner_seq` is the
+only part of those two lines this plan still owns.
 
 **The gate is one fact, checked in two places.** Every `haku-console` pod is running an image at or
 after R2. The desired tag is in
@@ -424,7 +433,7 @@ to the socket, which no closed session has.
 ### 3. Turn state onto the turn row — **done**
 
 `session_turns` carries `assistant_message_id`, `said_anything` and `queued_reply` (migration
-`0043`), each written in the same transaction as the effect it describes: the message pointer with
+`0044`), each written in the same transaction as the effect it describes: the message pointer with
 `begin_assistant`, the other two with the `update_assistant` that completes a message and inserts
 the room's outbox row. `_run_turn` reads them through `SessionStore.turn_state` at the top of every
 turn, so a turn this process opened and one it adopted enter the loop the same way. `TurnResumed`
@@ -872,7 +881,9 @@ retry, ever.
 **The generalization to aim at, from <../console/plans/session_channels.md> § 1: a channel is
 reconciled against the session rather than sent to.** The outbox is the push half — deliver
 promptly; a per-attachment cursor on `chat_attachment` is the convergence half — deliver
-eventually and at most once, with repair as the normal path rather than a retry bolted on. Two
+eventually and at most once, with repair as the normal path rather than a retry bolted on.
+`chat_attachment` is **specified but unbuilt** (<chat_runtime_cleanup.md> § stage 7): no migration
+creates it, so the cursor has no row to live on until that stage lands. Two
 consumers want the pair. Once lifecycle events are recorded rather than only announced, "the
 room's queue" becomes "bring each attached channel up to this session's record". And relaying an
 operator's console-sent message into the room stops being a feature at all: it is a transcript row

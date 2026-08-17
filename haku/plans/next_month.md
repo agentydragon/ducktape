@@ -57,12 +57,13 @@ What is left is three releases.
 
 #### Phase 2 — the code-only release, plus the additive tightening
 
-**The migration half has landed as `0058`**: `sessions.surface SET NOT NULL`, the surface/room
-equivalence, `VALIDATE CONSTRAINT ck_session_messages_source_anchored`,
+**The migration half has landed as `0058`** (#4235): `sessions.surface SET NOT NULL`, the
+surface/room equivalence, `VALIDATE CONSTRAINT ck_session_messages_source_anchored`,
 `ck_session_messages_assistant_pointed`, `ck_session_frames_runner_seq_direction`, and
 `projected_frame_seq` `SET DEFAULT 0` **and** `SET NOT NULL`. The backfill that wrote
-`unpointable_reason` — `x/message_provenance.py`, its `_main` and their tests — went with it, since
-`0058` makes the shape it recorded unwritable.
+`unpointable_reason` — `x/message_provenance.py`, its `_main` and their tests — went ahead of it in
+#4226, since `0058` makes the shape it recorded unwritable; and `_write_partial_frame`, the last
+writer of `session_frames.partial`, went in #4230.
 
 **`session_messages.{unpointable_reason,tool_calls}` are unmapped** (#4266), with the
 `ck_session_messages_unpointable_{reason,exclusive}` declarations, `MessageUnpointable`,
@@ -73,8 +74,8 @@ know were still there — `apply_frame`'s `message.tool_calls = tool_calls` and 
 **`session_frames.partial` cannot be unmapped in a code-only release**, and this is the plan's own
 gap rather than a discovery about the deploy. `0030` created the column `NOT NULL` **with no server
 default** and nothing has altered it since, so an image that does not map it emits an `INSERT`
-naming no `partial` and every `record_frame` fails. The three-release shape for it is therefore
-four steps, not three:
+naming no `partial` and every `record_frame` fails. The three-release shape for it therefore gains a step
+in front:
 
 1. `ALTER TABLE session_frames ALTER COLUMN partial SET DEFAULT false` — additive, and safe against
    the previous image for the usual reason: `record_frame` passes an explicit `false`, which a
@@ -182,7 +183,9 @@ collects a debt once rather than changing policy.
 [chat_runtime_cleanup.md](chat_runtime_cleanup.md) § Stage 6 allocates a sandbox because there is
 something to do, instead of holding one indefinitely for a quiet room. The widening shipped a release
 early (#4190) because `TextBackedStrEnumColumn` parses the column, so a replica on the previous image
-reading `idle` fails rather than degrading; the writer is the second half.
+reading `idle` fails rather than degrading; the writer is the second half and is **open as #4231**.
+On `devel` the only writer of `SessionStatus.IDLE` is still a test fixture, and `chat_models.py`'s
+tombstone on the member says so.
 
 **Done when** an idle room holds no sandbox and the first message provisions one.
 
@@ -253,7 +256,9 @@ Costed, not scheduled.
 - **The reconcile loop and `chat_attachment`**
   ([session_channels.md](../console/plans/session_channels.md) § 1). The outbox is the push half and
   it works; the convergence half pays off with a **second** channel or the Matrix relay. Pull it in
-  the moment either becomes real.
+  the moment either becomes real. `chat_attachment` is a design, not a table —
+  [chat_runtime_cleanup.md](chat_runtime_cleanup.md) § stage 7 specifies it and no migration creates
+  it — so pulling this in means building the schema half first.
 - **Multi-agent trust tiers** ([the trust-tier plan](information_trust_tiers.md)). The message
   provenance it wants exists now (`source_{first,last}_frame_seq`), so it starts cheaply — but it is
   a new subsystem, and the list above is what makes it stand on something finished.

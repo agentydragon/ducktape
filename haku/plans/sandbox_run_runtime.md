@@ -27,7 +27,7 @@ is the same command CI runs.
 
 **Works, unmodified:**
 
-| Step of `haku/run.md`             | In-sandbox result                                                                                                                                |
+| Step of the run procedure         | In-sandbox result                                                                                                                                |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | bootstrap / state checkout        | `provision_sandbox` → `ready` + `bootstrap_state=succeeded` in one call, warm-pool hit; `.netrc` written, `/workspace/haku-state` cloned at HEAD |
 | run-start gate 1 (SF date)        | `TZ=America/Los_Angeles date` — fine                                                                                                             |

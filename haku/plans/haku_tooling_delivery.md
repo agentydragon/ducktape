@@ -172,11 +172,11 @@ state; …) — treat this as scaffolding to extend.
   `MODULE.bazel`) so `bazel run` works off-cluster despite the codeload 403s. The git protocol is
   the only un-gated fetch path (constraint 2), so this is the _sole_ way to make bazel fetch its
   deps off-cluster without `add_repo`. **Horrible but real, documented for completeness:** a
-  hand-maintained `git_override` per module (dozens — rules*python, rules_cc, bazel-skylib,
-  platforms, protobuf, abseil, …), each pinned to a commit matching its BCR version and re-derived
-  on every bump, forfeiting bzlmod's version resolution. Committed config beats per-session
-  `add_repo` on recurrence, but it's fragile busywork — and it \_still* ships bazel's whole external
-  closure to run a small CLI (constraint 2's "doesn't matter which fetch path wins"), so it buys
+  hand-maintained `git_override` per module (dozens — `rules_python`, `rules_cc`, `bazel-skylib`,
+  `platforms`, `protobuf`, `abseil`, …), each pinned to a commit matching its BCR version and
+  re-derived on every bump, forfeiting bzlmod's version resolution. Committed config beats
+  per-session `add_repo` on recurrence, but it's fragile busywork — and it _still_ ships bazel's
+  whole external closure to run a small CLI (constraint 2's "doesn't matter which fetch path wins"), so it buys
   nothing over shipping the python directly. Not recommended; recorded so the option isn't
   re-derived.
 
