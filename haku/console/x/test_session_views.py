@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
+from uuid import uuid4
 
 import pytest_bazel
 
 from haku.console.chat_models import ConversationEventKind, EventProvenance, FrameDirection
-from haku.console.database_schema import SessionEvent
+from haku.console.database_schema import SessionEvent, SessionFrame
 from haku.console.x import session_views
+from haku.console.x.claude_code import projection
 from haku.console.x.session_store import BridgeAuthentication, SpaSession
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 
@@ -111,6 +114,60 @@ async def test_a_result_stored_in_any_shape_reads_back_as_text(chat_store, migra
         "toolu_references": '["Read", "Grep"]',
         "toolu_opaque": '{"unknown": true}',
     }
+
+
+def _frame(frame_seq: int, kind: str, payload: dict[str, Any]) -> SessionFrame:
+    now = datetime.now(UTC)
+    return SessionFrame(
+        frame_seq=frame_seq,
+        session_id=uuid4(),
+        direction=FrameDirection.FROM_AGENT,
+        kind=kind,
+        payload=payload,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+_INSPECTED = [
+    _frame(1, SETUP_OUTPUT_KIND, setup_output_frame("cloning haku-state")),
+    _frame(2, "system", {"type": "system", "subtype": "status"}),
+    _frame(3, "system", {"type": "system", "subtype": "vcs_state_changed"}),
+    _frame(4, "user", {"type": "user", "message": {"content": [{"type": "text", "text": "hi"}]}}),
+    _frame(5, "result", {"type": "result", "subtype": "success"}),
+]
+
+
+def test_the_inspector_says_which_frames_the_fold_had_no_branch_for() -> None:
+    """The actionable half of a debug surface: a frame class this release does not map is the one
+    thing a transcript is silently missing, and the key is the string to add a branch for."""
+    page = session_views.frame_page(_INSPECTED, limit=len(_INSPECTED))
+
+    assert {frame.frame_seq: frame.unprojected for frame in page.frames} == {
+        1: None,
+        2: None,
+        3: {"system/vcs_state_changed": 1},
+        4: {"user/text": 1},
+        5: None,
+    }
+
+
+def test_the_per_frame_counts_are_what_a_whole_session_fold_reports() -> None:
+    """Per frame is exact rather than an approximation of the session-wide tally: a count keys off
+    the frame's own class, never off what the fold accumulated before it. `setup_output` is the
+    bridge's own envelope, which the fold refuses, so it is excluded from both sides."""
+    page = session_views.frame_page(_INSPECTED, limit=len(_INSPECTED))
+    whole = projection.project_log(
+        projection.RecordedFrame(frame_seq=row.frame_seq, payload=row.payload)
+        for row in _INSPECTED
+        if row.kind != SETUP_OUTPUT_KIND
+    )
+
+    tallied: dict[str, int] = {}
+    for frame in page.frames:
+        for kind, count in (frame.unprojected or {}).items():
+            tallied[kind] = tallied.get(kind, 0) + count
+    assert tallied == dict(whole.unprojected)
 
 
 if __name__ == "__main__":

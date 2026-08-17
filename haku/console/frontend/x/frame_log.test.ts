@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import type { SessionFrame, SessionFramePage } from "../client";
-import { frameSummary, kindsForMode, prependEarlierPage } from "./frame_log";
+import { frameSummary, kindsForMode, prependEarlierPage, unprojectedSummary } from "./frame_log";
 
-function frame(frame_seq: number, kind: string, payload: Record<string, unknown>): SessionFrame {
+function frame(
+  frame_seq: number,
+  kind: string,
+  payload: Record<string, unknown>,
+  unprojected?: Record<string, number>
+): SessionFrame {
   return {
     frame_seq,
     kind,
     payload,
+    unprojected,
     direction: "from_agent",
     created_at: "2026-08-01T03:00:00Z",
   };
@@ -48,6 +54,24 @@ describe("prependEarlierPage", () => {
     const merged = prependEarlierPage(page([frame(1, "system", {})], null), page([frame(2, "user", {})], 2));
 
     expect(merged.next_before_seq).toBeNull();
+  });
+});
+
+describe("unprojectedSummary", () => {
+  it("says nothing for a frame the fold read whole", () => {
+    expect(unprojectedSummary(frame(1, "assistant", {}))).toBe("");
+  });
+
+  it("names the frame class verbatim, so it is the string to add a branch for", () => {
+    expect(unprojectedSummary(frame(2, "system", {}, { "system/vcs_state_changed": 1 }))).toBe(
+      "system/vcs_state_changed"
+    );
+  });
+
+  it("counts only a class the frame carried more than once", () => {
+    expect(unprojectedSummary(frame(3, "assistant", {}, { "assistant/redacted_thinking": 2, "system/x": 1 }))).toBe(
+      "assistant/redacted_thinking ×2 · system/x"
+    );
   });
 });
 

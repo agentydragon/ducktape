@@ -151,6 +151,7 @@ py_library(
         ":setup_output",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
+        "//haku/console/x/claude_code:projection",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
@@ -412,6 +413,7 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "//haku/console/x/claude_code:projection",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],

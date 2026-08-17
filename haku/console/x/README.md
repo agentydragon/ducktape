@@ -193,6 +193,11 @@ Decisions worth knowing before changing it:
   frame to a context budget; here the wire is the answer, so clipping would be the lossy projection
   again one level down. The browser's other cost is drawn down instead: a payload builds its
   syntax-highlighted editor only once it nears the viewport (`frontend/code_block.tsx`).
+- **A frame the fold had no branch for says so.** Each row carries its own `Projection.unprojected`,
+  badged in the inspector — the transcript is silently missing whatever the adapter did not map, and
+  the key is the frame class to go and write a branch for. Diagnostic only: no rendering, notice or
+  delivery decision reads it. The keys stay the backend's own class names, because the adapter is
+  the one component allowed to be provider-shaped; neutralizing them would delete the answer.
 
 **Where per-message provenance lands** (`agent/claude-frame-provenance`, #4105): a message's
 inclusive `frame_seq` range is a bound on the same query — `before_seq` is already its upper half —
@@ -323,7 +328,8 @@ meaning anything:
 - One batch and any split of batches project alike (`Projection.then`).
 - Every event carries provenance, and it is a union, so a rebuild cannot delete an authored event
   (`conversation_events.Authored`).
-- The default branch is counted, not dropped (`Projection.unprojected`).
+- The default branch is counted, not dropped (`Projection.unprojected`) — and the count is read:
+  per session as `read_transcript`'s `unreadable`, per frame as the inspector's `unprojected` badge.
 
 Before changing the adapter, read <../debug/frame_shape_census.md>: every rule in it is a measured
 fact rather than a reading of `protocol.md`, so what looks like belt and braces mostly is not.

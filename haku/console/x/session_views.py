@@ -33,6 +33,7 @@ from haku.console.chat_models import (
 )
 from haku.console.database_schema import Session, SessionEvent, SessionFrame, SessionMessage
 from haku.console.x import session_events
+from haku.console.x.claude_code import projection
 from haku.console.x.conversation_events import Outcome
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
@@ -177,6 +178,12 @@ class SessionFrameView(BaseModel):
     kind: str
     created_at: datetime
     payload: dict[str, Any]
+    unprojected: dict[str, int] | None = Field(
+        default=None,
+        description="What the adapter's fold read nothing from in this frame, by the frame class it "
+        "calls it — absent when it read the whole frame. Diagnostic only: no rendering, notice or "
+        "delivery decision reads it.",
+    )
 
 
 class SessionFramePage(BaseModel):
@@ -186,6 +193,25 @@ class SessionFramePage(BaseModel):
     next_before_seq: int | None = Field(
         description="Pass back as `before_seq` for the page of earlier frames, or absent at the start of the log."
     )
+
+
+def _unprojected(row: SessionFrame) -> dict[str, int] | None:
+    """`Projection.unprojected` for one frame, or nothing — never an empty map standing in for "none".
+
+    **The keys are the adapter's, and that is not the leak it looks like.** They are Claude's own
+    frame class names (`system/vcs_state_changed`, `user/text`) because the adapter is the component
+    allowed to be provider-shaped — translating is its job. A future reader should not rename them
+    into a neutral vocabulary; what the fold could not read is only sayable in the wire's own words.
+
+    Folding one frame at a time is exact here, unlike for the events: a count keys off the frame's
+    own class and content blocks, never off what the fold accumulated before it, so per frame sums
+    to what a whole-session fold reports. `setup_output` is the bridge's own envelope rather than a
+    CLI frame — the fold refuses it, and it has no class the adapter could fail to read.
+    """
+    if row.kind == SETUP_OUTPUT_KIND:
+        return None
+    folded = projection.project_log([projection.RecordedFrame(frame_seq=row.frame_seq, payload=row.payload)])
+    return dict(folded.unprojected) or None
 
 
 def frame_page(rows: Sequence[SessionFrame], *, limit: int) -> SessionFramePage:
@@ -201,6 +227,7 @@ def frame_page(rows: Sequence[SessionFrame], *, limit: int) -> SessionFramePage:
             kind=row.kind,
             created_at=row.created_at,
             payload=row.payload,
+            unprojected=_unprojected(row),
         )
         for row in rows
     ]

@@ -49,8 +49,10 @@ def projected(*, frame_seq: int, payload: dict[str, Any]) -> tuple[ConversationE
     and a `result` frame produces exactly one `TurnCompleted` and nothing else — there is no open
     message left for it to close.
 
-    `Projection.unprojected` is dropped rather than logged: per frame in the hot path it would be a
-    log line for every heartbeat, and the count is worth taking where the events are *stored*.
+    `Projection.unprojected` is dropped here rather than logged: per frame in the hot path it would
+    be a log line for every heartbeat. It is read on the two paths that re-fold stored frames
+    instead — `session_store.read_transcript`'s `unreadable`, and the frame inspector's per-frame
+    count (`session_views.frame_page`).
     """
     return projection.project_log(
         [projection.RecordedFrame(frame_seq=frame_seq, payload=payload)],

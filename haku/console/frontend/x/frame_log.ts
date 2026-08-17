@@ -33,6 +33,17 @@ export function prependEarlierPage(page: SessionFramePage, loaded: SessionFrameP
   return { frames: [...earlier, ...loaded.frames], next_before_seq: page.next_before_seq };
 }
 
+/** What the adapter's fold read nothing from in this frame, in one line, or "" when it read it all.
+ *
+ * The keys are the backend's own frame class names, shown verbatim: this is the debug surface, and
+ * "system/vcs_state_changed" is the string to go and add a branch for. A count rides along only
+ * when a frame carried the same unread class more than once, which is a batched assistant frame. */
+export function unprojectedSummary(frame: SessionFrame): string {
+  return Object.entries(frame.unprojected ?? {})
+    .map(([kind, count]) => (count > 1 ? `${kind} ×${count}` : kind))
+    .join(" · ");
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

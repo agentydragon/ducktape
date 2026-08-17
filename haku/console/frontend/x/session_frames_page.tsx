@@ -5,7 +5,7 @@ import { displayableError, fetchSessionFrames, type SessionFrame, type SessionFr
 import { JsonPreview } from "../json_preview";
 import { conversationPath, navigateToConsolePath } from "../routing";
 import { useVariant, VariantControl } from "../variant_control";
-import { frameSummary, kindsForMode, prependEarlierPage, type FrameMode } from "./frame_log";
+import { frameSummary, kindsForMode, prependEarlierPage, unprojectedSummary, type FrameMode } from "./frame_log";
 
 // Matches the server's own default page. Held here too so "Load earlier frames" asks for the same
 // size as the first read; a frame carries a whole tool result, and each one on screen builds a
@@ -17,6 +17,7 @@ function FrameRow({ frame }: { frame: SessionFrame }) {
   // full shows it whole with line numbers. Frames are read by skimming until one looks wrong.
   const [variant, setVariant] = useVariant("compact");
   const summary = frameSummary(frame);
+  const unprojected = unprojectedSummary(frame);
   const outbound = frame.direction === "to_agent";
   return (
     <Paper withBorder p="sm">
@@ -33,6 +34,14 @@ function FrameRow({ frame }: { frame: SessionFrame }) {
           <Badge size="sm" variant="outline">
             {frame.kind}
           </Badge>
+          {/* The one thing the transcript is silently missing, said where it can be acted on: this
+              frame reached the fold and the fold had no branch for it. Orange rather than red —
+              a class the CLI added is news, not a failure. */}
+          {unprojected && (
+            <Badge size="sm" variant="light" color="orange" title="The projection has no branch for this frame">
+              unprojected: {unprojected}
+            </Badge>
+          )}
         </Group>
         <Group gap="xs" wrap="nowrap">
           {/* Wall-clock rather than the relative form the tool-call surfaces use: frames are read
