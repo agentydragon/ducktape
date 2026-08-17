@@ -595,7 +595,7 @@ async def test_a_conversation_a_channel_holds_takes_a_prompt_typed_in_the_browse
     await attach_channel(migrated_sessions, matrix.session_id, ROOM)
     assert await chat_store.authenticate_bridge(matrix.session_id, token) == BridgeAuthentication.ACCEPTED
 
-    await chat_store.enqueue_prompt(operator_id, matrix.session_id, "typed into the tab")
+    await chat_store.enqueue_prompt(operator_id, matrix.session_id, "typed into the tab", SPA_ORIGIN)
     detail = await chat_store.get_operator_conversation(
         operator_id, await chat_store.conversation_of(matrix.session_id)
     )
@@ -955,7 +955,9 @@ async def accepted_prompt(chat_store: SessionStore, operator_id: UUID) -> tuple[
     """
     view, token = await chat_store.create(operator_id, MatrixSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    prompt = await chat_store.enqueue_prompt(operator_id, view.session_id, "what were we doing")
+    prompt = await chat_store.enqueue_prompt(
+        operator_id, view.session_id, "what were we doing", MatrixOrigin(address=ROOM, refs=("$asked",))
+    )
     return view.session_id, prompt.message_id
 
 

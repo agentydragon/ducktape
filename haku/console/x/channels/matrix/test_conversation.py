@@ -604,7 +604,7 @@ async def test_a_batch_a_ready_session_takes_becomes_its_prompt(
     assert isinstance(admitted, PromptAccepted)
     start = await chat_store.next_prompt(session_id)
     assert start is not None
-    assert start.prompt == "[$1] hi\n[$2] and this"
+    assert start.prompt == "hi\nand this", "the ids ride on the prompt's own event now, not in its prose"
 
 
 async def test_a_batch_offered_mid_turn_is_rejected_with_the_reason_and_the_text(
@@ -629,7 +629,7 @@ async def test_a_batch_offered_mid_turn_is_rejected_with_the_reason_and_the_text
     assert admitted.event is not None
     assert admitted.event.session_id == session_id
     assert admitted.event.kind is AuthoredEventKind.PROMPT_REJECTED
-    assert admitted.event.body == {"reason": PromptRejection.TURN_IN_FLIGHT, "text": "[$2] and another thing"}
+    assert admitted.event.body == {"reason": PromptRejection.TURN_IN_FLIGHT, "text": "and another thing"}
 
 
 async def test_a_batch_offered_before_a_session_exists_is_rejected_with_nothing_to_record(
@@ -807,9 +807,9 @@ async def test_a_batch_records_the_room_events_it_was_folded_from(
         [operator_message("first", event_id="$a", at=1), operator_message("second", event_id="$b", at=2)]
     )
 
-    assert offered is not None
+    assert isinstance(offered, PromptAccepted)
     async with migrated_sessions() as db:
-        prompt = await db.get(SessionMessage, offered)
+        prompt = await db.get(SessionMessage, offered.message_id)
         assert prompt is not None
         assert prompt.content == "first\nsecond"
         asked = await db.scalar(
