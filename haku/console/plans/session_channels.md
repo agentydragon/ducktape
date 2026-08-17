@@ -196,7 +196,7 @@ describe that channel's rendering. `rejected` and `unreadable` are already the h
 fact is an `AuthoredEventKind` row and the tag names the room's rendering of it. Do not promote
 the whole enum.
 
-## 4. Live updates, over the socket the shell already holds — built; the increment is next
+## 4. Live updates, over the socket the shell already holds — built; the increment has a server half
 
 **Build on `/api/events/ws`, not a second SSE endpoint.** The shell holds exactly one per tab, and
 `frontend/console_events.ts`'s `useConsoleEvents` already provides the whole client half:
@@ -239,7 +239,7 @@ window per session, an owner lookup resolved once per session and cached, and th
 list on the same event as the detail. The SPA chat page's SSE stream is untouched — §2 retires it,
 not this.
 
-### Streaming the increment — scheduled, and designed here
+### Streaming the increment — designed here, server half built
 
 **The operator chose to build this before §2's merge** (2026-08-16, <../../plans/next_month.md>
 § C): the increment first, the merge onto it, so the surviving surface never reads worse than
@@ -282,30 +282,29 @@ copy? — already gives this answer: the console converges by reading the record
 told _when_, not delivered _to_. Reading a suffix of the record instead of all of it does not move
 it across that line.
 
-#### The address does not cover the transcript, and that is the real precondition
+#### The address does not cover the transcript, and that was the real precondition
 
-<../../plans/next_month.md> § Not now calls the preconditions half met — the ordered stream and its
-address exist, the position does not. Reading the code, the stream itself is the part that is
-short: **two things a transcript shows are not in `session_events`.**
+<../../plans/next_month.md> § Not now called the preconditions half met — the ordered stream and its
+address existed, the position did not. Reading the code, the stream was the part that was short:
+**things a transcript shows that no `session_events` row named.**
 
-- **The operator's own prompt.** `enqueue_prompt` writes a `session_messages` row and no event;
-  `x/session_events.py`'s `row()` maps only agent-side events. So `event_seq` is not a cursor over
-  the messages a transcript renders, and an increment addressed by it would silently drop the
-  operator's own question.
+- **The operator's own prompt.** `enqueue_prompt` wrote a `session_messages` row and no event, so
+  `event_seq` was not a cursor over the messages a transcript renders and an increment addressed by
+  it would have dropped the operator's own question. **Built**:
+  `AuthoredEventKind.PROMPT_ENQUEUED`, migration `0059`. It is `authored` because at enqueue time
+  no frame carries it — a session holds no sandbox until a prompt buys one — and it stays authored
+  once the prompt is handed over. That settles nothing about the argument
+  <../../plans/next_month.md> § 3 is blocked on: §3's claim is about lifecycle, and a prompt is
+  conversation.
 - **The message currently streaming.** A `TextDelta` is deliberately not a row — the completed
   message carries the prose whole — so an open message is invisible in the log until
-  `message_completed`, while `session_messages.content` is mutated in place per delta.
-
-Two consequences, and the first is a dependency worth naming:
-
-- **The `authored` arm gets its first writer, and it is uncontroversial.** An operator prompt is
-  conversation, not lifecycle, so recording it as a `session_events` row settles nothing about the
-  argument <../../plans/next*month.md> § 3 is blocked on — §3's claim is about lifecycle. It is
-  `authored` because at enqueue time it has no frame; `set_message_source_frames` later points the
-  \_message* at the frame it went out as, and the event stays authored.
-- **The open message is read whole, every time.** One row, bounded by one message rather than by
-  the transcript, found by the existing `uq_session_turns_open` index. It is the one thing the
-  cursor cannot address, and sending it whole is already the increment.
+  `message_completed`, while `session_messages.content` is mutated in place per delta. It is read
+  whole every time: one row, bounded by one message rather than by the transcript.
+- **A turn's own row**, which the implementation found (#4257). `next_prompt`, `end_turn` and
+  `fail` move transcript rows with no event naming them — a prompt leaving `pending`, a turn's
+  outcome and its cost. All act on the newest turn, so an increment carries everything from the
+  earliest turn an event names **plus** the newest turn's row, its prompts and its open message.
+  Without that second half a tab renders the operator's own prompt as queued forever.
 
 #### What is sent is changed messages, not events
 
@@ -323,10 +322,10 @@ That is what makes every recovery path below trivial instead of a protocol.
 #### The read surface
 
 A new route beside the existing read, not a parameter on it: `GET
-/api/conversations/{id}/changes?after={event_seq}` returning `{watermark, messages, turns,
-status}`. `messages` there means "the ones that moved", which is a different field from the detail
+/api/conversations/{id}/changes?after={event_seq}` returning `{watermark, status, error, messages,
+turns}`. `messages` there means "the ones that moved", which is a different field from the detail
 view's "all of them" — overloading one name with both is how a client ends up rendering an
-increment as a transcript.
+increment as a transcript. **Built by #4257**, server half only; the frontend still refetches.
 
 - **`watermark`** is the session's highest `event_seq` at read time, and the page's next `after`.
   The detail read gains the same field, so a freshly opened transcript is self-addressing.
@@ -336,10 +335,14 @@ increment as a transcript.
 - **A gap cannot be detected and must not be relied on.** `session_events.event_seq` is a global
   `Identity` sequence, so consecutive rows of one session are not contiguous and holes are normal.
   Correctness comes from every read being "everything after N", never "the next one after N".
-- **A position older than the log is `410 Gone`**, and the page falls back to the full read.
-  Nothing prunes `session_events` today — rows leave only with their session (`ON DELETE CASCADE`)
-  or by <../../plans/legacy_purge.md> — but "no rows after N" and "N is before this log begins" are
-  different answers and only one of them is safe to render.
+- **A position the log cannot answer from is `410 Gone`**, and the page falls back to the full
+  read. Nothing prunes `session_events` today — rows leave only with their session
+  (`ON DELETE CASCADE`) or by <../../plans/legacy_purge.md> — but "no rows after N" and "N is
+  before this log begins" are different answers and only one of them is safe to render. The check
+  is **membership**, not a comparison: `event_seq` is a global `Identity`, so a number below the
+  session's first row and a number between two of its rows are both simply not positions it hands
+  out. #4257 gives the same 410 when more rows have moved than the page bound allows, since the
+  recovery is identical and a caller gains nothing by telling the two apart.
 - **The whole-conversation read stays**, in three roles: the opening snapshot, the recovery path
   above, and the inventory the list page reads (which is a different query and stays a refetch —
   it is bounded by session count, not by transcript length).
@@ -528,11 +531,11 @@ rather than a viewer, from rows that already existed. What remains:
 
 1. ~~**Live updates** (§4)~~ — done.
 2. **Stream the increment** (§4). Ahead of the merge by the operator's choice, so the surviving
-   surface never reads worse than `/chat` does. Its own first step is the `authored` writer for the
-   operator's prompt, without which the cursor does not cover the transcript.
+   surface never reads worse than `/chat` does. The prompt's `authored` writer and the read route
+   are built (migration `0059`, #4257); what is left is the page reading it instead of refetching.
 3. **Merge the two pages** (§2) and move sending into the merged detail (§5, SPA half).
-4. **Record lifecycle events** (§3) and render them in both channels. The `authored` arm has its
-   first two writers — a lease taken over and a lease lapsing; `_SessionStatusAnnouncer`'s
+4. **Record lifecycle events** (§3) and render them in both channels. The `authored` arm has
+   three writers — a prompt accepted, a lease taken over, a lease lapsing; `_SessionStatusAnnouncer`'s
    transitions are what remain.
 5. **The reconcile loop** (§1) — the cursor on `chat_attachment`, and Matrix delivery moved onto
    it. Cleanup stage 7's schema half landed as migration `0064` and what the channel has already
