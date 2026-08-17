@@ -1,0 +1,100 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: public-coder-agent-state-archive-20260817
+  namespace: public-coder-agent
+  labels:
+    app.kubernetes.io/name: public-coder-agent-archive-copier
+spec:
+  # A failed rescue must be inspected before another full source-disk read.
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: public-coder-agent-archive-copier
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: ovh-ns103656
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: archive
+          image: rclone/rclone:1.75.0
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              set -o pipefail
+              umask 077
+              stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+              prefix="rescue/${stamp}"
+              partial="${prefix}/public-coder-agent-state.tar.partial"
+              archive="${prefix}/public-coder-agent-state.tar"
+              checksum="${prefix}/public-coder-agent-state.tar.sha256"
+              fifo=/tmp/archive.sha256.fifo
+              hash_file=/tmp/archive.sha256
+              mkfifo "$fifo"
+              sha256sum "$fifo" | sed 's#  .*#  -#' > "$hash_file" &
+              hasher_pid=$!
+              tar -C /state -cf - . | tee "$fifo" | rclone --config '' rcat --bwlimit 2M archive:"$partial"
+              wait "$hasher_pid"
+              rclone --config '' moveto archive:"$partial" archive:"$archive"
+              rclone --config '' copyto "$hash_file" archive:"$checksum"
+              rclone --config '' cat archive:"$archive" | sha256sum -c "$hash_file"
+              rclone --config '' cat archive:"$archive" | tar -tf - >/dev/null
+          env:
+            - name: RCLONE_CONFIG_ARCHIVE_TYPE
+              value: s3
+            - name: RCLONE_CONFIG_ARCHIVE_PROVIDER
+              value: Other
+            - name: RCLONE_CONFIG_ARCHIVE_ENDPOINT
+              value: http://seaweedfs-s3.seaweedfs.svc:8333
+            - name: RCLONE_CONFIG_ARCHIVE_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: s3-identity-public-coder-agent-archive
+                  key: accessKey
+            - name: RCLONE_CONFIG_ARCHIVE_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: s3-identity-public-coder-agent-archive
+                  key: secretKey
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: state
+              mountPath: /state
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: public-coder-agent-state
+            readOnly: true
+        - name: tmp
+          emptyDir: {}
