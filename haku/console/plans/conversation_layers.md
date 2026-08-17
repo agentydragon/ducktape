@@ -72,6 +72,37 @@ keep refusal expressible.
 
 ### Subscriptions, in both directions
 
+**One primitive, and every channel is a consumer of it** (operator, 2026-08-17):
+
+```text
+subscribe(conversation, from: position | nothing)
+  -> a snapshot, if no position was given
+  -> then the changes, as they happen
+```
+
+That is the whole contract, and the point of naming it is that **the SPA and Matrix stop being two
+mechanisms**. Today the browser reads the record and Matrix is pushed by the turn loop from inside
+the process that holds the runner (§ 8) — one job done twice, which is why a fact can reach a room
+and never reach a tab. Under one subscription there is a single path from the record outward, and a
+channel differs only in two ways:
+
+- **How it renders what arrives.** A run of tool calls is a list in a tab and one folded notice in a
+  room (§ 4). That is the channel's own decision and it belongs there, not in the stream.
+- **Whether its position is durable.** A room holds its own copy, so its position is a cursor the
+  console owes work against; a tab holds none, so its position is an argument to the next read.
+  Same subscription, different cursor lifetime.
+
+The read half already exists in the shape the primitive needs: `GET /api/conversations/{id}` is the
+snapshot and carries its `watermark`, `…/changes?after=N` is the changes, and `session_changed` is
+the wake that says to ask again. What is missing is not a new protocol but a second consumer —
+Matrix reading the record rather than being handed events by the turn loop.
+
+**What the stream carries is the record, so its granularity is the record's.** A `TextDelta` is not
+a row, so no subscriber gets one; a message being written arrives as its open row, re-sent. Pushing
+deltas to the browser as a payload on the wake was considered and dropped: it would make one channel
+a partial replica of a stream the others read, which is the duplication this primitive exists to
+remove.
+
 **Conversation → subscriber.**
 
 - **The address is `session_events.event_seq`.** It is a global `Identity` sequence, so one
@@ -418,40 +449,48 @@ holder, which is the point at which a rate budget can be real rather than estima
 
 ## 9. The order
 
-**Do not start with the reconciler.** Each step below is independently reviewable, and every one of
-them is worth having even if the loop is never built.
+**Do not start with the reconciler.** Each step is independently reviewable, and every one is worth
+having even if the loop is never built.
 
-0. **The browser joins a session instead of creating one.** No schema, no dependency on anything
+1. **The browser joins a session instead of creating one.** No schema and no dependency on anything
    below, and it is most of what "both surfaces open on one conversation" looks like from the
    operator's side: `enqueue_prompt` has no surface check and § 8's increment route already serves
    updates, so what is missing is a chat page that opens an existing session.
-1. **`conversation`, then `chat_attachment` keyed on it** (§ 6). Both in one change, because the
+2. **`conversation`, then `chat_attachment` keyed on it** (§ 6). One change, because the
    attachment's key is the whole point of the identity — building the attachment on `session_id`
-   first would mean writing the re-pointing logic and then deleting it. This subsumes
+   first would mean writing the re-pointing logic and then deleting it. Subsumes
    `matrix_conversation` and `sessions.room_id`.
-2. **Record a prompt's provenance** (missing item 3). A structured link from the transcript row to
-   the channel event it came from, rather than brackets in prose. Small, additive, and it is what
+3. **The conversation list surface.** `/chat` and `/conversations` merge
+   (<session_channels.md> § 2) into one list of conversations — each showing its attached channels,
+   its last activity, and whether a session is live — with "new conversation" minting the
+   conversation and its first session together. Step 1 lands before this and lists sessions; the
+   list query is rewritten once here, which is the price of not blocking a visible surface behind a
+   migration.
+4. **Record a prompt's provenance** (§ 8's missing item 3). A structured link from the transcript
+   row to the channel event it came from, rather than brackets in prose. Small, additive, and what
    makes "answer the message that asked" expressible at all.
-3. **Move the artifacts that are durable in the wrong layer.** The abort notice is a `session_outbox`
-   row keyed by `turn_id`; § 7 settles that it is an event. Doing this is also what gives a
-   reconciler the conversation-side identity it needs to be at-least-once, which § 3 names as a
+5. **Move the artifacts that are durable in the wrong layer.** The abort notice is a
+   `session_outbox` row keyed by `turn_id`; § 7 settles that it is an event. This is also what gives
+   a reconciler the conversation-side identity it needs to be at-least-once, which § 3 names as a
    prerequisite rather than a follow-up.
-4. **Give the facts in stack frames a writer** (missing item 4), so a notice body can be a pure
-   function of the record.
-5. **Record what we sent** (missing item 2), or turn on the correspondence reader. § 7's ruling
-   says channel state lives in Postgres, which argues for storing the `event_id` beside the
-   attachment rather than deriving it from the room on every pass; the room read stays available
-   for repair. Deciding this decides how idempotence works, so it wants its own PR.
-6. **One loop per `(channel, conversation)`**, woken by `session_changed` and by inbound events,
-   with the 1s poll demoted to a fallback. This is where the three elections collapse to one, the
-   three egress mechanisms become one difference calculation, and the pacer's bucket stops being an
-   estimate.
-7. **Notices as spans** (§ 4), once 4 and 6 exist: one work notice per turn, one lifecycle notice
-   per session, each a pure function of its span, each retired or sealed.
+6. **Give the facts in stack frames a writer** (§ 8's missing item 4), so a notice body can be a
+   pure function of the record.
+7. **Record what we sent** (§ 8's missing item 2), or turn on the correspondence reader. § 7's
+   ruling puts channel state in Postgres, which argues for storing the `event_id` beside the
+   attachment rather than deriving it from the room every pass; the room read stays available for
+   repair. This decides how idempotence works, so it wants its own PR.
+8. **Matrix becomes a subscriber** (§ 2's primitive): one loop per `(channel, conversation)`,
+   reading the record from its cursor instead of being handed events by the turn loop, woken by
+   `session_changed` and by inbound events with the 1s poll demoted to a fallback. Here the three
+   elections collapse to one, the three egress mechanisms become one difference calculation, the
+   pacer's bucket stops being an estimate, and the browser stops being the only consumer that reads
+   the record.
+9. **Notices as spans** (§ 4), once 6 and 8 exist: one work notice per turn, one lifecycle notice
+   per session, each a pure function of its span, each retired or sealed. This is Matrix's
+   streaming — the granularity a channel that holds a permanent, federated copy can afford.
 
-Step 0 and steps 2–4 are independent of each other and of step 1; step 5 depends on 1; step 6
-depends on 4 and 5; step 7 depends on 6. Nothing depends on step 0, which is why it goes first: it
-is the only one an operator would notice landing.
+Steps 1 and 4–6 are independent of each other and of step 2; 3 and 7 depend on 2; 8 depends on 6
+and 7; 9 depends on 8.
 
 ## 10. `sessions.status` is derived, and lossy
 
