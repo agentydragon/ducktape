@@ -99,31 +99,29 @@ Two gotchas, both about the end that is not a database:
   the loop entirely — they are live-state rendering driven by the turn (§3), not cursor-driven
   delivery.
 
-## 2. One sessions surface, not two pages
+## 2. One surface, not two pages — done, and it lists conversations rather than sessions
 
-`/_console/chat` creates and drives one session over SSE; `/_console/conversations` lists every
-session and renders a read-only transcript from one REST fetch. Same object, two routes, two nav
+`/_console/chat` created and drove one session over SSE; `/_console/conversations` listed every
+session and rendered a read-only transcript from one REST fetch. Same object, two routes, two nav
 entries, two data paths, two view models over the same rows.
 
-Merge them into one **sessions** surface: the list gains "new session", the detail gains the
-composer, the abort button and close. `ClaudeChatPage` stops existing; what it knows how to do
-becomes actions on a session detail.
+**Merged, keyed by the conversation rather than the session.** The list is conversations, keyset-
+paged because a conversation never ends (<conversation_layers.md> § 7); the detail carries the
+thread's attachments, the current session's transcript, the composer, abort and close.
+`ClaudeChatPage` is gone.
 
-**The live-update path is where the merge costs something.** `/chat` streams token-by-token over
-SSE; the merged view updates by refetching on a coalesced notification (§4), which reads as
-near-live but is not per-token. Take the regression knowingly:
+**The live-update path is what the merge cost, and the cost was taken.** `/chat` streamed
+token-by-token over SSE; the merged view refetches on a coalesced notification (§4), which reads
+as near-live but is not per-token. `/api/sessions/{id}/stream` is gone with the page that read it
+— this section previously said to keep it until a coalesced refetch had proven itself, and #4282
+is where it did. Retiring it is what makes the `asyncio.wait` abort dance in `_run_turn`
+removable, which is still deferred.
 
-- It is one live path for the whole console instead of a second one for a single page, and Matrix
-  has no streaming either (matrix_chat_runtime.md § Non-goals), so it is not a capability the
-  other channel has.
-- Keep `/api/sessions/{id}/stream` until the merged view has proven a coalesced refetch is
-  enough, then retire it. Retiring it is what makes the `asyncio.wait` abort dance in `_run_turn`
-  removable — the simplification Phase 1 deferred.
-- **The delta path itself does not go away**, and nothing here should be read as saying it does.
-  `RolloutRecorder` records deltas with no exclusions because the fold needs a log with no hole
-  (<../../plans/chat_runtime_projection.md> § stage 1), and `update_partial_frame` is what makes
-  an interrupted turn's half-written answer survive (R5.5b). Only the SSE transport is in
-  question.
+**The delta path itself did not go away**, and nothing here should be read as saying it did.
+`RolloutRecorder` records deltas with no exclusions because the fold needs a log with no hole
+(<../../plans/chat_runtime_projection.md> § stage 1), and `update_partial_frame` is what makes an
+interrupted turn's half-written answer survive (R5.5b). Only the SSE transport went. Per-token
+streaming to a tab comes back as the subscription's delta kind (<conversation_layers.md> § 2).
 
 ## 3. Session-level events belong in the database, not only in the room
 
