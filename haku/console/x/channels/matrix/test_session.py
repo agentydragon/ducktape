@@ -19,7 +19,7 @@ import pytest_bazel
 from sqlalchemy import delete, select
 
 from haku.console.chat_models import ChatMessageRole, SessionStatus, TurnOutcome
-from haku.console.database_schema import Session
+from haku.console.database_schema import ChatAttachment, Session
 from haku.console.x.channels.matrix.client import InboundMessage, RoomEventKind
 from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
 from haku.console.x.channels.matrix.session import (
@@ -148,6 +148,29 @@ async def test_the_pointer_moves_while_each_session_keeps_the_room_it_served(
     async with migrated_sessions() as db:
         rooms = {row.session_id: row.room_id for row in await db.scalars(select(Session).order_by(Session.created_at))}
     assert rooms == {first: MATRIX_ROOM, second: MATRIX_ROOM}, "each session still says which room it served"
+
+
+async def test_a_replacement_session_joins_the_room_s_conversation_and_the_attachment_stays_put(
+    supervisor, conversations, chat_store, recording_claims, migrated_sessions
+) -> None:
+    """What the conversation is for: session replacement is the supervisor's normal job, and the
+    room's attachment is not touched by it — the successor joins the thread the attachment names,
+    where re-pointing every live attachment would leave the thread itself unnamed afterwards."""
+    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
+    await supervisor.supervise_once()
+    [first] = recording_claims.created
+    await chat_store.fail(first, "the sandbox went away")
+
+    await supervisor.supervise_once()
+
+    async with migrated_sessions() as db:
+        threads = {row.session_id: row.conversation_id for row in await db.scalars(select(Session))}
+        attachments = (
+            await db.execute(select(ChatAttachment.conversation_id, ChatAttachment.address, ChatAttachment.detached_at))
+        ).all()
+    assert len(threads) == 2, "the failed session was replaced"
+    assert len(set(threads.values())) == 1, "both sessions run one conversation"
+    assert attachments == [(threads[first], MATRIX_ROOM, None)], "one live attachment, never re-pointed"
 
 
 async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(

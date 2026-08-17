@@ -22,7 +22,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Protocol
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert
@@ -32,11 +32,12 @@ from haku.console.chat_models import (
     OPEN_SESSION_STATUSES,
     ChatMessageRole,
     ChatMessageStatus,
+    ChatSurface,
     PromptFate,
     SessionStatus,
 )
 from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
-from haku.console.database_schema import MatrixConversation, Session, SessionMessage
+from haku.console.database_schema import ChatAttachment, Conversation, MatrixConversation, Session, SessionMessage
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.channels.matrix.client import InboundMessage, RoomEventKind
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
@@ -148,6 +149,42 @@ class MatrixConversationStore:
             if row is None:
                 raise RuntimeError("cannot bind a session before a room is bound")
             row.session_id = session_id
+
+    async def conversation_for_room(self, room_id: str, operator_id: UUID) -> UUID:
+        """The conversation this room holds a copy of, opening one the first time it is asked.
+
+        The room's live `chat_attachment` row is the answer, and it outlives every session that
+        served the room — which is the whole point: a replacement session joins the conversation the
+        attachment already names instead of the attachment being re-pointed at the replacement.
+
+        Read-then-insert rather than insert-or-nothing because the only caller is the session
+        supervisor, which runs under its own advisory lock; a second writer would want
+        `uq_chat_attachment_live_address` as the arbiter instead.
+        """
+        async with self._sessions() as db, db.begin():
+            conversation_id: UUID | None = await db.scalar(
+                select(ChatAttachment.conversation_id).where(
+                    ChatAttachment.surface == ChatSurface.MATRIX,
+                    ChatAttachment.address == room_id,
+                    ChatAttachment.detached_at.is_(None),
+                )
+            )
+            if conversation_id is not None:
+                return conversation_id
+            now = datetime.datetime.now(datetime.UTC)
+            conversation_id = uuid4()
+            db.add(Conversation(conversation_id=conversation_id, operator_id=operator_id, created_at=now))
+            db.add(
+                ChatAttachment(
+                    attachment_id=uuid4(),
+                    conversation_id=conversation_id,
+                    surface=ChatSurface.MATRIX,
+                    address=room_id,
+                    attached_at=now,
+                    detached_at=None,
+                )
+            )
+            return conversation_id
 
 
 @dataclass(frozen=True)
@@ -437,8 +474,8 @@ class MatrixSessionSupervisor:
 
     async def supervise_once(self) -> None:
         """Bring the live room's session back to a working state, if it is not already."""
-        conversation = await self._conversations.load(self._config.user_id)
-        if conversation is None:
+        binding = await self._conversations.load(self._config.user_id)
+        if binding is None:
             return  # No room yet — nothing to serve, and nowhere to say so.
 
         # Before believing a live status, give a session whose holder has gone away the chance
@@ -447,15 +484,13 @@ class MatrixSessionSupervisor:
         # anything reporting a failure.
         await self._chat_store.expire_stale_leases()
 
-        outcome = (
-            await self._chat_store.outcome(conversation.session_id) if conversation.session_id is not None else None
-        )
+        outcome = await self._chat_store.outcome(binding.session_id) if binding.session_id is not None else None
         status = outcome.status if outcome is not None else None
         if status in OPEN_SESSION_STATUSES:
-            await self._report(str(status), f"session {conversation.session_id} is {status}")
+            await self._report(str(status), f"session {binding.session_id} is {status}")
             return
 
-        if conversation.session_id is not None:
+        if binding.session_id is not None:
             # With the reason, not just the status. Every path that ends a session records a
             # specific sentence in `error` — which replica went away, what the runtime failed
             # with, that the runner disconnected — and the room used to be told only `failed`,
@@ -464,18 +499,25 @@ class MatrixSessionSupervisor:
             reason = f" — {outcome.error}" if outcome is not None and outcome.error else ""
             await self._report(
                 f"ended:{status}",
-                f"session {conversation.session_id} ended ({status or 'gone'}){reason}; starting a new one",
+                f"session {binding.session_id} ended ({status or 'gone'}){reason}; starting a new one",
             )
             # The claim may already be gone — `handle_runner` deletes it on the way out — so
             # this is the idempotent sweep rather than a targeted delete.
             await self._conversations.set_session(self._config.user_id, None)
             await self._chat.reconcile_terminal_claims()
 
-        session = await self._chat.create(await self._operator_id(), MatrixSession(room_id=conversation.room_id))
+        operator_id = await self._operator_id()
+        # The replacement joins the conversation the room is already attached to, so the attachment
+        # is not touched and the thread survives the session that was running it.
+        session = await self._chat.create(
+            operator_id,
+            MatrixSession(room_id=binding.room_id),
+            conversation_id=await self._conversations.conversation_for_room(binding.room_id, operator_id),
+        )
         await self._conversations.set_session(self._config.user_id, session.session_id)
         self._last_announced = SessionStatus.PROVISIONING
         await self._announce(f"provisioning a sandbox · session {session.session_id}")
-        logger.info("Matrix: provisioned session %s for room %s", session.session_id, conversation.room_id)
+        logger.info("Matrix: provisioned session %s for room %s", session.session_id, binding.room_id)
 
     async def _supervise_as_leader(self) -> None:
         """Supervise until cancelled. Only ever entered holding the advisory lock."""
@@ -499,12 +541,12 @@ class MatrixSessionSupervisor:
         The interval stays as the backstop for what no transition announces — a room bound
         for the first time, or a session row disappearing underneath us.
         """
-        conversation = await self._conversations.load(self._config.user_id)
-        if conversation is None or conversation.session_id is None:
+        binding = await self._conversations.load(self._config.user_id)
+        if binding is None or binding.session_id is None:
             await asyncio.sleep(SUPERVISE_INTERVAL.total_seconds())
             return
         await self._notifications.wait(
-            SessionEventKind.UPDATE, conversation.session_id, timeout_seconds=SUPERVISE_INTERVAL.total_seconds()
+            SessionEventKind.UPDATE, binding.session_id, timeout_seconds=SUPERVISE_INTERVAL.total_seconds()
         )
 
     async def _run(self) -> None:

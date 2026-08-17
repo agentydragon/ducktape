@@ -78,19 +78,21 @@ instead of a room id. What is left of the seam:
    one does the SPA session is the port's `None` — one seam rather than the four the address
    parameter cost.
 
-2. Then the schema half — `chat_attachment(session_id, surface, address, attached_at, detached_at)`
-   with a partial unique index on `(surface, address) where detached_at is null`. It subsumes
-   `sessions.surface`, `.room_id`, `ck_sessions_matrix_room` (the equivalence `0058` collapsed the
-   two one-way rules into), and `matrix_conversation.session_id`; the pointer/history distinction
-   those two tables document in prose becomes `detached_at IS NULL`. Attach/detach within one
-   session becomes a row, and <../console/plans/session_channels.md>'s `chat_attachment` need is
-   this table, not a second one.
+2. Then the schema half — **done, and keyed on the conversation rather than on the session**.
+   Migration `0063` creates `conversation(conversation_id, operator_id, created_at)` and
+   `chat_attachment(attachment_id, conversation_id, surface, address, attached_at, detached_at)`
+   with the partial unique index on `(surface, address) where detached_at is null`, and
+   `database_schema.py` maps both. Keying on `session_id`, which this paragraph used to specify, is
+   what would have made session replacement re-point every live attachment; keying on the
+   conversation is what leaves them untouched. It still subsumes `sessions.surface`, `.room_id`,
+   `ck_sessions_matrix_room` (the equivalence `0058` collapsed the two one-way rules into), and
+   `matrix_conversation` entirely — the pointer/history distinction those two tables document in
+   prose becomes `detached_at IS NULL`. <../console/plans/session_channels.md>'s `chat_attachment`
+   need is this table, not a second one.
 
-   **The table does not exist.** This paragraph is its only specification: no migration creates it,
-   nothing in `database_schema.py` maps it, and every other plan naming it
-   (<chat_runtime_projection.md> § 5, <information_trust_tiers.md> § Attachment and subscription,
-   <next_month.md> § Not now) is citing this design rather than a schema. Live planned work, not a
-   fact about the database.
+   **What is left is the reader move**: `0063` is additive, so `matrix_conversation`,
+   `sessions.room_id` and `sessions.surface` all stay mapped and authoritative, and
+   `sessions.conversation_id` is nullable until every replica writes it.
 
 ### The backend seam
 

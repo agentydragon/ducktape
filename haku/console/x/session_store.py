@@ -43,6 +43,7 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.database_schema import (
+    Conversation,
     Session,
     SessionFrame,
     SessionMessage,
@@ -56,7 +57,10 @@ from haku.console.x.claude_code import projection
 from haku.console.x.claude_code.frames import DELTA_FRAME_KIND, PROMPT_FRAME_KIND
 from haku.console.x.conversation_events import ConversationEvent, MessageCompleted, TextDelta
 from haku.console.x.conversation_records import (
-    Conversation,
+    # Aliased to avoid colliding with the ORM `Conversation` imported above. This one is the record
+    # of a *session* that the `haku_conversations` tools return, named before a conversation was a
+    # table of its own; the list surface that merges the two renames it.
+    Conversation as ConversationRecord,
     ConversationCursor,
     FrameCursor,
     RolloutFrame,
@@ -232,15 +236,27 @@ class SessionStore:
     def _fingerprint(token: str) -> bytes:
         return hashlib.sha256(token.encode()).digest()
 
-    async def create(self, operator_id: UUID, surface: SessionSurface) -> tuple[SessionView, str]:
+    async def create(
+        self, operator_id: UUID, surface: SessionSurface, *, conversation_id: UUID | None = None
+    ) -> tuple[SessionView, str]:
+        """Start a session, continuing *conversation_id* or opening a conversation of its own.
+
+        Absent is not "unknown": it is a caller with no thread to continue, which is every session
+        the browser starts. A channel that holds a copy passes the conversation its attachment names,
+        which is what makes the replacement of a dead session invisible to that channel.
+        """
         now = datetime.now(UTC)
         session_id = uuid4()
         bridge_token = secrets.token_urlsafe(32)
         async with self._sessions.begin() as db:
+            if conversation_id is None:
+                conversation_id = uuid4()
+                db.add(Conversation(conversation_id=conversation_id, operator_id=operator_id, created_at=now))
             db.add(
                 Session(
                     session_id=session_id,
                     operator_id=operator_id,
+                    conversation_id=conversation_id,
                     surface=surface.surface_column,
                     room_id=surface.room_id,
                     status=SessionStatus.PROVISIONING,
@@ -825,7 +841,7 @@ class SessionStore:
                 select(func.max(SessionFrame.runner_seq)).where(SessionFrame.session_id == session_id)
             )
 
-    async def list_conversations(self, *, cursor: ConversationCursor | None, limit: int) -> list[Conversation]:
+    async def list_conversations(self, *, cursor: ConversationCursor | None, limit: int) -> list[ConversationRecord]:
         """Past sessions from *cursor*, newest first, for the `haku_conversations` read tools.
 
         Keyset paging on `(created_at, session_id)`, for the same reason `read_frames` pages on
@@ -847,7 +863,7 @@ class SessionStore:
         async with self._sessions() as db:
             rows = (await db.scalars(query.limit(limit))).all()
         return [
-            Conversation(
+            ConversationRecord(
                 session_id=row.session_id,
                 surface=row.surface,
                 room_id=row.room_id,

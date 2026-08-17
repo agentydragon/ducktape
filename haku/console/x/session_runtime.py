@@ -211,8 +211,10 @@ class SessionService:
             raise KeyError(session_id)
         return await self._store.request_abort(session_id)
 
-    async def create(self, operator_id: UUID, surface: SessionSurface) -> SessionView:
-        view, token = await self._store.create(operator_id, surface)
+    async def create(
+        self, operator_id: UUID, surface: SessionSurface, *, conversation_id: UUID | None = None
+    ) -> SessionView:
+        view, token = await self._store.create(operator_id, surface, conversation_id=conversation_id)
         try:
             await self._claims.create(
                 session_id=view.session_id,

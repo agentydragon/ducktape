@@ -33,7 +33,7 @@ from haku.console.chat_models import (
     SessionStatus,
     TurnOutcome,
 )
-from haku.console.database_schema import Session, SessionEvent, SessionMessage, SessionPrompt
+from haku.console.database_schema import Conversation, Session, SessionEvent, SessionMessage, SessionPrompt
 from haku.console.x.claude_code.testing.wire import assistant, result, text_block, text_delta
 from haku.console.x.conftest import age_lease, lease_of, queued_for_the_room
 from haku.console.x.conversation_events import (
@@ -816,6 +816,25 @@ async def test_a_session_records_the_surface_it_was_created_for(chat_store, migr
         assert (await db.get(Session, spa.session_id)).room_id is None
         assert (await db.get(Session, matrix.session_id)).surface == ChatSurface.MATRIX
         assert (await db.get(Session, matrix.session_id)).room_id == "!room:allegedly.works"
+
+
+async def test_a_session_opens_its_own_conversation_unless_it_is_given_one(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """The identity a channel's attachment hangs off. A caller with a thread to continue names it,
+    and a caller with none — every session the browser starts — gets one of its own."""
+    first, _ = await chat_store.create(operator_id, SpaSession())
+    second, _ = await chat_store.create(operator_id, SpaSession())
+
+    async with migrated_sessions() as db:
+        opened = (await db.get(Session, first.session_id)).conversation_id
+        assert opened != (await db.get(Session, second.session_id)).conversation_id
+        assert (await db.get(Conversation, opened)).operator_id == operator_id
+
+    continued, _ = await chat_store.create(operator_id, SpaSession(), conversation_id=opened)
+
+    async with migrated_sessions() as db:
+        assert (await db.get(Session, continued.session_id)).conversation_id == opened
 
 
 async def test_a_room_cannot_be_recorded_without_the_matrix_surface(migrated_sessions, operator_id) -> None:

@@ -852,6 +852,88 @@ class OperatorAuthentikToken(Base):
     )
 
 
+class Conversation(Base):
+    """A thread that outlives the sessions running it — identity, and nothing else.
+
+    Sessions come and go under it and channels attach to it; every fact stays where it already is.
+    What forces it is neither multiplicity on its own but their combination: when the sandbox dies
+    and session A is replaced by B, what has to move is *the set of attachments*, and a set has no
+    name. Re-pointing each of A's live attachments at B works, but afterwards "this thread" is
+    recoverable only as a transitive closure over "sessions that ever shared an attachment" — not a
+    join, and no handle to link to. Replacement is instead "a new session with the same
+    `conversation_id`", and the attachments are not touched because they were never the session's.
+
+    The same call this codebase already made for `agents` against `credential_bindings`, where the
+    Agent is identity and rotation creates a successor binding rather than mutating the Agent.
+
+    **A conversation never ends.** No `ended_at` and no terminal state: it is an id. "Start this room
+    over" is detaching the address and attaching it to a new conversation, which
+    `uq_chat_attachment_live_address` already permits — so a surface listing these needs keyset
+    paging from the day it ships, since the list only grows.
+
+    **A session attached to nothing stays expressible**: a conversation with one session and no
+    attachment row, which is what an SPA session is.
+    """
+
+    __tablename__ = "conversation"
+
+    conversation_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    operator_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (Index("idx_conversation_operator", "operator_id", "created_at"),)
+
+
+class ChatAttachment(Base):
+    """One channel holding a copy of a conversation, at the address it holds it under.
+
+    **Copy-holding channels only.** A row exists to hold a cursor, and a cursor exists because the
+    channel keeps a copy the console owes work against — a Matrix room does, a browser tab does not.
+    So `ck_chat_attachment_surface` admits no `spa` row, there is no synthetic address for a tab,
+    and "the browser is looking at this conversation" is an absence rather than a row.
+
+    Attach and detach are the row's whole lifecycle: `detached_at IS NULL` is the live binding, and
+    the history of past ones stays readable beside it — the pointer/history distinction
+    `matrix_conversation` and `sessions.room_id` described in prose, said once by a column.
+
+    Which session serves an address needs no agreement between two rows here: it is the live session
+    of the conversation this attachment names. `matrix_conversation.session_id` had no constraint
+    tying it to a session whose room matched because SQL cannot state an agreement between rows;
+    there is nothing to agree about once both sides hang off one id.
+    """
+
+    __tablename__ = "chat_attachment"
+
+    attachment_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    conversation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("conversation.conversation_id", ondelete="CASCADE"), nullable=False
+    )
+    surface: Mapped[ChatSurface] = mapped_column(TextBackedStrEnumColumn(ChatSurface), nullable=False)
+    # What the channel calls this conversation: a Matrix room id today. Opaque here — only the
+    # channel that holds the copy knows how to reach it.
+    address: Mapped[str] = mapped_column(Text, nullable=False)
+    attached_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    detached_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("surface IN ('matrix')", name="ck_chat_attachment_surface"),
+        CheckConstraint("btrim(address) <> ''", name="ck_chat_attachment_address_nonempty"),
+        CheckConstraint(
+            "detached_at IS NULL OR detached_at >= attached_at", name="ck_chat_attachment_detach_after_attach"
+        ),
+        Index(
+            "uq_chat_attachment_live_address",
+            "surface",
+            "address",
+            unique=True,
+            postgresql_where=text("detached_at IS NULL"),
+        ),
+        Index("idx_chat_attachment_conversation", "conversation_id", "attached_at"),
+    )
+
+
 class Session(Base):
     """One Operator-owned agent conversation and its Agent Sandbox rendezvous."""
 
@@ -860,6 +942,19 @@ class Session(Base):
     session_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     operator_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
+    )
+    # The thread this session runs. Successive sessions serving one Matrix room share it, which is
+    # what makes a replacement session inherit the room's attachments instead of being re-pointed at.
+    #
+    # CLEANUP(added 2026-08-17): `ALTER COLUMN conversation_id SET NOT NULL` once every haku-console
+    #   pod runs an image at or after this commit — `kubectl get pods -n haku-console -o
+    #   jsonpath='{.items[*].spec.containers[0].image}'` reporting a single tag at or after it.
+    #   Nullable only because the previous image's `INSERT INTO sessions` does not name the column,
+    #   so a `NOT NULL` would reject the first session of the roll. **Nothing may key a read on this
+    #   until that same gate**: a session created by the previous image has no conversation, so a
+    #   reader that joined through it would silently omit that session's rows.
+    conversation_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("conversation.conversation_id", ondelete="CASCADE"), nullable=True
     )
     surface: Mapped[ChatSurface] = mapped_column(TextBackedStrEnumColumn(ChatSurface), nullable=False)
     # The Matrix room this session serves — the *history* half of the binding, where
@@ -924,6 +1019,7 @@ class Session(Base):
         # the two are one fact rather than two rules.
         CheckConstraint("(surface = 'matrix') = (room_id IS NOT NULL)", name="ck_sessions_matrix_room"),
         Index("idx_sessions_operator", "operator_id", "created_at"),
+        Index("idx_sessions_conversation", "conversation_id", "created_at"),
         Index(
             "idx_sessions_expired_lease",
             "lease_expires_at",
@@ -1505,6 +1601,11 @@ class MatrixSyncWatermark(Base):
 
 class MatrixConversation(Base):
     """The one room Haku services, and the chat session bound to it.
+
+    CLEANUP(added 2026-08-17): superseded by `ChatAttachment` above, which holds the same binding
+      keyed on the conversation instead of on the bot user. Unmap this class once nothing selects it
+      — `rg MatrixConversation haku/` naming only this file — and drop the table a release after
+      that unmapping has converged.
 
     Keyed by bot user rather than by room, which is what makes "one room at a time"
     (R3.6a) a property of the schema instead of a rule the code has to remember: a second
