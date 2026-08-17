@@ -131,7 +131,29 @@ class LeaseExpiredBody(BaseModel):
     last_holder: str | None = Field(description="The replica whose lease lapsed, where one held it.")
 
 
+class TurnAbortedBody(BaseModel):
+    """No fields: the kind and the turn it names are the whole fact (see `turn_aborted`)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
 type AuthoredBody = PromptRejectedBody | UnreadableInputBody | SessionAdoptedBody | LeaseExpiredBody
+
+# Every shape `session_events.body` is ever written from, over both categories. A reader dispatches
+# on these rather than on `kind`, which is what keeps the discriminator and the payload from
+# disagreeing.
+type StoredBody = (
+    MessageBody
+    | ReasoningBody
+    | ToolCallBody
+    | ToolResultBody
+    | PromptBody
+    | TurnAbortedBody
+    | PromptRejectedBody
+    | UnreadableInputBody
+    | SessionAdoptedBody
+    | LeaseExpiredBody
+)
 
 
 def authored(body: AuthoredBody, *, session_id: UUID, now: datetime) -> SessionEvent:
@@ -210,9 +232,39 @@ def turn_aborted(*, session_id: UUID, turn_id: UUID, now: datetime) -> SessionEv
         source_first_frame_seq=None,
         source_last_frame_seq=None,
         call_id=None,
-        body={},
+        body=TurnAbortedBody().model_dump(mode="json"),
         created_at=now,
     )
+
+
+def body_of(row: SessionEvent) -> StoredBody:
+    """What a stored row says, back in the shape it was written from.
+
+    The read half of `row` and `authored`, and the only one there is: nothing else parses
+    `session_events.body`, so the stored spelling stays settled here whichever direction it is
+    crossed in. A kind added without an arm fails the type check rather than the read.
+    """
+    match row.kind:
+        case ConversationEventKind.MESSAGE_COMPLETED:
+            return MessageBody.model_validate(row.body)
+        case ConversationEventKind.REASONING:
+            return ReasoningBody.model_validate(row.body)
+        case ConversationEventKind.TOOL_CALL_STARTED:
+            return ToolCallBody.model_validate(row.body)
+        case ConversationEventKind.TOOL_CALL_COMPLETED:
+            return ToolResultBody.model_validate(row.body)
+        case AuthoredEventKind.PROMPT_ENQUEUED:
+            return PromptBody.model_validate(row.body)
+        case AuthoredEventKind.TURN_ABORTED:
+            return TurnAbortedBody.model_validate(row.body)
+        case AuthoredEventKind.PROMPT_REJECTED:
+            return PromptRejectedBody.model_validate(row.body)
+        case AuthoredEventKind.UNREADABLE_INPUT:
+            return UnreadableInputBody.model_validate(row.body)
+        case AuthoredEventKind.SESSION_ADOPTED:
+            return SessionAdoptedBody.model_validate(row.body)
+        case AuthoredEventKind.LEASE_EXPIRED:
+            return LeaseExpiredBody.model_validate(row.body)
 
 
 def row(event: ConversationEvent, *, session_id: UUID, turn_id: UUID, now: datetime) -> SessionEvent | None:

@@ -1649,3 +1649,29 @@ class MatrixConversation(Base):
         PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="SET NULL"), nullable=True
     )
     joined_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MatrixRoomCursor(Base):
+    """How far this room has been brought up to date with the conversation it holds a copy of.
+
+    **The Matrix channel's own storage, and named after it** — below the channel boundary, beside
+    the outbox, because durability here is Matrix's problem and nobody else's. The room holds a
+    federated copy that outlives every console process, so after a restart the channel has to know
+    what it already put there. A browser tab holds no such copy: several tabs can watch one
+    conversation at different points and none of those positions should survive a refresh, so the
+    SPA's position is a request parameter and there is deliberately no shared cursor table for the
+    two to share (operator, 2026-08-17).
+
+    Keyed by room, which is this channel's own address for a conversation — the same opacity
+    `chat_attachment.address` records. It is not keyed by conversation, because that would put the
+    conversation layer's identity in the channel's private table for no reader.
+
+    `event_seq` is a position in <x/subscription.py>'s stream, and an absent row is a room that has
+    never read it — which is why the reader seeds it at the stream's head rather than at zero: a
+    room serviced before this table existed already shows everything said in it.
+    """
+
+    __tablename__ = "matrix_room_cursor"
+
+    room_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    event_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)

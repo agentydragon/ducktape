@@ -61,6 +61,20 @@ py_library(
 )
 
 py_library(
+    name = "room_subscription",
+    srcs = ["room_subscription.py"],
+    deps = [
+        ":outbox",
+        ":session",
+        "//haku/console:database_schema",
+        "//haku/console/x:session_events",
+        "//haku/console/x:session_notifications",
+        "//haku/console/x:subscription",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "sync",
     srcs = ["sync.py"],
     deps = [
@@ -166,6 +180,29 @@ py_test(
         "//haku/console/x:session_store",
         "//haku/console/x:system_prompt",
         "@pypi//pydantic",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_room_subscription",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_room_subscription.py"],
+    deps = [
+        ":conftest",
+        ":room_subscription",
+        ":session",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "//haku/console/x:conftest",
+        "//haku/console/x:session_events",
+        "//haku/console/x:session_store",
+        "//haku/console/x:subscription",
+        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

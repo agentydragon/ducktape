@@ -98,6 +98,16 @@ py_library(
 )
 
 py_library(
+    name = "subscription",
+    srcs = ["subscription.py"],
+    deps = [
+        ":session_events",
+        "//haku/console:database_schema",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "session_store",
     srcs = ["session_store.py"],
     deps = [
@@ -358,6 +368,25 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "@pypi//more_itertools",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_subscription",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_subscription.py"],
+    deps = [
+        ":conftest",
+        ":session_events",
+        ":session_store",
+        ":subscription",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

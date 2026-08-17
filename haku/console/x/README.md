@@ -403,7 +403,16 @@ the test that reads it, as `test_diverse_session` has.
 - `pacer.py` — one paced outbound queue per room, over Synapse's `rc_message` budget.
 - `outbox.py` — the room's outbox: replies as `session_outbox` rows, and the drain that
   says them, recording which room event each became.
+- `room_subscription.py` — the room as a subscriber: its durable position in the conversation
+  (`matrix_room_cursor`) and the notices it says from it.
 - `formatted_body.py` — Haku's Markdown into the HTML subset Matrix clients render.
+
+**The room reads the record; it is not pushed at.** A fact with a `session_events` row reaches the
+room through `room_subscription.py` — `turn_aborted` is the one that does today, and the turn loop
+no longer calls the channel about it. What is still pushed is what no row carries: the turn that
+produced nothing to record, and the sandbox's setup narration. The position is kept after the
+notice has been queued, so what a crash costs is a repeat rather than a silence; the window it
+leaves is the pacer's in-process queue, the same one every other notice already lives in.
 
 **The outbox is half here and half at the runtime level, deliberately.** The row is written where
 the reply is produced, by `session_store.update_assistant` into the neutral `session_outbox` table,
@@ -643,6 +652,42 @@ What it is deliberate about:
 
 Routing costs a lookup: `SessionEvent` carries no operator and the hub delivers per operator, so
 the session's owner is resolved once per session and kept (a session's owner never changes).
+
+## `subscription.py` — reading a conversation from a position
+
+The wake above says _which_ session moved; this is what a woken consumer reads, and from where.
+A conversation is an ordered stream of `session_events` rows addressed by `event_seq`, and a
+**subscription** is one consumer reading it from a position. `ConversationStream.read` is the
+shared half — everything after N, keyed by the thread rather than the session, so a position
+survives a session being replaced.
+
+**The position is the subscriber's, and where it lives follows from what the subscriber holds**
+(operator, 2026-08-17). That is the whole reason `Cursor` is the only port here:
+
+- **A tab holds no copy that outlives it.** Several tabs can watch one conversation at different
+  points, and persisting any of those would store rows for something a refresh destroys. So its
+  position is the request's own argument (`ClientHeldCursor`) and the console keeps nothing.
+- **A room holds a federated copy that outlives every console process.** After a restart the
+  channel has to know what it already put there, so its position is durable — in the channel's own
+  table, `matrix_room_cursor`, below the channel boundary and beside its outbox.
+
+**There is deliberately no shared cursor table**, because durability is one implementation's
+concern rather than a property of subscribing.
+
+Three consequences worth knowing:
+
+- **Read, then keep.** `Subscription.read` never advances. A durable subscriber keeps its position
+  once it has done what the events oblige it to, so a crash in that window replays rather than
+  skips — the discipline `delivery_log.retire` already follows.
+- **An absent position means _never read_, not _at the start_.** Only a kept position can be absent
+  (`Unstarted`), and what a subscriber does about it is its own decision: the room takes the head
+  silently, because a room bound before it kept a position already shows everything said in it.
+- **A gap is not a loss.** `event_seq` is global, so one conversation's rows are not contiguous.
+  Every read is "everything after N", which makes a hole undetectable by construction rather than
+  something to notice.
+
+The consumers today are the Matrix room's notices (below) and, once #4257 lands,
+`GET /api/sessions/{session_id}/changes?after=N` — whose `after` is exactly a `ClientHeldCursor`.
 
 ## Cross-replica state, and the trap it sets
 

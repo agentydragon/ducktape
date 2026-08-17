@@ -684,16 +684,12 @@ class _RecordingFrontend:
 
     def __init__(self) -> None:
         self.silent_turns = 0
-        self.aborts = 0
 
     async def system_prompt(self, session_id: UUID) -> str:
         return "you are Haku"
 
     async def report_silent_turn(self) -> None:
         self.silent_turns += 1
-
-    async def report_abort(self) -> None:
-        self.aborts += 1
 
     async def report(self, detail: str) -> None:
         return None
@@ -1099,8 +1095,10 @@ async def test_an_aborted_turn_leaves_a_notice_and_no_reply(
     )
 
     assert client.interrupted
-    # The two messages, and nothing from the interrupt's own `result` frame ("stopped").
-    assert (queued, frontend.aborts) == (["Looking at the logs now.", "Found it: a bad config."], 1)
+    # The two messages, and nothing from the interrupt's own `result` frame ("stopped"). That the
+    # stop itself is recorded is `test_session_store`'s; the room reads that row for itself
+    # (<channels/matrix/room_subscription.py>) rather than being told here.
+    assert queued == ["Looking at the logs now.", "Found it: a bad config."]
 
 
 async def test_an_abort_mid_answer_leaves_the_half_answer_unmarked(
@@ -1125,7 +1123,7 @@ async def test_an_abort_mid_answer_leaves_the_half_answer_unmarked(
         frontend=frontend,
     )
 
-    assert (queued, frontend.aborts) == (["because the disk was full"], 1)
+    assert queued == ["because the disk was full"]
 
 
 async def test_a_message_the_agent_finished_before_stopping_survives_the_drain(

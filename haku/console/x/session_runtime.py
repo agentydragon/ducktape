@@ -161,16 +161,19 @@ class ChatFrontend(StatusFrontend, Protocol):
     session to every listener and having each re-derive whether it is its own.
 
     **Replies are not here.** They are rows in `session_outbox`, written where they are produced
-    and drained into the room by whoever holds the outbox lock (<../debug/message_drops.md>). What
-    is left here is what a channel *shows*: a notice, whose fact the record already holds
-    elsewhere — the turn row, the session's event stream, the frame log.
+    and drained into the room by whoever holds the outbox lock (<../debug/message_drops.md>).
+
+    **Neither is anything the stream already records.** A channel subscribes to the conversation and
+    renders what it reads from its own position (<subscription.py>), so a fact with a
+    `session_events` row needs nothing pushed at it from here — `turn_aborted` was the last one that
+    was, and it now reaches the room through <channels/matrix/room_subscription.py>. What is left is
+    what no row carries: the turn that produced nothing to record, and the sandbox's setup
+    narration.
     """
 
     async def system_prompt(self, session_id: UUID) -> str: ...
 
     async def report_silent_turn(self) -> None: ...
-
-    async def report_abort(self) -> None: ...
 
     async def report(self, detail: str) -> None: ...
 
@@ -693,11 +696,6 @@ class SessionService:
                 last_frame_seq=completed.frame.frame_seq,
                 projected_frame_seq=completed.frame.frame_seq,
             )
-            # After the record, never before it: `end_turn` writes the `turn_aborted` row, and this
-            # is that row projected into the room. Announcing first would leave a crash in the
-            # window showing the operator a notice nothing recorded.
-            if abort_event.is_set() and frontend is not None:
-                await frontend.report_abort()
         except Exception as error:
             # Bounded only where the failure was diagnosed from the `result` frame; otherwise this
             # turn ended on no frame of its own and `end_turn` bounds it by what it recorded.

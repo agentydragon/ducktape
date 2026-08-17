@@ -73,11 +73,16 @@ from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import RecallIndexMaintenance
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
-from haku.console.x import delivery_log, sandbox_claims, session_runtime
+from haku.console.x import delivery_log, sandbox_claims, session_runtime, subscription
 
 # Aliased: bare `session`, `sync` and `outbox` would each collide with something this module
 # already talks about (database sessions, the index sweeps, the push queue).
-from haku.console.x.channels.matrix import outbox as matrix_outbox, session as matrix_session, sync as matrix_sync
+from haku.console.x.channels.matrix import (
+    outbox as matrix_outbox,
+    room_subscription as matrix_room_subscription,
+    session as matrix_session,
+    sync as matrix_sync,
+)
 from haku.console.x.session_live_updates import SessionLiveUpdates
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_store import SessionStore
@@ -287,6 +292,7 @@ def create_app(
     matrix_sync_service: matrix_sync.MatrixSyncService | None = None
     matrix_conversations: matrix_session.MatrixConversationStore | None = None
     matrix_surface: matrix_session.MatrixSurface | None = None
+    matrix_notices: matrix_room_subscription.RoomNotices | None = None
     if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
         matrix_conversations = matrix_session.MatrixConversationStore(db_sessions)
         matrix_sync_service = matrix_sync.MatrixSyncService(
@@ -299,6 +305,18 @@ def create_app(
             matrix_session.RoomTranscript(db_sessions),
             matrix_outbox.RoomOutbox(db_sessions),
             delivery_log.DeliveryLog(db_sessions),
+        )
+        # The room as a subscriber to the conversation: it reads the record from a position it keeps
+        # itself and says what the room has not been told, rather than being pushed at by whichever
+        # replica happens to be running the turn.
+        matrix_notices = matrix_room_subscription.RoomNotices(
+            db_engine,
+            db_sessions,
+            subscription.ConversationStream(db_sessions),
+            matrix_conversations,
+            session_notifications,
+            matrix_sync_service.announce,
+            matrix_sync_service.bound_room,
         )
         if claude_runtime is not None:
             # The template is parsed here, at construction, so a broken one is a pod that never
@@ -494,8 +512,18 @@ def create_app(
         # replica provisioning, while staying a separate task keeps a stalled sandbox claim
         # from wedging ingress, which must keep enqueueing with no sandbox up (R1.4).
         supervising = matrix_supervisor.run() if matrix_supervisor is not None else contextlib.nullcontext()
+        # Its own lock and its own task, like the two above: what it does is bounded by the room's
+        # send budget, and a room that is refusing sends must not hold up ingress or provisioning.
+        noticing = matrix_notices.run() if matrix_notices is not None else contextlib.nullcontext()
         indexing = index_maintenance.run() if index_maintenance is not None else contextlib.nullcontext()
-        async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), matrix_running, supervising, indexing:
+        async with (
+            agent_authority.expiry_maintenance(),
+            oauth_maintenance.run(),
+            matrix_running,
+            supervising,
+            noticing,
+            indexing,
+        ):
             await console_event_hub.start()
             await session_notifications.start()
             try:

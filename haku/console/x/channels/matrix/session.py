@@ -64,10 +64,6 @@ _SUPERVISOR_ADVISORY_LOCK = 0x4D58_5345  # "MXSE"
 # thing to have happened — it just must not look like the console lost the answer.
 NOTHING_SAID = "the turn finished without saying anything"
 
-# How this room renders a `turn_aborted` event. The words are the channel's own: what is recorded
-# is that the turn was aborted, and every channel gets to say so differently.
-ABORTED_BY_OPERATOR = "[aborted by operator]"
-
 SUPERVISE_INTERVAL = datetime.timedelta(seconds=10)
 # How long a replica that lost the election waits before contending again.
 LEADER_RETRY = datetime.timedelta(seconds=30)
@@ -186,6 +182,23 @@ class MatrixConversationStore:
             if row is None:
                 raise RuntimeError("cannot bind a session before a room is bound")
             row.session_id = session_id
+
+    async def conversation_of_room(self, room_id: str) -> UUID | None:
+        """The conversation this room holds a copy of, or None where it holds none yet.
+
+        The read-only half of `conversation_for_room`: a subscriber reading the record on this
+        room's behalf must not open a thread as a side effect of looking for one, and a room bound
+        by an invite the supervisor has not reached yet genuinely has nothing to read.
+        """
+        async with self._sessions() as db:
+            conversation_id: UUID | None = await db.scalar(
+                select(ChatAttachment.conversation_id).where(
+                    ChatAttachment.surface == ChatSurface.MATRIX,
+                    ChatAttachment.address == room_id,
+                    ChatAttachment.detached_at.is_(None),
+                )
+            )
+            return conversation_id
 
     async def conversation_for_room(self, room_id: str, operator_id: UUID) -> UUID:
         """The conversation this room holds a copy of, opening one the first time it is asked.
@@ -463,15 +476,6 @@ class MatrixSurface:
         """
         logger.warning("Matrix: a turn finished with no text to send")
         await self._room.announce(NOTHING_SAID, RoomEventKind.NARRATION)
-
-    async def report_abort(self) -> None:
-        """Show the `turn_aborted` event the closing transaction just wrote.
-
-        A notice and no outbox row: the record already holds the fact, so the room's copy is a
-        rendering a reconciler re-derives rather than a delivery anything owes
-        (<../../../plans/session_channels.md> § 1).
-        """
-        await self._room.announce(ABORTED_BY_OPERATOR, RoomEventKind.NARRATION)
 
     async def report(self, detail: str) -> None:
         """Narrate the sandbox's setup into the room (R7.1)."""
