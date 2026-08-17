@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
 import pytest_bazel
 
 from haku.console.chat_models import (
@@ -51,12 +52,19 @@ def test_a_frame_derived_event_carries_the_range_it_was_projected_from() -> None
     assert row.body == {"text": "done", "agent_message_id": "msg_1"}
 
 
-def test_a_console_authored_event_takes_the_other_arm_and_no_range() -> None:
-    """The distinction `session_messages` cannot make: no frames, rather than frames unrecorded."""
-    row = stored(Reasoning(message=MESSAGE, summary=None, provenance=Authored()))
+def test_a_frame_derived_kind_that_names_no_frames_is_refused_rather_than_downgraded() -> None:
+    """Every kind this writes is one a fold produced, so the other arm is an adapter bug.
 
-    assert row.provenance == EventProvenance.AUTHORED
-    assert (row.source_first_frame_seq, row.source_last_frame_seq) == (None, None)
+    Writing it as `authored` instead would land the failure on the read, where one such row makes a
+    whole session's transcript unreadable.
+    """
+    with pytest.raises(ValueError, match="projected from frames"):
+        session_events.row(
+            Reasoning(message=MESSAGE, summary=None, provenance=Authored()),
+            session_id=SESSION_ID,
+            turn_id=TURN_ID,
+            now=NOW,
+        )
 
 
 def test_a_tool_call_and_its_answer_are_two_rows_sharing_the_correlation_column() -> None:

@@ -273,18 +273,24 @@ def row(event: ConversationEvent, *, session_id: UUID, turn_id: UUID, now: datet
     A `TextDelta` has none: it is an increment of prose the completed message carries whole. A
     `TurnCompleted` has `session_turns`, which already holds the exchange's outcome, its cost and
     its frame bracket.
+
+    **Every kind that reaches a row here is frame-derived**, so an event carrying `Authored` is an
+    adapter that did not say where it read the fact, and it raises rather than being written under
+    the other arm: `ck_session_events_frame_derived_kinds` refuses such a row, and the read path
+    (`session_views._asked`) raises on one for a whole session's transcript.
     """
     if (stored := _stored(event)) is None:
         return None
     kind, body, call_id = stored
-    frames = event.provenance if isinstance(event.provenance, FrameRange) else None
+    if not isinstance(frames := event.provenance, FrameRange):
+        raise ValueError(f"{kind} is projected from frames and names none: {event=}")
     return SessionEvent(
         session_id=session_id,
         turn_id=turn_id,
         kind=kind,
-        provenance=EventProvenance.AUTHORED if frames is None else EventProvenance.FRAME_RANGE,
-        source_first_frame_seq=None if frames is None else frames.first_frame_seq,
-        source_last_frame_seq=None if frames is None else frames.last_frame_seq,
+        provenance=EventProvenance.FRAME_RANGE,
+        source_first_frame_seq=frames.first_frame_seq,
+        source_last_frame_seq=frames.last_frame_seq,
         call_id=call_id,
         body=body.model_dump(mode="json"),
         created_at=now,

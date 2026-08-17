@@ -1342,6 +1342,16 @@ class SessionEvent(Base):
             "AND (provenance <> 'frame_range' OR turn_id IS NOT NULL)",
             name="ck_session_events_provenance_frames",
         ),
+        # What the discriminator alone cannot say: a kind the fold produced takes the arm that
+        # names its frames. `ConversationEventKind` is exactly what folding a recorded frame
+        # yields, so an `authored` row under one of them is an adapter that did not say where it
+        # read the fact — and it fails on *read* rather than on write, since `session_views._asked`
+        # raises on a tool call with no frames and runs on every `SessionStore.get`.
+        CheckConstraint(
+            "provenance = 'frame_range' OR kind NOT IN "
+            "('message_completed','reasoning','tool_call_started','tool_call_completed')",
+            name="ck_session_events_frame_derived_kinds",
+        ),
         CheckConstraint(
             "(call_id IS NOT NULL) = (kind IN ('tool_call_started','tool_call_completed'))",
             name="ck_session_events_call_id",

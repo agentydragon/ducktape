@@ -1666,3 +1666,69 @@ def test_a_chat_session_cannot_be_written_without_a_lease(db_url: str) -> None:
             )
     finally:
         engine.dispose()
+
+
+_EVENT = text(
+    """
+    INSERT INTO session_events (session_id, turn_id, kind, provenance, source_first_frame_seq,
+                                source_last_frame_seq, call_id, body, created_at)
+    VALUES (:session_id, NULL, :kind, 'authored', NULL, NULL, NULL, '{}'::jsonb, :now)
+    """
+)
+
+
+def test_a_projected_event_kind_cannot_claim_the_console_authored_it(db_url: str) -> None:
+    """0073: `ConversationEventKind` is by definition what folding a recorded frame produced, so a
+    row of one on the `authored` arm names no frames to appeal its normalization to — and the write
+    succeeding is what makes `session_views._asked` meet it as an unreadable transcript instead.
+    """
+    apply_migrations(db_url)
+    engine = create_engine(db_url)
+    operator_id, conversation_id, session_id = uuid4(), uuid4(), uuid4()
+    now = _now()
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO operators (operator_id, status, created_at, updated_at)
+                    VALUES (:operator_id, 'active', :now, :now)
+                    """
+                ),
+                {"operator_id": operator_id, "now": now},
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO conversation (conversation_id, operator_id, created_at)
+                    VALUES (:conversation_id, :operator_id, :now)
+                    """
+                ),
+                {"conversation_id": conversation_id, "operator_id": operator_id, "now": now},
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO sessions (
+                        session_id, operator_id, conversation_id, surface, status, bridge_token_fingerprint,
+                        bridge_connected_at, error, lease_expires_at, created_at, updated_at
+                    ) VALUES (
+                        :session_id, :operator_id, :conversation_id, 'spa', 'ready', :fingerprint,
+                        NULL, NULL, :now, :now, :now
+                    )
+                    """
+                ),
+                {
+                    "session_id": session_id,
+                    "operator_id": operator_id,
+                    "conversation_id": conversation_id,
+                    "fingerprint": b"fp",
+                    "now": now,
+                },
+            )
+            # The other category is what the arm is for, so the rule must leave it writable.
+            conn.execute(_EVENT, {"session_id": session_id, "kind": "prompt_enqueued", "now": now})
+        with pytest.raises(IntegrityError, match="ck_session_events_frame_derived_kinds"), engine.begin() as conn:
+            conn.execute(_EVENT, {"session_id": session_id, "kind": "reasoning", "now": now})
+    finally:
+        engine.dispose()

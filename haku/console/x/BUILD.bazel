@@ -440,6 +440,7 @@ py_test(
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
