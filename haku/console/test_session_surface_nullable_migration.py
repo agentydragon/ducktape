@@ -57,24 +57,25 @@ def _insert_session(conn: Connection, conversation_id: UUID, **columns: str) -> 
     return session_id
 
 
-def _surface(conn: Connection, session_id: UUID) -> str:
-    surface: str = conn.execute(
+def _surface(conn: Connection, session_id: UUID) -> str | None:
+    surface: str | None = conn.execute(
         text("SELECT surface FROM sessions WHERE session_id = :session_id"), {"session_id": session_id}
     ).scalar_one()
     return surface
 
 
-def test_a_session_inserted_without_a_surface_gets_one(db_url: str) -> None:
-    """The failure mode the default exists to prevent: SQLAlchemy names only mapped columns, so the
-    release that unmaps `surface` omits it from every insert and a bare `NOT NULL` would reject the
-    first session of that roll."""
+def test_a_session_inserted_without_a_surface_records_none(db_url: str) -> None:
+    """The failure mode this prevents: SQLAlchemy names only mapped columns, so the release that
+    unmaps `surface` omits it from every insert and a bare `NOT NULL` would reject the first session
+    of that roll. It lands NULL rather than a default, because a defaulted `'spa'` would be a false
+    statement about a session a Matrix room opened."""
     apply_migrations(db_url)
     engine = create_engine(sync_database_url(db_url))
     try:
         with engine.begin() as conn:
             session_id = _insert_session(conn, _conversation(conn))
         with engine.connect() as conn:
-            assert _surface(conn, session_id) == "spa"
+            assert _surface(conn, session_id) is None
     finally:
         engine.dispose()
 
@@ -91,7 +92,7 @@ def test_surface_and_room_id_are_no_longer_coupled(db_url: str) -> None:
             room_without_a_matrix_surface = _insert_session(conn, conversation_id, room_id="!room:example.org")
         with engine.connect() as conn:
             assert _surface(conn, matrix_without_a_room) == "matrix"
-            assert _surface(conn, room_without_a_matrix_surface) == "spa"
+            assert _surface(conn, room_without_a_matrix_surface) is None
     finally:
         engine.dispose()
 

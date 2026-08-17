@@ -976,12 +976,10 @@ class Session(Base):
     conversation_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("conversation.conversation_id", ondelete="CASCADE"), nullable=False
     )
-    # Every writer names this column, so the server default supplies nothing today. It is what an
-    # `INSERT` that stops naming it gets instead of a `NOT NULL` violation, which is the state the
-    # attachment leaves this column in (`0073`).
-    surface: Mapped[ChatSurface] = mapped_column(
-        TextBackedStrEnumColumn(ChatSurface), nullable=False, server_default=text("'spa'")
-    )
+    # Every writer names this column, so no row is null today. Nullable is what an `INSERT` that
+    # stops naming it gets instead of a `NOT NULL` violation, and absent is the honest record for a
+    # session whose channel the attachment holds instead (`0073`).
+    surface: Mapped[ChatSurface] = mapped_column(TextBackedStrEnumColumn(ChatSurface), nullable=True)
     # The Matrix room this session serves — the *history* half of the binding, where
     # `matrix_conversation.session_id` is the live pointer. Written once at creation and never
     # updated, which is what keeps a replaced Matrix session distinguishable from an SPA one.

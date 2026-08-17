@@ -1,17 +1,16 @@
-"""`sessions.surface` gets a server default, and `ck_sessions_matrix_room` goes.
+"""`sessions.surface` becomes nullable, and `ck_sessions_matrix_room` goes.
 
 Both stand in the way of unmapping `surface` and `room_id`, and each for its own reason:
 
 - **`surface` is `NOT NULL` with no default.** SQLAlchemy names only mapped columns in an `INSERT`,
-  so the release that unmaps it omits it and Postgres rejects the first session of that roll — the
-  same hazard `0062` fixed for `session_frames.partial`, and the same fix.
+  so the release that unmaps it omits it and Postgres rejects the first session of that roll.
+  Nullable rather than defaulted (operator, 2026-08-17): a default would record every Matrix room's
+  sessions as `'spa'` for the release between the unmapping and the drop — a false statement about
+  the very linkage the attachment replaces. Absent says what is true, that the session no longer
+  states a surface.
 - **`ck_sessions_matrix_room` couples the two columns**, `(surface = 'matrix') = (room_id IS NOT
   NULL)`. While it stands, unmapping either column alone writes a row the other half of the
   equivalence rejects, so it has to go before either does.
-
-`'spa'` is spelled out rather than taken from `ChatSurface.SPA`, for the reason `0041` gives: a
-migration is a point-in-time statement about the database, and reaching into code that moves would
-make an already-applied migration change meaning.
 
 The pairing rule itself stays enforced where it is decided — `SessionStore.create` takes a
 `SpaSession | MatrixSession` variant and reads both columns off it, so the combinations the CHECK
@@ -36,12 +35,10 @@ _MATRIX_ROOM_CHECK = "(surface = 'matrix') = (room_id IS NOT NULL)"
 
 
 def upgrade() -> None:
-    op.alter_column(
-        "sessions", "surface", existing_type=sa.Text(), existing_nullable=False, server_default=sa.text("'spa'")
-    )
+    op.alter_column("sessions", "surface", existing_type=sa.Text(), nullable=True)
     op.drop_constraint(_MATRIX_ROOM, "sessions", type_="check")
 
 
 def downgrade() -> None:
     op.create_check_constraint(_MATRIX_ROOM, "sessions", _MATRIX_ROOM_CHECK)
-    op.alter_column("sessions", "surface", existing_type=sa.Text(), existing_nullable=False, server_default=None)
+    op.alter_column("sessions", "surface", existing_type=sa.Text(), nullable=False)
