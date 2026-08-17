@@ -54,7 +54,7 @@ over Matrix, and any write surface for the agent beyond its own replies.
   acknowledgement, so the watermark advances every pass. The cost is deliberate and recorded in
   <../../../plans/conversation_layers.md> § 7, along with the two richer answers (mid-turn steering,
   a conversation-layer queue) that would take it back.
-- **Unsettled, and tracked in <../../TODO.md>:** the batch size cap and its overflow split, the
+- **Unsettled, and tracked in <../../../TODO.md>:** the batch size cap and its overflow split, the
   ingress debounce window, and the age fence that makes a very old message context rather than work.
   Provenance in the rendered prompt is thinner than intended: `_as_prompt` renders one line per
   message carrying its `event_id` and body alone, so sender, timestamp and thread root do not reach
@@ -186,7 +186,7 @@ over Matrix, and any write surface for the agent beyond its own replies.
 
 - **Reads are unscoped across rooms and past conversations**, deliberately and for now. The fence
   that replaces this is the information tier, not the room
-  (<../../../plans/information_trust_tiers.md>) — a decision function at one console call site, not
+  (<../../../../plans/information_trust_tiers.md>) — a decision function at one console call site, not
   scoping smeared through the transport, which is a second reason to keep the tools plain HTTP
   entries rather than closures over a session.
 - **IDs are given, not guessed.** Every message the agent sees carries its event ID in the form the
