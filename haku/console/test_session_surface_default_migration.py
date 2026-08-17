@@ -58,9 +58,10 @@ def _insert_session(conn: Connection, conversation_id: UUID, **columns: str) -> 
 
 
 def _surface(conn: Connection, session_id: UUID) -> str:
-    return conn.execute(
+    surface: str = conn.execute(
         text("SELECT surface FROM sessions WHERE session_id = :session_id"), {"session_id": session_id}
     ).scalar_one()
+    return surface
 
 
 def test_a_session_inserted_without_a_surface_gets_one(db_url: str) -> None:
