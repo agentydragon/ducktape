@@ -384,6 +384,46 @@ removes that branch. What stays shared is the record and the per-attachment curs
 record-then-drain split "the shape every outbound channel write has to take". The split is right;
 the neutral half is the record, and this is the sentence to correct when the move lands.
 
+### `chat_delivery` is a revision index, and only some channels can keep one
+
+Step 8's table (`0067`) is shared by every channel that attaches, and its shape assumes more about a
+channel than the layer model lets us assume (operator, 2026-08-17, on a channel that is _"a teletype
+printing everything as it happens"_, _"an old timey pager"_, or _"a telegraph key that sends a
+constant message when pressed and doesn't display anything"_).
+
+Three of its properties are Matrix's model, not a channel's:
+
+- **`sent_ref` is `NOT NULL`** with a non-empty CHECK, so a channel with nothing to point at cannot
+  record that it delivered anything at all.
+- **`uq_chat_delivery_live_subject`** — one live row per `(attachment, subject)` — encodes _at most
+  one artifact per subject, revised in place_. An append-only channel's correct behaviour when a
+  subject changes is to emit again; the index either forbids that or forces a retirement that
+  describes nothing.
+- **`retire` means "the channel has taken this one back"**, which a channel with no display and no
+  edit cannot do.
+
+Two facts are fused here, and only one of them is neutral:
+
+1. **"we already delivered subject S"** — every channel needs this, or a restart reprints the
+   conversation and re-pages the operator at 3am.
+2. **"…and it is still visible at ref R, so revise it there"** — a property of channels that hold an
+   addressable, editable copy.
+
+`chat_delivery` stores (2), and stores (1) only incidentally — inaccessibly to any channel that
+cannot satisfy (2).
+
+**For an append-only channel the table is not wrong-shaped so much as unnecessary.** What a teletype
+needs is a position past which everything has been emitted, which is § 2's per-`(channel,
+conversation)` subscription cursor — step 9's, and all such a channel needs. The correspondence
+exists _because_ Matrix can revise, and revising requires addressing.
+
+So the table stays and its name is the thing to fix: it is the revision index for copy-holding
+channels, not a delivery log, and `x/delivery_log.py`'s own docstring already says "copy-holding"
+while nothing in the schema or the module name carries that scope. This is § 11's rule one layer
+down — the provider shape is living in a `NOT NULL` and a unique index, which is exactly the
+load-bearing position that rule forbids. **Do not build the append-only path ahead of step 9**;
+nothing today is a teletype, and a second mechanism invented now is one to delete later.
+
 ### A session has no frontend, and the port is per attachment
 
 **"The frontend this session is attached to" is not a thing** (operator, 2026-08-17: _"what is a
@@ -743,7 +783,10 @@ having even if the loop is never built.
 8.  **Record what we sent** (§ 8's missing item 2), or turn on the correspondence reader. § 7's
     ruling puts channel state in Postgres, which argues for storing the `event_id` beside the
     attachment rather than deriving it from the room every pass; the room read stays available for
-    repair. This decides how idempotence works, so it wants its own PR.
+    repair. This decides how idempotence works, so it wants its own PR. **Built as #4307, and the
+    table it added is narrower than its name** — see § 5 § `chat_delivery` is a revision index: it
+    serves channels that hold an addressable, editable copy, and an append-only one is served by
+    step 9's cursor instead.
 9.  **Matrix becomes a subscriber** (§ 2's primitive): one loop per `(channel, conversation)`,
     reading the record from its cursor instead of being handed events by the turn loop, woken by
     `session_changed` and by inbound events with the 1s poll demoted to a fallback. Here the three
