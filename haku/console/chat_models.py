@@ -155,23 +155,14 @@ class EventProvenance(StrEnum):
     AUTHORED = "authored"
 
 
+# CLEANUP(added 2026-08-17): Delete with the column it types. Its only writer was the provenance
+#   backfill, deleted along with the rows it existed to point; <../plans/legacy_purge.md> phase 3
+#   drops `session_messages.unpointable_reason`.
 class MessageUnpointable(StrEnum):
-    """Why a `session_messages` row was left without a frame range, once one was looked for.
+    """Why a `session_messages` row was left without a frame range, once one was looked for."""
 
-    The backfill (`x/message_provenance.py`) matches a row to the message its session's frames
-    project by the prose both carry, so every arm here is a way that match can fail to be exactly
-    one. Recording it is what makes "every row has a range or a reason" a query rather than a
-    re-derivation, and what stops the next scan re-examining rows already found unrecoverable.
-    """
-
-    # No projected message carries this row's text: prose the frames never held — an abort
-    # notice appended to it, an error, or a message whose frames were never recorded.
     NO_MATCHING_PROJECTION = "no_matching_projection"
-    # The text is carried by a different number of unclaimed projected messages than of rows, so
-    # pairing them is a guess. Two rows and two candidates align by order; anything else does not.
     AMBIGUOUS_TEXT = "ambiguous_text"
-    # The one match would put this row before a row already pointed earlier in the transcript.
-    # Messages are written in frame order, so a match that inverts it is the wrong message.
     OUT_OF_ORDER = "out_of_order"
 
 

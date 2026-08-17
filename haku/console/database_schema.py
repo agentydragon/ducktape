@@ -977,10 +977,9 @@ class SessionMessage(Base):
     tool_calls: Mapped[list[RecordedToolCall]] = mapped_column(
         PydanticListColumn(RecordedToolCall), nullable=False, server_default=text("'[]'::jsonb")
     )
-    # Why the two columns above are NULL, where somebody has looked. Both NULL and no reason means
-    # nothing has scanned this row yet, which is what separates the two meanings the range alone
-    # cannot: `x/message_provenance.py` writes a reason exactly where it could not recover a range,
-    # so "every row has a range or a reason" is a query rather than an archaeology.
+    # CLEANUP(added 2026-08-17): Unmap, then drop. Nothing writes this column since the provenance
+    #   backfill that was its only writer was deleted; <../plans/legacy_purge.md> phase 2 unmaps it
+    #   and phase 3 drops it with `ck_session_messages_unpointable_{reason,exclusive}`.
     unpointable_reason: Mapped[MessageUnpointable | None] = mapped_column(
         TextBackedStrEnumColumn(MessageUnpointable), nullable=True
     )

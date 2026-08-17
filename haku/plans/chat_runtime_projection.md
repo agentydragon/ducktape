@@ -451,8 +451,8 @@ into it (`x/claude_code/projection.py`) and a read surface over the result (`rea
 #4149 made the adapter a reducer; the turn loop and the room's status line both read it; the
 durable cursor is `sessions.projected_frame_seq` (§ The shape); and `session_events` stores what
 the fold produces, written inside the cursor's own transaction. **All four interpreters counted
-below are gone.** What is still open is the _second_ category — session events, which cross no wire
-— and the backfill that re-projection feeds; the paragraphs that have landed say so where they are.
+below are gone.** What is still open is the _second_ category — session events, which cross no wire;
+the paragraphs that have landed say so where they are.
 
 `_run_turn`'s frame `match` became `project`, with the cursor advanced beside its effects. The
 abort path is still to collapse here: an abort becomes an intent the transport writes, and the
@@ -706,9 +706,9 @@ for one `session_ttl_seconds` after the release.
 **No standing check and no CLI over it** (operator, 2026-08-16). It cannot run in CI — what it
 needs is production rows — and production has almost none: `session_events` held **one row** on
 2026-08-16, a `message_completed` over frames 45129..45129, every other session predating the
-writer. A tool pointed at that corpus reads nothing. The caller that does exist is the backfill
-above, so this is a function and the CLI is a decision to revisit only if a drift report ever has a
-population to speak about.
+writer. A tool pointed at that corpus reads nothing, and the backfill above — the one caller it had
+— is deleted with the rows it was built to point (<legacy_purge.md>). So this is a function, and
+the CLI is a decision to revisit only if a drift report ever has a population to speak about.
 
 #### Pressure-tested against the two things that would break it
 

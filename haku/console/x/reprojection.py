@@ -1,10 +1,7 @@
 """Re-project a recorded session's frames and say where `session_events` disagrees.
 
-`check_session` returns findings; it prints nothing and decides nothing. Its caller is the
-`session_messages` provenance backfill (<../../plans/chat_runtime_projection.md> § 4), which needs
-the per-turn `MessageCompleted` events with their frame ranges to fill `source_first_frame_seq` and
-`source_last_frame_seq` for the rows carrying no agent id — and needs to know, per turn, whether
-that alignment is unambiguous enough to write from.
+`check_session` returns findings; it prints nothing and decides nothing, so a caller chooses what
+a per-turn disagreement is worth.
 
 **The fold is the write path's own** (`frame_projection.projected`) and the row is built by the
 write path's own mapping (`session_events.row`), so the only thing added here is the alignment.
@@ -281,7 +278,7 @@ def foldable_frames(session_id: UUID) -> Select[tuple[SessionFrame]]:
     `setup_output` carries no protocol `type` for the fold to read and a `partial` row is the
     console's own reconstruction of an answer in flight — the same exclusions adoption replays
     under (`session_store._unprojected_frames`). Returned as a query so a caller can bound it
-    further; `message_provenance` re-projects the same frames to recover a message's own range.
+    further.
     """
     return (
         select(SessionFrame)

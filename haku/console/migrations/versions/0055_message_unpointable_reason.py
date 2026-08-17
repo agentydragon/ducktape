@@ -7,12 +7,11 @@ column that separates them, so the recovery's outcome is stored beside each row 
 living in whatever report the operator last ran.
 
 **No rows are written here, deliberately.** Recovering a range means re-projecting a session's
-frames through the Python fold — `x/message_provenance.py` — which is neither a SQL statement nor
-bounded by anything this table knows. Startup applies migrations before serving and the Deployment
-rolls at `maxUnavailable: 0` (console README § Perimeter / deploy), so a fold over the frame log
-inside `upgrade()` would hold every replacement replica out of Ready for its duration. The scan is
-an operator-invoked path instead, and this migration is what gives it somewhere to record what it
-could not do.
+frames through the Python fold, which is neither a SQL statement nor bounded by anything this table
+knows. Startup applies migrations before serving and the Deployment rolls at `maxUnavailable: 0`
+(console README § Perimeter / deploy), so a fold over the frame log inside `upgrade()` would hold
+every replacement replica out of Ready for its duration. The scan was an operator-invoked path
+instead, and this migration gave it somewhere to record what it could not do.
 
 Additive and safe for the length of a roll: a replica on the previous image neither selects nor
 writes this column, and both constraints are satisfied by every existing row — `unpointable_reason`
