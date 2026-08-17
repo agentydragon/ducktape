@@ -11,7 +11,7 @@ import pytest_bazel
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, SessionStatus
+from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSurface, SessionStatus
 from haku.console.database_schema import Base as ConsoleBase, Operator, Session, SessionMessage
 from haku.console.operator_identity import OperatorStatus
 from haku.recall_index.chat_sync import ChatSyncReport, sync_chat
@@ -55,6 +55,7 @@ async def new_session(source: AsyncSession, operator_id: UUID) -> UUID:
         Session(
             session_id=session_id,
             operator_id=operator_id,
+            surface=ChatSurface.SPA,
             status=SessionStatus.CLOSED,
             bridge_token_fingerprint=b"fingerprint",
             lease_expires_at=_NOW,
@@ -84,6 +85,9 @@ async def say(
             role=role,
             status=status,
             content=content,
+            # An answer names the frame it was projected from; a prompt is written before the
+            # frame it goes out as exists (`ck_session_messages_assistant_pointed`).
+            source_first_frame_seq=minute + 1 if role is ChatMessageRole.ASSISTANT else None,
             created_at=at,
             updated_at=at,
         )
