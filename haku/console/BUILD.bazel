@@ -1390,6 +1390,17 @@ py_test(
 )
 
 py_test(
+    name = "test_migration_chain",
+    size = "small",
+    srcs = ["test_migration_chain.py"],
+    data = glob(["migrations/**"]),
+    deps = [
+        "@pypi//alembic",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_recall_index_migration",
     size = "medium",
     srcs = ["test_recall_index_migration.py"],
