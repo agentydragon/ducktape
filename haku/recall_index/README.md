@@ -20,11 +20,11 @@ One shared table and a per-corpus set around it:
 
 | table                 | keyed by                  | holds                                                                    |
 | --------------------- | ------------------------- | ------------------------------------------------------------------------ |
-| `chunks`              | `(corpus, content_sha)`   | every embedding ever computed, including for content no longer reachable |
+| `chunks`              | corpus + content + regime | every embedding ever computed, including for content no longer reachable |
 | `git_tip`             | `path`                    | the tree at the indexed commit, replaced wholesale per sync              |
 | `git_sync_state`      | singleton                 | what the branch points at, and which commit `git_tip` holds              |
 | `chat_chunks`         | `(session_id, window_no)` | the searchable windows of each chat session                              |
-| `chat_chunk_messages` | window + ordinal          | **which messages each window holds**                                     |
+| `chat_chunk_messages` | window + ordinal          | **which messages each window intersects**                                |
 | `chat_sessions`       | `session_id`              | each session's shape as last indexed, which is what decides re-indexing  |
 
 `chunks` is content-addressed, so it has no notion of where content currently lives and keeps
@@ -83,13 +83,15 @@ A sync whose commit and regime already match what `git_sync_state` records retur
 a push-triggered sync and a slow reconciling cron both fire as often as they like — webhooks get
 dropped, so you want the belt as well as the braces.
 
-### chat: a chunk holds whole messages
+### chat: a chunk names the messages it covers
 
-Packing stops at message boundaries rather than at lines, so every window can name exactly which
-messages it covers and a hit hands back pointers a caller drills into with the console's own
-conversation tools (`haku/console/tools/conversations.py`) rather than trusting the copy in
-`chunks.text`. The one exception is a message longer than a whole chunk, which is split — and
-each part still holds exactly that one message, so the mapping never becomes approximate.
+Message ends are the preferred cut rather than line ends, so a window usually stops where a
+message does, and every window names each message it **intersects** — the pointers a caller
+drills into with the console's own conversation tools (`haku/console/tools/conversations.py`)
+rather than trusting the copy in `chunks.text`. Two things cut across a message anyway: the
+configured overlap, which carries the previous window's tail into the next, and a message longer
+than a whole chunk, which is split. So a window's message list is what it overlaps, not what it
+wholly contains.
 
 The unit of skipping is a session: one grouped scan gets every session's message count and newest
 message, and a session that matches what `chat_sessions` recorded under the same regime is never
@@ -119,9 +121,8 @@ and these values are only ever compared, never read back and used for anything.
 **No ANN index**, which at this size is still a choice rather than a limit. Exact KNN scans the
 joined set and so has no ANN-plus-filter correctness problem. Sizing it honestly: ~5 KiB a chunk
 means a query reads ~50 MB at 10k chunks and ~500 MB at 100k, against a database whose volume is
-**2Gi in total** and shared with the approval ledger. (The "revisit past ~100k chunks" this
-paragraph used to carry was arithmetic from the 384-dimension model that preceded Ollama; the
-volume runs out around the same place the scan does.)
+**2Gi in total** and shared with the approval ledger — so the volume runs out around the same
+place the scan does.
 
 Two things that revisit would need, in order: a **typmod** — the column is declared without one so
 that changing models is not a migration, and an index cannot be built on a column whose dimension
@@ -166,10 +167,9 @@ which the agent cannot edit:
   a model actually reads; a server's `instructions` frequently are not surfaced by the client at
   all, which is why the same point is not left there alone.
 - **The Matrix session prompt** (<../../cluster/k8s/haku/console/matrix_system_prompt.md.j2>),
-  which is operator-owned and mounted from the console's ConfigMap. It also fixes the prompt's
-  previous claim that anything older than the replayed tail lives "in the room itself, and Rai can
-  quote it to you" — with the chat corpus indexed, that is now something to look up rather than
-  something to ask for.
+  which is operator-owned and mounted from the console's ConfigMap. It says that anything older
+  than the replayed tail is something to look up here rather than something to ask the operator
+  to quote back.
 
 Both say the same third thing: **a search that found nothing must be reported as a search that
 found nothing**, not as absence and not as silence. That is the failure the whole surface exists
@@ -180,9 +180,15 @@ comparable thing in reach and has had far more exposure to real sessions than th
 
 ## Evaluating it locally
 
-Everything here is runnable against a clone and a throwaway Postgres, which is the point:
-whether semantic retrieval over these corpora beats ripgrep and `list_conversations` is an
-empirical question, and it gates whether any of this is worth deploying.
+Everything here is runnable against a clone and a throwaway Postgres, which is the point: whether
+semantic retrieval over these corpora beats ripgrep and `list_conversations` is an empirical
+question, and the answer wants measuring rather than arguing.
+
+The CLI needs an embedder as well as a database — it defaults to `http://localhost:11434/v1` and
+`qwen3-embedding:4b`, so either run Ollama locally or port-forward `ollama.ollama:11434`.
+`HAKU_STATE_INDEX_EMBEDDER_{URL,MODEL}` override both, and the model must be the one the server
+actually reports, since the client fails closed on a mismatch rather than writing a second vector
+space into the corpus.
 
 ```bash
 docker run -d --rm -e POSTGRES_PASSWORD=x -p 5432:5432 pgvector/pgvector:pg18
@@ -207,20 +213,15 @@ bb run //haku/recall_index:main -- query-chat "what did we decide about the egre
 bb run //haku/recall_index:main -- query-chat "intake" --session-id 0e4b…
 ```
 
-## Not here yet
+## Deployed, in the console
 
-### Deployment
-
-Deliberately absent — it depends on the evaluation above:
-
-- **Schema ownership.** `store.ensure_schema` creates the extension, schema, and tables for
-  the CLI and tests. A deployed index gets them from a migration in the console's Alembic
-  chain instead (the console's CNPG cluster is the intended home — no new stateful service,
-  and `haku/console/README.md` already names Postgres as an accepted private boundary). The chat
-  corpus makes that the obvious home rather than one option: its source tables are already there.
-- **The MCP tool surface — built, and off.** `haku_index`
-  (<../console/tools/recall_index.py>) is an in-process FastMCP server in haku-console: one
-  `search` with a `corpus` argument (`haku_state`, `conversations`, or both), plus `index_status`.
+- **Schema ownership.** `store.ensure_schema` creates the extension, schema, and tables for the
+  CLI and the tests, which own their whole database. The deployed index gets them from migration
+  `0037` in the console's Alembic chain — the console's CNPG cluster is the home because the chat
+  corpus's source tables are already there.
+- **The MCP tool surface.** `haku_index` (<../console/tools/recall_index.py>) is an in-process
+  FastMCP server in haku-console: one `search` with a `corpus` argument (`haku_state`,
+  `conversations`, or both), plus `index_status`.
 
   **`index_status` answers before there is anything to search.** It reports `remote_commit` —
   what the last sweep saw on the branch, recorded on every tick including the ones that decide
@@ -252,28 +253,27 @@ Deliberately absent — it depends on the evaluation above:
   `haku_conversations` already owns reading past sessions. A second reader in this server would be
   a second answer to "what does this file say", and the two would drift.
 
-  Listing the server in `cluster/k8s/haku/console/config.yaml` is what builds it — and the
-  console refuses to start if it is listed with no embedder configured, since search embeds its
-  query and cannot run without somewhere to do that. Nothing is registered in `cluster/k8s/haku/console/config.yaml` yet — a configured server with no builder
-  fails `validate_in_process_server_bindings` at startup — so turning it on is a config change and
-  a policy decision together, and **Read scoping** below is the gate on the second.
+  Listing the server in `cluster/k8s/haku/console/config.yaml` is what builds it — a configured
+  server with no builder fails `validate_in_process_server_bindings` at startup — and the console
+  refuses to start if it is listed with no embedder configured, since search embeds its query and
+  cannot run without somewhere to do that. It is listed there, and Haku holds both tools unscoped
+  through the `haku_recall_reads` policy; **Read scoping** below is what that decision rests on.
 
-- **The `vector` extension — settled, and not by an image build.** pgvector 0.8.1 already ships in
+- **The `vector` extension — not an image build.** pgvector is untrusted, so `CREATE EXTENSION`
+  needs superuser and the migration (running as `approval_store`) cannot do it — hence a CNPG
+  `Database` CR (<../../cluster/k8s/haku/console/db/approval-store-database.yaml>) declaring the
+  extension, adopting the database `bootstrap.initdb` created, with `databaseReclaimPolicy: retain`
+  so deleting the file can never drop the console's database. pgvector 0.8.1 already ships in
   `ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie`, the image the console's CNPG cluster
-  already runs; what was missing was only the `CREATE EXTENSION`. That is untrusted, so it needs
-  superuser and the migration (running as `approval_store`) cannot do it — hence a CNPG `Database`
-  CR (<../../cluster/k8s/haku/console/db/approval-store-database.yaml>) declaring the extension,
-  adopting the database `bootstrap.initdb` created, with `databaseReclaimPolicy: retain` so
-  deleting the file can never drop the console's database.
+  runs, so nothing had to be rebuilt.
 
   Migration `0037` creates the schema and tables and assumes the extension is there. If it is not,
   the migration fails, the new replica never becomes Ready, and `maxUnavailable: 0` leaves the
-  running version serving — so the ordering to verify before merging is that the `Database` CR has
-  reconciled first.
+  running version serving — so a change to either side wants the `Database` CR reconciled first.
 
-- **Sync — done, in the console.** `haku/console/recall_index_sync.py` sweeps both corpora from
-  the console process: chat every minute over its own tables, haku-state every thirty seconds
-  against a bare mirror on the pod's `/tmp`. Each corpus takes its own Postgres advisory lock, so
+- **Sync.** `haku/console/recall_index_sync.py` sweeps both corpora from the console process:
+  chat every minute over its own tables, haku-state every thirty seconds against a bare mirror on
+  the pod's `/tmp`. Each corpus takes its own Postgres advisory lock, so
   exactly one replica syncs it and a slow fetch never delays the other.
 
   **The git tick is an `ls-remote`, not a fetch.** One round trip returns refs and no objects, so
@@ -287,19 +287,22 @@ Deliberately absent — it depends on the evaluation above:
   again; `sync_chat` skips a session whose newest message is under `quiet_for` old (30s) and
   reports it as `sessions_settling`. Nothing records the skip, so the next sweep still sees the
   session as changed — the only cost is the delay, and `index_status` therefore has a lag floor of
-  the quiet window. The git half needs a credential, and it
-  is **Haku's own Forgejo account** (operator, 2026-08-15) rather than a second read-only one — so
+  the quiet window. The git half needs a credential, and it is **Haku's own Forgejo account**
+  (operator, 2026-08-15) rather than a second read-only one — so
   the console holds something that could write haku-state even though nothing in it does. That cost
   is recorded where it is paid: <../console/README.md> and `tf/gitops/haku-state/main.tf`, which
   reflects the Secret into `haku-console`.
 
-  Not done: nothing triggers a sweep on a push, so a haku-state commit is searchable within five
-  minutes rather than immediately, and a new message within one.
+## Not here yet
+
+- **A push-triggered sweep.** Nothing fires one, so a haku-state commit waits for the next
+  thirty-second git tick and a new message for the next minute-long chat tick plus its quiet
+  window.
 
 - **Eviction.** `last_seen_at` is maintained but nothing sweeps it, and the cache keeps every
-  vector ever computed — including for content that has left the tip. At ~10 KiB a chunk on a 2Gi
-  volume (see above) that is a bounded amount of patience, not an indefinite one. When you do add a sweep, it
-  must exclude anything still referenced:
+  vector ever computed — including for content that has left the tip. At ~5 KiB a chunk on a 2Gi
+  volume (see above) that is a bounded amount of patience, not an indefinite one. A sweep must
+  exclude anything still referenced:
 
   ```sql
   DELETE FROM state_index.chunks c
@@ -313,7 +316,7 @@ Deliberately absent — it depends on the evaluation above:
   `last_seen_at` goes stale while its content is still very much searchable. `last_seen_at` only
   governs how long _unreferenced_ vectors are kept against a future revert.
 
-### Read scoping — before the chat corpus is exposed to any agent
+## Read scoping
 
 **Decided 2026-08-15: Haku holds `search` and `index_status` unscoped**, auto-approved through
 `haku_recall_reads` in `cluster/k8s/haku/console/config.yaml`. What made that an easy call is that
@@ -335,9 +338,8 @@ conversation a deliberate act: you have to name the session. Ranked retrieval su
 **by accident**, at the top of the results, in response to an innocent question. Same data, same
 policy gap, materially different odds of tripping over it.
 
-Nothing here is blocked on it — indexing everything and searching everything is right for the
-local evaluation, where there is one operator and a restored database. It is a prerequisite for
-exposing the corpus through `/mcp` to any agent.
+Nothing was blocked on it while there was one operator and one agent. It is the prerequisite for
+exposing the corpus through `/mcp` to a **second** agent.
 
 **The trigger condition has since arrived, and the intended answer is not a filter.** Several
 agent kinds at several information trust levels (<../plans/information_trust_tiers.md>) is exactly
@@ -378,7 +380,7 @@ What settling it touches:
   confidentiality claim about the console's data and belongs in the enforcement inventory rather
   than in a default nobody chose.
 
-### Frames
+## Frames
 
 `session_frames` — the console's verbatim record of the agent protocol — is **not indexed**.
 `haku/plans/matrix_chat_runtime.md` names frames as the granularity search should eventually use,

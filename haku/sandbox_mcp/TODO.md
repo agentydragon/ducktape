@@ -4,7 +4,7 @@
 
 Today any change to the server's `EnvironmentConfig` changes `contract_hash`
 (<config.py>), and every claim annotated with the old hash is immediately unusable:
-`exec_sandbox` and `get_sandbox_info` both fail with _"sandbox `<name>` was created with
+`provision_sandbox` and `exec_sandbox` both fail with _"sandbox `<name>` was created with
 different server configuration; dispose and recreate it"_ (<kubernetes_client.py>). The
 running pod is fine — its checkout, caches, and any in-flight work are all still there —
 but the only supported move is to throw it away.
@@ -32,22 +32,19 @@ What would be better, roughly in order of value:
 
 ## Make running-vs-configured inspectable
 
-When the mismatch does happen there is currently no way to see _what_ differs — the
-error names neither hash, and `get_sandbox_info` fails the same way instead of
-answering. The agent's only recourse is to guess from the recent deploy.
+The read tools say _that_ a claim is stale — `get_sandbox_info` and every entry of
+`list_sandboxes` report `state: stale_config` with `reason: ConfigurationChanged` — but not
+_what_ differs. Neither hash is in the response and neither is in the provision/exec error, so
+the agent's only recourse is to guess from the recent deploy.
 
-- `get_sandbox_info` should **always succeed** for a service-owned claim, and report the
-  claim's stored contract hash, the server's current one, and which config fields
-  diverge. A read tool that refuses to read when something is wrong is backwards — that
-  is exactly when it is needed.
+- `get_sandbox_info` should report the claim's stored contract hash, the server's current
+  one, and which config fields diverge.
 - Surface what the box was actually bootstrapped **with**: the bootstrap script's own
   hash (or a short digest), its exit status, and when it ran. Today `bootstrap_state`
   says `succeeded` without saying _what_ succeeded, so an old-image / new-config skew
   looks identical to a healthy claim (a 2026-07-24 rollout produced exactly that — a
   `succeeded` bootstrap that had silently done only half the setup, because the config
   had moved to calling a script the running image did not yet contain).
-- `list_sandboxes` should mark stale-contract claims so the agent can see the situation
-  without a per-claim probe.
 
 ### A `warnings` field: "this pod is running a stale spec"
 

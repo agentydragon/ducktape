@@ -42,11 +42,10 @@ history holds the original full design rationale. The **actionable build checkli
   between `haku/console/frontend/bridge.ts` (authoritative) and Haku's UI — a tiny shared
   package or a sync-checked artifact. (The remaining cleanup from the realized free-form
   UI design; see `console/docs/containment.md` → _The bridge protocol_.)
-- **In-cluster runtime** (the `haku-scanner` CronJob / self-hosted Managed-Agents
-  worker) as an alternative to the web home — deferred; see `TODO.md` → _Later_ and
-  `haku/runtime/managed_agent/`. Revisit if scanner-image upkeep or the
-  client_credentials path proves painful (scheduled deployments + vaults remove exactly
-  those work items).
+- **An in-cluster runtime as the default instead of the web home.** Both candidates are
+  built — `runtime/agent` (Runtime C) and `runtime/managed_agent/self_hosted` (Runtime B) —
+  so what is undecided is whether either replaces the web home rather than sitting beside
+  it. Per-runtime state: `TODO.md` → _Later_.
 - **Capability registry** (a ConfigMap mapping `service → facade URL → secret name`) —
   a possible later formalization of today's ad-hoc `kubectl get secret` discovery; not
   required by the current model.
@@ -104,61 +103,37 @@ policy execute immediately, while all others become operator approval requests. 
 the same: exact call reviewed, trusted console approval, console-owned audit/result state, and
 credentials scoped or proxied rather than trusted to Haku's restraint.
 
-## Future: a conversational interface with Haku (operator, 2026-07-06)
+## A conversational interface with Haku (operator, 2026-07-06) — answered by Matrix
 
-Today the only way to reach Haku mid-stream is the console's capability tier: fire the
-claude-code-web routine (optionally with per-run `text`) and get one fresh, fire-and-forget
-`run.md` pass — no back-and-forth, no memory of the exchange beyond what lands in
-`haku-state`. The operator wants something more like chatting with Haku directly, plus
-richer push notifications. **Chat is the higher-priority half of this; notifications are a
-nice-to-have.** Nothing below is designed yet — this is the shape of the ask, to work through
-in a follow-up design pass.
+The ask was a chat-like surface instead of only the console's fire-and-forget launch dialog:
+quick dispatch, follow-ups without re-stating context, and separate threads per topic. Matrix
+answers all three — a message in Element drives a real turn and the answer comes back into the
+room, one long-running session per room, with the console still owning the session, the
+credentials and the approval gate. Requirements and what is still owed:
+<plans/matrix_chat_runtime.md>. The notification half was answered separately and differently:
+Web Push from the console's own origin (`console/web_push.py`), with Approve/Deny rendered by
+the OS from console-authored content, because a third-party service with action buttons would
+have to carry a deciding credential outside the trust boundary (`docs/security.md` invariant #4).
 
-- **A chat-like surface** — a Telegram bot and/or a web UI — where Haku reads messages and
-  replies, as an easier and richer affordance than the console's launch dialog for:
-  - **Quick dispatch**: send Haku a task in a message, superseding the console's
-    "canned per-fire instructions" TODO (`TODO.md` → _Console_) with a lower-friction
-    version of the same idea.
-  - **An ongoing, longer conversation** — not just one-shot fire-and-forget: follow-ups,
-    clarifying questions, iterating on a task, without re-stating context each time.
-  - **Multiple conversation threads**, à la ChatGPT/claude.ai — separate topics or tasks
-    kept apart rather than one running transcript.
-  - **Inline action affordances** — clickable prebaked answers/actions in Haku's messages,
-    not just prose. Conceptually the same idea as `haku-ui`'s markdown affordance widgets
-    (`<signal-toggle>`, `<handoff>`, `<launch>`, `<feedback>`) but rendered in a chat surface
-    (e.g. Telegram inline-keyboard buttons with `callback_data`, which is a different wire
-    shape than a link-based affordance).
-- **Richer mobile notifications** — push notifications (today: one-way ntfy, no replies, no
-  buttons — see _Open questions_ below) that carry action buttons, so the operator can act
-  from the lock screen instead of opening a dashboard.
+What the ask still does not have:
 
-Open design questions to work through before building anything:
-
-- How a chat surface reconciles with Haku's run-based execution model: today each web-home
-  invocation is one bounded `run.md` pass, not a standing process. Does "ongoing
-  conversation" mean a live conversational loop (a new runtime shape), or per-message dispatch
-  against a conversation thread/log kept in `haku-state` that each run picks up and appends to
-  (closer to today's model, but not a live chat)?
-- Where conversation threads live and who owns them — `haku-state` (consistent with "state is
-  Haku's only memory") or a separate store, and how threads relate to `items/` and `runs/`.
-- How action-button clicks get enforced: a chat message and click-to-action carries the same
-  shape of risk as `requestLaunch`, but a bot API has no equivalent of "trusted-rendered
-  chrome" to confirm against — worth a hard look before wiring any button to a mutating
-  action.
-- Bot/webhook identity and perimeter: a Telegram bot needs a public inbound route and its own
-  credential, same class of new capability surface as `haku-ui`/the console — it inherits
-  Haku's security doctrine (`docs/security.md`), not a chat SDK trusting the model to behave.
-- Whether chat-dispatched one-off tasks run at Haku's own orchestrator privilege (like today's
-  launch-routine) or can ever route to a lower-trust agent. The worker zones this used to point
-  at are retired; the live question is <plans/information_trust_tiers.md>'s.
+- **Inline action affordances** — clickable prebaked answers/actions inside Haku's chat
+  messages, the way `haku-ui`'s markdown affordance widgets (`<signal-toggle>`, `<handoff>`,
+  `<launch>`, `<feedback>`) work in the iframe. The blocker is the same one that made Web Push
+  the answer for approvals: a click-to-action in a room carries the risk shape of
+  `requestLaunch`, and a Matrix client is not trusted-rendered chrome, so nothing may wire a
+  room button to a mutating action without a confirm on a console surface.
+- **Whether a chat-dispatched task can route to a lower-trust agent** rather than running at
+  Haku's own orchestrator privilege. The worker zones this used to point at are retired; the
+  live question is <plans/information_trust_tiers.md>'s.
 
 ## Open questions
 
 - **Value scoring**: single curator-owned 0–100 plus deadline is probably enough; resist
   building an expected-utility framework before the queue has real traffic.
-- **Notification thresholds**: ntfy is the channel; when to ping vs. wait for a dashboard
-  visit is a `memory/` matter, tuned via intake. See _Future: a conversational interface
-  with Haku_ above for the fuller chat/rich-notification direction this was gesturing at.
+- **Notification thresholds**: the channel is settled (Web Push for a pending tool call, the
+  room for prose); when to ping vs. wait for a dashboard visit is a `memory/` matter, tuned
+  via intake.
 - **Git as item store at scale**: a repo gives auditability, trivial backup, and
   human-editable state, but no queries or concurrent-writer safety. Fine at personal
   volumes with effectively serialized writers. If volume/concurrency ever outgrows it,

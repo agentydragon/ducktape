@@ -1,5 +1,10 @@
 # Haku dispatch plane — dispatcher + worker
 
+**Not deployed.** The z.ai lane was retired in August 2026: none of
+`cluster/k8s/x/haku/dispatch/` is listed in the root `cluster/k8s/kustomization.yaml`, so Flux
+applies none of it. The code and the manifests are kept for re-use, and everything below
+describes how the plane works when it runs, not something currently serving.
+
 The ducktape-owned service that lets Haku (the orchestrator) hand well-scoped jobs to
 cheaper, lower-trust worker agents running in per-provider **zones**, without ever
 holding a credential for the worker's model provider. Haku can call this plane but not
@@ -53,8 +58,9 @@ result worker-authored — no credential is ever stored. `JobRequest`/`JobRecord
 
 ## Worker image (`worker/`)
 
-One image (`ghcr.io/agentydragon/haku-zone-worker`, built by
-`formerly built by .github/workflows/haku-zone-worker-image.yml`) carries both zone harnesses — **Claude
+One image (`ghcr.io/agentydragon/haku-zone-worker`, formerly built by
+`.github/workflows/haku-zone-worker-image.yml`, which was deleted with the rest of the lane —
+nothing publishes a new tag today) carries both zone harnesses — **Claude
 Code CLI** for the zai zone's Anthropic wire shape and **Codex CLI** for the future oai
 zone's Responses shape — plus git and a stdlib-only `entrypoint.py`. It holds **no
 credentials**; the per-job key and result token arrive only via the Job's Secret.

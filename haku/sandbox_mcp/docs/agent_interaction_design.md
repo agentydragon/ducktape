@@ -53,6 +53,8 @@ as failed.
 
 ## Deferred
 
-Deployment manifests, RBAC, haku-console registration, multiple environment
-profiles, suspend/resume, interactive terminals, file transfer, port
-forwarding, and log streaming are intentionally not part of v1.
+Multiple environment profiles, suspend/resume, interactive terminals, file
+transfer, port forwarding, and log streaming are intentionally not part of v1.
+Deployment manifests and RBAC stay outside this package. Registration behind
+haku-console has since landed (`cluster/k8s/haku/console/config.yaml`, the
+`sandbox-mcp` entry).

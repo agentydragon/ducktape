@@ -9,12 +9,13 @@ repo has to understand rather than depend on. Nothing here is published by Anthr
 contract: the surface is reverse-engineered from the bundled binary's own schemas and measured by
 running it, and much of it the CLI marks `@internal`. Treat it as pinned to a CLI version.
 
-| File          | Holds                                                              |
-| ------------- | ------------------------------------------------------------------ |
-| <protocol.md> | The reference: channels, frames, control requests, `initialize`    |
-| <frames.py>   | Pydantic models for the slice the console acts on                  |
-| <probes/>     | Runnable experiments, each printing every frame in both directions |
-| <testdata/>   | One scrubbed capture of a real session, kept as evidence           |
+| File                                     | Holds                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------ |
+| <protocol.md>                            | The reference: channels, frames, control requests, `initialize`    |
+| <frames.py>                              | Pydantic models for the slice the console acts on                  |
+| [`frame_identity.py`](frame_identity.py) | Which wire field identifies each frame, for replay dedupe          |
+| <probes/>                                | Runnable experiments, each printing every frame in both directions |
+| <testdata/>                              | One scrubbed capture of a real session, kept as evidence           |
 
 The client that uses all this is `haku/runtime/x/bridge/cli_client.py`.
 
@@ -64,10 +65,11 @@ the wire fails a test rather than going unnoticed.
 
 ## Testing after a CLI repin
 
-`bbr test //haku/cli_protocol:...` runs two checks with different reach. `test_frames` checks the
-models still parse the corpus of captured frames, which catches a renamed or retyped field.
+`bbr test //haku/cli_protocol:...` runs checks of differing reach. `test_frames` checks the models
+still parse the corpus of captured frames, which catches a renamed or retyped field.
 `test_compaction_capture` checks the captured session still holds the properties a reader relies on
 across a compaction — that nothing is retracted, that the summary arrives as a synthetic `user`
-frame, that `PreCompact` runs in time to matter. Neither catches a changed behaviour, because both
-read a recording. For behaviour, re-run the probes and reconcile <protocol.md> — the fields it
-calls silently-ignored or fail-closed are the ones where a regression is invisible.
+frame, that `PreCompact` runs in time to matter. `test_frame_identity` checks each frame class still
+carries the field replay dedupes on. None of them catches a changed behaviour, because all read a
+recording. For behaviour, re-run the probes and reconcile <protocol.md> — the fields it calls
+silently-ignored or fail-closed are the ones where a regression is invisible.

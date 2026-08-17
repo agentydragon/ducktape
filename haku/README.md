@@ -14,17 +14,17 @@ data plane (scoped k8s identity, the sandbox, read-only source mirrors, `haku-st
 mailbox — `haku@allegedly.works` on a self-hosted Stalwart, delivery DMARC-gated to
 whitelisted senders in operator-owned config, read over JMAP with a dedicated Authentik
 identity; `cluster/k8s/haku/mailbox/`) is landed, and Haku owns its UI service and method.
-Current work is iterating base and Haku's method until what it surfaces is genuinely good.
+Current work is iterating that method until what it surfaces is genuinely good.
 
 ## Where things live
 
-- What Haku is, its objective, and how it reasons, plus the credential/perimeter model:
-  `base/instructions.md` (+ `base/sources/`). Base is **item-agnostic**; Haku's current
-  working method — its presentation format, procedures, and UI — lives in its
-  `haku-state` repo (seeded from `state_template/`), not base.
+- What Haku is, its objective, how it reasons, and its working method: **not in ducktape.** They
+  live in the `haku-state` repo's root cards (`AGENTS.md`, `SOUL.md`, `MEMORY.md`) and the hubs
+  they point at, which Haku owns and writes. ducktape holds the runtime entrypoints and the deploy
+  config — <base/README.md> says what is left here and why it stays.
 - **Threat model, enforcement inventory, and the invariants edits must preserve:**
   <docs/security.md> — the durable doctrine's canonical home; start a security review there.
-- The run procedure: `run.md`; the web runtime: `runtime/claude_web_env/`.
+- The web runtime and its run procedure: `runtime/claude_web_env/` (+ its `run.md`).
 - The trusted console (capability tier + iframe shell): `console/README.md`;
   containment contract: `console/docs/containment.md`. Alternative runtimes
   (Managed Agents): `runtime/managed_agent/` + `plans/`.

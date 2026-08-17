@@ -34,8 +34,8 @@ class OpenAIEmbedder:
     def model_key(self) -> str:
         """The model, not the transport.
 
-        So pointing the same model at a different server — our service today, Ollama later —
-        re-uses every cached vector instead of re-embedding the corpus for no reason.
+        So pointing the same model at a different server — Ollama today, anything else that speaks
+        `/v1/embeddings` later — re-uses every cached vector instead of re-embedding the corpus.
         """
         return self._model
 

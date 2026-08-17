@@ -89,7 +89,7 @@ slices over the deployed schema, not another identity migration:
 - **G3 (later, not scheduled): retire Haku's last Airlock dependency — the read-only Google token.**
   The console now owns Gmail/Calendar (G1/G2, done), but the agent still holds the read-only
   `google-access-token` (`$TOK`) that the `google` Airlock grant reflects into `haku-sandbox` — used
-  directly for Drive/Tasks and as the Gmail/Calendar REST fallback (`base/sources/`). Target: the
+  directly for Drive/Tasks and as the Gmail/Calendar REST fallback. Target: the
   console mediates all Google access so the agent holds no standing Google token; high-risk ops are
   already approval-gated (invariant), and the open question is whether to also move read-only reads
   behind console MCP tools (cleaner/safer, but a larger tool surface) vs. keep the direct read-only
@@ -114,19 +114,11 @@ slices over the deployed schema, not another identity migration:
   assign shared mappings one controller, update `cluster/docs/mcp_oauth_authentik_notes.md`, and add
   drift checks.
 
-## Repo-boundary follow-ups (from the 2026-07-07 state_template retirement)
-
-- **Source access recipes — decide the long-term home:** today `base/sources/` keeps
-  per-channel contracts + generic recipes (multi-agent-reusable ones, e.g. ActivityWatch,
-  point at `cluster/docs/`), while Haku's living helpers/runbooks are in haku-state. If
-  base recipes keep going stale against state-side reality, slim the rest of
-  `base/sources/` to thin contracts the same way ActivityWatch was.
-
 ## New read-only sources to wire
 
 Each follows the same pattern: a read-only credential or filter facade reachable
-from `haku-sandbox`, plus a source guide in `base/sources/` (and any reusable
-technique as a pass in haku-state's `procedures/`).
+from `haku-sandbox`, plus a source guide in haku-state (and any reusable technique
+as a pass in its `procedures/`).
 
 - **Cluster Forgejo repos** — read access to `ducktape` and `gaffer-private`
   if/when they're migrated or mirrored to the cluster Forgejo: grant the `haku`
@@ -152,7 +144,7 @@ let the console's approval gate filter it — reads auto-approve, every mutating
 call queues for operator approval (`haku/console/auto_approval.py`). The Authentik OAuth facades
 are auth, not tool filtering, but the approval gate is. PostScanMail is wired this way.
 
-**Grocy is wired** (`base/sources/grocy.md`) — routed through haku-console's `grocy-sf`
+**Grocy is wired** — routed through haku-console's `grocy-sf`
 MCP entry (the `grocy_reads` policy in `cluster/k8s/haku/console/config.yaml` auto-approves the
 read tools; every write tool stays approval-gated). Haku's dedicated read-only `haku` Grocy identity
 (`grocy-mcp-haku-sf` Authentik provider, its JWT rotation, and the ESO reflection into
@@ -160,7 +152,7 @@ read tools; every write tool stays approval-gated). Haku's dedicated read-only `
 and unlike the direct read-only path it also lets every runtime reach approval-gated
 Grocy writes.
 
-**Tana is wired** (`base/sources/tana.md`) — routed through haku-console's `tana-rw`
+**Tana is wired** — routed through haku-console's `tana-rw`
 MCP entry instead of a dedicated facade: the read tools (`search_nodes`, `read_node`,
 `get_children`, `open_node`, `list_tags`, `list_workspaces`, `get_tag_schema`) plus the
 idempotent `get_or_create_calendar_node` auto-approve under the `tana_safe_tools` policy in
@@ -227,7 +219,7 @@ the runtimes differ in where the sandbox runs — see
 <runtime/managed_agent/README.md>):
 
 - **Self-hosted worker (Runtime B)** — operator activation to go live:
-  <runtime/managed_agent/self_hosted/TODO.md>.
+  <runtime/managed_agent/self_hosted/README.md> and its bring-up RCA.
 - **Anthropic-hosted cloud** — **PARKED (2026-07-04)**: the cloud control-plane
   objects were deleted at Anthropic and `cluster/k8s/haku/cloud-agent-tf` is
   suspended; see <runtime/managed_agent/anthropic_hosted/PLAN.md> for the reason
@@ -244,7 +236,7 @@ the runtimes differ in where the sandbox runs — see
   `haku-state` for replayability. Prefer `OTEL_LOG_RAW_API_BODIES=file:<dir>` over
   parsing transcript JSONL: untruncated bodies as JSON plus a `body_ref` join key
   back to the Loki events — see
-  [`transcript_collection.md`](../devinfra/claude/plans/transcript_collection.md) section _Raw API bodies_.
+  [transcript collection](../devinfra/claude/plans/transcript_collection.md) § _Raw API bodies_.
   If the loop ever runs on the **Claude Agent SDK**, a second mechanism exists: a
   `SessionStore` adapter (`session_store` on `ClaudeAgentOptions`; `append`/`load` required,
   `list_sessions`/`list_session_summaries`/`delete`/`list_subkeys` optional) — docs:
@@ -277,7 +269,7 @@ the runtimes differ in where the sandbox runs — see
   haku-console keeps the logic in reviewed code. Works on Runtime A today; not
   coupled to the runtime question. Under the Agent SDK this is simpler still —
   hooks there are in-process callbacks and Python has both `PreCompact` and `Stop`
-  (see [`plans/agent_sdk_sandbox_runtime.md`](plans/agent_sdk_sandbox_runtime.md)).
+  (see <plans/agent_sdk_sandbox_runtime.md>).
 - **Cut the sandbox over to the Nix image** — `cluster/k8s/haku/workspaces/image/default.nix`
   builds in CI and publishes to `haku-sandbox-image-nix`, but the SandboxTemplate still pulls
   the apt/Dockerfile build. The blocker is a **runtime** question a green build can't answer:
@@ -313,7 +305,7 @@ the runtimes differ in where the sandbox runs — see
   handoff-via-prompt proves too slow for routine actions.
 - **Precise effort/cost model** — today effort budgeting is a rough heuristic
   (operator value-of-time anchor in `memory/` vs. a hand-wavy "tokens loosely track
-  cost" proxy; see `instructions.md` → effort budgeting). Make it concrete: actual
+  cost" proxy; see haku-state's effort-budgeting guidance). Make it concrete: actual
   per-run token/$ accounting (e.g. from LiteLLM/Langfuse), a real estimate of model
   cost (e.g. Opus 4.8 per-token), and a defensible mapping from "agent effort" to
   "value of the operator's time" so Haku can decide research depth on more than a vibe.
