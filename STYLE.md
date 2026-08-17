@@ -257,11 +257,20 @@ Returns sections echoing types; trivial class docstrings; obvious docstrings lon
 one line; historical "used to" comments; **prose arguing that the current code is correct** —
 what was here before, why the change was right, what alternative was rejected; `# === Section ===`
 banners; changelog comments; self-referential counts of an adjacent list ("the three steps
-below") — they drift silently as rows are added, so let the list speak or derive the count.
+below") — they drift silently as rows are added, so let the list speak or derive the count;
+**process narration** — the order the work landed in, which step or milestone a change belongs
+to, what it replaced, what it is waiting on. An actionable transition is a **tombstone** (above);
+nothing else about the sequence earns a line.
 
-That justifying register belongs in the commit message or the PR, which is where a reviewer
-reads it. It does not survive into the file, because after the change lands nobody is deciding
-whether to accept it.
+That justifying register belongs in the commit message, the PR, or the reply handed back with the
+work — wherever someone is deciding whether to accept it. It does not survive into the file,
+because once the change has landed nobody is deciding any more.
+
+**What ships is the artifact, not an account of building it.** A television leaves the factory
+with a service sticker inside, not a book about designing televisions. A reader arriving at a file
+wants the system as it works now, and every sentence about how it came to work that way is one
+they must read and discard first. Git already holds that story for the rare reader who wants it,
+which is exactly why the file does not have to.
 
 **Keep**: TODOs/FIXMEs near their context; non-obvious behavior (edge cases, invariants,
 preconditions, contracts); why-comments; system/integration context not visible locally
@@ -275,7 +284,9 @@ holds. Those are instructions wearing a historical tense. A past state that only
 the present code is right is not: the present code being right is not news.
 
 **Heuristics**: if deleting it loses zero information, delete it. "Why" earns its place;
-"what" rarely does. Public API boundaries tolerate more verbosity than internal code.
+"what" rarely does. Public API boundaries tolerate more verbosity than internal code. Judge the
+file and not only the line: every comment can pass the test above while the file still reads as
+narration with some code in it. If prose is most of what a reader scrolls past, keep cutting.
 
 **Then say what is left in fewer words.** Deletion is not the only edit: prose that carries real
 information can still take more clauses and more sentence structure than the information needs,
