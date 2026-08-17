@@ -127,7 +127,7 @@ carrying no agent-assigned id escape. Two properties worth knowing before changi
   yet**: a hole in the recorded numbers is what narration leaves behind, and the runner's replay
   window retains only replayable frames, so an adopted connection's own sequence is sparse too.
   "A hole means loss" becomes true at the release that makes this the log's ordering
-  (<../../plans/chat_runtime_projection.md> § 2b, R3), not before.
+  (<../../plans/chat_runtime_projection.md> § 2b, R2), not before.
 
 Both surfaces run on it at once. They are ordinary separate sessions — separate rows,
 separate sandboxes — so a browser conversation and the Matrix conversation coexist rather

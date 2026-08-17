@@ -254,9 +254,8 @@ stream deltas removed its reason to exist. What is left after that is the two-vo
 
 `../plans/chat_runtime_projection.md` § stage 2 holds the intended shape — the table becomes the log
 of the bridge, `kind` becomes the envelope discriminator, and the CLI's type gets its own column —
-along with what that costs (the sink has to move down to `WebSocketTransport`, and it is a
-four-release expand/contract because flipping a column's meaning under a rolling deploy is not
-additive).
+along with what that costs (the sink has to move down to `WebSocketTransport`, and it is a two-release
+expand/contract because flipping a column's meaning under a rolling deploy is not additive).
 
 **It is scheduled now, and it grew a second half** (operator, 2026-08-16): `frame_seq` stops being
 Postgres's `Identity` and becomes the number the runner minted when the frame crossed the wire, which
@@ -264,22 +263,22 @@ is what makes catch-up on reconnect "send me everything after N". Same stage bec
 cause and the same fix — the sink sits above the envelope and has to move onto the socket — so doing
 the two apart would move it twice. § 2b of that plan holds the schedule.
 
-**Retiring identity numbering entirely is R5 of that schedule**, and its cross-cutting half is here
+**Retiring identity numbering entirely is R3 of that schedule**, and its cross-cutting half is here
 because the removal is a schema change whose consequences land in the MCP transcript tools and the
 state index. Three things to hold onto when it is picked up:
 
-- **The gate is two-part and both halves are checkable**: every `haku-console` pod running an image
-  at or after R3 (the `$imagepolicy`-marked tag in <../../cluster/k8s/haku/console/deployment.yaml>,
-  _and_ every running pod actually on it — `maxUnavailable: 0` makes those different facts), and
-  `count(*) = 0` over sessions that are `frame_numbering = 'identity'` **and not yet terminal**. The
-  whole-table count never reaches zero and is not the gate.
-- **Historical identity-numbered rows stay, and cost nothing**: no read path branches on the
-  numbering scheme, because none of them needs more from `frame_seq` than a per-session total order.
-  Renumbering them would repoint published `read_frame` addresses at frames that still resolve;
-  retiring them would delete transcripts the chat corpus still returns search hits into.
-- **What R5 owes instead of a branch removal is an invariant**: nothing in the read path may assume
-  `frame_seq` is dense, 1-based, or comparable across sessions. Today that holds by accident of how
-  the readers were written, and it wants a test over a deliberately sparse session.
+- **The gate is one checkable fact**: every `haku-console` pod running an image at or after R2 — the
+  `$imagepolicy`-marked tag in <../../cluster/k8s/haku/console/deployment.yaml>, _and_ every running
+  pod actually on it, which `maxUnavailable: 0` makes a different fact.
+- **The identity-numbered rows are purged rather than carried**, on the operator's authorisation:
+  the corpus is test conversations, and `DELETE FROM sessions` cascades through every session table
+  while the Matrix supervisor re-provisions against the room. Run it on both sides of R2's roll. What
+  that spares is a durable per-session numbering column, a renumber batch, and the drop query that
+  would have decided which sessions the renumber could not reach.
+- **What R3 owes instead of a branch removal is an invariant**: nothing in the read path may assume
+  `frame_seq` is 1-based, comparable across sessions, or by itself a row identity — `frame_ord` means
+  one `frame_seq` can name several rows of a session. Today that holds by accident of how the readers
+  were written, and it wants a test over a deliberately sparse session.
 
 ## Give `system/compact_boundary` a real branch in the projection
 

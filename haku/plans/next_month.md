@@ -200,9 +200,10 @@ Costed, not scheduled.
   § 4). Its two preconditions are half met: the ordered stream and its address
   exist, the per-consumer position does not. It is the thing item C should be judged against; see
   there.
-- **Projection stage 2 — the frame table's two `kind` vocabularies**, and with it releases R2–R5 of
-  the numbering schedule ([chat_runtime_projection.md](chat_runtime_projection.md) § 2b). R1 landed;
-  the rest are four release-gated steps and nothing here depends on them. This is also where item
+- **Projection stage 2 — the frame table's two `kind` vocabularies**, and with it R2 and R3 of the
+  numbering schedule ([chat_runtime_projection.md](chat_runtime_projection.md) § 2b). R1 landed; what
+  is left is a cutover and a contract release, the second gated on the first converging, and nothing
+  here depends on either. This is also where item
   D's residue goes: `session_store.py` and `session_runtime.py` still _speak_ the CLI's vocabulary,
   which is a column and an adapter port rather than a move, recorded in
   [the runtime README](../console/x/README.md).
