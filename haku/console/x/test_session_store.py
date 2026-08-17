@@ -968,7 +968,7 @@ async def test_an_accepted_prompt_is_a_row_in_the_stream_as_well_as_in_the_trans
 
     asked = one(await authored_events(migrated_sessions, view.session_id))
     assert asked.kind == AuthoredEventKind.PROMPT_ENQUEUED
-    assert asked.body == {"message_id": str(prompt.message_id), "text": "list the files"}
+    assert asked.body == {"message_id": str(prompt.message_id), "text": "list the files", "origin": {"kind": "spa"}}
     # No frames because nothing has been sent yet, and no turn because admission refuses a prompt
     # while one is open — so a prompt is accepted exactly when there is none to name.
     assert (asked.turn_id, asked.source_first_frame_seq) == (None, None)
