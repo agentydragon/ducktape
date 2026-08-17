@@ -575,10 +575,12 @@ class SessionStore:
                 .join(SessionTurn, SessionTurn.turn_id == SessionEvent.turn_id)
                 .where(SessionEvent.session_id == session_id, SessionEvent.event_seq > after)
             )
+            # Tie-broken on the start, because `first_frame_seq` is a bound rather than a pointer:
+            # a turn that wrote no frames leaves the next one opening on the same number.
             newest = await db.scalar(
                 select(SessionTurn)
                 .where(SessionTurn.session_id == session_id)
-                .order_by(SessionTurn.first_frame_seq.desc())
+                .order_by(SessionTurn.first_frame_seq.desc(), SessionTurn.started_at.desc(), SessionTurn.turn_id.desc())
                 .limit(1)
             )
             named = await _messages_named_after(db, session_id, after)

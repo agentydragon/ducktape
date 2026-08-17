@@ -681,8 +681,9 @@ Three consequences worth knowing:
   Every read is "everything after N", which makes a hole undetectable by construction rather than
   something to notice.
 
-The consumers today are the Matrix room's notices (below) and, once #4257 lands,
-`GET /api/sessions/{session_id}/changes?after=N` — whose `after` is exactly a `ClientHeldCursor`.
+The consumers today are the Matrix room's notices (below) and the increment route in the next
+section, whose `after` is exactly a `ClientHeldCursor` — session-keyed where this stream is
+thread-keyed, so a browser re-reads whole on a session replacement where a room would not.
 
 ## Reading the increment — `GET /api/sessions/{session_id}/changes`
 

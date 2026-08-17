@@ -109,7 +109,7 @@ async def test_a_stored_result_reads_back_as_its_text(chat_store, migrated_sessi
             )
         await db.commit()
 
-        calls = await session_views.tool_calls(db, view.session_id)
+        calls = await session_views.tool_calls(db, view.session_id, since_frame_seq=None)
 
     assert {call_id: result.content for call_id, result in calls.results.items()} == {
         "toolu_text": "a.py\nb.py",
