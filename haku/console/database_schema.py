@@ -1442,13 +1442,7 @@ metadata = Base.metadata
 # one that stopped naming it, because `maxUnavailable: 0` keeps the previous image serving through
 # the roll and that image selects every table it maps. `test_agent_authority_schema` excludes these
 # from its ORM-versus-database comparison, which is otherwise exact.
-#
-# CLEANUP(added 2026-08-17): `DROP TABLE matrix_sync_state` once every haku-console pod runs an
-#   image at or after this commit — `kubectl get pods -n haku-console -o
-#   jsonpath='{.items[*].spec.containers[0].image}'` reporting a single tag at or after it.
-#   Migration 0060 copied its two columns into `matrix_access_token` and `matrix_sync_watermark`
-#   and this release stopped mapping it, so only a replica on an earlier image still selects it.
-UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset({"matrix_sync_state"})
+UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset()
 
 # The same, one level down: `(table, column)` pairs the database has and no ORM class maps, in
 # tables that stay. A separate set rather than an entry in the one above, which hides a whole
