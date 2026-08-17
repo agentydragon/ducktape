@@ -34,7 +34,6 @@ from haku.console.chat_models import (
     LeaseExpiryReason,
     PromptOrigin,
     PromptRejection,
-    UnrecordedOrigin,
 )
 from haku.console.database_schema import SessionEvent
 from haku.console.x.conversation_events import (
@@ -107,14 +106,12 @@ class PromptBody(BaseModel):
     # Nothing projects it yet; that is the step where a channel starts reading the record instead
     # of being handed what the turn loop produced (#4254 § 9 step 9).
     #
-    # **Defaulted rather than required**, because a row written before this field has no key for
-    # it and `extra="forbid"` says nothing about missing ones. The default is the arm that means
-    # exactly that, so an old row deserializes to "not written down" instead of impersonating a
-    # surface.
+    # **Required, with no default**, because every default is a lie a reader acts on: guessing the
+    # SPA tells an attached room it owes a copy of a prompt it may already be showing. `0073`
+    # deleted the rows that had no key for this and constrains the table so none can come back, so
+    # a body missing it is a bug rather than an era.
     origin: PromptOrigin = Field(
-        default_factory=UnrecordedOrigin,
-        discriminator="kind",
-        description="The surface this prompt arrived through, and its own address for it.",
+        discriminator="kind", description="The surface this prompt arrived through, and its own address for it."
     )
 
 

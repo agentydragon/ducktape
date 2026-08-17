@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_bazel
+from pydantic import ValidationError
 
 from haku.console.chat_models import (
     SPA_ORIGIN,
@@ -16,7 +17,6 @@ from haku.console.chat_models import (
     LeaseExpiryReason,
     MatrixOrigin,
     TurnOutcome,
-    UnrecordedOrigin,
 )
 from haku.console.database_schema import SessionEvent
 from haku.console.x import session_events
@@ -137,13 +137,15 @@ def test_a_room_prompt_names_the_room_as_well_as_the_events() -> None:
     assert asked.body["origin"] == {"kind": "matrix", "address": "!room:example.org", "refs": ["$a", "$b"]}
 
 
-def test_a_prompt_stored_before_origins_existed_reads_as_unrecorded() -> None:
-    """The reason the SPA is a named arm rather than the absent one. An old row carries no origin
-    key, and reading that as "typed into a browser" would tell every attached room it owes a copy
-    of a prompt the room may already be showing."""
-    stored = {"message_id": str(uuid4()), "text": "from before the field existed"}
+def test_a_prompt_body_without_an_origin_is_rejected() -> None:
+    """The reason the SPA is a named arm rather than the absent one: there is no default to fall
+    back to, because reading a missing key as "typed into a browser" would tell every attached room
+    it owes a copy of a prompt the room may already be showing. `0073` deleted the rows that had no
+    key and constrains the table against new ones, so this shape is a bug, not an era."""
+    stored = {"message_id": str(uuid4()), "text": "no surface named"}
 
-    assert session_events.PromptBody.model_validate(stored).origin == UnrecordedOrigin()
+    with pytest.raises(ValidationError):
+        session_events.PromptBody.model_validate(stored)
 
 
 def test_a_fact_the_console_authored_names_no_turn_and_no_frames() -> None:

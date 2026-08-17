@@ -1286,6 +1286,13 @@ class SessionEvent(Base):
             "(call_id IS NOT NULL) = (kind IN ('tool_call_started','tool_call_completed'))",
             name="ck_session_events_call_id",
         ),
+        # `PromptBody.origin` is required and has no default, so a prompt row without the key is one
+        # no reader can parse. The table refuses to hold one — during a roll the previous image is
+        # still serving and does not name an origin, and a rejected INSERT is a failure the operator
+        # sees and retries where an accepted one is a transcript that never reads again.
+        CheckConstraint(
+            "kind <> 'prompt_enqueued' OR jsonb_exists(body, 'origin')", name="ck_session_events_prompt_origin"
+        ),
         Index("idx_session_events_session", "session_id", "event_seq"),
     )
 

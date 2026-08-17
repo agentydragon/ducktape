@@ -37,14 +37,13 @@ class ChatSurface(StrEnum):
 class PromptOriginKind(StrEnum):
     """Which arm of `PromptOrigin` a prompt carries.
 
-    Two of these are `ChatSurface` members and one is not, which is why this is its own vocabulary
-    rather than that one: `UNRECORDED` is not a surface a prompt could have arrived through, it is
-    the console saying it did not write the origin down.
+    Its members coincide with `ChatSurface`'s and it stays its own vocabulary: this discriminates a
+    value stored inside a `prompt_enqueued` body, `ChatSurface` names how a session was created, and
+    one enum for both would make a change to either meaning rewrite the other's stored strings.
     """
 
     SPA = "spa"
     MATRIX = "matrix"
-    UNRECORDED = "unrecorded"
 
 
 class SpaOrigin(BaseModel):
@@ -80,24 +79,7 @@ class MatrixOrigin(BaseModel):
     refs: tuple[str, ...] = Field(description="The events folded into this prompt, oldest first.")
 
 
-class UnrecordedOrigin(BaseModel):
-    """The prompt predates the origin being written down.
-
-    **A named state, not an absence.** Overloading "no value" with both "typed into a browser" and
-    "we never wrote it down" makes the reader wrong on exactly the rows where being wrong reposts
-    history into a room. Its meaning to that reader is the conservative one: show this prompt where
-    it already is and nowhere else.
-    """
-
-    # CLEANUP(added 2026-08-17): drop this arm once no stored prompt lacks an origin —
-    #   `SELECT count(*) FROM session_events WHERE kind = 'prompt_enqueued' AND NOT (body ? 'origin')`
-    #   returning 0. Until then it is what those rows deserialize to.
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    kind: Literal[PromptOriginKind.UNRECORDED] = PromptOriginKind.UNRECORDED
-
-
-type PromptOrigin = SpaOrigin | MatrixOrigin | UnrecordedOrigin
+type PromptOrigin = SpaOrigin | MatrixOrigin
 
 # The console's own surface, as one value rather than one per call: `SpaOrigin` carries nothing, so
 # every instance is the same statement and a shared frozen one says so.

@@ -68,11 +68,11 @@ over Matrix, and any write surface for the agent beyond its own replies.
   would take it back — mid-turn steering, a conversation-layer queue — are in
   <../../../plans/conversation_layers.md> § 7.
 - **What a prompt answered is recorded, not rendered.** The `PROMPT_ENQUEUED` event's body names the
-  prompt's origin — a closed union of the SPA, a Matrix room, and the unrecorded state rows written
-  before the field existed deserialize to. The room's arm carries the room beside the events folded
-  into the prompt, because one bot serves many rooms and a bare event id cannot tell a sibling room's
-  copy from this room's. Both strings are opaque outside this channel: everything else compares them
-  and never reads them.
+  prompt's origin — a closed union of the SPA and a Matrix room, required with no default, so every
+  stored prompt says which. The room's arm carries the room beside the events folded into the prompt,
+  because one bot serves many rooms and a bare event id cannot tell a sibling room's copy from this
+  room's. Both strings are opaque outside this channel: everything else compares them and never
+  reads them.
 - **Unsettled, and tracked in <../../../TODO.md>:** the batch size cap and its overflow split, the
   ingress debounce window, and the age fence that makes a very old message context rather than work.
   Provenance in the rendered prompt is thinner than intended: `_as_prompt` renders one body per line,
