@@ -2,16 +2,18 @@
 
 Status: **resolved — landed the deep per-icon import (no RAM override needed).**
 The barrel's ~8.7 GB esbuild peak has no clean per-action RAM lever (only
-platform-global works — see below), so `feedback.tsx` imports `IconMessage2` by
-subpath (`dist/esm/icons/IconMessage2.mjs`, default export), which esbuild
-processes in ~tens of MB. The subpath ships no types, so an ambient declaration in
-`tabler-icons.d.ts` types it for `tsc_test`. The investigation/memory notes below
-are retained for the next time a `@tabler` barrel import tempts someone.
+platform-global works — see below), so every icon is imported by subpath
+(`dist/esm/icons/Icon<Name>.mjs`, default export), which esbuild processes in
+~tens of MB. Those subpaths ship no types, so a wildcard ambient declaration in
+`tabler_icons.d.ts` types them. `icons.tsx` is the one module that imports them
+and it says so at the top. The investigation/memory notes below are retained for
+the next time a `@tabler` barrel import tempts someone.
 
 The SPA bundle `//haku/console/frontend:bundle` OOMs esbuild on BuildBuddy RBE
-whenever `feedback.tsx` imports from the `@tabler/icons-react` _barrel_
-(`import { IconMessage2 } from "@tabler/icons-react"`). Investigation notes
-below. BuildBuddy source referenced from a clone at `~/code/buildbuddy`.
+whenever a module imports from the `@tabler/icons-react` _barrel_
+(`import { IconMessage2 } from "@tabler/icons-react"` — `feedback.tsx`, since
+retired, at the time). Investigation notes below. BuildBuddy source referenced
+from a clone at `~/code/buildbuddy`.
 
 ## Symptom
 

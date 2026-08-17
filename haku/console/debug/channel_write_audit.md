@@ -96,6 +96,11 @@ channel cannot reuse any of this. It gets the recorded frames and must write its
 one channel. That is the coupling `session_channels.md` §1 names as the way to get the reconciler
 wrong, and it already exists on the rendering side.
 
+> **Half of that has since been fixed** (the neutral projection, `x/README.md` § The neutral
+> projection): `coarse_status` takes a run of `ConversationEvent`s, so the derivation is no longer
+> welded to one AI backend. It is still welded to one channel — the driver lives in `room_status.py`
+> beside the Matrix surface — so the reuse cost above stands, one axis smaller.
+
 ## 3. The eight bypassing writes, and what recording each would take
 
 ### Row 13 — lifecycle notices (the worst one)

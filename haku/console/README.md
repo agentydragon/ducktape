@@ -155,12 +155,8 @@ fetchers.
 
 Discovery is request-local: either principal sees remote servers connected by its canonical
 Operator, plus shared configured/in-process servers. For Agents, that surface is divided into two
-buckets:
-tools the policy **unconditionally**
-auto-approves (Gmail and Google Calendar reads, read-only grocy-sf, tana's read tools —
-`search_nodes`, `read_node`, `get_children`, `open_node`, `list_tags`, `list_workspaces`,
-`get_tag_schema`, plus the idempotent `get_or_create_calendar_node`, and postscanmail-mcp
-reads) appear as
+buckets. Tools the policy **unconditionally** auto-approves — the `auto_approval_policies` graph in
+<../../cluster/k8s/haku/console/config.yaml>, which is the only place that list lives — appear as
 transparent **pass-throughs** (original schema, real result); everything else keeps the same
 `<server>__<tool>` name but uses an envelope `{input, title?, rationale, wait_for_result_ms?}` that
 returns the real result if approval and execution reach a terminal state within the wait, else a
@@ -200,39 +196,34 @@ The reflected `instructions` are the upstream server's own `initialize` guidance
 rather than restated. The handshake happens on every reflection anyway, so this was already being
 fetched and discarded.
 
-`list_mcp_servers` passively reports the
-configured catalog plus each persisted per-Operator OAuth/provider status object. Each server's
-discriminated `backend` object mirrors the safe configuration shape (`remote_mcp` with URL/auth or
-`in_process` with credential kind); static-bearer secret references are deliberately omitted. These status objects
-match the console's existing non-secret status structures, including `status`, `connected_at`,
-`token_expires_at`, `scope`, and the safe display identity; access tokens, refresh tokens, and client
-secrets are never included. A cataloged provider connection whose deploy-time OAuth client is absent
-reports `status: unprovisioned` instead of disappearing; the Settings panel renders that state with no
-Connect action. Authentication kinds without a separate operator-linked connection report
-`connection: null`. The tool never refreshes credentials or contacts downstream servers. Live tool
-discovery remains the normal MCP `tools/list` path. `get_mcp_server_status(server_id)` is the active
-counterpart: it reflects one configured server now, so it may refresh the operator's credentials and
-contact the downstream server. By default it returns tool names, descriptions, and annotations but
-omits the potentially large input schemas; callers opt in with `include_tool_schemas=true`. Credential
-resolution and downstream discovery failures return distinct degraded stages and reasons rather than
-failing the reflection call; direct calls in a known
-`<server>__<tool>` namespace return the same actionable error instead of appearing as an unknown tool.
-The stub-semantics preamble lives in each tool's
-**description** (many MCP clients, claude.ai included, never surface a server's `instructions`). Auth is a Haku-owned
-`HakuAgentOAuthProxy` composed with the configured `static_agents` through
+**The two reflection tools split on whether they touch the network.** `list_mcp_servers` is passive:
+the configured catalog plus each persisted per-Operator OAuth/provider status, never a credential
+refresh and never a downstream connect, so live tool discovery stays the normal `tools/list` path.
+Each server's discriminated `backend` mirrors the safe configuration shape, and no status object
+ever carries an access token, refresh token, client secret, or static-bearer secret reference. A
+cataloged provider connection whose deploy-time OAuth client is absent reports
+`status: unprovisioned` rather than disappearing, and Settings renders that with no Connect action;
+an auth kind with no separate operator-linked connection reports `connection: null`.
+`get_mcp_server_status(server_id)` is the active counterpart — it may refresh the operator's
+credentials and contact the server — and omits the potentially large input schemas unless the caller
+passes `include_tool_schemas=true`. Credential-resolution and discovery failures come back as
+distinct degraded stages and reasons instead of failing the reflection call, and a direct call in a
+known `<server>__<tool>` namespace returns that same actionable error rather than "unknown tool".
+The stub-semantics preamble lives in each tool's **description**, because many MCP clients —
+claude.ai included — never surface a server's `instructions`.
+
+Auth is a Haku-owned `HakuAgentOAuthProxy` composed with the configured `static_agents` through
 `HakuFailurePreservingMultiAuth`. An explicit `Authorization` header always selects Agent admission;
 an invalid bearer never falls back to an ambient browser cookie. FastMCP still owns DCR, PKCE,
-callback, code, and token-family
-machinery; Haku adds the Operator-authenticated Agent-enrollment ceremony and resolves both OAuth
-and static credentials through the same canonical Agent authority. The `/mcp` surface submits,
-reads, and lets an Agent **withdraw its own still-pending call** — there is still no decision tool,
-so an OAuth caller cannot self-approve, and withdrawal only ever moves a call the caller itself
-queued toward a terminal state, never toward execution. Approval stays
-in trusted console chrome. Approved calls execute against the console's stored Operator credentials,
-so an incoming token's blast radius is "call the console's submit/read/withdraw-own tools" and
-nothing else.
-OAuth state is required to use the console's Postgres; Haku never falls back to FastMCP's
-process-local store or Valkey.
+callback, code, and token-family machinery; Haku adds the Operator-authenticated Agent-enrollment
+ceremony and resolves both OAuth and static credentials through the same canonical Agent authority,
+with OAuth state required to live in the console's Postgres rather than FastMCP's process-local
+store or Valkey. The `/mcp` surface submits, reads, and lets an Agent **withdraw its own
+still-pending call** — there is no decision tool, so an OAuth caller cannot self-approve, and
+withdrawal only ever moves a call the caller itself queued toward a terminal state, never toward
+execution. Approval stays in trusted console chrome, and approved calls execute against the
+console's stored Operator credentials, so an incoming token's blast radius is "call the console's
+submit/read/withdraw-own tools" and nothing else.
 
 The trusted frontend validates the console-native reflection results with the same generated MCP
 result-schema catalog used by Gmail, Google Calendar, Grocy, and routine renderers. The catalog is
@@ -264,85 +255,18 @@ per-reflection connect entirely).
 
 ### Canonical Agent authority and enrollment
 
-Alembic revision `0010` is the single forward-only database baseline. It directly installs one
-Postgres graph shared by interactive OAuth and configured static Agents:
+Alembic revision `0010` is the single forward-only database baseline: one Postgres graph shared by
+interactive OAuth and configured static Agents, where `Operator`, `Agent` and every
+authority-bearing relationship are local immutable UUIDs, a `CredentialBinding` owns credential
+lifecycle, and an Agent-originated tool call persists only its exact binding provenance — so
+approval and execution revalidate that binding and queued work cannot transfer to a replacement
+credential. Enrollment is an Operator-authenticated browser ceremony layered over FastMCP's own
+authorize/callback/token path; the runtime caller it produces is `OperatorActor | AgentActor`, and
+an Agent's auto-approval policy is chosen at enrollment with a fail-closed `never` default. Agents
+submit and read only their own calls, and never approve themselves.
 
-```text
-Operator -> IdentityAnchor -> OidcIdentity
-Operator -> Agent -> AgentNameReservation
-Agent -> CredentialBinding -> AuthorizationGrant | StaticCredential
-ToolCallPrincipal -> exactly one of operator_id | binding_id
-```
-
-The durable contract is:
-
-- `Operator`, `Agent`, and every authority-bearing relationship use local immutable UUIDs. An exact
-  verified `(issuer, subject)` identifies an OIDC identity; a configured Authentik trust-domain
-  anchor is the only path by which identities at the browser and MCP issuers converge on one
-  Operator. Username is presentation only.
-- OAuth `client_id` describes client software/registration metadata. It is never the Agent,
-  Operator, grant, or credential binding, and unauthenticated DCR does not create an Agent.
-- Every Agent has a required normalized non-empty display name, globally unique by its normalized
-  key. The name is presentation owned by the canonical Agent; it is never a credential or durable
-  identity key.
-- A `CredentialBinding` owns credential kind, generation, predecessor, and lifecycle. An OAuth
-  `AuthorizationGrant` owns client software, authorizing identity, scopes, and token-family
-  evidence. Static rotation and OAuth reconnect create successor bindings instead of mutating
-  Agent identity.
-- An Agent-originated tool call persists only its exact binding provenance. Agent, owning Operator,
-  and display name derive through canonical joins, and approval/execution revalidate that binding
-  so queued work cannot transfer to a replacement credential.
-
-Interactive enrollment proceeds as follows:
-
-1. FastMCP validates client, redirect, resource, scopes, and S256 PKCE through its public
-   `authorize()` path.
-2. Haku reserves the exact public client/redirect/challenge tuple only as a temporal collision key
-   and creates a random `EnrollmentInteraction`.
-3. The browser independently logs into Haku through Authentik. Opening the page binds its verified
-   identity and canonical Operator to the interaction exactly once.
-4. The Operator explicitly denies or allows a required name and auto-approval policy for a new
-   Agent, or reconnects an existing owned Agent with a selected policy. This records intent but
-   issues no grant yet. The server chooses the unique configured `never` policy as the fail-closed
-   default; its identifier has no built-in meaning.
-5. FastMCP performs its untouched Authentik callback and creates the downstream code.
-6. At exchange, Haku verifies the MCP-side access-token principal and requires the same active
-   canonical Operator as the browser interaction. One locked transition creates the draft Agent
-   when needed plus its issuing binding and grant.
-7. FastMCP carries only opaque `grant_id` context through the token family. The first successfully
-   verified MCP tool request atomically activates the Agent and binding.
-8. Access load, transparent/explicit refresh, decisions, and execution revalidate the grant,
-   binding, Agent, and Operator. Local revoke remains authoritative even if best-effort upstream or
-   individual-token cleanup fails.
-
-The enrollment cookie is only a short-lived page/CSRF binding: path-scoped, `HttpOnly`,
-`SameSite=Lax`, and `Secure` in production. It contains no name, token, raw claim, or durable
-authority. The trusted Console SPA receives an escaped typed view model from same-origin APIs;
-decision endpoints enforce the browser binding and exact Origin before changing authority state.
-
-The runtime caller is `OperatorActor | AgentActor`. Only the authority constructs an
-`AgentActor(agent_id, operator_id, binding_id, auto_approval_policy)` from durable state. Operators
-may change an OAuth Agent's policy later under Settings; configured static Agent policies remain
-owned by deployment configuration so the manually approved public Coder identity cannot be granted
-standing authority through the UI. Policy selection is required for every new enrollment,
-reconnection, Settings mutation, and static-Agent definition. Only pre-migration durable Agents may
-have a null assignment, which fails closed until an Operator selects a policy. Agents can
-submit/read only their own calls; Operators can
-read/decide all and only calls they own; Agents never approve themselves. Repository operations
-have no unscoped or `None` actor mode.
-
-Haku supports one exact FastMCP version at a time. The adapter's sole private seam is `_code_store`
-read/delete during code exchange; protected claim, scope-translation, and transparent-refresh hooks
-are version-pinned. It does not replace route construction, registration, transaction storage,
-callback, PKCE, or token issuance. Adapter compatibility and mounted enrollment/token/refresh/
-revocation tests are mandatory before a repin.
-
-Client-side credential deletion is generally invisible to Haku. `last_seen_at` is observation, not
-connection state; an Operator-owned revoke/disable action is the authoritative product control.
-Postgres, Valkey for generic consumers, Kubernetes Secrets, and their backups/admin readers are the
-accepted private credential boundary. Extra application encryption is optional defense-in-depth,
-while tokens, codes, secrets, callback queries, and raw OAuth forms must never enter logs or API
-models.
+The durable contract, the eight-step ceremony, the FastMCP version-pinning seam, and the accepted
+credential boundary: <docs/agent_authority.md>.
 
 ### In-process MCP servers — no second deployment
 
@@ -450,26 +374,26 @@ schema-validates, and decides/confirms before acting. It mirrors the iframe's va
 (`routeChanged`) into the console's pathname so refresh/deep links — path-form URLs included —
 restore the view (legacy `#/…` console URLs still restore). The shared bridge client also watches
 the iframe's `<title>` and posts `titleChanged` automatically, so the outer tab follows it.
-A persistent top-right floating toolbar (`shell_chrome.tsx`'s
-`ShellChrome`, each button `filled` while its panel is selected) opens the shell's own trusted
-chrome: a checklist button — badged with a callout light when a tool call is awaiting approval —
-toggles the approval queue panel (with a link to the full-page past-tool-calls history); a gear
-toggles the Settings panel (MCP account connect/reconnect/disconnect); a location-sharing pin
-(shown only while consent is held, with a live indicator when location is actively read) toggles
-a stop/withdraw panel; a clock button appears in the last few minutes of the operator session,
-opening a re-authenticate panel; and a crossed-wifi button appears when the live event socket is
-down (an expired session closes that socket with its own code, `4001`, so the shell re-authenticates
-instead of reporting a channel outage).
-These controls behave as deselectable tabs, so at most one panel is open.
-See <docs/containment.md>.
+A fixed-width icon rail down the left edge (`shell_chrome.tsx`'s `ShellChrome`) is the shell's own
+trusted chrome, and it reserves layout space the frame cannot render into. Its top button — badged
+with a count while tool calls await approval — toggles the approval queue drawer, independently of
+whichever page is selected; below it, page buttons select the framed Haku UI, the Claude sandbox
+chat, Conversations, Settings, or the past-tool-calls history. The bottom holds indicators, which
+are mutually exclusive popovers: sync state (always present; an expired session closes the event
+socket with its own code, `4001`, so the shell re-authenticates instead of reporting a channel
+outage), a location pin and a camera (each shown only while its consent grant is held, with a live
+dot while it is being read) opening stop/withdraw panels, and a clock in the last few minutes of
+the operator session opening a re-authenticate panel. See <docs/containment.md>.
 
 ## Past tool calls — full-page history
 
 Beyond the approvals panel's ephemeral "Recent" list, the console owns a **full-page history view**
 of the authenticated operator's tool-call audit ledger (`frontend/tool_calls_page.tsx`), reached from the
-approvals panel and living at its own route, `/tool-calls` (`frontend/routing.ts`). The console's own
-`/tool-calls` path is reserved; every other path mirrors the framed haku-ui route, and the
-shell renders the history view instead of the iframe when the reserved path matches. It reads `GET /api/tool-calls?newest_first=true`, so the
+rail and from the approvals drawer, living at its own route, `/_console/tool-calls`
+(`frontend/routing.ts`). `/_console` is the
+one pathname namespace the console reserves for itself; every other path mirrors the framed haku-ui
+route, and the shell renders a console page instead of the iframe when a reserved path matches. It
+reads `GET /api/tool-calls?newest_first=true`, so the
 newest calls come first, and walks older ones a page at a time by following `next_cursor` ("Load
 older calls"). Production's nginx already serves the SPA for any
 non-asset/API path; `app.py`'s dev fallback mirrors that so deep links work locally too.
@@ -561,7 +485,7 @@ Two operational notes:
 | `push_routes.py`                   | Operator-browser `/api/push/*` surface: the public VAPID key the SPA subscribes with, plus subscription registration, listing, and removal.                                                                                                                                  |
 | `mcp_config.py`                    | Connected-MCP-server catalog plus in-process/remote transport and static bearer resolution, shared by the application service, `McpServerDispatcher`, and operator OAuth linkage.                                                                                            |
 | `mcp_reflection_cache.py`          | Short-lived reuse of reflected upstream tool catalogs: a TTL plus single-flight, keyed so a catalog never outlives the credential that read it.                                                                                                                              |
-| `in_process_servers.py`            | Canonical builder catalog for the Gmail, Google Calendar, routine, conversations, and index FastMCP servers, shared by the production app and schema exporter.                                                                                                               |
+| `in_process_servers.py`            | Canonical builder catalog for the Gmail, Google Calendar, routine, conversations, index, and hostexec FastMCP servers, shared by the production app and schema exporter.                                                                                                     |
 | `recall_index_reader.py`           | Binds the `haku_index` tools to the console's database and embedder; the one place the tool surface's `haku_state`/`conversations` vocabulary maps to the index's own `git`/`chat`.                                                                                          |
 | `recall_index_sync.py`             | The sweeps that keep both index corpora current: chat from the console's own tables, haku-state from a bare mirror it fetches. One Postgres advisory lock per corpus, so one replica syncs each.                                                                             |
 | `mcp_operator_oauth.py`            | Operator OAuth account linkage for servers that execute as the operator's own account: the DCR/PKCE flow, association-specific client metadata, and the `/api/mcp/operator-auth/*` connect/disconnect/callback endpoints.                                                    |
@@ -582,10 +506,12 @@ Manifests live in `cluster/k8s/haku/console/` (operator-owned — the perimeter 
 Haku's to change); the `haku-console` namespace itself is `cluster/k8s/haku/console-namespace/`.
 The deployment runs two containers in one pod: the `haku-console` FastAPI API
 image and a separate `haku-console-static` nginx image that bakes in the
-fingerprinted SPA. nginx serves `/` and `/assets/*`, proxies `/api/*`, `/healthz`,
+fingerprinted SPA. nginx serves `/` and `/_console/assets/`, proxies `/api/*`, `/healthz`,
 `/mcp`, `/auth/*`, and the `/.well-known/oauth-*` discovery paths to FastAPI on
-localhost, and sets cache policy by route (`/assets/*` immutable, app shell
-never stored, missing assets and API/health/mcp/auth uncached). No runtime asset copy or shared web
+localhost, and sets cache policy by route (fingerprinted assets immutable, app shell
+never stored, missing assets and API/health/mcp/auth uncached). **Invariant:** a new top-level
+backend prefix needs its own `location`, or it falls through to the SPA shell and returns
+`index.html` instead of reaching the app (this is what bit `/mcp`). No runtime asset copy or shared web
 volume is used. It also gzips both what it serves and what it proxies (`gzip_proxied any` — nginx
 leaves upstream responses alone otherwise), covering the ~1.8 MB SPA bundle and the API's JSON;
 `text/event-stream` is deliberately left out so the `/mcp` stream still flushes per event.
@@ -673,7 +599,7 @@ Secret). That Authentik `sub_mode=user_id` value is used only to create/find an 
 is immediately resolved to an Operator UUID; it is never carried as live request authority.
 It also holds Haku's own Forgejo credential (`haku-forgejo-git`, reflected in from haku-sandbox;
 `HAKU_CONSOLE_HAKU_STATE_GIT__*`), which the index's git sweep fetches haku-state with. The shared
-retrieval-unit budget, including `HAKU_CONSOLE_RECALL_INDEX__OVERLAP_CODEPOINTS`, configures both
+retrieval-unit budget, including `HAKU_CONSOLE_RECALL_INDEX__CHUNK_BUDGET__OVERLAP_CODEPOINTS`, configures both
 index sweeps and search readers so they select the same chunk regime. Nothing in
 the console writes to haku-state — feedback/trace writes moved into haku-ui — but this credential
 _can_, which is the cost of reusing Haku's account instead of provisioning a second, read-only one

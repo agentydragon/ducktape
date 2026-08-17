@@ -114,15 +114,15 @@ each into a `.schema.json` plus a `.d.ts`. <../frontend/mcp_tool_result_schema.t
 whole result catalog eagerly at module load.
 
 **A session reader would _not_ get this for free today — but nearly.** `build_schema_servers()`
-constructs `InProcessServerDependencies(routine_launcher=…, hostexec=…)` and leaves `rollout` and
-`index` unset, and <../in_process_servers.py> registers `haku_conversations` only
-`if dependencies.rollout is not None`. So the five conversation tools are absent from both
+constructs `InProcessServerDependencies(routine_launcher=…, hostexec=…)` and leaves `conversations`
+and `index` unset, and <../in_process_servers.py> registers `haku_conversations` only
+`if dependencies.conversations is not None`. So the five conversation tools are absent from both
 catalogs.
 
 The fix is one argument. `conversations_tools.build_mcp(reader)` only closes over the reader; no
 `@mcp.tool` body touches it until execution, which is exactly the invariant `_InertCollaborator`
-exists to prove. Passing the same inert object as `rollout=` (and `index=`) registers both servers
-for reflection. Every JSON Schema keyword those models produce is already in the reviewed
+exists to prove. Passing the same inert object as `conversations=` (and `index=`) registers both
+servers for reflection. Every JSON Schema keyword those models produce is already in the reviewed
 allowlist — `anyOf`/`type`/`format` (`uuid`, `date-time`), `additionalProperties` for
 `payload: dict[str, Any] | None` and `usage`, `enum` for the `FrameKind` literal union, `items`,
 `minimum`/`maximum` from the `ge`/`le` fields, `description`, `default`, `title` — and
@@ -318,7 +318,7 @@ sitting.
 
 ### Stage 1 — make the reader reflectable (the cheapest experiment)
 
-One file, zero production behavior: pass an inert reader as `rollout=` (and `index=`) in
+One file, zero production behavior: pass an inert reader as `conversations=` (and `index=`) in
 `build_schema_servers()` so `haku_conversations` and `haku_index` enter both generated catalogs.
 Nothing calls the generated types yet.
 

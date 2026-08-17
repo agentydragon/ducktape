@@ -92,9 +92,9 @@ Fullscreen is withheld from the iframe (no `allow="fullscreen"`) so it can't spo
 chrome.
 
 **The shell chrome.** A persistent shell-owned left rail reserves layout space the frame cannot
-render into. It navigates among the still-mounted Haku UI frame and trusted Settings/history
-pages, opens the approvals drawer independently, and exposes location, screenshot, and sync state
-through compact indicator popovers. It is **not** a consent surface:
+render into. It navigates among the still-mounted Haku UI frame and the trusted console pages,
+opens the approvals drawer independently, and exposes location, screenshot, sync and
+session-expiry state through compact indicator popovers. It is **not** a consent surface:
 it only reveals state and _reduces_ privilege, so — unlike `ConfirmDialog` — it needn't be a
 top-layer `<dialog>`. The one authority moment (granting a capability) always stays in the
 top-layer confirm. Consistent with invariant #4: a persistent panel is not a trust
@@ -107,7 +107,7 @@ Display data and operator intent go straight to Haku's backend (it holds the `ha
 creds); the bridge carries only actions needing the trusted side. Every inbound message is
 origin-checked (`event.origin === "https://haku-ui.allegedly.works"`) and schema-validated;
 the iframe can only _request_ — the shell decides and acts. Wire shapes are defined once in
-the shared `@haku/console-bridge` package (<../../js/bridge_protocol/protocol.ts>, owned here); the
+the shared `@haku/console-bridge` package (<../../shared/bridge_protocol/protocol.ts>, owned here); the
 shell's inbound validators and the open-link whitelist stay PR-gated in <../frontend/bridge.ts>.
 Haku's UI will link the same package as a Bazel module from haku-state (migration tracked in
 `haku/PLAN.md`).
@@ -121,6 +121,14 @@ validates and mirrors the path into its own URL for refresh/deep-link restoratio
 selected, remembering it while a `/_console/*` page is visible. The shell likewise copies each
 bounded title only while Haku UI is selected; console-owned pages own their tab titles. The
 cross-origin boundary prevents the shell from reading the iframe document directly.
+
+- **The path is never a URL.** `isRoutePath` (`bridge.ts`) enforces a leading `/` (not `//`), a
+  conservative charset with `%` only as a well-formed `%XX` escape, and a length cap; the restored
+  frame `src` is always `uiUrl` with only its pathname replaced, so the frame origin cannot be
+  steered.
+- **Paths, not fragments.** haku-ui speaks real History-API paths, and a path survives the whole
+  in-frame Authentik redirect chain (the `rd` parameter carries it) where the old `#/…` fragment did
+  not. Legacy `#/…` console URLs still win when present, for old bookmarks.
 
 ### `requestLaunch` — fire the launch-routine capability
 
@@ -239,19 +247,6 @@ popups). Rules:
 - **Popup permission is a one-time per-origin setup** on the **shell** origin ("allow
   pop-ups for `haku.allegedly.works`") — postMessage-relayed opens lose user activation.
   The iframe still cannot open anything itself.
-
-### `routeChanged` — mirror the route for refresh/deep-links
-
-haku-ui posts `{type: "routeChanged", path}` on hash-route changes; the shell
-`history.replaceState`s the path into its **own** URL fragment, and on load carries its
-fragment back into the frame `src` so F5 / a deep link restores the view. Rules:
-
-- **The path is never a URL.** `isRoutePath` (bridge.ts) enforces a leading `/` (not
-  `//`), a conservative charset, and a length cap; the shell only ever puts the value in
-  a fragment, and the restored `src` is always `uiUrl` with only its fragment replaced —
-  the frame origin cannot be steered.
-- Fragments never reach servers, so the mirrored route leaks nothing to the SSO hop and
-  survives the in-frame Authentik 302 chain when a session exists.
 
 ## Operator identity — forward-auth headers, made trustworthy
 

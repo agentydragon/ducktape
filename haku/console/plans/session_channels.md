@@ -78,9 +78,10 @@ reconciler for the console out of a taste for symmetry.
 
 What it needs, concretely:
 
-- **A per-attachment cursor.** Cleanup stage 7's
-  `chat_attachment(session_id, surface, address, attached_at, detached_at)` gains "delivered
-  through". That is the entire durable state of a channel.
+- **A per-attachment cursor**, on a table that **does not exist yet**:
+  `chat_attachment(session_id, surface, address, attached_at, detached_at)` is proposed by
+  <../../plans/chat_runtime_cleanup.md> § stage 7 and nothing has built it. This adds "delivered
+  through" to that proposal, which is then the entire durable state of a channel.
 - **A per-channel projection**, because not every recorded event belongs on every channel — and
   "nothing to show" is a valid answer that still advances the cursor.
 
@@ -348,9 +349,9 @@ So: link in the notice now; topic as a follow-up gated on a power-level check.
 
 Worth doing broadly and in both directions — room notice → console session, console session →
 the room (a `matrix.to` permalink, which `channels/matrix/client.py` already builds for read results,
-R11.5), session → its tool calls, tool call → the session that made it. The last of those shares
-its mechanism with console/TODO.md's per-tool-call deep link, which is unbuilt for the same
-reason: nothing yet opens _the exact thing_ a URL names.
+R11.5), session → its tool calls, tool call → the session that made it. The last of those has its
+precedent already: `/_console/tool-calls/<tc_…>` opens the embed view with the approvals drawer on
+that exact call, so "a URL names one thing and opens it" is a pattern to copy rather than to invent.
 
 **One ordering constraint, and it is not obvious: settle the session route before minting links
 into the room.** A Matrix event is permanent and federated — the console cannot take back a URL
@@ -382,7 +383,8 @@ rather than a viewer, from rows that already existed. What remains:
    first two writers — a lease taken over and a lease lapsing; `_SessionStatusAnnouncer`'s
    transitions are what remain.
 4. **The reconcile loop** (§1) — the cursor on `chat_attachment`, and Matrix delivery moved onto
-   it. Wants cleanup stage 7's schema half; everything above is possible without it.
+   it. Wants cleanup stage 7's schema half, which is unbuilt; everything above is possible without
+   it.
 5. **The Matrix relay** (§5, Matrix half) — one more thing the loop already does, once it exists.
 
 Two items sit outside that spine. **The session link in the R7.2 notice** (§6) is small and can

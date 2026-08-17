@@ -23,16 +23,18 @@ bundles the emitted `.js`, and vitest runs the emitted `.test.js`.
   top approvals trigger controls an independent non-modal drawer over the content area; page icons
   select Haku UI, Settings, or Past tool calls; bottom indicators expose sync, location-sharing,
   and screenshot-capture state through compact popovers.
-- `settings_panel.tsx` — the Settings page; reads MCP/account and node-daemon
-  reflection through the console's Operator-authenticated MCP transport and validates it with the
-  Python-generated MCP result schema catalog
-  including MCP operator account connect/disconnect plus linked server/web deployment commits.
+- `settings_panel.tsx` — the Settings page. It reads MCP-server and node-daemon reflection through
+  the console's Operator-authenticated MCP transport, validating each result against the
+  Python-generated MCP result-schema catalog, and hosts account connect/disconnect, per-Agent
+  auto-approval policy, Web Push registration, and the deployment commit links.
 - `open_external.ts` — `openExternal(url)`: opens a link in a new tab with the opener
   severed, shared by the embed shell (the `openLink` bridge action) and the settings panel
   (the MCP OAuth popup).
 - `tool_arguments_field.tsx` / `icons.tsx` — shared tool-argument renderer (per-server
-  preview or raw JSON) and inline-SVG icons (never the `@tabler` barrel — see
-  `debug/esbuild_tabler_memory.md`), used by both the approvals panel and the history view.
+  preview or raw JSON) and the icon set, used by both the approvals panel and the history view.
+  Icons are thin wrappers over **per-icon `@tabler` subpath imports**, never the barrel, which OOMs
+  esbuild on RBE at ~8.7 GB (<../debug/esbuild_tabler_memory.md>); their ambient types live in
+  `tabler_icons.d.ts`.
 - `tool_result_field.tsx` — the result-side counterpart: a finished call's result as a
   per-server widget (`tool_rendering/<server>/responses.tsx`) over the unwrapped
   `CallToolResult` payload, else the raw-JSON `Result` field (detailed only).

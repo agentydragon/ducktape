@@ -17,7 +17,8 @@ Design, the parity gaps it closes, and the traps in each: <plans/session_channel
    that never got past `provisioning` has a durable record. **Not** the status line or the typing
    indicator — those are renderings of live state each channel derives for itself.
 3. **Reconcile a channel against the session** rather than sending to it: a loop per
-   `(channel, session)` over a cursor on cleanup stage 7's `chat_attachment`. A channel that holds
+   `(channel, session)` over a cursor on cleanup stage 7's proposed-but-unbuilt
+   `chat_attachment`. A channel that holds
    its own copy (Matrix) needs it; one that reads the record (the console) converges by refetching.
 4. **Send into a Matrix session** (lower priority) — the console holds only `@haku`'s credential,
    so an operator message reaches the room as a **relay** posted by Haku's account and tagged with
@@ -60,8 +61,7 @@ to a Gmail API method:
 - **Delete / trash** — `users.messages.{trash,untrash,delete}`,
   `users.threads.{trash,untrash,delete}`. `delete` is permanent; `trash` is recoverable.
 - **Message-level label changes** — `users.messages.modify`, `users.messages.batchModify`
-  (today only whole-thread label changes are exposed, via the synthesized
-  `batch_modify_thread_labels`).
+  (today only whole-thread label changes are exposed, via `threads_modify_labels`).
 - **Attachments** — `users.messages.attachments.get` (fetch attachment bytes).
 - **Raw import/insert** — `users.messages.{import,insert}`.
 - **History** — `users.history.list` (incremental sync since a `historyId`).
@@ -117,25 +117,24 @@ deferred:
 ## MCP server (`/mcp`) — deferred follow-ups
 
 The `/mcp` server (`mcp_server.py`) now resolves canonical Operators, Agents, grants, and
-credential bindings through one authority, while retaining a single global auto-approval policy
-and deriving each request's tool surface from that Agent's Operator connections. The architecture
-is specified in <../../plans/oauth_architecture.md>. The next product slices are:
+credential bindings through one authority, and derives each request's tool surface from that
+Agent's Operator connections. Settings lists the Operator's Agents and lets an OAuth Agent's
+auto-approval policy be reassigned among the roots `config.yaml` defines. The architecture is
+specified in <../../plans/oauth_architecture.md>. The next product slices are:
 
-- **Connected Agents** — add an Operator-scoped API and UI showing each Agent's name, client
-  software, scopes, status, creation and last-seen times, and reconnect history.
+- **Fuller Agent detail** — `AgentView` carries name, status, credential kind/status, and the
+  creation/activation/last-seen times. Client software, granted scopes, and reconnect history are
+  in the durable graph and are not yet surfaced.
 - **Agent-filtered history** — filter past tool calls by Agent only after applying the
   authenticated Operator predicate. Resolve display names through canonical joins; never copy
   them into tool-call rows or use them as authority.
 - **Agent lifecycle controls** — expose revoke/disable, rename/history, and tombstone/reconnect
   operations as vertical API + UI + audit-event slices.
-- **Per-Agent policy** — author a typed structured policy in the console UI. The single global
-  policy remains the degenerate "same for every Agent" case until this ships.
+- **Author a policy in the UI** — reassignment picks among deploy-defined roots; composing a typed
+  structured policy in the console is what remains.
 - **Per-Agent tool surface** — derive request-time `list_tools` from the verified binding and
   policy, with `tools/list_changed` on policy edits. Do not key authorization directly on an
   unverified DCR `client_id`.
-- **Per-tool-call deep link** — a `/tool-calls/<id>` SPA route (`routing.ts` +
-  `tool_calls_page.tsx`) that opens/highlights the specific call the promise `url` points at
-  (today the URL loads the console but not that exact call).
 
 ## Serve a last-known tool catalog for a degraded server
 
