@@ -222,8 +222,8 @@ Naming its parts separately is what makes the projection reconcilable:
 
 - **Its subject** — the span of the conversation it summarises: a turn, a tool-call run, a
   session's life.
-- **Its body** — a pure function of that span's current state. Purity is what makes squashing
-  correct: whatever the room last received, the next send is recomputed from the record.
+- **Its body** — a fold over the subscription stream (see below). Purity is what makes squashing
+  correct: whatever the room last received, the next send is recomputed from what has arrived.
 - **Its lifecycle** — created when the span first has something worth saying, edited while the span
   is open, and closed when the span is.
 
@@ -243,6 +243,37 @@ whole prose and hope. That is the same fact that lets a tab be sent the open row
 idempotent, discarded when the tab closes) and stops a room being sent it (permanent, federated,
 and re-published in full to every client that does not render edits, since an edit's fallback body
 is the new text).
+
+### A notice body is a fold over the subscription stream
+
+**Every notice body is a reduction of the provider-neutral messages § 2's subscription delivers**
+(operator, 2026-08-17). Not a query the channel issues against the store, and not a value the turn
+loop hands it: the channel consumes one ordered stream and folds it into "what the room should
+currently show". The channel's own state is the accumulator — the fold's carry plus what it last
+sent — which is the same `(subject, body, tag)` triple the lifecycle above already names.
+
+Three things follow, and they are why this is worth requiring rather than merely allowing:
+
+- **It is testable without a room, a homeserver or a database.** A list of `ConversationEvent`s in,
+  a notice body out; the edge cases that are hard to provoke end to end (a run of forty tool calls,
+  a session replaced mid-turn, a turn that aborts between two tool results) become table rows. This
+  is the one part of the channel where correctness is about accumulation rather than delivery, so
+  it is the part worth isolating from the parts that need Synapse.
+- **It is what makes reconciliation cheap.** An at-least-once reconciler needs to answer "does the
+  room's copy match what it should show", and a fold gives that answer by construction: re-fold
+  from the cursor, compare with the tag's last body, send only if they differ. Without a fold the
+  comparison needs a second derivation of the same fact, which is the duplication § 2 exists to
+  remove.
+- **It forbids the shortcut that would rot.** A body computed from whatever the turn loop happened
+  to be holding is a body no other consumer can reproduce — the exact coupling that lets a fact
+  reach a room and never reach a tab (§ 8).
+
+**v0 may emit one notice per noticeable event and never edit** (operator, 2026-08-17). That is a
+lesser feature, not a different architecture: the fold still runs, the accumulator is still the
+carry, and what changes is only that the channel appends its output instead of editing the open
+notice's tag. Editing is added later by giving the fold's output a tag to reconcile against, which
+touches the send path and nothing about the reduction. Take this if editing turns out to cost more
+than it looks like it will — the tally-in-one-line shape below is the goal either way.
 
 ### What a notice body may do
 
@@ -554,8 +585,11 @@ having even if the loop is never built.
    pacer's bucket stops being an estimate, and the browser stops being the only consumer that reads
    the record.
 10. **Notices as spans** (§ 4), once 7 and 9 exist: one work notice per turn, one lifecycle notice
-    per session, each a pure function of its span, each retired or sealed. This is Matrix's
-    streaming — the granularity a channel that holds a permanent, federated copy can afford.
+    per session, **each body a fold over the subscription stream**, each retired or sealed. This is
+    Matrix's streaming — the granularity a channel that holds a permanent, federated copy can
+    afford. The fold is not optional; editing already-posted notices is, and a v0 that appends one
+    notice per noticeable event is the accepted lesser form (§ 4). Split the fold from the send
+    path in the same PR, because the fold is where this step's tests live.
 11. **Delete `ActivityStarted`/`ActivityCompleted` from the vocabulary** (operator, 2026-08-17):
     the `case "task_started"` arm of the projection, both dataclasses, the `session_events` bodies
     that store them, and `room_status.coarse_status`'s arm — so a status line that would have shown
@@ -568,9 +602,11 @@ session_events WHERE kind IN ('activity_started','activity_completed')`, drop th
     members, narrow the CHECK — one migration, the shape `0059`'s downgrade already uses. Deleting
     the members before the rows would make reading one raise rather than degrade, and deleting the
     rows earlier is harmless but pointless: the previous image is still writing them.
-13. **Audit the rest of `ConversationEvent` against the same question**: could a second backend
-    produce this, or is it one provider's concept renamed? Do this before a second backend exists,
-    because afterwards every answer is retrofitted to what that backend happens to emit.
+13. **Audit the rest of `ConversationEvent` against the same question** — could a second backend
+    produce this, or is it one provider's concept renamed? — **done** in
+    <../debug/conversation_vocabulary_audit.md>. It found one more failure, `ToolReferences`, and
+    the rule that decides the rest (§ 11). Deleting that arm is its own step, and it does not wait
+    on 11 or 12: different member, different arm, no shared migration.
 
 14. **Delete `Usage`** (operator, 2026-08-17), for a different reason from 11: not that it fails
     the neutrality test — it passes, being a reduction to quantities every backend reports — but
@@ -644,8 +680,9 @@ These are the acceptance criteria, and each names something that is false today:
 
 - **No code outside a channel names a channel's address.** `_enqueue_reply` stops branching on
   `chat.room_id`; the turn writes the record and nothing else.
-- **Nothing is announced that is not recorded.** Every notice body is a function of rows, so there
-  is no fact whose only copy is a stack frame and no notice that a SIGKILL can silently swallow.
+- **Nothing is announced that is not recorded.** Every notice body is a fold over the subscription
+  stream (§ 4), so there is no fact whose only copy is a stack frame, no notice that a SIGKILL can
+  silently swallow, and no body a second consumer could not reproduce from the same messages.
 - **A replica death costs latency and nothing else.** No orphaned status line, no second status
   line, no acknowledged-but-unreported message.
 - **No channel knows a provider's frame shape.** Not Claude's `type` strings, not its content
@@ -682,11 +719,20 @@ rendering one is knowing a provider's concept at one remove, which is the rule b
 of the vocabulary rather than by a channel. Retiring it is § 9's steps 10 and 11; what it records is
 recoverable from `session_frames`, which is the surface allowed to be provider-shaped.
 
-Nothing has ever asked the same question of the rest. `TextDelta`, `MessageCompleted`, `Reasoning`,
-`ToolCallStarted`/`Completed`, `TurnCompleted` and `Usage` read as genuinely general;
-`ToolReferences`, as an arm of `ToolResultContent`, is the next one to look at, since "a result that
-lists tool names" may be one provider's `tool_result` shape. That is a guess, which is the reason
-the audit is its own step rather than a claim here.
+**The rest has now been asked** (<../debug/conversation_vocabulary_audit.md>, § 9 step 13).
+`TextDelta`, `MessageCompleted`, `Reasoning`, `ToolCallStarted`/`Completed` and `TurnCompleted` are
+general. One more member fails: `ToolReferences` is not one provider's `tool_result` shape but
+**one tool's result shape on one provider** — every sighting is Claude Code's deferred-tool search
+— so its arm goes and those results fall to `OpaqueContent`, losing a name list in the SPA and
+nothing from the record.
+
+The audit's useful product is the rule that decides the remaining cases: **the line is not how
+Claude-shaped a thing is, but where the shape lives in the type.** `ToolCallCompleted.structured`
+is also one tool's shape, and it stays, because it sits behind `Json` — a per-tool payload is
+sanctioned (R6.3 passes tool identifiers verbatim; a channel rendering a Bash result's `stdout`
+knows Bash, not Claude), and a per-tool shape promoted to a typed member is not. That also bounds
+the leak surface exactly: `Json` marks three fields, and `Projection.unprojected`'s keys are a
+fourth the type does not mark.
 
 **What enforces the rule does not exist yet.** `x/frame_projection.py` imports
 `x/claude_code/projection` directly, so there is no seam at which a second backend's adapter could
@@ -753,6 +799,10 @@ back silently:
 
 - `session_store` contains no reference to `room_id` — one structural test, and it is the whole of
   "no code outside a channel names a channel's address".
+- **Notice bodies are folds**, tested as folds: a list of `ConversationEvent`s in, a body out, no
+  room and no database. The cases worth writing are the ones an end-to-end test cannot provoke on
+  demand — a forty-call run collapsing to a tally, a session replaced mid-turn, a turn aborting
+  between two tool results.
 - The Matrix channel's Bazel target cannot depend on `//haku/console/x/claude_code:*`. Restricting
   that package's `default_visibility` to `//haku/console/x:__pkg__` enforces "no channel knows a
   provider's frame shape" at build time in one line. The one exception it surfaces —
