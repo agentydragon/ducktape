@@ -153,105 +153,58 @@ const overflowingClaudeMessages = Array.from({ length: 8 }, (_, index) => {
     },
   ];
 }).flat();
-const claudeSession = scene?.startsWith("claude-provisioning")
-  ? {
-      session_id: "60000000-0000-4000-8000-000000000006",
-      status: "provisioning",
-      error: null,
-      created_at: "2026-08-01T03:00:00Z",
-      updated_at: "2026-08-01T03:00:03Z",
-      provisioning: {
-        step: "waiting_for_pod_ready",
-        inspected_at: "2026-08-01T03:00:03Z",
-        claim_name: "claude-60000000000040008000000000000006",
-        claim_ready: false,
-        claim_reason: "PodNotReady",
-        claim_message: "Waiting for the sandbox Pod to become ready",
-        sandbox_name: "haku-claude-7r9qk",
-        sandbox_ready: false,
-        pod_name: "haku-claude-7r9qk",
-        pod_phase: "Pending",
-        pod_ready: false,
-        runner_ready: false,
-        runner_state: "waiting: ContainerCreating",
-        observation_error: null,
-      },
-      messages: [],
-    }
-  : ({
-      session_id: "60000000-0000-4000-8000-000000000006",
-      status: "ready",
-      error: null,
-      created_at: "2026-08-01T03:00:00Z",
-      updated_at: "2026-08-01T03:01:00Z",
-      provisioning: null,
-      messages:
-        scene === "claude-message-boundaries"
-          ? claudeBoundaryMessages
-          : scene === "claude-chat-overflow"
-            ? overflowingClaudeMessages
-            : standardClaudeMessages.map((message) =>
-                message.role === "assistant" && scene?.startsWith("claude-tool-use")
-                  ? {
-                      ...message,
-                      tool_calls: [
-                        {
-                          call_id: "toolu_01HakuConsoleRead",
-                          tool_name: "mcp__haku-console__haku-console__list_mcp_servers",
-                          arguments: {},
-                          result: {
-                            content:
-                              '{"servers": [{"server_id": "gmail", "status": "alive"}, {"server_id": "tana", "status": "degraded"}]}',
-                            is_error: false,
-                          },
-                        },
-                        {
-                          call_id: "toolu_02WriteNote",
-                          tool_name: "Write",
-                          arguments: {
-                            file_path: "/workspace/note.txt",
-                            content: "Hello from the disposable Haku sandbox.",
-                          },
-                          // A failed call and a still-running one, so the scene shows all three
-                          // states a result can be in.
-                          result: {
-                            content: "EACCES: permission denied, open '/workspace/note.txt'",
-                            is_error: true,
-                          },
-                        },
-                        {
-                          call_id: "toolu_03StillRunning",
-                          tool_name: "Bash",
-                          arguments: { command: "rg --files | wc -l" },
-                        },
-                        {
-                          call_id: "toolu_04Edit",
-                          tool_name: "Edit",
-                          arguments: {
-                            file_path: "/workspace/src/renderer.ts",
-                            old_string: "const transcript = messages.map(renderMessage);\n".repeat(16),
-                            new_string: "const transcript = messages.map(renderClaudeMessage);\n".repeat(16),
-                          },
-                          result: { content: "Updated /workspace/src/renderer.ts", is_error: false },
-                        },
-                        {
-                          call_id: "toolu_05BashOutput",
-                          tool_name: "Bash",
-                          arguments: { command: "git diff --check" },
-                          result: {
-                            content: Array.from(
-                              { length: 14 },
-                              (_unused, line) => `checked generated file ${line + 1}: no whitespace errors`
-                            ).join("\n"),
-                            is_error: false,
-                          },
-                        },
-                      ],
-                    }
-                  : message
-              ),
-    } as const);
-const conversationSessionId = "70000000-0000-4000-8000-000000000001";
+// The same transcript with every state a tool call's result can be in: answered, failed, still
+// running, and one long enough to need its own scroll.
+const toolUsingClaudeMessages = standardClaudeMessages.map((message) =>
+  message.role === "assistant"
+    ? {
+        ...message,
+        tool_calls: [
+          {
+            call_id: "toolu_01HakuConsoleRead",
+            tool_name: "mcp__haku-console__haku-console__list_mcp_servers",
+            arguments: {},
+            result: {
+              content:
+                '{"servers": [{"server_id": "gmail", "status": "alive"}, {"server_id": "tana", "status": "degraded"}]}',
+              is_error: false,
+            },
+          },
+          {
+            call_id: "toolu_02WriteNote",
+            tool_name: "Write",
+            arguments: { file_path: "/workspace/note.txt", content: "Hello from the disposable Haku sandbox." },
+            result: { content: "EACCES: permission denied, open '/workspace/note.txt'", is_error: true },
+          },
+          { call_id: "toolu_03StillRunning", tool_name: "Bash", arguments: { command: "rg --files | wc -l" } },
+          {
+            call_id: "toolu_04Edit",
+            tool_name: "Edit",
+            arguments: {
+              file_path: "/workspace/src/renderer.ts",
+              old_string: "const transcript = messages.map(renderMessage);\n".repeat(16),
+              new_string: "const transcript = messages.map(renderClaudeMessage);\n".repeat(16),
+            },
+            result: { content: "Updated /workspace/src/renderer.ts", is_error: false },
+          },
+          {
+            call_id: "toolu_05BashOutput",
+            tool_name: "Bash",
+            arguments: { command: "git diff --check" },
+            result: {
+              content: Array.from(
+                { length: 14 },
+                (_unused, line) => `checked generated file ${line + 1}: no whitespace errors`
+              ).join("\n"),
+              is_error: false,
+            },
+          },
+        ],
+      }
+    : message
+);
+const conversationId = "70000000-0000-4000-8000-000000000001";
+const conversationSessionId = "70000000-0000-4000-8000-000000000011";
 // What the shared sandbox bootstrap script writes, forwarded verbatim by the runner — long,
 // unbroken paths included, since those are what a narrow viewport has to wrap rather than
 // scroll sideways.
@@ -275,41 +228,39 @@ const setupNarration = [
     created_at: "2026-08-01T02:59:53Z",
   },
 ] as const;
-const conversationSummaries = [
-  {
-    session_id: conversationSessionId,
-    surface: "matrix",
-    room_id: "!ops:example.org",
-    status: "ready",
-    error: null,
-    created_at: "2026-08-01T03:00:00Z",
-    updated_at: "2026-08-01T03:01:00Z",
-    message_count: 6,
-    last_message_at: "2026-08-01T03:00:24Z",
-  },
-  {
-    session_id: "70000000-0000-4000-8000-000000000002",
-    surface: "matrix",
-    room_id: "!archive:example.org",
-    status: "closed",
-    error: null,
-    created_at: "2026-07-31T18:20:00Z",
-    updated_at: "2026-07-31T18:42:00Z",
-    message_count: 8,
-    last_message_at: "2026-07-31T18:41:00Z",
-  },
-  {
-    session_id: "70000000-0000-4000-8000-000000000003",
-    surface: "spa",
-    room_id: null,
-    status: "failed",
-    error: "Sandbox runner stopped unexpectedly",
-    created_at: "2026-07-30T09:10:00Z",
-    updated_at: "2026-07-30T09:12:00Z",
-    message_count: 2,
-    last_message_at: "2026-07-30T09:11:00Z",
-  },
-] as const;
+// One conversation per row, with the channels holding it rather than one surface: the first is a
+// room with a live session, the second a room between runners, the third a browser thread nothing
+// is attached to.
+const conversationPage = {
+  conversations: [
+    {
+      conversation_id: conversationId,
+      created_at: "2026-08-01T03:00:00Z",
+      last_activity_at: "2026-08-01T03:01:00Z",
+      attachments: [{ surface: "matrix", address: "!ops:example.org", attached_at: "2026-08-01T03:00:00Z" }],
+      live_session: { session_id: conversationSessionId, status: "ready" },
+      message_count: 6,
+    },
+    {
+      conversation_id: "70000000-0000-4000-8000-0000000000a2",
+      created_at: "2026-07-31T18:20:00Z",
+      last_activity_at: "2026-07-31T18:42:00Z",
+      attachments: [{ surface: "matrix", address: "!archive:example.org", attached_at: "2026-07-31T18:20:00Z" }],
+      live_session: null,
+      message_count: 8,
+    },
+    {
+      conversation_id: "70000000-0000-4000-8000-0000000000a3",
+      created_at: "2026-07-30T09:10:00Z",
+      last_activity_at: "2026-07-30T09:12:00Z",
+      attachments: [],
+      live_session: { session_id: "70000000-0000-4000-8000-000000000003", status: "failed" },
+      message_count: 2,
+    },
+  ],
+  // Not the last page, so the keyset's "Load older conversations" control renders.
+  next_cursor: { last_activity_at: "2026-07-29T22:05:00Z", conversation_id: "70000000-0000-4000-8000-0000000000a4" },
+} as const;
 // Two exchanges, so the detail scene shows a turn boundary landing between them rather than a
 // single marker that could sit anywhere and still look right.
 const conversationMessages = [
@@ -335,14 +286,13 @@ const conversationMessages = [
     updated_at: "2026-08-01T03:00:24Z",
   },
 ] as const;
-const conversationDetail = {
+const conversationSession = {
   session_id: conversationSessionId,
-  surface: "matrix",
-  room_id: "!ops:example.org",
   status: "ready",
   error: null,
   created_at: "2026-08-01T03:00:00Z",
   updated_at: "2026-08-01T03:01:00Z",
+  provisioning: null,
   narration: setupNarration,
   messages: conversationMessages,
   // Newest first, as the endpoint returns them — the transcript numbers them the other way.
@@ -361,28 +311,87 @@ const conversationDetail = {
     },
   ],
 } as const;
+const conversationDetail = {
+  conversation_id: conversationId,
+  created_at: "2026-08-01T03:00:00Z",
+  attachments: [{ surface: "matrix", address: "!ops:example.org", attached_at: "2026-08-01T03:00:00Z" }],
+  session: conversationSession,
+  // The thread ran one session before this one: what a sandbox dying looks like from the
+  // conversation's side, and the only place its frame log stays reachable from.
+  earlier_sessions: [
+    { session_id: "70000000-0000-4000-8000-000000000010", status: "failed", created_at: "2026-07-31T22:14:00Z" },
+  ],
+} as const;
 // The same session a few seconds earlier: still provisioning, mid-clone, with nothing but the
 // narration to show. This is what the panel exists for, so it gets its own scene.
 const conversationBootstrap = {
   ...conversationDetail,
-  status: "provisioning",
-  updated_at: "2026-08-01T02:59:51Z",
-  narration: setupNarration.slice(0, 4),
-  messages: [],
-  turns: [],
+  session: {
+    ...conversationSession,
+    status: "provisioning",
+    updated_at: "2026-08-01T02:59:51Z",
+    narration: setupNarration.slice(0, 4),
+    messages: [],
+    turns: [],
+  },
+} as const;
+// A sandbox still being handed out, which is a different picture from a sandbox already narrating:
+// the live Kubernetes read is the whole account for a session that never comes up.
+const conversationProvisioning = {
+  ...conversationDetail,
+  session: {
+    ...conversationSession,
+    status: "provisioning",
+    updated_at: "2026-08-01T03:00:03Z",
+    provisioning: {
+      step: "waiting_for_pod_ready",
+      inspected_at: "2026-08-01T03:00:03Z",
+      claim_name: "claude-70000000000040008000000000000011",
+      claim_ready: false,
+      claim_reason: "PodNotReady",
+      claim_message: "Waiting for the sandbox Pod to become ready",
+      sandbox_name: "haku-claude-7r9qk",
+      sandbox_ready: false,
+      pod_name: "haku-claude-7r9qk",
+      pod_phase: "Pending",
+      pod_ready: false,
+      runner_ready: false,
+      runner_state: "waiting: ContainerCreating",
+      observation_error: null,
+    },
+    narration: [],
+    messages: [],
+    turns: [],
+  },
 } as const;
 // A finished session short enough that the collapsed panel stays on screen: the detail scene's
 // transcript opens scrolled to its newest message, which puts the collapsed panel above the fold.
 const conversationNarrationCollapsed = {
   ...conversationDetail,
-  messages: standardClaudeMessages,
-  turns: [],
+  session: { ...conversationSession, messages: standardClaudeMessages, turns: [] },
+} as const;
+// A transcript long enough to overflow its viewport, so the scroll stays pinned to the newest
+// message rather than opening at the top.
+const conversationOverflow = {
+  ...conversationDetail,
+  session: { ...conversationSession, narration: [], messages: overflowingClaudeMessages, turns: [] },
+} as const;
+// Tool calls with their results, which is what the transcript's card rendering exists for.
+const conversationToolUse = {
+  ...conversationDetail,
+  session: { ...conversationSession, narration: [], messages: toolUsingClaudeMessages, turns: [] },
 } as const;
 const conversationDetailForScene = scene?.startsWith("conversation-bootstrap")
   ? conversationBootstrap
-  : scene?.startsWith("conversation-narration")
-    ? conversationNarrationCollapsed
-    : conversationDetail;
+  : scene?.startsWith("conversation-provisioning")
+    ? conversationProvisioning
+    : scene?.startsWith("conversation-narration")
+      ? conversationNarrationCollapsed
+      : scene?.startsWith("conversation-overflow")
+        ? conversationOverflow
+        : scene?.startsWith("conversation-tool-use")
+          ? conversationToolUse
+          : conversationDetail;
 // The rollout behind that conversation, as the frame inspector reads it: one exchange in wire
 // order, with a tool call and the result it got — the pair `session_messages` cannot show.
 const conversationFrames = {
@@ -543,7 +552,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
   // Before the conversation detail below, which its path is a prefix of.
   if (url.includes("/frames")) return jsonResponse(conversationFrames);
   if (url.includes("/api/conversations/")) return jsonResponse(conversationDetailForScene);
-  if (url.includes("/api/conversations")) return jsonResponse(conversationSummaries);
+  if (url.includes("/api/conversations")) return jsonResponse(conversationPage);
   // The refusal the composer exists to render clearly: `enqueue_prompt` answers 409 and records
   // nothing, so the operator's text has to survive it. Before the session read below, whose path
   // this one extends.
@@ -553,7 +562,6 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
       headers: { "Content-Type": "application/json" },
     });
   }
-  if (url.includes("/api/sessions")) return jsonResponse(claudeSession);
   // Push is configured on this console, and one *other* device is enrolled — the two facts the
   // Notifications section exists to show. The headless browser has no real subscription, so
   // "this browser" renders Off; a second device proves the per-device list renders.

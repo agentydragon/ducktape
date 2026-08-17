@@ -39,13 +39,10 @@ ts_library(
 )
 
 ts_library(
-    name = "claude_chat_page",
-    srcs = ["claude_chat_page.tsx"],
+    name = "sandbox_provisioning",
+    srcs = ["sandbox_provisioning.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":chat_scroll",
-        ":markdown",
-        ":tool_call",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -112,6 +109,7 @@ ts_library(
         ":conversation_composer",
         ":conversation_timeline",
         ":markdown",
+        ":sandbox_provisioning",
         ":tool_call",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -180,9 +178,9 @@ ts_library(
 filegroup(
     name = "tailwind_content_srcs",
     srcs = [
-        "claude_chat_page.tsx",
         "conversation_composer.tsx",
         "conversations_page.tsx",
+        "sandbox_provisioning.tsx",
         "session_frames_page.tsx",
     ],
 )

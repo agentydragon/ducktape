@@ -24,7 +24,6 @@ from haku.console.chat_models import (
     TOOL_CALL_EVENT_KINDS,
     ChatMessageRole,
     ChatMessageStatus,
-    ChatSurface,
     ConversationEventKind,
     FrameDirection,
     RecordedToolCall,
@@ -35,6 +34,7 @@ from haku.console.database_schema import Session, SessionEvent, SessionFrame, Se
 from haku.console.x import session_events
 from haku.console.x.claude_code import projection
 from haku.console.x.conversation_events import Outcome
+from haku.console.x.conversation_records import ChannelAttachment
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 
@@ -86,6 +86,12 @@ class SessionMessageView(BaseModel):
 
 
 class SessionView(BaseModel):
+    """One session's own row and transcript, as the store hands it to whoever asked.
+
+    Not a wire shape: the browser reads a conversation, and this is what the read of its current
+    session is assembled from.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     session_id: UUID
@@ -93,24 +99,65 @@ class SessionView(BaseModel):
     error: str | None
     created_at: datetime
     updated_at: datetime
-    provisioning: ClaudeSandboxProvisioningView | None = None
     messages: list[SessionMessageView]
 
 
-class ConversationSessionSummary(BaseModel):
-    """The operator-facing inventory entry for one conversation."""
+class LiveSession(BaseModel):
+    """The session currently holding a conversation, where one holds it.
+
+    At most one, because only one session holds a conversation at a time. Absent means the thread
+    is between runners: a prompt to it needs a new session rather than reaching an existing one.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     session_id: UUID
-    surface: ChatSurface
-    room_id: str | None
     status: SessionStatus
-    error: str | None
+
+
+class ConversationSummary(BaseModel):
+    """The operator-facing inventory entry for one conversation.
+
+    Keyed by the thread rather than by a session, and carrying **attachments** rather than one
+    surface: a conversation is held by however many channels have attached to it, and a browser
+    reading it is not one of them.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    conversation_id: UUID
     created_at: datetime
-    updated_at: datetime
+    last_activity_at: datetime = Field(
+        description="When the most recent session under this conversation last moved. What the list is ordered by."
+    )
+    attachments: list[ChannelAttachment]
+    live_session: LiveSession | None
     message_count: int
-    last_message_at: datetime | None
+
+
+class ConversationCursor(BaseModel):
+    """A position in the newest-activity-first order the inventory walks.
+
+    Keyset rather than an offset, because a conversation never ends: the list only ever grows, and
+    it grows at the top — every conversation that moves while a reader pages would push a row
+    across a page boundary, skipping it or repeating it. `conversation_id` breaks the tie
+    `last_activity_at` alone leaves, so the key is total.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    last_activity_at: datetime
+    conversation_id: UUID
+
+
+class ConversationPage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    conversations: list[ConversationSummary]
+    next_cursor: ConversationCursor | None = Field(
+        description="The first conversation this page did not return. Pass its fields back as "
+        "`before_activity`/`before_conversation` to continue; absent when this page is the last."
+    )
 
 
 class SetupNarrationView(BaseModel):
@@ -140,18 +187,51 @@ class ConversationTurnView(BaseModel):
 
 
 class ConversationSessionView(BaseModel):
+    """One session of a conversation, whole: what it said, what it cost to start, how it ended."""
+
     model_config = ConfigDict(extra="forbid")
 
     session_id: UUID
-    surface: ChatSurface
-    room_id: str | None
     status: SessionStatus
     error: str | None
     created_at: datetime
     updated_at: datetime
+    provisioning: ClaudeSandboxProvisioningView | None = None
     narration: list[SetupNarrationView]
     messages: list[SessionMessageView]
     turns: list[ConversationTurnView]
+
+
+class EarlierSession(BaseModel):
+    """A session this conversation ran before the current one, newest first.
+
+    A conversation outlives its sessions, so a thread whose sandbox died has more than one — and
+    what each of them said is still in its own frame log. Merging their transcripts into one
+    reading is the reconciler's job (`plans/conversation_layers.md` § 9 step 9); until then this is
+    the handle that keeps them reachable.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: UUID
+    status: SessionStatus
+    created_at: datetime
+
+
+class ConversationView(BaseModel):
+    """One conversation as the browser reads it.
+
+    No terminal state and no `ended_at`: a conversation is an id, and what ends is the session
+    under it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    conversation_id: UUID
+    created_at: datetime
+    attachments: list[ChannelAttachment]
+    session: ConversationSessionView
+    earlier_sessions: list[EarlierSession]
 
 
 # Frames per page of the inspector. A frame is usually small, but one `user` frame carries a whole
@@ -403,6 +483,5 @@ def session_view(
         error=record.error,
         created_at=record.created_at,
         updated_at=record.updated_at,
-        provisioning=None,
         messages=[message_view(message, calls) for message in messages],
     )

@@ -5,14 +5,13 @@ import { useCallback, useEffect, useState } from "react";
 export const CONSOLE_ROOT_PATH = "/_console";
 export const SETTINGS_PATH = `${CONSOLE_ROOT_PATH}/settings`;
 export const TOOL_CALLS_PATH = `${CONSOLE_ROOT_PATH}/tool-calls`;
-export const CLAUDE_CHAT_PATH = `${CONSOLE_ROOT_PATH}/chat`;
 export const CONVERSATIONS_PATH = `${CONSOLE_ROOT_PATH}/conversations`;
 export const OAUTH_RESULT_PATH_PREFIX = `${CONSOLE_ROOT_PATH}/oauth-result`;
 export const AGENT_ENROLLMENT_PATH_PREFIX = `${SETTINGS_PATH}/agents/enroll`;
 export const HOME_PATH = "/";
 const LAST_EMBED_PATH_KEY = "haku-console:last-embed-path";
 
-export type ConsoleNavigationView = "embed" | "settings" | "toolCalls" | "claudeChat" | "conversations";
+export type ConsoleNavigationView = "embed" | "settings" | "toolCalls" | "conversations";
 export type ConsoleView = ConsoleNavigationView | "agentEnrollment" | "oauthResult" | "sessionFrames" | "notFound";
 
 // Every id-bearing console route carries a canonical UUIDv4, and each spelled its own pattern
@@ -29,16 +28,17 @@ const TOOL_CALL_PATH = new RegExp(`^${TOOL_CALLS_PATH}/(tc_[0-9a-f]{24})$`, "i")
 const OAUTH_RESULT_PATH = new RegExp(`^${OAUTH_RESULT_PATH_PREFIX}/(${UUID})$`, "i");
 const AGENT_ENROLLMENT_PATH = new RegExp(`^${AGENT_ENROLLMENT_PATH_PREFIX}/(${UUID})$`, "i");
 const CONVERSATION_PATH = new RegExp(`^${CONVERSATIONS_PATH}/(${UUID})$`, "i");
-// The raw frame log behind one conversation, under the conversation it belongs to: a debug view
-// is deep-linkable so "look at frame 412" can be a link rather than a set of directions.
-const SESSION_FRAMES_PATH = new RegExp(`^${CONVERSATIONS_PATH}/(${UUID})/frames$`, "i");
+// The raw frame log of one session. Under `/sessions/` rather than under its conversation, because
+// a conversation outlives its sessions and has several: the frames belong to exactly one of them.
+// Deep-linkable so "look at frame 412" can be a link rather than a set of directions.
+const SESSION_FRAMES_PATH = new RegExp(`^${CONSOLE_ROOT_PATH}/sessions/(${UUID})/frames$`, "i");
 
-export function conversationPath(sessionId: string): string {
-  return `${CONVERSATIONS_PATH}/${sessionId}`;
+export function conversationPath(conversationId: string): string {
+  return `${CONVERSATIONS_PATH}/${conversationId}`;
 }
 
 export function sessionFramesPath(sessionId: string): string {
-  return `${conversationPath(sessionId)}/frames`;
+  return `${CONSOLE_ROOT_PATH}/sessions/${sessionId}/frames`;
 }
 
 /** Move the console to one of its own paths. The shell reads the view off `window.location` and
@@ -73,7 +73,6 @@ export function viewForPathname(pathname: string): ConsoleView {
   if (pathname === SETTINGS_PATH) return "settings";
   if (agentEnrollmentIdForPathname(pathname) !== null) return "agentEnrollment";
   if (pathname === TOOL_CALLS_PATH) return "toolCalls";
-  if (pathname === CLAUDE_CHAT_PATH) return "claudeChat";
   if (sessionFramesIdForPathname(pathname) !== null) return "sessionFrames";
   if (pathname === CONVERSATIONS_PATH || conversationIdForPathname(pathname) !== null) return "conversations";
   if (toolCallIdForPathname(pathname) !== null) return "embed";
@@ -112,7 +111,6 @@ export function rememberEmbedPath(path: string): void {
 function pathForView(view: ConsoleNavigationView): string {
   if (view === "settings") return SETTINGS_PATH;
   if (view === "toolCalls") return TOOL_CALLS_PATH;
-  if (view === "claudeChat") return CLAUDE_CHAT_PATH;
   if (view === "conversations") return CONVERSATIONS_PATH;
   return rememberedEmbedPath();
 }

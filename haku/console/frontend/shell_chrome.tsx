@@ -21,7 +21,6 @@ import { CodeBlock } from "./code_block";
 import { Field } from "./field";
 import {
   CameraIcon,
-  ChatIcon,
   ChecklistIcon,
   ClockIcon,
   CloseIcon,
@@ -736,13 +735,6 @@ export function ShellChrome(props: ShellChromeProps) {
           <div className="haku-shell-rail-divider" />
           <RailButton open={props.view === "embed"} label="Haku UI" onClick={() => props.onNavigate("embed")}>
             <HomeIcon />
-          </RailButton>
-          <RailButton
-            open={props.view === "claudeChat"}
-            label="Claude sandbox"
-            onClick={() => props.onNavigate("claudeChat")}
-          >
-            <ChatIcon />
           </RailButton>
           <RailButton
             open={props.view === "conversations"}

@@ -634,7 +634,6 @@ ts_library(
         "//:node_modules/@haku/console-bridge",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//haku/console/frontend/x:claude_chat_page",
         "//haku/console/frontend/x:conversations_page",
         "//haku/console/frontend/x:session_frames_page",
     ],

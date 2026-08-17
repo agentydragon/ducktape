@@ -378,8 +378,8 @@ the iframe's `<title>` and posts `titleChanged` automatically, so the outer tab 
 A fixed-width icon rail down the left edge (`shell_chrome.tsx`'s `ShellChrome`) is the shell's own
 trusted chrome, and it reserves layout space the frame cannot render into. Its top button — badged
 with a count while tool calls await approval — toggles the approval queue drawer, independently of
-whichever page is selected; below it, page buttons select the framed Haku UI, the Claude sandbox
-chat, Conversations, Settings, or the past-tool-calls history. The bottom holds indicators, which
+whichever page is selected; below it, page buttons select the framed Haku UI, Conversations,
+Settings, or the past-tool-calls history. The bottom holds indicators, which
 are mutually exclusive popovers: sync state (always present; an expired session closes the event
 socket with its own code, `4001`, so the shell re-authenticates instead of reporting a channel
 outage), a location pin and a camera (each shown only while its consent grant is held, with a live

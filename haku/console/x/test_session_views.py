@@ -16,6 +16,11 @@ from haku.console.x.session_store import BridgeAuthentication, SpaSession
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 
 
+async def _detail(chat_store, operator_id, session_id):
+    """The conversation this session runs, read as the browser reads it."""
+    return await chat_store.get_operator_conversation(operator_id, await chat_store.conversation_of(session_id))
+
+
 async def test_narration_reads_back_in_the_order_the_sandbox_produced_it(chat_store, operator_id) -> None:
     session, _ = await chat_store.create(operator_id, SpaSession())
     for line in ("Cloning into 'haku-state'...", "done.", "Starting Claude Code."):
@@ -23,14 +28,16 @@ async def test_narration_reads_back_in_the_order_the_sandbox_produced_it(chat_st
             session.session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, setup_output_frame(line)
         )
 
-    detail = await chat_store.get_operator_conversation(operator_id, session.session_id)
+    detail = await _detail(chat_store, operator_id, session.session_id)
 
-    assert [line.text for line in detail.narration] == [
+    assert [line.text for line in detail.session.narration] == [
         "Cloning into 'haku-state'...",
         "done.",
         "Starting Claude Code.",
     ]
-    assert [line.frame_seq for line in detail.narration] == sorted(line.frame_seq for line in detail.narration)
+    assert [line.frame_seq for line in detail.session.narration] == sorted(
+        line.frame_seq for line in detail.session.narration
+    )
 
 
 async def test_two_identical_narration_lines_are_two_lines(chat_store, operator_id) -> None:
@@ -42,10 +49,10 @@ async def test_two_identical_narration_lines_are_two_lines(chat_store, operator_
             session.session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, setup_output_frame("retrying")
         )
 
-    detail = await chat_store.get_operator_conversation(operator_id, session.session_id)
+    detail = await _detail(chat_store, operator_id, session.session_id)
 
-    assert [line.text for line in detail.narration] == ["retrying", "retrying"]
-    assert len({line.frame_seq for line in detail.narration}) == 2
+    assert [line.text for line in detail.session.narration] == ["retrying", "retrying"]
+    assert len({line.frame_seq for line in detail.session.narration}) == 2
 
 
 async def test_narration_carries_only_this_session_and_only_setup_output(chat_store, operator_id) -> None:
@@ -61,17 +68,17 @@ async def test_narration_carries_only_this_session_and_only_setup_output(chat_st
         session.session_id, FrameDirection.FROM_AGENT, "result", {"type": "result", "uuid": "r1"}
     )
 
-    detail = await chat_store.get_operator_conversation(operator_id, session.session_id)
+    detail = await _detail(chat_store, operator_id, session.session_id)
 
-    assert [line.text for line in detail.narration] == ["mine"]
+    assert [line.text for line in detail.session.narration] == ["mine"]
 
 
 async def test_a_session_that_narrated_nothing_reports_no_narration(chat_store, operator_id) -> None:
     session, _ = await chat_store.create(operator_id, SpaSession())
 
-    detail = await chat_store.get_operator_conversation(operator_id, session.session_id)
+    detail = await _detail(chat_store, operator_id, session.session_id)
 
-    assert detail.narration == []
+    assert detail.session.narration == []
 
 
 _STORED_CONTENT = {

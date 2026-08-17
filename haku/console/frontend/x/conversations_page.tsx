@@ -2,12 +2,16 @@ import { Badge, Box, Button, Code, Divider, Group, Loader, Paper, Stack, Text, T
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  closeSession,
+  createConversation,
   displayableError,
   fetchConversation,
   fetchConversations,
   type ClaudeChatMessage,
+  type Conversation,
+  type ConversationCursor,
   type ConversationSession,
-  type ConversationSessionSummary,
+  type ConversationSummary,
 } from "../client";
 import { useCoalescedRefresh } from "../coalesced_refresh";
 import { changedSessionId, useConsoleEvents } from "../console_events";
@@ -18,19 +22,20 @@ import { ToolCallView } from "./tool_call";
 import { ConversationComposer } from "./conversation_composer";
 import { conversationTimeline, type ConversationTurn } from "./conversation_timeline";
 import { Markdown } from "./markdown";
+import { SandboxProvisioning } from "./sandbox_provisioning";
 
 /** A session that has ended takes no more prompts, so it gets no composer. */
-const SETTLED = new Set<ConversationSessionSummary["status"]>(["closing", "closed", "failed"]);
+const SETTLED = new Set<ConversationSession["status"]>(["closing", "closed", "failed"]);
 
-function openConversation(sessionId: string): void {
-  navigateToConsolePath(conversationPath(sessionId));
+function openConversation(conversationId: string): void {
+  navigateToConsolePath(conversationPath(conversationId));
 }
 
 function backToConversations(): void {
   navigateToConsolePath(CONVERSATIONS_PATH);
 }
 
-function statusColor(status: ConversationSessionSummary["status"]): string {
+function statusColor(status: ConversationSession["status"]): string {
   if (status === "ready") return "teal";
   if (status === "responding" || status === "provisioning") return "blue";
   if (status === "failed") return "red";
@@ -41,8 +46,29 @@ function timestamp(value: string): string {
   return `${value.slice(0, 16).replace("T", " ")} UTC`;
 }
 
-function surfaceLabel(summary: { surface: ConversationSessionSummary["surface"] }): string {
-  return summary.surface === "matrix" ? "Matrix" : "Console chat";
+/** The channels holding a copy of this conversation, or that none do.
+ *
+ * Plural on purpose: a conversation is held by however many channels have attached to it, and the
+ * browser reading it is not one of them — a tab keeps no copy, so it has no attachment and nothing
+ * to address.
+ */
+function Attachments({ attachments }: { attachments: ConversationSummary["attachments"] }) {
+  if (attachments.length === 0) {
+    return (
+      <Text size="sm" c="dimmed">
+        No channel attached
+      </Text>
+    );
+  }
+  return (
+    <Group gap={6} wrap="wrap">
+      {attachments.map((attachment) => (
+        <Badge key={`${attachment.surface}:${attachment.address}`} size="sm" variant="outline">
+          {attachment.surface}: {attachment.address}
+        </Badge>
+      ))}
+    </Group>
+  );
 }
 
 /** Where one exchange began, drawn across the transcript.
@@ -146,27 +172,74 @@ function MessageView({ message }: { message: ClaudeChatMessage }) {
   );
 }
 
+/** Every conversation this operator has, newest activity first, and the button that starts one.
+ *
+ * **Paged by keyset from the day it ships**, because a conversation never ends: this list only
+ * grows, and only at its top, so an offset would step over a row or repeat one every time
+ * something moved mid-walk. Pages already loaded are kept and appended to; a live event refreshes
+ * only the newest page, the way the tool-call history does.
+ */
 function ConversationListPage() {
   // Null until the first read lands: an empty inventory and an unread one look the same
   // otherwise, and the two want different things on screen.
-  const [conversations, setConversations] = useState<ConversationSessionSummary[] | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[] | null>(null);
+  const [nextCursor, setNextCursor] = useState<ConversationCursor | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
 
   const { refresh } = useCoalescedRefresh(async () => {
     try {
-      setConversations(await fetchConversations());
+      const page = await fetchConversations();
+      // The newest page replaces its own rows and keeps whatever older pages were loaded below it:
+      // refetching everything would cost the whole walk on each of a turn's invalidations.
+      setConversations((loaded) => {
+        const newest = new Set(page.conversations.map((conversation) => conversation.conversation_id));
+        return [
+          ...page.conversations,
+          ...(loaded ?? []).filter((conversation) => !newest.has(conversation.conversation_id)),
+        ];
+      });
+      setNextCursor((cursor) => cursor ?? page.next_cursor);
       setError(null);
     } catch (reason: unknown) {
       setError(displayableError(reason));
     }
   });
 
-  // The initial read, a re-read when any session changes, and one more on every reconnect. The
-  // inventory shows `message_count` and `updated_at`, so it goes stale for exactly the reason a
+  // The initial read, a re-read when any session changes, and one more on every reconnect. A row
+  // carries `message_count` and `last_activity_at`, so it goes stale for exactly the reason a
   // transcript does — and it is not told which of its rows moved, only that one did.
   useConsoleEvents((event) => {
     if (event.event_type === "sync" || changedSessionId(event) !== null) refresh();
   });
+
+  async function loadOlder() {
+    if (nextCursor === null) return;
+    setLoadingOlder(true);
+    try {
+      const page = await fetchConversations(nextCursor);
+      setConversations((loaded) => [...(loaded ?? []), ...page.conversations]);
+      setNextCursor(page.next_cursor);
+      setError(null);
+    } catch (reason: unknown) {
+      setError(displayableError(reason));
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
+
+  async function start() {
+    setStarting(true);
+    setError(null);
+    try {
+      openConversation((await createConversation()).conversation_id);
+    } catch (reason: unknown) {
+      setError(displayableError(reason));
+    } finally {
+      setStarting(false);
+    }
+  }
 
   return (
     <section className="haku-page" aria-label="Conversations">
@@ -175,12 +248,12 @@ function ConversationListPage() {
           <div>
             <Title order={1}>Conversations</Title>
             <Text c="dimmed" size="sm">
-              Sessions handled by your linked agents and Console runtimes.
+              Every thread you have with Haku, wherever it is being held.
             </Text>
           </div>
-          <Badge variant="light" className="haku-conversation-count">
-            {conversations?.length ?? 0} sessions
-          </Badge>
+          <Button onClick={() => void start()} loading={starting}>
+            New conversation
+          </Button>
         </div>
       </header>
       <div className="haku-page-scroll">
@@ -210,24 +283,27 @@ function ConversationListPage() {
           ) : (
             conversations.map((conversation) => (
               <button
-                key={conversation.session_id}
+                key={conversation.conversation_id}
                 type="button"
                 className="haku-conversation-list-item"
-                onClick={() => openConversation(conversation.session_id)}
+                onClick={() => openConversation(conversation.conversation_id)}
               >
                 <Group justify="space-between" align="flex-start" wrap="nowrap">
                   <Box className="haku-conversation-list-item-main">
                     <Group gap="xs" mb={4}>
-                      <Text fw={600}>{surfaceLabel(conversation)}</Text>
-                      <Badge size="sm" color={statusColor(conversation.status)} variant="light">
-                        {conversation.status}
-                      </Badge>
+                      <Attachments attachments={conversation.attachments} />
+                      {conversation.live_session ? (
+                        <Badge size="sm" color={statusColor(conversation.live_session.status)} variant="light">
+                          {conversation.live_session.status}
+                        </Badge>
+                      ) : (
+                        <Badge size="sm" color="gray" variant="light">
+                          no live session
+                        </Badge>
+                      )}
                     </Group>
-                    <Text size="sm" c="dimmed" className="haku-conversation-room">
-                      {conversation.room_id ?? "No Matrix room"}
-                    </Text>
                     <Text size="xs" c="dimmed" mt={4}>
-                      {conversation.message_count} messages · updated {timestamp(conversation.updated_at)}
+                      {conversation.message_count} messages · active {timestamp(conversation.last_activity_at)}
                     </Text>
                   </Box>
                   <Text size="sm" c="dimmed" className="haku-conversation-open">
@@ -237,20 +313,65 @@ function ConversationListPage() {
               </button>
             ))
           )}
+          {nextCursor !== null && (
+            <Button variant="subtle" onClick={() => void loadOlder()} loading={loadingOlder}>
+              Load older conversations
+            </Button>
+          )}
         </div>
       </div>
     </section>
   );
 }
 
-function ConversationDetailPage({ sessionId }: { sessionId: string }) {
-  const [conversation, setConversation] = useState<ConversationSession | null>(null);
+/** The sessions this conversation ran before the current one.
+ *
+ * A conversation outlives its sessions, so a thread whose sandbox died has more than one. Their
+ * transcripts are not merged into the one above — that is the subscription's job — so what they
+ * get here is the link that keeps their frame log reachable.
+ */
+function EarlierSessions({ sessions }: { sessions: Conversation["earlier_sessions"] }) {
+  return (
+    <Paper withBorder p="sm">
+      <Text fw={600} size="xs" mb={4}>
+        {sessions.length === 1 ? "1 earlier session" : `${sessions.length} earlier sessions`}
+      </Text>
+      <Stack gap={4}>
+        {sessions.map((session) => (
+          <Group key={session.session_id} gap="xs" wrap="nowrap">
+            <Badge size="xs" color={statusColor(session.status)} variant="light">
+              {session.status}
+            </Badge>
+            <Text size="xs" c="dimmed">
+              started {timestamp(session.created_at)}
+            </Text>
+            <Button
+              variant="subtle"
+              size="compact-xs"
+              onClick={() => navigateToConsolePath(sessionFramesPath(session.session_id))}
+            >
+              Raw frames
+            </Button>
+          </Group>
+        ))}
+      </Stack>
+    </Paper>
+  );
+}
+
+function ConversationDetailPage({ conversationId }: { conversationId: string }) {
+  const [conversation, setConversation] = useState<Conversation | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   // Which conversation is on screen, for the two readers that must not close over a stale one:
   // the live-event callback, registered once, and a response landing after the operator moved on.
-  const shownRef = useRef(sessionId);
+  const shownRef = useRef(conversationId);
+  // The session whose invalidations this page cares about. A conversation is not named by
+  // `session_changed`, so the page maps the wake back onto itself through the session it is
+  // showing — and a replacement session arrives on the next whole-conversation read.
+  const sessionRef = useRef<string | null>(null);
 
   const read = useCallback(async () => {
     const requested = shownRef.current;
@@ -258,6 +379,7 @@ function ConversationDetailPage({ sessionId }: { sessionId: string }) {
       const item = await fetchConversation(requested);
       if (shownRef.current === requested) {
         setConversation(item);
+        sessionRef.current = item.session.session_id;
         setError(null);
       }
     } catch (reason: unknown) {
@@ -268,25 +390,26 @@ function ConversationDetailPage({ sessionId }: { sessionId: string }) {
 
   useEffect(() => {
     // On mount the ref already holds this id and the live-event hook's own initial read covers
-    // it; this effect exists for the operator opening a *different* transcript in place.
-    if (shownRef.current === sessionId) return;
-    shownRef.current = sessionId;
+    // it; this effect exists for the operator opening a *different* conversation in place.
+    if (shownRef.current === conversationId) return;
+    shownRef.current = conversationId;
+    sessionRef.current = null;
     setConversation(null);
     setError(null);
     stickToBottomRef.current = true;
     refresh();
-  }, [sessionId, refresh]);
+  }, [conversationId, refresh]);
 
-  // Live: the initial read, this session's own invalidations, and a catch-up on every reconnect.
-  // A refetch rather than a delta stream is what makes a missed event cost nothing — the page
-  // lands on the current transcript whether it heard one event or none.
+  // Live: the initial read, this conversation's own invalidations, and a catch-up on every
+  // reconnect. A refetch rather than a delta stream is what makes a missed event cost nothing —
+  // the page lands on the current transcript whether it heard one event or none.
   useConsoleEvents((event) => {
-    if (event.event_type === "sync" || changedSessionId(event) === shownRef.current) refresh();
+    if (event.event_type === "sync" || changedSessionId(event) === sessionRef.current) refresh();
   });
 
-  // A transcript opens on its newest message, the way the live chat surface does — the operator
-  // came to read what just happened, not the first thing said. The layout settles a frame after
-  // the transcript renders, so the scroll waits for it.
+  // A transcript opens on its newest message: the operator came to read what just happened, not
+  // the first thing said. The layout settles a frame after the transcript renders, so the scroll
+  // waits for it.
   useEffect(() => {
     if (!stickToBottomRef.current) return;
     const frame = window.requestAnimationFrame(() => {
@@ -323,9 +446,22 @@ function ConversationDetailPage({ sessionId }: { sessionId: string }) {
     );
   }
 
-  const title = conversation.surface === "matrix" ? "Matrix conversation" : "Conversation";
-  const narration = bootstrapNarration(conversation);
-  const timeline = conversationTimeline(conversation.messages, conversation.turns);
+  const { session } = conversation;
+  const narration = bootstrapNarration(session);
+  const timeline = conversationTimeline(session.messages, session.turns);
+
+  const close = async (sessionId: string) => {
+    setClosing(true);
+    try {
+      await closeSession(sessionId);
+      refresh();
+    } catch (reason: unknown) {
+      setError(displayableError(reason));
+    } finally {
+      setClosing(false);
+    }
+  };
+
   return (
     <section className="haku-page" aria-label="Conversation">
       <header className="haku-page-header">
@@ -334,9 +470,10 @@ function ConversationDetailPage({ sessionId }: { sessionId: string }) {
             <Button variant="subtle" size="compact-sm" onClick={backToConversations}>
               ← Conversations
             </Button>
-            <Title order={1}>{title}</Title>
+            <Title order={1}>Conversation</Title>
+            <Attachments attachments={conversation.attachments} />
             <Text c="dimmed" size="sm">
-              {conversation.room_id ?? "Console chat session"} · started {timestamp(conversation.created_at)}
+              started {timestamp(conversation.created_at)}
             </Text>
           </div>
           <Group gap="xs" wrap="nowrap" align="center">
@@ -345,12 +482,23 @@ function ConversationDetailPage({ sessionId }: { sessionId: string }) {
             <Button
               variant="light"
               size="compact-sm"
-              onClick={() => navigateToConsolePath(sessionFramesPath(conversation.session_id))}
+              onClick={() => navigateToConsolePath(sessionFramesPath(session.session_id))}
             >
               Raw frames
             </Button>
-            <Badge color={statusColor(conversation.status)} variant="light">
-              {conversation.status}
+            {!SETTLED.has(session.status) && (
+              <Button
+                variant="light"
+                color="red"
+                size="compact-sm"
+                onClick={() => void close(session.session_id)}
+                loading={closing}
+              >
+                Close session
+              </Button>
+            )}
+            <Badge color={statusColor(session.status)} variant="light">
+              {session.status}
             </Badge>
           </Group>
         </div>
@@ -364,10 +512,12 @@ function ConversationDetailPage({ sessionId }: { sessionId: string }) {
           }}
         >
           <div className="haku-page-list haku-chat-messages">
+            {conversation.earlier_sessions.length > 0 && <EarlierSessions sessions={conversation.earlier_sessions} />}
+            {session.provisioning && <SandboxProvisioning provisioning={session.provisioning} />}
             {narration && (
-              <BootstrapNarrationPanel narration={narration} starting={conversation.status === "provisioning"} />
+              <BootstrapNarrationPanel narration={narration} starting={session.status === "provisioning"} />
             )}
-            {timeline.length === 0 && !narration && (
+            {timeline.length === 0 && !narration && !session.provisioning && (
               <Text c="dimmed" size="sm">
                 No transcript messages were recorded.
               </Text>
@@ -381,10 +531,10 @@ function ConversationDetailPage({ sessionId }: { sessionId: string }) {
             )}
           </div>
         </div>
-        {!SETTLED.has(conversation.status) && (
+        {!SETTLED.has(session.status) && (
           <ConversationComposer
-            sessionId={conversation.session_id}
-            status={conversation.status}
+            sessionId={session.session_id}
+            status={session.status}
             onSent={() => {
               // The accepted prompt is the operator's own, so the transcript follows it down
               // rather than holding whatever they had scrolled back to.
@@ -398,6 +548,10 @@ function ConversationDetailPage({ sessionId }: { sessionId: string }) {
   );
 }
 
-export function ConversationsPage({ sessionId }: { sessionId: string | null }) {
-  return sessionId === null ? <ConversationListPage /> : <ConversationDetailPage sessionId={sessionId} />;
+export function ConversationsPage({ conversationId }: { conversationId: string | null }) {
+  return conversationId === null ? (
+    <ConversationListPage />
+  ) : (
+    <ConversationDetailPage conversationId={conversationId} />
+  );
 }

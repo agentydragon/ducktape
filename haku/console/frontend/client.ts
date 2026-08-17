@@ -36,9 +36,11 @@ export type OAuthConnectionResult =
   | components["schemas"]["OAuthConnectionSucceeded"]
   | components["schemas"]["OAuthConnectionFailed"];
 export type AgentView = components["schemas"]["AgentView"];
-export type ClaudeChatSession = components["schemas"]["SessionView"];
 export type ClaudeChatMessage = components["schemas"]["SessionMessageView"];
-export type ConversationSessionSummary = components["schemas"]["ConversationSessionSummary"];
+export type ConversationSummary = components["schemas"]["ConversationSummary"];
+export type ConversationPage = components["schemas"]["ConversationPage"];
+export type ConversationCursor = components["schemas"]["ConversationCursor"];
+export type Conversation = components["schemas"]["ConversationView"];
 export type ConversationSession = components["schemas"]["ConversationSessionView"];
 export type SessionFrame = components["schemas"]["SessionFrameView"];
 export type SessionFramePage = components["schemas"]["SessionFramePage"];
@@ -85,29 +87,31 @@ export async function fetchOperator(): Promise<OperatorResponse> {
   return data;
 }
 
-export async function createClaudeChatSession(): Promise<ClaudeChatSession> {
-  const { data, error } = await api.POST("/api/sessions");
-  if (error || !data) throw new Error(errorDetail(error, "Failed to create Claude chat session"));
+/** Mint a conversation and the first session to run it. */
+export async function createConversation(): Promise<Conversation> {
+  const { data, error } = await api.POST("/api/conversations");
+  if (error || !data) throw new Error(errorDetail(error, "Failed to start a conversation"));
   return data;
 }
 
-export async function fetchClaudeChatSession(sessionId: string): Promise<ClaudeChatSession> {
-  const { data, error } = await api.GET("/api/sessions/{session_id}", {
-    params: { path: { session_id: sessionId } },
+/** One page of conversations, newest activity first.
+ *
+ * `cursor` is a previous page's `next_cursor`; omitting it opens on the newest. Keyset rather than
+ * an offset because a conversation never ends, so this list only grows and only at its top.
+ */
+export async function fetchConversations(cursor?: ConversationCursor, limit = 25): Promise<ConversationPage> {
+  const { data, error } = await api.GET("/api/conversations", {
+    params: {
+      query: { limit, before_activity: cursor?.last_activity_at, before_conversation: cursor?.conversation_id },
+    },
   });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to load Claude chat session"));
-  return data;
-}
-
-export async function fetchConversations(limit = 50): Promise<ConversationSessionSummary[]> {
-  const { data, error } = await api.GET("/api/conversations", { params: { query: { limit } } });
   if (error || !data) throw new Error(errorDetail(error, "Failed to load conversations"));
   return data;
 }
 
-export async function fetchConversation(sessionId: string): Promise<ConversationSession> {
-  const { data, error } = await api.GET("/api/conversations/{session_id}", {
-    params: { path: { session_id: sessionId } },
+export async function fetchConversation(conversationId: string): Promise<Conversation> {
+  const { data, error } = await api.GET("/api/conversations/{conversation_id}", {
+    params: { path: { conversation_id: conversationId } },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to load conversation"));
   return data;
@@ -125,7 +129,7 @@ export async function fetchSessionFrames(
   beforeSeq?: number,
   kinds?: string[]
 ): Promise<SessionFramePage> {
-  const { data, error } = await api.GET("/api/conversations/{session_id}/frames", {
+  const { data, error } = await api.GET("/api/sessions/{session_id}/frames", {
     params: { path: { session_id: sessionId }, query: { limit, before_seq: beforeSeq, kind: kinds } },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to load session frames"));
@@ -165,11 +169,12 @@ export async function abortSessionTurn(sessionId: string): Promise<boolean> {
   return true;
 }
 
-export async function deleteClaudeChatSession(sessionId: string): Promise<void> {
+/** End this session and release its sandbox. The conversation it ran outlives it. */
+export async function closeSession(sessionId: string): Promise<void> {
   const { error } = await api.DELETE("/api/sessions/{session_id}", {
     params: { path: { session_id: sessionId } },
   });
-  if (error) throw new Error(errorDetail(error, "Failed to close Claude chat session"));
+  if (error) throw new Error(errorDetail(error, "Failed to close the session"));
 }
 
 export async function fetchDeploymentInfo(): Promise<DeploymentInfo> {

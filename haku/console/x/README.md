@@ -158,10 +158,8 @@ module to the console level is the fix, not reinstating the models on the tool.
 surface opened it: `enqueue_prompt` checks `operator_id`, `READY`, no open turn and no queued
 prompt, and nothing in the route or the store reads `sessions.surface`. So the conversation detail
 view carries a composer (`frontend/x/conversation_composer.tsx`) for any session it can read,
-Matrix-surfaced ones included — the reply then goes wherever that session's channel sends replies,
-so a prompt typed in the browser also lands in the room. This is the first half of the merge
-<../plans/session_channels.md> § 2 describes; the list still lists sessions and `/_console/chat`
-still exists.
+a room's included — the reply then goes wherever that session's channel sends replies, so a prompt
+typed in the browser also lands in the room.
 
 **A refusal is the case the surface has to render, not the send.** The route holds nothing:
 `enqueue_prompt` refuses a prompt arriving mid-turn and refuses a second prompt while one is
@@ -174,9 +172,11 @@ operator's text, because until the console accepts a prompt its only copy is in 
 `session_messages` is a **lossy projection** of `session_frames`
 (<../../plans/chat_runtime_projection.md> § stage 4), and a projection nobody can appeal is a
 projection nobody can debug. So a conversation in the console carries a **Raw frames** button, and
-`GET /api/conversations/{session_id}/frames` is what it reads: one page of the rollout, in wire
+`GET /api/sessions/{session_id}/frames` is what it reads: one page of the rollout, in wire
 order, each frame's payload whole. Frontend: `frontend/x/session_frames_page.tsx`, at its own route
-(`/_console/conversations/<id>/frames`) so a frame is something an operator can link to.
+(`/_console/sessions/<id>/frames`) so a frame is something an operator can link to — under the
+session rather than the conversation, because a conversation outlives its sessions and has several
+while the frames belong to exactly one.
 
 **It is the one surface in the console that shows a backend's own shapes, and it says whose.** Three
 conditions keep that from being a hole in the layering: it is addressed separately, so no channel can

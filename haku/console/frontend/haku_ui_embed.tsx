@@ -12,7 +12,6 @@ import {
 import { type GeolocationOptions, type Outbound } from "@haku/console-bridge/protocol";
 
 import { isRoutePath, parseInbound, vetOpenLink } from "./bridge";
-import { ClaudeChatPage } from "./x/claude_chat_page";
 import { ConversationsPage } from "./x/conversations_page";
 import { SessionFramesPage } from "./x/session_frames_page";
 import { displayableError, fetchPendingApprovals, launchRoutine, type ToolCallRecord } from "./client";
@@ -632,8 +631,7 @@ export function HakuUiEmbed({
           />
         )}
         {view === "toolCalls" && <ToolCallsPage />}
-        {view === "claudeChat" && <ClaudeChatPage />}
-        {view === "conversations" && <ConversationsPage sessionId={conversationId ?? null} />}
+        {view === "conversations" && <ConversationsPage conversationId={conversationId ?? null} />}
         {view === "sessionFrames" && sessionFramesId != null && <SessionFramesPage sessionId={sessionFramesId} />}
         {view === "notFound" && (
           <section className="haku-page" aria-label="Not found">

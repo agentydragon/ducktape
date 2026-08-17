@@ -32,6 +32,7 @@ from haku.cli_protocol.frame_identity import frame_uid
 from haku.console.chat_models import (
     ENDED_SESSION_STATUSES,
     LEASED_SESSION_STATUSES,
+    OPEN_SESSION_STATUSES,
     ChatMessageRole,
     ChatMessageStatus,
     ChatSurface,
@@ -69,9 +70,14 @@ from haku.console.x.conversation_records import (
 )
 from haku.console.x.session_notifications import SessionEventKind, notify
 from haku.console.x.session_views import (
-    ConversationSessionSummary,
+    ConversationCursor,
+    ConversationPage,
     ConversationSessionView,
+    ConversationSummary,
     ConversationTurnView,
+    ConversationView,
+    EarlierSession,
+    LiveSession,
     SessionFramePage,
     SessionMessageView,
     SessionView,
@@ -164,6 +170,55 @@ async def _live_attachments(db: AsyncSession, conversations: set[UUID]) -> dict[
             ChannelAttachment(surface=row.surface, address=row.address, attached_at=row.attached_at)
         )
     return attachments
+
+
+async def _message_counts(db: AsyncSession, conversations: set[UUID]) -> dict[UUID, int]:
+    """How many transcript rows each of *conversations* holds, across every session it has run."""
+    rows = await db.execute(
+        select(Session.conversation_id, func.count(SessionMessage.message_id))
+        .outerjoin(SessionMessage, SessionMessage.session_id == Session.session_id)
+        .where(Session.conversation_id.in_(conversations))
+        .group_by(Session.conversation_id)
+    )
+    counted = {conversation: count for conversation, count in rows.all() if conversation is not None}
+    return {conversation: counted.get(conversation, 0) for conversation in conversations}
+
+
+async def _live_sessions(db: AsyncSession, conversations: set[UUID]) -> dict[UUID, LiveSession]:
+    """The session holding each of *conversations*, for those a session is holding.
+
+    At most one per conversation — that is the rule the supervisor keeps — so `one()` here would be
+    right and a duplicate is a bug. It is not enforced by an index yet, and a listing is the wrong
+    place to raise over it, so the newest wins and the invariant is checked where it is maintained.
+
+    **`responding` is derived, not read**, the same way `session_view` derives it: the column
+    stopped carrying turn state, so a session with an open turn reports `responding` however its
+    row reads.
+    """
+    rows = (
+        await db.scalars(
+            select(Session)
+            .where(Session.conversation_id.in_(conversations), Session.status.in_(OPEN_SESSION_STATUSES))
+            .order_by(Session.created_at)
+        )
+    ).all()
+    responding = set(
+        (
+            await db.scalars(
+                select(SessionTurn.session_id).where(
+                    SessionTurn.session_id.in_([row.session_id for row in rows]), SessionTurn.ended_at.is_(None)
+                )
+            )
+        ).all()
+    )
+    return {
+        # `conversation_id` is non-NULL on anything this query can return, since the argument is a
+        # set of conversation ids.
+        cast(UUID, row.conversation_id): LiveSession(
+            session_id=row.session_id, status=SessionStatus.RESPONDING if row.session_id in responding else row.status
+        )
+        for row in rows
+    }
 
 
 class BridgeAuthentication(StrEnum):
@@ -345,69 +400,131 @@ class SessionStore:
             responding = await _open_turn(db, session_id) is not None
             return session_view(record, messages, responding=responding, calls=await tool_calls(db, session_id))
 
-    async def list_operator_conversations(self, operator_id: UUID, *, limit: int) -> list[ConversationSessionSummary]:
-        """List this Operator's conversations for the Console inventory.
+    async def conversation_of(self, session_id: UUID) -> UUID:
+        """The thread this session runs, for a caller that has just created it."""
+        async with self._sessions() as db:
+            record = await db.get(Session, session_id)
+            if record is None:
+                raise KeyError(session_id)
+            return _thread_of(record)
+
+    async def list_operator_conversations(
+        self, operator_id: UUID, *, cursor: ConversationCursor | None, limit: int
+    ) -> ConversationPage:
+        """One page of this Operator's conversations, newest activity first.
 
         The MCP reader intentionally remains unscoped, but a browser-facing inventory is an
-        operator-owned surface and must never reveal another Operator's sessions. The aggregate
-        comes from the transcript table so the list stays useful without loading every message.
-        """
-        async with self._sessions() as db:
-            rows = (
-                await db.execute(
-                    select(Session, func.count(SessionMessage.message_id), func.max(SessionMessage.created_at))
-                    .outerjoin(SessionMessage, SessionMessage.session_id == Session.session_id)
-                    .where(Session.operator_id == operator_id)
-                    .group_by(Session.session_id)
-                    .order_by(Session.updated_at.desc(), Session.session_id.desc())
-                    .limit(limit)
-                )
-            ).all()
-        return [
-            ConversationSessionSummary(
-                session_id=session.session_id,
-                surface=session.surface,
-                room_id=session.room_id,
-                status=session.status,
-                error=session.error,
-                created_at=session.created_at,
-                updated_at=session.updated_at,
-                message_count=message_count,
-                last_message_at=last_message_at,
-            )
-            for session, message_count, last_message_at in rows
-        ]
+        operator-owned surface and must never reveal another Operator's conversations.
 
-    async def get_operator_conversation(self, operator_id: UUID, session_id: UUID) -> ConversationSessionView:
-        """Read one Operator-owned conversation: transcript, turns and bootstrap narration.
+        **Keyset, from the day it ships**, because a conversation never ends: an offset counts from
+        the top of an order that only grows there, so anything that moves mid-walk pushes a row
+        across a page boundary. `limit + 1` rows are read so the last page is told from a full one
+        without a second count query, and the extra row is what `next_cursor` names.
+
+        Four reads rather than one join: the aggregates fan out per session and the attachments per
+        conversation, so one query would multiply the two and count each message once per
+        attachment.
+        """
+        activity = func.max(Session.updated_at).label("last_activity_at")
+        page = (
+            select(Conversation.conversation_id, Conversation.created_at, activity)
+            .join(Session, Session.conversation_id == Conversation.conversation_id)
+            .where(Conversation.operator_id == operator_id)
+            .group_by(Conversation.conversation_id, Conversation.created_at)
+            .order_by(activity.desc(), Conversation.conversation_id.desc())
+            .limit(limit + 1)
+        )
+        if cursor is not None:
+            page = page.having(
+                tuple_(activity, Conversation.conversation_id)
+                <= tuple_(literal(cursor.last_activity_at), literal(cursor.conversation_id))
+            )
+        async with self._sessions() as db:
+            rows = (await db.execute(page)).all()
+            threads = {row.conversation_id for row in rows[:limit]}
+            attachments = await _live_attachments(db, threads)
+            messages = await _message_counts(db, threads)
+            live = await _live_sessions(db, threads)
+        return ConversationPage(
+            conversations=[
+                ConversationSummary(
+                    conversation_id=row.conversation_id,
+                    created_at=row.created_at,
+                    last_activity_at=row.last_activity_at,
+                    attachments=attachments[row.conversation_id],
+                    live_session=live.get(row.conversation_id),
+                    message_count=messages[row.conversation_id],
+                )
+                for row in rows[:limit]
+            ],
+            next_cursor=(
+                ConversationCursor(
+                    last_activity_at=rows[limit].last_activity_at, conversation_id=rows[limit].conversation_id
+                )
+                if len(rows) > limit
+                else None
+            ),
+        )
+
+    async def get_operator_conversation(self, operator_id: UUID, conversation_id: UUID) -> ConversationView:
+        """Read one Operator-owned conversation: its channels, its current session, and the rest.
+
+        The transcript is the current session's — the one holding the conversation, or the last one
+        to have held it. Reading the thread as one transcript across a replacement is the
+        subscription's job (<../plans/conversation_layers.md> § 9 step 9); what this surface owes
+        until then is that the earlier sessions stay reachable rather than disappearing when the
+        sandbox they ran in did.
 
         Not the raw frame log — the narration is the one projection of it this surface carries,
         because for a session that died before the CLI produced anything it is the whole account.
         """
-        view = await self.get(operator_id, session_id)
         async with self._sessions() as db:
-            session = await db.scalar(
-                select(Session).where(Session.session_id == session_id, Session.operator_id == operator_id)
-            )
-            narration = await setup_narration(db, session_id)
-        if session is None:
-            raise KeyError(session_id)
-        turns = await self.list_turns(session_id, cursor=None, limit=100)
-        return ConversationSessionView(
-            session_id=view.session_id,
-            surface=session.surface,
-            room_id=session.room_id,
-            status=view.status,
-            error=view.error,
-            created_at=view.created_at,
-            updated_at=view.updated_at,
-            narration=narration,
-            messages=view.messages,
-            turns=[
-                ConversationTurnView(
-                    turn_id=turn.turn_id, started_at=turn.started_at, ended_at=turn.ended_at, outcome=turn.outcome
+            conversation = await db.scalar(
+                select(Conversation).where(
+                    Conversation.conversation_id == conversation_id, Conversation.operator_id == operator_id
                 )
-                for turn in turns
+            )
+            if conversation is None:
+                raise KeyError(conversation_id)
+            sessions = (
+                await db.scalars(
+                    select(Session)
+                    .where(Session.conversation_id == conversation_id)
+                    .order_by(Session.created_at.desc(), Session.session_id.desc())
+                )
+            ).all()
+            attachments = (await _live_attachments(db, {conversation_id}))[conversation_id]
+        if not sessions:
+            # A conversation is only ever created alongside its first session, so this is a writer
+            # that committed one without the other rather than a thread waiting to start.
+            raise ValueError(f"a conversation has no sessions: {conversation_id=}")
+        current, *earlier = sessions
+        view = await self.get(operator_id, current.session_id)
+        async with self._sessions() as db:
+            narration = await setup_narration(db, current.session_id)
+        turns = await self.list_turns(current.session_id, cursor=None, limit=100)
+        return ConversationView(
+            conversation_id=conversation_id,
+            created_at=conversation.created_at,
+            attachments=attachments,
+            session=ConversationSessionView(
+                session_id=view.session_id,
+                status=view.status,
+                error=view.error,
+                created_at=view.created_at,
+                updated_at=view.updated_at,
+                narration=narration,
+                messages=view.messages,
+                turns=[
+                    ConversationTurnView(
+                        turn_id=turn.turn_id, started_at=turn.started_at, ended_at=turn.ended_at, outcome=turn.outcome
+                    )
+                    for turn in turns
+                ],
+            ),
+            earlier_sessions=[
+                EarlierSession(session_id=row.session_id, status=row.status, created_at=row.created_at)
+                for row in earlier
             ],
         )
 

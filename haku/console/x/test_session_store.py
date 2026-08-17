@@ -553,24 +553,104 @@ async def test_deltas_are_not_on_the_transcript_at_all(chat_store, operator_id) 
 
 
 async def test_operator_conversation_read_surface_keeps_inventory_and_transcript_separate(
-    chat_store, operator_id
+    chat_store, migrated_sessions, operator_id
 ) -> None:
-    """The Console list is light, while detail carries messages and turn summaries."""
+    """The Console list is light, while detail carries messages and turn summaries.
+
+    Both are keyed by the conversation and carry its attachments — a list row says which channels
+    hold this thread, not which single surface a session was created for.
+    """
     await chat_store.create(operator_id, SpaSession())
-    matrix, matrix_token = await chat_store.create(operator_id, MatrixSession(room_id="!room:example.org"))
+    matrix, matrix_token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    await _attach(migrated_sessions, matrix.session_id, ROOM)
     assert await chat_store.authenticate_bridge(matrix.session_id, matrix_token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, matrix.session_id, "What is happening?")
+    conversation_id = await chat_store.conversation_of(matrix.session_id)
 
-    summaries = await chat_store.list_operator_conversations(operator_id, limit=10)
-    detail = await chat_store.get_operator_conversation(operator_id, matrix.session_id)
+    page = await chat_store.list_operator_conversations(operator_id, cursor=None, limit=10)
+    detail = await chat_store.get_operator_conversation(operator_id, conversation_id)
 
-    assert summaries[0].session_id == matrix.session_id
-    assert summaries[0].surface == ChatSurface.MATRIX
-    assert summaries[0].room_id == "!room:example.org"
-    assert summaries[0].message_count == 1
-    assert detail.surface == ChatSurface.MATRIX
-    assert detail.messages[0].content == "What is happening?"
-    assert detail.turns == []
+    assert page.conversations[0].conversation_id == conversation_id
+    assert [attachment.address for attachment in page.conversations[0].attachments] == [ROOM]
+    assert page.conversations[0].live_session is not None
+    assert page.conversations[0].live_session.session_id == matrix.session_id
+    assert page.conversations[0].message_count == 1
+    assert [attachment.address for attachment in detail.attachments] == [ROOM]
+    assert detail.session.session_id == matrix.session_id
+    assert detail.session.messages[0].content == "What is happening?"
+    assert detail.session.turns == []
+    assert detail.earlier_sessions == []
+
+
+async def test_a_conversation_a_channel_holds_takes_a_prompt_typed_in_the_browser(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """Acceptance behaviour 5: one conversation, two surfaces.
+
+    Nothing on the browser path asks what channel holds the thread, and nothing may start to — a
+    room's session admits a prompt on exactly the terms an SPA session does, which is what makes
+    "either can prompt" true rather than aspirational.
+    """
+    matrix, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    await _attach(migrated_sessions, matrix.session_id, ROOM)
+    assert await chat_store.authenticate_bridge(matrix.session_id, token) == BridgeAuthentication.ACCEPTED
+
+    await chat_store.enqueue_prompt(operator_id, matrix.session_id, "typed into the tab")
+    detail = await chat_store.get_operator_conversation(
+        operator_id, await chat_store.conversation_of(matrix.session_id)
+    )
+
+    assert [message.content for message in detail.session.messages] == ["typed into the tab"]
+    assert [attachment.address for attachment in detail.attachments] == [ROOM]
+
+
+async def test_a_replacement_session_leaves_the_thread_and_its_attachment_where_they_were(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """What the conversation entity is for: the successor runs the same thread, so the attachment
+    is untouched and the transcript of the session that died stays reachable beside it."""
+    first, _ = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    await _attach(migrated_sessions, first.session_id, ROOM)
+    conversation_id = await chat_store.conversation_of(first.session_id)
+    await chat_store.fail(first.session_id, "the sandbox went away")
+    second, _ = await chat_store.create(operator_id, MatrixSession(room_id=ROOM), conversation_id=conversation_id)
+
+    page = await chat_store.list_operator_conversations(operator_id, cursor=None, limit=10)
+    detail = await chat_store.get_operator_conversation(operator_id, conversation_id)
+
+    assert [conversation.conversation_id for conversation in page.conversations] == [conversation_id]
+    assert detail.session.session_id == second.session_id
+    assert [session.session_id for session in detail.earlier_sessions] == [first.session_id]
+    assert [attachment.address for attachment in detail.attachments] == [ROOM]
+
+
+async def test_a_conversation_created_between_two_pages_cannot_shift_what_the_second_one_holds(
+    chat_store, operator_id
+) -> None:
+    """The keyset's whole point, and why the list needs one from the day it ships: a conversation
+    never ends, so this order only grows and only at its top."""
+    older, _ = await chat_store.create(operator_id, SpaSession())
+    newer, _ = await chat_store.create(operator_id, SpaSession())
+
+    first = await chat_store.list_operator_conversations(operator_id, cursor=None, limit=1)
+    await chat_store.create(operator_id, SpaSession())
+    second = await chat_store.list_operator_conversations(operator_id, cursor=first.next_cursor, limit=1)
+
+    assert [conversation.conversation_id for conversation in first.conversations] == [
+        await chat_store.conversation_of(newer.session_id)
+    ]
+    assert [conversation.conversation_id for conversation in second.conversations] == [
+        await chat_store.conversation_of(older.session_id)
+    ]
+
+
+async def test_the_last_page_of_conversations_offers_no_cursor(chat_store, operator_id) -> None:
+    await chat_store.create(operator_id, SpaSession())
+
+    page = await chat_store.list_operator_conversations(operator_id, cursor=None, limit=10)
+
+    assert len(page.conversations) == 1
+    assert page.next_cursor is None
 
 
 async def test_a_second_prompt_is_refused_while_a_turn_is_open(chat_store, operator_id) -> None:

@@ -10,9 +10,7 @@ The incidents behind this file's invariants are in <../debug/2026_08_16_runtime_
 from __future__ import annotations
 
 import asyncio
-import collections.abc
 import contextlib
-import json
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
@@ -22,7 +20,6 @@ from typing import Annotated, Any, Protocol, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
 from more_itertools import first
 from pydantic import BaseModel, Field, SecretStr
 
@@ -33,7 +30,12 @@ from haku.console.x import frame_projection
 from haku.console.x.claude_code.frames import frame_kind
 from haku.console.x.conversation_events import TurnCompleted
 from haku.console.x.room_status import StatusFrontend, TurnStatus
-from haku.console.x.sandbox_claims import ProvisioningStep, SandboxClaims, provisioning_view
+from haku.console.x.sandbox_claims import (
+    ClaudeSandboxProvisioningView,
+    ProvisioningStep,
+    SandboxClaims,
+    provisioning_view,
+)
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.session_store import (
     LEASE_RENEW_INTERVAL,
@@ -48,8 +50,10 @@ from haku.console.x.session_store import (
 from haku.console.x.session_views import (
     DEFAULT_FRAME_PAGE,
     MAX_FRAME_PAGE,
-    ConversationSessionSummary,
+    ConversationCursor,
+    ConversationPage,
     ConversationSessionView,
+    ConversationView,
     SessionFramePage,
     SessionMessageView,
     SessionView,
@@ -228,22 +232,37 @@ class SessionService:
             # retry marker.
             await self._cleanup_terminal_claim(view.session_id)
             raise
-        return await self._with_provisioning(view)
+        return view
 
-    async def get(self, operator_id: UUID, session_id: UUID) -> SessionView:
-        view = await self._store.get(operator_id, session_id)
-        return await self._with_provisioning(view)
+    async def create_conversation(self, operator_id: UUID) -> ConversationView:
+        """Open a thread and the session that runs it, and read the thread back.
 
-    async def _with_provisioning(self, view: SessionView) -> SessionView:
-        if view.status != SessionStatus.PROVISIONING:
-            return view
+        The read is what the browser wants — a conversation, not a session — and it is one query
+        against rows this call has just committed.
+        """
+        view = await self.create(operator_id, SpaSession())
+        return await self.conversation(operator_id, await self._store.conversation_of(view.session_id))
+
+    async def conversation(self, operator_id: UUID, conversation_id: UUID) -> ConversationView:
+        view = await self._store.get_operator_conversation(operator_id, conversation_id)
+        return view.model_copy(
+            update={"session": view.session.model_copy(update={"provisioning": await self._provisioning(view.session)})}
+        )
+
+    async def _provisioning(self, session: ConversationSessionView) -> ClaudeSandboxProvisioningView | None:
+        """What Kubernetes says about a sandbox still coming up, for a session still waiting on one.
+
+        A live read rather than a stored one: the claim, the pod and the runner are the cluster's
+        state, and a session that never comes up has nothing but this to say why.
+        """
+        if session.status != SessionStatus.PROVISIONING:
+            return None
         try:
-            provisioning = await self._claims.inspect(session_id=view.session_id)
+            return await self._claims.inspect(session_id=session.session_id)
         except Exception as error:
-            provisioning = provisioning_view(
-                f"claude-{view.session_id.hex}", step=ProvisioningStep.CLAIM_CREATED, observation_error=str(error)
+            return provisioning_view(
+                f"claude-{session.session_id.hex}", step=ProvisioningStep.CLAIM_CREATED, observation_error=str(error)
             )
-        return view.model_copy(update={"provisioning": provisioning})
 
     async def dispose(self, operator_id: UUID, session_id: UUID) -> None:
         await self._store.request_close(operator_id, session_id)
@@ -771,23 +790,53 @@ SessionStoreDep = Annotated[SessionStore, Depends(_store)]
 
 @router.get("/api/conversations")
 async def list_conversations(
-    actor: OperatorActorDep, store: SessionStoreDep, limit: Annotated[int, Query(ge=1, le=100)] = 50
-) -> list[ConversationSessionSummary]:
-    return await store.list_operator_conversations(actor.operator_id, limit=limit)
+    actor: OperatorActorDep,
+    store: SessionStoreDep,
+    before_activity: Annotated[datetime | None, Query()] = None,
+    before_conversation: Annotated[UUID | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> ConversationPage:
+    """One page of this Operator's conversations, newest activity first.
+
+    The two cursor parameters are the halves of `next_cursor` and travel together: either both or
+    neither, because half a keyset is not a position. Spelled out rather than encoded into one
+    opaque string so the page boundary is readable from the URL.
+    """
+    if (before_activity is None) != (before_conversation is None):
+        raise HTTPException(status_code=422, detail="before_activity and before_conversation go together")
+    cursor = (
+        None
+        if before_activity is None or before_conversation is None
+        else ConversationCursor(last_activity_at=before_activity, conversation_id=before_conversation)
+    )
+    return await store.list_operator_conversations(actor.operator_id, cursor=cursor, limit=limit)
 
 
-@router.get("/api/conversations/{session_id}")
-async def get_conversation(
-    session_id: UUID, actor: OperatorActorDep, store: SessionStoreDep
-) -> ConversationSessionView:
+@router.post("/api/conversations", status_code=201)
+async def create_conversation(actor: OperatorActorDep, service: SessionServiceDep) -> ConversationView:
+    """Open a new thread and the first session to run it.
+
+    One call, because a conversation with no session is a thread nothing can be said to — and the
+    operator asking for a new conversation is asking to say something.
+    """
     try:
-        return await store.get_operator_conversation(actor.operator_id, session_id)
+        return await service.create_conversation(actor.operator_id)
+    except Exception as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@router.get("/api/conversations/{conversation_id}")
+async def get_conversation(
+    conversation_id: UUID, actor: OperatorActorDep, service: SessionServiceDep
+) -> ConversationView:
+    try:
+        return await service.conversation(actor.operator_id, conversation_id)
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Conversation not found") from error
 
 
-@router.get("/api/conversations/{session_id}/frames")
-async def read_conversation_frames(
+@router.get("/api/sessions/{session_id}/frames")
+async def read_session_frames(
     session_id: UUID,
     actor: OperatorActorDep,
     store: SessionStoreDep,
@@ -795,7 +844,7 @@ async def read_conversation_frames(
     limit: Annotated[int, Query(ge=1, le=MAX_FRAME_PAGE)] = DEFAULT_FRAME_PAGE,
     kind: Annotated[list[str] | None, Query()] = None,
 ) -> SessionFramePage:
-    """Claude Code's own protocol frames behind a conversation, newest page first.
+    """Claude Code's own protocol frames behind one session, newest page first.
 
     **One backend's wire, not the conversation.** Everything else the console serves is the neutral
     vocabulary, which names no backend; these are the CLI's own frames, in the CLI's own shapes, and
@@ -815,67 +864,7 @@ async def read_conversation_frames(
             actor.operator_id, session_id, before_seq=before_seq, limit=limit, kinds=kind
         )
     except KeyError as error:
-        raise HTTPException(status_code=404, detail="Conversation not found") from error
-
-
-@router.post("/api/sessions")
-async def create_session(actor: OperatorActorDep, service: SessionServiceDep) -> SessionView:
-    try:
-        return await service.create(actor.operator_id, SpaSession())
-    except Exception as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
-
-
-@router.get("/api/sessions/{session_id}")
-async def get_session(session_id: UUID, actor: OperatorActorDep, service: SessionServiceDep) -> SessionView:
-    try:
-        return await service.get(actor.operator_id, session_id)
-    except KeyError as error:
         raise HTTPException(status_code=404, detail="session not found") from error
-
-
-async def _sse_stream(
-    store: SessionStore, notifications: SessionNotifications, operator_id: UUID, session_id: UUID
-) -> collections.abc.AsyncIterator[str]:
-    """Server-Sent Events stream delivering real-time session updates via LISTEN/NOTIFY."""
-    yield f"data: {json.dumps({'type': 'connected'})}\n\n"
-    try:
-        last_view = await store.get(operator_id, session_id)
-    except KeyError:
-        yield f"data: {json.dumps({'type': 'end'})}\n\n"
-        return
-    last_status, last_payload = last_view.status, last_view.model_dump_json()
-    yield f"data: {last_payload}\n\n"
-    while True:
-        if last_status in {SessionStatus.CLOSED, SessionStatus.FAILED}:
-            yield f"data: {json.dumps({'type': 'end'})}\n\n"
-            return
-        await notifications.wait(SessionEventKind.UPDATE, session_id, timeout_seconds=30.0)
-        try:
-            next_view = await store.get(operator_id, session_id)
-        except KeyError:
-            yield f"data: {json.dumps({'type': 'end'})}\n\n"
-            return
-        # Serialized once and compared against what was last sent: the view embeds the whole
-        # transcript, so every serialization is the entire conversation. It suppresses little
-        # during a turn — every delta really does change the view — hence not paying for it more
-        # than once per wake.
-        if (payload := next_view.model_dump_json()) != last_payload:
-            last_status, last_payload = next_view.status, payload
-            yield f"data: {payload}\n\n"
-
-
-@router.get("/api/sessions/{session_id}/stream")
-async def stream_session(
-    session_id: UUID, actor: OperatorActorDep, store: SessionStoreDep, notifications: SessionNotificationsDep
-) -> StreamingResponse:
-    if not await store.session_exists(actor.operator_id, session_id):
-        raise HTTPException(status_code=404, detail="session not found")
-    return StreamingResponse(
-        _sse_stream(store, notifications, actor.operator_id, session_id),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
 
 
 @router.post("/api/sessions/{session_id}/abort", status_code=202)

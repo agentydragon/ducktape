@@ -123,15 +123,6 @@ function sceneElement(scene: string) {
     case "settings-nodes":
     case "settings-system":
       return <ConsoleScene view="settings" />;
-    case "claude-chat":
-    case "claude-message-boundaries":
-    case "claude-chat-mobile":
-    case "claude-chat-overflow":
-    case "claude-tool-use":
-    case "claude-tool-use-mobile":
-    case "claude-provisioning":
-    case "claude-provisioning-mobile":
-      return <ConsoleScene view="claudeChat" />;
     case "conversations":
     case "conversations-mobile":
       return <ConsoleScene view="conversations" />;
@@ -141,6 +132,11 @@ function sceneElement(scene: string) {
     case "conversation-bootstrap-mobile":
     case "conversation-narration-collapsed":
     case "conversation-prompt-refused":
+    case "conversation-provisioning":
+    case "conversation-provisioning-mobile":
+    case "conversation-overflow":
+    case "conversation-tool-use":
+    case "conversation-tool-use-mobile":
       return <ConsoleScene view="conversations" conversationId={CONVERSATION_ID} />;
     case "session-frames":
     case "session-frames-mobile":
