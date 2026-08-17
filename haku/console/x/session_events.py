@@ -275,9 +275,9 @@ def row(event: ConversationEvent, *, session_id: UUID, turn_id: UUID, now: datet
     its frame bracket.
 
     **Every kind that reaches a row here is frame-derived**, so an event carrying `Authored` is an
-    adapter that did not say where it read the fact, and it raises rather than being written under
-    the other arm: `ck_session_events_frame_derived_kinds` refuses such a row, and the read path
-    (`session_views._asked`) raises on one for a whole session's transcript.
+    adapter that did not say where it read the fact, and it raises rather than taking the other
+    arm. Written instead, the failure would land on the read: `session_views._asked` runs on every
+    `SessionStore.get`, and one such row makes a session's whole transcript unreadable.
     """
     if (stored := _stored(event)) is None:
         return None
