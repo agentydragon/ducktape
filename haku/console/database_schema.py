@@ -42,8 +42,6 @@ from haku.console.chat_models import (
     ConversationEventKind,
     EventProvenance,
     FrameDirection,
-    MessageUnpointable,
-    RecordedToolCall,
     SessionStatus,
     StoredEventKind,
     TurnOutcome,
@@ -53,7 +51,6 @@ from haku.console.operator_identity import OperatorStatus
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_calls import ToolCallStatus
 from util.sqlalchemy_types import (
-    PydanticListColumn,
     StrEnumColumn,
     StringBackedStrEnumColumn,
     TextBackedStrEnumColumn,
@@ -953,8 +950,8 @@ class SessionMessage(Base):
     #
     # NULL where there is nothing to point at: a user row, a row written before this column, or an
     # assistant row the console synthesized rather than observed — a turn whose text arrived only
-    # on the `result` frame. Such a row's calls come from `tool_calls`, which is why that column is
-    # still written.
+    # on the `result` frame. Nothing keys on it: a message finds its calls through its frame range
+    # (`x/session_views.message_view`), which every assistant row has.
     agent_message_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Inclusive range in the session's raw frame log from which this projection was built. These
     # are deliberately sequence pointers rather than copied payloads: the frame log remains the
@@ -969,23 +966,6 @@ class SessionMessage(Base):
     # See <plans/chat_runtime_projection.md> § "The projection is not a one-way door".
     source_first_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     source_last_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    # What this message asked its tools to do, in the conversation vocabulary rather than in one
-    # backend's, and the calls without their answers. `session_events` is where a call and its
-    # answer are both rows; this column is what a message written before them still has, and it is
-    # read only for such a row (`x/session_views.message_view`).
-    tool_calls: Mapped[list[RecordedToolCall]] = mapped_column(
-        PydanticListColumn(RecordedToolCall), nullable=False, server_default=text("'[]'::jsonb")
-    )
-    # Why the two columns above are NULL, where somebody has looked.
-    #
-    # CLEANUP(added 2026-08-17): Unmap, then drop. Nothing writes this column since the provenance
-    #   backfill that was its only writer was deleted, and an assistant row can no longer be
-    #   unpointed at all (`ck_session_messages_assistant_pointed`). <../plans/next_month.md> § 1
-    #   phase 2 unmaps it; phase 3 drops it with
-    #   `ck_session_messages_unpointable_{reason,exclusive}`.
-    unpointable_reason: Mapped[MessageUnpointable | None] = mapped_column(
-        TextBackedStrEnumColumn(MessageUnpointable), nullable=True
-    )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -1010,17 +990,6 @@ class SessionMessage(Base):
         # unclaimed, which is why this is by role and not on the column.
         CheckConstraint(
             "role <> 'assistant' OR source_first_frame_seq IS NOT NULL", name="ck_session_messages_assistant_pointed"
-        ),
-        CheckConstraint(
-            "unpointable_reason IS NULL "
-            "OR unpointable_reason IN ('no_matching_projection','ambiguous_text','out_of_order')",
-            name="ck_session_messages_unpointable_reason",
-        ),
-        # A reason is why there is no range, so carrying both says two contradictory things. Its own
-        # rule rather than an arm of the one above, because it fails for a different reason.
-        CheckConstraint(
-            "unpointable_reason IS NULL OR source_first_frame_seq IS NULL",
-            name="ck_session_messages_unpointable_exclusive",
         ),
         Index("idx_session_messages_session_created", "session_id", "created_at"),
     )
@@ -1499,6 +1468,19 @@ metadata = Base.metadata
 #   Migration 0060 copied its two columns into `matrix_access_token` and `matrix_sync_watermark`
 #   and this release stopped mapping it, so only a replica on an earlier image still selects it.
 UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset({"matrix_sync_state"})
+
+# The same, one level down: `(table, column)` pairs the database has and no ORM class maps, in
+# tables that stay. A separate set rather than an entry in the one above, which hides a whole
+# table — naming `session_messages` there would stop the comparison noticing any drift in it.
+#
+# CLEANUP(added 2026-08-17): `DROP COLUMN` both once every haku-console pod runs an image at or
+#   after this commit — `kubectl get pods -n haku-console -o
+#   jsonpath='{.items[*].spec.containers[0].image}'` reporting a single tag at or after it. With
+#   `unpointable_reason` go `ck_session_messages_unpointable_{reason,exclusive}`, which this
+#   release also stopped declaring. <../plans/next_month.md> § 1 phase 3.
+UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
+    {("session_messages", "tool_calls"), ("session_messages", "unpointable_reason")}
+)
 
 
 class MatrixAccessToken(Base):

@@ -20,7 +20,7 @@ from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 from haku.console.database_migrate import apply_migrations
-from haku.console.database_schema import UNMAPPED_TABLES_PENDING_DROP, metadata
+from haku.console.database_schema import UNMAPPED_COLUMNS_PENDING_DROP, UNMAPPED_TABLES_PENDING_DROP, metadata
 from third_party.containers.rlocations import PGVECTOR_PG18
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import start_postgres_container
@@ -561,13 +561,19 @@ def _create_static_agent(conn: Connection, *, identity: IdentityIds, label: str,
 
 
 def _not_awaiting_its_drop(name: str | None, type_: str, parent_names: dict[str, str | None]) -> bool:
-    """Hide the tables an expand/contract has unmapped but not yet dropped.
+    """Hide the tables and columns an expand/contract has unmapped but not yet dropped.
 
     Each exists in the database and in no ORM class, which is otherwise exactly the difference this
-    comparison is for — so each is named in `UNMAPPED_TABLES_PENDING_DROP` beside the tombstone that
-    says when it goes, and everything else still has to match exactly.
+    comparison is for — so each is named in `UNMAPPED_{TABLES,COLUMNS}_PENDING_DROP` beside the
+    tombstone that says when it goes, and everything else still has to match exactly.
     """
-    return not (type_ == "table" and name in UNMAPPED_TABLES_PENDING_DROP)
+    match type_:
+        case "table":
+            return name not in UNMAPPED_TABLES_PENDING_DROP
+        case "column":
+            return (parent_names["table_name"], name) not in UNMAPPED_COLUMNS_PENDING_DROP
+        case _:
+            return True
 
 
 def test_fresh_baseline_matches_sqlalchemy_metadata(db_url: str) -> None:

@@ -119,11 +119,10 @@ def test_a_secret_in_a_tool_argument_does_not_reach_the_fixture(exported) -> Non
     assert call["input"]["command"].startswith("<elided:")
 
 
-def test_the_two_row_kinds_the_console_authored_are_left_out(exported) -> None:
-    """`setup_output` carries no protocol `type` and a `partial` row was the console's own
-    reconstruction, so the fold reads neither — and a fixture holding them would be a fixture of
-    something the wire never sent. Only `setup_output` is exercised here; nothing writes `partial`
-    any more."""
+def test_the_console_authored_row_is_left_out(exported) -> None:
+    """`setup_output` carries no protocol `type`, so the fold does not read it — and a fixture
+    holding it would be a fixture of something the wire never sent. It is the only one of the
+    export's two exclusions this exercises; nothing writes a `partial` row any more."""
     assert [frame.payload["type"] for frame in _reread(exported)] == [
         "assistant",
         "assistant",

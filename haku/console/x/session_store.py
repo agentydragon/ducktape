@@ -40,7 +40,6 @@ from haku.console.chat_models import (
     FrameDirection,
     LeaseExpiryReason,
     PromptFate,
-    RecordedToolCall,
     SessionStatus,
     TurnOutcome,
 )
@@ -56,7 +55,7 @@ from haku.console.database_schema import (
 from haku.console.x import session_events, transcript_entries
 from haku.console.x.claude_code import projection
 from haku.console.x.claude_code.frames import DELTA_FRAME_KIND, PROMPT_FRAME_KIND
-from haku.console.x.conversation_events import ConversationEvent, MessageCompleted, TextDelta, ToolCallStarted, Usage
+from haku.console.x.conversation_events import ConversationEvent, MessageCompleted, TextDelta, Usage
 from haku.console.x.conversation_records import (
     Conversation,
     ConversationCursor,
@@ -1020,10 +1019,6 @@ class SessionStore:
             message = (
                 None if turn.assistant_message_id is None else await db.get(SessionMessage, turn.assistant_message_id)
             )
-            # The calls of the message being assembled. Per frame rather than per turn, because a
-            # message never spans two frames here (`frame_projection.projected`) and they are
-            # written with the message that made them.
-            tool_calls: list[RecordedToolCall] = []
             for event in events:
                 match event:
                     case TextDelta():
@@ -1032,16 +1027,9 @@ class SessionStore:
                         message.source_last_frame_seq = frame_seq
                         message.status = ChatMessageStatus.STREAMING
                         message.updated_at = now
-                    case ToolCallStarted():
-                        tool_calls.append(
-                            RecordedToolCall(
-                                call_id=event.call_id, tool_name=event.tool_name, arguments=dict(event.arguments)
-                            )
-                        )
                     case MessageCompleted():
                         message = message or await _open_assistant(db, session_id, turn, frame_seq, now)
                         message.content = (event.text or "").strip() or message.content.strip()
-                        message.tool_calls = tool_calls
                         # Provenance, not identity: it is what the frames called this message, and
                         # it is what lets a reader find its calls in the log rather than match by
                         # position. Absent on thousands of production rows, which is why nothing
@@ -1066,11 +1054,11 @@ class SessionStore:
                         turn.assistant_message_id = None
                         turn.said_anything = True
                         turn.queued_reply = turn.queued_reply or owed
-                        message, tool_calls = None, []
+                        message = None
                     case _:
                         # Every event is stored below, whatever the transcript row does with it.
                         # This arm is what the *message* row makes of one — nothing, for reasoning,
-                        # a tool's answer and the harness's narration.
+                        # a tool call, its answer and the harness's narration.
                         pass
             # In this transaction, so a row exists here exactly when the cursor says its frame was
             # projected: a process that dies leaves no half-written stream to reconcile, and the
@@ -1117,7 +1105,6 @@ class SessionStore:
         message_id: UUID,
         content: str,
         *,
-        tool_calls: list[RecordedToolCall] | None = None,
         agent_message_id: str | None = None,
         source_last_frame_seq: int | None = None,
         complete: bool = False,
@@ -1141,8 +1128,6 @@ class SessionStore:
             if message is None or chat is None:
                 return False
             message.content = content
-            if tool_calls is not None:
-                message.tool_calls = tool_calls
             if agent_message_id is not None:
                 message.agent_message_id = agent_message_id
             # Only the far end moves here. `begin_assistant` set the near end once, and frames

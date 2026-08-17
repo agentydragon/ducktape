@@ -641,9 +641,7 @@ class SessionService:
                 # A stream no completed frame closed.
                 # No frame range is passed: the deltas that produced this text already recorded
                 # theirs, and the `result` frame closing the turn is not where the words came from.
-                carried_final = await self._store.update_assistant(
-                    session_id, assistant_id, final_text, tool_calls=[], complete=True
-                )
+                carried_final = await self._store.update_assistant(session_id, assistant_id, final_text, complete=True)
                 assistant_id = None
             elif not state.said_anything:
                 # This row's only source is the `result` frame — the turn said nothing else.
@@ -651,12 +649,7 @@ class SessionService:
                     session_id, turn_id, source_first_frame_seq=completed.frame.frame_seq
                 )
                 carried_final = await self._store.update_assistant(
-                    session_id,
-                    assistant_id,
-                    final_text,
-                    tool_calls=[],
-                    source_last_frame_seq=completed.frame.frame_seq,
-                    complete=True,
+                    session_id, assistant_id, final_text, source_last_frame_seq=completed.frame.frame_seq, complete=True
                 )
                 assistant_id = None
             else:

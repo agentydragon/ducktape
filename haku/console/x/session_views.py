@@ -246,9 +246,8 @@ def _frame_of(asked: tuple[int, RecordedToolCall]) -> int:
 async def tool_calls(db: AsyncSession, session_id: UUID) -> SessionToolCalls:
     """Read the calls and their answers out of the session's stored events.
 
-    The answer exists nowhere else in a row: `session_messages.tool_calls` records what was asked,
-    and until `session_events` the reply was re-parsed out of the frame log on every request by a
-    Claude frame parser — the last of the four interpreters
+    Until `session_events` the reply existed in no row at all: it was re-parsed out of the frame
+    log on every request by a Claude frame parser — the last of the four interpreters
     (<../../plans/chat_runtime_projection.md> § The four interpreters, counted).
     """
     rows = (
@@ -316,10 +315,6 @@ async def setup_narration(db: AsyncSession, session_id: UUID) -> list[SetupNarra
 
 
 def message_view(message: SessionMessage, calls: SessionToolCalls) -> SessionMessageView:
-    # The events where the message's own frames reach them, the column otherwise. That column is
-    # the lossy copy — the calls without their answers — and is what a message written before the
-    # events had rows still has; a message that made no calls reads the same either way.
-    recorded = calls.within(message.source_first_frame_seq, message.source_last_frame_seq)
     return _view(
         message,
         tool_calls=[
@@ -329,7 +324,7 @@ def message_view(message: SessionMessage, calls: SessionToolCalls) -> SessionMes
                 arguments=call.arguments,
                 result=calls.results.get(call.call_id),
             )
-            for call in (recorded or message.tool_calls)
+            for call in calls.within(message.source_first_frame_seq, message.source_last_frame_seq)
         ],
     )
 

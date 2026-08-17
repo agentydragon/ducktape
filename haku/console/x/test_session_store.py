@@ -31,7 +31,6 @@ from haku.console.chat_models import (
     FrameDirection,
     LeaseExpiryReason,
     PromptFate,
-    RecordedToolCall,
     SessionStatus,
     TurnOutcome,
 )
@@ -597,38 +596,6 @@ async def test_operator_conversation_read_surface_keeps_inventory_and_transcript
     assert detail.surface == ChatSurface.MATRIX
     assert detail.messages[0].content == "What is happening?"
     assert detail.turns == []
-
-
-async def test_a_message_with_nothing_to_point_at_still_reads_its_calls_from_the_column(
-    chat_store, migrated_sessions, operator_id
-) -> None:
-    """A row written before the pointer existed, or one the console synthesized rather than
-    observed — a turn whose text arrived only on the `result` frame — has no agent message id, and
-    the column is all it has. That is why the column is still written."""
-    view, token = await chat_store.create(operator_id, SpaSession())
-    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "do a thing")
-    turn = await chat_store.next_prompt(view.session_id)
-    assert turn is not None
-    message_id = await chat_store.begin_assistant(view.session_id, turn.turn_id, source_first_frame_seq=1)
-    await chat_store.update_assistant(
-        view.session_id,
-        message_id,
-        "did a thing",
-        tool_calls=[RecordedToolCall(call_id="toolu_legacy", tool_name="Bash", arguments={})],
-        complete=True,
-    )
-
-    [call] = [
-        call for message in (await chat_store.get(operator_id, view.session_id)).messages for call in message.tool_calls
-    ]
-
-    assert call.call_id == "toolu_legacy"
-    async with migrated_sessions() as db:
-        assert (
-            await db.scalar(select(SessionMessage.agent_message_id).where(SessionMessage.message_id == message_id))
-            is None
-        )
 
 
 async def test_a_second_prompt_is_refused_while_a_turn_is_open(chat_store, operator_id) -> None:
@@ -1213,8 +1180,8 @@ async def test_a_frames_events_land_as_rows_with_the_cursor_that_says_they_did(
 ) -> None:
     """The projection's own output, stored — and stored in the transaction that moves the cursor.
 
-    A tool call's answer is the row nothing had ever held: `session_messages.tool_calls` keeps what
-    was asked, and until these rows the frames carrying the reply were re-parsed on every read.
+    A tool call's answer is the row nothing held before these: until them the frames carrying the
+    reply were re-parsed on every read.
     """
     view, token = await chat_store.create(operator_id, SpaSession())
     session_id = view.session_id

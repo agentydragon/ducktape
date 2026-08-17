@@ -202,19 +202,6 @@ class EventProvenance(StrEnum):
     AUTHORED = "authored"
 
 
-# CLEANUP(added 2026-08-17): Delete with the column it types. Its only writer was the provenance
-#   backfill, deleted along with the rows it existed to point; <../plans/next_month.md> § 1 phase 3
-#   drops `session_messages.unpointable_reason`.
-class MessageUnpointable(StrEnum):
-    """Why a `session_messages` row was left without a frame range, once one was looked for."""
-
-    # No projected message carries this row's text: prose the frames never held — an abort
-    # notice appended to it, an error, or a message whose frames were never recorded.
-    NO_MATCHING_PROJECTION = "no_matching_projection"
-    AMBIGUOUS_TEXT = "ambiguous_text"
-    OUT_OF_ORDER = "out_of_order"
-
-
 # Whether the session is worth keeping: nothing has ended it, so a supervisor must not replace it
 # and the claim sweep must not clean up after it.
 OPEN_SESSION_STATUSES = frozenset(

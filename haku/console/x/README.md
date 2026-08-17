@@ -230,9 +230,8 @@ call and every result on every request — is deleted, because the events are ro
 `session_events.py` maps a `ConversationEvent` onto a row and `apply_frame` writes it inside the
 transaction that moves the cursor, so a row exists exactly when the cursor says its frame was
 projected. The same module maps the console's own facts about a session onto rows, written in the
-transaction that makes each true, and the operator's prompt onto one written in `enqueue_prompt`'s. What the table holds that nothing else does is a **tool call's answer**:
-`session_messages.tool_calls` records what was asked, and the reply used to exist only as frames
-that `session_views.rollout_calls` re-parsed on every read.
+transaction that makes each true, and the operator's prompt onto one written in `enqueue_prompt`'s. What the table holds that nothing else does is a **tool call's answer**, which
+used to exist only as frames that `session_views.rollout_calls` re-parsed on every read.
 
 - **A message is found by frame range**, not by the agent's id for it — `session_messages` records
   the span it was built from and an event's own span falls inside it, so the join needs nothing the

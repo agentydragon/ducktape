@@ -28,12 +28,11 @@ from haku.console.chat_models import (
     ChatMessageRole,
     ChatMessageStatus,
     FrameDirection,
-    RecordedToolCall,
     SessionStatus,
     TurnOutcome,
 )
 from haku.console.config import ClaudeRuntimeConfig
-from haku.console.database_schema import Session, SessionFrame, SessionMessage
+from haku.console.database_schema import Session, SessionFrame
 from haku.console.x.claude_code.frames import DELTA_FRAME_KIND
 from haku.console.x.claude_code.testing.wire import (
     Accounting,
@@ -1233,9 +1232,8 @@ async def test_a_turn_ends_at_its_own_result_rather_than_at_what_the_cli_logs_af
 async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_service, operator_id) -> None:
     """The call and its answer are both `session_events` rows, paired by `call_id`.
 
-    `session_messages.tool_calls` keeps only what was asked, so this is the half that used to exist
-    nowhere but the frame log — and the pairing is exact where matching the Nth message to the Nth
-    frame would be a guess.
+    The answer used to exist nowhere but the frame log, and the pairing is exact where matching the
+    Nth message to the Nth frame would be a guess.
     """
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -1267,7 +1265,7 @@ async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_s
 
 
 async def test_the_calls_come_from_the_events_and_need_no_id_from_the_agent(
-    chat_store, chat_service, migrated_sessions, operator_id
+    chat_store, chat_service, operator_id
 ) -> None:
     """A message finds its calls through the frames it was built from, and nothing else.
 
@@ -1289,16 +1287,11 @@ async def test_the_calls_come_from_the_events_and_need_no_id_from_the_agent(
     await chat_service._run_turn(
         client, client.frames().__aiter__(), view.session_id, turn, frontend=None, abort_event=asyncio.Event()
     )
-    # Whatever the column says is now beside the point, so make it say something wrong.
-    async with migrated_sessions.begin() as db:
-        for message in await db.scalars(select(SessionMessage).where(SessionMessage.role == ChatMessageRole.ASSISTANT)):
-            message.tool_calls = [RecordedToolCall(call_id="toolu_stale", tool_name="Stale", arguments={})]
-
     [call] = [
         call for message in (await chat_store.get(operator_id, view.session_id)).messages for call in message.tool_calls
     ]
 
-    assert (call.call_id, call.tool_name) == ("toolu_ok", "Bash"), "the events win over the column"
+    assert (call.call_id, call.tool_name) == ("toolu_ok", "Bash")
     assert call.result is not None
     assert call.result.content == "7"
 
