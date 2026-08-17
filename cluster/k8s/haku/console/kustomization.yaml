@@ -7,6 +7,7 @@ resources:
   - serviceaccount.yaml
   - haku-console-google-calendar-client-credentials.sops.yaml
   - haku-console-google-client-credentials.sops.yaml
+  - haku-console-github-mcp-client-credentials.sops.yaml
   - node-daemon-rugged.sops.yaml
   - node-daemon-wyrm2.sops.yaml
   - httproute.yaml

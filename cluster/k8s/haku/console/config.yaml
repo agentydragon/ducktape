@@ -73,6 +73,43 @@ auto_approval_policies:
         - shopping_lists_list
         - stock_entries_list
         - stock_get
+  # GitHub MCP's normal endpoint exposes its default catalog, including writes. This is the
+  # explicit 2026-08-14 upstream read-only subset: new upstream tools intentionally stay manual
+  # until reviewed here. `ui_get` reads an MCP App UI resource, not GitHub repository state.
+  - id: github_reads
+    type: exact_tools
+    tools:
+      github:
+        - get_me
+        - get_team_members
+        - get_teams
+        - ui_get
+        - find_duplicate
+        - get_label
+        - issue_dependency_read
+        - issue_read
+        - list_issue_fields
+        - list_issue_types
+        - list_issues
+        - search_issues
+        - list_pull_requests
+        - pull_request_read
+        - search_pull_requests
+        - get_commit
+        - get_file_blame
+        - get_file_contents
+        - get_latest_release
+        - get_release_by_tag
+        - get_tag
+        - list_branches
+        - list_commits
+        - list_releases
+        - list_repository_collaborators
+        - list_tags
+        - search_code
+        - search_commits
+        - search_repositories
+        - search_users
   - id: tana_safe_tools
     type: exact_tools
     tools:
@@ -166,6 +203,7 @@ auto_approval_policies:
       - gmail_reads
       - google_calendar_reads
       - grocy_reads
+      - github_reads
       - tana_safe_tools
       - postscanmail_reads
       - home_assistant_reads
@@ -217,6 +255,21 @@ operator_connections:
       - https://www.googleapis.com/auth/calendar.events
 mcp:
   servers:
+    # The root endpoint exposes GitHub's normal default toolsets, including writes. Haku receives
+    # transparent access only to the explicit github_reads policy above; every other tool stays in
+    # the Console's per-call operator approval queue.
+    - id: github
+      backend:
+        kind: remote_mcp
+        url: https://api.githubcopilot.com/mcp/
+        auth:
+          kind: remote_server_oauth
+          scopes: [] # GitHub App permissions are the least-privilege boundary.
+          client_registration:
+            kind: preregistered
+            client_id_env_var: HAKU_CONSOLE_GITHUB_MCP_CLIENT_ID
+            client_secret_env_var: HAKU_CONSOLE_GITHUB_MCP_CLIENT_SECRET
+            token_endpoint_auth_method: client_secret_post
     - id: grocy-sf
       backend:
         kind: remote_mcp

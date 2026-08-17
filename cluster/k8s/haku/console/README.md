@@ -85,13 +85,14 @@ rather than broadening either existing grant.
 
 GitHub's hosted MCP endpoint is `https://api.githubcopilot.com/mcp/`. It discovers its OAuth
 authorization server normally, but GitHub does **not** support Dynamic Client Registration, so the
-Console needs an organization-owned, pre-registered **GitHub App**. Use the read-only endpoint
-initially: `https://api.githubcopilot.com/mcp/readonly`.
+Console needs an organization-owned, pre-registered **GitHub App**. The Console uses GitHub's normal
+endpoint: its upstream catalog includes write tools, but `config.yaml` explicitly auto-approves only
+the reviewed read-only tool names for Haku. Every other GitHub tool remains per-call operator approval.
 
 1. Create a private GitHub App owned by the organization. Set its user-authorization callback URL
    to `https://haku.allegedly.works/api/mcp/operator-auth/callback`. Grant only the repository and
-   read permissions the intended toolset needs; `/readonly` restricts MCP tools but does not widen
-   the App's GitHub permissions. Install/approve the App for the intended organization and
+   write permissions the intended toolset needs; Console approval never widens the App's GitHub
+   permissions. Install/approve the App for the intended organization and
    repositories. Do not substitute a PAT or the OAuth client embedded in GitHub's local MCP binary.
 2. Put the App's `client_id` and `client_secret` in a new SOPS-encrypted Secret named
    `haku-console-github-mcp-client-credentials`, with those exact keys. Add that manifest to this
@@ -104,7 +105,7 @@ initially: `https://api.githubcopilot.com/mcp/readonly`.
    - id: github
      backend:
        kind: remote_mcp
-       url: https://api.githubcopilot.com/mcp/readonly
+       url: https://api.githubcopilot.com/mcp/
        auth:
          kind: remote_server_oauth
          scopes: [] # App permissions are the least-privilege boundary; do not request legacy broad scopes.
@@ -117,8 +118,8 @@ initially: `https://api.githubcopilot.com/mcp/readonly`.
 
 4. In Console Settings → Access, connect the GitHub server and complete GitHub's authorization
    prompt. The Console stores each operator's grant separately; disconnecting replaces only that
-   operator's link. Keep write-capable GitHub MCP endpoints out of this entry until there is an
-   explicit approval-policy decision for their tools.
+   operator's link. Haku's reviewed reads execute immediately; GitHub writes always enter the
+   Console's per-call approval queue.
 
 GitHub's host guide describes the prerequisite and explicitly notes that its remote MCP server has
 no Dynamic Client Registration: <https://github.com/github/github-mcp-server/blob/main/docs/host-integration.md>.
