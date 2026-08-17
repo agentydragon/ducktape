@@ -6,21 +6,17 @@ actionable checklist. Remove entries once done.
 ## The console as a channel, not a viewer
 
 Direction set 2026-08-15: Matrix and the console frontend should be two **messaging channels**
-onto one session, each able to do broadly what the other can. Today the console is split across
-two pages that are the same object, cannot show a session's lifecycle at all, and cannot speak.
-Design, the parity gaps it closes, and the traps in each: <plans/conversation_layers.md>.
+onto one conversation, each able to do broadly what the other can. The console still cannot show a
+session's lifecycle at all. Design, the parity gaps it closes, and the traps in each:
+<plans/conversation_layers.md>.
 
-1. **Merge `/chat` into `/conversations`** as one sessions surface — list plus detail, with new /
-   compose / abort / close as actions on a session. Costs the per-token SSE stream; take it
-   knowingly.
-2. **Record lifecycle transitions** as frame-log rows, the way narration already is, so a session
+1. **Record lifecycle transitions** as frame-log rows, the way narration already is, so a session
    that never got past `provisioning` has a durable record. **Not** the status line or the typing
    indicator — those are renderings of live state each channel derives for itself.
-3. **Reconcile a channel against the session** rather than sending to it: a loop per
-   `(channel, session)` over a cursor on cleanup stage 7's proposed-but-unbuilt
-   `chat_attachment`. A channel that holds
-   its own copy (Matrix) needs it; one that reads the record (the console) converges by refetching.
-4. **Send into a Matrix session** (lower priority) — the console holds only `@haku`'s credential,
+2. **Reconcile a channel against the conversation** rather than sending to it: one loop per
+   `(channel, conversation)` over its own cursor. `RoomNotices` is that loop for one event kind;
+   every other outbound fact is still pushed at the room by whoever noticed it.
+3. **Send into a Matrix session** (lower priority) — the console holds only `@haku`'s credential,
    so an operator message reaches the room as a **relay** posted by Haku's account and tagged with
    its true provenance. Under the loop the send only enqueues; the room being one message behind
    is a divergence the reconciler already closes. The subtle part is `_is_conversational`, which
@@ -32,7 +28,7 @@ has — abort first — as ingress interception rather than an agent tool, so R5
 watch out for Element consuming leading-slash verbs before they ever reach the room. And
 **interlink the two channels** now that sessions have a page: a link to the console session in
 the R7.2 notice, a `matrix.to` permalink back, session ↔ tool calls. A posted Matrix event is
-permanent and federated, so settle the session route (item 1) before minting links into a room.
+permanent and federated, so mint links only under routes chosen to survive.
 
 ## Notification text per tool kind
 
@@ -234,10 +230,6 @@ deliberately still holding the old name.
 `type` there. `_progress_reporter` writes `setup_output`, which is the **bridge envelope's** `kind`
 literal, for one decoded line of a `SetupOutput`. Two unrelated sinks, one column, two vocabularies.
 
-A `partial` row was a third thing again: the console's own reconstruction of an answer still
-streaming, which wore `assistant` and was told apart by a boolean column rather than by `kind`.
-Nothing writes one now.
-
 **Consequences, so this reads as a known state rather than an oversight:**
 
 - There is deliberately **no enum over `kind`**. One would give a name to a concept the schema does
@@ -246,9 +238,6 @@ Nothing writes one now.
 - The loose `*_FRAME_KIND` constants in `x/claude_code/frames.py` stay loose, with a pointer to
   `SessionFrame` and to <plans/conversation_layers.md> § 13.
 - The table's own docstring says the same thing, since that is where a reader meets it first.
-
-The `partial` row is gone: `0068` dropped the column, its index and the rows. What is left is the
-two-vocabulary problem.
 
 <plans/conversation_layers.md> § 13 holds the intended shape — the table becomes the log of the
 bridge, `kind` becomes the envelope discriminator, and the CLI's type gets its own column —
@@ -259,7 +248,7 @@ expand/contract because flipping a column's meaning under a rolling deploy is no
 Postgres's `Identity` and becomes the number the runner minted when the frame crossed the wire, which
 is what makes catch-up on reconnect "send me everything after N". Same stage because it has the same
 cause and the same fix — the sink sits above the envelope and has to move onto the socket — so doing
-the two apart would move it twice. § 2b of that plan holds the schedule.
+the two apart would move it twice. § 13 of that plan holds the schedule.
 
 **Retiring identity numbering entirely is R3 of that schedule**, and its cross-cutting half is here
 because the removal is a schema change whose consequences land in the MCP transcript tools and the

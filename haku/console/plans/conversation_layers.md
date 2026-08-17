@@ -379,9 +379,6 @@ is backing off" in a cursor is just re-deriving a queue. Equally the outbox cann
 cursor: it is the channel's private business, and the conversation layer must not have to read a
 Matrix queue to know how far Matrix has got.
 
-**The cursor is built** (#4315), ahead of the rest of step 4 and gated on nothing, which is what
-lets the merged schema below shrink rather than grow.
-
 ### `chat_delivery` is a revision index, and most of it is write-only
 
 `chat_delivery` (`0067`) is shared by every channel that attaches, and its shape assumes more about
@@ -409,8 +406,8 @@ addressable, editable copy. `chat_delivery` stores the second, and the first onl
 needs is a position past which everything has been emitted, which is § 2's per-`(channel,
 conversation)` cursor. The correspondence exists _because_ Matrix can revise, and revising requires
 addressing. So the table stays and its name is the thing to fix: it is the revision index for
-copy-holding channels, not a delivery log. **Do not build the append-only path ahead of the
-cursor**; nothing today is a teletype, and a second mechanism invented now is one to delete later.
+copy-holding channels, not a delivery log. **Do not build the append-only path**: nothing today is
+a teletype, and a second mechanism invented now is one to delete later.
 
 **Most of what it stores is write-only, which is the sharper form of the same finding.**
 `PendingReply.subject()` mints three kinds — `message:{message_id}`, `turn:{turn_id}` and the single
@@ -421,7 +418,7 @@ reader. For those rows the table adds exactly one fact over `session_outbox.sent
 drain writes in the same transaction: the room's `event_id`. Nothing edits a message, so nothing
 wants that id — it is there for the reconciler that replaces the outbox, which does not exist. The
 growing set of `(attachment, subject)` rows is a flushed-up-to position materialised as a map, one
-row at a time, ahead of the cursor that will hold it properly.
+row at a time, beside the cursor that holds it properly.
 
 **What genuinely earns a table is the one revisable subject.** `status` is edited in place and
 retired; it is the only row whose `sent_ref` is read, and one live row per attachment is bounded. So
@@ -625,8 +622,8 @@ exists to remove:
 
 1. **Every cross-session read is keyed by `Session.room_id`**, and `matrix_conversation` is one row
    per bot user, so one room ever.
-2. **Egress has no wake.** The outbox drain polls; nothing listens for `session_changed` on the
-   channel side.
+2. **The outbox drain polls**, at `IDLE_POLL = 1s`, while `RoomNotices` beside it already wakes on
+   `session_changed`.
 3. **Ingress duplicate suppression is positional.** A crash between `enqueue_prompt` committing and
    the watermark advancing re-delivers a batch the session already has. **Suppression is not
    acknowledgement**: skipping the re-delivered event and letting the watermark advance trades a
@@ -639,13 +636,9 @@ exists to remove:
 having even if the loop is never built. The dependency edges are at the end.
 
 1.  **Read through `conversation_id`, then unmap what it subsumes.** `0064` is additive, so
-    `matrix_conversation`, `sessions.room_id` and `sessions.surface` are still authoritative. The
-    gate that held a reader back is discharged: `0072` takes the `NOT NULL`, so a join through
-    `conversation_id` can no longer silently omit a session the previous image inserted without
-    one — `RoomTranscript.recent` losing a room's re-awakening history was the concrete case.
+    `matrix_conversation`, `sessions.room_id` and `sessions.surface` are still authoritative.
 
-    **Two nullability traps sit on the columns this subsumes**, and they make it four steps rather
-    than three:
+    **Two nullability traps sit on the columns this subsumes:**
     - `sessions.surface` is `NOT NULL` **with no server default**. The release that unmaps it omits
       it from every `INSERT` and Postgres rejects the first session of that roll, so it needs
       `server_default='spa'` in a migration landing _before_ the unmapping.
@@ -657,24 +650,9 @@ having even if the loop is never built. The dependency edges are at the end.
     audit counted six, including `recall_index_reader` — a consumer in another package entirely,
     which a sweep of the chat runtime would not have turned up.
 
-2.  **The conversation list surface**, keyset-paged from the start, since § 7 settles that a
-    conversation never ends and so the list only grows. One list of conversations — each showing its
-    attached channels, its last activity, and whether a session is live — with "new conversation"
-    minting the conversation and its first session together.
-
-    Three shapes are rewritten here, and today's field being the obvious thing to carry forward is
-    precisely the risk:
-    - **`surface` leaves the read models.** `ConversationSessionSummary.surface`,
-      `ConversationSessionView.surface`, `conversation_records.Conversation.surface` and the SPA's
-      `surfaceLabel` each say a conversation has exactly one channel, which is the shape acceptance
-      behaviour 5 cannot render.
-    - **The record shapes still call a session a conversation, and let it end.**
-      `conversation_records.Conversation` is keyed by `session_id` and carries a terminal status;
-      `ConversationSessionSummary`/`View` and the `{session_id}` route say the same. The model name
-      reaches the generated MCP schemas and the frontend validators, so it is a rename with a blast
-      radius rather than a local one.
-    - **The detail page reads the increment** instead of refetching the whole conversation.
-      `GET /api/conversations/{id}/changes?after=` exists with no frontend consumer.
+2.  **The conversation detail page reads the increment** instead of refetching the whole
+    conversation on every poll. `Subscription` over a `ClientHeldCursor` is the server-side half;
+    the position-addressed route and the frontend consumer are what is left.
 
 3.  **Allocate a sandbox because there is something to do** — open as #4231. An idle room holds a
     sandbox permanently: the supervisor provisions whenever the room has no live session, and the
@@ -695,13 +673,12 @@ having even if the loop is never built. The dependency edges are at the end.
     Measure it rather than assume it away. **Done when** an idle room holds no sandbox and the first
     message provisions one.
 
-4.  **Matrix becomes a subscriber** (§ 2's primitive). The cursor half is built and landed on its
-    own (#4315); what is left is every consumer that still is not one. One loop per
-    `(channel, conversation)`, reading the record from its cursor instead of being handed events by
-    the turn loop, woken by `session_changed` and by inbound events with the 1s poll demoted to a
-    fallback. Here the four elections collapse to one, the three egress mechanisms become one
-    difference calculation, the pacer's bucket stops being an estimate, and the browser stops being
-    the only consumer that reads the record.
+4.  **Matrix becomes a subscriber** (§ 2's primitive) for every kind, not just the one
+    `RoomNotices` reads. One loop per `(channel, conversation)`, reading the record from its cursor
+    instead of being handed events by the turn loop, woken by `session_changed` and by inbound
+    events with the 1s poll demoted to a fallback. Here the four elections collapse to one, the
+    three egress mechanisms become one difference calculation, the pacer's bucket stops being an
+    estimate, and the browser stops being the only consumer that reads the record.
 
     **`_frontend_for` is deleted here, not improved** (§ 5): the turn loop stops holding a channel at
     all, so the question "which frontend is this session's" stops being asked rather than being
@@ -779,17 +756,15 @@ having even if the loop is never built. The dependency edges are at the end.
 10. **The session link in the room's startup notice**, and interlinking generally: room notice →
     console session, console session → the room (a `matrix.to` permalink the client already builds),
     session → its tool calls, tool call → the session that made it. The last has its precedent —
-    `/_console/tool-calls/<tc_…>` opens the drawer on that exact call. **Ordering constraint:** a
-    Matrix event is permanent and federated, so this waits until step 2 has settled the session
-    route. Post links under a route chosen to survive it, or not at all.
+    `/_console/tool-calls/<tc_…>` opens the drawer on that exact call. A Matrix event is permanent
+    and federated, so post links under routes chosen to survive, or not at all.
 
 11. **The frame log stores one thing, and the runner numbers it.** Two changes, deliberately one
     step, because they share a cause — the recorder sits _above_ the bridge envelope and
     structurally cannot see one — and therefore share a fix: moving that sink down onto the socket.
     § 13 holds the design and the release schedule.
 
-12. **`sessions.status` becomes derived timestamps** (§ 10). Waits on 3, which is adding `idle` to
-    the enum right now.
+12. **`sessions.status` becomes derived timestamps** (§ 10). Waits on 3.
 
 13. **Enforce the neutral-vocabulary invariants instead of reviewing for them** (§ 11). Two pieces,
     each one change: a CHECK tying frame-derived event kinds to the `frame_range` provenance arm,
@@ -842,8 +817,8 @@ having even if the loop is never built. The dependency edges are at the end.
   loop-side bugs block it and `session_runtime._projected` names both. Pull it in when a message
   spanning frames needs to be one row.
 
-**Dependencies.** 1 gates 2 and 6. 4 gates 5 and 6. 3 gates 6 and 12. Everything else — 7 through
-11, 13, 14, 15 and the smaller items — depends on nothing here and can be dispatched in any order.
+**Dependencies.** 1 gates 6. 4 gates 5 and 6. 3 gates 6 and 12. Everything else — 2, 7 through 11,
+13, 14, 15 and the smaller items — depends on nothing here and can be dispatched in any order.
 
 ## 10. `sessions.status` is derived, and lossy
 

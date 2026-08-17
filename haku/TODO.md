@@ -72,8 +72,6 @@ slices over the deployed schema, not another identity migration:
   can reassign an OAuth Agent's policy in Settings. What is missing is the notification: a connected
   client enumerated its tool surface once, so an edit that moves a tool between pass-through and
   approval-wrapped does not reach it until it reconnects.
-- **Per-tool-call deep link:** make the promise URL open/highlight its exact call rather than merely
-  loading the console. Detailed route/UI pointer: <console/TODO.md>.
 
 ## Console and authority consolidation
 
