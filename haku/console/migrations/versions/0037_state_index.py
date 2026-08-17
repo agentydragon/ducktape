@@ -11,7 +11,7 @@ declares it (<../../../../cluster/k8s/haku/console/db/approval-store-database.ya
 and this does not. If the extension is missing, this migration fails and the new replica never
 becomes Ready; the Deployment's `maxUnavailable: 0` leaves the running version serving.
 
-The tables are declared in `haku/state_index/schema.py`; `test_state_index_migration.py` is what
+The tables are declared in `haku/recall_index/schema.py`; `test_recall_index_migration.py` is what
 holds the two definitions together.
 
 Revision ID: 0037
@@ -24,7 +24,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 
-from haku.state_index.vector_type import HalfVector
+from haku.recall_index.vector_type import HalfVector
 
 revision: str = "0037"
 down_revision: str | None = "0036"
@@ -49,7 +49,7 @@ def upgrade() -> None:
         # `halfvec` (2 bytes a dimension) rather than `vector` (4), and no typmod: the dimension
         # is a property of `model_key`, and pinning it here would make changing the embedding
         # model a migration. Nothing indexes it — searches are exact KNN over a filtered set at
-        # this corpus size. Reasoning for the type: `haku/state_index/vector_type.py`.
+        # this corpus size. Reasoning for the type: `haku/recall_index/vector_type.py`.
         sa.Column("embedding", HalfVector(), nullable=False),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.PrimaryKeyConstraint("corpus", "content_sha", "byte_start", "chunker_key", "model_key"),

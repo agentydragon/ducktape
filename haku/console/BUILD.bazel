@@ -187,8 +187,7 @@ py_library(
     deps = [
         ":database_schema",
         "//haku/recall_index:schema",
-        # Alembic revision 0037 is immutable and imports this legacy type at runtime.
-        "//haku/state_index:vector_type",
+        "//haku/recall_index:vector_type",
         "@pypi//alembic",
         "@pypi//sqlalchemy",
     ],

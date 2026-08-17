@@ -168,7 +168,7 @@ which is the one place the answer reliably is not, and a tool it never reaches f
 indistinguishable from a tool that does not exist. So recall is prompted in two places, both of
 which the agent cannot edit:
 
-- **The `search` tool's own description** (<../console/tools/state_index.py>) states it as a step
+- **The `search` tool's own description** (<../console/tools/recall_index.py>) states it as a step
   rather than an affordance, and names the question types that trigger it — prior work, decisions,
   dates, people, preferences, commitments, anything asked for earlier. A tool description is what
   a model actually reads; a server's `instructions` frequently are not surfaced by the client at
@@ -227,7 +227,7 @@ Deliberately absent — it depends on the evaluation above:
   and `haku/console/README.md` already names Postgres as an accepted private boundary). The chat
   corpus makes that the obvious home rather than one option: its source tables are already there.
 - **The MCP tool surface — built, and off.** `haku_index`
-  (<../console/tools/state_index.py>) is an in-process FastMCP server in haku-console: one
+  (<../console/tools/recall_index.py>) is an in-process FastMCP server in haku-console: one
   `search` with a `corpus` argument (`haku_state`, `conversations`, or both), plus `index_status`.
 
   **`index_status` answers before there is anything to search.** It reports `remote_commit` —
@@ -279,7 +279,7 @@ Deliberately absent — it depends on the evaluation above:
   running version serving — so the ordering to verify before merging is that the `Database` CR has
   reconciled first.
 
-- **Sync — done, in the console.** `haku/console/state_index_sync.py` sweeps both corpora from
+- **Sync — done, in the console.** `haku/console/recall_index_sync.py` sweeps both corpora from
   the console process: chat every minute over its own tables, haku-state every thirty seconds
   against a bare mirror on the pod's `/tmp`. Each corpus takes its own Postgres advisory lock, so
   exactly one replica syncs it and a slow fetch never delays the other.

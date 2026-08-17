@@ -396,7 +396,7 @@ MCP servers from `@mcp.tool`-decorated functions:
   last sweep saw on the remote, what is indexed, and how many chunks are embedded so far — so
   "not indexed yet", "indexing now" and "cannot reach the repository" are different answers
   rather than one absent object. Both auto-approve for Haku (`haku_recall_reads`, the same atom that grants the `haku_conversations` reads); both are unscoped across rooms
-  and operators, which is a decision recorded in <../state_index/README.md> § Read scoping rather
+  and operators, which is a decision recorded in <../recall_index/README.md> § Read scoping rather
   than an oversight. Listing the server in `config.yaml` is what builds it, and the console refuses
   to start if it is listed without an embedder configured — search embeds its query, so a search
   tool with nowhere to embed is a tool that can only fail. Credential-free: the corpus is the

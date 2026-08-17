@@ -321,12 +321,12 @@ Three things it needs, in order:
 **Semantic search is the urgent half, because it is already unscoped and live.** `haku_index`'s
 `search`/`index_status` were exposed to Haku unscoped on 2026-08-15 — a fair call then, since they
 granted no reachability `haku_conversations` did not already have — and
-<../state_index/README.md> § Read scoping names the condition for revisiting: the moment a room
+<../recall_index/README.md> § Read scoping names the condition for revisiting: the moment a room
 Haku should not see exists, ranked retrieval is where it leaks first. Several agents is that
 moment. A drilldown makes reading another conversation deliberate; ranked retrieval surfaces it by
 accident, at the top of the results.
 
-**Do it by naming indexes rather than filtering rows.** `Corpus` (<../state_index/schema.py>)
+**Do it by naming indexes rather than filtering rows.** `Corpus` (<../recall_index/schema.py>)
 stays the **type** — `git`/`chat`, deciding how content is chunked and addressed — and gains named
 **instances** configured per repo and per tier ("index `foobar` is of type `git`, indexes this
 remote"), in the discriminated shape `mcp.servers` already uses. The gate becomes "which indexes
@@ -337,5 +337,5 @@ per-row tier filter — a missed predicate on one read path leaks, an index an a
 does not. `chunks` is untouched: it is a content-addressed embedding cache, identity lives on the
 occurrence rows, and the instance goes there. Full design:
 <../plans/information_trust_tiers.md>. The wider inventory — the drilldown tools, the identity it
-keys on, and the RLS-scoped-Postgres-role alternative — stays in <../state_index/README.md>
+keys on, and the RLS-scoped-Postgres-role alternative — stays in <../recall_index/README.md>
 § Read scoping.

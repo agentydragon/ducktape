@@ -118,7 +118,7 @@ through the transport. Three things it needs:
 - **Semantic search is where this bites first, and it is already live.** `haku_index`'s `search`
   and `index_status` are exposed to Haku **unscoped**, decided 2026-08-15 and auto-approved through
   `haku_recall_reads` — an easy call at the time because it granted no new reachability over
-  `haku_conversations`, which was itself unscoped. <../state_index/README.md> § Read scoping names
+  `haku_conversations`, which was itself unscoped. <../recall_index/README.md> § Read scoping names
   the exact condition for revisiting: "the moment a second operator or a room Haku should not see
   exists, ranked retrieval is where that leaks first". Several agents at several tiers is that
   moment. A drilldown makes reading another conversation deliberate — you have to name the
@@ -128,7 +128,7 @@ through the transport. Three things it needs:
 ### Corpus as a type, with an instance per tier
 
 Operator, 2026-08-15, and it is a better mechanism than the per-row tier predicate this document
-proposed first. `Corpus` in <../state_index/schema.py> is today an enum of `git` and `chat`, doing
+proposed first. `Corpus` in <../recall_index/schema.py> is today an enum of `git` and `chat`, doing
 two jobs at once. Split them: **the type says how content is indexed, the instance says who may
 read it.** One `chat` instance per tier, one `git` instance per repo.
 
@@ -223,7 +223,7 @@ entry.
 from its sources, so a mis-routed occurrence is a re-index rather than a loss. That makes this much
 safer to do early than late.
 
-**It makes the RLS option more attractive**, without deciding it. <../state_index/README.md> keeps
+**It makes the RLS option more attractive**, without deciding it. <../recall_index/README.md> keeps
 a scoped-Postgres-role alternative in its inventory; with corpora as first-class the natural RLS
 policy is per corpus, which would move the gate from the query builder into the database.
 

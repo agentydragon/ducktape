@@ -66,7 +66,7 @@ def _behind(status: IndexStatus, corpus: SearchCorpus) -> bool:
 
 
 class PostgresIndexSearcher:
-    """`tools.state_index.IndexSearcher` over the console's database."""
+    """`tools.recall_index.IndexSearcher` over the console's database."""
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession], embedder: Embedder) -> None:
         self._sessions = sessions

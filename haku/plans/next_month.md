@@ -128,7 +128,7 @@ tests" would otherwise delete two things that are not about migration at all:
 | `test_session_claim_cleaned_at_migration.py` | `0048` | **Goes.** A backfill of rows phase 1 deleted                                                                                                                                                |
 | `test_frame_runner_seq_migration.py`         | `0050` | **Goes.** Asserts a nullable column an old writer could omit; phase 2 makes it not-nullable                                                                                                 |
 | `test_session_idle_status_migration.py`      | `0054` | **Becomes a constraint test** — both assertions are about what `ck_sessions_status` admits. Not before item 2 ships, since until then the widening is the live half of a two-release change |
-| `test_state_index_migration.py`              | `0037` | **Stays, rebased.** Not a migration test: it compares <../state_index/schema.py> against what the deployed database gets, and nothing else does                                             |
+| `test_recall_index_migration.py`             | `0037` | **Stays, rebased.** Not a migration test: it compares <../recall_index/schema.py> against what the deployed database gets, and nothing else does                                            |
 
 That is 473 of the six files' 624 lines, and no coverage lost — the two tests that assert the
 property a squash actually endangers already exist in `test_agent_authority_schema.py`:

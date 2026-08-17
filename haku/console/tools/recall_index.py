@@ -43,8 +43,8 @@ class SearchCorpus(StrEnum):
 
     `haku_state` is the files at the indexed tip of the haku-state repository — named for the
     repository rather than for what is in it, because that is exactly as much as the wiring
-    promises. Storage calls the two `git` and `chat` (`state_index.schema.Corpus`), and
-    `state_index_reader` is the one place that translation happens.
+    promises. Storage calls the two `git` and `chat` (`recall_index.schema.Corpus`), and
+    `recall_index_reader` is the one place that translation happens.
     """
 
     HAKU_STATE = "haku_state"

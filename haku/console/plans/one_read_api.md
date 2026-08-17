@@ -233,7 +233,7 @@ And the premise that makes an unscoped read harmless today is **already retired 
 room, so the fence would separate Haku from its own history and nothing else") carries a note dated
 2026-08-15 — "superseded, on exactly the condition this recorded" — so reads become
 **tier-scoped**, with "a decision function at one console call site, not scoping smeared through
-the transport". <../../state_index/README.md>
+the transport". <../../recall_index/README.md>
 § Read scoping says the same thing about the index: "the moment a second operator or a room Haku
 should not see exists, ranked retrieval is where that leaks first".
 
