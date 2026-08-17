@@ -380,6 +380,23 @@ transaction, so while it exists the conversation's writer branches on `chat.room
 reconciliation the turn writes only the record and the channel derives what it owes, which is what
 removes that branch. What stays shared is the record and the per-attachment cursor.
 
+**And the table should say Matrix** (operator, 2026-08-17: _"the matrix outbox should as matrix impl
+be named after matrix in its table and not try to be generic"_). `session_outbox`'s docstring says
+the opposite today — "a second one joins by adding a discriminator beside it rather than by
+overloading this column" — which is an instruction to the next editor to make it generic, and under
+the layer model that instruction is wrong. A second channel does not join this table. It either
+keeps no copy and needs no queue, or it has its own with its own retry semantics; a Squid-style
+discriminator would put two channels' failure domains in one queue.
+
+Two halves, on different clocks. **The doctrine is wrong now and costs nothing to fix**: the
+docstring, and <../x/README.md> § Matrix chat surface's claim that `session_outbox` is neutral and
+that record-then-drain is "the shape every outbound channel write has to take". The split is right;
+the neutral half is the record. **The rename itself rides with the move**, because `session_outbox`
+→ `matrix_outbox` is not a one-step migration under `maxUnavailable: 0` — an old replica selects the
+old name for the length of a roll, so a bare `ALTER TABLE … RENAME` breaks it, and the expand/
+contract dance is not worth paying twice for a table the reconciler is about to restructure anyway.
+Rename it as part of that restructure, and fix what the docstrings instruct now.
+
 ### The cursor and the outbox are both needed, and they answer to different layers
 
 They are easy to confuse because both are "what has gone out", so name whose contract each one is
@@ -411,10 +428,6 @@ collapsing the three elections and reducing the three egress mechanisms, and is 
 step 7. The cursor itself is gated on none of that — it is a position over rows that already exist —
 and it is what lets a piece of merged schema shrink rather than grow. Splitting it out ahead of its
 own step is the correction #4307 earned.
-
-<../x/README.md> § Matrix chat surface currently calls `session_outbox` neutral and calls the
-record-then-drain split "the shape every outbound channel write has to take". The split is right;
-the neutral half is the record, and this is the sentence to correct when the move lands.
 
 ### `chat_delivery` is a revision index, and only some channels can keep one
 
