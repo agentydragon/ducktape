@@ -22,8 +22,8 @@ turn's tool calls and thinking reach a room that will not take a token at a time
 | **Conversation** | what was said and done, ordered and backend-neutral: `session_messages`, `session_events`, `session_turns`                 | none of its own (§ 6)         | nothing expresses this                                    |
 | **Channel**      | its own copy and addressing, its credential and rate budget, its rendering vocabulary, its delivery state                  | `matrix_conversation.room_id` | the attachment is released (R3.6c, unbuilt)               |
 
-Four things in the code today sit across a boundary rather than inside a layer, and each is a
-place where the model has work to do:
+What sits across a boundary today rather than inside a layer, each a place where the model has work
+to do:
 
 - **The conversation's writer names a channel's address.** `_enqueue_reply`
   (<../x/session_store.py>) returns early on `chat.room_id is None` and writes `session_outbox.room_id`,
@@ -161,7 +161,7 @@ the work.
 
 A room takes prose. Everything else a turn does — a run of tool calls, a stretch of thinking, a
 session being provisioned and replaced — reaches it as a **notice that updates as things happen**.
-Three parts, and naming them separately is what makes the projection reconcilable:
+Naming its parts separately is what makes the projection reconcilable:
 
 - **Its subject** — the span of the conversation it summarises: a turn, a tool-call run, a
   session's life.
@@ -173,8 +173,8 @@ Three parts, and naming them separately is what makes the projection reconcilabl
 ### What streaming projects into
 
 The conversation moves per delta; the room moves per message. Between two messages, what the room
-can be told is that a turn is live (the typing notice, which is sent outside the pacer and so costs
-the room's `rc_message` budget nothing) and how much has happened (the notice). When
+can be told is that a turn is live (the typing notice, sent directly rather than through the pacer,
+so it spends no queued slot) and how much has happened (the notice). When
 `MessageCompleted` lands, the finished message is forwarded whole, as R11.1 already requires of
 every assistant message rather than only the last.
 
