@@ -384,6 +384,35 @@ removes that branch. What stays shared is the record and the per-attachment curs
 record-then-drain split "the shape every outbound channel write has to take". The split is right;
 the neutral half is the record, and this is the sentence to correct when the move lands.
 
+### A session has no frontend, and the port is per attachment
+
+**"The frontend this session is attached to" is not a thing** (operator, 2026-08-17: _"what is a
+session's frontend? why would a session care?"_). It is worth stating flatly because the code
+already reads as though it were, and #4290 was closed for making it more explicit rather than less.
+
+What is actually there: `SessionService` holds **one** `ChatFrontend`, the Matrix one, and
+`_frontend_for` is not a lookup but a filter — is this session's `surface` the one my single
+frontend serves? The name promises a mapping where there is a global and a guard.
+
+**A session does not care, and nothing about a session should.** What cares is the turn loop, and
+only because the turn loop is doing the channel's job: `report`, `report_silent_turn`, `_speak`
+and `TurnStatus` are § 8's "pushed by the turn loop from inside the process that holds the runner",
+which is why a fact can reach a room and never a tab. Step 9 deletes all of it — a subscriber reads
+the record and nothing hands a frontend to a turn. The one use that is honestly surface-dependent
+is `system_prompt`, telling the model it is speaking in a room, and that is a question asked once
+when a session starts rather than a channel the turn holds.
+
+**So the shape is a frontend per attachment, never per surface.** Selecting by surface is the
+inversion made concrete — it says a channel owns a set of sessions, when a channel is attached to a
+_conversation_ and a session merely happens to be the one running under it. It also does not
+survive § 7's ruling: with one bot in several rooms every Matrix session matches the surface, so a
+surface-keyed singleton cannot address any of them correctly. That is the checkable form of the
+objection, and it is why the answer is `chat_attachment` (§ 6) plus step 9, not a discriminator on
+the port.
+
+**Until then, leave it alone.** The right amount of work on `_frontend_for` before step 9 is none:
+it is deleted, not improved, and polishing it buys a rename in exchange for entrenching the concept.
+
 ## 6. The conversation is a real table, and it is identity only
 
 **Decided 2026-08-17**, after the operator named the case that forces it.
@@ -546,8 +575,8 @@ reading.
     cheaper than a lock per conversation and keeps the count at one, which § 8 wants anyway; the
     thing that must not be global is the _lease_, and that is already per session.
   - **`MatrixSessionFrontend` takes no address "by construction", citing R3.6a.** With the
-    citation gone the port must be bound per attachment — which is what the `ChatFrontend` port
-    change was going to do regardless, now for a load-bearing reason rather than tidiness.
+    citation gone the port must be bound **per attachment** — see § 5's ruling below, which is
+    where the shape is settled, because getting it wrong is easy and #4290 got it wrong.
 
   **This promotes idle sessions from tidy-up to prerequisite.** One room could afford a sandbox
   held open; ten cannot, and a room nobody is talking to must not hold one. So `create()` stopping
@@ -673,9 +702,13 @@ having even if the loop is never built.
    the unreadable-event notice as events** — one piece of work, because both are "the fact is
    recorded, the notice is its projection", and it is what lets the watermark advance every pass.
    `matrix_held_batch` and its backoff go with it.
-5. **Record a prompt's provenance** (§ 8's missing item 3). A structured link from the transcript
-   row to the channel event it came from, rather than brackets in prose. Small, additive, and what
-   makes "answer the message that asked" expressible at all.
+5. **Record a prompt's provenance** (§ 8's missing item 3), **built as #4289**. A structured link
+   from the transcript row to the channel events it came from, rather than brackets in prose.
+   Smaller than it looked: `PROMPT_ENQUEUED` is already an `AUTHORED` event, so the link is one
+   field on `PromptBody` — no table, no migration, no join. Two corrections this step made to its
+   own description: **the plan said "the channel event", singular, and a prompt is a batch**, since
+   `/sync` folds several room events into one prompt, so the field carries the attachment plus the
+   refs; and the union is closed with the SPA named rather than implied by absence (§ 4).
 6. **Move the artifacts that are durable in the wrong layer.** The abort notice is a
    `session_outbox` row keyed by `turn_id`; § 7 settles that it is an event. This is also what gives
    a reconciler the conversation-side identity it needs to be at-least-once, which § 3 names as a
@@ -691,7 +724,9 @@ having even if the loop is never built.
    `session_changed` and by inbound events with the 1s poll demoted to a fallback. Here the three
    elections collapse to one, the three egress mechanisms become one difference calculation, the
    pacer's bucket stops being an estimate, and the browser stops being the only consumer that reads
-   the record.
+   the record. **`_frontend_for` is deleted here, not improved** (§ 5): the turn loop stops holding
+   a channel at all, so the question "which frontend is this session's" stops being asked rather
+   than being answered better.
 10. **Notices as spans** (§ 4), once 7 and 9 exist: one work notice per turn, one lifecycle notice
     per session, **each body a fold over the subscription stream**, each retired or sealed. This is
     Matrix's streaming — the granularity a channel that holds a permanent, federated copy can
@@ -733,6 +768,13 @@ session_events WHERE kind IN ('activity_started','activity_completed')`, drop th
     claiming it has one by construction. Depends on 2's reader half, since "which conversations
     have a live attachment" is the query the fan-out runs. **Do not schedule it before idle
     sessions land** — ten rooms each holding a sandbox is the failure this would ship.
+18. **Close R1.2's replay window.** A crash between `enqueue_prompt` committing and the hold being
+    written re-delivers a batch the session already has. Found while building step 5 and dropped
+    from it deliberately — different query shape, distinct bug, its own review. The trap it left
+    behind is worth carrying: **suppression is not acknowledgement.** Skipping the re-delivered
+    event and letting the watermark advance trades a duplicate ask for a _lost message_, because
+    the session holding the prompt can still die before answering it. The fix re-establishes the
+    hold rather than dropping the event.
 
 Steps 11–16 are a separate lane from 1–10: nothing in the layering depends on them and they do not
 wait on it. **Both deletions lose something recoverable rather than something gone.** `Usage` is
