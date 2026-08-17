@@ -245,3 +245,31 @@ an unrelated reason — nobody wants the feature — as steps 14–16.
   carrying no `tool_name` yields `"None"` as a tool name rather than raising or landing in
   `unprojected`. The census shows the key is always present (`{tool_name, type}`, 51 of 51), so this
   has never fired — but it is a strict-data-mapping hole, and it disappears with the arm.
+
+## What was done about it
+
+Both failures are being acted on; neither answer is quite what the audit proposed, and the
+differences are the useful part.
+
+- **The activity events are deleted** (#4279), as the audit's premise assumed. The enum members and
+  `ck_session_events_kind` stay for a release, because rows of those kinds exist and a member
+  removed while its rows survive makes reading one raise rather than degrade.
+- **`ToolReferences` is deleted, and so is the union it was an arm of** (#4284). The audit proposed
+  dropping the arm and letting those results fall to `OpaqueContent`; what landed goes further —
+  `ToolResultContent` is gone entirely and a tool result's `content` is a `str`, the adapter
+  rendering it and being the only thing that knows a block shape. The operator's reasoning is that a
+  tool result may be lossy, so "provider-specific result rendered as a string" is enough. That
+  removes the leak by removing the place a block shape could be named at all, rather than by
+  removing one arm and keeping the shape.
+- **`structured` stays**, per the rule below: it has readers (`read_transcript` serves it,
+  `clip_entry` was written for it), it is not derivable from the string, and it sits behind `Json`.
+- **The stored bodies do not change.** `ToolReferencesResultBody` and `OpaqueResultBody` survive
+  behind a tombstone, because `session_views._answered` validates every stored row the SPA renders
+  and an old transcript must not raise. Only the writer narrows. Their gate is a migration that
+  **rewrites** rows to the text shape — not a delete, since unlike the `activity_*` rows these are
+  history a surface still shows.
+
+**The rule this audit produced is the part worth keeping**, and it decided the `structured` case
+where "how Claude-shaped is it" could not: the line is not how Claude-shaped a thing is, but **where
+the shape lives in the type**. A per-tool payload behind `Json` is sanctioned; a per-tool shape
+promoted to a typed member is not.
