@@ -266,8 +266,8 @@ sessions that have held it, and something for the per-attachment cursor to hang 
 `sessions.room_id` for Matrix sessions; every SPA session becomes its own one-session conversation,
 which is what it already is. The migration is expand/contract — a mapped column takes three
 releases to remove (README § Perimeter / deploy) — and it overlaps
-<../../plans/chat_runtime_cleanup.md> § stage 7's `chat_attachment`, which already subsumes
-`sessions.room_id` and `matrix_conversation.session_id`. So the real choice is whether attachments
+<../../plans/chat_runtime_cleanup.md> § stage 7's unbuilt `chat_attachment`, which is specified to
+subsume `sessions.room_id` and `matrix_conversation.session_id`. So the real choice is whether attachments
 are re-keyed to a conversation or a conversation table is added beside them.
 
 **What not doing it costs.** Every cross-session read stays addressed by a channel key, so a second
