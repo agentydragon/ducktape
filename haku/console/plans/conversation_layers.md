@@ -380,6 +380,38 @@ transaction, so while it exists the conversation's writer branches on `chat.room
 reconciliation the turn writes only the record and the channel derives what it owes, which is what
 removes that branch. What stays shared is the record and the per-attachment cursor.
 
+### The cursor and the outbox are both needed, and they answer to different layers
+
+They are easy to confuse because both are "what has gone out", so name whose contract each one is
+(operator, 2026-08-17):
+
+- **The cursor is how far the conversation has been handed to the channel implementation and
+  acked by it.** It lives on the boundary between the conversation layer and the channel layer, and
+  it is a position in the conversation's own stream — the one thing every channel has, including a
+  channel that keeps no copy.
+- **The outbox is the channel's queue against the homeserver.** It lives entirely inside the Matrix
+  implementation, below that boundary, and what it holds is retry state about a flaky external
+  server: `attempts`, `next_attempt_at`, `last_error`, a row that stays unsent until it is not.
+
+**A cursor cannot absorb the outbox**, and this is why both survive. A position says "everything
+before here is done", which is only true when delivery is ordered and gapless; a homeserver that
+refuses one reply and accepts the next breaks that, and expressing "this one failed three times and
+is backing off" in a cursor is just re-deriving a queue. Equally the outbox cannot absorb the
+cursor: it is the channel's private business, and the conversation layer must not have to read a
+Matrix queue to know how far Matrix has got.
+
+**`chat_delivery` splits along that same line, which is what makes it look odd.** Its `message:` and
+`turn:` rows are per-item cursor information kept in the shared schema as a growing map; its single
+`status` row is the channel's own revision addressing, which belongs beside the outbox rather than
+above it. So the order is cursor first: once the position exists, the `message:`/`turn:` rows have
+nothing left to say and go, and what remains is small enough to move down into the channel.
+
+**Do the cursor before the rest of step 9.** Step 9 bundles it with deleting `_frontend_for`,
+collapsing the three elections and reducing the three egress mechanisms, and is in turn gated on
+step 7. The cursor itself is gated on none of that — it is a position over rows that already exist —
+and it is what lets a piece of merged schema shrink rather than grow. Splitting it out ahead of its
+own step is the correction #4307 earned.
+
 <../x/README.md> § Matrix chat surface currently calls `session_outbox` neutral and calls the
 record-then-drain split "the shape every outbound channel write has to take". The split is right;
 the neutral half is the record, and this is the sentence to correct when the move lands.
@@ -808,7 +840,9 @@ having even if the loop is never built.
     table it added is narrower than its name** — see § 5 § `chat_delivery` is a revision index: it
     serves channels that hold an addressable, editable copy, and an append-only one is served by
     step 9's cursor instead.
-9.  **Matrix becomes a subscriber** (§ 2's primitive): one loop per `(channel, conversation)`,
+9.  **Matrix becomes a subscriber** (§ 2's primitive) — **but build the cursor first, on its own**
+    (§ 5): the position is gated on nothing here, and everything else in this step is. One loop per
+    `(channel, conversation)`,
     reading the record from its cursor instead of being handed events by the turn loop, woken by
     `session_changed` and by inbound events with the 1s poll demoted to a fallback. Here the three
     elections collapse to one, the three egress mechanisms become one difference calculation, the
