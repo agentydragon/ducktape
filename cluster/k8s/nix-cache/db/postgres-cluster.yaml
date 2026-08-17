@@ -16,6 +16,10 @@ spec:
   affinity:
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
     # One PostgreSQL instance per OVH kimsufi node for real HA.
     topologyKey: kubernetes.io/hostname
     # Soft anti-affinity off control-plane nodes (their etcd is on a rotational

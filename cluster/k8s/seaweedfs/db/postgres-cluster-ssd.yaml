@@ -24,8 +24,20 @@ spec:
   affinity:
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
-    # One instance per KS-GAME node for HA (local-path-ovh-ssd pins the tier).
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+    # Existing SSD-local replicas remain pinned by their PVs. Prefer a worker
+    # for any future placement that is not constrained by an existing claim.
     topologyKey: kubernetes.io/hostname
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
 
   storage:
     storageClass: local-path-ovh-ssd

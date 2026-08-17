@@ -27,6 +27,13 @@ spec:
         effect: NoSchedule
     # One PostgreSQL instance per HIL node for real HA.
     topologyKey: kubernetes.io/hostname
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
 
   storage:
     storageClass: local-path-ovh
