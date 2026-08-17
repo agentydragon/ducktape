@@ -634,11 +634,7 @@ class SessionService:
             if abort_event.is_set():
                 final_text += f"\n\n{ABORTED_NOTICE}"
             if assistant_id is not None:
-                # A stream no completed frame closed. Its `partial` frame stays exactly as the
-                # last delta left it: the rollout should show a turn that stopped mid-answer as
-                # having stopped mid-answer. `final_text` is not written over it, because the
-                # harness adds `[aborted by operator]` to that and the frame records what the
-                # agent produced, not what the room was told.
+                # A stream no completed frame closed.
                 # No frame range is passed: the deltas that produced this text already recorded
                 # theirs, and the `result` frame closing the turn is not where the words came from.
                 carried_final = await self._store.update_assistant(

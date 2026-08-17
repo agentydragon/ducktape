@@ -52,7 +52,7 @@ from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import ABORTED_NOTICE, GOING_AWAY_CODE, RolloutRecorder, SessionService, _replaying
 from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, MatrixSession, SessionStore, SpaSession
 from haku.console.x.testing.recording_claims import RecordingClaims
-from haku.runtime.x.bridge.cli_client import ClaudeCli, ReceivedFrame, SentPrompt
+from haku.runtime.x.bridge.cli_client import ClaudeCli, FrameSink, ReceivedFrame, SentPrompt
 from haku.runtime.x.bridge.protocol import NOT_ADMITTED_CODE, ClaudeMessage
 
 
@@ -113,8 +113,8 @@ class _FakeCli:
     async def connect(self) -> dict[str, Any]:
         return {"subtype": "success"}
 
-    async def query(self, prompt: str) -> SentPrompt:
-        self.prompts.append(prompt)
+    async def query(self, text: str) -> SentPrompt:
+        self.prompts.append(text)
         self.replay()
         return SentPrompt(command_uuid="fake-command", frame_seq=self.prompt_frame_seq)
 
@@ -255,16 +255,30 @@ class _LifecycleWebSocket:
 
 
 class _LifecycleClaudeClient(_FakeCli):
+    """A `cli_over_websocket` stand-in that records through the sink it is handed.
+
+    The sink is not optional in the real client (<../../runtime/x/bridge/cli_client.py>): every
+    frame either way is written as it crosses the wire, and each is numbered from the row it
+    landed in. So a double that dropped it would stand in for a client that cannot exist, and
+    would hand the turn loop numbers naming no row.
+    """
+
     last_launch: object | None = None
 
-    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: object):
+    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: FrameSink):
         super().__init__()
         type(self).last_launch = launch
+        self._frames_to = frames_to
         self.connected = False
 
     async def connect(self) -> dict[str, Any]:
         self.connected = True
         return {"subtype": "success"}
+
+    async def query(self, text: str) -> SentPrompt:
+        self.prompt_frame_seq = await self._frames_to.sent(prompt(text))
+        self.frame_seqs = [(await self._frames_to.received(frame, runner_seq=None)).frame_seq for frame in self.script]
+        return await super().query(text)
 
 
 class _ClosingClaudeClient(_LifecycleClaudeClient):
@@ -1287,7 +1301,7 @@ async def test_the_calls_come_from_the_events_and_need_no_id_from_the_agent(
 class _RealDbClaudeClient(_LifecycleClaudeClient):
     """Answers every prompt with "pong", then goes quiet like an idle CLI."""
 
-    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: object):
+    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: FrameSink):
         super().__init__(adapter, launch, on_progress, frames_to)
         self.script = [assistant(text_block("pong")), result(text="pong")]
 
@@ -1468,7 +1482,7 @@ async def test_the_runners_number_is_recorded_beside_the_rows_own(chat_store, mi
 class _DyingMidStreamClaudeClient(_LifecycleClaudeClient):
     """Streams two deltas, then ends the turn without ever completing the message."""
 
-    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: object):
+    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: FrameSink):
         super().__init__(adapter, launch, on_progress, frames_to)
         self.script = [text_delta("half an "), text_delta("answer"), result()]
 
@@ -1478,7 +1492,7 @@ class _DisconnectingClaudeClient(_LifecycleClaudeClient):
 
     instance: _DisconnectingClaudeClient | None = None
 
-    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: object):
+    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: FrameSink):
         super().__init__(adapter, launch, on_progress, frames_to)
         type(self).instance = self
 
