@@ -548,8 +548,11 @@ having even if the loop is never built.
 
 1. **The browser joins a session instead of creating one.** No schema and no dependency on anything
    below, and it is most of what "both surfaces open on one conversation" looks like from the
-   operator's side: `enqueue_prompt` has no surface check and § 8's increment route already serves
-   updates, so what is missing is a chat page that opens an existing session.
+   operator's side: `enqueue_prompt` has no surface check, so what is missing is a chat page that
+   opens an existing session. **Shipped as #4282, on the whole-conversation refetch**, which is the
+   correction its author made to this sentence: § 8's increment route is #4257, still open and with
+   no frontend consumer, so this step could not and did not build on it. Reading the increment is
+   its own later change, and it is invisible to the operator when it lands.
 2. **`conversation`, then `chat_attachment` keyed on it** (§ 6). One change, because the
    attachment's key is the whole point of the identity — building the attachment on `session_id`
    first would mean writing the re-pointing logic and then deleting it. Subsumes
