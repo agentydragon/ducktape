@@ -713,7 +713,7 @@ async def test_history_is_read_from_our_record_and_not_from_the_homeserver(
     await chat_store.enqueue_prompt(operator_id, view.session_id, "[$a] hi")
     start = await chat_store.next_prompt(view.session_id)
     assert start is not None
-    message_id = await chat_store.begin_assistant(view.session_id, start.turn_id)
+    message_id = await chat_store.begin_assistant(view.session_id, start.turn_id, source_first_frame_seq=1)
     await chat_store.update_assistant(view.session_id, message_id, "hello", complete=True)
 
     said = await service.recent_history(uuid4(), 20)

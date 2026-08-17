@@ -1084,9 +1084,7 @@ class SessionStore:
                 queued_reply=turn.queued_reply,
             )
 
-    async def begin_assistant(
-        self, session_id: UUID, turn_id: UUID, *, source_first_frame_seq: int | None = None
-    ) -> UUID:
+    async def begin_assistant(self, session_id: UUID, turn_id: UUID, *, source_first_frame_seq: int) -> UUID:
         """Open the message this turn is about to stream into, and point the turn at it.
 
         One transaction, because the pointer is what makes the message the *turn's*: a replica
@@ -1097,6 +1095,7 @@ class SessionStore:
         every update: this is the one moment that knows where the message began, and a resumed turn
         picks its message up from the turn row without passing through here — so leaving `first` to
         a later write would walk it forward past the frames the earlier process already projected.
+        Required, because `ck_session_messages_assistant_pointed` refuses a row without it.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -1424,7 +1423,7 @@ async def _unprojected_frames(db: AsyncSession, session_id: UUID, cursor: int) -
 
 
 async def _open_assistant(
-    db: AsyncSession, session_id: UUID, turn: SessionTurn, source_first_frame_seq: int | None, now: datetime
+    db: AsyncSession, session_id: UUID, turn: SessionTurn, source_first_frame_seq: int, now: datetime
 ) -> SessionMessage:
     """Open an assistant message and point *turn* at it, inside the caller's transaction.
 

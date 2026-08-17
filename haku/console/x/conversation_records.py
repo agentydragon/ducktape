@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 
 class Conversation(BaseModel):
     session_id: UUID
-    surface: str | None = Field(description="`matrix` or `spa`; absent on sessions that predate the column.")
+    surface: str = Field(description="`matrix` or `spa`.")
     room_id: str | None = Field(description="The Matrix room this session served, if it served one.")
     status: str
     created_at: datetime.datetime

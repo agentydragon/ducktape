@@ -19,7 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console import recall_index_sync
-from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, SessionStatus
+from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSurface, SessionStatus
 from haku.console.config import HakuStateGitConfig
 from haku.console.database_schema import Operator, Session, SessionMessage
 from haku.console.operator_identity import OperatorStatus
@@ -64,6 +64,7 @@ async def say(sessions: async_sessionmaker[AsyncSession], operator_id: UUID, con
             Session(
                 session_id=session_id,
                 operator_id=operator_id,
+                surface=ChatSurface.SPA,
                 status=SessionStatus.CLOSED,
                 bridge_token_fingerprint=b"fingerprint",
                 lease_expires_at=_NOW,

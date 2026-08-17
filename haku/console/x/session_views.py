@@ -105,7 +105,7 @@ class ConversationSessionSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     session_id: UUID
-    surface: ChatSurface | None
+    surface: ChatSurface
     room_id: str | None
     status: SessionStatus
     error: str | None
@@ -150,7 +150,7 @@ class ConversationSessionView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     session_id: UUID
-    surface: ChatSurface | None
+    surface: ChatSurface
     room_id: str | None
     status: SessionStatus
     error: str | None

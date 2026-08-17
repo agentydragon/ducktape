@@ -864,10 +864,7 @@ class Session(Base):
     operator_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
     )
-    # Null means "predates attribution" — a row written before 0030, or by a replica still on
-    # the previous image during a roll. Deliberately not defaulted to `spa`: a wrong label is
-    # worse than an absent one, since nothing downstream can tell the two apart afterwards.
-    surface: Mapped[ChatSurface | None] = mapped_column(TextBackedStrEnumColumn(ChatSurface), nullable=True)
+    surface: Mapped[ChatSurface] = mapped_column(TextBackedStrEnumColumn(ChatSurface), nullable=False)
     # The Matrix room this session serves — the *history* half of the binding, where
     # `matrix_conversation.session_id` is the current pointer. Denormalized from that table
     # because it keeps only the live session, so without this column a replaced Matrix session
@@ -896,11 +893,10 @@ class Session(Base):
     # A bound like `session_turns.first_frame_seq`, not a pointer: `Identity` leaves gaps, and
     # `next_prompt` anchors it at the frame before the turn it opens, which is a value no row has.
     #
-    # **NULL means nothing here has ever projected for this session.** There is no position to
-    # resume from in that case, so `adopt_open_turn` ends the session's open turn as failed rather
-    # than re-projecting from one no writer took. <../plans/next_month.md> § 1 tightens the column to
-    # `NOT NULL DEFAULT 0`, at which point "nothing projected yet" is `0` rather than absent.
-    projected_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # **`0` is "nothing here has ever projected"**, which no frame's `frame_seq` can be, so the
+    # bound needs no absent state. It arrives by the server default rather than from `create`,
+    # which never names the column.
+    projected_frame_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("0"))
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Renewed by whichever replica currently holds this session's runner websocket. A live
     # status is otherwise only ever corrected in-process, so a replica that dies mid-turn
@@ -925,12 +921,11 @@ class Session(Base):
             "status IN ('idle','provisioning','ready','responding','closing','closed','failed')",
             name="ck_sessions_status",
         ),
-        CheckConstraint("surface IS NULL OR surface IN ('spa','matrix')", name="ck_sessions_surface"),
+        CheckConstraint("surface IN ('spa','matrix')", name="ck_sessions_surface"),
         # A room without a Matrix surface, or a Matrix session with no room, are both states
-        # nothing could act on sensibly. Two one-way constraints rather than an equivalence,
-        # because a legacy row has neither and must stay legal.
-        CheckConstraint("room_id IS NULL OR surface = 'matrix'", name="ck_sessions_room_is_matrix"),
-        CheckConstraint("surface <> 'matrix' OR room_id IS NOT NULL", name="ck_sessions_matrix_has_room"),
+        # nothing could act on sensibly — and a session serving a room is what `matrix` means, so
+        # the two are one fact rather than two rules.
+        CheckConstraint("(surface = 'matrix') = (room_id IS NOT NULL)", name="ck_sessions_matrix_room"),
         Index("idx_sessions_operator", "operator_id", "created_at"),
         Index(
             "idx_sessions_expired_lease",
@@ -967,14 +962,10 @@ class SessionMessage(Base):
     # The two values are session-scoped; frame_seq is globally allocated and is not a foreign key
     # by itself.
     #
-    # **NULL here means two different things, and this table cannot tell them apart**, which is
-    # why the plan's "new and updated rows must carry a range" is not a constraint that can be
-    # written against these two columns: a row predating #4105, and the operator's own prompt,
-    # written before the frame it goes out as exists and never pointed at all if no turn claims
-    # it. Both are the plan's `authored` arm, and a `CHECK` sees only NULL. (It used to mean a
-    # third thing — a projection whose frame carried no sequence — which a numbered frame at the
-    # console's boundary has since made unreachable.) Requiring the range belongs where the union
-    # is a real discriminator — the neutral events of stage 4 — not here.
+    # **NULL is the operator's own prompt**, written before the frame it goes out as exists and
+    # never pointed at all if no turn claims it (`PromptFate.LOST`). That is a live state rather
+    # than an era, so the range is required by role in the constraint below rather than on these
+    # columns.
     # See <plans/chat_runtime_projection.md> § "The projection is not a one-way door".
     source_first_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     source_last_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
@@ -985,9 +976,13 @@ class SessionMessage(Base):
     tool_calls: Mapped[list[RecordedToolCall]] = mapped_column(
         PydanticListColumn(RecordedToolCall), nullable=False, server_default=text("'[]'::jsonb")
     )
+    # Why the two columns above are NULL, where somebody has looked.
+    #
     # CLEANUP(added 2026-08-17): Unmap, then drop. Nothing writes this column since the provenance
-    #   backfill that was its only writer was deleted; <../plans/legacy_purge.md> phase 2 unmaps it
-    #   and phase 3 drops it with `ck_session_messages_unpointable_{reason,exclusive}`.
+    #   backfill that was its only writer was deleted, and an assistant row can no longer be
+    #   unpointed at all (`ck_session_messages_assistant_pointed`). <../plans/next_month.md> § 1
+    #   phase 2 unmaps it; phase 3 drops it with
+    #   `ck_session_messages_unpointable_{reason,exclusive}`.
     unpointable_reason: Mapped[MessageUnpointable | None] = mapped_column(
         TextBackedStrEnumColumn(MessageUnpointable), nullable=True
     )
@@ -1005,10 +1000,16 @@ class SessionMessage(Base):
         ),
         # A separate rule from the ordering above, because it fails for a different reason and a
         # reader should be told which: a far end with no near end is neither a range nor the
-        # absence of one. Added `NOT VALID` by `0046`, so unpointed history is tolerated.
+        # absence of one.
         CheckConstraint(
             "source_last_frame_seq IS NULL OR source_first_frame_seq IS NOT NULL",
             name="ck_session_messages_source_anchored",
+        ),
+        # Every writer of an assistant row names the frame that opened it, so an unpointed one is
+        # a row nothing can appeal to the log. A user row is unpointed exactly while its prompt is
+        # unclaimed, which is why this is by role and not on the column.
+        CheckConstraint(
+            "role <> 'assistant' OR source_first_frame_seq IS NOT NULL", name="ck_session_messages_assistant_pointed"
         ),
         CheckConstraint(
             "unpointable_reason IS NULL "
@@ -1335,6 +1336,11 @@ class SessionFrame(Base):
 
     __table_args__ = (
         CheckConstraint("direction IN ('to_agent','from_agent')", name="ck_session_frames_direction"),
+        # The runner numbers what *it* puts on the wire, so a number on a frame this console sent
+        # would be one nobody assigned.
+        CheckConstraint(
+            "runner_seq IS NULL OR direction = 'from_agent'", name="ck_session_frames_runner_seq_direction"
+        ),
         Index("idx_session_frames_session", "session_id", "frame_seq"),
         # Reading a session by kind is otherwise a filter over its whole log, which is affordable
         # only while the log holds no deltas. It holds them now, and the readers that select by

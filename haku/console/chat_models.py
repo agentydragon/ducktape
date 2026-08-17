@@ -195,6 +195,13 @@ class EventProvenance(StrEnum):
 class MessageUnpointable(StrEnum):
     """Why a `session_messages` row was left without a frame range, once one was looked for."""
 
+    CLEANUP(added 2026-08-17): No writer left — the backfill that matched a row to the message its
+    frames project went with the rows it was built to point. Delete this with
+    `session_messages.unpointable_reason` in phase 3 of <../plans/next_month.md> § 1.
+    """
+
+    # No projected message carries this row's text: prose the frames never held — an abort
+    # notice appended to it, an error, or a message whose frames were never recorded.
     NO_MATCHING_PROJECTION = "no_matching_projection"
     AMBIGUOUS_TEXT = "ambiguous_text"
     OUT_OF_ORDER = "out_of_order"

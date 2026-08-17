@@ -57,12 +57,16 @@ What is left is three releases.
 
 #### Phase 2 — the code-only release, plus the additive tightening
 
-Unmap `session_messages.{unpointable_reason,tool_calls}` and `session_frames.partial` and delete
-every reader; delete `message_view`'s `recorded or message.tool_calls` fallback; and one additive
-migration: `sessions.surface SET NOT NULL`, the surface/room equivalence,
-`VALIDATE CONSTRAINT ck_session_messages_source_anchored`, `ck_session_messages_assistant_pointed`,
-`ck_session_frames_runner_seq_direction`, and `projected_frame_seq` `SET DEFAULT 0` **and**
-`SET NOT NULL`.
+**The migration half has landed as `0058`**: `sessions.surface SET NOT NULL`, the surface/room
+equivalence, `VALIDATE CONSTRAINT ck_session_messages_source_anchored`,
+`ck_session_messages_assistant_pointed`, `ck_session_frames_runner_seq_direction`, and
+`projected_frame_seq` `SET DEFAULT 0` **and** `SET NOT NULL`. The backfill that wrote
+`unpointable_reason` — `x/message_provenance.py`, its `_main` and their tests — went with it, since
+`0058` makes the shape it recorded unwritable.
+
+What is left is the code: unmap `session_messages.{unpointable_reason,tool_calls}` and
+`session_frames.partial` and delete every reader, and delete `message_view`'s
+`recorded or message.tool_calls` fallback.
 
 **`ck_session_frames_wire_numbered` is not in phase 2**, and the reason is rows rather than old data:
 `_write_partial_frame` wrote a `from_agent`/`assistant` row carrying no runner number on every stream
@@ -70,18 +74,19 @@ delta, and went on doing so in the serving image until #4230 deleted it — so p
 table did not leave it empty of them. It goes in phase 3, which deletes those rows; the writer being
 gone is not enough.
 
-Each addition is safe against the previous image for a specific reason, not a general one:
+Each of `0058`'s additions is safe against the previous image for a specific reason, not a general
+one:
 
-| Addition                                       | Why the previous image cannot violate it                                                                                                                              |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `surface NOT NULL`                             | `SessionStore.create` always sets `surface` from the variant's `surface_column`                                                                                       |
-| `(surface = 'matrix') = (room_id IS NOT NULL)` | Same call site sets `room_id` from the same variant                                                                                                                   |
-| `ck_session_messages_assistant_pointed`        | Both `_open_assistant` call sites pass a `frame_seq`; there is no third writer                                                                                        |
-| `VALIDATE … source_anchored`                   | The table is empty, and `update_assistant` only widens a range `begin_assistant` set                                                                                  |
-| `ck_session_frames_wire_numbered`              | Holds only because phase 1 cycled the runner — **verify the gate query first**                                                                                        |
-| `projected_frame_seq SET DEFAULT 0`            | `create()` never sets the attribute, so the ORM omits it and the default applies — **measured** on the replacement session, which came up `NULL` under the old schema |
+| Addition                                       | Why the previous image cannot violate it                                                                                   |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `surface NOT NULL`                             | `SessionStore.create` always sets `surface` from the variant's `surface_column`                                            |
+| `(surface = 'matrix') = (room_id IS NOT NULL)` | Same call site sets `room_id` from the same variant, and the two rules it replaces already said exactly this               |
+| `ck_session_messages_assistant_pointed`        | Every `_open_assistant` call site passes a `frame_seq`, and the parameter is now required rather than defaulted            |
+| `VALIDATE … source_anchored`                   | The table is empty, and `update_assistant` only widens a range `begin_assistant` set                                       |
+| `ck_session_frames_runner_seq_direction`       | Only `RolloutRecorder.received` passes a number, and it is `from_agent` by construction                                    |
+| `projected_frame_seq NOT NULL DEFAULT 0`       | `create()` never sets the attribute, so the ORM omits it and the default applies; nothing writes `NULL` over it afterwards |
 
-Prove each before writing it. Every query returns 0:
+Each was proved before it was written. Every query returns 0:
 
 ```sql
 SELECT count(*) FROM sessions WHERE surface IS NULL;

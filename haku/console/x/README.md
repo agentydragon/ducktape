@@ -315,8 +315,8 @@ fact rather than a reading of `protocol.md`, so what looks like belt and braces 
 
 `check_session` re-projects a recorded session's frames and aligns the result against
 `session_events`, returning per turn either `Agrees`, `Drifted` with its findings, or `Skipped`
-with the era it cannot speak about. It is a function, not a command, so a caller decides what to do
-with the report.
+with the era it cannot speak about. It is a function rather than a command, and has no caller in
+the tree: the backfill it was written for pointed the rows the purge deleted.
 
 - **It folds through `frame_projection.projected`**, which is why that function is not the turn
   loop's private one. A checker driving `project_log` over a whole session instead would merge the

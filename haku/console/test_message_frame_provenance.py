@@ -105,18 +105,19 @@ def test_message_provenance_migration_backfills_observed_assistant_frames(db_url
 
 
 def test_unpointed_history_survives_the_constraint(db_url: str, engine: Engine) -> None:
-    """`NOT VALID` is the whole reason this ships without archaeology first.
+    """`NOT VALID` is the whole reason `0046` shipped without archaeology first.
 
     An assistant row written before #4105 names no wire message, so `0045`'s backfill above cannot
-    reach it and it stays unpointed. Migrating past `0046` must leave it exactly where it is
-    rather than refusing to apply — the alternative was recovering or dropping history, and
-    dropping it would delete the `haku_index` chat corpus.
+    reach it and it stays unpointed. Applying `0046` had to leave it exactly where it is rather
+    than refusing — the alternative was recovering or dropping history, and dropping it would have
+    deleted the `haku_index` chat corpus. It was dropped in the end (`0058`, and the purge that
+    preceded it), which is why this stops at the revision it is about.
     """
     apply_migrations(db_url, "0045")
     with engine.begin() as conn:
         message_id = _insert_message(conn, _session(conn), role="assistant")
 
-    apply_migrations(db_url)
+    apply_migrations(db_url, "0046")
 
     with engine.connect() as conn:
         assert conn.execute(
@@ -127,14 +128,28 @@ def test_unpointed_history_survives_the_constraint(db_url: str, engine: Engine) 
 
 def test_a_range_cannot_end_where_it_never_began(db_url: str, engine: Engine) -> None:
     """The shape `0045` left writable that is nonsense under either arm of the union: a far end
-    with no near end is neither a range nor the absence of one."""
+    with no near end is neither a range nor the absence of one.
+
+    On the prompt, since an assistant row is refused for the stricter reason below.
+    """
     apply_migrations(db_url)
     with engine.begin() as conn:
         session_id = _session(conn)
 
-    for role in ("assistant", "user"):
-        with engine.begin() as conn, pytest.raises(IntegrityError, match="ck_session_messages_source_anchored"):
-            _insert_message(conn, session_id, role=role, last=4)
+    with engine.begin() as conn, pytest.raises(IntegrityError, match="ck_session_messages_source_anchored"):
+        _insert_message(conn, session_id, role="user", last=4)
+
+
+def test_an_assistant_row_must_say_which_frame_opened_it(db_url: str, engine: Engine) -> None:
+    """`begin_assistant` names that frame at insert, so an unpointed answer is one nothing can
+    appeal to the log. Refusable only because the purge deleted the rows that were in that shape
+    (<../plans/legacy_purge.md>)."""
+    apply_migrations(db_url)
+    with engine.begin() as conn:
+        session_id = _session(conn)
+
+    with engine.begin() as conn, pytest.raises(IntegrityError, match="ck_session_messages_assistant_pointed"):
+        _insert_message(conn, session_id, role="assistant")
 
 
 @pytest.mark.parametrize(
@@ -143,10 +158,6 @@ def test_a_range_cannot_end_where_it_never_began(db_url: str, engine: Engine) ->
         # The operator's own prompt at the moment it is typed: written before the frame it goes
         # out as exists, and never pointed at all if no turn claims it.
         pytest.param("user", None, None, id="unclaimed-prompt"),
-        # An assistant row with no range at all: every row written before #4105, and
-        # `begin_assistant` with no opening frame named. Requiring the near end would refuse the
-        # history this table already holds, which is why it is *not* required.
-        pytest.param("assistant", None, None, id="unpointed-assistant"),
         # `begin_assistant` at insert: the near end alone, before any delta has widened it.
         pytest.param("assistant", 7, None, id="opened"),
         pytest.param("assistant", 7, 9, id="completed"),

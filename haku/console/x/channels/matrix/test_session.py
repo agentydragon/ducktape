@@ -385,7 +385,7 @@ async def exchange(chat_store: SessionStore, operator_id: UUID, session_id: UUID
     await chat_store.enqueue_prompt(operator_id, session_id, asked)
     start = await chat_store.next_prompt(session_id)
     assert start is not None
-    message_id = await chat_store.begin_assistant(session_id, start.turn_id)
+    message_id = await chat_store.begin_assistant(session_id, start.turn_id, source_first_frame_seq=1)
     await chat_store.update_assistant(session_id, message_id, answered, complete=True)
     # Ended, because admission asks about the turn: a session left mid-turn refuses the next
     # prompt, and these tests are conversations rather than one exchange each.
@@ -492,9 +492,9 @@ async def test_what_the_room_was_never_told_is_not_in_the_history(
     await chat_store.enqueue_prompt(operator_id, session_id, "[$a] do something")
     start = await chat_store.next_prompt(session_id)
     assert start is not None
-    tool_only = await chat_store.begin_assistant(session_id, start.turn_id)
+    tool_only = await chat_store.begin_assistant(session_id, start.turn_id, source_first_frame_seq=1)
     await chat_store.update_assistant(session_id, tool_only, "", complete=True)
-    streaming = await chat_store.begin_assistant(session_id, start.turn_id)
+    streaming = await chat_store.begin_assistant(session_id, start.turn_id, source_first_frame_seq=2)
     await chat_store.update_assistant(session_id, streaming, "half an ans", complete=False)
 
     assert await read(transcript) == [(ChatMessageRole.USER, "[$a] do something")]

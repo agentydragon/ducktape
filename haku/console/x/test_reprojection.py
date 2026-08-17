@@ -159,14 +159,15 @@ async def test_a_turn_the_cursor_never_reached_is_skipped_rather_than_re_project
 ) -> None:
     """The other era, #4178's: a session whose cursor a previous image never advanced.
 
-    Its frames were projected by *something* — the rows are there — but nothing says how far, so
-    re-projecting them would compare against a position no writer claimed.
+    Its frames were projected by *something* — the rows are there — but the cursor stands where
+    nothing has been projected, so re-projecting them would compare against a position no writer
+    claimed.
     """
     session_id, _ = await _turn_through_the_write_path(
         chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
     )
     async with migrated_sessions() as db:
-        await db.execute(update(Session).where(Session.session_id == session_id).values(projected_frame_seq=None))
+        await db.execute(update(Session).where(Session.session_id == session_id).values(projected_frame_seq=0))
         await db.commit()
         report = await reprojection.check_session(db, session_id)
 

@@ -81,9 +81,12 @@ async def _rows(sessions: async_sessionmaker[AsyncSession]) -> list[SessionOutbo
 
 async def _enqueue(chat_store: SessionStore, session_id: UUID, turn_id: UUID, *bodies: str) -> None:
     """Produce *bodies* the way a turn does: one completed assistant message each."""
-    for body in bodies:
+    for frame_seq, body in enumerate(bodies, start=1):
         assert await chat_store.update_assistant(
-            session_id, await chat_store.begin_assistant(session_id, turn_id), body, complete=True
+            session_id,
+            await chat_store.begin_assistant(session_id, turn_id, source_first_frame_seq=frame_seq),
+            body,
+            complete=True,
         )
 
 
@@ -225,7 +228,7 @@ async def test_one_message_is_queued_once_however_often_its_frame_arrives(
     """A runner replaying its rollout into a replacement replica offers the same completed
     `assistant` frame again. Without the partial unique index that would be a second row for one
     transcript message, and the room would read the answer twice."""
-    message_id = await chat_store.begin_assistant(session_id, turn_id)
+    message_id = await chat_store.begin_assistant(session_id, turn_id, source_first_frame_seq=1)
 
     for _ in range(3):
         assert await chat_store.update_assistant(session_id, message_id, "the answer", complete=True)
@@ -260,7 +263,7 @@ async def test_a_session_serving_no_room_queues_nothing(chat_store, migrated_ses
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
-    message_id = await chat_store.begin_assistant(view.session_id, turn.turn_id)
+    message_id = await chat_store.begin_assistant(view.session_id, turn.turn_id, source_first_frame_seq=1)
 
     assert not await chat_store.update_assistant(view.session_id, message_id, "the answer", complete=True)
 
@@ -273,7 +276,7 @@ async def test_the_tag_says_which_transcript_row_the_room_is_showing(
     chat_store, migrated_sessions, session_id, turn_id
 ) -> None:
     """Rebuilt from the row rather than stored beside it, so the two cannot disagree."""
-    message_id = await chat_store.begin_assistant(session_id, turn_id)
+    message_id = await chat_store.begin_assistant(session_id, turn_id, source_first_frame_seq=1)
     await chat_store.update_assistant(session_id, message_id, "the answer", agent_message_id="msg_01abc", complete=True)
     [row] = await _rows(migrated_sessions)
 

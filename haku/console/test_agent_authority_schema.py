@@ -1567,12 +1567,14 @@ def test_lease_backfill_reclaims_a_session_no_replica_is_holding(db_url: str) ->
                     },
                 )
 
-        apply_migrations(db_url)
+        # `0028`, the revision under test, rather than head: a row this old has no `surface`, and
+        # `0058` requires one now that the purge has deleted the rows that had none.
+        apply_migrations(db_url, "0028")
 
         with engine.connect() as conn:
             leases: dict[UUID, datetime.datetime | None] = {
                 row.session_id: row.lease_expires_at
-                for row in conn.execute(text("SELECT session_id, lease_expires_at FROM sessions"))
+                for row in conn.execute(text("SELECT session_id, lease_expires_at FROM claude_chat_sessions"))
             }
         # Grace, not an expired lease: a replica that is genuinely alive renews inside the TTL,
         # so the backfill must not declare every healthy session dead the moment it runs.
@@ -1606,15 +1608,15 @@ def test_a_chat_session_cannot_be_written_without_a_lease(db_url: str) -> None:
                 ),
                 {"operator_id": operator_id, "now": now},
             )
-        with pytest.raises(IntegrityError), engine.begin() as conn:
+        with pytest.raises(IntegrityError, match="lease_expires_at"), engine.begin() as conn:
             conn.execute(
                 text(
                     """
                     INSERT INTO sessions (
-                        session_id, operator_id, status, bridge_token_fingerprint,
+                        session_id, operator_id, surface, status, bridge_token_fingerprint,
                         bridge_connected_at, error, lease_expires_at, created_at, updated_at
                     ) VALUES (
-                        :session_id, :operator_id, 'responding', :fingerprint,
+                        :session_id, :operator_id, 'spa', 'responding', :fingerprint,
                         NULL, NULL, NULL, :now, :now
                     )
                     """
