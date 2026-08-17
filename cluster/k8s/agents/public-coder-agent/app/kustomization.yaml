@@ -4,6 +4,7 @@ resources:
   - github-token-eso.yaml
   - public-coder-devbox-ssh.sops.yaml
   - pvc.yaml
+  - pvc-v2.yaml
   - deployment.yaml
   - service.yaml
   - networkpolicy-egress.yaml

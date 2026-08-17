@@ -20,7 +20,10 @@ metadata:
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
-  replicas: 1
+  # Hold the agent down until its local-PV state has been restored on the
+  # worker-local replacement claim. This is intentionally GitOps-owned: an
+  # imperative scale-to-zero would be reverted by Flux.
+  replicas: 0
   strategy:
     type: Recreate
   selector:
@@ -33,21 +36,18 @@ spec:
     spec:
       securityContext:
         fsGroup: 1000
-      # Retain the current local-PV holder through the control-plane taint, but
-      # prefer a worker for any subsequent placement before the explicit PVC
-      # migration.
-      tolerations:
-        - key: node-role.kubernetes.io/control-plane
-          operator: Exists
-          effect: NoSchedule
+      # The restored v2 local PVC is deliberately bound on this worker. Keep
+      # Public Coder off control planes even if a later manifest change points
+      # at a different claim.
       affinity:
         nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              preference:
-                matchExpressions:
-                  - key: node-role.kubernetes.io/control-plane
-                    operator: DoesNotExist
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - ovh-ns102453
       # Both containers use the Flux-pinned image produced by the Nix image workflow.
       initContainers:
         # The gateway reads its config from the state dir, which is the PVC, so

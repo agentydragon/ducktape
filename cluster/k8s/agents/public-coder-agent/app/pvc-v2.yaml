@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: public-coder-agent-state-v2
+  namespace: public-coder-agent
+  annotations:
+    description: >-
+      Worker-local replacement for the archived Public Coder OpenClaw state.
+      WaitForFirstConsumer binds it to ovh-ns102453 when the one-off restore
+      Pod is created; it must not be mounted by the Deployment before restore.
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path-ovh-hdd
+  resources:
+    requests:
+      # The source used 48.2 GiB at migration planning time. local-path does
+      # not enforce this request as a quota, but 80 GiB records sensible
+      # capacity for the durable agent workspace and its normal growth.
+      storage: 80Gi
