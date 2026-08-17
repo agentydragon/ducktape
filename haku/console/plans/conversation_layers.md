@@ -767,7 +767,15 @@ session_events WHERE kind IN ('activity_started','activity_completed')`, drop th
     instead of supervising one binding; `MatrixSessionFrontend` takes its address rather than
     claiming it has one by construction. Depends on 2's reader half, since "which conversations
     have a live attachment" is the query the fan-out runs. **Do not schedule it before idle
-    sessions land** — ten rooms each holding a sandbox is the failure this would ship.
+    sessions land** — ten rooms each holding a sandbox is the failure this would ship — **and not
+    before step 9 either**, which the dependency line originally omitted. § 7 listed four things
+    that assume one bot serves one room; an audit of the code found **eleven**. The seven it adds
+    are all per-bot-process state that step 9 deletes: `_status_event_id`, `_status_body`,
+    `_holding`, `_last_announced`, the single `RoomPacer` with its one collapsing status slot,
+    `_serviced`/`_live_room`, and `RoomOutboxDrain` claiming only `bound_room()`'s rows. Every one
+    fails **silently** with a second room — ingress dropped to a `logger.warning`, a status line
+    that never appears in room B, an edit addressed at another room's event id, replies that sit
+    unsent forever. Shipping 17 before 9 is shipping all seven.
 18. **Close R1.2's replay window.** A crash between `enqueue_prompt` committing and the hold being
     written re-delivers a batch the session already has. Found while building step 5 and dropped
     from it deliberately — different query shape, distinct bug, its own review. The trap it left
@@ -785,7 +793,7 @@ wanting either back is a re-fold over frames. That is what makes these cheap rat
 
 Steps 1, 4–7, 11 and 13 are independent of each other and of step 2; 3 and 8 depend on 2; 9 depends
 on 7 and 8; 10 depends on 9; 12 depends on 11 converging; 15 on 14, and 16 on 15; 17 on 2's reader
-half and on idle sessions. Step 13 may reorder 11 and 12 by finding more members that fail, which
+half, on step 9 and on idle sessions. Step 13 may reorder 11 and 12 by finding more members that fail, which
 argues for doing it early rather than waiting.
 
 ## 10. `sessions.status` is derived, and lossy
@@ -849,16 +857,31 @@ These are the acceptance criteria, and each names something that is false today:
   cursor if it holds a copy. Nothing else in the console changes.
 - **Adding a backend is implementing one thing** — an adapter producing `ConversationEvent`.
 - **Every event derived from a provider's frames names the frames it came from** (operator,
-  2026-08-17). Already true and already enforced, which is why it belongs here: it is the invariant
-  most likely to erode quietly, since nothing breaks the day a writer stops setting it. It holds as
-  a **union rather than a nullable** — `FrameRange | Authored` in the type,
-  `(provenance = 'frame_range') = (source_first_frame_seq IS NOT NULL)` in the database — because a
-  nullable range would let a rebuild drop the pointers and still report green, and because a
-  console-authored event genuinely has no frames rather than unknown ones. `session_messages` and
-  `session_turns` carry the same span, and `ck_session_messages_assistant_pointed` makes an
-  unpointed assistant row unrepresentable. What it buys is that a normalization can always be
-  appealed to the raw JSON — which is what makes the vocabulary's lossiness (a tool result rendered
-  as a string, `Usage` deleted, the activity events deleted) recoverable rather than final.
+  2026-08-17). What it buys is that a normalization can always be appealed to the raw JSON, which
+  is what makes the vocabulary's lossiness — a tool result rendered as a string, `Usage` deleted,
+  the activity events deleted — recoverable rather than final.
+
+  **This is a convention, not an enforced invariant, and an earlier draft of this line said
+  otherwise.** What is enforced is the union's internal consistency: `FrameRange | Authored` in the
+  type, and `ck_session_events_provenance_frames` saying frames are present on exactly the
+  `frame_range` arm. What is _not_ enforced is that a frame-derived **kind** must take that arm.
+  `ConversationEvent.provenance` is the same union on every member, so a `MessageCompleted`
+  carrying `Authored` type-checks; no CHECK ties a `ConversationEventKind` to a provenance, so the
+  row it produces passes every constraint; and `session_events.row` writes it as `authored` rather
+  than raising. Nothing reaches that state today only because the Claude adapter always sets a
+  range.
+
+  **It breaks asymmetrically, which is why it is worth a constraint rather than a docstring**: a
+  second adapter that forgot would write silently and fail on _read_ — `session_views._asked`
+  raises on a tool-call row with no frame, and it runs on every `SessionStore.get`, so one such row
+  makes a whole session's transcript unreadable. The gap sits exactly on the seam a second backend
+  arrives through, and this list previously recorded it as done, which is the more dangerous of the
+  two errors. Closing it is a CHECK tying the frame-derived kinds to `frame_range`, and a
+  `session_events.row` that raises instead of downgrading.
+
+  `session_messages` and `session_turns` carry the same span, and there
+  `ck_session_messages_assistant_pointed` does make an unpointed assistant row unrepresentable —
+  the shape `session_events` still wants.
 
 The last two are what "N backends × M channels, additively" actually means, and they are the reason
 for the whole exercise.
