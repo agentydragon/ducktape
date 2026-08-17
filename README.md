@@ -92,6 +92,12 @@ Lockfile and generated manifest workflows: <devinfra/docs/lockfiles.md>.
 
 When a component has one central plan, put it at `<dir>/PLAN.md` instead of a single-file `plans/` directory (e.g. `loom/PLAN.md`, `haku/PLAN.md`). Same lifecycle: delete or tombstone once fully done.
 
+**A plan is a burn-down, so it must be able to empty out.** An entry _leaves_ when its work lands, rather than staying behind marked done — a plan that accumulates completed items stops being a list of what to do next and becomes archaeology.
+
+**So nothing outside a plan may cite one.** No code comment, no `SPEC.md`, no other document pointing at a plan's numbered requirement, stage or step. A citation pins that entry in place permanently: it can no longer be deleted without breaking the reference, and the numbers outlive the work they described. Something needing a stable identifier is the signal that the content is not plan content.
+
+**Durable requirements and design go somewhere durable.** State the invariant at the code site if one place depends on it, in the component's `SPEC.md` if it is part of what that component guarantees, or as a design doc under `<dir>/docs/` if several places reason from it. Then the plan entry is free to disappear when the work does.
+
 ### `debug/`
 
 `<dir>/debug/<topic>.md` holds investigation notes, RCAs, and debug logs. The `cluster/` subproject uses `cluster/docs/lessons_learned/` instead.
