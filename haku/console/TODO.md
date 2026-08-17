@@ -220,14 +220,11 @@ ConfigMap edit instead of a roll.
 
 ## Finish the `claude_chat` → `session` rename
 
-The tables, the wake channel, the Python and the operator routes moved; two things are
-deliberately still holding the old name, each for its own reason.
+The tables, the wake channel, the Python, the operator routes and the SPA moved; one thing is
+deliberately still holding the old name.
 
 - **`/internal/claude/runner/{session_id}`.** Left alone on purpose: the runner image dials it, so
   renaming it is a coordinated two-sided roll, not part of a console-only change.
-- **The SPA's `frontend/x/claude_chat_page.tsx`.** The Python side is done — `x/claude_chat.py` is
-  `x/session_runtime.py` — but the page is the frontend's own rename and wants doing with the
-  `/chat`-and-`/conversations` merge rather than ahead of it.
 
 ## `session_frames` does not map to one concept
 

@@ -183,20 +183,15 @@ tombstone on the member says so.
 
 **Done when** an idle room holds no sandbox and the first message provisions one.
 
-### C. One sessions surface, and the SSE stream
+### C. One conversations surface, and the SSE stream — done
 
-`/chat` and `/conversations` are the same object behind two routes, two nav entries and two data
-paths. Merging them deletes `claude_chat_page.tsx`, unmounts `/api/sessions/{session_id}/stream`, and
-makes the `asyncio.wait` abort dance in `_run_turn` removable
-([session_channels.md](../console/plans/session_channels.md) § 2, [the read-API
-plan](../console/plans/one_read_api.md) § Stage 3).
+`/chat` and `/conversations` were the same object behind two routes, two nav entries and two data
+paths. They merged into one surface that lists **conversations**: `claude_chat_page.tsx` is deleted,
+`/api/sessions/{session_id}/stream` is unmounted, and the console has one live-update mechanism
+([session_channels.md](../console/plans/session_channels.md) § 2).
 
-**The operator chose: build the increment first, then merge onto it** — no regression at any point,
-rather than taking the refetch regression for however long the increment takes. The design is in
-`session_channels.md` § 4.
-
-**Done when** `claude_chat_page.tsx` is deleted, the SSE route is unmounted, and the console has one
-live-update mechanism.
+What is left of this item is the `asyncio.wait` abort dance in `_run_turn`, which unmounting the SSE
+route makes removable and which nothing has removed yet.
 
 ## The rule the outbox was a special case of
 

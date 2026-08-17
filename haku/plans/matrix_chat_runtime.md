@@ -19,7 +19,7 @@ plugs into. That runtime is not re-specified here.
 
 The operator chat surface today is `haku/console/x/session_runtime.py` (sessions, message rows,
 WebSocket streaming, sandbox claims, reconciliation) plus
-`console/frontend/x/claude_chat_page.tsx` and the markdown / scroll / code-block modules
+`console/frontend/x/conversations_page.tsx` and the markdown / scroll / code-block modules
 around it. Routing chat through Matrix buys an existing client ecosystem instead: mobile
 push, offline history, multi-client sync, and search — none of which the console gets
 otherwise, and all of which would be built by hand.

@@ -478,7 +478,7 @@ def session_view(
 ) -> SessionView:
     """The session as the SPA reads it, with `responding` derived from an open turn.
 
-    `status` is the frontend's contract (`frontend/x/claude_chat_page.tsx` switches on it); the
+    `status` is the frontend's contract (`frontend/x/conversations_page.tsx` switches on it); the
     column underneath does not carry turn state. A live session with a turn in flight reports
     `responding`; the session's own lifecycle — provisioning, closing, closed, failed — always
     wins, because a turn left open by a dead replica says nothing about a session the sweep has
