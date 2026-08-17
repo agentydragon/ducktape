@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime
-import decimal
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -18,7 +17,6 @@ from sqlalchemy import (
     Identity,
     Index,
     LargeBinary,
-    Numeric,
     Text,
     UniqueConstraint,
     text,
@@ -1130,9 +1128,8 @@ class SessionTurn(Base):
 
     `_run_turn`'s stack frame used to be the only place a turn existed, so everything that
     needed to name one named something else instead: session `status` carried `responding`
-    beside the session's own lifecycle, an abort was addressed to a session and so could be
-    accepted when no turn was running, and a `result` frame's cost and usage were read for an
-    error check and dropped because nothing owned them.
+    beside the session's own lifecycle, and an abort was addressed to a session and so could be
+    accepted when no turn was running.
 
     **A range, not a `turn_id` stamped on each frame.** The frame log is the record of the wire
     and the wire does not agree with our bracketing: the CLI folds a prompt sent mid-turn into
@@ -1166,18 +1163,6 @@ class SessionTurn(Base):
     started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     outcome: Mapped[TurnOutcome | None] = mapped_column(TextBackedStrEnumColumn(TurnOutcome), nullable=True)
-    # CLEANUP(added 2026-08-17): unmap these five once the release that stopped writing them has
-    #   converged, and drop them a release after that. Nothing reads or writes them: the console no
-    #   longer accounts for what an exchange cost. All five are nullable with no server default, so
-    #   ceasing to write them is legal and so is unmapping them; leaving all three counters NULL
-    #   satisfies `ck_session_turns_usage_counters` below, which is what an open turn has always
-    #   done. The numbers are still recoverable — they were read off the `result` frame's payload,
-    #   which stays whole in `session_frames`.
-    input_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    output_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    cached_input_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    cost_usd: Mapped[decimal.Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
-    duration_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # The assistant message this turn is streaming into, set when the message is opened and
     # cleared when it completes — so on an open turn it is non-NULL exactly while an answer is
     # half written, and NULL both before the first delta and between two completed messages.
@@ -1202,14 +1187,6 @@ class SessionTurn(Base):
         ),
         # Open and un-outcomed are the same state, so neither can be reached without the other.
         CheckConstraint("(ended_at IS NULL) = (outcome IS NULL)", name="ck_session_turns_ended_has_outcome"),
-        # The three counters are one fact — a backend either reported usage or it did not — so a
-        # row saying it counted input tokens and not output ones is unrepresentable rather than
-        # something every reader has to decide what to do with.
-        CheckConstraint(
-            "(input_tokens IS NULL) = (output_tokens IS NULL) "
-            "AND (input_tokens IS NULL) = (cached_input_tokens IS NULL)",
-            name="ck_session_turns_usage_counters",
-        ),
         Index("idx_session_turns_session", "session_id", "started_at"),
         # One open turn per session, as a schema property rather than a rule the turn loop has to
         # keep. It is also what `responding` is derived from, and what makes "an abort names a
@@ -1557,8 +1534,24 @@ UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset()
 #   or after this commit, and `DELETE FROM session_frames WHERE partial` with it. Those rows
 #   outlived their writer (#4230) and this release stopped marking them, so until the delete runs
 #   the fold reads them as ordinary `assistant` frames. Same § 1 phase 3.
+#
+# CLEANUP(added 2026-08-17): `DROP COLUMN session_turns.{input_tokens,output_tokens,
+#   cached_input_tokens,cost_usd,duration_ms}` once every pod runs an image at or after this
+#   commit, and `ck_session_turns_usage_counters` with them — this release stopped declaring that
+#   constraint, and it survives the unmapping because an `INSERT` naming none of the three
+#   counters leaves them all NULL, which is what it asks for. The numbers stay recoverable: they
+#   were read off the `result` frame's payload, which is whole in `session_frames`.
 UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
-    {("session_messages", "tool_calls"), ("session_messages", "unpointable_reason"), ("session_frames", "partial")}
+    {
+        ("session_messages", "tool_calls"),
+        ("session_messages", "unpointable_reason"),
+        ("session_frames", "partial"),
+        ("session_turns", "input_tokens"),
+        ("session_turns", "output_tokens"),
+        ("session_turns", "cached_input_tokens"),
+        ("session_turns", "cost_usd"),
+        ("session_turns", "duration_ms"),
+    }
 )
 
 # Indexes the database has and no ORM class declares. Reachable only through a column above: an
