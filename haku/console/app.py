@@ -73,7 +73,7 @@ from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import RecallIndexMaintenance
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
-from haku.console.x import sandbox_claims, session_runtime
+from haku.console.x import delivery_log, sandbox_claims, session_runtime
 
 # Aliased: bare `session`, `sync` and `outbox` would each collide with something this module
 # already talks about (database sessions, the index sweeps, the push queue).
@@ -298,6 +298,7 @@ def create_app(
             matrix_session.MatrixTurns(matrix_config, matrix_conversations, session_store, operator_identity_store),
             matrix_session.RoomTranscript(db_sessions),
             matrix_outbox.RoomOutbox(db_sessions),
+            delivery_log.DeliveryLog(db_sessions),
         )
         if claude_runtime is not None:
             # The template is parsed here, at construction, so a broken one is a pod that never

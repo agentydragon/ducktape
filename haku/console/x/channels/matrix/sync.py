@@ -58,12 +58,17 @@ from haku.console.x.channels.matrix.session import (
     PromptRejected,
     RoomTranscript,
 )
+from haku.console.x.delivery_log import DeliveryLog
 from haku.console.x.system_prompt import HistoryMessage
 
 logger = logging.getLogger(__name__)
 
 # Distinct from the OAuth refresh lock in oauth_association_maintenance.
 _SYNC_ADVISORY_LOCK = 0x4D58_5359  # "MXSY"
+
+# What the room's one status line is called in `chat_delivery`. Unparameterised because the room
+# shows one at a time: retiring the line frees the subject, and the next turn's creates it again.
+STATUS_SUBJECT = "status"
 
 # How long a replica that lost the election waits before trying again.
 LEADER_RETRY = datetime.timedelta(seconds=30)
@@ -163,6 +168,7 @@ class MatrixSyncService:
         turns: MatrixTurns,
         transcript: RoomTranscript,
         outbox: RoomOutbox,
+        deliveries: DeliveryLog,
     ):
         # Taken separately from `config`, which carries it as optional: the service is
         # only ever constructed once the password is known to be there (R10.3b).
@@ -173,6 +179,7 @@ class MatrixSyncService:
         self._conversations = conversations
         self._turns = turns
         self._transcript = transcript
+        self._deliveries = deliveries
         self._client = MatrixClient(config.homeserver, config.user_id, config.device_id)
         # Public because it has a lifecycle, and this object's owner is the one that drives it:
         # everything the console says into the room goes through here, so it outlives no
@@ -181,7 +188,6 @@ class MatrixSyncService:
         # Held here rather than by the composition root because it needs the two things only this
         # object has: the credential that can speak into the room, and the pacer that decides when.
         self._outbox = RoomOutboxDrain(engine, outbox, self.pacer, self.post_reply, self.bound_room)
-        self._status_event_id: str | None = None
         self._status_body: str | None = None
 
     async def _token(self) -> str:
@@ -217,7 +223,7 @@ class MatrixSyncService:
         logger.info("Matrix: joined %s on invite from %s", invite.room_id, invite.inviter)
         self._queue_notice(invite.room_id, "joined — this is now Haku's room", RoomEventKind.ROOM)
 
-    async def post_reply(self, reply: PendingReply) -> None:
+    async def post_reply(self, reply: PendingReply) -> str:
         """Post one queued answer into the room as ordinary text (R11.1).
 
         Called by `RoomOutboxDrain`, from inside the pacer's queue, so this is the send itself —
@@ -225,7 +231,7 @@ class MatrixSyncService:
         claimable again. The tag is what makes the event say which transcript row it is showing,
         and the transaction id is the row's own, so a redrive is refused rather than doubled.
         """
-        await self._client.send_text(
+        return await self._client.send_text(
             await self._token(), reply.room_id, reply.body, txn_id=reply.transaction_id(), tag=reply.tag()
         )
 
@@ -238,9 +244,8 @@ class MatrixSyncService:
         """Make the room's single status line say *body*, creating or editing it (R6.2, R6.5).
 
         One line per turn rather than a notice per step: a room where every tool call is a
-        message is a room nobody reads. The event id of the live line is held here because
-        this is the only object that knows the room and the token; the turn loop says what
-        the state is and never learns how it is shown.
+        message is a room nobody reads. The turn loop says what the state is and never learns how
+        it is shown.
 
         **Idempotent, and paced by the room rather than by this call.** The floor moved to the
         caller (`room_status.TurnStatus`), because deciding what the line should say and deciding when it
@@ -250,27 +255,32 @@ class MatrixSyncService:
         Create-or-edit is decided inside the queued send, not here, because the create is what
         produces the event id the edit needs — and between queueing and sending, it may not
         have happened yet. The pacer is serial, so by the time an edit runs its create has.
+
+        **Which event to edit comes from `chat_delivery`, not from this process.** The line
+        outlives the replica that posted it: whichever replica holds the session's lease drives the
+        status, and an adopting one would otherwise have nothing to edit and would post a second
+        line beside its predecessor's.
         """
         if body == self._status_body:
             return
         conversation = await self._conversations.load(self._config.user_id)
         if conversation is None:
             return
-        self._status_body = body
         room_id = conversation.room_id
+        if (attachment_id := await self._conversations.attachment(room_id)) is None:
+            logger.warning("Matrix: %s has no live attachment, leaving the status line alone", room_id)
+            return
+        self._status_body = body
 
         tag = EventTag(kind=RoomEventKind.STATUS, session_id=session_id)
 
         async def post() -> None:
             token = await self._token()
-            if self._status_event_id is None:
-                self._status_event_id = await self._client.send_notice(
-                    token, room_id, body, txn_id=tag.transaction_id(), tag=tag
-                )
+            if (showing := await self._deliveries.live(attachment_id, STATUS_SUBJECT)) is None:
+                event_id = await self._client.send_notice(token, room_id, body, txn_id=tag.transaction_id(), tag=tag)
+                await self._deliveries.record(attachment_id, STATUS_SUBJECT, event_id)
                 return
-            await self._client.edit_notice(
-                token, room_id, self._status_event_id, body, txn_id=tag.transaction_id(), tag=tag
-            )
+            await self._client.edit_notice(token, room_id, showing.sent_ref, body, txn_id=tag.transaction_id(), tag=tag)
 
         self.pacer.set_status(post)
 
@@ -307,12 +317,14 @@ class MatrixSyncService:
         if conversation is None:
             return
         room_id = conversation.room_id
+        if (attachment_id := await self._conversations.attachment(room_id)) is None:
+            return
 
         async def retire() -> None:
-            event_id, self._status_event_id = self._status_event_id, None
-            if event_id is None:
+            if (showing := await self._deliveries.live(attachment_id, STATUS_SUBJECT)) is None:
                 return
-            await self._client.redact(await self._token(), room_id, event_id, reason="turn finished")
+            await self._client.redact(await self._token(), room_id, showing.sent_ref, reason="turn finished")
+            await self._deliveries.retire(showing.delivery_id)
 
         self.pacer.send(retire)
 

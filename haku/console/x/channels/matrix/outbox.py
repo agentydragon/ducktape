@@ -32,8 +32,10 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.database_schema import SessionOutbox
+from haku.console.x import delivery_log
 from haku.console.x.channels.matrix.client import EventTag, RoomEventKind
 from haku.console.x.channels.matrix.pacer import MAX_QUEUED_SENDS, SENDS_PER_SECOND, RoomPacer
+from haku.console.x.channels.matrix.session import live_attachment
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +86,24 @@ class PendingReply:
     body: str
     message_id: UUID | None
     agent_message_id: str | None
+    turn_id: UUID | None
     attempts: int
+
+    def subject(self) -> str:
+        """What the room shows here, as `chat_delivery` keys it.
+
+        **The record's identity, never the outbox row's**, because the queue is the channel's
+        private implementation and a reconciler re-deriving this reply from the transcript has to
+        arrive at the same subject after the table is gone
+        (<../../../plans/session_channels.md> § 1).
+        """
+        match self.message_id, self.turn_id:
+            case UUID() as message_id, _:
+                return f"message:{message_id.hex}"
+            case _, UUID() as turn_id:
+                return f"turn:{turn_id.hex}"
+            case _:
+                raise ValueError(f"outbox row carries neither identity: {self.outbox_id=}")
 
     def tag(self) -> EventTag:
         """What the room event states about itself.
@@ -120,6 +139,7 @@ def _pending(row: SessionOutbox) -> PendingReply:
         body=row.body,
         message_id=row.message_id,
         agent_message_id=row.agent_message_id,
+        turn_id=row.turn_id,
         attempts=row.attempts,
     )
 
@@ -173,12 +193,23 @@ class RoomOutbox:
             row.next_attempt_at = now + _backoff(row.attempts)
             return _pending(row)
 
-    async def mark_sent(self, outbox_id: UUID) -> None:
+    async def mark_sent(self, outbox_id: UUID, subject: str, sent_ref: str) -> None:
+        """Record that the room has this reply, and which event of the room's it is.
+
+        One transaction, so `sent_at` and the correspondence cannot come apart: a reply the room
+        accepted whose event we did not write down is one a reconciler would have to find by
+        reading the room back.
+        """
         now = datetime.datetime.now(datetime.UTC)
         async with self._sessions() as db, db.begin():
-            if (row := await db.get(SessionOutbox, outbox_id)) is not None:
-                row.sent_at = now
-                row.last_error = None
+            if (row := await db.get(SessionOutbox, outbox_id)) is None:
+                return
+            row.sent_at = now
+            row.last_error = None
+            if (attachment_id := await live_attachment(db, row.room_id)) is None:
+                logger.warning("Matrix: %s has no live attachment, not recording what was sent there", row.room_id)
+                return
+            db.add(delivery_log.sent(attachment_id=attachment_id, subject=subject, sent_ref=sent_ref, now=now))
 
     async def record_failure(self, outbox_id: UUID, error: str) -> None:
         """Keep why the room refused this reply, and say so once it is out of attempts."""
@@ -198,9 +229,10 @@ class RoomOutbox:
                 )
 
 
-# Saying one reply into the room. Raising is how the sender reports that the homeserver refused
-# it — which is what leaves the row unsent and therefore claimable again.
-PostReply = Callable[[PendingReply], Awaitable[None]]
+# Saying one reply into the room, and answering with the room's own reference for the event it
+# became. Raising is how the sender reports that the homeserver refused it — which is what leaves
+# the row unsent and therefore claimable again.
+PostReply = Callable[[PendingReply], Awaitable[str]]
 
 # The room this console is currently bound to, or None before there is one.
 BoundRoom = Callable[[], Awaitable[str | None]]
@@ -226,8 +258,7 @@ class RoomOutboxDrain:
 
         async def post() -> None:
             try:
-                await self._post(reply)
-                await self._outbox.mark_sent(reply.outbox_id)
+                await self._outbox.mark_sent(reply.outbox_id, reply.subject(), await self._post(reply))
             except Exception as error:
                 # Recorded and re-raised rather than handled: `pacer` logs it and learns a
                 # 429's `retry_after_ms` from it, and only the row can carry it past this process.

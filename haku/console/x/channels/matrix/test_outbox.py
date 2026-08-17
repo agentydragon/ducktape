@@ -15,11 +15,12 @@ import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.database_schema import SessionOutbox
+from haku.console.database_schema import ChatDelivery, SessionOutbox
 from haku.console.x.channels.matrix.client import MatrixError, RoomEventKind
 from haku.console.x.channels.matrix.conftest import MATRIX_ROOM
 from haku.console.x.channels.matrix.outbox import MAX_SEND_ATTEMPTS, PendingReply, RoomOutbox, RoomOutboxDrain
 from haku.console.x.channels.matrix.pacer import RoomPacer
+from haku.console.x.channels.matrix.session import MatrixConversationStore
 from haku.console.x.session_store import BridgeAuthentication, MatrixSession, SessionStore, SpaSession
 
 
@@ -29,9 +30,26 @@ def outbox(migrated_sessions: async_sessionmaker[AsyncSession]) -> RoomOutbox:
 
 
 @pytest.fixture
-async def session_id(chat_store: SessionStore, operator_id: UUID) -> UUID:
-    """A live Matrix session for `MATRIX_ROOM`, since an outbox row is one of its children."""
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=MATRIX_ROOM))
+async def attachment_id(conversations: MatrixConversationStore, operator_id: UUID) -> UUID:
+    """The room's attachment, which is what a sent reply is recorded against."""
+    await conversations.conversation_for_room(MATRIX_ROOM, operator_id)
+    attachment_id = await conversations.attachment(MATRIX_ROOM)
+    assert attachment_id is not None
+    return attachment_id
+
+
+@pytest.fixture
+async def session_id(chat_store: SessionStore, conversations: MatrixConversationStore, operator_id: UUID) -> UUID:
+    """A live Matrix session for `MATRIX_ROOM`, since an outbox row is one of its children.
+
+    Started on the conversation the room is attached to, the way the supervisor starts one, so the
+    replies it produces have somewhere to be recorded.
+    """
+    view, token = await chat_store.create(
+        operator_id,
+        MatrixSession(room_id=MATRIX_ROOM),
+        conversation_id=await conversations.conversation_for_room(MATRIX_ROOM, operator_id),
+    )
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     return view.session_id
 
@@ -54,11 +72,12 @@ class _Homeserver:
         self.transactions: list[str] = []
         self._refuses = refuses or set()
 
-    async def post(self, reply: PendingReply) -> None:
+    async def post(self, reply: PendingReply) -> str:
         self.transactions.append(reply.transaction_id())
         if reply.body in self._refuses:
             raise MatrixError("429: slow down")
         self.posted.append(reply.body)
+        return f"$event-{len(self.posted)}"
 
     def accepts_everything(self) -> None:
         self._refuses = set()
@@ -77,6 +96,12 @@ def _unpaced(engine: AsyncEngine, outbox: RoomOutbox, homeserver: _Homeserver) -
 async def _rows(sessions: async_sessionmaker[AsyncSession]) -> list[SessionOutbox]:
     async with sessions() as db:
         return list(await db.scalars(select(SessionOutbox).order_by(SessionOutbox.created_at)))
+
+
+async def _deliveries(sessions: async_sessionmaker[AsyncSession]) -> list[tuple[str, str]]:
+    async with sessions() as db:
+        rows = await db.scalars(select(ChatDelivery).order_by(ChatDelivery.sent_at, ChatDelivery.sent_ref))
+    return [(row.subject, row.sent_ref) for row in rows]
 
 
 async def _enqueue(chat_store: SessionStore, session_id: UUID, turn_id: UUID, *bodies: str) -> None:
@@ -107,6 +132,56 @@ async def test_a_reply_is_said_once_and_then_never_again(
     assert homeserver.posted == ["the answer"]
     [row] = await _rows(migrated_sessions)
     assert (row.sent_at is not None, row.attempts, row.last_error) == (True, 1, None)
+
+
+async def test_a_sent_reply_records_which_room_event_it_became(
+    chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id, attachment_id
+) -> None:
+    """Correspondence, kept rather than re-read: without it, which event shows this answer is
+    recoverable only by reading the room back and parsing the tag off every event."""
+    homeserver = _Homeserver()
+    pacer, drain = _unpaced(migrated_engine, outbox, homeserver)
+    await _enqueue(chat_store, session_id, turn_id, "the answer")
+
+    async with pacer.run():
+        assert await drain.drain_once()
+        await pacer.flush()
+
+    [row] = await _rows(migrated_sessions)
+    assert row.message_id is not None
+    assert await _deliveries(migrated_sessions) == [(f"message:{row.message_id.hex}", "$event-1")]
+
+
+async def test_a_refused_reply_records_nothing(
+    chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id, attachment_id
+) -> None:
+    """The row and the correspondence commit together, so a send the homeserver refused leaves
+    neither — and the redrive that follows is not a second thing the room is shown."""
+    homeserver = _Homeserver(refuses={"the answer"})
+    pacer, drain = _unpaced(migrated_engine, outbox, homeserver)
+    await _enqueue(chat_store, session_id, turn_id, "the answer")
+
+    async with pacer.run():
+        assert await drain.drain_once()
+        await pacer.flush()
+
+    assert await _deliveries(migrated_sessions) == []
+
+
+async def test_a_turn_last_word_is_recorded_against_its_turn(
+    chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id, attachment_id
+) -> None:
+    """The one reply no transcript row holds. Its subject is the turn, not the outbox row, so a
+    reconciler re-deriving it from the record after the queue is gone reaches the same subject."""
+    homeserver = _Homeserver()
+    pacer, drain = _unpaced(migrated_engine, outbox, homeserver)
+    assert await chat_store.enqueue_turn_reply(session_id, turn_id, "that is all")
+
+    async with pacer.run():
+        assert await drain.drain_once()
+        await pacer.flush()
+
+    assert await _deliveries(migrated_sessions) == [(f"turn:{turn_id.hex}", "$event-1")]
 
 
 async def test_replies_are_said_in_the_order_they_were_produced(
@@ -288,6 +363,7 @@ async def test_the_tag_says_which_transcript_row_the_room_is_showing(
         body=row.body,
         message_id=row.message_id,
         agent_message_id=row.agent_message_id,
+        turn_id=row.turn_id,
         attempts=row.attempts,
     ).tag()
 
@@ -316,7 +392,7 @@ async def _room() -> str | None:
     return MATRIX_ROOM
 
 
-async def _never_posted(reply: PendingReply) -> None:
+async def _never_posted(reply: PendingReply) -> str:
     raise AssertionError(f"nothing should have been sent, but {reply.body!r} was")
 
 

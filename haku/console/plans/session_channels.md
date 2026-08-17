@@ -78,11 +78,15 @@ reconciler for the console out of a taste for symmetry.
 
 What it needs, concretely:
 
-- **A per-attachment cursor**, on `chat_attachment`, which exists as of migration `0063` —
+- **A per-attachment cursor**, on `chat_attachment`, which exists as of migration `0064` —
   `(attachment_id, conversation_id, surface, address, attached_at, detached_at)`, keyed on the
   conversation rather than on the session so that replacing a session leaves the attachment alone.
-  The cursor column is what this section adds to it, and with that the row is the entire durable
-  state of a channel.
+  The cursor column is what this section adds to it.
+- **A record of what the channel already put in its copy**, which `chat_delivery` is as of
+  migration `0067`: `(attachment_id, subject, sent_ref, sent_at, retired_at)`, one live row per
+  subject. `subject` is what the channel decided to show and `sent_ref` is where it put it, both
+  opaque outside that channel — because how much of the record one event shows is a rendering
+  decision, and a conversation-layer key for it would put that decision in shared schema.
 - **A per-channel projection**, because not every recorded event belongs on every channel — and
   "nothing to show" is a valid answer that still advances the cursor.
 
@@ -92,12 +96,16 @@ Two gotchas, both about the end that is not a database:
   The existing guard fits, and fits _better_ here than under a queue: `EventTag.transaction_id`
   derived from the transcript row is stable across processes and retries, so two reconcilers
   reaching the same conclusion still produce one event. Its limit is Synapse's 30–60 minute dedup
-  window (<../docs/chat_runtime_facts.md>); past that the cursor is the only guard, which is the
-  argument for advancing it in the same transaction that records the send rather than after it.
-- **Convergence is not available at every edge.** Redacting a status message and clearing a typing
-  indicator have no cheap "what does the room currently show" to compare against. Keep them out of
-  the loop entirely — they are live-state rendering driven by the turn (§3), not cursor-driven
-  delivery.
+  window (<../docs/chat_runtime_facts.md>); past that the stored correspondence is the only guard,
+  which is the argument for writing it in the same transaction that records the send rather than
+  after it — what `RoomOutbox.mark_sent` does with `sent_at` and the `chat_delivery` row.
+- **Convergence is not available at every edge, and the line moved.** A typing indicator has no
+  cheap "what does the room currently show" to compare against, and stays out of the loop — it is
+  live-state rendering driven by the turn (§3). The status line does have one now: its event id is
+  a `chat_delivery` row, so editing and redacting it are level-triggered against the record rather
+  than against whichever process posted it. That is what the sync service reads instead of the
+  instance attribute it held, which is why a replica adopting a session no longer posts a second
+  line beside its predecessor's.
 
 ## 2. One sessions surface, not two pages
 
@@ -386,9 +394,10 @@ rather than a viewer, from rows that already existed. What remains:
    first two writers — a lease taken over and a lease lapsing; `_SessionStatusAnnouncer`'s
    transitions are what remain.
 4. **The reconcile loop** (§1) — the cursor on `chat_attachment`, and Matrix delivery moved onto
-   it. Cleanup stage 7's schema half landed as migration `0063`; what it still wants is the readers
-   moved onto it, which waits a release for `sessions.conversation_id` to be written by every
-   replica. Everything above is possible without either.
+   it. Cleanup stage 7's schema half landed as migration `0064` and what the channel has already
+   put in its copy as `0067`; what it still wants is the cursor and the readers moved onto it,
+   which waits a release for `sessions.conversation_id` to be written by every replica. Everything
+   above is possible without either.
 5. **The Matrix relay** (§5, Matrix half) — one more thing the loop already does, once it exists.
 
 Two items sit outside that spine. **The session link in the R7.2 notice** (§6) is small and can

@@ -53,6 +53,7 @@ from haku.console.x.channels.matrix.session import (
     RoomTranscript,
 )
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
+from haku.console.x.delivery_log import DeliveryLog
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService, internal_router
@@ -118,12 +119,12 @@ class RefusingSyncService(MatrixSyncService):
         super().__init__(*args, **kwargs)
         self._armed = armed
 
-    async def post_reply(self, reply: PendingReply) -> None:
+    async def post_reply(self, reply: PendingReply) -> str:
         if self._armed.exists():
             self._armed.unlink()
             logger.warning("refusing to post %r, as armed", reply.body)
             raise MatrixError("429: simulated homeserver refusal")
-        await super().post_reply(reply)
+        return await super().post_reply(reply)
 
 
 def _environment(name: str) -> str:
@@ -174,6 +175,7 @@ async def _serve() -> None:
         MatrixTurns(matrix, conversations, store, identities),
         RoomTranscript(sessions),
         RoomOutbox(sessions),
+        DeliveryLog(sessions),
         armed=Path(_environment("HAKU_E2E_REFUSE_NEXT_REPLY")),
     )
     surface = MatrixSurface(matrix, runtime, SystemPromptTemplate.from_path(runtime.system_prompt_template), sync)

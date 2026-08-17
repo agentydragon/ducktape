@@ -932,6 +932,56 @@ class ChatAttachment(Base):
     )
 
 
+class ChatDelivery(Base):
+    """What one channel put in its own copy of a conversation, and where it put it.
+
+    Correspondence, stored rather than re-read: a channel that holds a copy has to know whether it
+    has already shown a thing before it shows it again, and the alternative — reading the room back
+    and parsing the tag off every event — is a round trip per pass. The room read stays the repair
+    path for a copy that drifted; this is the cheap one (<plans/session_channels.md> § 1).
+
+    **Both columns are opaque outside the channel that wrote them**, and for the same reason
+    `chat_attachment.address` is: `sent_ref` is where the channel put it — a Matrix `event_id`
+    today — and `subject` is what the channel decided to show there. Only the channel that minted a
+    pair may look inside one; everything else compares, and never interprets.
+
+    **The subject is the channel's, not the record's**, because how much of the record one event
+    shows is a rendering decision: a room folds a run of tool calls into one notice where a browser
+    lists them. A conversation-layer key for it would put that decision in shared schema. What the
+    conversation layer does own is the pairing being per attachment, which is what makes two rooms
+    holding one conversation two independent copies.
+
+    **Live means the channel still shows it.** `retired_at` is set when the channel takes it back —
+    a redacted status line — and `uq_chat_delivery_live_subject` is what makes re-deriving a subject
+    find the event already showing it instead of sending a second one. A retired row stays: the
+    channel's copy cannot be asked what it used to show, so this is the only place that survives.
+    """
+
+    __tablename__ = "chat_delivery"
+
+    delivery_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    attachment_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("chat_attachment.attachment_id", ondelete="CASCADE"), nullable=False
+    )
+    subject: Mapped[str] = mapped_column(Text, nullable=False)
+    sent_ref: Mapped[str] = mapped_column(Text, nullable=False)
+    sent_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    retired_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("btrim(subject) <> ''", name="ck_chat_delivery_subject_nonempty"),
+        CheckConstraint("btrim(sent_ref) <> ''", name="ck_chat_delivery_ref_nonempty"),
+        CheckConstraint("retired_at IS NULL OR retired_at >= sent_at", name="ck_chat_delivery_retire_after_sent"),
+        Index(
+            "uq_chat_delivery_live_subject",
+            "attachment_id",
+            "subject",
+            unique=True,
+            postgresql_where=text("retired_at IS NULL"),
+        ),
+    )
+
+
 class Session(Base):
     """One Operator-owned agent conversation and its Agent Sandbox rendezvous."""
 

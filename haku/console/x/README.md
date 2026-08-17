@@ -407,7 +407,7 @@ the test that reads it, as `test_diverse_session` has.
   behind the room.
 - `pacer.py` — one paced outbound queue per room, over Synapse's `rc_message` budget.
 - `outbox.py` — the room's outbox: replies as `session_outbox` rows, and the drain that
-  says them.
+  says them, recording which room event each became.
 - `formatted_body.py` — Haku's Markdown into the HTML subset Matrix clients render.
 
 **The outbox is half here and half at the runtime level, deliberately.** The row is written where
@@ -429,6 +429,18 @@ Behaviours worth knowing before reading the code:
   later. Two rules the drain is deliberate about: a failed reply **halts** the queue for its
   backoff rather than being overtaken, and the one row stepped over is one out of
   `MAX_SEND_ATTEMPTS`, kept unsent with its `last_error` and logged loudly rather than deleted.
+
+- **What was sent is written down, in the transaction that says it was sent.** `chat_delivery`
+  pairs a subject the channel decided to show with the room event it became, per attachment, so
+  which event shows a given answer is a lookup rather than a re-read of the room. Both strings are
+  the channel's: `x/delivery_log.py` stores them and parses neither. Today the Matrix channel keys
+  a reply by the transcript row (`message:…`) or, for a turn's last word, by the turn
+  (`turn:…`) — the record's identities, so a reconciler re-deriving a reply after `session_outbox`
+  is gone reaches the same subject. **The status line is the reader:** its event id lives in this
+  table rather than on the sync service, so the replica that adopts a session edits the line its
+  predecessor posted instead of posting a second one beside it. Notices are not recorded yet, for
+  want of a subject — they have no conversation-side identity to be keyed by until every fact
+  behind one is a row.
 
 - **A rejected batch is not queued anywhere.** `enqueue_prompt` only accepts on a ready session
   with no turn open and nothing pending, and a refusal is the answer: the room is told the messages

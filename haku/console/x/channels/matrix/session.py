@@ -123,11 +123,35 @@ class RoomChannel(Protocol):
 RE_AWAKENING_MESSAGES = 20
 
 
+async def live_attachment(db: AsyncSession, room_id: str) -> UUID | None:
+    """This room's live attachment, which is what its deliveries hang off.
+
+    None where the room holds no conversation yet — a room bound by an invite before the supervisor
+    has given it a session, and a room whose attachment was detached. Both are states where there is
+    nothing to record a send against, and the room notice is the only account of it.
+
+    Takes the caller's session so a channel can record what it sent in the transaction that records
+    the send itself (`outbox.RoomOutbox.mark_sent`).
+    """
+    attachment_id: UUID | None = await db.scalar(
+        select(ChatAttachment.attachment_id).where(
+            ChatAttachment.surface == ChatSurface.MATRIX,
+            ChatAttachment.address == room_id,
+            ChatAttachment.detached_at.is_(None),
+        )
+    )
+    return attachment_id
+
+
 class MatrixConversationStore:
     """The bound room and the session serving it."""
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]):
         self._sessions = sessions
+
+    async def attachment(self, room_id: str) -> UUID | None:
+        async with self._sessions() as db:
+            return await live_attachment(db, room_id)
 
     async def load(self, user_id: str) -> MatrixConversation | None:
         async with self._sessions() as db:
