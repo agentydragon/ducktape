@@ -746,10 +746,10 @@ session_events WHERE kind IN ('activity_started','activity_completed')`, drop th
     the members before the rows would make reading one raise rather than degrade, and deleting the
     rows earlier is harmless but pointless: the previous image is still writing them.
 13. **Audit the rest of `ConversationEvent` against the same question** — could a second backend
-    produce this, or is it one provider's concept renamed? — **done** in
-    <../debug/conversation_vocabulary_audit.md>. It found one more failure, `ToolReferences`, and
-    the rule that decides the rest (§ 11). Deleting that arm is its own step, and it does not wait
-    on 11 or 12: different member, different arm, no shared migration.
+    produce this, or is it one provider's concept renamed? — **done, and its findings are § 11's**
+    rather than a separate note, since what survived is one rule and one open item. It found one
+    more failure, `ToolReferences`, deleted along with its whole union by #4284; and it left
+    `Projection.unprojected` needing a reader or a deletion, which is the only piece outstanding.
 
 14. **Delete `Usage`** (operator, 2026-08-17), for a different reason from 11: not that it fails
     the neutrality test — it passes, being a reduction to quantities every backend reports — but
@@ -887,20 +887,33 @@ rendering one is knowing a provider's concept at one remove, which is the rule b
 of the vocabulary rather than by a channel. Retiring it is § 9's steps 10 and 11; what it records is
 recoverable from `session_frames`, which is the surface allowed to be provider-shaped.
 
-**The rest has now been asked** (<../debug/conversation_vocabulary_audit.md>, § 9 step 13).
-`TextDelta`, `MessageCompleted`, `Reasoning`, `ToolCallStarted`/`Completed` and `TurnCompleted` are
-general. One more member fails: `ToolReferences` is not one provider's `tool_result` shape but
-**one tool's result shape on one provider** — every sighting is Claude Code's deferred-tool search
-— so its arm goes and those results fall to `OpaqueContent`, losing a name list in the SPA and
-nothing from the record.
+**The rest has been asked, and the answer is in.** Every member was read against its producing
+`case` in the adapter and the payload keys that arm reads. `TextDelta`, `MessageCompleted`,
+`Reasoning`, `ToolCallStarted`/`Completed`, `TurnCompleted`, `Outcome`, `MessageKey` and the
+provenance types are general. Two failed and are gone: `ToolReferences`, which turned out to be not
+one provider's `tool_result` shape but **one tool's result shape on one provider** — every one of
+its 51 sightings is Claude Code's deferred-tool search — and with it the whole
+`ToolResultContent` union, since #4284 made a tool result's `content` a plain string.
 
-The audit's useful product is the rule that decides the remaining cases: **the line is not how
-Claude-shaped a thing is, but where the shape lives in the type.** `ToolCallCompleted.structured`
-is also one tool's shape, and it stays, because it sits behind `Json` — a per-tool payload is
-sanctioned (R6.3 passes tool identifiers verbatim; a channel rendering a Bash result's `stdout`
-knows Bash, not Claude), and a per-tool shape promoted to a typed member is not. That also bounds
-the leak surface exactly: `Json` marks three fields, and `Projection.unprojected`'s keys are a
-fourth the type does not mark.
+**The rule the audit produced is the part worth keeping**, because it is what decided the cases that
+looked alike: **the line is not how Claude-shaped a thing is, but where the shape lives in the
+type.** `ToolCallCompleted.structured` is _also_ one tool's shape and it stays, because it sits
+behind `Json` — a per-tool payload is sanctioned (R6.3 passes tool identifiers verbatim; a channel
+rendering a Bash result's `stdout` knows Bash, not Claude) while a per-tool shape promoted to a
+typed member is not. That bounds the leak surface exactly: `Json` marks three fields, and
+`Projection.unprojected`'s keys are a fourth the type does not mark.
+
+**`unprojected` is the one thing left, and it is not the leak it looks like.** Its keys are Claude's
+own frame class names (`system/vcs_state_changed`, `user/text`), but it is produced by the adapter —
+the one component allowed to be provider-shaped, since translating is its job — and **no production
+code reads it**: the readers are tests and this plan. So it reaches no channel and breaks no
+invariant. What it is instead is a **field with no reader**, which STYLE forbids for its own
+reasons: the actionable signal it exists to carry, "the backend is sending something we do not map",
+currently reaches nobody. Give it a reader — a log line or a metric at the fold's boundary — or
+delete it. Two other members were noticed in passing and neither is leakage: `Authored` is
+constructed nowhere outside a test, a shape waiting for the writer step 4 adds; and `Outcome`'s
+premise was wrong in the asking — `result.subtype` never reaches it, it is fed from `is_error` and
+`status`.
 
 **What enforces the rule does not exist yet.** `x/frame_projection.py` imports
 `x/claude_code/projection` directly, so there is no seam at which a second backend's adapter could
