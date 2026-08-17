@@ -48,7 +48,7 @@ half of the surface is empty here, and the whole audit is the six calls above.
 | 12  | `send_notice` — unreadable     | `sync.py` `_report_unreadable`                | `unreadable` | **recorded**          |
 | 13  | `send_notice` — lifecycle      | `matrix_session.py:362,403` → `announce`      | `lifecycle`  | **bypassing** (worst) |
 | 14  | `send_notice` — silent turn    | `matrix_session.py:274` → `announce`          | `narration`  | **bypassing**         |
-| 15  | `send_notice` — turn aborted   | `session.py` `MatrixSurface.report_abort`     | `narration`  | **recorded** (§ 1)    |
+| 15  | `send_notice` — turn aborted   | `room_subscription.py` `RoomNotices`          | `narration`  | **driven** (§ 1)      |
 
 **The bypassing writes are rows 7–10, 13 and 14.** Rows 8–14 share one send path —
 `MatrixSyncService._queue_notice`, which
@@ -75,12 +75,13 @@ with nothing to notice it is missing. It is the right classification — the fac
 but it is fan-out, not projection, and it is the shape the reconciler
 (<../plans/conversation_layers.md> § 2) exists to replace.
 
-**Row 15, the abort notice, is the only one that is a projection.** `end_turn` writes a
-`turn_aborted` row into `session_events` under the lock that closes the turn, and the surface
-announces afterwards — so the fact is in the record, the room's copy is a rendering of it, and a
-reconciler re-derives that rendering from the row rather than from a queue. It used to be a
-`turn_id`-keyed `session_outbox` row, which made it the one durable non-reply artifact the console
-kept and kept it in the channel's table.
+**Row 15, the abort notice, is the only one driven from the record.** `end_turn` writes a
+`turn_aborted` row into `session_events` under the lock that closes the turn, and nothing announces
+it: the room reads it from its own position in the conversation
+(`x/channels/matrix/room_subscription.py`) and says it from there. So the row is not merely the
+fact behind a fan-out — it is what causes the send, which is why a console that dies between the
+two still says it on the next pass. The other recorded rows are still push, and this is the shape
+they move to.
 
 ## 2. The three ephemeral writes, and why the claim is defensible here
 
