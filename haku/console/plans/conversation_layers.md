@@ -806,6 +806,17 @@ These are the acceptance criteria, and each names something that is false today:
 - **Adding a channel is implementing two things** — how to render the stream, and where to keep a
   cursor if it holds a copy. Nothing else in the console changes.
 - **Adding a backend is implementing one thing** — an adapter producing `ConversationEvent`.
+- **Every event derived from a provider's frames names the frames it came from** (operator,
+  2026-08-17). Already true and already enforced, which is why it belongs here: it is the invariant
+  most likely to erode quietly, since nothing breaks the day a writer stops setting it. It holds as
+  a **union rather than a nullable** — `FrameRange | Authored` in the type,
+  `(provenance = 'frame_range') = (source_first_frame_seq IS NOT NULL)` in the database — because a
+  nullable range would let a rebuild drop the pointers and still report green, and because a
+  console-authored event genuinely has no frames rather than unknown ones. `session_messages` and
+  `session_turns` carry the same span, and `ck_session_messages_assistant_pointed` makes an
+  unpointed assistant row unrepresentable. What it buys is that a normalization can always be
+  appealed to the raw JSON — which is what makes the vocabulary's lossiness (a tool result rendered
+  as a string, `Usage` deleted, the activity events deleted) recoverable rather than final.
 
 The last two are what "N backends × M channels, additively" actually means, and they are the reason
 for the whole exercise.
