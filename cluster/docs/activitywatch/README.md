@@ -1,4 +1,16 @@
-# ActivityWatch
+# ActivityWatch (retired)
+
+**Retired 2026-08-17.** The cluster receiver, importer, public query route,
+machine credentials, and desktop `aw-sync`/Syncthing transport are suspended.
+The receive-only input cannot be imported correctly with upstream `aw-sync`:
+it mutates SQLite inputs, loses provenance, and is not idempotent. The retained
+manifests live in `cluster/k8s/x/activitywatch/`; reconsider only with a
+repo-owned snapshot/export and idempotent importer. This preserves a future
+cluster-queryable, agent-readable activity-history effort without preserving an
+incorrect central dataset.
+
+The remainder of this directory is historical design and incident evidence;
+it does not describe a running service.
 
 Personal activity tracking via [aw-server-rust](https://github.com/ActivityWatch/aw-server-rust).
 The cluster is intended to be the query surface; individual devices keep local ActivityWatch
@@ -18,9 +30,9 @@ See [the importer canary record](importer-canary.md).
 No built-in ActivityWatch auth is enabled. Read/query access goes through the
 read-only proxy and, for public access, Authentik.
 
-## Current Design
+## Former Design
 
-- **Query server**: `aw-server-rust` in `cluster/k8s/activitywatch`, device id
+- **Query server**: `aw-server-rust` in `cluster/k8s/x/activitywatch`, device id
   `activitywatch-cluster`, SQLite on `activitywatch-data` (`local-path-proxmox`, 10Gi).
 - **Read-only API**: nginx sidecar on Service `activitywatch-readonly`, allowing GET plus
   POST `/api/0/query` for query consumers.
@@ -54,10 +66,10 @@ read-only proxy and, for public access, Authentik.
   instead of native-tls/OpenSSL, which avoids vendored OpenSSL build-script runfiles in
   Bazel/RBE.
 - **Cluster Syncthing identity**: public certificate in
-  `cluster/k8s/activitywatch/syncthing-identity.yaml`; private key only in
-  `cluster/k8s/activitywatch/syncthing-key.sops.yaml`. The device ID in
+  `cluster/k8s/x/activitywatch/syncthing-identity.yaml`; private key only in
+  `cluster/k8s/x/activitywatch/syncthing-key.sops.yaml`. The device ID in
   `syncthing-config.xml` is derived from that public certificate and checked in CI.
-- **Cluster Syncthing config**: `cluster/k8s/activitywatch/syncthing-config.xml`
+- **Cluster Syncthing config**: `cluster/k8s/x/activitywatch/syncthing-config.xml`
   declares the `activitywatch` receive-only folder and paired devices. An initContainer
   stages that ConfigMap into Syncthing's writable config dir before the Syncthing container
   starts; cert/key stay Kubernetes-owned and are mounted read-only at the filenames
@@ -252,7 +264,7 @@ Last checked 2026-07-21:
 
 - `bazelisk build --config=rbe @ducktape_activitywatch//:image` passed; `aw-sync` and
   `aw_sync_bin` compiled and the OCI image assembled.
-- `kustomize build cluster/k8s/activitywatch` passed.
+- `kustomize build cluster/k8s/x/activitywatch` passed.
 - Syncthing 2.0.10 smoke test passed with the static ConfigMap-style
   `syncthing-config.xml` shape: flat `activitywatch` receive-only folder, desktop peers,
   and cluster self device.

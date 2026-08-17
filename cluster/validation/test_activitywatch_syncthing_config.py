@@ -14,12 +14,12 @@ import yaml
 
 from util.bazel.runfiles import get_required_path
 
-CONFIG_XML = get_required_path("_main/cluster/k8s/activitywatch/syncthing-config.xml")
-CLUSTER_IDENTITY = get_required_path("_main/cluster/k8s/activitywatch/syncthing-identity.yaml")
-CLUSTER_KEY = get_required_path("_main/cluster/k8s/activitywatch/syncthing-key.sops.yaml")
-SYNCTHING_DEPLOYMENT = get_required_path("_main/cluster/k8s/activitywatch/syncthing-deployment.yaml")
-IMPORTER_CRONJOB = get_required_path("_main/cluster/k8s/activitywatch/importer-cronjob.yaml")
-PVC_MANIFEST = get_required_path("_main/cluster/k8s/activitywatch/pvc.yaml")
+CONFIG_XML = get_required_path("_main/cluster/k8s/x/activitywatch/syncthing-config.xml")
+CLUSTER_IDENTITY = get_required_path("_main/cluster/k8s/x/activitywatch/syncthing-identity.yaml")
+CLUSTER_KEY = get_required_path("_main/cluster/k8s/x/activitywatch/syncthing-key.sops.yaml")
+SYNCTHING_DEPLOYMENT = get_required_path("_main/cluster/k8s/x/activitywatch/syncthing-deployment.yaml")
+IMPORTER_CRONJOB = get_required_path("_main/cluster/k8s/x/activitywatch/importer-cronjob.yaml")
+PVC_MANIFEST = get_required_path("_main/cluster/k8s/x/activitywatch/pvc.yaml")
 HOST_CERT_SENTINEL = get_required_path("_main/secrets/home/rugged/activitywatch-syncthing.cert.pem")
 
 SYNCTHING_BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"

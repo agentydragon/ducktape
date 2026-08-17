@@ -127,12 +127,11 @@ Applications use Authentik through Terraform-managed OIDC/proxy providers and a
 shrinking set of blueprint-managed proxy providers. See <docs/sso.md> for the ownership
 split, secret flow, NetworkPolicy template, and tombstone rules.
 
-## ActivityWatch
+## ActivityWatch (retired)
 
-Personal activity tracking with local desktop capture, Syncthing transport, and an
-in-cluster query server. There is no public or Nebula route to ActivityWatch; query access
-is constrained by Kubernetes NetworkPolicy and the read-only proxy. Architecture and
-desktop setup: <docs/activitywatch/README.md>.
+The local capture, Syncthing transport, and in-cluster query service are suspended because
+upstream `aw-sync` cannot safely produce a canonical central dataset. Historical architecture
+and the replacement requirements: <docs/activitywatch/README.md>.
 
 ## Repository Structure
 

@@ -50,7 +50,9 @@
   };
 
   ducktape.activitywatch.sync = {
-    enable = true;
+    # Retired with the cluster receiver: aw-sync's receive-only import is not
+    # correct or idempotent. Keep the inactive connection material for revival.
+    enable = false;
     syncthing = {
       certFile = ../../../secrets/home/wyrm2/activitywatch-syncthing.cert.pem;
       keySopsFile = ../../../secrets/home/wyrm2/activitywatch-syncthing.sops.key;

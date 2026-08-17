@@ -4,7 +4,11 @@ metadata:
   name: activitywatch
   namespace: ducktape-flux
 spec:
-  suspend: false
+  # Retired 2026-08-17: upstream aw-sync mutates the receive-only SQLite input
+  # and cannot provide an idempotent, provenance-preserving import. Retain the
+  # manifests for a future repo-owned snapshot/import design, but keep all
+  # cluster objects deleted while this Kustomization is suspended.
+  suspend: true
   retryInterval: 1m
   interval: 10m
   timeout: 5m
@@ -12,7 +16,7 @@ spec:
     kind: GitRepository
     name: ducktape
     namespace: ducktape-flux
-  path: ./cluster/k8s/activitywatch
+  path: ./cluster/k8s/x/activitywatch
   prune: true
   wait: true
   decryption:
