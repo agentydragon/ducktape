@@ -15,6 +15,7 @@ import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from haku.console.chat_models import SPA_ORIGIN
 from haku.console.database_schema import ChatDelivery, SessionOutbox
 from haku.console.x.channels.matrix.client import MatrixError, RoomEventKind
 from haku.console.x.channels.matrix.conftest import MATRIX_ROOM
@@ -57,7 +58,7 @@ async def session_id(chat_store: SessionStore, conversations: MatrixConversation
 async def turn_id(chat_store: SessionStore, operator_id: UUID, session_id: UUID) -> UUID:
     """The exchange these replies are produced in: a message is opened inside a turn, which is
     what records that the turn has queued one (`session_turns.queued_reply`)."""
-    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
+    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?", SPA_ORIGIN)
     turn = await chat_store.next_prompt(session_id)
     assert turn is not None
     return turn.turn_id
@@ -330,7 +331,7 @@ async def test_a_session_serving_no_room_queues_nothing(chat_store, migrated_ses
     down. A row for it would be a reply nothing will ever say."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
     message_id = await chat_store.begin_assistant(view.session_id, turn.turn_id, source_first_frame_seq=1)

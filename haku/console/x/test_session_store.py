@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.chat_models import (
     OPEN_SESSION_STATUSES,
+    SPA_ORIGIN,
     AuthoredEventKind,
     ChatMessageRole,
     ChatMessageStatus,
@@ -149,7 +150,7 @@ async def test_a_turn_records_the_message_it_finished_rather_than_the_frames_it_
     session_id = view.session_id
     await attach_channel(migrated_sessions, session_id, ROOM)
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
+    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
     assistant_id = await chat_store.begin_assistant(session_id, started.turn_id, source_first_frame_seq=1)
@@ -416,7 +417,7 @@ async def test_a_prompt_records_the_channel_events_it_was_folded_from(
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
     await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "do the thing")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "do the thing", SPA_ORIGIN)
 
     asked = [
         PromptBody.model_validate(event.body)
@@ -433,7 +434,7 @@ async def test_exchanges_page_by_their_own_keyset(chat_store, operator_id) -> No
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     for index in range(3):
-        await chat_store.enqueue_prompt(operator_id, view.session_id, f"prompt {index}")
+        await chat_store.enqueue_prompt(operator_id, view.session_id, f"prompt {index}", SPA_ORIGIN)
         turn = await chat_store.next_prompt(view.session_id)
         assert turn is not None
         await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
@@ -452,7 +453,7 @@ async def test_a_turn_ends_at_the_frame_it_names_rather_than_at_the_head_of_the_
     did not produce."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
     ending = await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, "result", result(uuid="r1"))
@@ -473,11 +474,11 @@ async def test_a_turn_that_ended_on_no_frame_is_bounded_by_the_ones_it_recorded(
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, "system", {"type": "system"})
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "first")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "first", SPA_ORIGIN)
     silent = await chat_store.next_prompt(view.session_id)
     assert silent is not None
     await chat_store.end_turn(silent.turn_id, TurnOutcome.FAILED)
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "second")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "second", SPA_ORIGIN)
     spoke = await chat_store.next_prompt(view.session_id)
     assert spoke is not None
     answer = await chat_store.record_frame(
@@ -563,7 +564,9 @@ async def test_operator_conversation_read_surface_keeps_inventory_and_transcript
     matrix, matrix_token = await chat_store.create(operator_id, MatrixSession())
     await attach_channel(migrated_sessions, matrix.session_id, ROOM)
     assert await chat_store.authenticate_bridge(matrix.session_id, matrix_token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, matrix.session_id, "What is happening?")
+    await chat_store.enqueue_prompt(
+        operator_id, matrix.session_id, "What is happening?", MatrixOrigin(address=ROOM, refs=("$asked",))
+    )
     conversation_id = await chat_store.conversation_of(matrix.session_id)
 
     page = await chat_store.list_operator_conversations(operator_id, cursor=None, limit=10)
@@ -654,16 +657,16 @@ async def test_a_second_prompt_is_refused_while_a_turn_is_open(chat_store, opera
     fold-into-turn with no fold path wired."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "first")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "first", SPA_ORIGIN)
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
 
     with pytest.raises(PromptRefusedError) as refusal:
-        await chat_store.enqueue_prompt(operator_id, view.session_id, "second")
+        await chat_store.enqueue_prompt(operator_id, view.session_id, "second", SPA_ORIGIN)
     assert refusal.value.reason is PromptRejection.TURN_IN_FLIGHT
 
     await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "second")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "second", SPA_ORIGIN)
 
 
 async def test_a_prompt_is_taken_off_the_queue_rather_than_found_by_status(
@@ -674,7 +677,7 @@ async def test_a_prompt_is_taken_off_the_queue_rather_than_found_by_status(
     answer finished."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
 
     async with migrated_sessions() as db:
         queued = list(await db.scalars(select(SessionPrompt)))
@@ -695,7 +698,7 @@ async def test_one_prompt_in_flight_is_a_schema_property(chat_store, migrated_se
     conclude they may accept."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "first")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "first", SPA_ORIGIN)
 
     async with migrated_sessions() as db:
         message = SessionMessage(
@@ -742,7 +745,7 @@ async def test_a_pending_row_with_no_queue_row_is_not_a_prompt(chat_store, migra
 
     assert await chat_store.next_prompt(view.session_id) is None
     # And it does not block a real one.
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "mine")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "mine", SPA_ORIGIN)
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
     assert turn.prompt == "mine"
@@ -753,7 +756,7 @@ async def test_the_view_says_responding_for_as_long_as_the_turn_is_open(chat_sto
     the column."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "work")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "work", SPA_ORIGIN)
     assert (await chat_store.get(operator_id, view.session_id)).status == SessionStatus.READY, (
         "a queued prompt is not a turn in flight"
     )
@@ -776,7 +779,7 @@ async def test_a_session_that_ended_does_not_report_a_turn_it_left_open(
     an abandoned exchange — and must not make a failed session read as still working."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "work")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "work", SPA_ORIGIN)
     assert await chat_store.next_prompt(view.session_id) is not None
     await age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 
@@ -801,7 +804,7 @@ async def test_abort_is_refused_until_a_turn_is_actually_running(chat_store, ope
 
     assert await chat_store.request_abort(view.session_id) is False
 
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "work")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "work", SPA_ORIGIN)
     assert await chat_store.request_abort(view.session_id) is False, "a queued prompt is not a turn"
 
     turn = await chat_store.next_prompt(view.session_id)
@@ -822,7 +825,7 @@ async def test_abort_reaches_the_replica_running_the_turn(
     """
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "work")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "work", SPA_ORIGIN)
     assert await chat_store.next_prompt(view.session_id) is not None, "the turn the abort names"
 
     other_engine = create_async_engine(migrated_db_url, pool_pre_ping=True)
@@ -964,7 +967,7 @@ async def test_an_accepted_prompt_is_a_row_in_the_stream_as_well_as_in_the_trans
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
 
-    prompt = await chat_store.enqueue_prompt(operator_id, view.session_id, "list the files")
+    prompt = await chat_store.enqueue_prompt(operator_id, view.session_id, "list the files", SPA_ORIGIN)
 
     asked = one(await authored_events(migrated_sessions, view.session_id))
     assert asked.kind == AuthoredEventKind.PROMPT_ENQUEUED
@@ -1016,10 +1019,10 @@ async def test_a_refused_prompt_is_not_in_the_stream(chat_store, migrated_sessio
     """The row and the event commit together, so what is not accepted is not recorded."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "first")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "first", SPA_ORIGIN)
 
     with pytest.raises(PromptRefusedError) as refusal:
-        await chat_store.enqueue_prompt(operator_id, view.session_id, "second")
+        await chat_store.enqueue_prompt(operator_id, view.session_id, "second", SPA_ORIGIN)
     assert refusal.value.reason is PromptRejection.PROMPT_QUEUED
 
     asked = one(await authored_events(migrated_sessions, view.session_id))
@@ -1159,7 +1162,7 @@ async def test_a_frames_events_land_as_rows_with_the_cursor_that_says_they_did(
     view, token = await chat_store.create(operator_id, SpaSession())
     session_id = view.session_id
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, session_id, "list the files")
+    await chat_store.enqueue_prompt(operator_id, session_id, "list the files", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
     message = MessageKey(opened_at_frame_seq=7)
@@ -1231,7 +1234,7 @@ async def test_an_event_row_cannot_be_written_without_a_provenance_union(
     """
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "list the files")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "list the files", SPA_ORIGIN)
     started = await chat_store.next_prompt(view.session_id)
     assert started is not None
 

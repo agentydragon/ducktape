@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import (
     OPEN_SESSION_STATUSES,
+    SPA_ORIGIN,
     ChatMessageRole,
     ChatMessageStatus,
     FrameDirection,
@@ -165,7 +166,7 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
     """A tool-use block and the text after it are two messages, not one merged row."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "Check the Haku MCP catalog")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "Check the Haku MCP catalog", SPA_ORIGIN)
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
 
@@ -203,7 +204,7 @@ async def test_projected_assistant_message_points_to_the_frames_that_built_it(
     """A message row keeps a navigable range into the lossless rollout rather than only a copy."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "say hello")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "say hello", SPA_ORIGIN)
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
 
@@ -386,7 +387,7 @@ async def test_adoption_picks_the_answer_up_where_it_stopped(
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
-    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
+    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
@@ -412,7 +413,7 @@ async def test_a_turn_that_said_something_the_room_could_not_hear_still_knows_it
     view, token = await chat_store.create(operator_id, SpaSession())
     session_id = view.session_id
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
+    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
     assistant_id = await chat_store.begin_assistant(session_id, started.turn_id, source_first_frame_seq=1)
@@ -451,7 +452,7 @@ async def test_adoption_closes_a_turn_whose_result_nobody_projected(
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
-    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
+    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing", SPA_ORIGIN)
     assert await chat_store.next_prompt(session_id) is not None
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
     await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "result", result(uuid="res-1"))
@@ -485,7 +486,7 @@ async def test_adoption_reads_a_failed_result_as_a_failed_turn(
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
-    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
+    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing", SPA_ORIGIN)
     assert await chat_store.next_prompt(session_id) is not None
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
     await chat_store.record_frame(
@@ -527,7 +528,7 @@ async def test_a_turn_whose_cursor_is_behind_it_is_failed_rather_than_resumed(
     session_id = session.session_id
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "system", {"type": "system"})
-    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
+    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing", SPA_ORIGIN)
     assert await chat_store.next_prompt(session_id) is not None
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
     async with migrated_sessions() as db:
@@ -549,7 +550,7 @@ async def test_a_turn_that_never_asked_its_prompt_gives_it_back(
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
-    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
+    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing", SPA_ORIGIN)
     claimed = await chat_store.next_prompt(session_id)
     assert claimed is not None
 
@@ -567,7 +568,7 @@ async def test_a_turn_that_asked_its_prompt_keeps_it(chat_store, chat_service, r
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
-    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
+    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing", SPA_ORIGIN)
     assert await chat_store.next_prompt(session_id) is not None
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
 
@@ -749,7 +750,7 @@ async def _turn_into_a_room(
     view, token = await chat_store.create(operator_id, MatrixSession())
     await attach_channel(migrated_sessions, view.session_id, ROOM)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
     async with asyncio.timeout(30):
@@ -797,7 +798,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     session_id = view.session_id
     await attach_channel(migrated_sessions, session_id, ROOM)
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
+    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
     # What the previous holder got through before its pod went: the prompt written, and half an
@@ -854,7 +855,7 @@ async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
     session_id = view.session_id
     await attach_channel(migrated_sessions, session_id, ROOM)
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
+    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
     delta = text_delta("because the ")
@@ -904,7 +905,7 @@ async def test_a_resumed_turn_does_not_say_again_what_it_had_already_queued(
     session_id = view.session_id
     await attach_channel(migrated_sessions, session_id, ROOM)
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
+    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
@@ -967,7 +968,7 @@ async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
     view, token = await chat_store.create(operator_id, MatrixSession())
     await attach_channel(migrated_sessions, view.session_id, ROOM)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
     client = _FakeCli([*_NARRATED_TURN[:-1], result(subtype="error_during_execution", is_error=True)])
@@ -998,7 +999,7 @@ async def test_a_turn_the_cli_ended_badly_fails_even_though_is_error_says_it_did
     """
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "keep going")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "keep going", SPA_ORIGIN)
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
     client = _FakeCli([result(subtype="error_max_turns")])
@@ -1139,7 +1140,7 @@ async def test_a_turn_brackets_the_frames_it_produced(chat_store, chat_service, 
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     # A frame from before this turn, so a bracket that started at the log's beginning would show.
     await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, "system", {"type": "system"})
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
     answer = assistant(text_block("a bad config"))
@@ -1168,7 +1169,7 @@ async def test_a_turn_ends_at_its_own_result_rather_than_at_what_the_cli_logs_af
     it as the turn's last frame — on 80 of 99 production turns (2026-08-16)."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
     ending = result(text="a bad config")
@@ -1192,7 +1193,7 @@ async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_s
     matching the Nth message to the Nth frame would be a guess."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "count the files")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "count the files", SPA_ORIGIN)
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
     client = _FakeCli(
@@ -1229,7 +1230,7 @@ async def test_the_calls_come_from_the_events_and_need_no_id_from_the_agent(
     """
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "count the files")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "count the files", SPA_ORIGIN)
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
     client = _FakeCli(
@@ -1285,7 +1286,7 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, 
             # And the wait must actually wake on NOTIFY rather than only time out. A bounded poll
             # rather than an Event, so the runner's wake is observed from outside; what it polls
             # for is the closed turn, since the session's status stays `ready` throughout.
-            await chat_store.enqueue_prompt(operator_id, view.session_id, "ping")
+            await chat_store.enqueue_prompt(operator_id, view.session_id, "ping", SPA_ORIGIN)
             for _ in range(75):
                 if [
                     turn
@@ -1504,7 +1505,7 @@ async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
                 if await chat_store.status(view.session_id) == SessionStatus.READY:
                     break
                 await asyncio.sleep(0.2)
-            await chat_store.enqueue_prompt(operator_id, view.session_id, "go")
+            await chat_store.enqueue_prompt(operator_id, view.session_id, "go", SPA_ORIGIN)
             # Waits for the whole streamed text, not for the first delta: waiting on one frame
             # existing races the second and cancels between them, asserting a timing rather than
             # the property.

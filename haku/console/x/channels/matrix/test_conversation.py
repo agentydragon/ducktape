@@ -19,6 +19,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import (
+    SPA_ORIGIN,
     AuthoredEventKind,
     ChatMessageRole,
     MatrixOrigin,
@@ -415,7 +416,7 @@ async def exchange(chat_store: SessionStore, operator_id: UUID, session_id: UUID
     behind — a prompt row `pending` until a turn claims it, an assistant row `complete` in the same
     transaction that queues the room's copy.
     """
-    await chat_store.enqueue_prompt(operator_id, session_id, asked)
+    await chat_store.enqueue_prompt(operator_id, session_id, asked, SPA_ORIGIN)
     start = await chat_store.next_prompt(session_id)
     assert start is not None
     message_id = await chat_store.begin_assistant(session_id, start.turn_id, source_first_frame_seq=1)
@@ -482,7 +483,7 @@ async def test_a_batch_the_dying_session_never_answered_is_still_the_history(
     doomed = await serving_session(chat_store, operator_id, thread)
     await exchange(chat_store, operator_id, doomed, "hi", "hello")
     # Accepted, and then nothing: no turn ever claimed it, which is what leaves it `pending`.
-    await chat_store.enqueue_prompt(operator_id, doomed, "the one that killed it")
+    await chat_store.enqueue_prompt(operator_id, doomed, "the one that killed it", SPA_ORIGIN)
     await chat_store.fail(doomed, "the sandbox went away")
 
     assert (ChatMessageRole.USER, "the one that killed it") in await read(transcript, thread)
@@ -499,7 +500,7 @@ async def test_a_session_s_own_rows_are_not_its_history(
     doomed = await serving_session(chat_store, operator_id, thread)
     await exchange(chat_store, operator_id, doomed, "hi", "hello")
     replacement = await serving_session(chat_store, operator_id, thread)
-    await chat_store.enqueue_prompt(operator_id, replacement, "re-offered")
+    await chat_store.enqueue_prompt(operator_id, replacement, "re-offered", SPA_ORIGIN)
 
     said = await transcript.recent(thread, before_session=replacement, limit=20)
 
@@ -519,7 +520,7 @@ async def test_what_the_room_was_never_told_is_not_in_the_history(
     leaves behind.
     """
     session_id = await serving_session(chat_store, operator_id, thread)
-    await chat_store.enqueue_prompt(operator_id, session_id, "do something")
+    await chat_store.enqueue_prompt(operator_id, session_id, "do something", SPA_ORIGIN)
     start = await chat_store.next_prompt(session_id)
     assert start is not None
     tool_only = await chat_store.begin_assistant(session_id, start.turn_id, source_first_frame_seq=1)
@@ -618,7 +619,7 @@ async def test_a_batch_offered_mid_turn_is_rejected_with_the_reason_and_the_text
     once the caller acknowledges the batch."""
     session_id = await serving_session(chat_store, operator_id, thread)
     await serving_room(conversations, operator_id)
-    await chat_store.enqueue_prompt(operator_id, session_id, "first")
+    await chat_store.enqueue_prompt(operator_id, session_id, "first", SPA_ORIGIN)
     assert await chat_store.next_prompt(session_id) is not None
 
     admitted = await turns.offer([operator_message("and another thing", event_id="$2", at=2)])
@@ -800,7 +801,7 @@ async def test_a_batch_records_the_room_events_it_was_folded_from(
     origins needs once one bot serves more than one.
     """
     session_id = await serving_session(chat_store, operator_id)
-    await serving_room(conversations, session_id)
+    await serving_room(conversations)
 
     offered = await turns.offer(
         [operator_message("first", event_id="$a", at=1), operator_message("second", event_id="$b", at=2)]

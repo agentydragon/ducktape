@@ -14,7 +14,7 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
-from haku.console.chat_models import FrameDirection
+from haku.console.chat_models import SPA_ORIGIN, FrameDirection
 from haku.console.x import frame_export
 from haku.console.x.claude_code import frames
 from haku.console.x.claude_code.projection import RecordedFrame, project_log
@@ -79,7 +79,7 @@ async def exported(chat_store, migrated_sessions, operator_id) -> frame_export.E
     await chat_store.record_frame(
         session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, setup_output_frame("cloning the repo")
     )
-    await chat_store.enqueue_prompt(operator_id, session_id, "start the build")
+    await chat_store.enqueue_prompt(operator_id, session_id, "start the build", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
     for payload in SESSION_FRAMES:

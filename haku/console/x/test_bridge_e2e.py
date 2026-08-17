@@ -26,7 +26,7 @@ from fastapi import FastAPI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from haku.console.chat_models import OPEN_SESSION_STATUSES, ChatMessageRole, SessionStatus, TurnOutcome
+from haku.console.chat_models import OPEN_SESSION_STATUSES, SPA_ORIGIN, ChatMessageRole, SessionStatus, TurnOutcome
 from haku.console.database_schema import SessionFrame
 from haku.console.x.conftest import MCP_TOKEN, runtime_config
 from haku.console.x.session_notifications import SessionNotifications
@@ -160,11 +160,11 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     try:
         async with serve_app(_console_app(migrated_db_url, workspace), port=port):
             await _wait_until("the runner's bridge handshake", bridge_connected, runner=runner)
-            await chat_store.enqueue_prompt(operator_id, session_id, "first question")
+            await chat_store.enqueue_prompt(operator_id, session_id, "first question", SPA_ORIGIN)
             await _wait_until("the first turn to finish", first_turn_finished, runner=runner)
             # `[hold]` is the stub's direction to answer and then wait, which is what strands this
             # turn in flight while the console below goes away.
-            await chat_store.enqueue_prompt(operator_id, session_id, "second question [hold]")
+            await chat_store.enqueue_prompt(operator_id, session_id, "second question [hold]", SPA_ORIGIN)
             await _wait_until("the CLI to receive the second prompt", the_cli_has_the_second_prompt, runner=runner)
 
         # The console is gone with the exchange unfinished. The sandbox is not: its CLI is still

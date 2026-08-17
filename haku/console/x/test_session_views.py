@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest_bazel
 
-from haku.console.chat_models import ConversationEventKind, EventProvenance, FrameDirection
+from haku.console.chat_models import SPA_ORIGIN, ConversationEventKind, EventProvenance, FrameDirection
 from haku.console.database_schema import SessionEvent, SessionFrame
 from haku.console.x import session_views
 from haku.console.x.claude_code import projection
@@ -88,7 +88,7 @@ async def test_a_stored_result_reads_back_as_its_text(chat_store, migrated_sessi
     """`text` is the only stored shape, and an empty result is a result rather than an absent one."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "list the files")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "list the files", SPA_ORIGIN)
     started = await chat_store.next_prompt(view.session_id)
     assert started is not None
 

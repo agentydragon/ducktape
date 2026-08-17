@@ -32,7 +32,6 @@ from haku.console.chat_models import (
     ENDED_SESSION_STATUSES,
     LEASED_SESSION_STATUSES,
     OPEN_SESSION_STATUSES,
-    SPA_ORIGIN,
     AuthoredEventKind,
     ChatMessageRole,
     ChatMessageStatus,
@@ -781,7 +780,7 @@ class SessionStore:
         operator_id: UUID,
         session_id: UUID,
         prompt_text: str,
-        origin: PromptOrigin = SPA_ORIGIN,
+        origin: PromptOrigin,
         records: PromptRecords | None = None,
     ) -> SessionMessageView:
         """Accept a prompt, recording which surface it arrived through.
@@ -790,8 +789,11 @@ class SessionStore:
         that event is already the prompt's provider-neutral place in the stream — and a surface
         deciding whether it has already shown this prompt reads the stream, not the transcript.
 
-        Defaulted to the console's own surface: a caller that passes nothing is one, and a channel
-        says which of its attachments the prompt came through.
+        Required, with no default. A default of the console's own surface would mean a channel
+        that forgot to pass one recorded the operator as having typed it into a browser — and the
+        reader this exists for would then post that prompt into every room including the one it
+        came from, which is the exact duplicate the origin is here to prevent. Silent, and in the
+        one direction that matters, so the type system holds it instead.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
