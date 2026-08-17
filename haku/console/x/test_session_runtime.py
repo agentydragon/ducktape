@@ -1364,6 +1364,7 @@ class _ScriptedChannel:
     def __init__(self) -> None:
         self.written: list[dict[str, Any]] = []
         self._inbound: asyncio.Queue[ClaudeMessage | None] = asyncio.Queue()
+        self._wrote = asyncio.Event()
 
     def deliver(self, frame: dict[str, Any], *, seq: int | None = None) -> None:
         self._inbound.put_nowait(ClaudeMessage(payload=frame, seq=seq))
@@ -1373,6 +1374,18 @@ class _ScriptedChannel:
 
     async def write(self, data: str) -> None:
         self.written.append(json.loads(data))
+        self._wrote.set()
+
+    async def first_write(self) -> dict[str, Any]:
+        """The opening frame, once it is actually on the wire.
+
+        `cli_client._write` numbers a frame before writing it, and numbering here is a database
+        round trip, so the write lands several loop turns after `connect()` is scheduled rather
+        than on the first — which is what awaiting a single `sleep(0)` would assume.
+        """
+        async with asyncio.timeout(30):
+            await self._wrote.wait()
+        return self.written[0]
 
     async def read_messages(self):
         while (message := await self._inbound.get()) is not None:
@@ -1413,8 +1426,7 @@ async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas
     cli = ClaudeCli(channel, RolloutRecorder(chat_store, view.session_id), control_timeout=5)
 
     connecting = asyncio.create_task(cli.connect())
-    await asyncio.sleep(0)
-    initialize = channel.written[0]
+    initialize = await channel.first_write()
     channel.deliver(
         {"type": "control_response", "response": {"subtype": "success", "request_id": initialize["request_id"]}}
     )
@@ -1460,8 +1472,7 @@ async def test_the_runners_number_is_recorded_beside_the_rows_own(chat_store, mi
     cli = ClaudeCli(channel, RolloutRecorder(chat_store, view.session_id), control_timeout=5)
 
     connecting = asyncio.create_task(cli.connect())
-    await asyncio.sleep(0)
-    initialize = channel.written[0]
+    initialize = await channel.first_write()
     channel.deliver(
         {"type": "control_response", "response": {"subtype": "success", "request_id": initialize["request_id"]}}, seq=11
     )
