@@ -18,7 +18,7 @@ absence is the honest reading rather than a gap:
   cannot see one; `test_diverse_session.py` remains where that hazard is pinned.
 
 **What is exported is what the fold reads** — `reprojection.foldable_frames`, so the console's own
-two authored row kinds are left out, which is also the set adoption replays under.
+`setup_output` rows are left out, which is also the exclusion adoption replays under.
 """
 
 from __future__ import annotations

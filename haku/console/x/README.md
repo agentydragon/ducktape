@@ -358,7 +358,7 @@ the test that reads it, as `test_diverse_session` has.
   survives, a short list of discriminators and tool names is kept, and every other string elides to
   its own length — so what it keeps is a list rather than a judgement about one session, and the
   review is the other half of that.
-- **What it exports is what the fold reads**, so the console's own two authored row kinds are gone
+- **What it exports is what the fold reads**, so the console's own `setup_output` rows are gone
   and a record's index is its `frame_seq` rather than the table's number. Both differences are
   written up in `frame_export.py`.
 - **The composed half is `test_agents_and_background.py`.** It pins what the projection does with
