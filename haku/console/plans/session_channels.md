@@ -36,6 +36,11 @@ truth; a channel is driven toward agreement with it.** Not "send this event when
 "make this channel show what this session has". The unit is a loop per `(channel, session)`, and
 its state is one cursor: how far this attachment has been brought up to date.
 
+**The layer model this candidate sits in is <conversation_layers.md>** — session, conversation and
+channel, the operator's cardinality over them, the subscription contract in both directions, and how
+a turn's tool calls and thinking project into a room as notices. It also answers, against this
+section, where the delivery queue belongs: to the Matrix channel, not to the shared schema.
+
 **What it is for: plurality on both axes.** Different chat backends (web, Matrix, whatever comes
 next) and different AI backends (an OpenAI-compatible endpoint alongside Claude). Those are the
 two seams <../../plans/chat_runtime_cleanup.md> § stage 7 already names, and this is the frontend
