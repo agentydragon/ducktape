@@ -148,7 +148,7 @@ _INSPECTED = [
 def test_the_inspector_says_which_frames_the_fold_had_no_branch_for() -> None:
     """The actionable half of a debug surface: a frame class this release does not map is the one
     thing a transcript is silently missing, and the key is the string to add a branch for."""
-    page = session_views.frame_page(_INSPECTED, limit=len(_INSPECTED))
+    page = session_views.frame_page(_INSPECTED, limit=len(_INSPECTED), conversation_id=uuid4())
 
     assert {frame.frame_seq: frame.unprojected for frame in page.frames} == {
         1: None,
@@ -163,7 +163,7 @@ def test_the_per_frame_counts_are_what_a_whole_session_fold_reports() -> None:
     """Per frame is exact rather than an approximation of the session-wide tally: a count keys off
     the frame's own class, never off what the fold accumulated before it. `setup_output` is the
     bridge's own envelope, which the fold refuses, so it is excluded from both sides."""
-    page = session_views.frame_page(_INSPECTED, limit=len(_INSPECTED))
+    page = session_views.frame_page(_INSPECTED, limit=len(_INSPECTED), conversation_id=uuid4())
     whole = projection.project_log(
         projection.RecordedFrame(frame_seq=row.frame_seq, payload=row.payload)
         for row in _INSPECTED
