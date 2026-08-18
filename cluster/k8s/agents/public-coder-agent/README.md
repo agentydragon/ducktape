@@ -112,3 +112,8 @@ proxy environment handling.
   the accepted cost of not using OpenShell — see
   <../../../../plans/personal_agents/findings/openshell.md> F1 for why OpenShell was not
   used.
+- **PVC capacity enforcement.** `local-path-ovh-hdd` does not enforce requested
+  PVC sizes, so workspace growth can consume the worker disk beyond its claim.
+  Before treating this as durable agent storage, evaluate extending the
+  OpenEBS LVM provisioner to OVH workers and migrating this claim to a
+  size-enforcing LVM-backed StorageClass (or another quota-enforcing design).
