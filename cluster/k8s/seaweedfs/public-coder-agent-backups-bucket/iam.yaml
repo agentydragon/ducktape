@@ -1,0 +1,29 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: public-coder-agent-backups
+  namespace: seaweedfs
+spec:
+  seaweedRef:
+    name: seaweedfs
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: public-coder-agent-backups
+  namespace: seaweedfs
+spec:
+  seaweedRef:
+    name: seaweedfs
+  identityRef:
+    name: public-coder-agent-backups
+  # Generate the narrowly scoped credentials directly where VolSync consumes
+  # them. A namespace-local ExternalSecret adds the Restic repository/password
+  # without copying these keys through static IAM or cross-namespace reflection.
+  secretRef:
+    name: public-coder-agent-volsync-s3
+    namespace: public-coder-agent
+    accessKeyField: AWS_ACCESS_KEY_ID
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+  reclaimPolicy: Retain

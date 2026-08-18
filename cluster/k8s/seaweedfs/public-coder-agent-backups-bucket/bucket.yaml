@@ -1,0 +1,15 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: public-coder-agent-backups
+  namespace: seaweedfs
+spec:
+  name: public-coder-agent-backups
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  # Restic retention/pruning is managed by VolSync, not by Bucket deletion.
+  reclaimPolicy: Retain
+  access:
+    - user: public-coder-agent-backups
+      actions: [Read, Write, List, Tagging]
