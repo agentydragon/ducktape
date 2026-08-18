@@ -15,12 +15,11 @@ address is dense, so two writers may not allocate concurrently. That costs one r
 and is affordable — segments are coalesced, so a turn writes tens of rows rather than thousands,
 and only one session holds a conversation at a time.
 
-**Three ways an item is addressed, and each exists because the last one cannot reach.** A key
-minted in this batch is in `_opened`. A message opened by an earlier batch is the turn's one open
-message item — the CLI writes one answer at a time, which is what makes "the open one"
-unambiguous, and it is why the turn keeps no pointer of its own any more. A tool call answered
-frames after it was asked is found by `call_id`, which is the id the protocol supplies for exactly
-that purpose.
+**Two ways an item is addressed, and neither is a key the fold invented.** A tool call answered
+frames after it was asked is found by `call_id` — the id the protocol supplies for exactly that
+purpose. Everything else is "the open item of this type", answered from this transaction's own
+opens and otherwise from the turn's open items in the database, so a fold resuming mid-item finds
+what its predecessor left open. Identity is the `item_id` minted here and nowhere else.
 """
 
 from __future__ import annotations
@@ -39,12 +38,12 @@ from haku.console.x.conversation_events import (
     CallRef,
     ConversationEvent,
     FrameRange,
-    ItemKey,
     ItemRef,
     ItemSegment,
     Json,
     MessageCompleted,
     MessageStarted,
+    OpenRef,
     ReasoningCompleted,
     ReasoningStarted,
     ToolCallCompleted,
@@ -75,7 +74,10 @@ class LogWriter:
     session_id: UUID | None
     turn_id: UUID | None
     now: datetime
-    _opened: dict[ItemKey, UUID] = field(default_factory=dict)
+    # What this transaction has opened and not yet closed, per type. Consulted before the database,
+    # because an item opened a moment ago in this same transaction is not visible to a query until
+    # it flushes and is the common case besides.
+    _open_of_type: dict[ItemType, UUID] = field(default_factory=dict)
 
     def _next_seq(self) -> int:
         """The next position, taken from the counter the caller locked."""
@@ -115,12 +117,11 @@ class LogWriter:
         """The item this event is about, opening one where the event is what opens it."""
         match event:
             case MessageStarted():
-                return await self._open(event.item, ItemType.MESSAGE)
+                return await self._open(ItemType.MESSAGE)
             case ReasoningStarted():
-                return await self._open(event.item, ItemType.REASONING)
+                return await self._open(ItemType.REASONING)
             case ToolCallStarted():
                 return await self._open(
-                    event.item,
                     ItemType.TOOL_CALL,
                     call_id=event.call_id,
                     tool_name=event.tool_name,
@@ -132,11 +133,11 @@ class LogWriter:
                 item.updated_at = self.now
                 return item.item_id
             case MessageCompleted():
-                item = await self._close(await self._resolve(event.item))
+                item = await self._close(await self._resolve(OpenRef(item_type=ItemType.MESSAGE)))
                 item.backend_item_id = event.backend_item_id
                 return item.item_id
             case ReasoningCompleted():
-                item = await self._close(await self._resolve(event.item))
+                item = await self._close(await self._resolve(OpenRef(item_type=ItemType.REASONING)))
                 item.disclosure = event.disclosure
                 return item.item_id
             case ToolCallCompleted():
@@ -149,7 +150,6 @@ class LogWriter:
 
     async def _open(
         self,
-        key: ItemKey,
         item_type: ItemType,
         *,
         call_id: str | None = None,
@@ -179,7 +179,7 @@ class LogWriter:
         )
         # Flushed before anything points at it: `conversation_event.item_id` is a foreign key.
         await self.db.flush()
-        self._opened[key] = item_id
+        self._open_of_type[item_type] = item_id
         return item_id
 
     async def _resolve(self, ref: ItemRef) -> UUID:
@@ -194,27 +194,28 @@ class LogWriter:
                 if found is None:
                     raise UnknownItemError(f"no call was asked under this id: {ref.call_id=}")
                 return found
-            case ItemKey():
-                if (opened := self._opened.get(ref)) is not None:
+            case OpenRef():
+                if (opened := self._open_of_type.get(ref.item_type)) is not None:
                     return opened
-                return await self._open_message_of_turn()
+                return await self._open_of_turn(ref.item_type)
 
-    async def _open_message_of_turn(self) -> UUID:
-        """The message this turn is still streaming into.
+    async def _open_of_turn(self, item_type: ItemType) -> UUID:
+        """The item of this type the turn is still writing into.
 
         What replaces the pointer the turn used to carry: the state is the item's, so there is one
-        place it can be wrong rather than two that can disagree. One answer, because a CLI writes
-        one answer at a time.
+        place it can be wrong rather than two that can disagree. One answer, because a backend
+        writes one message at a time — and a fold that resumed mid-item finds its predecessor's
+        here rather than opening a second.
         """
         found = await self.db.scalar(
             select(ConversationItem.item_id).where(
                 ConversationItem.turn_id == self.turn_id,
-                ConversationItem.item_type == ItemType.MESSAGE,
+                ConversationItem.item_type == item_type,
                 ConversationItem.status == ItemStatus.OPEN,
             )
         )
         if found is None:
-            raise UnknownItemError(f"no message is open on this turn: {self.turn_id=}")
+            raise UnknownItemError(f"no item of this type is open on the turn: {item_type=} {self.turn_id=}")
         return found
 
     async def _item(self, item_id: UUID) -> ConversationItem:
@@ -235,6 +236,7 @@ class LogWriter:
         item.status = ItemStatus.COMPLETE
         item.closed_seq = self.conversation.next_event_seq
         item.updated_at = self.now
+        self._open_of_type.pop(item.item_type, None)
         return item
 
     async def authored_prompt(self, text: str, origin: PromptOrigin) -> UUID:

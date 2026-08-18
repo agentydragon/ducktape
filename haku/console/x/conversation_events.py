@@ -4,8 +4,8 @@ The vocabulary every surface renders and every backend adapter produces. Nothing
 Claude-shaped: no `assistant`, no content block, no `msg_…`, no `tool_use_result`. The Claude
 adapter is <claude_code/projection.py> (<README.md> § The neutral projection).
 
-**Everything is an item, and an item is a type, a key, and three events**: started, then any number
-of segments, then completed. Both stream-native harness protocols reached that decomposition
+**Everything is an item, and an item is a type and three events**: started, then any number of
+segments, then completed. Both stream-native harness protocols reached that decomposition
 independently — Codex's `item/started` → `item/*/delta` → `item/completed` and the Responses API's
 `output_item.added` → `output_text.delta` → `output_item.done` — which is the argument that it is
 not our invention (<../docs/conversation_schema.md> § 1).
@@ -40,7 +40,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from haku.console.chat_models import ReasoningDisclosure, ToolOutcome, TurnOutcome
+from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
 
 # Whatever a provider put in a field this layer passes through rather than reads. Open by nature:
 # a tool's structured result is per-tool, not per-protocol.
@@ -71,47 +71,43 @@ type Provenance = FrameRange | Authored
 
 
 @dataclass(frozen=True, slots=True)
-class ItemKey:
-    """Which item an event belongs to, within one session's projection.
-
-    The `frame_seq` it opened at — ours, deterministic, a pointer back into the log. Not the
-    backend's own id for the item, which many production rows lack and no delta carries; that rides
-    on the completion as provenance, where its absence costs nothing.
-
-    Deterministic is the load-bearing word: the fold is a pure function of frames, so re-folding a
-    session produces the same keys and a rebuild can compare what it derived against what is stored.
-    An item the console authored has no frame and is keyed by the store instead.
-
-    **`within_frame` is why a position alone is not enough.** One Claude `assistant` frame can open
-    a message and two tool calls, which are three items sharing a `frame_seq`; the ordinal is their
-    order within it. It stays deterministic, which is the property the key exists for.
-    """
-
-    opened_at_frame_seq: int
-    within_frame: int = 0
-
-
-@dataclass(frozen=True, slots=True)
 class CallRef:
-    """An item addressed by the id the tool protocol gave it, rather than by where it opened.
+    """An item addressed by the id the tool protocol gave it.
 
     A call's answer arrives frames after its ask, and the frame carrying it says only `call_id` —
-    so a fold resuming from a cursor after the ask cannot name the position the item opened at, and
-    should not have to. Every harness protocol supplies this id precisely so the two halves can be
-    paired, and the store's unique index on `(conversation_id, call_id)` is what resolves it.
+    so a fold resuming from a cursor after the ask has no other handle on the item. Every harness
+    protocol supplies this id precisely so the two halves can be paired, and the store's unique
+    index on `(conversation_id, call_id)` is what resolves it.
     """
 
     call_id: str
 
 
-type ItemRef = ItemKey | CallRef
+@dataclass(frozen=True, slots=True)
+class OpenRef:
+    """The item of this type the fold currently has open.
+
+    **Not a key**, and that is the point: prose belongs to the thing being written, and a backend
+    writing one message at a time makes "the open one" an unambiguous answer that survives a fold
+    resuming mid-item. What identity an item has is the store's `item_id`, minted when it opens;
+    the fold never invents one.
+
+    An earlier shape keyed items by the frame that opened them. That linkage did no work — nothing
+    ever read the frame numbers back to find an item — while forcing an ordinal to disambiguate the
+    several items one frame can open, and it leaked a session-scoped coordinate into read models
+    that channels consume.
+    """
+
+    item_type: ItemType
+
+
+type ItemRef = CallRef | OpenRef
 
 
 @dataclass(frozen=True, slots=True)
 class MessageStarted:
     """The agent began saying something. Its prose follows as segments."""
 
-    item: ItemKey
     provenance: Provenance
 
 
@@ -125,7 +121,6 @@ class ReasoningStarted:
     upward.
     """
 
-    item: ItemKey
     provenance: Provenance
 
 
@@ -139,7 +134,6 @@ class ToolCallStarted:
     something true to say about it.
     """
 
-    item: ItemKey
     call_id: str
     tool_name: str
     arguments: Mapping[str, Json]
@@ -167,11 +161,11 @@ class ItemSegment:
 class MessageCompleted:
     """One agent message, finished.
 
-    Carries no text: the segments were the text. `backend_item_id` is provenance, not identity — it
-    is what the frames called this message, and it is absent whenever the wire supplied none.
+    Carries no text: the segments were the text, and it closes the open message rather than naming
+    one. `backend_item_id` is provenance, not identity — it is what the frames called this message,
+    and it is absent whenever the wire supplied none.
     """
 
-    item: ItemKey
     backend_item_id: str | None
     provenance: Provenance
 
@@ -185,7 +179,6 @@ class ReasoningCompleted:
     is an empty string no surface can explain.
     """
 
-    item: ItemKey
     disclosure: ReasoningDisclosure
     provenance: Provenance
 
@@ -249,11 +242,16 @@ class Projection:
 
 @dataclass(frozen=True, slots=True)
 class OpenItem:
-    """An item the fold has seen the start of and not the end of."""
+    """An item the fold has seen the start of and not the end of.
 
-    key: ItemKey
-    backend_item_id: str | None
+    The two frame numbers are **provenance**, not identity: they are the span the item's completion
+    reports as the frames it was read from, which is what lets an operator appeal the folded text to
+    the raw JSON.
+    """
+
+    opened_at_frame_seq: int
     last_frame_seq: int
+    backend_item_id: str | None
 
 
 @dataclass(frozen=True, slots=True)

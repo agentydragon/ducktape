@@ -50,18 +50,18 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Any
 
-from haku.console.chat_models import ReasoningDisclosure, ToolOutcome, TurnOutcome
+from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
 from haku.console.x.claude_code import frames
 from haku.console.x.conversation_events import (
     CallRef,
     ConversationEvent,
     FrameRange,
-    ItemKey,
     ItemSegment,
     Json,
     MessageCompleted,
     MessageStarted,
     OpenItem,
+    OpenRef,
     Projection,
     ProjectionState,
     ReasoningCompleted,
@@ -156,11 +156,14 @@ def finish(state: ProjectionState) -> Projection:
 
 
 def _completed(open_message: OpenItem) -> MessageCompleted:
-    """The message's close. It carries no prose: the segments already delivered every word."""
+    """The message's close. It carries no prose: the segments already delivered every word.
+
+    The frame span is the item's provenance — where it began and where it ended on the wire — which
+    is the one thing those numbers are for.
+    """
     return MessageCompleted(
-        item=open_message.key,
         backend_item_id=open_message.backend_item_id,
-        provenance=FrameRange(open_message.key.opened_at_frame_seq, open_message.last_frame_seq),
+        provenance=FrameRange(open_message.opened_at_frame_seq, open_message.last_frame_seq),
     )
 
 
@@ -224,57 +227,55 @@ class _Projector:
         event = frame.payload.get("event")
         if not isinstance(event, dict) or not (text := frames.text_delta(event)):
             return
-        if (open_message := self.open_message) is None:
-            open_message = OpenItem(
-                key=ItemKey(opened_at_frame_seq=frame.frame_seq), backend_item_id=None, last_frame_seq=frame.frame_seq
+        if self.open_message is None:
+            self.open_message = OpenItem(
+                opened_at_frame_seq=frame.frame_seq, last_frame_seq=frame.frame_seq, backend_item_id=None
             )
-            self.open_message = open_message
-            self.events.append(
-                MessageStarted(item=open_message.key, provenance=FrameRange(frame.frame_seq, frame.frame_seq))
-            )
+            self.events.append(MessageStarted(provenance=FrameRange(frame.frame_seq, frame.frame_seq)))
         else:
-            self.open_message = replace(open_message, last_frame_seq=frame.frame_seq)
+            self.open_message = replace(self.open_message, last_frame_seq=frame.frame_seq)
         self.events.append(
-            ItemSegment(item=open_message.key, text=text, provenance=FrameRange(frame.frame_seq, frame.frame_seq))
+            ItemSegment(
+                item=OpenRef(item_type=ItemType.MESSAGE),
+                text=text,
+                provenance=FrameRange(frame.frame_seq, frame.frame_seq),
+            )
         )
 
     def _assistant(self, frame: RecordedFrame) -> None:
         where = FrameRange(frame.frame_seq, frame.frame_seq)
-        for index, block in enumerate(frames.content_blocks(frame.payload)):
-            # Every item a frame opens beside its message needs a key of its own, and one frame can
-            # carry several: the block's own position is what distinguishes them, deterministically.
-            beside = ItemKey(opened_at_frame_seq=frame.frame_seq, within_frame=index + 1)
+        for block in frames.content_blocks(frame.payload):
             match block.get("type"):
                 case "text" if isinstance(text := block.get("text"), str):
-                    message = self._message_for(frame)
+                    self._message_for(frame)
                     # Under `STREAM_EVENTS` the deltas already delivered this prose; emitting it
                     # again as a whole would have a consumer render the answer twice.
                     if self.delta_source is DeltaSource.COMPLETED_BLOCKS:
-                        self.events.append(ItemSegment(item=message.key, text=text, provenance=where))
+                        self.events.append(
+                            ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text=text, provenance=where)
+                        )
                 case "thinking":
+                    # Opened, spoken and closed by this one frame, so nothing has to name it: it is
+                    # the open reasoning item for exactly as long as these three events take.
                     summary = block.get("thinking")
-                    self.events.append(ReasoningStarted(item=beside, provenance=where))
+                    self.events.append(ReasoningStarted(provenance=where))
                     if isinstance(summary, str) and summary:
-                        self.events.append(ItemSegment(item=beside, text=summary, provenance=where))
-                    self.events.append(
-                        ReasoningCompleted(item=beside, disclosure=ReasoningDisclosure.SUMMARY, provenance=where)
-                    )
+                        self.events.append(
+                            ItemSegment(item=OpenRef(item_type=ItemType.REASONING), text=summary, provenance=where)
+                        )
+                    self.events.append(ReasoningCompleted(disclosure=ReasoningDisclosure.SUMMARY, provenance=where))
                 case "redacted_thinking":
                     # The model thought and none of it is available. Rendered as an item with no
                     # segments, which is the one thing an empty string could not say.
-                    self.events.append(ReasoningStarted(item=beside, provenance=where))
-                    self.events.append(
-                        ReasoningCompleted(item=beside, disclosure=ReasoningDisclosure.WITHHELD, provenance=where)
-                    )
+                    self.events.append(ReasoningStarted(provenance=where))
+                    self.events.append(ReasoningCompleted(disclosure=ReasoningDisclosure.WITHHELD, provenance=where))
                 case "tool_use" if (
                     isinstance(call_id := block.get("id"), str)
                     and isinstance(name := block.get("name"), str)
                     and isinstance(arguments := block.get("input"), dict)
                 ):
                     self.events.append(
-                        ToolCallStarted(
-                            item=beside, call_id=call_id, tool_name=name, arguments=arguments, provenance=where
-                        )
+                        ToolCallStarted(call_id=call_id, tool_name=name, arguments=arguments, provenance=where)
                     )
                 case block_type:
                     self._unprojected(f"{frames.ASSISTANT_FRAME_KIND}/{block_type}")
@@ -299,12 +300,10 @@ class _Projector:
             return continued
         self.close_message()
         started = OpenItem(
-            key=ItemKey(opened_at_frame_seq=frame.frame_seq),
-            backend_item_id=backend_item_id,
-            last_frame_seq=frame.frame_seq,
+            opened_at_frame_seq=frame.frame_seq, last_frame_seq=frame.frame_seq, backend_item_id=backend_item_id
         )
         self.open_message = started
-        self.events.append(MessageStarted(item=started.key, provenance=FrameRange(frame.frame_seq, frame.frame_seq)))
+        self.events.append(MessageStarted(provenance=FrameRange(frame.frame_seq, frame.frame_seq)))
         return started
 
     def _user(self, frame: RecordedFrame) -> None:
