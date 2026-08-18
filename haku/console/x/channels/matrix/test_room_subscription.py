@@ -64,9 +64,7 @@ async def served(chat_store: SessionStore, operator_id: UUID, conversations: Mat
     """A ready session serving the bound room, on the conversation the room is attached to."""
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
     conversation_id = await conversations.conversation_for_room(MATRIX_ROOM, operator_id)
-    view, token = await chat_store.create(
-        operator_id, MatrixSession(room_id=MATRIX_ROOM), conversation_id=conversation_id
-    )
+    view, token = await chat_store.create(operator_id, MatrixSession(), conversation_id=conversation_id)
     await chat_store.authenticate_bridge(view.session_id, token)
     return view.session_id
 

@@ -617,7 +617,7 @@ class MatrixSessionSupervisor:
         # is not touched and the thread survives the session that was running it.
         session = await self._chat.create(
             operator_id,
-            MatrixSession(room_id=binding.room_id),
+            MatrixSession(),
             conversation_id=await self._conversations.conversation_for_room(binding.room_id, operator_id),
         )
         await self._conversations.set_session(self._config.user_id, session.session_id)

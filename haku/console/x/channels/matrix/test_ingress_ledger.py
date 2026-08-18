@@ -20,7 +20,7 @@ ROOM = "!room:allegedly.works"
 
 async def ready_session(chat_store: SessionStore, operator_id: UUID) -> UUID:
     """A Matrix session that will take a prompt, made the way the supervisor and a runner make one."""
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    view, token = await chat_store.create(operator_id, MatrixSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     return view.session_id
 

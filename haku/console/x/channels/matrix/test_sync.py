@@ -262,7 +262,7 @@ async def carried_prompt(
     chat_store: SessionStore, operator_id: UUID, ledger: IngressLedger, event_id: str, body: str
 ) -> UUID:
     """A prompt in the record carrying *event_id*, as an accepted batch leaves one behind."""
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=MATRIX_ROOM))
+    view, token = await chat_store.create(operator_id, MatrixSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, f"[{event_id}] {body}", ledger.carrying((event_id,)))
     return view.session_id
@@ -831,7 +831,7 @@ async def test_history_is_read_from_our_record_and_not_from_the_homeserver(
     """
     view, token = await chat_store.create(
         operator_id,
-        MatrixSession(room_id=MATRIX_ROOM),
+        MatrixSession(),
         conversation_id=await conversations.conversation_for_room(MATRIX_ROOM, operator_id),
     )
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED

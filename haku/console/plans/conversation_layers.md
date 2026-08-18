@@ -36,11 +36,8 @@ What sits across a boundary today rather than inside a layer, each a place where
 to do:
 
 - **The conversation's writer names a channel's address.** `_enqueue_reply`
-  (<../x/session_store.py>) returns early on `chat.room_id is None` and writes `session_outbox.room_id`,
-  inside the turn loop's own transaction. § 5.
-- **The conversation's own read is addressed by a channel key.** `RoomTranscript.recent`
-  (<../x/channels/matrix/conversation.py>) joins `Session.room_id`, so re-awakening asks the channel
-  (`RoomChannel.recent_history`) for the conversation's tail.
+  (<../x/session_store.py>) reads the conversation's live Matrix attachment and writes
+  `session_outbox.room_id`, inside the turn loop's own transaction. § 5.
 - **Channel state that survives nothing.** `MatrixSyncService._status_body`,
   `MatrixSessionSupervisor._last_announced` — per-process, so a leader handover re-announces. § 3.
 
@@ -336,7 +333,7 @@ second channel's rows to hold: a channel that keeps no copy (the SPA) needs no q
 channel whose transport has no idempotency key needs a different one.
 
 **Moving it is the reconciler, not a rename.** The row is written today inside the turn loop's
-transaction, so while it exists the conversation's writer branches on `chat.room_id`. Under
+transaction, so while it exists the conversation's writer looks up the room's address. Under
 reconciliation the turn writes only the record and the channel derives what it owes, which is what
 removes that branch. What stays shared is the record and the subscription interface.
 
@@ -483,7 +480,7 @@ rows keyed by `session_id`. The conversation answers only _which channels are to
 sessions, fan-out by conversation.
 
 **What is left is the reader move** (step 1). Authoritative reads still go through
-`sessions.room_id` and `matrix_conversation`; the attachment
+`matrix_conversation`; the attachment
 subsumes both, including `matrix_conversation`'s `user_id` primary key — the rule that makes one bot
 user serve exactly one room ever. Losing that rule is **the point rather than the cost** (§ 7).
 
@@ -619,8 +616,7 @@ exists to remove:
 
 ### What is missing
 
-1. **Every cross-session read is keyed by `Session.room_id`**, and `matrix_conversation` is one row
-   per bot user, so one room ever.
+1. **`matrix_conversation` is one row per bot user**, so one room ever.
 2. **The outbox drain polls**, at `IDLE_POLL = 1s`, while `RoomNotices` beside it already wakes on
    `session_changed`.
 3. **Ingress duplicate suppression is positional.** A crash between `enqueue_prompt` committing and
@@ -635,19 +631,10 @@ exists to remove:
 having even if the loop is never built. The dependency edges are at the end.
 
 1.  **Read through `conversation_id`, then unmap what it subsumes.** `0064` is additive, so
-    `matrix_conversation`, `sessions.room_id` and `sessions.surface` are still authoritative.
-
-    **Two nullability traps sit on the columns this subsumes:**
-    - `sessions.surface` is `NOT NULL` **with no server default**. The release that unmaps it omits
-      it from every `INSERT` and Postgres rejects the first session of that roll, so it needs
-      `server_default='spa'` in a migration landing _before_ the unmapping.
-    - `sessions.room_id` is nullable and undefaulted, so it is safe alone — but
-      `ck_sessions_matrix_room` couples it to `surface`. Drop the CHECK before either column is
-      unmapped, and unmap the pair together.
-
-    **Find every reader of `sessions.room_id` before unmapping it, and one is outside `x/`.** The
-    audit counted six, including `recall_index_reader` — a consumer in another package entirely,
-    which a sweep of the chat runtime would not have turned up.
+    `matrix_conversation` and `sessions.surface` are still authoritative. `sessions.room_id` is
+    unmapped and awaiting its drop; `surface` follows the same three releases, and `0075` already
+    made it nullable so the release that stops naming it does not break the first `INSERT` of the
+    roll.
 
 2.  **The conversation detail page reads the increment** instead of refetching the whole
     conversation on every poll. `Subscription` over a `ClientHeldCursor` is the server-side half;
@@ -863,8 +850,8 @@ vocabulary. Nothing is pushed at a channel; a channel is told to look.
 
 These are the acceptance criteria, and each names something that is false today:
 
-- **No code outside a channel names a channel's address.** `_enqueue_reply` stops branching on
-  `chat.room_id`; the turn writes the record and nothing else.
+- **No code outside a channel names a channel's address.** `_enqueue_reply` stops reading the
+  attachment's address; the turn writes the record and nothing else.
 - **Nothing is announced that is not recorded.** Every notice body is a fold over the subscription
   stream (§ 4), so there is no fact whose only copy is a stack frame, no notice that a SIGKILL can
   silently swallow, and no body a second consumer could not reproduce from the same messages.
@@ -955,8 +942,6 @@ Not gone, and deliberately: `matrix_sync_watermark`, `session_events`, `session_
 - Every per-process latch that stands in for durable state: `_status_body`, `_last_announced`.
 - `RoomPacer` as a queue of opaque callables — a budget the reconciler spends, not a deque of
   closures it cannot inspect or squash.
-- `RoomTranscript.recent`'s join on `Session.room_id` — the tail handed to a replacement session
-  becomes a conversation read, which is what it always meant.
 
 ### How to tell it is finished
 

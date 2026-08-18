@@ -140,7 +140,7 @@ async def test_a_turn_records_the_message_it_finished_rather_than_the_frames_it_
     session serving a room — records that the room's outbox holds it, in the transaction that puts
     it there. Reading that off the `assistant` frames could only answer "one was recorded".
     """
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    view, token = await chat_store.create(operator_id, MatrixSession())
     session_id = view.session_id
     await attach_channel(migrated_sessions, session_id, ROOM)
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
@@ -344,7 +344,7 @@ async def test_sessions_come_back_newest_first_with_the_channels_holding_their_t
     """The attachments, not a surface enum: a session says which channels hold a copy of the
     conversation it runs, which is the shape that survives a second one attaching."""
     await chat_store.create(operator_id, SpaSession())
-    matrix, _ = await chat_store.create(operator_id, MatrixSession(room_id="!room:example.org"))
+    matrix, _ = await chat_store.create(operator_id, MatrixSession())
     await attach_channel(migrated_sessions, matrix.session_id, "!room:example.org")
 
     sessions = await chat_store.list_sessions(cursor=None, limit=10)
@@ -526,7 +526,7 @@ async def test_operator_conversation_read_surface_keeps_inventory_and_transcript
     thread rather than which surface a session was created for.
     """
     await chat_store.create(operator_id, SpaSession())
-    matrix, matrix_token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    matrix, matrix_token = await chat_store.create(operator_id, MatrixSession())
     await attach_channel(migrated_sessions, matrix.session_id, ROOM)
     assert await chat_store.authenticate_bridge(matrix.session_id, matrix_token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, matrix.session_id, "What is happening?")
@@ -554,7 +554,7 @@ async def test_a_conversation_a_channel_holds_takes_a_prompt_typed_in_the_browse
     thread, and nothing may start to: a room's session admits a prompt on exactly the terms an SPA
     session does.
     """
-    matrix, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    matrix, token = await chat_store.create(operator_id, MatrixSession())
     await attach_channel(migrated_sessions, matrix.session_id, ROOM)
     assert await chat_store.authenticate_bridge(matrix.session_id, token) == BridgeAuthentication.ACCEPTED
 
@@ -572,11 +572,11 @@ async def test_a_replacement_session_leaves_the_thread_and_its_attachment_where_
 ) -> None:
     """The successor runs the same thread, so the attachment is untouched and the transcript of the
     session that died stays reachable beside it."""
-    first, _ = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    first, _ = await chat_store.create(operator_id, MatrixSession())
     await attach_channel(migrated_sessions, first.session_id, ROOM)
     conversation_id = await chat_store.conversation_of(first.session_id)
     await chat_store.fail(first.session_id, "the sandbox went away")
-    second, _ = await chat_store.create(operator_id, MatrixSession(room_id=ROOM), conversation_id=conversation_id)
+    second, _ = await chat_store.create(operator_id, MatrixSession(), conversation_id=conversation_id)
 
     page = await chat_store.list_operator_conversations(operator_id, cursor=None, limit=10)
     detail = await chat_store.get_operator_conversation(operator_id, conversation_id)
@@ -803,20 +803,15 @@ async def test_abort_reaches_the_replica_running_the_turn(
 
 
 async def test_a_session_records_the_surface_it_was_created_for(chat_store, migrated_sessions, operator_id) -> None:
-    """`surface` and `room_id` are a pair a CHECK couples, and `create` writes both or neither.
-
-    Nothing here selects them any more — a session reaches its channel through the conversation's
-    attachments — but the previous image does for the length of a roll, so they must keep being
-    written until they are unmapped together.
-    """
+    """Nothing selects `surface` any more — a session reaches its channel through the
+    conversation's attachments — but the previous image does for the length of a roll, so it must
+    keep being written until it is unmapped too."""
     spa, _ = await chat_store.create(operator_id, SpaSession())
-    matrix, _ = await chat_store.create(operator_id, MatrixSession(room_id="!room:allegedly.works"))
+    matrix, _ = await chat_store.create(operator_id, MatrixSession())
 
     async with migrated_sessions() as db:
         assert (await db.get(Session, spa.session_id)).surface == ChatSurface.SPA
-        assert (await db.get(Session, spa.session_id)).room_id is None
         assert (await db.get(Session, matrix.session_id)).surface == ChatSurface.MATRIX
-        assert (await db.get(Session, matrix.session_id)).room_id == "!room:allegedly.works"
 
 
 async def test_a_session_opens_its_own_conversation_unless_it_is_given_one(
@@ -921,7 +916,7 @@ async def accepted_prompt(chat_store: SessionStore, operator_id: UUID) -> tuple[
     Room-backed because the tests using it are about what a channel reads back — but a room is an
     attachment address here, not a homeserver.
     """
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    view, token = await chat_store.create(operator_id, MatrixSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     prompt = await chat_store.enqueue_prompt(operator_id, view.session_id, "what were we doing")
     return view.session_id, prompt.message_id

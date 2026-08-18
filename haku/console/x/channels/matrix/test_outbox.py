@@ -46,7 +46,7 @@ async def session_id(chat_store: SessionStore, conversations: MatrixConversation
     """
     view, token = await chat_store.create(
         operator_id,
-        MatrixSession(room_id=MATRIX_ROOM),
+        MatrixSession(),
         conversation_id=await conversations.conversation_for_room(MATRIX_ROOM, operator_id),
     )
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED

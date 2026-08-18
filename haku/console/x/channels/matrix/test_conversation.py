@@ -375,11 +375,9 @@ async def thread(conversations: MatrixConversationStore, operator_id: UUID) -> U
     return await conversations.conversation_for_room(MATRIX_ROOM, operator_id)
 
 
-async def serving_session(
-    chat_store: SessionStore, operator_id: UUID, conversation_id: UUID, room_id: str = MATRIX_ROOM
-) -> UUID:
+async def serving_session(chat_store: SessionStore, operator_id: UUID, conversation_id: UUID) -> UUID:
     """A Matrix session ready to take prompts, made the way the supervisor and a runner make one."""
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=room_id), conversation_id=conversation_id)
+    view, token = await chat_store.create(operator_id, MatrixSession(), conversation_id=conversation_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     return view.session_id
 
@@ -517,7 +515,7 @@ async def test_another_thread_is_not_this_thread(
     second attached room will need on the day one bot holds several."""
     other_room = "!other:allegedly.works"
     elsewhere = await serving_session(
-        chat_store, operator_id, await conversations.conversation_for_room(other_room, operator_id), room_id=other_room
+        chat_store, operator_id, await conversations.conversation_for_room(other_room, operator_id)
     )
 
     await exchange(chat_store, operator_id, elsewhere, "[$a] hi", "hello")

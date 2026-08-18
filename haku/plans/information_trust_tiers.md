@@ -108,9 +108,9 @@ console, which knows the calling Agent and each conversation's owner, so this is
 function at one call site in the shape the approval policy already has — not scoping smeared
 through the transport. Three things it needs:
 
-- **A conversation needs a tier of its own.** `sessions` already carries `surface` and
-  `room_id` (migration `0030`); the tier goes beside them, derived from the room's fixed tier for a
-  Matrix session and from the agent kind otherwise. Those two must agree, and the room's is
+- **A conversation needs a tier of its own.** A session's room is its conversation's live
+  `chat_attachment`; the tier goes beside it, derived from the room's fixed tier for a Matrix
+  conversation and from the agent kind otherwise. Those two must agree, and the room's is
   authoritative where both exist.
 - **Unlabelled is highest, so it fails closed.** Every session predating the column has no tier
   and must read as top-tier — unreadable by anything lower — rather than as "unclassified,
@@ -286,7 +286,7 @@ operator gesture — which keeps the common case free. Only a multi-party room n
 declared, and that is exactly where declaring one is worth the friction.
 
 One console consequence, small but worth catching early: the sessions surface
-(<../console/plans/conversation_layers.md> § 9 step 2) shows `surface` and `room_id` per session,
+(<../console/plans/conversation_layers.md> § 9 step 2) shows each session's surface and room,
 and with
 several agent kinds it needs to show **which agent** too, or two rooms' sessions become
 indistinguishable in the list.

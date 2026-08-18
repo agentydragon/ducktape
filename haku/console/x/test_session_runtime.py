@@ -746,7 +746,7 @@ async def _turn_into_a_room(
     service = SessionService(
         runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend
     )
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    view, token = await chat_store.create(operator_id, MatrixSession())
     await attach_channel(migrated_sessions, view.session_id, ROOM)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
@@ -775,7 +775,7 @@ async def test_only_the_sessions_that_serve_a_room_are_attached_to_the_frontend(
         runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend
     )
     spa, _ = await chat_store.create(operator_id, SpaSession())
-    room_backed, _ = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    room_backed, _ = await chat_store.create(operator_id, MatrixSession())
     await attach_channel(migrated_sessions, room_backed.session_id, ROOM)
 
     assert (await service._frontend_for(spa.session_id), await service._frontend_for(room_backed.session_id)) == (
@@ -793,7 +793,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     service = SessionService(
         runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend
     )
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    view, token = await chat_store.create(operator_id, MatrixSession())
     session_id = view.session_id
     await attach_channel(migrated_sessions, session_id, ROOM)
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
@@ -850,7 +850,7 @@ async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
     service = SessionService(
         runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend
     )
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    view, token = await chat_store.create(operator_id, MatrixSession())
     session_id = view.session_id
     await attach_channel(migrated_sessions, session_id, ROOM)
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
@@ -900,7 +900,7 @@ async def test_a_resumed_turn_does_not_say_again_what_it_had_already_queued(
     service = SessionService(
         runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend
     )
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    view, token = await chat_store.create(operator_id, MatrixSession())
     session_id = view.session_id
     await attach_channel(migrated_sessions, session_id, ROOM)
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
@@ -964,7 +964,7 @@ async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
     service = SessionService(
         runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend
     )
-    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    view, token = await chat_store.create(operator_id, MatrixSession())
     await attach_channel(migrated_sessions, view.session_id, ROOM)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")

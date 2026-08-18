@@ -240,21 +240,17 @@ class SpaSession:
     # What the row records for this variant, carried on the variant rather than derived by an
     # `isinstance` chain at the call site: a third surface is a dataclass, not another arm.
     surface_column: ClassVar[ChatSurface] = ChatSurface.SPA
-    room_id: ClassVar[None] = None
 
 
 @dataclass(frozen=True)
 class MatrixSession:
-    """A session created to serve one Matrix room, which it records for good.
+    """A session created to serve one Matrix room.
 
-    A variant rather than a `surface` enum beside an optional `room_id`, because the two
-    combinations that pair would also admit — a Matrix session with no room, a room on an SPA
-    session — are states no caller could act on. Nothing in the table enforces the pairing, so
-    this union is the whole of where the rule lives.
+    Which room is the conversation's live `chat_attachment`; this variant says only what the
+    session's `surface` column records.
     """
 
     surface_column: ClassVar[ChatSurface] = ChatSurface.MATRIX
-    room_id: str
 
 
 SessionSurface = SpaSession | MatrixSession
@@ -353,7 +349,6 @@ class SessionStore:
                     operator_id=operator_id,
                     conversation_id=conversation_id,
                     surface=surface.surface_column,
-                    room_id=surface.room_id,
                     status=SessionStatus.PROVISIONING,
                     bridge_token_fingerprint=self._fingerprint(bridge_token),
                     bridge_connected_at=None,

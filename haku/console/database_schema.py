@@ -980,14 +980,6 @@ class Session(Base):
     # stops naming it gets instead of a `NOT NULL` violation, and absent is the honest record for a
     # session whose channel the attachment holds instead (`0075`).
     surface: Mapped[ChatSurface] = mapped_column(TextBackedStrEnumColumn(ChatSurface), nullable=True)
-    # The Matrix room this session serves, written once at creation and never updated.
-    #
-    # CLEANUP(added 2026-08-17): nothing selects this column any more — a session reaches its
-    #   room through `conversation_id` and that conversation's live `chat_attachment`. It stays
-    #   written for the length of a roll, since the previous image still selects it. Unmap it
-    #   together with `surface`, once `ck_sessions_matrix_room` is dropped; drop the column a
-    #   release after that unmapping has converged.
-    room_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[SessionStatus] = mapped_column(TextBackedStrEnumColumn(SessionStatus), nullable=False)
     # The verifier for this session's rendezvous credential — SHA-256 of a bearer minted once at
     # creation and never stored. It answers only "does this redialling runner hold this session's
@@ -1497,7 +1489,13 @@ UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset()
 # The same for `(table, column)` pairs in tables that stay. A separate set rather than an entry
 # in the one above, which hides a whole table — naming `session_messages` there would stop the
 # comparison noticing any drift in it.
-UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset()
+#
+# CLEANUP(added 2026-08-18): drop `sessions.room_id` once no replica predating this commit is
+#   still serving — the image that mapped it names the column in every `SELECT` it emits against
+#   `sessions`, whether or not any code reads the attribute, so the drop waits a release after
+#   this unmapping. A session reaches its room through `conversation_id` and that conversation's
+#   live `chat_attachment`.
+UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset({("sessions", "room_id")})
 
 # Indexes the database has and no ORM class declares. Reachable only through a column above: an
 # index over columns that are all still mapped would be drift rather than an unfinished drop.
