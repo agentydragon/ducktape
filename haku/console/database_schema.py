@@ -1485,12 +1485,7 @@ metadata = Base.metadata
 # one that stopped naming it, because `maxUnavailable: 0` keeps the previous image serving through
 # the roll and that image selects every table it maps. `test_agent_authority_schema` excludes these
 # from its ORM-versus-database comparison, which is otherwise exact.
-#
-# CLEANUP(added 2026-08-18): drop `matrix_conversation` once no replica predating this commit is
-#   still serving — the image that mapped it selects the table by name, so the drop is a 500 on
-#   that replica rather than a lint failure, and it waits a release after this unmapping. The room
-#   binding it held lives on `chat_attachment`, keyed on the conversation.
-UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset({"matrix_conversation"})
+UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset()
 
 # The same for `(table, column)` pairs in tables that stay. A separate set rather than an entry
 # in the one above, which hides a whole table — naming `session_messages` there would stop the
