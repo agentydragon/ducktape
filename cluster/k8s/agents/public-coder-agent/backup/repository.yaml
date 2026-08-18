@@ -13,6 +13,8 @@ spec:
     creationPolicy: Owner
     template:
       type: Opaque
+      # Preserve the data fetched below alongside the static Restic endpoint.
+      mergePolicy: Merge
       templateFrom:
         - literal: |
             RESTIC_REPOSITORY: s3:http://seaweedfs-s3.seaweedfs.svc:8333/public-coder-agent-backups
