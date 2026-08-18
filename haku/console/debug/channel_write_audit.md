@@ -44,20 +44,26 @@ half of the surface is empty here, and the whole audit is the six calls above.
 | 8   | `send_notice` — invite refused | `matrix_sync.py:231` `_handle_invite`         | `room`       | **bypassing**         |
 | 9   | `send_notice` — joined a room  | `matrix_sync.py:236` `_handle_invite`         | `room`       | **bypassing**         |
 | 10  | `send_notice` — adopted a room | `matrix_sync.py:480` `_live_room`             | `room`       | **bypassing**         |
-| 11  | `send_notice` — rejected N     | `sync.py` `_report_rejected`                  | `rejected`   | **recorded**          |
-| 12  | `send_notice` — unreadable     | `sync.py` `_report_unreadable`                | `unreadable` | **recorded**          |
+| 11  | `send_notice` — rejected N     | `room_subscription.py` `RoomNotices`          | `rejected`   | **driven** (§ 1)      |
+| 12  | `send_notice` — unreadable     | `room_subscription.py` `RoomNotices`          | `unreadable` | **driven** (§ 1)      |
 | 13  | `send_notice` — lifecycle      | `matrix_session.py:362,403` → `announce`      | `lifecycle`  | **bypassing** (worst) |
 | 14  | `send_notice` — silent turn    | `matrix_session.py:274` → `announce`          | `narration`  | **bypassing**         |
 | 15  | `send_notice` — turn aborted   | `room_subscription.py` `RoomNotices`          | `narration`  | **driven** (§ 1)      |
+| 16  | `send_notice` — lease lapsed   | `room_subscription.py` `RoomNotices`          | `lifecycle`  | **driven** (§ 1)      |
+| 17  | `send_notice` — session taken  | `room_subscription.py` `RoomNotices`          | `lifecycle`  | **driven** (§ 1)      |
+| 18  | `send_notice` — relayed prompt | `room_subscription.py` `RoomNotices`          | `narration`  | **driven** (§ 1)      |
 
-**The bypassing writes are rows 7–10, 13 and 14.** Rows 8–14 share one send path —
+**The bypassing writes are rows 7–10, 13 and 14.** Rows 8–10, 13 and 14 share one send path —
 `MatrixSyncService._queue_notice`, which
-builds an `EventTag`, closes over a `send_notice`, and hands the closure to the pacer. What
-separates 11 and 12 from the rest is no longer the path but what stands behind it: each is now a
-`session_events` row committed before the notice is queued, so the send is a rendering rather than
-the fact. They are listed separately because they are seven different facts with seven different
-homes, and lumping them would hide that some are session events and some are channel-binding
-events.
+builds an `EventTag`, closes over a `send_notice`, and hands the closure to the pacer. Rows 11, 12
+and 15–18 have left that path entirely: each is a `session_events` row the room renders from its own
+position in the conversation's stream, so the room is told by looking rather than by being handed
+anything. They are listed separately because they are different facts with different homes, and
+lumping them would hide that some are session events and some are channel-binding events.
+
+`_report_rejected` and `_report_unreadable` survive in `sync.py` for the one case that reaches no
+row: a refusal against a room with no session behind it, which a `session_events` row cannot name.
+That is a bypassing write, and it closes when the log is keyed by the conversation.
 
 ## 1. The recorded writes
 
@@ -164,7 +170,7 @@ tag, against the deliberate argument in `report_silent_turn`'s own docstring ("a
 a reply, because nothing was said") and against R7.4. Out of scope: it needs a `kind` on the
 outbox, which is a schema change.
 
-### Rows 11 and 12 — the rejection notice, and unreadable — **fixed**
+### Rows 11 and 12 — the rejection notice, and unreadable — **fixed**, and now projected
 
 Both were the console reporting on ingress with the fact in no store at the moment it was
 announced. Row 11 was `_report_holding`, whose count existed only in the stack frame that built
@@ -178,6 +184,9 @@ the sync watermark: `PROMPT_REJECTED` carrying the reason and the text, `UNREADA
 event carrying its media type. Holding as a state is gone with them — a batch the session will not
 take is rejected rather than held, so what row 11 announced is now one message being answered
 rather than a count of messages waiting.
+
+The room says both from those rows now rather than from ingress, so a replica that dies between the
+commit and the send still says them, and a second channel says them without a second writer.
 
 **One case still bypasses**, and it is not fixable here: a room whose session has not been
 provisioned yet has no session for the row to name, so that rejection is announced and kept

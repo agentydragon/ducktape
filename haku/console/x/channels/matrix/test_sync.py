@@ -357,7 +357,8 @@ async def test_a_rejected_batch_is_acknowledged_and_recorded_in_one_go(
     """A prompt the session will not take is rejected, not held.
 
     The watermark covers the batch, so the homeserver will not offer it again, and the only
-    surviving copy of what was said is the row written beside that watermark.
+    surviving copy of what was said is the row written beside that watermark. The room hears about
+    it from that row (`room_subscription.notice`), so this pass says nothing itself.
     """
     matrix.result = SyncResult("s2", (_message("hello"),), ())
     turns.accepts = False
@@ -369,8 +370,7 @@ async def test_a_rejected_batch_is_acknowledged_and_recorded_in_one_go(
     assert await recorded(migrated_sessions) == [
         (AuthoredEventKind.PROMPT_REJECTED, {"reason": PromptRejection.TURN_IN_FLIGHT, "text": "hello"})
     ]
-    [(_, body)] = matrix.notices
-    assert body == "1 message(s) not delivered — Haku is still working on the previous message; send them again"
+    assert matrix.notices == []
 
 
 async def test_a_recording_that_cannot_be_written_takes_the_watermark_with_it(sync_store, migrated_sessions):
@@ -390,9 +390,9 @@ async def test_a_recording_that_cannot_be_written_takes_the_watermark_with_it(sy
     assert await recorded(migrated_sessions) == []
 
 
-async def test_every_rejected_batch_is_told_it_was_not_delivered(service, matrix, turns, bound_room):
-    """Once per rejection, not once per turn: nothing is re-offered, so each of these notices is
-    about a different message the operator has to send again."""
+async def test_every_rejected_batch_gets_a_row_of_its_own(service, matrix, turns, migrated_sessions, bound_room):
+    """Once per rejection, not once per turn: nothing is re-offered, so each of these rows is about
+    a different message the operator has to send again."""
     matrix.result = SyncResult("s2", (_message("hello"),), ())
     turns.accepts = False
     await service.sync_once("tok")
@@ -401,7 +401,7 @@ async def test_every_rejected_batch_is_told_it_was_not_delivered(service, matrix
     await service.sync_once("tok")
     await settled(service)
 
-    assert len(matrix.notices) == 2
+    assert [body["text"] for _, body in await recorded(migrated_sessions)] == ["hello", "and this"]
     assert turns.offered == [["hello"], ["and this"]]
 
 
@@ -418,7 +418,9 @@ async def test_a_pass_with_nothing_to_reject_says_nothing(service, matrix, turns
     assert matrix.notices == []
 
 
-async def test_a_message_arriving_mid_turn_is_told_it_was_not_delivered(service, matrix, turns, bound_room):
+async def test_a_message_arriving_mid_turn_is_recorded_as_undelivered(
+    service, matrix, turns, migrated_sessions, bound_room
+):
     """A batch arriving while a turn runs is rejected rather than held, which costs the operator a
     re-send and nothing else."""
     matrix.result = SyncResult("s2", (_message("hello"),), ())
@@ -429,8 +431,8 @@ async def test_a_message_arriving_mid_turn_is_told_it_was_not_delivered(service,
     await service.sync_once("tok")
     await settled(service)
 
-    assert [body for _, body in matrix.notices] == [
-        "1 message(s) not delivered — Haku is still working on the previous message; send them again"
+    assert await recorded(migrated_sessions) == [
+        (AuthoredEventKind.PROMPT_REJECTED, {"reason": PromptRejection.TURN_IN_FLIGHT, "text": "and this"})
     ]
 
 
@@ -455,12 +457,12 @@ async def test_a_rejection_with_no_session_is_announced_and_not_recorded(
     assert "no session behind this room yet" in body
 
 
-async def test_an_unreadable_event_is_announced_recorded_and_the_batch_moves_on(
+async def test_an_unreadable_event_is_recorded_and_the_batch_moves_on(
     service, matrix, turns, sync_store, migrated_sessions, bound_room
 ):
     """The half a refusal cannot serve: nothing about a sent `m.image` will ever change, so holding
-    the batch for it would wedge ingress on one screenshot forever. The operator is told in the
-    room they sent it to, the fact is written down, and the watermark advances."""
+    the batch for it would wedge ingress on one screenshot forever. The fact is written down beside
+    the watermark, and what the room shows is a rendering of that row."""
     matrix.result = SyncResult("s2", (), (), (_unreadable(),))
 
     await service.sync_once("tok")
@@ -469,30 +471,23 @@ async def test_an_unreadable_event_is_announced_recorded_and_the_batch_moves_on(
     assert await watermark(sync_store) == "s2"
     assert turns.offered == [], "there is no prose in this batch to hand over"
     assert await recorded(migrated_sessions) == [(AuthoredEventKind.UNREADABLE_INPUT, {"media_type": "m.image"})]
-    [(room_id, body)] = matrix.notices
-    assert room_id == MATRIX_ROOM
-    assert "m.image" in body
-    assert "cannot read" in body
-    assert [tag.kind for tag in matrix.tags] == [RoomEventKind.UNREADABLE]
+    assert matrix.notices == []
 
 
 async def test_each_unreadable_event_is_a_row_of_its_own(service, matrix, turns, migrated_sessions, bound_room):
-    """One notice summarising them, and one row each: the count in the notice is a rendering, and
-    a rendering is not what a record keeps."""
+    """One row each rather than one row for the batch: what arrived is two facts, and a channel
+    that wants to summarise them can, from two rows."""
     matrix.result = SyncResult("s2", (), (), (_unreadable(), _unreadable(msgtype="m.audio", event_id="$memo")))
 
     await service.sync_once("tok")
     await settled(service)
 
-    assert [kind for kind, _ in await recorded(migrated_sessions)] == [
-        AuthoredEventKind.UNREADABLE_INPUT,
-        AuthoredEventKind.UNREADABLE_INPUT,
-    ]
-    [(_, body)] = matrix.notices
-    assert "2 message(s)" in body
+    assert [body["media_type"] for _, body in await recorded(migrated_sessions)] == ["m.image", "m.audio"]
 
 
-async def test_the_text_of_a_mixed_batch_is_serviced_and_the_rest_announced(service, matrix, turns, bound_room):
+async def test_the_text_of_a_mixed_batch_is_serviced_and_the_rest_recorded(
+    service, matrix, turns, migrated_sessions, bound_room
+):
     """A "look at this" alongside a screenshot: the sentence still starts a turn."""
     matrix.result = SyncResult("s2", (_message("look at this"),), (), (_unreadable(),))
 
@@ -500,18 +495,19 @@ async def test_the_text_of_a_mixed_batch_is_serviced_and_the_rest_announced(serv
     await settled(service)
 
     assert turns.offered == [["look at this"]]
-    [(_, body)] = matrix.notices
-    assert "m.image" in body
+    assert await recorded(migrated_sessions) == [(AuthoredEventKind.UNREADABLE_INPUT, {"media_type": "m.image"})]
 
 
-async def test_an_unreadable_event_from_an_unserviced_room_is_not_announced(service, matrix, bound_room):
-    """The notice goes to the room the operator sent it to, and only the bound room is that one."""
+async def test_an_unreadable_event_from_an_unserviced_room_reaches_nothing(
+    service, matrix, migrated_sessions, bound_room
+):
+    """Only the bound room is serviced, so a stray room's event is neither recorded nor said."""
     matrix.result = SyncResult("s2", (), (), (_unreadable(room_id="!stray:allegedly.works"),))
 
     await service.sync_once("tok")
     await settled(service)
 
-    assert matrix.notices == []
+    assert (matrix.notices, await recorded(migrated_sessions)) == ([], [])
 
 
 async def test_joins_an_invite_from_the_operator(service, matrix):
@@ -832,6 +828,8 @@ async def test_each_kind_of_notice_says_which_it_is(service, matrix, turns, boun
     conversational" only because everything worth excluding happened to be a notice."""
     matrix.result = SyncResult("s2", (_message("hello"),), ())
     turns.accepts = False
+    # The refusal that reaches no row, since that is the one this loop still says itself.
+    turns.session_id = None
     await service.sync_once("tok")
     await service.announce("provisioning a sandbox")
     await service.announce("cloning haku-state", RoomEventKind.NARRATION)

@@ -64,6 +64,7 @@ from haku.console.x.channels.matrix.conversation import (
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox, RoomOutboxDrain
 from haku.console.x.channels.matrix.pacer import RoomPacer
+from haku.console.x.channels.matrix.room_subscription import why_not
 from haku.console.x.delivery_log import DeliveryLog
 from haku.console.x.system_prompt import HistoryMessage
 
@@ -80,23 +81,6 @@ STATUS_SUBJECT = "status"
 LEADER_RETRY = datetime.timedelta(seconds=30)
 # Backoff after a failed sync, so a homeserver outage does not become a hot loop.
 ERROR_BACKOFF = datetime.timedelta(seconds=10)
-
-
-def _why_not(reason: PromptRejection) -> str:
-    """What a rejection notice says the operator is waiting for.
-
-    The channel's own rendering of `PromptRejection`, hence here rather than beside the enum. A
-    match rather than a lookup, so a member added later fails the type check instead of the send.
-    """
-    match reason:
-        case PromptRejection.NO_SESSION:
-            return "there is no session behind this room yet"
-        case PromptRejection.SESSION_NOT_READY:
-            return "Haku's sandbox is not up yet"
-        case PromptRejection.TURN_IN_FLIGHT:
-            return "Haku is still working on the previous message"
-        case PromptRejection.PROMPT_QUEUED:
-            return "a message is already waiting to be answered"
 
 
 class MatrixSyncStore:
@@ -419,9 +403,10 @@ class MatrixSyncService:
         the other — handed to the session, or rejected and said so — and what it decided is written
         with the watermark rather than after it.
 
-        **The room is told once that is committed**: a crash before the commit re-delivers the
-        batch and says nothing, and one after it leaves a recorded fact whose notice can be posted
-        again.
+        **What was recorded, the room is not told here.** The row is the notice: `RoomNotices`
+        renders it from the record at its own position, so this pass writes and stops. What is
+        still said from here is the refusal that reached no row — no session to key one to — which
+        would otherwise be a message the operator watches disappear.
 
         **A re-delivered message is dropped from the batch rather than offered again**, and what
         makes that safe is that the ledger only knows an event because a prompt in the record
@@ -437,19 +422,22 @@ class MatrixSyncService:
         messages = await self._undelivered(self._serviced(result.messages, live_room))
         unreadable = self._serviced(result.unmappable, live_room)
         recorded = list(await self._turns.unreadable(unreadable)) if unreadable else []
-        rejection: PromptRejection | None = None
+        # `MatrixTurns.unreadable` gives one row per event or none at all, so an empty list beside
+        # a non-empty batch is the case with no session to key rows to.
+        unrecorded = unreadable if unreadable and not recorded else []
+        unrecorded_rejection: PromptRejection | None = None
         if messages:
             match await self._turns.offer(messages):
                 case PromptAccepted():
                     logger.info("Matrix: handed %d message(s) to the session", len(messages))
-                case PromptRejected(reason=reason, event=event):
-                    rejection = reason
-                    if event is not None:
-                        recorded.append(event)
+                case PromptRejected(event=SessionEvent() as event):
+                    recorded.append(event)
+                case PromptRejected(reason=reason):
+                    unrecorded_rejection = reason
         await self._store.advance(self._config.user_id, result.next_batch, recorded)
-        if rejection is not None:
-            self._report_rejected(live_room, len(messages), rejection)
-        self._report_unreadable(live_room, unreadable)
+        if unrecorded_rejection is not None:
+            self._report_rejected(live_room, len(messages), unrecorded_rejection)
+        self._report_unreadable(live_room, unrecorded)
 
     async def _undelivered(self, messages: list[InboundMessage]) -> list[InboundMessage]:
         """The messages of a batch no prompt in the record carries yet.
@@ -506,24 +494,25 @@ class MatrixSyncService:
         return room
 
     def _report_rejected(self, live_room: str | None, count: int, reason: PromptRejection) -> None:
-        """Tell the room its messages were not delivered, and what to wait for.
+        """Tell the room about the one refusal the record cannot carry.
 
-        Every pass that rejects says so, because every rejection is a different message: nothing is
-        re-offered, so there is no repetition to suppress. The reason is named because the
-        operator's next move differs between a turn in flight, a sandbox still provisioning and no
-        session at all.
+        There is no session row to key an event to — nothing provisioned, or the supervisor between
+        sessions — so this notice is the only account of it and stays on
+        <../../../debug/channel_write_audit.md>'s inventory until a conversation-keyed log exists.
+        Every other refusal is a `prompt_rejected` row `RoomNotices` renders instead.
         """
         if live_room is None:
             return
         self._queue_notice(
-            live_room, f"{count} message(s) not delivered — {_why_not(reason)}; send them again", RoomEventKind.REJECTED
+            live_room, f"{count} message(s) not delivered — {why_not(reason)}; send them again", RoomEventKind.REJECTED
         )
 
     def _report_unreadable(self, live_room: str | None, events: list[UnmappableEvent]) -> None:
-        """Say in the room that something arrived which Haku has no way to read.
+        """Say what arrived that Haku cannot read, where no session existed to record it against.
 
         Said in the room and not only logged, because the room is where the operator is: a
         screenshot that disappears with a line in a pod's stdout is a message silently dropped.
+        Where a session did exist, each of these is an `unreadable_input` row instead.
         """
         if not events or live_room is None:
             return

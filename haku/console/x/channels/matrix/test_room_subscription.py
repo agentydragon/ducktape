@@ -6,6 +6,7 @@ reading it, which is why the restart is asserted here rather than beside the abs
 
 from __future__ import annotations
 
+import datetime
 from uuid import UUID
 
 import pytest
@@ -13,11 +14,18 @@ import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import MatrixOrigin, TurnOutcome
+from haku.console.chat_models import LeaseExpiryReason, MatrixOrigin, PromptRejection, SpaOrigin, TurnOutcome
 from haku.console.database_schema import MatrixRoomCursor
+from haku.console.x import session_events
+from haku.console.x.channels.matrix.client import RoomEventKind
 from haku.console.x.channels.matrix.conftest import MATRIX_ROOM
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore
-from haku.console.x.channels.matrix.room_subscription import ABORTED_BY_OPERATOR, RoomCursor, RoomNotices
+from haku.console.x.channels.matrix.room_subscription import (
+    ABORTED_BY_OPERATOR,
+    RELAYED_PROMPT,
+    RoomCursor,
+    RoomNotices,
+)
 from haku.console.x.session_store import SessionStore
 from haku.console.x.subscription import START, ConversationStream, StreamPosition
 
@@ -27,9 +35,11 @@ class Room:
 
     def __init__(self) -> None:
         self.said: list[str] = []
+        self.kinds: list[RoomEventKind] = []
 
-    async def announce(self, body: str) -> None:
+    async def announce(self, body: str, kind: RoomEventKind) -> None:
         self.said.append(body)
+        self.kinds.append(kind)
 
     async def bound(self) -> str | None:
         return MATRIX_ROOM
@@ -162,6 +172,109 @@ async def test_a_room_with_no_conversation_behind_it_is_not_behind_on_anything(
     zero."""
     assert await notices.reconcile_once() is False
     assert (room.said, await stored_position(migrated_sessions)) == ([], None)
+
+
+async def author(
+    sessions: async_sessionmaker[AsyncSession], session_id: UUID, body: session_events.AuthoredBody
+) -> None:
+    """Write one of the console's own facts about *session_id*, as its own writer would."""
+    async with sessions() as db, db.begin():
+        db.add(session_events.authored(body, session_id=session_id, now=datetime.datetime.now(datetime.UTC)))
+
+
+async def test_a_refused_prompt_is_said_from_its_row_rather_than_by_ingress(
+    chat_store, operator_id, served, notices, room, migrated_sessions
+) -> None:
+    """The row ingress wrote with the watermark is the notice: the sync loop records and this says
+    it, so one refusal is not both recorded and pushed."""
+    await notices.reconcile_once()
+    await author(
+        migrated_sessions,
+        served,
+        session_events.PromptRejectedBody(reason=PromptRejection.TURN_IN_FLIGHT, text="and this"),
+    )
+
+    await notices.reconcile_once()
+
+    assert room.said == ["not delivered — Haku is still working on the previous message; send it again"]
+    assert room.kinds == [RoomEventKind.REJECTED]
+
+
+async def test_something_haku_cannot_read_is_said_from_its_row(
+    chat_store, operator_id, served, notices, room, migrated_sessions
+) -> None:
+    await notices.reconcile_once()
+    await author(migrated_sessions, served, session_events.UnreadableInputBody(media_type="m.image"))
+
+    await notices.reconcile_once()
+
+    assert "m.image" in room.said[0]
+    assert room.kinds == [RoomEventKind.UNREADABLE]
+
+
+async def test_the_room_is_told_when_its_session_changes_hands_or_ends(
+    chat_store, operator_id, served, notices, room, migrated_sessions
+) -> None:
+    """Both are caused by a session and are conversation facts: what the operator needs is to know
+    why the room went quiet, which is the same question either way."""
+    await notices.reconcile_once()
+    await author(migrated_sessions, served, session_events.SessionAdoptedBody(previous_holder="pod-a", holder="pod-b"))
+    await author(
+        migrated_sessions,
+        served,
+        session_events.LeaseExpiredBody(reason=LeaseExpiryReason.HOLDER_GONE, last_holder="pod-b"),
+    )
+
+    await notices.reconcile_once()
+
+    assert room.said == [
+        "another console replica (pod-b) took this session over",
+        "the session ended — the console replica serving it went away",
+    ]
+
+
+async def test_a_prompt_sent_from_another_surface_is_posted_into_the_room(
+    chat_store, operator_id, served, notices, room
+) -> None:
+    """A prompt is a conversation fact, so every attached surface shows it — including the one it
+    did not arrive through."""
+    await notices.reconcile_once()
+    await chat_store.enqueue_prompt(operator_id, served, "from the console", SpaOrigin())
+
+    await notices.reconcile_once()
+
+    assert room.said == [RELAYED_PROMPT + "from the console"]
+    assert room.kinds == [RoomEventKind.NARRATION]
+
+
+async def test_a_prompt_typed_into_this_room_is_not_posted_back_into_it(
+    chat_store, operator_id, served, notices, room
+) -> None:
+    """`PromptBody.origin`'s reader: the message is already in the timeline above, so posting it
+    again would show the operator their own sentence twice."""
+    await notices.reconcile_once()
+    await chat_store.enqueue_prompt(
+        operator_id, served, "typed here", MatrixOrigin(address=MATRIX_ROOM, refs=("$here",))
+    )
+
+    await notices.reconcile_once()
+
+    assert room.said == []
+
+
+async def test_a_prompt_from_a_sibling_room_is_posted_because_the_address_differs(
+    chat_store, operator_id, served, notices, room
+) -> None:
+    """An equality test against the address, not a look inside one: a bare event id could not tell
+    a sibling room's copy from this room's."""
+    await notices.reconcile_once()
+    await chat_store.enqueue_prompt(
+        operator_id, served, "next door", MatrixOrigin(address="!other:allegedly.works", refs=("$there",))
+    )
+
+    await notices.reconcile_once()
+
+    assert room.said == [RELAYED_PROMPT + "next door"]
 
 
 async def test_an_unread_room_has_no_position_at_all(migrated_sessions) -> None:

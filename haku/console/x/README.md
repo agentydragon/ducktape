@@ -418,11 +418,18 @@ the test that reads it, as `test_diverse_session` has.
 - `formatted_body.py` — Haku's Markdown into the HTML subset Matrix clients render.
 
 **The room reads the record; it is not pushed at.** A fact with a `session_events` row reaches the
-room through `room_subscription.py`; `turn_aborted` is the one that does today. What is still pushed
-is what no row carries: the turn that produced nothing to record, and the sandbox's setup narration.
-The position is kept after the notice has been queued, so what a crash costs is a repeat rather than
-a silence; the window it leaves is the pacer's in-process queue, the same one every other notice
-already lives in.
+room through `room_subscription.py` — an abort, a refused prompt, an unreadable attachment, a
+session changing hands or losing its lease, and a prompt the operator sent through some other
+surface. What is still pushed is what no row carries: the turn that produced nothing to record, the
+sandbox's setup narration, the session's lifecycle transitions, a room being bound, and the one
+refusal that arrives with no session to key a row to. The position is kept after the notice has been
+queued, so what a crash costs is a repeat rather than a silence; the window it leaves is the pacer's
+in-process queue, the same one every other notice already lives in.
+
+**A prompt is a conversation fact, so every attached surface shows it.** `PromptBody.origin` names
+the surface a prompt arrived through, and the room compares it against its own address: a prompt
+typed here is already in the timeline, and one from the SPA or a sibling room is posted, marked as
+having come from elsewhere.
 
 **The outbox is half here and half at the runtime level, deliberately.** The row is written where
 the reply is produced, by `session_store.update_assistant` into the neutral `session_outbox` table,

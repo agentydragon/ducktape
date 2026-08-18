@@ -76,8 +76,10 @@ py_library(
     name = "room_subscription",
     srcs = ["room_subscription.py"],
     deps = [
+        ":client",
         ":conversation",
         ":outbox",
+        "//haku/console:chat_models",
         "//haku/console:database_schema",
         "//haku/console/x:session_events",
         "//haku/console/x:session_notifications",
@@ -95,6 +97,7 @@ py_library(
         ":ingress_ledger",
         ":outbox",
         ":pacer",
+        ":room_subscription",
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:database_schema",
@@ -228,6 +231,7 @@ py_test(
     size = "medium",  # provisions a Postgres database per test
     srcs = ["test_room_subscription.py"],
     deps = [
+        ":client",
         ":conftest",
         ":conversation",
         ":room_subscription",

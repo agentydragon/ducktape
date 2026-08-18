@@ -15,6 +15,12 @@ with a transaction id, a retry budget and an ordering guarantee against other an
 a rendering of a recorded fact and needs none of that. Moving the outbox is the reconciler's work
 (<../../../plans/conversation_layers.md> § 5) and is deliberately not this.
 
+**Every kind the stream carries — which is not every kind the room shows.** What `notice` reads is
+what `session_events` records, and several things the room says have no row at all: a session's
+lifecycle transitions, the supervisor's setup narration, a room being bound or adopted. Those still
+reach the room by being pushed at it, and giving each a row is a CHECK-constraint migration plus a
+vocabulary decision rather than an arm here.
+
 **The position is kept after the notice, never before.** A crash in that window says the notice
 again on the next pass — the same trade `delivery_log.retire` takes, and the right way round: a
 room told twice is odd, a room never told is a message silently dropped. What is left unguarded is
@@ -27,18 +33,28 @@ import asyncio
 import contextlib
 import datetime
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from haku.console.chat_models import LeaseExpiryReason, MatrixOrigin, PromptOrigin, PromptRejection, SpaOrigin
 from haku.console.database_schema import MatrixRoomCursor
-from haku.console.x.channels.matrix.conversation import Announce, MatrixConversationStore
+from haku.console.x.channels.matrix.client import RoomEventKind
+from haku.console.x.channels.matrix.conversation import MatrixConversationStore
 from haku.console.x.channels.matrix.outbox import BoundRoom
-from haku.console.x.session_events import TurnAbortedBody
+from haku.console.x.session_events import (
+    LeaseExpiredBody,
+    PromptBody,
+    PromptRejectedBody,
+    SessionAdoptedBody,
+    TurnAbortedBody,
+    UnreadableInputBody,
+)
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.subscription import ConversationStream, StreamedEvent, StreamPosition, Subscription, Unstarted
 
@@ -47,9 +63,19 @@ logger = logging.getLogger(__name__)
 # Distinct from the sync loop's lock, the supervisor's, the outbox drain's and the OAuth sweep's.
 _NOTICES_ADVISORY_LOCK = 0x4D58_4E54  # "MXNT"
 
+# Saying one notice into a room. Wider than `conversation.Announce`, whose caller is the supervisor
+# and always means the same kind: what this renders spans several, and the kind is what the room
+# event states about itself.
+Notify = Callable[[str, RoomEventKind], Awaitable[None]]
+
 # How this room renders a `turn_aborted` event. The words are the channel's own: what is recorded is
 # that the turn was aborted, and every channel gets to say so differently.
 ABORTED_BY_OPERATOR = "[aborted by operator]"
+
+# What marks a prompt the operator sent somewhere else. The room shows it because a prompt is a
+# conversation fact and every attached surface shows one, and marks it because an operator reading
+# this room would otherwise find a message they did not send here.
+RELAYED_PROMPT = "[sent from another surface] "
 
 # How many events one pass renders. Small, because each one it does render costs the room a send.
 NOTICE_BATCH = 50
@@ -101,17 +127,93 @@ class RoomCursor:
             )
 
 
-def notice(event: StreamedEvent) -> str | None:
+@dataclass(frozen=True, slots=True)
+class Notice:
+    """One thing to say in the room, and what the room event states about itself."""
+
+    body: str
+    kind: RoomEventKind
+
+
+def why_not(reason: PromptRejection) -> str:
+    """What a rejection says the operator is waiting for.
+
+    The channel's own rendering of `PromptRejection`, hence here rather than beside the enum. A
+    match rather than a lookup, so a member added later fails the type check instead of the send.
+
+    Shared with `sync.py`, which still says this itself for the one rejection that reaches no row
+    (`conversation.PromptRejected.event`): one fact spoken two ways would read as two facts.
+    """
+    match reason:
+        case PromptRejection.NO_SESSION:
+            return "there is no session behind this room yet"
+        case PromptRejection.SESSION_NOT_READY:
+            return "Haku's sandbox is not up yet"
+        case PromptRejection.TURN_IN_FLIGHT:
+            return "Haku is still working on the previous message"
+        case PromptRejection.PROMPT_QUEUED:
+            return "a message is already waiting to be answered"
+
+
+def _why_it_lapsed(reason: LeaseExpiryReason) -> str:
+    """The room's own words for a lease that ran out, not `session_store._expiry_detail`'s.
+
+    The holder is left out on purpose: a replica name is the console's own topology, and what the
+    operator can act on is that the session is gone.
+    """
+    match reason:
+        case LeaseExpiryReason.HOLDER_GONE:
+            return "the console replica serving it went away"
+        case LeaseExpiryReason.UNADOPTED:
+            return "its sandbox went away and nothing took it back over"
+        case LeaseExpiryReason.NEVER_ATTACHED:
+            return "its sandbox never came up"
+
+
+def _arrived_here(origin: PromptOrigin, room_id: str) -> bool:
+    """Whether this prompt is already in this room because it was typed into it.
+
+    An equality test against the address, never a look inside one: `MatrixOrigin`'s strings are the
+    Matrix channel's own, and this is the channel that minted them.
+    """
+    match origin:
+        case MatrixOrigin(address=address):
+            return address == room_id
+        case SpaOrigin():
+            return False
+
+
+def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
     """What this room says about *event*, or nothing where it says nothing.
 
     A match on the event's body rather than on its kind, so a shape added to the stream lands here
-    as a type error instead of being silently ignored. One arm today: everything else this room
-    says about a recorded fact is either a reply (the outbox's) or is announced by ingress in the
-    transaction that recorded it.
+    as a type error instead of being silently ignored.
+
+    The kinds with no arm are the ones the room shows some other way: an assistant message is an
+    answer the outbox says with a transaction id and a retry budget, and reasoning and tool calls
+    are what the work notice will summarise (<../../../plans/conversation_layers.md> § 4) rather
+    than a line each.
     """
     match event.body:
         case TurnAbortedBody():
-            return ABORTED_BY_OPERATOR
+            return Notice(ABORTED_BY_OPERATOR, RoomEventKind.LIFECYCLE)
+        case PromptRejectedBody(reason=reason):
+            return Notice(f"not delivered — {why_not(reason)}; send it again", RoomEventKind.REJECTED)
+        case UnreadableInputBody(media_type=media_type):
+            return Notice(
+                f"received a message Haku cannot read ({media_type}) — it reads text only; "
+                "describe it in words and it will reach the session",
+                RoomEventKind.UNREADABLE,
+            )
+        case SessionAdoptedBody(holder=holder):
+            return Notice(f"another console replica ({holder}) took this session over", RoomEventKind.LIFECYCLE)
+        case LeaseExpiredBody(reason=reason):
+            return Notice(f"the session ended — {_why_it_lapsed(reason)}", RoomEventKind.LIFECYCLE)
+        case PromptBody(text=text, origin=origin):
+            # The reader `origin` shipped without (#4289). A prompt the operator sent from the SPA
+            # or from a sibling room is a conversation fact this room is not showing yet; one sent
+            # here is already in the timeline above, and posting it again would duplicate it.
+            return None if _arrived_here(origin, room_id) else Notice(RELAYED_PROMPT + text, RoomEventKind.NARRATION)
         case _:
             return None
 
@@ -126,7 +228,7 @@ class RoomNotices:
         stream: ConversationStream,
         conversations: MatrixConversationStore,
         notifications: SessionNotifications,
-        announce: Announce,
+        announce: Notify,
         room: BoundRoom,
     ) -> None:
         self._engine = engine
@@ -154,8 +256,8 @@ class RoomNotices:
             await subscription.keep(read.head)
             return False
         for event in read.events:
-            if (body := notice(event)) is not None:
-                await self._announce(body)
+            if (said := notice(event, room_id=room_id)) is not None:
+                await self._announce(said.body, said.kind)
         await subscription.keep(read.position)
         return read.more
 

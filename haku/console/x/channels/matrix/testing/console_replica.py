@@ -51,12 +51,14 @@ from haku.console.x.channels.matrix.conversation import (
 )
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox
+from haku.console.x.channels.matrix.room_subscription import RoomNotices
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.delivery_log import DeliveryLog
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService, internal_router
 from haku.console.x.session_store import SessionStore
+from haku.console.x.subscription import ConversationStream
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.console.x.testing.recording_claims import fixed_provisioning_view
 
@@ -189,12 +191,15 @@ async def _serve() -> None:
     supervisor = MatrixSessionSupervisor(
         matrix, conversations, service, store, notifications, identities, sync.announce, engine
     )
+    notices = RoomNotices(
+        engine, sessions, ConversationStream(sessions), conversations, notifications, sync.announce, sync.bound_room
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         del app
         try:
-            async with sync.run(), supervisor.run():
+            async with sync.run(), supervisor.run(), notices.run():
                 yield
         finally:
             await service.aclose()
