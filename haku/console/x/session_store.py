@@ -619,6 +619,8 @@ class SessionStore:
             session_id=current.session_id,
             status=live_status(current, responding=responding),
             error=current.error,
+            created_at=current.created_at,
+            updated_at=current.updated_at,
             narration=narration,
             attachments=attachments,
             earlier_sessions=[

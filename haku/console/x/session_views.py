@@ -249,6 +249,10 @@ class ConversationUpdate(BaseModel):
     conversation shows is a handful of rows, and sending them every time is what keeps a follower
     from holding a copy nothing can correct. A field carried only in the snapshot would be a value
     the tab can never be told has changed.
+
+    That extends to the live session's own row, timestamps included, so that a follower merging
+    this can hold no field belonging to a session it has just been told was replaced. What a
+    conversation never changes is left out: its id, and when it was opened.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -258,6 +262,8 @@ class ConversationUpdate(BaseModel):
     session_id: UUID = Field(description="The session now holding the conversation, which a replacement changes.")
     status: SessionStatus
     error: str | None
+    created_at: datetime
+    updated_at: datetime
     provisioning: ClaudeSandboxProvisioningView | None = Field(
         default=None,
         description="The cluster's account of the sandbox this session is waiting on, while it is still waiting.",

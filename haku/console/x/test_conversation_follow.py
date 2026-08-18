@@ -234,6 +234,9 @@ async def test_a_replacement_sessions_rows_reach_a_follower_that_never_named_it(
     # And the session it replaced is now one of the thread's earlier ones, which a follower is told
     # rather than left to infer from a `session_id` it does not recognise.
     assert [earlier.session_id for earlier in update.earlier_sessions] == [first]
+    # The whole of the live session's row, so nothing a follower holds still describes the session
+    # it has just been told was replaced.
+    assert update.created_at == replacement.created_at
     await messages.aclose()
 
 
