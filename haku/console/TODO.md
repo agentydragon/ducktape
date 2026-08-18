@@ -361,8 +361,8 @@ keys on, and the RLS-scoped-Postgres-role alternative — stays in <../recall_in
 ## A second runner, and binding an agent to one
 
 Two wants on one axis: the console launches a runner that is not Claude Code, and it holds several
-agent identities that differ in which runner each gets. They are the same work because choosing a
-backend per session is what an agent-to-runner binding decides.
+agent identities that differ in which runner each gets. They meet at the session row — which Agent a
+session runs as is also what says which runner implementation to launch for it.
 
 ### A runner that talks to OpenAI models
 
@@ -375,44 +375,54 @@ bridge; the frame log and its adapter are what keep a runner's shape below the c
 **This is the first real test of the neutrality the conversation layer claims.**
 `ConversationEventKind` and the frame adapter exist so that a second backend is possible, and
 nothing has ever exercised that — every claim in this repo about one is read from the sketch in
-<../runtime/x/bridge/docs/second_backend.md> rather than measured. That sketch is the runner-side
-design and stays accurate: what `CliBackend` asks for, what the envelope gives away free, and the
-three seams it deliberately does not cover (selecting an adapter, the control channel's
-`control_request` spelling, choosing a backend per session).
+<../runtime/x/bridge/docs/second_backend.md> rather than measured.
 
-Two obstacles it does not carry:
+**The seam is the frame protocol, not `CliBackend`.** A runner is anything that dials the console
+with the bridge credential and speaks frames, which is why <../runtime/x/bridge/backend.py> can say
+almost nothing below the envelope is Claude-specific. `CliBackend` answers one question — how to get
+frames out of a **child process** — so it is what a runner uses when it happens to wrap a CLI, and
+`second_backend.md`'s subprocess assumptions (a binary to resolve, argv, `replayable` over a child's
+stdio) are about that case rather than about runners. A runner implementing the Responses API loop
+itself is therefore a peer of the CLI-wrapping runner, producing frames directly instead of pumping
+a child's stdio. Codex is interesting because its embedded app server may let it fit that same
+shape — a process we speak a protocol to and translate into frames — rather than being a third kind
+of thing.
 
-- **<x/README.md> claims a neutrality the live path does not have.** It says the live path "does
-  not know that `assistant`, `stream_event` and `result` exist", while `_run_turn` reads `subtype`,
-  `stop_reason` and `result` straight off the payload. The code is the honest half — both reads
-  name themselves escape hatches — so what a second backend needs is those two answers coming from
-  the vocabulary: why a turn failed, and a turn's final text when it arrived nowhere else. The
-  chat-runtime plan already schedules the correction (<plans/conversation_layers.md>); check there
-  before writing it again.
-- **A direct Responses-API runner is not a CLI at all**, so `CliBackend` does not describe it: there
-  is no binary to resolve, no argv, no stdio frames, and `replayable` has no wire kind to answer
-  about. The Codex app server fits the existing seam; the Responses API is a second shape that
-  reaches the bridge with a loop of its own. Deciding which of the two lands first decides how much
-  of the runner image is reusable.
+What the sketch still names correctly is what the seam does not cover: selecting an adapter, the
+control channel's `control_request` spelling, and choosing a backend per session.
+
+One obstacle it does not carry: **<x/README.md> claims a neutrality the live path does not have.**
+It says the live path "does not know that `assistant`, `stream_event` and `result` exist", while
+`_run_turn` reads `subtype`, `stop_reason` and `result` straight off the payload. The code is the
+honest half — both reads name themselves escape hatches — so what a second backend needs is those
+two answers coming from the vocabulary: why a turn failed, and a turn's final text when it arrived
+nowhere else. The chat-runtime plan already schedules the correction
+(<plans/conversation_layers.md>); check there before writing it again.
 
 ### More than one agent
 
 Several agent identities, each with its own permissions and its own session runner — an
 OpenAI-driven agent with one permission set on one runner, Haku with another on Claude Code.
 
-Most of agent identity is built: `agents/` holds the canonical Agent domain, and enrollment picks
-that Agent's auto-approval policy from the roots `config.yaml` defines (`AutoApprovalPolicyRegistry`
-in <auto_approval.py>), so distinct permissions per agent already has a home. What is missing is the
-binding to a runner implementation, and three facts say the console has never had to name one:
+**A runner runs _as_ an Agent** (operator, 2026-08-18), and talks to `/mcp` as that Agent, so the
+two are one identity and the binding belongs on the session: a session names the Agent it runs as,
+beside the operator and the conversation it already names.
 
-- **`sessions` carries `operator_id` and `conversation_id`, and no agent.** The Agent domain names
-  the caller of the console's MCP surface; a session names the runner the console launches. Whether
-  those are one identity is the question this answers, and it decides whether the binding is a
-  column on `sessions` or a property of the conversation.
-- **Every runner authenticates as the same Agent.** `ClaudeRuntimeConfig.mcp_static_agent_id` is one
-  id and `x/session_runtime.py` hands every launch the same bearer, so per-agent permissions do not
-  reach a session today however well `agents/` models them.
-- **`ClaudeRuntimeConfig` is singular throughout** — one namespace, one warm pool, one
-  `oauth_placeholder`, one system-prompt template, one `mcp_url`. Several agents makes it a keyed
-  set, and which key (the agent, the conversation, or a named runner profile referenced by both) is
-  the design decision the rest follows from.
+**Enrollment is unaffected.** An agent in an external harness still reaches `/mcp` by static token
+or dynamic client registration exactly as now. This adds a way to _be_ an Agent — one the console
+launches — beside the way an Agent arrives from outside, and replaces neither.
+
+**The permission machinery is already built and cannot currently express a difference.** `agents/`
+holds the canonical Agent domain and enrollment picks that Agent's auto-approval policy from the
+roots `config.yaml` defines (`AutoApprovalPolicyRegistry` in <auto_approval.py>, fail-closed at
+`MANUAL_APPROVAL_REQUIRED`). But `ClaudeRuntimeConfig.mcp_static_agent_id` is one id and
+<x/session_runtime.py> hands every launch the same bearer, so every session is the **same** Agent and
+the policy is uniform across all of them by construction. Naming the Agent per session is what makes
+it bite: "permissions X here, permissions Y there" stops being new machinery and becomes the
+existing machinery finally having distinct subjects.
+
+**So this is two pieces of work joined at the session row, and splittable.** The permission half is
+largely built and blocked on identity alone. The runner half is a new frame-speaking implementation,
+and it drags `ClaudeRuntimeConfig` with it: singular throughout — one namespace, one warm pool, one
+`oauth_placeholder`, one system-prompt template, one `mcp_url` — where several runners want a keyed
+set.
