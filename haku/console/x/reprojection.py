@@ -34,6 +34,7 @@ from haku.console.chat_models import EventProvenance, StoredEventKind
 from haku.console.database_schema import Session, SessionEvent, SessionFrame, SessionTurn
 from haku.console.x import frame_projection, session_events
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
+from util.sqlalchemy_types import UnknownValue
 
 # Only ever the `created_at` of a row that is compared against a stored one on every column but
 # that, so the value is arbitrary and being a constant keeps two runs of the check identical.
@@ -66,8 +67,8 @@ class RowCountMismatch:
     """One frame's projection and one frame's rows are different lengths — a row gained or lost."""
 
     frame_seq: int
-    projected: tuple[StoredEventKind, ...]
-    stored: tuple[StoredEventKind, ...]
+    projected: tuple[StoredEventKind | UnknownValue, ...]
+    stored: tuple[StoredEventKind | UnknownValue, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,7 +80,7 @@ class RowsBeyondCursor:
     """
 
     frame_seq: int
-    stored: tuple[StoredEventKind, ...]
+    stored: tuple[StoredEventKind | UnknownValue, ...]
 
 
 type Finding = RowMismatch | RowCountMismatch | RowsBeyondCursor
@@ -270,5 +271,10 @@ async def _turn_frames(db: AsyncSession, turn: SessionTurn, *, ends_before: int 
     return (await db.scalars(query)).all()
 
 
-def _kinds(rows: Sequence[SessionEvent]) -> tuple[StoredEventKind, ...]:
+def _kinds(rows: Sequence[SessionEvent]) -> tuple[StoredEventKind | UnknownValue, ...]:
+    """A row of a kind this release has no words for is reported like any other difference.
+
+    It is genuine drift from where this check stands: the fold here cannot have produced it, so
+    saying so is the honest answer where raising would make the whole session unreportable.
+    """
     return tuple(row.kind for row in rows)

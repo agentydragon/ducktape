@@ -82,6 +82,7 @@ py_library(
         ":setup_output",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
+        "//util:sqlalchemy_types",
         "@pypi//sqlalchemy",
     ],
 )
@@ -93,6 +94,7 @@ py_library(
         ":conversation_events",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
+        "//util:sqlalchemy_types",
         "@pypi//pydantic",
     ],
 )
@@ -219,6 +221,7 @@ py_library(
     name = "session_notifications",
     srcs = ["session_notifications.py"],
     deps = [
+        "//util:sqlalchemy_types",
         "@pypi//asyncpg",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
@@ -349,6 +352,7 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console/x/claude_code:projection",
         "//haku/console/x/claude_code/testing:wire",
+        "//util:sqlalchemy_types",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
     ],
@@ -482,6 +486,7 @@ py_test(
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
+        "//util:sqlalchemy_types",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

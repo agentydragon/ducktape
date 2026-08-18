@@ -50,6 +50,7 @@ from haku.console.x.conversation_events import (
     ToolCallStarted,
 )
 from haku.console.x.frame_projection import projected
+from util.sqlalchemy_types import UnknownValue
 
 # What the CLI answers a backgrounded `Bash` with: the call returns at once, naming a shell.
 BACKGROUND_SHELL = {"shellId": "bash_1", "command": "sleep 60 && echo done", "stdout": "", "stderr": ""}
@@ -66,10 +67,13 @@ def _write_path(frames: Sequence[RecordedFrame]) -> tuple[ConversationEvent, ...
     return tuple(event for frame in frames for event in projected(frame_seq=frame.frame_seq, payload=frame.payload))
 
 
-def _rows(events: Sequence[ConversationEvent]) -> list[ConversationEventKind | AuthoredEventKind]:
+def _rows(events: Sequence[ConversationEvent]) -> list[ConversationEventKind | AuthoredEventKind | UnknownValue]:
     """The `session_events` rows those events are stored as, in order. Two members of the
     vocabulary have no row at all, so this is shorter than the event list — which is the point of
-    asking it rather than counting events."""
+    asking it rather than counting events.
+
+    `UnknownValue` is in the type because the column admits one, never because a row minted here
+    could carry it: nothing this process wrote can be a kind this process cannot name."""
     return [
         row.kind
         for event in events

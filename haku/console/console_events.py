@@ -1,4 +1,16 @@
-"""Server-pushed console events relayed across replicas through PostgreSQL."""
+"""Server-pushed console events relayed across replicas through PostgreSQL.
+
+**Nothing here forbids unknown fields.** These envelopes cross replicas, which under
+`maxUnavailable: 0` may run different releases (<README.md> § Perimeter / deploy): a field the next
+release adds to an event would otherwise cost the previous one every invalidation on the channel,
+including the kinds it does understand. An `event_type` it does not know still fails the union
+parse, and is dropped — the tab it would have reached re-syncs on its own 30s timer, so a wake lost
+for the length of a roll delays a view rather than losing anything from it.
+
+Forwarding an unrecognised event to the tabs verbatim, so a browser holding the *new* bundle could
+act on it, is possible and deliberately not built: it needs a passthrough arm that round-trips raw
+JSON through a discriminated union, and the periodic sync already covers the window.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +23,7 @@ from uuid import UUID
 
 import asyncpg
 from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.engine import make_url
 
 from haku.console import operator_auth
@@ -28,30 +40,22 @@ OPERATOR_SESSION_EXPIRED_CLOSE_CODE = 4001
 
 
 class McpOperatorAuthChangedEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     event_type: Literal["mcp_operator_auth_changed"] = "mcp_operator_auth_changed"
     server_id: str
     status: Literal["connected", "disconnected"]
 
 
 class OperatorConnectionChangedEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     event_type: Literal["operator_connection_changed"] = "operator_connection_changed"
     connection: str
     status: Literal["connected", "disconnected"]
 
 
 class ConsoleHelloEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     event_type: Literal["hello"] = "hello"
 
 
 class ToolCallsChangedEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     event_type: Literal["tool_calls_changed"] = "tool_calls_changed"
     tool_call_id: str
 
@@ -64,8 +68,6 @@ class SessionChangedEvent(BaseModel):
     or the API is the truth. Carrying the message itself would make this a second source of one.
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     event_type: Literal["session_changed"] = "session_changed"
     session_id: UUID
 
@@ -76,8 +78,6 @@ type ConsoleEvent = (
 
 
 class _RoutedConsoleEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     operator_id: UUID
     event: ConsoleEvent
 

@@ -32,10 +32,12 @@ from typing import Any
 from uuid import UUID
 
 import asyncpg
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, field_validator
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from util.sqlalchemy_types import UnknownValue
 
 logger = logging.getLogger(__name__)
 
@@ -53,18 +55,33 @@ class SessionEventKind(StrEnum):
     """The operator asked for the in-flight turn to be interrupted."""
 
 
+# Membership, read once. A `StrEnum` member hashes as its own string, so this answers for the raw
+# value off the wire without constructing anything.
+_KINDS = frozenset(SessionEventKind)
+
+
 class SessionEvent(BaseModel):
     """What travels on `CHANNEL`.
 
     A cross-replica wire contract: both ends of a notification are separate pods, which may run
     different releases during a roll. Add fields, never rename or remove one, and treat a change of
     `CHANNEL` itself as destructive — see the expand/contract note in the README.
+
+    **So unknown fields are ignored and an unknown kind is a value rather than a parse failure.**
+    Forbidding either makes "add fields" false: under `extra="forbid"` a field the next release adds
+    costs the previous one every wake on this channel, including the kinds it does understand, and a
+    dropped wake is a turn nobody picks up. A kind it does not understand legitimately wakes nobody
+    — no waiter is registered under one — and saying so as `UnknownValue` is what keeps a roll
+    distinguishable from a corrupt payload in the log.
     """
 
-    model_config = ConfigDict(extra="forbid")
-
-    kind: SessionEventKind
+    kind: SessionEventKind | UnknownValue
     session_id: UUID
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _a_kind_from_a_newer_release_is_a_value(cls, value: object) -> object:
+        return UnknownValue(value) if isinstance(value, str) and value not in _KINDS else value
 
 
 _RECONNECT_DELAY = timedelta(seconds=2)
@@ -207,6 +224,12 @@ class SessionNotifications:
         """
         event = _parse(str(payload))
         if event is None:
+            return
+        if isinstance(event.kind, UnknownValue):
+            # A kind the release that emitted it has and this one does not. Nothing here is
+            # registered under it, so there is nobody to wake and this is the whole handling —
+            # logged at debug because it is what a roll looks like, not a fault.
+            logger.debug("session notification names a kind this release does not have: %s", event.kind)
             return
         for waiter in self._waiters.get((event.kind, event.session_id), ()):
             waiter.set()

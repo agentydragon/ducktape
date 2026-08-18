@@ -16,16 +16,24 @@ so what joins the two tables.
 **An authored row may name a turn**, and one kind does: an abort is the operator stopping an
 exchange. `reprojection.check_session` therefore filters the arm out rather than relying on its
 per-turn read never seeing one.
+
+**No body forbids unknown fields, and none may start.** The console rolls with `maxUnavailable: 0`,
+so the release that adds a field to a body writes rows the previous image is still reading; under
+`extra="forbid"` every one of them raises in `body_of`, which runs on every row of every
+conversation read (`x/subscription._streamed`). A field an older reader ignores is exactly what
+makes an addition shippable in one release. The rule and its limits are
+<../README.md> § Vocabularies across a roll.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from haku.console.chat_models import (
     AuthoredEventKind,
@@ -50,56 +58,45 @@ from haku.console.x.conversation_events import (
     ToolCallStarted,
     TurnCompleted,
 )
+from util.sqlalchemy_types import UnknownValue
 
 
 class ResultShape(StrEnum):
     """Which spelling of a result's content a stored row carries.
 
-    One member, and it stays an enum because every stored row carries the discriminator and
-    `TextResultBody` forbids extras.
+    One member, and it stays an enum because every stored row carries the discriminator: a second
+    spelling becomes a second arm rather than a migration over rows that never said what they were.
     """
 
     TEXT = "text"
 
 
 class TextResultBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     shape: Literal[ResultShape.TEXT] = ResultShape.TEXT
     text: str
 
 
 class MessageBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     text: str | None = Field(description="The message's prose, joined. None for one that was all thinking and tools.")
     agent_message_id: str | None = Field(description="What the frames called this message — provenance, not identity.")
 
 
 class ReasoningBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     summary: str | None
 
 
 class ToolCallBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     tool_name: str
     arguments: dict[str, Json]
 
 
 class ToolResultBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     content: TextResultBody = Field(description="The part a transcript prints.")
     structured: Json = Field(description="The exit code, the patch, the MCP structuredContent — an open set.")
     outcome: Outcome
 
 
 class PromptBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     message_id: UUID = Field(description="The `session_messages` row this prompt is — its only join.")
     text: str
     # What reads this is cross-surface prompt visibility: every attached surface shows the
@@ -117,21 +114,15 @@ class PromptBody(BaseModel):
 
 
 class PromptRejectedBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     reason: PromptRejection
     text: str = Field(description="What was said and not delivered — this row is its only copy.")
 
 
 class UnreadableInputBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     media_type: str = Field(description="The channel's own name for what arrived, verbatim: `m.image`, a MIME type.")
 
 
 class SessionAdoptedBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     previous_holder: str | None = Field(
         description="The replica whose lease this one took, or None where the session was unowned."
     )
@@ -139,8 +130,6 @@ class SessionAdoptedBody(BaseModel):
 
 
 class LeaseExpiredBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     reason: LeaseExpiryReason
     last_holder: str | None = Field(description="The replica whose lease lapsed, where one held it.")
 
@@ -148,7 +137,23 @@ class LeaseExpiredBody(BaseModel):
 class TurnAbortedBody(BaseModel):
     """No fields: the kind and the turn it names are the whole fact (see `turn_aborted`)."""
 
-    model_config = ConfigDict(extra="forbid")
+
+@dataclass(frozen=True, slots=True)
+class UnknownEventBody:
+    """A row of a kind this release has no words for: what a reader older than its writer reads.
+
+    Not a Pydantic model, because it is never written and never parsed — it is minted on read and
+    carries the row through unread. The kind is kept as the string it was stored as, and the body
+    unparsed, so a reader that logs one says which vocabulary it was missing.
+
+    **A reader must decide what to do with one, and skipping is not free.** A surface rendering the
+    stream can leave it out; a reader deciding something from the stream cannot, because "a kind I
+    do not know" and "no such event" are the same to it and only one of them is true
+    (<../README.md> § Vocabularies across a roll).
+    """
+
+    kind: str
+    body: dict[str, Any]
 
 
 class TurnStartedBody(BaseModel):
@@ -160,8 +165,6 @@ class TurnStartedBody(BaseModel):
     reader outside the session it came from cannot compare them.
     """
 
-    model_config = ConfigDict(extra="forbid")
-
 
 class TurnEndedBody(BaseModel):
     """How the exchange this row names came out.
@@ -171,15 +174,11 @@ class TurnEndedBody(BaseModel):
     folding the stream reaches the same conclusions from the events it already receives.
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     outcome: TurnOutcome
 
 
 class SessionProvisioningBody(BaseModel):
     """No fields: that this session is being provisioned for its conversation is the whole fact."""
-
-    model_config = ConfigDict(extra="forbid")
 
 
 class SessionEndedBody(BaseModel):
@@ -190,16 +189,12 @@ class SessionEndedBody(BaseModel):
     exists only here.
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     status: SessionStatus
     error: str | None = Field(description="The sentence the ending path recorded, where it recorded one.")
 
 
 class SetupNarrationBody(BaseModel):
     """One line the sandbox printed while coming up."""
-
-    model_config = ConfigDict(extra="forbid")
 
     text: str
 
@@ -210,10 +205,10 @@ type AuthoredBody = PromptRejectedBody | UnreadableInputBody | SessionAdoptedBod
 # on `kind`, which keeps the discriminator and the payload from disagreeing.
 #
 # **Wider than `AuthoredBody`, and deliberately so.** The five lifecycle shapes have no writer in
-# this release: a row of one of those kinds reaching an image that cannot parse it fails on *read*
-# — `TextBackedStrEnumUnionColumn` raises `KeyError` on a kind it does not know, and
-# `subscription.ConversationStream.read` selects whole rows with no kind filter — so every replica
-# has to be able to read one before any replica writes one.
+# this release, which is why they are here before anything mints one.
+#
+# `UnknownEventBody` is the arm for a kind added by a release *later* than this one — read-only by
+# construction, since nothing here can write a kind it cannot name.
 type StoredBody = (
     MessageBody
     | ReasoningBody
@@ -230,6 +225,7 @@ type StoredBody = (
     | SessionProvisioningBody
     | SessionEndedBody
     | SetupNarrationBody
+    | UnknownEventBody
 )
 
 
@@ -319,8 +315,14 @@ def body_of(row: SessionEvent) -> StoredBody:
 
     The read half of `row` and `authored`, and the only one there is. A kind added without an arm
     fails the type check rather than the read.
+
+    A kind added by a **newer release than this one** cannot be type-checked against, so it takes
+    the `UnknownValue` arm instead of raising: the previous image reads every row of a conversation
+    for the length of a roll, and one row it has no words for must not cost it the rest.
     """
     match row.kind:
+        case UnknownValue():
+            return UnknownEventBody(kind=row.kind.value, body=row.body)
         case ConversationEventKind.MESSAGE_COMPLETED:
             return MessageBody.model_validate(row.body)
         case ConversationEventKind.REASONING:

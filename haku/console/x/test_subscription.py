@@ -15,9 +15,10 @@ from uuid import UUID
 
 import pytest
 import pytest_bazel
+from sqlalchemy import text
 
 from haku.console.chat_models import SPA_ORIGIN, TurnOutcome
-from haku.console.x.session_events import PromptBody
+from haku.console.x.session_events import PromptBody, UnknownEventBody
 from haku.console.x.session_store import SessionStore
 from haku.console.x.subscription import (
     START,
@@ -158,6 +159,36 @@ async def test_a_replacement_session_continues_the_same_stream(chat_store, opera
     await chat_store.enqueue_prompt(operator_id, replacement.session_id, "after", SPA_ORIGIN)
 
     assert prompts(await stream.read(thread.conversation_id, after=START)) == ["before", "after"]
+
+
+async def test_a_kind_this_release_has_no_words_for_is_read_past_rather_than_raised_on(
+    chat_store, operator_id, stream, migrated_sessions
+) -> None:
+    """The roll this stream is exposed to, staged: the console rolls with `maxUnavailable: 0`, so
+    the replica on the previous image reads rows the new one wrote, and this read filters no kind in
+    SQL. The CHECK is widened and a kind inserted exactly as the new image's migration and writer
+    would leave it; what runs against it is the vocabulary this release has.
+
+    The row is read, not skipped: it keeps its position, so the two prompts around it are still
+    delivered and a subscriber's kept position advances over what it was handed.
+    """
+    thread = await a_thread(chat_store, operator_id, "before")
+    async with migrated_sessions() as db, db.begin():
+        await db.execute(text("ALTER TABLE session_events DROP CONSTRAINT ck_session_events_kind"))
+        await db.execute(
+            text(
+                "INSERT INTO session_events (session_id, kind, provenance, body, created_at) "
+                "VALUES (:session_id, 'provisioning_started', 'authored', '{}'::jsonb, now())"
+            ),
+            {"session_id": thread.session_id},
+        )
+    await say(chat_store, operator_id, thread, "after")
+
+    read = await stream.read(thread.conversation_id, after=START)
+
+    assert prompts(read) == ["before", "after"]
+    assert [type(event.body) for event in read.events] == [PromptBody, UnknownEventBody, PromptBody]
+    assert read.events[1].body == UnknownEventBody(kind="provisioning_started", body={})
 
 
 async def test_the_head_of_a_conversation_nothing_has_been_said_in_is_the_start(

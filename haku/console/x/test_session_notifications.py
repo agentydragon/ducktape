@@ -92,6 +92,42 @@ async def test_an_unreadable_payload_does_not_take_the_listener_down(notificatio
             await woken.wait()
 
 
+async def test_a_field_a_later_release_adds_still_wakes_this_one(notifications, migrated_sessions) -> None:
+    """The kind is one this release has; only the envelope grew. Under `extra="forbid"` the whole
+    payload failed to parse and the wake was dropped in silence — a turn nobody picks up, for the
+    length of the roll, on a kind both images understand."""
+    session_id = uuid4()
+    from_a_later_release = f'{{"kind": "update", "session_id": "{session_id}", "queued_at": "2026-08-18T00:00:00Z"}}'
+
+    async with notifications.subscribe(SessionEventKind.UPDATE, session_id) as woken:
+        async with migrated_sessions.begin() as db:
+            await db.execute(
+                text("SELECT pg_notify(:channel, :payload)"), {"channel": CHANNEL, "payload": from_a_later_release}
+            )
+        async with asyncio.timeout(30):
+            await woken.wait()
+
+
+async def test_a_kind_a_later_release_adds_wakes_nobody_and_costs_nothing(notifications, migrated_sessions) -> None:
+    """The other direction, where doing nothing is the correct answer rather than a loss: no waiter
+    is registered under a kind this release does not have. What must survive is the listener — the
+    next notification on a kind it does have still arrives."""
+    session_id = uuid4()
+    a_kind_from_later = f'{{"kind": "compacted", "session_id": "{session_id}"}}'
+
+    async with notifications.subscribe(SessionEventKind.UPDATE, session_id) as woken:
+        async with migrated_sessions.begin() as db:
+            await db.execute(
+                text("SELECT pg_notify(:channel, :payload)"), {"channel": CHANNEL, "payload": a_kind_from_later}
+            )
+        assert not await _woken_within(woken, 2)
+
+        async with migrated_sessions.begin() as db:
+            await notify(db, SessionEventKind.UPDATE, session_id)
+        async with asyncio.timeout(30):
+            await woken.wait()
+
+
 async def test_wait_reports_a_timeout_rather_than_hanging(notifications) -> None:
     assert await notifications.wait(SessionEventKind.UPDATE, uuid4(), timeout_seconds=0.5) is False
 

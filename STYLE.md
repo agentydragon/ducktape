@@ -82,7 +82,15 @@ instead, so they load on demand.
 - **Express code concisely**: every line does work; inline single-use subexpressions;
   no no-op short-circuits; no single-use intermediate variables.
 - **Strict data mapping**: invalid enum/typed inputs raise early; never `continue`
-  past them.
+  past them. **Deviation, where the writer may be a newer release of this same system**
+  — a value read back from our own storage, or off a payload between replicas of a
+  rolling deployment: there an unrecognised value is expected rather than invalid, and
+  raising takes down the rows the reader does understand along with the one it does
+  not. Such a reader decodes it to a **named** unknown variant every consumer must
+  dispatch on (never `None`, never a nearby member, never a silent skip), and the
+  writer of a new value still waits a release wherever ignoring it is not the correct
+  answer. Which readers those are, and how to tell: <haku/console/README.md>
+  § Vocabularies across a roll.
 - **Prefer functional style**: comprehensions and idiomatic patterns over loop-and-append.
 - **Functions over classes** when there's no state to manage.
 - **Use framework features** (e.g. typer `exists=True`) over manual checks.

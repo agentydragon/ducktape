@@ -6,10 +6,11 @@ nothing and left no record either. They are `authored` for the reason every cons
 is: no frame carries them, and none ever will.
 
 **Additive, and safe for the length of a roll.** A widened CHECK forbids nothing the previous image
-writes, and that image never *reads* one of these rows: its two queries against this table filter to
-the tool-call kinds in SQL and select by `turn_id`, and neither of these names a turn. Both matter,
-because `TextBackedStrEnumUnionColumn` parses the column — a row of an unknown kind reaching either
-would raise rather than degrade.
+writes.
+
+This carried the same reader-set argument `0065` did, and it expired the same way — see that
+migration. The column tolerates a kind it has no words for now, so the claim is no longer one a
+later reader can falsify by existing (<../../README.md> § Vocabularies across a roll).
 
 Revision ID: 0066
 Revises: 0065

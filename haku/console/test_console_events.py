@@ -247,15 +247,22 @@ def test_operator_auth_event_is_pydantic_validated() -> None:
         McpOperatorAuthChangedEvent.model_validate(
             {"event_type": "mcp_operator_auth_changed", "server_id": "grocy-sf", "status": "unknown"}
         )
-    with pytest.raises(ValidationError):
-        McpOperatorAuthChangedEvent.model_validate(
-            {
-                "event_type": "mcp_operator_auth_changed",
-                "server_id": "grocy-sf",
-                "status": "connected",
-                "unexpected": True,
-            }
-        )
+
+
+def test_a_field_a_later_release_adds_does_not_cost_the_previous_one_the_event() -> None:
+    """These envelopes cross replicas, which during a roll run different releases. Refusing an
+    unknown field would make the release that adds one drop every invalidation the previous image
+    is owed — including on the kinds it does understand."""
+    event = McpOperatorAuthChangedEvent.model_validate(
+        {
+            "event_type": "mcp_operator_auth_changed",
+            "server_id": "grocy-sf",
+            "status": "connected",
+            "reauthorized_at": "2026-08-18T00:00:00Z",
+        }
+    )
+
+    assert (event.server_id, event.status) == ("grocy-sf", "connected")
 
 
 def test_console_hello_event_is_a_pydantic_shape() -> None:

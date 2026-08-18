@@ -10,10 +10,14 @@ becomes a projection of that row.
 requires one only on the `frame_range` arm. So this is the CHECK on `kind` and nothing else.
 
 **Additive, and safe for the length of a roll.** A widened CHECK forbids nothing the previous image
-writes, and that image never *reads* one of these rows: its two queries against this table are the
-transcript's tool-call view, which filters to `tool_call_started`/`tool_call_completed` in SQL, and
-`reprojection`'s per-turn read. Both matter, because `TextBackedStrEnumUnionColumn` parses the
-column: a row of an unknown kind reaching either would raise rather than degrade.
+writes.
+
+Whether that image could *read* one of these rows was argued here from the reader set as it stood,
+and the argument expired: `x/subscription.ConversationStream.read` selects every row of a
+conversation with no kind filter, and was written two days after this migration. The console
+answers this at the column now — `session_events.kind` decodes a kind it has no words for instead of
+raising — so a widened CHECK no longer depends on an inventory of readers holding still
+(<../../README.md> § Vocabularies across a roll).
 
 Revision ID: 0065
 Revises: 0064

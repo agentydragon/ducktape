@@ -34,6 +34,7 @@ from haku.console.x.conversation_events import (
     ToolCallStarted,
     TurnCompleted,
 )
+from util.sqlalchemy_types import UnknownValue
 
 SESSION_ID = uuid4()
 TURN_ID = uuid4()
@@ -205,10 +206,10 @@ _BODIES: dict[StoredEventKind, dict[str, object]] = {
 def test_every_kind_the_column_may_hold_can_be_read_back() -> None:
     """The property a roll depends on, which is stronger than the type check behind it.
 
-    `TextBackedStrEnumUnionColumn` raises on a value it does not know and
-    `subscription.ConversationStream.read` selects whole rows with no kind filter, so a row of a
-    kind some serving replica cannot parse wedges that replica's reader rather than being skipped.
-    This is what says the vocabulary is complete before any writer uses it.
+    Tolerance covers the kind a *later* release adds; it cannot cover one this release already
+    holds and has no body for, because `body_of` would then be reading a kind it does name. So this
+    says the vocabulary is complete — every kind the column may hold parses — which is what lets a
+    writer for these ship without a second release.
     """
     unreadable = [
         kind
@@ -220,6 +221,50 @@ def test_every_kind_the_column_may_hold_can_be_read_back() -> None:
     ]
 
     assert unreadable == []
+
+
+def test_a_row_of_a_kind_this_release_has_no_words_for_reads_as_one() -> None:
+    """What the previous image sees for the length of a roll once a release adds a kind.
+
+    The point is that it is a value: the read that produced it carries every other row of that
+    conversation, and a subscriber can position and skip this one instead of losing all of them.
+    """
+    row = SessionEvent(
+        session_id=SESSION_ID,
+        turn_id=None,
+        kind=UnknownValue("provisioning_started"),
+        provenance=EventProvenance.AUTHORED,
+        source_first_frame_seq=None,
+        source_last_frame_seq=None,
+        call_id=None,
+        body={"reason": "a field this release has never heard of"},
+        created_at=NOW,
+    )
+
+    assert session_events.body_of(row) == session_events.UnknownEventBody(
+        kind="provisioning_started", body={"reason": "a field this release has never heard of"}
+    )
+
+
+def test_a_body_carrying_a_field_this_release_does_not_know_still_reads() -> None:
+    """The other half of the same roll, and the one that bites without a new kind at all: the
+    release that adds a field to a body writes rows the previous image is still reading, so a body
+    that forbade extras would raise on every one of them."""
+    row = SessionEvent(
+        session_id=SESSION_ID,
+        turn_id=None,
+        kind=AuthoredEventKind.LEASE_EXPIRED,
+        provenance=EventProvenance.AUTHORED,
+        source_first_frame_seq=None,
+        source_last_frame_seq=None,
+        call_id=None,
+        body={"reason": "unadopted", "last_holder": None, "swept_by": "a field added later"},
+        created_at=NOW,
+    )
+
+    assert session_events.body_of(row) == session_events.LeaseExpiredBody(
+        reason=LeaseExpiryReason.UNADOPTED, last_holder=None
+    )
 
 
 def test_the_two_events_with_a_durable_home_elsewhere_get_no_row() -> None:

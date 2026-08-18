@@ -530,7 +530,7 @@ the running version serving and a bad release is a no-op instead of an outage. I
 reflected Secret (`ha-mcp-bearer`, gone for ~2 minutes while its own namespace churned) took the
 console fully down, where rolling would have been invisible.
 
-Two consequences, both real:
+What follows from it, all of it real:
 
 - **Assets can skew during a roll.** Each static image contains only its own fingerprinted bundle,
   so a browser can take the new shell from one pod and 404 on its chunk against the other. The
@@ -545,6 +545,10 @@ Two consequences, both real:
   previous strategy hid. Two is the floor, not the count: an ORM-mapped column is named in every
   `SELECT` SQLAlchemy emits whether or not any code reads the attribute, so dropping one takes three
   — add the replacement, unmap the old column, then drop it a release after the unmapping converged.
+- **Vocabularies must be readable by the release before them.** The rule above is about columns; the
+  same roll puts _values_ in front of an older reader — a new enum member, a new event kind, a new
+  field on a payload that crosses replicas. The answer has a different shape, so it is its own
+  section: § Vocabularies across a roll, below.
 
 The server receives both Flux-selected image tags through `HAKU_CONSOLE_{,STATIC_}IMAGE_TAG`.
 `GET /api/deployment` parses their commit suffixes at runtime for the Settings version links. This
@@ -610,6 +614,52 @@ As trusted ducktape code in its own namespace it is **not** behind the `haku-egr
 fence — it gets ordinary cluster egress (which the capability tier needs to reach the
 Anthropic fire URL). Security model: `haku/docs/security.md`; roadmap: `haku/PLAN.md` and the
 `haku-state` repo's `plans/dashboard-arm.md`.
+
+### Vocabularies across a roll
+
+A new writer meeting an old reader fails **transiently**: it dies with the replica. An old writer
+meeting a new reader fails **permanently**: it dies with the row. Tolerance fixes the first. Only a
+constraint fixes the second.
+
+**Readers tolerate.** Decoding a stored value, or a payload from a sibling replica, must not raise
+on something the reader has no words for. It decodes to a named "I do not know this" —
+`util.sqlalchemy_types.UnknownValue` for a column, `x/session_events.UnknownEventBody` for a row,
+never `None` and never a nearby member — so every consumer is made to say what it does with one.
+Models that cross replicas do not forbid unknown fields; `x/session_notifications`,
+<console_events.py> and `x/session_events` all say so where they define their shapes.
+
+**Writers still wait, unless ignoring is correct.** Tolerance only ever buys "ignore it correctly",
+so whether the writer may ship in the same release depends on what kind of vocabulary it is:
+
+- **Narration** — an append-only stream whose readers render or fold it: `session_events.kind`, the
+  notification channel's kinds, `ConsoleEvent.event_type`. An older reader passing over an entry it
+  has no words for is the correct behaviour, not a degradation, so **a new value ships with its
+  writer in one release**. What it costs is named where it is paid: the room never says the notice
+  it skipped, because the cursor moves past it (`channels/matrix/room_subscription.notice`).
+- **Decision** — a value a reader branches on: `SessionStatus`, `TurnOutcome`, `ToolCallStatus`,
+  `EventProvenance`, `PromptRejection`. No reader-side answer is correct — an unknown `SessionStatus`
+  is neither open nor ended, and guessing either lets the lease sweep fail a live session or lets a
+  dead one leak — so **the reader ships a release ahead of the writer**, gated on that roll having
+  converged. `0054` did exactly this and `0077` cleaned up after it.
+
+The two are separable, and the second could take tolerance without taking the single release:
+decoding to `UnknownValue` would keep one unreadable row from failing a `select(Session)` over the
+whole inventory, while the two-release rule still stood because no consumer may guess what the value
+means. Nothing does that today — the decision columns stay strict.
+
+**A required field added to an existing shape is neither.** It is a narrowing, and tolerance is the
+wrong tool: a tolerant new reader would silently mis-read an old writer's row forever. That is the
+expand/contract dance plus a constraint the old writer's `INSERT` fails on, which is what `0078`
+did for `PromptBody.origin`.
+
+**Which one a reader is in, in one question:** could the value in front of it have been produced by
+a newer commit of this repo than the code reading it? If no — a request body, a config file, an MCP
+tool argument, a pinned third-party vocabulary — an unknown value is a bug or an attack, and
+<../../STYLE.md> § General's strict data mapping applies unchanged. If yes, an unknown value is
+expected, and raising on it is the defect. A third answer exists where the two ends handshake:
+<../runtime/x/bridge/protocol.py> negotiates a version on its first frame and so can reject an
+unknown kind outright, which is where this doctrine was already written down — for one seam.
+Storage has no handshake.
 
 ## Test
 

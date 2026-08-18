@@ -63,6 +63,11 @@ class StreamedEvent:
 
     No kind beside `body`: the body's type *is* the kind, so a consumer dispatches on it with
     `isinstance` and cannot be handed a pair that disagrees.
+
+    A row written by a **newer release than this one** arrives as `session_events.UnknownEventBody`
+    rather than not arriving. It keeps its position, which is the point: the read stops at its limit
+    where it should, `more` stays true where it should, and a subscriber's kept position advances
+    over what it was actually handed instead of over a row that raised.
     """
 
     position: StreamPosition

@@ -52,7 +52,8 @@ from util.sqlalchemy_types import (
     StrEnumColumn,
     StringBackedStrEnumColumn,
     TextBackedStrEnumColumn,
-    TextBackedStrEnumUnionColumn,
+    TolerantTextBackedStrEnumUnionColumn,
+    UnknownValue,
 )
 
 
@@ -1241,8 +1242,13 @@ class SessionEvent(Base):
     turn_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("session_turns.turn_id", ondelete="CASCADE"), nullable=True
     )
-    kind: Mapped[StoredEventKind] = mapped_column(
-        TextBackedStrEnumUnionColumn(ConversationEventKind, AuthoredEventKind), nullable=False
+    # Tolerant, because this stream's writer may be a newer release than its reader: a replica on
+    # the previous image reads every row of a conversation (`x/subscription.ConversationStream`)
+    # with no kind filter, and a kind added by the release rolling in must reach it as a value it
+    # can skip rather than as an exception that stops the whole read
+    # (<README.md> § Vocabularies across a roll). The SQL type is unchanged — `Text` either way.
+    kind: Mapped[StoredEventKind | UnknownValue] = mapped_column(
+        TolerantTextBackedStrEnumUnionColumn(ConversationEventKind, AuthoredEventKind), nullable=False
     )
     # Which arm of the provenance union this row carries, and NOT NULL is the point: an event whose
     # origin is unstated is exactly what `session_messages` cannot rule out.

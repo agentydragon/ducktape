@@ -49,10 +49,20 @@ from haku.console.x.channels.matrix.conversation import MatrixConversationStore
 from haku.console.x.channels.matrix.outbox import BoundRoom
 from haku.console.x.session_events import (
     LeaseExpiredBody,
+    MessageBody,
     PromptBody,
     PromptRejectedBody,
+    ReasoningBody,
     SessionAdoptedBody,
+    SessionEndedBody,
+    SessionProvisioningBody,
+    SetupNarrationBody,
+    ToolCallBody,
+    ToolResultBody,
     TurnAbortedBody,
+    TurnEndedBody,
+    TurnStartedBody,
+    UnknownEventBody,
     UnreadableInputBody,
 )
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
@@ -186,13 +196,20 @@ def _arrived_here(origin: PromptOrigin, room_id: str) -> bool:
 def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
     """What this room says about *event*, or nothing where it says nothing.
 
-    A match on the event's body rather than on its kind, so a shape added to the stream lands here
-    as a type error instead of being silently ignored.
+    A match on the event's body rather than on its kind, and every shape spelled out rather than
+    left to a wildcard, so a shape added to the stream lands here as a type error instead of being
+    silently ignored.
 
-    The kinds with no arm are the ones the room shows some other way: an assistant message is an
-    answer the outbox says with a transaction id and a retry budget, and reasoning and tool calls
+    The shapes with a `None` arm are the ones the room shows some other way: an assistant message
+    is an answer the outbox says with a transaction id and a retry budget, reasoning and tool calls
     are what the work notice will summarise (<../../../plans/conversation_layers.md> § 4) rather
-    than a line each.
+    than a line each, and the lifecycle shapes have no writer yet.
+
+    `UnknownEventBody` is on that arm too, and it is a different statement: a kind a **newer**
+    release wrote, which this one has no words for. The room says nothing about it and the cursor
+    moves past it, so that line is never said — deliberately, and it is the arm to think about
+    before adding a kind whose notice matters. Holding the cursor instead would leave the room
+    silent for the whole roll, since this replica holds the notices election while it waits.
     """
     match event.body:
         case TurnAbortedBody():
@@ -214,7 +231,18 @@ def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
             # or from a sibling room is a conversation fact this room is not showing yet; one sent
             # here is already in the timeline above, and posting it again would duplicate it.
             return None if _arrived_here(origin, room_id) else Notice(RELAYED_PROMPT + text, RoomEventKind.NARRATION)
-        case _:
+        case (
+            MessageBody()
+            | ReasoningBody()
+            | ToolCallBody()
+            | ToolResultBody()
+            | TurnStartedBody()
+            | TurnEndedBody()
+            | SessionProvisioningBody()
+            | SessionEndedBody()
+            | SetupNarrationBody()
+            | UnknownEventBody()
+        ):
             return None
 
 
