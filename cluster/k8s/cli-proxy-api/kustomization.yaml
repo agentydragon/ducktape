@@ -4,7 +4,6 @@ resources:
   - namespace.yaml
   - pvc.yaml
   - config-eso.yaml
-  - config-key.sops.yaml
   - client-key.sops.yaml
   - deployment.yaml
   - service.yaml
