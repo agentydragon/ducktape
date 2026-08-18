@@ -162,23 +162,63 @@ class RecordedToolCall(BaseModel):
     arguments: dict[str, Any] = Field(description="Whatever the agent passed, as the protocol carried it.")
 
 
-class ConversationEventKind(StrEnum):
-    """What a `session_events` row records that came off the runner↔console wire.
+class ItemType(StrEnum):
+    """What kind of thing an item is.
 
-    **Membership is decided by where the row came from, not by what it is about.** Every kind here
-    is produced by folding a recorded frame, so every row carries `EventProvenance.FRAME_RANGE` and
-    a frame range that says which frames it was read from. A fact the console holds but no frame
-    carries belongs in `AuthoredEventKind`, however conversational it reads.
-
-    The vocabulary is `x/conversation_events.ConversationEvent` less its two members that already
-    have a durable home: a `TextDelta` is an increment of prose the completed message carries
-    whole, and a `TurnCompleted` is the `session_turns` row.
+    A **decision** vocabulary (<README.md> § Vocabularies across a roll): every reader branches on
+    it to know which of the per-type columns mean anything, so no reader-side answer is correct for
+    a member it does not have and a new one ships a release behind its reader.
     """
 
-    MESSAGE_COMPLETED = "message_completed"
+    PROMPT = "prompt"
+    MESSAGE = "message"
     REASONING = "reasoning"
-    TOOL_CALL_STARTED = "tool_call_started"
-    TOOL_CALL_COMPLETED = "tool_call_completed"
+    TOOL_CALL = "tool_call"
+
+
+class ItemStatus(StrEnum):
+    """An item's lifecycle, and nothing else.
+
+    What it replaces put a prompt's queue state and an answer's completeness in one enum, told
+    apart only by `role`. The queue state is `conversation_prompt`'s now, where a queue belongs.
+    """
+
+    OPEN = "open"
+    COMPLETE = "complete"
+    FAILED = "failed"
+
+
+class ReasoningDisclosure(StrEnum):
+    """How much of a reasoning item's thinking the backend actually handed back.
+
+    No backend we adapt returns raw chain of thought — Anthropic returns summarised thinking,
+    OpenAI a generated summary over content it keeps encrypted, Codex a summary too — so the
+    distinction worth storing is not summary-versus-reasoning but whether anything was disclosed
+    at all. Without it a withheld item is an empty string no surface can explain.
+    """
+
+    SUMMARY = "summary"
+    WITHHELD = "withheld"
+
+
+class ConversationEventKind(StrEnum):
+    """The item lifecycle, as log rows.
+
+    **These three take either provenance arm**, which is what separates them from
+    `AuthoredEventKind`: an assistant message is folded out of frames, a prompt is a console fact
+    that crossed no wire, and both are items with the same three-row lifecycle. Which arm a given
+    row may take follows from the item's `item_type`, not from the kind.
+
+    **Prose exists only as segments, and a completion carries none.** A backend that streams has
+    its adapter cut the stream into `ITEM_SEGMENT` rows; one that produces only a final string
+    emits exactly one segment and then completes. So an item's text is the concatenation of its
+    segments by construction, and a consumer replaying from a position can never reprint prose it
+    already printed.
+    """
+
+    ITEM_STARTED = "item_started"
+    ITEM_SEGMENT = "item_segment"
+    ITEM_COMPLETED = "item_completed"
 
 
 # The two kinds that name a call rather than a message, and so carry `session_events.call_id`.
@@ -192,25 +232,25 @@ class AuthoredEventKind(StrEnum):
     range. That is the whole membership test: not whether the fact is about the session rather than
     the conversation, but whether it reached the console over the wire.
 
-    `PROMPT_ENQUEUED` is here for that reason and not because a prompt is a lifecycle fact. A prompt
-    is accepted before it is asked: a session holds no sandbox until a prompt buys one, so at
-    acceptance there is no runner to send it to, and a session that ends before the prompt is
-    claimed never sends it at all. The frame that eventually carries it, if one does, projects to
-    nothing — the console already holds the text (`x/claude_code/projection._user`).
+    A prompt is **not** here, and that is a change from what this arm used to hold: a prompt is an
+    item like any other, so it takes the item lifecycle in `ConversationEventKind` and carries this
+    arm's provenance. The reason it is authored is unchanged — a prompt is accepted before it is
+    asked, since a session holds no sandbox until a prompt buys one — but that is a fact about
+    which arm its rows take, not about what kind of thing it is.
 
-    Several members **name their turn**: the operator stopping an exchange, and the exchange's own
-    two ends. So a reader of this arm cannot assume `turn_id IS NULL`.
+    An abort is likewise gone: it is a turn's `outcome`, which is where every backend puts it.
+
+    Several members **name their turn**: the exchange's own two ends. So a reader of this arm
+    cannot assume `turn_id IS NULL`.
 
     **A turn's two ends are here rather than in `ConversationEventKind`, and the bracket is why.**
-    A turn is the console's construct, not the wire's: `database_schema.SessionTurn` records it as a
-    range because the CLI folds a prompt sent mid-turn into the running one, so one `result` frame
-    can answer two of these. `next_prompt` opens a turn before anything crosses the wire, and
-    `end_turn` closes one that ended on no frame at all — a failure, or an abort whose `result`
-    never arrived. So neither end can name the frames it was read from, which is what the
-    frame-derived arm requires.
+    A turn is the console's construct, not the wire's: it is a range because the CLI folds a prompt
+    sent mid-turn into the running one, so one `result` frame can answer two of these. A turn opens
+    before anything crosses the wire, and closes on no frame at all when it failed or was aborted
+    before its `result` arrived. So neither end can name the frames it was read from, which is what
+    the frame-derived arm requires.
     """
 
-    PROMPT_ENQUEUED = "prompt_enqueued"
     # A prompt admission refused. Recorded rather than only announced because the refusal is
     # terminal — the message is not delivered and is not coming back — so this row is the only
     # copy of what was said, and it is written in the transaction that acknowledges the message to
@@ -221,7 +261,6 @@ class AuthoredEventKind(StrEnum):
     UNREADABLE_INPUT = "unreadable_input"
     SESSION_ADOPTED = "session_adopted"
     LEASE_EXPIRED = "lease_expired"
-    TURN_ABORTED = "turn_aborted"
     # A sandbox is being provisioned for this thread. The only account of it today is the Matrix
     # supervisor's stack frame, so a thread whose session failed before a room was bound has none.
     SESSION_PROVISIONING = "session_provisioning"
