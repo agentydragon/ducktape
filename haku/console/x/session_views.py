@@ -270,9 +270,8 @@ type ConversationFollowMessage = Annotated[
 # made and the result each got, so what bounds a message is payload rather than row count — the
 # lesson `/api/tool-calls` learned at `le=500` (`frontend/tool_calls_page.tsx`). One update is
 # normally one coalescing window's worth of rows; past this the follower is sent the conversation
-# whole instead, which is cheaper than an update that carries most of it twice over.
-DEFAULT_CHANGED_ROWS = 50
-MAX_CHANGED_ROWS = 200
+# whole instead, which is cheaper than an update carrying most of one twice over.
+UPDATE_ROW_LIMIT = 50
 
 
 class SessionProvisioningView(BaseModel):

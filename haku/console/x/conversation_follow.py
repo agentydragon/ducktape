@@ -45,7 +45,7 @@ from haku.console import operator_auth
 from haku.console.console_events import OPERATOR_SESSION_EXPIRED_CLOSE_CODE
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.session_store import PositionUnusableError, SessionStore
-from haku.console.x.session_views import DEFAULT_CHANGED_ROWS, ConversationFollowMessage, ConversationSnapshot
+from haku.console.x.session_views import UPDATE_ROW_LIMIT, ConversationFollowMessage, ConversationSnapshot
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["conversations"])
@@ -93,7 +93,7 @@ class ConversationFollow:
                     await dispatching
 
     async def follow(
-        self, operator_id: UUID, conversation_id: UUID, *, after: int | None = None, limit: int = DEFAULT_CHANGED_ROWS
+        self, operator_id: UUID, conversation_id: UUID, *, after: int | None = None
     ) -> AsyncGenerator[ConversationFollowMessage]:
         """This conversation as it is now, and as it changes, until the caller stops reading.
 
@@ -115,7 +115,7 @@ class ConversationFollow:
                 # A reconnect is told what it missed at once rather than on the next change, which
                 # is also what makes a conversation this operator does not own fail here — where a
                 # caller is still asking — rather than as a socket that never says anything.
-                first = await self._caught_up(operator_id, conversation_id, after, limit)
+                first = await self._caught_up(operator_id, conversation_id, after)
             position = first.position
             yield first
             while True:
@@ -124,13 +124,11 @@ class ConversationFollow:
                 # each buying one of their own.
                 await asyncio.sleep(self._window.total_seconds())
                 woken.clear()
-                message = await self._caught_up(operator_id, conversation_id, position, limit)
+                message = await self._caught_up(operator_id, conversation_id, position)
                 position = message.position
                 yield message
 
-    async def _caught_up(
-        self, operator_id: UUID, conversation_id: UUID, position: int, limit: int
-    ) -> ConversationFollowMessage:
+    async def _caught_up(self, operator_id: UUID, conversation_id: UUID, position: int) -> ConversationFollowMessage:
         """What this follower is owed from *position* — an update, or the conversation whole.
 
         The fallback is the whole thing rather than an error because both reasons a position cannot
@@ -139,7 +137,7 @@ class ConversationFollow:
         """
         try:
             return await self._store.read_operator_conversation_changes(
-                operator_id, conversation_id, after=position, limit=limit
+                operator_id, conversation_id, after=position, limit=UPDATE_ROW_LIMIT
             )
         except PositionUnusableError:
             return await self._snapshot(
