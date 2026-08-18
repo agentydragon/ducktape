@@ -79,6 +79,9 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+              # Tar must traverse/write archived read-only directories and
+              # retain the source ownership and modes while extracting.
+              add: ["DAC_OVERRIDE", "FOWNER", "CHOWN"]
             readOnlyRootFilesystem: true
           volumeMounts:
             - name: state
