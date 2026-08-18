@@ -188,22 +188,20 @@ nowhere. It wants the conversation to own the event, which
 
 "invited to another room; still serving this one", "joined — this is now Haku's room", "adopted
 this room — Haku had no room bound". The binding _decision_ behind each of these is durable —
-`MatrixConversationStore.claim_room` writes `matrix_conversations` and the atomic
-`on_conflict_do_nothing` is what decides the refusal (`matrix_session.py:112-130`). The
-announcement of it is not.
+`MatrixConversationStore.bind_room` writes the `chat_attachment` row, and its read-then-insert
+under the sync election is what decides the refusal. The announcement of it is not.
 
 **Where they belong: nowhere neutral.** A room binding sits on the Matrix side of the vocabulary
-split — a room binding is not a session event, it is this channel's attachment
-changing. Under §1 that is the per-attachment cursor's business
-(`chat_attachment(session_id, surface, address, attached_at, detached_at)`), which does not exist
-yet. Recording them today means either a Matrix-shaped table or a Matrix-flavoured frame kind,
-and both prejudge the attachment model.
+split — a room binding is not a session event, it is this channel's attachment changing, and
+`chat_attachment` is now where that change is recorded. What is still missing is a durable
+announcement of it: recording one today means either a Matrix-shaped table or a Matrix-flavoured
+frame kind, and both prejudge what a channel says about its own attachment moving.
 
 ### Row 7 — `join`
 
 The one write here that is not a message, and it is bypassing in a different way from the rest.
-The order is right: `claim_room` commits the binding (`matrix_sync.py:226`) and only then does
-`join` run (`:234`). So the decision is recorded before the effect.
+The order is right: `bind_room` commits the binding and only then does `join` run. So the decision
+is recorded before the effect.
 
 But the effect is not driven from the record and nothing repairs it. **If `join` raises, the row
 says Haku is bound to a room it is not in**, and there is no retry: the exception propagates to
@@ -213,8 +211,8 @@ does in fact recover here, but only by accident of Synapse keeping the invite pe
 membership change is durable, operator-visible and federated, and our store has no column that
 says whether we made it.
 
-**Where it belongs: a column on `matrix_conversations`, not the outbox or the frame log** — this
-is attachment state, the same object §1's cursor hangs off. Out of scope: schema change.
+**Where it belongs: a column on `chat_attachment`, not the outbox or the frame log** — this is
+attachment state, the same row the binding itself is on. Out of scope: schema change.
 
 ## Verdict: nothing is fixed in this PR, and that is the finding
 

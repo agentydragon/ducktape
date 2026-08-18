@@ -41,7 +41,7 @@ type its own column is what retires those predicates (<../plans/conversation_lay
 
 The shared substrate: session, message and turn rows, Postgres `LISTEN`/`NOTIFY`, the
 SandboxClaim, the runner WebSocket bridge, and the `handle_runner` turn loop. Also the SPA chat
-surface's own HTTP routes and SSE stream, which is the older of the two experiments.
+surface's own HTTP routes, which is the older of the two experiments.
 
 **The line between the two files is the transaction.** `SessionStore` owns the SQLAlchemy sessions,
 so a method whose job is "these writes commit together or not at all" is in `session_store.py` — the
@@ -213,10 +213,10 @@ missing on thousands of production rows, which is why that change exists.
 Addressed at a session for the same reason the frame inspector is: a conversation outlives its
 sessions and each of them got its own sandbox, so the session that died has an account only it can
 give. `GET /api/conversations/{conversation_id}` still nests the same view, and deliberately only
-while that session is provisioning — that read is on the transcript's hot path, refetched twice a
-second by a streaming turn, and a cluster read per refetch is not worth paying for a question
-already answered. Both go through one `_observed`, so the two surfaces cannot disagree about what
-the cluster said; what differs is when each asks.
+while that session is provisioning — that read is what a follow's every update is assembled from,
+at up to twice a second while a turn streams, and a cluster read per update is not worth paying for
+a question already answered. Both go through one `_observed`, so the two surfaces cannot disagree
+about what the cluster said; what differs is when each asks.
 
 **Nothing here is reported by being absent.** Every session has a sandbox to report on — one is
 created only once a sandbox is being claimed for it — so the view is never `null`. A claim
@@ -688,8 +688,9 @@ Three consequences worth knowing:
   Every read is "everything after N", which makes a hole undetectable by construction rather than
   something to notice.
 
-The consumers today are the Matrix room's notices (below) and `conversation_follow.py`, whose
-follower carries exactly a `ClientHeldCursor`.
+The one consumer today is the Matrix room's notices (below). `conversation_follow.py` reads a
+conversation the same way and keeps nothing, so it holds a follower's position as a plain integer
+off the socket rather than through a `Cursor`; `ClientHeldCursor` is that case spelled as the port.
 
 ## `conversation_follow.py` — following a conversation, as one operation
 

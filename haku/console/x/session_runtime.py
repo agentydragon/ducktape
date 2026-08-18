@@ -152,9 +152,8 @@ class ChatFrontend(StatusFrontend, Protocol):
     (<room_status.py>).
 
     Which sessions it serves is whether a channel holds a copy of the conversation they run
-    (`SessionStore.attached`). The SPA needs none of this — its client
-    reads the message rows over SSE, so a finished turn is delivered by being written down. A room
-    has to be spoken to.
+    (`SessionStore.attached`). The SPA needs none of this — its client follows the conversation, so
+    a finished turn is delivered by being written down. A room has to be spoken to.
 
     **Replies are not here.** They are rows in `session_outbox`, written where they are produced
     and drained into the room by whoever holds the outbox lock (<../debug/message_drops.md>).

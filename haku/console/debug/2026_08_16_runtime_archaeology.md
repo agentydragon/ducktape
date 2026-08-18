@@ -28,7 +28,7 @@ are pointed at rather than retold — one incident, one write-up.
 | `session_store.fail`, `handle_runner`'s `except*`            | Logged as well as persisted; the traceback is what says which call produced it                            | <session_failure_status.md> § Verdict, and `x/session_notifications.py`                                         |
 | `session_store.ResumedTurn`, `TurnState`                     | Adoption reads how far the turn got off its row, rather than rebuilding it from the frame log             | <../x/README.md> § `session_store.py` and `session_runtime.py`                                                  |
 | `session_store.SpaSession.surface_column`                    | What the row records, carried on the variant                                                              | [Small ones](#small-ones)                                                                                       |
-| `session_runtime._run_turn`, `result`                        | The frame the completion was projected from, kept because the code below still reads Claude's own payload | <../plans/conversation_layers.md> § 9 step 4                                                                    |
+| `session_runtime._run_turn`, `result`                        | The frame the completion was projected from, kept because the code below still reads Claude's own payload | <../plans/conversation_layers.md> § 9                                                                           |
 
 ## A queued prompt that claimed to be a turn
 

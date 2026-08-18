@@ -115,8 +115,9 @@ Core HTTP mutation/audit endpoints and MCP reflection tools:
   frontend state plus lossy invalidations. REST remains the source of truth; the WebSocket only
   wakes the shell to refresh. It carries chat sessions too: a `session_changed` names the session
   whose rows moved and nothing else, coalesced to at most one per session per half-second, so a
-  streaming turn's per-delta writes cost an open transcript two refetches a second rather than
-  hundreds (`x/session_live_updates.py`).
+  streaming turn's per-delta writes cost the conversation inventory two re-reads a second rather
+  than hundreds (`x/session_live_updates.py`). An open transcript is not one of its consumers — it
+  follows its own conversation's socket.
 - `POST /api/tool-calls/{tool_call_id}/decision` — exact-Origin-gated trusted-frontend approval/denial.
 - `GET /api/tool-calls` / `GET /api/tool-calls/{tool_call_id}` — operator-only audit/result reads.
   The list endpoint accepts repeated `status` filters, a datetime `since` filter on `updated_at`,

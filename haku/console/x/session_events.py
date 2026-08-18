@@ -103,8 +103,8 @@ class PromptBody(BaseModel):
     # What reads this is cross-surface prompt visibility: every attached surface shows the
     # operator's prompts wherever they were sent from, so each asks "did this arrive through me?"
     # — an equality test against the origin, never a look inside one — and posts only what did not.
-    # Nothing projects it yet; that is the step where a channel starts reading the record instead
-    # of being handed what the turn loop produced (#4254 § 9 step 9).
+    # Nothing projects it yet; that waits on a channel reading the record instead of being handed
+    # what the turn loop produced.
     #
     # **Required, with no default**, because every default is a lie a reader acts on: guessing the
     # SPA tells an attached room it owes a copy of a prompt it may already be showing. `0078`

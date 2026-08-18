@@ -325,7 +325,7 @@ async def test_a_turns_last_word_is_queued_once_however_often_the_turn_is_adopte
 
 
 async def test_a_session_serving_no_room_queues_nothing(chat_store, migrated_sessions, operator_id) -> None:
-    """The SPA reads the message rows over SSE, so a finished turn is delivered by being written
+    """The SPA follows the conversation, so a finished turn is delivered by being written
     down. A row for it would be a reply nothing will ever say."""
     view, token = await chat_store.create(operator_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED

@@ -232,17 +232,15 @@ policy is per corpus, which would move the gate from the query builder into the 
 Matrix surface run as ordinary separate sessions, separate rows, separate sandboxes. Nothing about
 several agents needs the turn loop, the store or the bridge to change.
 
-What enforces "one Matrix session, one room" is three specific things, and only the first is a
-migration:
+What enforces "one Matrix session, one room" is two specific things, neither of them a migration.
+The schema no longer enforces it at all: `chat_attachment` admits a live row per address, and
+nothing reads `matrix_conversation`'s one-room-per-bot primary key any more.
 
-1. **`matrix_conversation`'s primary key is the bot's MXID**, so a second room cannot be recorded
-   without displacing the first — deliberately, as the schema's own docstring says, to make R3.6a a
-   property of the schema rather than a rule code must remember. Widening the key to
-   `(user_id, room_id)` is the change R3.6a's [later] note already anticipates.
-2. **The supervisor and ingress load that single row** by configured bot user and assume one. They
-   become "iterate the bindings" and "resolve the binding from the inbound message's room".
-3. **Both advisory locks are single global constants.** One leader supervising every binding is
-   enough for two, and is far simpler than a lock per binding — take that only if a stalled
+1. **The supervisor and ingress take the one bound room** (`bound_room`, deterministically ordered)
+   and assume it is the only one. They become "iterate the live attachments" and "resolve the
+   attachment from the inbound message's room".
+2. **Both advisory locks are single global constants.** One leader supervising every attachment is
+   enough for two, and is far simpler than a lock per attachment — take that only if a stalled
    provision must not delay another room.
 
 **The cheap increment is two rooms on one bot account**, which is what the operator asked for. The
@@ -285,11 +283,9 @@ whose only members are the operator and X, so it can be created at **X's own tie
 operator gesture — which keeps the common case free. Only a multi-party room needs its tier
 declared, and that is exactly where declaring one is worth the friction.
 
-One console consequence, small but worth catching early: the sessions surface
-(<../console/plans/conversation_layers.md> § 9 step 2) shows each session's surface and room,
-and with
-several agent kinds it needs to show **which agent** too, or two rooms' sessions become
-indistinguishable in the list.
+One console consequence, small but worth catching early: the conversations surface names each
+conversation's channels, and with several agent kinds it needs to name **which agent** too, or two
+rooms' conversations become indistinguishable in the list.
 
 ## Attachment and subscription: the room model a shared room forces
 
@@ -313,8 +309,8 @@ Six consequences, in the order they will bite:
 - **Subscriptions belong to the agent, not the session.** Sessions rotate on compaction and
   failure, and a subscription is a durable property of an agent kind ("the ducktape agent watches
   the coordination room"). Hanging them off `session_id` loses every subscription at each
-  rotation — the same data-losing shape R11.3a already flags for room bindings. The attachment
-  behaves as `matrix_conversation` does now: owned by the agent, with a session pointer that moves.
+  rotation — the same data-losing shape R11.3a already flags for room bindings. An attachment is
+  owned by the conversation, and which session runs under it moves freely.
 - **`chat_attachment` is the right table, with a role.** Migration `0064` creates it as
   `(attachment_id, conversation_id, surface, address, attached_at, detached_at)` with a partial
   unique index on the address. What this section asks of that design: add `role`, and a

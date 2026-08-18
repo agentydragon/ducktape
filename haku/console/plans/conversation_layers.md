@@ -88,10 +88,11 @@ channel differs only in two ways:
   console owes work against; a tab holds none, so its position is an argument to the next read.
 
 The primitive is code: `Subscription.read()` over a `ConversationStream` in `x/subscription.py`,
-where "no position given" is the `Unstarted` arm rather than a zero. `GET /api/conversations/{id}`
-and `…/changes?after=N` are the same contract over HTTP, and `session_changed` is the wake that says
-to ask again. Matrix is a second consumer for **one** event kind — `RoomNotices` reads `turn_aborted`
-from the record instead of the turn loop pushing it. What is missing is the rest of the kinds.
+where "no position given" is the `Unstarted` arm rather than a zero, and
+`WS /api/conversations/{id}/follow` is the same contract over one socket — a snapshot, then the
+changes, with `session_changed` as the wake that says to read again. Matrix is a second consumer for
+**one** event kind — `RoomNotices` reads `turn_aborted` from the record instead of the turn loop
+pushing it. What is missing is the rest of the kinds.
 
 **The stream carries two kinds of message, and a delta is one of them** (operator, 2026-08-17).
 State changes are whole rows, merged by id. A **delta** is `{message_id, append}` — the neutral
@@ -294,21 +295,8 @@ anything projected them.
 
 **The provenance pointer is what stops the echo, and that is its reader.** A prompt that arrived
 through this room is already in this room; re-posting it would duplicate it. A prompt from the SPA,
-or from another room, is not — so it must be posted. The test is "did this prompt originate on my
-own attachment", which is one comparison against `PromptBody`'s origin:
-
-- **Compare, never interpret.** The channel that minted the pointer is the only thing that reads
-  inside it; every other consumer compares it for equality. That keeps § 11's invariant — no code
-  outside a channel names a channel's address.
-- **It must identify the attachment, not just the event.** Under § 7's ruling one bot holds several
-  rooms, so "an event id I did not mint" is not enough to tell a sibling room's prompt from this
-  room's. The honest shape is the attachment's own id plus the channel's opaque ref; until
-  attachments are what a session is addressed by, it carries the address alongside the ref and the
-  conversation treats both as opaque.
-- **The SPA is named, not implied by absence.** A prompt typed into a tab gets an origin that says
-  so, because absence has a second meaning it cannot shed: a row written before the field existed.
-  Overloading one value with "typed in a browser" and "we do not know" makes the echo test silently
-  wrong on old rows — it would post them to every room.
+or from another room, is not — so it must be posted. `PromptBody.origin` carries that answer on
+every prompt already; what is missing is a channel that asks it.
 
 **Rendering it is the channel's own decision**: a room may want a prompt from elsewhere marked as
 such, since an operator reading the room sees a message they did not send there.
@@ -448,7 +436,7 @@ happens to be the one running under it. It also does not survive § 7's ruling: 
 several rooms every Matrix session matches the surface, so a surface-keyed singleton cannot address
 any of them correctly.
 
-**Until then, leave it alone.** The right amount of work on `_frontend_for` before step 4 is none:
+**Until then, leave it alone.** The right amount of work on `_frontend_for` before step 3 is none:
 it is deleted, not improved, and polishing it buys a rename in exchange for entrenching the concept.
 
 ## 6. The conversation is identity only
@@ -479,10 +467,10 @@ attachment rows. That is what an SPA session is, and it costs one row and no dec
 rows keyed by `session_id`. The conversation answers only _which channels are told_. Events on
 sessions, fan-out by conversation.
 
-**What is left is the unmapping** (step 1). `matrix_conversation` is still authoritative for which
-room the bot holds; the attachment subsumes it, including its `user_id` primary key — the rule that
-makes one bot user serve exactly one room ever. Losing that rule is **the point rather than the
-cost** (§ 7).
+**What is left is the drops** (step 1). `chat_attachment` is authoritative for which room the bot
+holds, so the rule its `user_id` primary key enforced — one bot user, one room, ever — is now
+`bind_room`'s refusal. Losing the schema's version of it is **the point rather than the cost**
+(§ 7).
 
 ## 7. Settled, and still open
 
@@ -534,10 +522,10 @@ cost** (§ 7).
   reader is how the reconciler learns what the room currently shows, and that is a read, not a
   store.
 
-- **One bot serves many rooms, and that is what parallel sessions are.** `matrix_conversation`'s
-  `user_id` primary key — one room per bot user, ever — was an artifact of the key, not a constraint
-  anyone wanted. `chat_attachment`'s partial unique index expresses the rule that is actually
-  wanted: **one live conversation per address**, which permits a bot in many rooms at once.
+- **One bot serves many rooms, and that is what parallel sessions are.** `chat_attachment`'s partial
+  unique index expresses the rule that is actually wanted: **one live conversation per address**,
+  which permits a bot in many rooms at once. What holds the bot to one room today is `bind_room`'s
+  refusal and a deterministic ordering behind it, not the schema.
 
   "Only one session holds a conversation at a time" is unchanged and is a **per-conversation** rule.
   What changes is that the console now runs N of them, one per attached room. Only the operator's
@@ -545,7 +533,7 @@ cost** (§ 7).
   out — it is now prevented by the invite creating the thing that services it, rather than by
   refusing the invite.
 
-  **This promotes on-demand allocation (step 3) from tidy-up to prerequisite.** One room could
+  **This promotes on-demand allocation (step 2) from tidy-up to prerequisite.** One room could
   afford a sandbox held open; ten cannot, and a room nobody is talking to must not hold one.
 
 **Still open.**
@@ -597,30 +585,26 @@ exists to remove:
   carries both halves of a conversation.
 - **The wake with no payload.** `session_changed` names a session and nothing else, coalesced at
   500ms. Built for the SPA; the same wake is what replaces the outbox drain's 1s poll.
-- **A position-addressed read.** `GET /api/conversations/{id}/changes?after=` is the
-  conversation→subscriber half working end to end for one consumer kind, server-side.
+- **A position-addressed read.** `WS /api/conversations/{id}/follow` is the conversation→subscriber
+  half working end to end for one consumer kind — a snapshot, then the changes, with a browser on
+  the other end of it.
 - **The correspondence key.** `EventTag` rides on every event the console sends. Write-only today.
 
 ### What is missing
 
-1. **`matrix_conversation` is one row per bot user**, so one room ever.
-2. **The outbox drain polls**, at `IDLE_POLL = 1s`, while `RoomNotices` beside it already wakes on
-   `session_changed`.
+**The outbox drain polls**, at `IDLE_POLL = 1s`, while `RoomNotices` beside it already wakes on
+`session_changed`.
 
 ## 9. The order
 
 **Do not start with the reconciler.** Each step is independently reviewable, and every one is worth
 having even if the loop is never built. The dependency edges are at the end.
 
-1.  **Read through `conversation_id`, then unmap what it subsumes.** `0064` is additive, so
-    `matrix_conversation` is still authoritative. `sessions.room_id` is gone; `sessions.surface` is
-    unmapped and awaiting its drop.
+1.  **Drop what the attachment subsumes.** `matrix_conversation` (#4351) and `sessions.surface`
+    (#4352) are unmapped and awaiting their drops, each gated on the release that stopped naming it
+    having converged.
 
-2.  **The conversation detail page reads the increment** instead of refetching the whole
-    conversation on every poll. `Subscription` over a `ClientHeldCursor` is the server-side half;
-    the position-addressed route and the frontend consumer are what is left.
-
-3.  **Allocate a sandbox because there is something to do.** A quiet room holds a sandbox
+2.  **Allocate a sandbox because there is something to do.** A quiet room holds a sandbox
     permanently: the supervisor provisions whenever the room has no live session, and the warm pool
     is `replicas: 0` so every claim is a cold start. That is ~1 CPU / 2Gi of an 8 CPU / 16Gi quota
     standing idle for a room nobody speaks in. The SPA has a gesture that means "I want a session"
@@ -667,7 +651,7 @@ having even if the loop is never built. The dependency edges are at the end.
     `uq_session_prompts_unclaimed` comes to express one prompt in flight per _thread_. And
     `PromptRejection.NO_SESSION` and `SESSION_NOT_READY` lose their reason.
 
-4.  **Matrix becomes a subscriber** (§ 2's primitive) for every kind, not just the one
+3.  **Matrix becomes a subscriber** (§ 2's primitive) for every kind, not just the one
     `RoomNotices` reads. One loop per `(channel, conversation)`, reading the record from its cursor
     instead of being handed events by the turn loop, woken by `session_changed` and by inbound
     events with the 1s poll demoted to a fallback. Here the four elections collapse to one, the
@@ -678,8 +662,8 @@ having even if the loop is never built. The dependency edges are at the end.
     all, so the question "which frontend is this session's" stops being asked rather than being
     answered better. Three things go with it, none obvious from the symbol: a **green test** pinning
     the surface-matching contract, which deleting the code deletes; **two <../x/README.md> sentences**
-    restating the doctrine; and `SessionIntroduction.room_id`, **required rather than optional** in a
-    struct the SPA also builds.
+    restating the doctrine; and `SessionIntroduction.room_id`, whose only builder is the Matrix
+    channel and which therefore stops being the thing a system prompt is selected by.
 
     One correction to make here rather than carry: <../x/README.md> claims "the live path no longer
     knows that `assistant`, `stream_event` and `result` exist", while `_run_turn` reads `subtype`,
@@ -687,37 +671,37 @@ having even if the loop is never built. The dependency edges are at the end.
     calls itself the escape hatch — so the README is the false half, and a second backend would
     degrade silently in both directions until it is fixed.
 
-5.  **Notices as spans** (§ 4), once 4 exists: one work notice per turn, one lifecycle notice per
+4.  **Notices as spans** (§ 4), once 3 exists: one work notice per turn, one lifecycle notice per
     session, **each body a fold over the subscription stream**, each retired or sealed. This is
     Matrix's streaming — the granularity a channel that holds a permanent, federated copy can
     afford. The fold is not optional; editing already-posted notices is, and a v0 that appends one
     notice per noticeable event is the accepted lesser form. Split the fold from the send path in
     the same PR, because the fold is where this step's tests live.
 
-6.  **Many rooms at once** (§ 7's ruling). `claim_room` stops refusing the second room and becomes
-    "resolve or create this room's attachment", so an invite mints a conversation; the supervisor
-    fans out over live attachments instead of supervising one binding; `MatrixSessionFrontend` takes
-    its address rather than claiming it has one by construction. The `MXSE` advisory lock stays
+5.  **Many rooms at once** (§ 7's ruling). `bound_room` stops answering with the one room and
+    `bind_room` stops refusing the second, so an invite mints a conversation; the supervisor fans
+    out over live attachments instead of supervising one binding; `MatrixSurface` takes its address
+    rather than claiming it has one by construction. The `MXSE` advisory lock stays
     global — one election supervising every attachment is cheaper than a lock per conversation, and
     the thing that must not be global is the _lease_, which is already per session.
 
-    **Depends on 1, on 3 and on 4**, and the last two are the ones the dependency line is easy to
-    get wrong. Ten rooms each holding a sandbox is the failure this would ship without 3. And an
+    **Depends on 1, on 2 and on 3**, and the last two are the ones the dependency line is easy to
+    get wrong. Ten rooms each holding a sandbox is the failure this would ship without 2. And an
     audit found **eleven** things that assume one bot serves one room, seven of which are per-bot
-    process state that step 4 deletes: `_status_body`, `_last_announced`, the single `RoomPacer`
+    process state that step 3 deletes: `_status_body`, `_last_announced`, the single `RoomPacer`
     with its one collapsing status slot, `_serviced`/`_live_room`, and `RoomOutboxDrain` claiming
     only `bound_room()`'s rows. Every one fails **silently** with a second room — ingress dropped to
     a `logger.warning`, a status line that never appears in room B, an edit addressed at another
     room's event id, replies that sit unsent forever.
 
-7.  **The console relays an operator's message into the room.** The console holds one Matrix
+6.  **The console relays an operator's message into the room.** The console holds one Matrix
     credential, `@haku`'s, and cannot post as the operator's MXID — so a console-originated message
     either does not appear in the room at all, or appears under Haku's account. Not posting it is
     ruled out, because the operator's own Element would then show half a conversation. So `@haku`
     posts it under a `relay` kind, tagged like every other console-authored event and rendered so
     the room states its true provenance.
 
-    **Under step 4 the send posts nothing.** It enqueues the prompt, in one transaction, and stops;
+    **Under step 3 the send posts nothing.** It enqueues the prompt, in one transaction, and stops;
     the room is then behind the transcript by one message, which is a divergence the reconciler
     already exists to close. That is what the model buys here: no "enqueue then post" order to
     choose, no partial failure where one landed and the other did not, and no bespoke retry.
@@ -734,7 +718,7 @@ having even if the loop is never built. The dependency edges are at the end.
     appservice with a puppet MXID. The first breaks the single-holder property for a send button;
     the second reverses the whole `/sync`-over-appservice decision for one.
 
-8.  **Slash commands**, which are how Matrix gets the actions the console has. The parity gap —
+7.  **Slash commands**, which are how Matrix gets the actions the console has. The parity gap —
     abort, new session, close — is one missing affordance, not three: a way for a room message to
     mean something other than "talk to Haku". They are **ingress interception, not an agent tool**:
     a command is recognised and consumed by the harness before batching, so it never reaches the
@@ -744,20 +728,20 @@ having even if the loop is never built. The dependency edges are at the end.
     the _session_, and a Matrix message is never consent for a tool call. Namespace choice is § 7's
     open question. Abort is the one worth having first. Depends on nothing here.
 
-9.  **The session link in the room's startup notice**, and interlinking generally: room notice →
+8.  **The session link in the room's startup notice**, and interlinking generally: room notice →
     console session, console session → the room (a `matrix.to` permalink the client already builds),
     session → its tool calls, tool call → the session that made it. The last has its precedent —
     `/_console/tool-calls/<tc_…>` opens the drawer on that exact call. A Matrix event is permanent
     and federated, so post links under routes chosen to survive, or not at all.
 
-10. **The frame log stores one thing, and the runner numbers it.** Two changes, deliberately one
+9.  **The frame log stores one thing, and the runner numbers it.** Two changes, deliberately one
     step, because they share a cause — the recorder sits _above_ the bridge envelope and
     structurally cannot see one — and therefore share a fix: moving that sink down onto the socket.
     § 13 holds the design and the release schedule.
 
-11. **`sessions.status` becomes derived timestamps** (§ 10).
+10. **`sessions.status` becomes derived timestamps** (§ 10).
 
-12. **Finish the legacy purge.** `ck_session_frames_wire_numbered` is declared nowhere — its rows
+11. **Finish the legacy purge.** `ck_session_frames_wire_numbered` is declared nowhere — its rows
     are gone, so all that stands between it and the database is writing it in the ORM as well as
     the migration, once
     `SELECT count(*) FROM session_frames WHERE runner_seq IS NULL AND direction = 'from_agent'`
@@ -765,13 +749,13 @@ having even if the loop is never built. The dependency edges are at the end.
     `test_session_claim_cleaned_at_migration.py` and `test_frame_runner_seq_migration.py` each
     assert a backfill or a nullability the schema has since moved past, and go outright.
 
-13. **The read surfaces stop maintaining two model families over one query** (§ 14). Two small
+12. **The read surfaces stop maintaining two model families over one query** (§ 14). Two small
     changes, neither of which needs a transport decision.
 
 **Smaller, and each landing with the change that creates it rather than as a standalone reshuffle:**
 
 - **Remove the `asyncio.wait` abort dance in `_run_turn`.** Unmounting the SSE route made it
-  removable and nothing has removed it. It collapses properly at step 4, where an abort becomes an
+  removable and nothing has removed it. It collapses properly at step 3, where an abort becomes an
   intent the transport writes and the CLI's answer comes back as frames.
 - **Split `session_runtime.py` further.** `handle_runner`'s admission and finalisation are a
   connection's lifecycle and `_run_turn` is a frame reducer; those are two files' worth of concern
@@ -783,8 +767,8 @@ having even if the loop is never built. The dependency edges are at the end.
   loop-side bugs block it and `session_runtime._projected` names both. Pull it in when a message
   spanning frames needs to be one row.
 
-**Dependencies.** 1 gates 6. 3 gates 6. 4 gates 5 and 6. Everything else — 2, 7 through 13 and
-the smaller items — depends on nothing here and can be dispatched in any order.
+**Dependencies.** 1 gates 5. 2 gates 5. 3 gates 4 and 5. Everything else — 6 through 12 and the
+smaller items — depends on nothing here and can be dispatched in any order.
 
 ## 10. `sessions.status` is derived, and lossy
 
@@ -892,7 +876,7 @@ gap that let the turn loop become a frame interpreter in the first place.
 | Gone                                     | Replaced by                                                                                                              |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `matrix_conversation` (all four columns) | `chat_attachment`, whose partial unique index is what "one session holds it" means                                       |
-| `sessions.room_id`, `sessions.surface`   | the attachment                                                                                                           |
+| `sessions.surface`                       | the attachment                                                                                                           |
 | `session_outbox`                         | the reconciler derives what it owes by comparing the record to the room; a queue that holds no facts need not be durable |
 | `sessions.status`                        | the timestamps of § 10, with the enum computed                                                                           |
 
@@ -915,24 +899,22 @@ architecture rather than the features, and each is the acceptance test for the t
    Synapse stays green throughout. A regression gate, not a new test.
 2. **The web surface works**: one merged surface lists conversations, creates one, sends, aborts,
    and shows a transcript.
-3. **The web surface streams.** A message being written grows in place, without a whole-transcript
-   refetch. Per token is what § 2 designs; a v0 that only carries the open row at `COALESCE_WINDOW`
-   granularity passes the weaker form of it, and the follow-up tightens the assertion.
+3. **The web surface streams per token.** A message being written grows in place at
+   `COALESCE_WINDOW` granularity today, which is the weaker form; the delta kind § 2 designs is what
+   tightens the assertion.
 4. **Both surfaces show the operator's own prompts, wherever they were sent from** (§ 4). A prompt
    typed in the SPA appears in the room; one sent from the room appears in the tab; neither appears
    twice on the surface it was typed on. The first case does not work at all today, and the third is
-   what the provenance pointer exists to make true. **A prompt whose origin predates the pointer is
-   shown where it already is and nowhere else** — the conservative answer, since the alternative
-   re-posts history into a room.
+   what the provenance pointer exists to make true.
 5. **One conversation, two surfaces.** A room and a browser both open, either can prompt, both show
    the same account. This is what the conversation entity is for, so it is its test.
 6. **A session replacement is invisible to both.** The sandbox is killed mid-turn, a new session
    takes over, and both surfaces show the restart without either being told twice.
 
 **Write these per step, not at the end.** A failing test cannot land on `devel`, so each step's PR
-carries the test that proves its own part, and 5 and 6 land as end-to-end tests with the steps that
-make them passable — 2 and 4. Behaviour 4 lands with step 4, which is where a channel starts reading
-the record rather than being handed the half the turn loop produced.
+carries the test that proves its own part, and 4, 5 and 6 land as end-to-end tests with step 3 —
+where a channel starts reading the record rather than being handed the half the turn loop
+produced.
 
 **Encode the invariants as tests too**, because each is false today and would otherwise creep back
 silently:
@@ -951,11 +933,9 @@ position is kept so a session that dies mid-flight loses nothing but its own con
 
 ### The bottleneck is migrations, and it is narrower than the step list suggests
 
-**At most one migration-bearing PR open at a time, or stacked.** Two agents independently declared
-`revision = "0062"` off `0061` within an hour of each other — a duplicate id _and_ a fork, both
-invisible to `git merge-tree`, both stopping the console booting. With N agents that is the default
-outcome, not bad luck. Stacking is fine (declare the parent's revision and say so in the body);
-racing is not.
+**Migration-bearing PRs are stacked rather than raced**, and what a branch owes the chain when it
+picks a revision id and a parent is <../AGENTS.md> § Adding a migration while other branches hold
+one.
 
 **A permissive schema change is safe alone.** A widened CHECK forbids nothing the previous image
 writes and has no reader, so it can merge on its own and the writers that use it become independent
@@ -1011,7 +991,7 @@ other** rather than only against `devel`. Prune finished worktrees as you go.
 
 ## 13. The frame log: one vocabulary, and the runner's numbering
 
-Step 10's design. Two changes that share a cause and therefore a fix.
+Step 9's design. Two changes that share a cause and therefore a fix.
 
 ### `kind` holds two vocabularies
 
@@ -1278,9 +1258,9 @@ turn's rows.
 
 ## 16. What is uncertain
 
-- **Whether whole-message updates at the coalescing window feel as good as the SSE stream.** The
-  increment removes the refetch's size but not its rate, and nobody has compared either against
-  per-token streaming on the real page.
+- **Whether whole-message updates at the coalescing window feel as good as per-token streaming.**
+  Following removed the refetch; the rate is still `COALESCE_WINDOW`, and nobody has compared it
+  against per-token on the real page.
 - **Whether "a second backend works" is worth more code before anything can check it.** No Codex
   credential exists in this cluster, so every claim in this repo about a second backend is read from
   documentation rather than measured. The cheapest fix: the tests already run a stub CLI as a real
