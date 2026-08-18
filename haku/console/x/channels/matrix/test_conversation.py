@@ -802,7 +802,7 @@ async def test_a_batch_records_the_room_events_it_was_folded_from(
     origins needs once one bot serves more than one.
     """
     session_id = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations)
+    await serving_room(conversations, operator_id)
 
     offered = await turns.offer(
         [operator_message("first", event_id="$a", at=1), operator_message("second", event_id="$b", at=2)]
