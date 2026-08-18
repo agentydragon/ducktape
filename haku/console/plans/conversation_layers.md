@@ -10,38 +10,91 @@ with the cardinality settled in the same breath:
 > - **conversation**: can span over multiple sessions; only one session holds it at a time
 > - **matrix room**: I think we can assume that 1 matrix room == 1 conversation
 
-This is the chat runtime's one plan: what the three layers own, what crosses each boundary, and
-§ 9's ordered list of what is left to build. Design that is still true is stated in the present
-tense; work that has landed is deleted rather than ticked off, so what remains here is what
-remains to do.
+This is the chat runtime's one plan: the invariant the layering is aiming at (§ 1), the protocols
+that follow from it, and § 9's ordered list of what is left to build. Design that is still true is
+stated in the present tense; work that has landed is deleted rather than ticked off, so what remains
+here is what remains to do.
 
 **Nothing in code cites this file, and nothing should.** A plan empties out as its work lands, so
 every identifier in it is transient by construction and a comment pointing at one goes stale
-without anything noticing. A contract several call sites depend on belongs in <../x/README.md> or
-a `SPEC.md` — <../x/channels/matrix/SPEC.md> is where the Matrix channel's own guarantees live. An
-invariant one call site depends on belongs in that call site's own words.
+without anything noticing. How the layers work once this plan is spent is <../docs/chat_layers.md>,
+a contract several call sites depend on belongs in <../x/README.md> or a `SPEC.md`
+(<../x/channels/matrix/SPEC.md> is where the Matrix channel's own guarantees live), and an invariant
+one call site depends on belongs in that call site's own words.
 
-## 1. What each layer owns
+## 1. The invariant this plan exists to reach
 
-| Layer            | Owns                                                                                                                                                                                                                                                           | Identity today                 | Ends when                                                 |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | --------------------------------------------------------- |
-| **LLM session**  | the runner wire (`session_frames`), the model's context and its compaction, the sandbox claim, the lease one replica holds, **and everything said or done while it ran** — `session_messages`, `session_events`, `session_turns` are all keyed by `session_id` | `sessions.session_id`          | the runner goes — lease lapse, disconnect, failure, close |
-| **Conversation** | which sessions are the same thread, and which channels are attached to it — **identity, and nothing else** (§ 6)                                                                                                                                               | `conversation.conversation_id` | never — a conversation has no end (§ 7)                   |
-| **Channel**      | its own copy and addressing, its credential and rate budget, its rendering vocabulary, its delivery state                                                                                                                                                      | `chat_attachment.address`      | the attachment is detached                                |
+The layering is two forbidden edges (operator, 2026-08-18):
 
-No row in the schema belongs to a conversation rather than to a session, and that is correct: the
-conversation is a _view_, and what it names is the set of sessions that are one thread.
+> A **channel** listens to and sends to the **conversation**, never to a session.
+>
+> A **session** listens to and sends to the **conversation**, never to a channel.
 
-What sits across a boundary today rather than inside a layer, each a place where the model has work
-to do:
+The conversation is the only thing either side talks to. **How the three layers work when this
+holds is <../docs/chat_layers.md>** — what each owns, the two routes a fact takes into the record,
+and where a new table, port or event kind belongs. Every step below is checked against it, and the
+rule leaves this plan with the last step that achieves it.
 
-- **The conversation's writer names a channel's address.** `_enqueue_reply`
-  (<../x/session_store.py>) reads the conversation's live Matrix attachment and writes
-  `session_outbox.room_id`, inside the turn loop's own transaction. § 5.
-- **Channel state that survives nothing.** `MatrixSyncService._status_body`,
-  `MatrixSessionSupervisor._last_announced` — per-process, so a leader handover re-announces. § 3.
+**The neutral log is already the conversation layer in everything but its key.** `session_events`
+carries `provenance`, its frame pointers are NULL on the authored arm, and `AuthoredEventKind`
+decides membership by _"whether it reached the console over the wire"_ — explicitly not by whether
+the fact is about a session. What is wrong is `session_id NOT NULL` and a name that says session.
+Step 1.
 
-## 2. The contract
+### The edges that are bugs
+
+Every line here is an edge the invariant forbids, in the code today.
+
+**A session that knows a channel.**
+
+- `ChatFrontend`, and `SessionService._frontend_for` selecting one for a session (§ 5).
+- `SessionIntroduction.room_id`: a session's own system prompt is rendered from a room's address.
+- `_enqueue_reply` (<../x/session_store.py>) reads the conversation's live Matrix attachment and
+  writes `session_outbox.room_id`, inside the turn loop's own transaction (§ 5).
+- `MatrixSurface`, reached from `_run_turn`: `report`, `report_silent_turn`, `show_status`,
+  `set_typing`.
+
+**A channel that knows a session.**
+
+- `MatrixSessionSupervisor` creates, replaces and tends sessions — `SessionService.create`,
+  `expire_stale_leases`, `reconcile_terminal_claims`. A channel owning session lifecycle is the
+  deepest of these, and step 2 is what removes the need for it.
+- `RoomOutboxDrain` drains `session_outbox`, and the room's status line comes from the open
+  `session_turns` row.
+- `MatrixConversationStore.recent_history` reads `session_messages` joined on `sessions` and
+  filtered by "not this session"; `IngressLedger.unanswered` joins the same three tables.
+- `MatrixSyncService.advance` takes `SessionEvent` rows, and every channel read of the neutral log
+  is session-keyed for as long as the table is.
+- `EventTag.session_id` rides on every event the console posts, so a room's permanent, federated
+  copy is addressed by a runner incarnation that a replacement invalidates.
+- **The wake itself is session-keyed.** `pg_notify` carries `{kind, session_id}`, so a subscriber to
+  a conversation subscribes by session.
+- The SPA is a channel too: it posts to `POST /api/sessions/{session_id}/messages`, reads
+  `/api/sessions/{session_id}/provisioning`, and takes its setup narration from a query over
+  `session_frames`.
+
+Two per-process latches sit beside these and are the same failure in another costume:
+`MatrixSyncService._status_body` and `MatrixSessionSupervisor._last_announced` stand in for state
+that has no row, so a leader handover re-announces. § 3.
+
+### Why those edges cannot simply be deleted
+
+Four facts the record does not hold, each the reason one push above still exists:
+
+- **Turn lifecycle.** `ConversationEventKind` says it outright: a `TurnCompleted` _is_ the
+  `session_turns` row. Nothing records a turn starting, so a room's status line has nothing to
+  project from and reads the row instead.
+- **Provisioning.** "A session is being provisioned for this conversation" is stored nowhere, so the
+  only account of it is the supervisor's stack frame.
+- **Setup narration.** `SessionStore.narrate` writes a `setup_output` row into `session_frames` —
+  the console minting a wire frame for a fact that crossed no wire — and both surfaces read it back
+  out by kind.
+- **Room binding.** "Joined — this is now Haku's room", "invited elsewhere, still serving this one":
+  queued notices with nothing behind them.
+
+Deleting the push would delete the fact. Recording them first is step 1.
+
+## 2. The protocols in detail
 
 ### Session ↔ conversation
 
@@ -54,8 +107,11 @@ depends on.
 ready session with nothing queued and refuses otherwise; a replacement session is handed the
 conversation's tail as prompt text.
 
-**Handover** is the operator's "only one session holds it at a time". Today that is the supervisor
-plus the `MXSE` advisory lock; as a row it is `chat_attachment`'s partial unique index.
+**Handover** is the operator's "only one session holds it at a time", and the lease is what holds
+it: `authenticate_bridge` admits one runner connection while a lease is valid, and expiry makes the
+row adoptable (§ 15). `chat_attachment`'s partial unique index is a different rule wearing the same
+words — **one live conversation per _address_** — and reading it as the handover rule is what makes
+a channel's row look like a statement about sessions (§ 7).
 
 ### Conversation ↔ channel
 
@@ -121,9 +177,10 @@ without it costs a follow-up, not a redesign.
 - **The address is `session_events.event_seq`.** It is a global `Identity` sequence, so one
   session's rows are not contiguous: every read is "everything after N", never "the next one after
   N", and a gap is undetectable by construction.
-- **The wake carries no payload.** `session_changed` names a session and nothing else; the
-  subscriber reads. Level-triggered, edge-scheduled — <../x/session_live_updates.py> builds this
-  half: `LISTEN`/`NOTIFY` is broadcast, each replica fans out to the sockets it holds, and changes
+- **The wake carries no payload**, and names the wrong layer. `session_changed` names a session and
+  nothing else, so a channel subscribing to a conversation subscribes by session (§ 1); it carries
+  the conversation from step 1. Level-triggered, edge-scheduled — <../x/session_live_updates.py>
+  builds this half: `LISTEN`/`NOTIFY` is broadcast, each replica fans out to the sockets it holds, and changes
   coalesce to at most one per session per half-second.
 - **The position belongs to whoever needs it, and its shape follows from what they hold.** A tab
   holds no copy that outlives it, so its position is a query parameter and the server keeps
@@ -169,6 +226,11 @@ other.
 `kind`, `session_id`, `message_id` and `agent_message_id`. **The reconciler is its reader**:
 correspondence between the record and the room is exactly what step 2 of the loop needs, and the
 tag is already the correspondence.
+
+**`session_id` comes off it first.** A room event is permanent and federated, so a tag is the
+longest-lived thing a channel stores, and a runner incarnation the shortest-lived thing it could
+name: replace the sandbox and every tag in the room names something gone. What a correspondence
+reader needs is the conversation and the row, which is what the other three fields already are.
 
 - **Two readers of one `/sync`, with opposite filters.** Ingress excludes Haku's own sender, and
   `MatrixClient._read` drops those events before anything else sees them. The correspondence reader
@@ -325,6 +387,11 @@ transaction, so while it exists the conversation's writer looks up the room's ad
 reconciliation the turn writes only the record and the channel derives what it owes, which is what
 removes that branch. What stays shared is the record and the subscription interface.
 
+**And it is re-keyed on the way in, not merely renamed.** `session_outbox.session_id` and its
+`turn_id` are session-layer columns, and `chat_delivery`'s subjects mint `turn:{turn_id}` from one —
+so a table that lands inside the Matrix channel still carrying either arrives already breaking the
+invariant. A channel's own tables name the conversation and the transcript row.
+
 **And the table should say Matrix** (operator, 2026-08-17: _"the matrix outbox should as matrix impl
 be named after matrix in its table and not try to be generic"_). `session_outbox`'s docstring says
 the opposite today — "a second one joins by adding a discriminator beside it rather than by
@@ -412,7 +479,7 @@ channel can actually revise, and let the outbox stay the record of what has been
 cursor takes it. Doing that before more callers arrive is cheaper than after — today there are two
 readers and one writer.
 
-### A session has no frontend, and the port is per attachment
+### A session has no frontend
 
 **"The frontend this session is attached to" is not a thing** (operator, 2026-08-17: _"what is a
 session's frontend? why would a session care?"_). It is worth stating flatly because the code reads
@@ -425,18 +492,18 @@ conversation? The name promises a mapping where there is a global and a guard.
 **A session does not care, and nothing about a session should.** What cares is the turn loop, and
 only because the turn loop is doing the channel's job: `report`, `report_silent_turn`, `_speak` and
 `TurnStatus` are § 8's "pushed by the turn loop from inside the process that holds the runner",
-which is why a fact can reach a room and never a tab. Step 4 deletes all of it — a subscriber reads
-the record and nothing hands a frontend to a turn. The one use that is honestly surface-dependent is
-`system_prompt`, telling the model it is speaking in a room, and that is a question asked once when
-a session starts rather than a channel the turn holds.
+which is why a fact can reach a room and never a tab. Step 3's D deletes all of it — a subscriber
+reads the record and nothing hands a frontend to a turn.
 
-**So the shape is a frontend per attachment, never per surface.** Selecting by surface says a
-channel owns a set of sessions, when a channel is attached to a _conversation_ and a session merely
-happens to be the one running under it. It also does not survive § 7's ruling: with one bot in
-several rooms every Matrix session matches the surface, so a surface-keyed singleton cannot address
-any of them correctly.
+**And the shape is no frontend at all, rather than a better-keyed one.** Selecting by surface says a
+channel owns a set of sessions; selecting by attachment says a session has a channel. The invariant
+forbids both, however the lookup is keyed. `system_prompt` is the one call that looked honestly
+surface-dependent and is not: what the model needs to know is that its conversation is attached to a
+chat channel and should be answered in chat's register, which the conversation can say for itself.
+The address is not a session's business, which is why `SessionIntroduction.room_id` goes with the
+rest.
 
-**Until then, leave it alone.** The right amount of work on `_frontend_for` before step 2 is none:
+**Until then, leave it alone.** The right amount of work on `_frontend_for` before step 3 is none:
 it is deleted, not improved, and polishing it buys a rename in exchange for entrenching the concept.
 
 ## 6. The conversation is identity only
@@ -462,10 +529,11 @@ same `conversation_id`"; the attachments are not touched, because they were neve
 **A session attached to nothing stays expressible** — a conversation with one session and no
 attachment rows. That is what an SPA session is, and it costs one row and no decisions.
 
-**Where events live, which this does not change.** On the session. "This session's sandbox died",
-"this replica adopted it", "the lease lapsed" are facts about a session and stay `session_events`
-rows keyed by `session_id`. The conversation answers only _which channels are told_. Events on
-sessions, fan-out by conversation.
+**Where events live.** On the conversation. "This session's sandbox died", "this replica adopted
+it", "the lease lapsed" are _caused_ by a session and are things the operator is told in a room, so
+they are conversation facts (<../docs/chat_layers.md>); the session they name is a field, not the
+key. Identity-only is a statement about the `conversation` row, not about the record: the log is
+keyed to the conversation by step 1 and the conversation table still holds nothing but an id.
 
 `chat_attachment` is authoritative for which room the bot holds, so the rule its `user_id` primary
 key enforced — one bot user, one room, ever — is now `bind_room`'s refusal. Losing the schema's
@@ -532,7 +600,7 @@ version of it is **the point rather than the cost** (§ 7).
   out — it is now prevented by the invite creating the thing that services it, rather than by
   refusing the invite.
 
-  **This promotes on-demand allocation (step 1) from tidy-up to prerequisite.** One room could
+  **This promotes on-demand allocation (step 2) from tidy-up to prerequisite.** One room could
   afford a sandbox held open; ten cannot, and a room nobody is talking to must not hold one.
 
 **Still open.**
@@ -582,8 +650,9 @@ exists to remove:
   terminal so it advances every pass.
 - **The ordered address.** `session_events.event_seq`, with `PROMPT_ENQUEUED` on it, so the stream
   carries both halves of a conversation.
-- **The wake with no payload.** `session_changed` names a session and nothing else, coalesced at
-  500ms. Built for the SPA; the same wake is what replaces the outbox drain's 1s poll.
+- **The wake with no payload**, in everything but which layer it names. `session_changed` carries an
+  id and nothing else, coalesced at 500ms, and is what replaces the outbox drain's 1s poll; the id
+  it carries is a session's, so it moves to the conversation with the log (step 1).
 - **A position-addressed read.** `WS /api/conversations/{id}/follow` is the conversation→subscriber
   half working end to end for one consumer kind — a snapshot, then the changes, with a browser on
   the other end of it.
@@ -599,7 +668,36 @@ exists to remove:
 **Do not start with the reconciler.** Each step is independently reviewable, and every one is worth
 having even if the loop is never built. The dependency edges are at the end.
 
-1.  **Allocate a sandbox because there is something to do.** A quiet room holds a sandbox
+1.  **Re-key the neutral log to the conversation, and record what only a stack frame holds.** The
+    log is the conversation's record wearing a session's key (§ 1). One migration: `session_id`
+    becomes nullable beside a `conversation_id NOT NULL`, the table takes the name of the layer it
+    serves, and the authored arm gains the kinds nothing can record today — a turn's lifecycle,
+    "a session is being provisioned for this conversation", and the sandbox's setup narration, which
+    is a forged `setup_output` frame until it has a row.
+
+    **This is what dissolves three separate dead ends**, which is why it goes ahead of the steps
+    that each hit one of them:
+    - **A prompt accepted before a session exists** has somewhere to be recorded, so admission stops
+      needing a session to name — the question step 2 would otherwise have to settle first.
+    - **A provisioning fact becomes recordable**, so an allocator can say what it is doing without a
+      channel watching it do it.
+    - **Channel notices become projections rather than pushes.** The status line, the setup
+      narration and the silent-turn notice each become a fold over the stream, which is what lets
+      the turn loop stop holding a channel to push them at (step 3's B and D).
+
+    **`session_messages` moves with it**, for the reason step 2 gives about `session_prompts`:
+    `conversation_id NOT NULL`, `session_id` nullable — NULL meaning a user prompt written before
+    any session took it. An assistant row stays session-scoped, because its frame pointers are.
+
+    **The wake moves too.** `pg_notify` carries `{kind, session_id}`, so a channel subscribing to a
+    conversation subscribes by session; it carries the conversation instead.
+
+    **Done when** a conversation with no session can hold a prompt, a provisioning fact and a line
+    of setup narration; when no channel read names a session; and when no authored kind needs a
+    session in order to be written. Expand/contract on hot tables, so it stacks rather than races
+    (§ 12).
+
+2.  **Allocate a sandbox because there is something to do.** A quiet room holds a sandbox
     permanently: the supervisor provisions whenever the room has no live session, and the warm pool
     is `replicas: 0` so every claim is a cold start. That is ~1 CPU / 2Gi of an 8 CPU / 16Gi quota
     standing idle for a room nobody speaks in. The SPA has a gesture that means "I want a session"
@@ -621,17 +719,15 @@ having even if the loop is never built. The dependency edges are at the end.
     provisions is answered rather than refused.
 
     **`session_prompts` cannot move alone.** It holds no text by design: `message_id` FKs
-    `session_messages` so the queue and the transcript cannot come to disagree. So
-    `session_messages` moves too — `conversation_id NOT NULL`, and `session_id` nullable, NULL
-    meaning a user prompt written before any session took it. An assistant row stays
-    session-scoped, because its frame pointers are.
+    `session_messages` so the queue and the transcript cannot come to disagree — which is why
+    `session_messages` is re-keyed by step 1 and this step's queue is conversation-keyed from the
+    start.
 
-    **Open, and the schedule turns on it.** `session_events.session_id` is `NOT NULL`, and
-    `prompt_enqueued` is written in `enqueue_prompt`'s own transaction so the ordered stream gains
-    the operator's turn exactly when the transcript does. With no session at that moment, every
-    conversation's first accepted prompt has nowhere to be recorded: either that column becomes
-    nullable beside a `conversation_id`, or the event is written late and the ordering guarantee
-    goes. Settle it before the migration.
+    **Where the first prompt is recorded is settled by step 1.** `prompt_enqueued` is written in
+    `enqueue_prompt`'s own transaction, so the ordered stream gains the operator's turn exactly when
+    the transcript does; with the log keyed by conversation, a thread's first accepted prompt has a
+    row to be written into before any session exists. That is what makes this step's queue
+    expressible at all.
 
     **The SPA posts to a session-addressed route** (`POST /api/sessions/{session_id}/messages`), so
     a conversation-addressed route has to ship and be adopted across a `maxUnavailable: 0` roll.
@@ -646,19 +742,36 @@ having even if the loop is never built. The dependency edges are at the end.
     `uq_session_prompts_unclaimed` comes to express one prompt in flight per _thread_. And
     `PromptRejection.NO_SESSION` and `SESSION_NOT_READY` lose their reason.
 
-2.  **Matrix becomes a subscriber** (§ 2's primitive) for every kind, not just the one
+3.  **Matrix becomes a subscriber** (§ 2's primitive) for every kind, not just the one
     `RoomNotices` reads. One loop per `(channel, conversation)`, reading the record from its cursor
     instead of being handed events by the turn loop, woken by `session_changed` and by inbound
     events with the 1s poll demoted to a fallback. Here the four elections collapse to one, the
     three egress mechanisms become one difference calculation, the pacer's bucket stops being an
     estimate, and the browser stops being the only consumer that reads the record.
 
-    **`_frontend_for` is deleted here, not improved** (§ 5): the turn loop stops holding a channel at
-    all, so the question "which frontend is this session's" stops being asked rather than being
-    answered better. Three things go with it, none obvious from the symbol: a **green test** pinning
-    the surface-matching contract, which deleting the code deletes; **two <../x/README.md> sentences**
-    restating the doctrine; and `SessionIntroduction.room_id`, whose only builder is the Matrix
-    channel and which therefore stops being the thing a system prompt is selected by.
+    Four parts, split by which forbidden edge each one removes:
+    - **A — the loop.** One subscriber per `(channel, conversation)` over the kinds the record
+      already carries, and one election in place of four. It removes no edge by itself; it is what
+      the other three are built on.
+    - **B — the turn's live state.** The status line and the typing indicator become a fold over the
+      stream instead of `TurnStatus._run` polling inside the turn loop's process. **Blocked on step
+      1**: a turn's live state is the open `session_turns` row and nothing else, so a room can reach
+      it only by reading a session-keyed table. There is nothing to fold until a turn's lifecycle is
+      on the stream.
+    - **C — replies stop being pushed.** `_enqueue_reply` stops reading the attachment's address;
+      the channel derives what the room is owed from the record and its own cursor.
+    - **D — the turn loop stops holding a channel.** `_frontend_for`, `ChatFrontend`, `report`,
+      `report_silent_turn` and `SessionIntroduction.room_id` go. **Blocked on step 1** for the same
+      reason in the other direction: setup narration exists only as a forged `setup_output` frame
+      and a silent turn's notice only in the stack frame that noticed it, so deleting the push
+      deletes the fact. Recording them first is what turns a deletion into a projection.
+
+    **`_frontend_for` is deleted in D, not improved** (§ 5): the question "which frontend is this
+    session's" stops being asked rather than being answered better. Three things go with it, none
+    obvious from the symbol: a **green test** pinning the surface-matching contract, which deleting
+    the code deletes; **two <../x/README.md> sentences** restating the doctrine; and
+    `SessionIntroduction.room_id`, whose only builder is the Matrix channel and which therefore
+    stops being the thing a system prompt is selected by.
 
     One correction to make here rather than carry: <../x/README.md> claims "the live path no longer
     knows that `assistant`, `stream_event` and `result` exist", while `_run_turn` reads `subtype`,
@@ -666,37 +779,37 @@ having even if the loop is never built. The dependency edges are at the end.
     calls itself the escape hatch — so the README is the false half, and a second backend would
     degrade silently in both directions until it is fixed.
 
-3.  **Notices as spans** (§ 4), once 2 exists: one work notice per turn, one lifecycle notice per
+4.  **Notices as spans** (§ 4), once 3 exists: one work notice per turn, one lifecycle notice per
     session, **each body a fold over the subscription stream**, each retired or sealed. This is
     Matrix's streaming — the granularity a channel that holds a permanent, federated copy can
     afford. The fold is not optional; editing already-posted notices is, and a v0 that appends one
     notice per noticeable event is the accepted lesser form. Split the fold from the send path in
     the same PR, because the fold is where this step's tests live.
 
-4.  **Many rooms at once** (§ 7's ruling). `bound_room` stops answering with the one room and
+5.  **Many rooms at once** (§ 7's ruling). `bound_room` stops answering with the one room and
     `bind_room` stops refusing the second, so an invite mints a conversation; the supervisor fans
     out over live attachments instead of supervising one binding; `MatrixSurface` takes its address
     rather than claiming it has one by construction. The `MXSE` advisory lock stays
     global — one election supervising every attachment is cheaper than a lock per conversation, and
     the thing that must not be global is the _lease_, which is already per session.
 
-    **Depends on 1 and on 2**, both of which the dependency line is easy to get wrong. Ten rooms
-    each holding a sandbox is the failure this would ship without 1. And an
-    audit found **eleven** things that assume one bot serves one room, seven of which are per-bot
-    process state that step 2 deletes: `_status_body`, `_last_announced`, the single `RoomPacer`
+    **Depends on 2 and on 3**, both of which the dependency line is easy to get wrong. Ten rooms
+    each holding a sandbox is the failure this would ship without 2. And an audit found **eleven**
+    things that assume one bot serves one room, seven of which are per-bot process state that step 3
+    deletes: `_status_body`, `_last_announced`, the single `RoomPacer`
     with its one collapsing status slot, `_serviced`/`_live_room`, and `RoomOutboxDrain` claiming
     only `bound_room()`'s rows. Every one fails **silently** with a second room — ingress dropped to
     a `logger.warning`, a status line that never appears in room B, an edit addressed at another
     room's event id, replies that sit unsent forever.
 
-5.  **The console relays an operator's message into the room.** The console holds one Matrix
+6.  **The console relays an operator's message into the room.** The console holds one Matrix
     credential, `@haku`'s, and cannot post as the operator's MXID — so a console-originated message
     either does not appear in the room at all, or appears under Haku's account. Not posting it is
     ruled out, because the operator's own Element would then show half a conversation. So `@haku`
     posts it under a `relay` kind, tagged like every other console-authored event and rendered so
     the room states its true provenance.
 
-    **Under step 2 the send posts nothing.** It enqueues the prompt, in one transaction, and stops;
+    **Under step 3 the send posts nothing.** It enqueues the prompt, in one transaction, and stops;
     the room is then behind the transcript by one message, which is a divergence the reconciler
     already exists to close. That is what the model buys here: no "enqueue then post" order to
     choose, no partial failure where one landed and the other did not, and no bespoke retry.
@@ -713,7 +826,7 @@ having even if the loop is never built. The dependency edges are at the end.
     appservice with a puppet MXID. The first breaks the single-holder property for a send button;
     the second reverses the whole `/sync`-over-appservice decision for one.
 
-6.  **Slash commands**, which are how Matrix gets the actions the console has. The parity gap —
+7.  **Slash commands**, which are how Matrix gets the actions the console has. The parity gap —
     abort, new session, close — is one missing affordance, not three: a way for a room message to
     mean something other than "talk to Haku". They are **ingress interception, not an agent tool**:
     a command is recognised and consumed by the harness before batching, so it never reaches the
@@ -723,20 +836,20 @@ having even if the loop is never built. The dependency edges are at the end.
     the _session_, and a Matrix message is never consent for a tool call. Namespace choice is § 7's
     open question. Abort is the one worth having first. Depends on nothing here.
 
-7.  **The session link in the room's startup notice**, and interlinking generally: room notice →
+8.  **The session link in the room's startup notice**, and interlinking generally: room notice →
     console session, console session → the room (a `matrix.to` permalink the client already builds),
     session → its tool calls, tool call → the session that made it. The last has its precedent —
     `/_console/tool-calls/<tc_…>` opens the drawer on that exact call. A Matrix event is permanent
     and federated, so post links under routes chosen to survive, or not at all.
 
-8.  **The frame log stores one thing, and the runner numbers it.** Two changes, deliberately one
+9.  **The frame log stores one thing, and the runner numbers it.** Two changes, deliberately one
     step, because they share a cause — the recorder sits _above_ the bridge envelope and
     structurally cannot see one — and therefore share a fix: moving that sink down onto the socket.
     § 13 holds the design and the release schedule.
 
-9.  **`sessions.status` becomes derived timestamps** (§ 10).
+10. **`sessions.status` becomes derived timestamps** (§ 10).
 
-10. **Finish the legacy purge.** `ck_session_frames_wire_numbered` is declared nowhere — its rows
+11. **Finish the legacy purge.** `ck_session_frames_wire_numbered` is declared nowhere — its rows
     are gone, so all that stands between it and the database is writing it in the ORM as well as
     the migration, once
     `SELECT count(*) FROM session_frames WHERE runner_seq IS NULL AND direction = 'from_agent'`
@@ -744,13 +857,13 @@ having even if the loop is never built. The dependency edges are at the end.
     `test_session_claim_cleaned_at_migration.py` and `test_frame_runner_seq_migration.py` each
     assert a backfill or a nullability the schema has since moved past, and go outright.
 
-11. **The read surfaces stop maintaining two model families over one query** (§ 14). Two small
+12. **The read surfaces stop maintaining two model families over one query** (§ 14). Two small
     changes, neither of which needs a transport decision.
 
 **Smaller, and each landing with the change that creates it rather than as a standalone reshuffle:**
 
 - **Remove the `asyncio.wait` abort dance in `_run_turn`.** Unmounting the SSE route made it
-  removable and nothing has removed it. It collapses properly at step 2, where an abort becomes an
+  removable and nothing has removed it. It collapses properly at step 3, where an abort becomes an
   intent the transport writes and the CLI's answer comes back as frames.
 - **Split `session_runtime.py` further.** `handle_runner`'s admission and finalisation are a
   connection's lifecycle and `_run_turn` is a frame reducer; those are two files' worth of concern
@@ -762,8 +875,9 @@ having even if the loop is never built. The dependency edges are at the end.
   loop-side bugs block it and `session_runtime._projected` names both. Pull it in when a message
   spanning frames needs to be one row.
 
-**Dependencies.** 1 gates 4. 2 gates 3 and 4. Everything else — 5 through 11 and the smaller
-items — depends on nothing here and can be dispatched in any order.
+**Dependencies.** 1 gates 2, gates 3's B and D, and gates 5. 2 gates 5. 3 gates 4 and 5. Everything
+else — 6 through 12 and the smaller items — depends on nothing here and can be dispatched in any
+order. 3's A and C are not gated on 1 and can be built beside it.
 
 ## 10. `sessions.status` is derived, and lossy
 
@@ -801,9 +915,10 @@ conversation ──< session   (serial: one runner each, replaced when the sandb
              └─< attachment (concurrent: a room, a browser, whatever comes next)
 ```
 
-Every fact is written once, on the session that produced it, into `session_events` and the
-transcript. Every channel reads that record through one subscription (§ 2) and renders it in its own
-vocabulary. Nothing is pushed at a channel; a channel is told to look.
+Every fact is written once, into the conversation's record — folded out of a session's frames, or
+authored where the console was the only witness. Every channel reads that record through one
+subscription (§ 2) and renders it in its own vocabulary. Nothing is pushed at a channel; a channel
+is told to look.
 
 ### The invariants to hold it to
 
@@ -811,6 +926,8 @@ These are the acceptance criteria, and each names something that is false today:
 
 - **No code outside a channel names a channel's address.** `_enqueue_reply` stops reading the
   attachment's address; the turn writes the record and nothing else.
+- **No code inside a channel names a session.** No session-keyed read, no session id in a durable
+  channel artifact, and no channel creating or tending a session.
 - **Nothing is announced that is not recorded.** Every notice body is a fold over the subscription
   stream (§ 4), so there is no fact whose only copy is a stack frame, no notice that a SIGKILL can
   silently swallow, and no body a second consumer could not reproduce from the same messages.
@@ -907,15 +1024,15 @@ architecture rather than the features, and each is the acceptance test for the t
    takes over, and both surfaces show the restart without either being told twice.
 
 **Write these per step, not at the end.** A failing test cannot land on `devel`, so each step's PR
-carries the test that proves its own part, and 4, 5 and 6 land as end-to-end tests with step 2 —
+carries the test that proves its own part, and 4, 5 and 6 land as end-to-end tests with step 3 —
 where a channel starts reading the record rather than being handed the half the turn loop
 produced.
 
 **Encode the invariants as tests too**, because each is false today and would otherwise creep back
 silently:
 
-- `session_store` contains no reference to `room_id` — one structural test, and it is the whole of
-  "no code outside a channel names a channel's address".
+- `session_store` contains no reference to `room_id`, and nothing under `x/channels/` names
+  `session_id` — two structural tests, and between them the whole of the two forbidden edges.
 - **Notice bodies are folds**, tested as folds: a list of `ConversationEvent`s in, a body out, no
   room and no database. The cases worth writing are the ones an end-to-end test cannot provoke on
   demand — a forty-call run collapsing to a tally, a session replaced mid-turn, a turn aborting

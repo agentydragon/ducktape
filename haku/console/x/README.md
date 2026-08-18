@@ -769,6 +769,8 @@ dependency:
 
 The code keeps the invariant; the evidence behind it is linked rather than restated.
 
+- <../docs/chat_layers.md> — what a session, a conversation and a channel each own, the two edges
+  between them, and where a new table, port or event kind goes. Read it before adding one.
 - <../docs/chat_runtime_facts.md> — behaviours of Synapse, nio, uvicorn and the CLI that this
   surface depends on, with where each was checked. Read it before changing anything that looks
   like belt and braces.
