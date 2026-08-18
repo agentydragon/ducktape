@@ -1,0 +1,88 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: public-coder-agent-state-restore-20260817
+  namespace: public-coder-agent
+  labels:
+    app.kubernetes.io/name: public-coder-agent-archive-restore
+spec:
+  # A failed restore must be inspected before rewriting the worker-local PVC.
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: public-coder-agent-archive-restore
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: ovh-ns102453
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: restore
+          image: rclone/rclone:1.75.0
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              set -o pipefail
+              umask 077
+              bucket=public-coder-agent-archive
+              prefix=rescue/20260817T093035Z
+              partial="${prefix}/public-coder-agent-state.tar.partial"
+              marker="${prefix}/public-coder-agent-state.tar.verified.json"
+              rclone --config '' cat archive:"$bucket/$marker" > /tmp/verified.json
+              grep -Fq "\"archive\":\"$partial\"" /tmp/verified.json
+              test -z "$(find /state -mindepth 1 -maxdepth 1 -print -quit)"
+              rclone --config '' cat --bwlimit 10M archive:"$bucket/$partial" | tar -C /state -xf -
+              test -d /state/workspace/.openclaw
+              test -d /state/agents
+          env:
+            - name: RCLONE_CONFIG_ARCHIVE_TYPE
+              value: s3
+            - name: RCLONE_CONFIG_ARCHIVE_PROVIDER
+              value: Other
+            - name: RCLONE_CONFIG_ARCHIVE_ENDPOINT
+              value: http://seaweedfs-s3.seaweedfs.svc:8333
+            - name: RCLONE_CONFIG_ARCHIVE_NO_CHECK_BUCKET
+              value: "true"
+            - name: RCLONE_CONFIG_ARCHIVE_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: s3-identity-public-coder-agent-archive
+                  key: accessKey
+            - name: RCLONE_CONFIG_ARCHIVE_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: s3-identity-public-coder-agent-archive
+                  key: secretKey
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: state
+              mountPath: /state
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: public-coder-agent-state-v2
+        - name: tmp
+          emptyDir: {}

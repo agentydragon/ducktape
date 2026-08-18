@@ -1,0 +1,23 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: public-coder-agent-archive-restore
+  namespace: ducktape-flux
+  annotations:
+    description: >-
+      One-shot worker-side restore of the verified Public Coder S3 archive.
+spec:
+  suspend: false
+  interval: 1h
+  retryInterval: 5m
+  timeout: 12h
+  wait: true
+  path: ./cluster/k8s/agents/public-coder-agent/archive-restore
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  dependsOn:
+    - name: seaweedfs-public-coder-agent-archive-bucket
+      namespace: ducktape-flux
