@@ -117,8 +117,6 @@ resources:
   - agents/public-coder-agent/namespace/flux-kustomization.yaml
   - agents/public-coder-agent/proxy/flux-kustomization.yaml
   - agents/public-coder-agent/app/flux-kustomization.yaml
-  - agents/public-coder-agent/archive-copier/flux-kustomization.yaml
-  - agents/public-coder-agent/archive-verifier/flux-kustomization.yaml
   - agents/public-coder-agent/archive-restore/flux-kustomization.yaml
   - agents/public-coder-agent/devbox/flux-kustomization.yaml
   - agents/public-coder-agent/k8s-reader/flux-kustomization.yaml
