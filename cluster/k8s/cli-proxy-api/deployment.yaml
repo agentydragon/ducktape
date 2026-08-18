@@ -38,7 +38,7 @@ spec:
         - name: cli-proxy-api
           # Pinned by digest (eceasy/cli-proxy-api is a third-party Docker Hub image with
           # no version-tag discipline). Bump by repulling :latest and re-pinning.
-          image: eceasy/cli-proxy-api@sha256:aeaa68c78e53e7efcc42187170218c83369cdffbb706ea70584fd72c072b7fcd
+          image: eceasy/cli-proxy-api@sha256:53162ac4ebf4f399b729a80830ad13e992add2430e1387a54e09a192987f6df3
           workingDir: /CLIProxyAPI
           # The image has CMD [./CLIProxyAPI] but no ENTRYPOINT, so k8s `args` alone would
           # replace the binary. Set `command` explicitly and pass -config via args.

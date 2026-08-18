@@ -1,0 +1,35 @@
+# CLIProxyAPI requires a single config file. ESO renders the API key from the
+# SOPS-managed client-key Secret, so this template remains safe to review and edit.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: cli-proxy-api-config
+  namespace: cli-proxy-api
+  annotations:
+    description: >-
+      CLIProxyAPI config.yaml rendered from the client-key Secret. Retry an upstream stream up
+      to three times only before its first response byte reaches the caller.
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: kubernetes-cli-proxy-api-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: cli-proxy-api-config
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        config.yaml: |
+          host: "0.0.0.0"
+          port: 8317
+          auth-dir: "/data/auth"
+          api-keys:
+            - "{{ .client_key }}"
+          streaming:
+            bootstrap-retries: 3
+  data:
+    - secretKey: client_key
+      remoteRef:
+        key: cli-proxy-api-client-key
+        property: client-key

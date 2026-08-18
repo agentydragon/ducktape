@@ -3,7 +3,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - pvc.yaml
-  - config.sops.yaml
+  - config-eso.yaml
   - client-key.sops.yaml
   - deployment.yaml
   - service.yaml

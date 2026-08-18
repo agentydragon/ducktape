@@ -39,15 +39,15 @@ persists the token across pod restarts; the auto-refresh worker (15m) keeps it v
 
 ## Secrets
 
-- `config.sops.yaml` — `cli-proxy-api-config` Secret holding `config.yaml` (port, auth-dir,
-  `api-keys` client key). Flux decrypts via `sops-age-cluster-secrets`.
-- `client-key.sops.yaml` — SSOT of the **same** client key, now consumed only by the main
-  LiteLLM pod (ESO-mirrored into `litellm` as `CLIPROXY_CLIENT_KEY` via
-  `cluster/k8s/litellm/secrets/cliproxy-client-key-eso.yaml`) for the `codex-*` upstream.
-  Laptops/agent-box/codex-pod use a scoped `codex-clients` LiteLLM virtual key instead.
-  Keep it in sync with `config.sops.yaml` on rotation.
+- `client-key.sops.yaml` — SSOT of the client key. ESO renders it into
+  `cli-proxy-api-config/config.yaml` for CLIProxyAPI and mirrors it into `litellm` as
+  `CLIPROXY_CLIENT_KEY` for the `codex-*` upstream. Laptops/agent-box/codex-pod use a scoped
+  `codex-clients` LiteLLM virtual key instead.
+- `config-eso.yaml` — plaintext CLIProxyAPI configuration template. It includes three bounded
+  stream bootstrap retries, which retry a failed upstream stream only before any response bytes
+  have been sent to the caller.
 
-Rotate the client key: generate a new value, update both files (`sops -e -i` each), push.
+Rotate the client key: generate a new value and update `client-key.sops.yaml` only, then push.
 
 ## Session ownership (rotation)
 
