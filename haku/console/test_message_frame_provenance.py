@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime
-import json
 from collections.abc import Generator
 from uuid import UUID, uuid4
 
@@ -26,14 +25,8 @@ def _conversation(conn: Connection, operator_id: UUID) -> UUID:
     return conversation_id
 
 
-def _session(conn: Connection, *, threaded: bool = True) -> UUID:
-    """One operator serving one session: the two foreign keys a message hangs off.
-
-    *threaded* names the schema era, and two columns turn on it. False is a revision older than
-    `0064`, which is where `conversation` and the column pointing at it begin, and where `surface`
-    is still `NOT NULL`. True is head: from `0072` on, naming `conversation_id` is the only way to
-    insert a session, and `surface` no longer exists to name.
-    """
+def _session(conn: Connection) -> UUID:
+    """One operator serving one session: the two foreign keys a message hangs off."""
     operator_id, session_id = uuid4(), uuid4()
     conn.execute(
         text("INSERT INTO operators (operator_id, status, created_at, updated_at) VALUES (:id, 'active', :n, :n)"),
@@ -42,13 +35,10 @@ def _session(conn: Connection, *, threaded: bool = True) -> UUID:
     columns: dict[str, object] = {
         "session_id": session_id,
         "operator_id": operator_id,
+        "conversation_id": _conversation(conn, operator_id),
         "status": "ready",
         "bridge_token_fingerprint": b"fingerprint",
     }
-    if threaded:
-        columns["conversation_id"] = _conversation(conn, operator_id)
-    else:
-        columns["surface"] = "spa"
     named = ", ".join(columns)
     conn.execute(
         text(
@@ -85,72 +75,9 @@ def engine(db_url: str) -> Generator[Engine]:
     engine.dispose()
 
 
-def test_message_provenance_migration_backfills_observed_assistant_frames(db_url: str, engine: Engine) -> None:
-    """The historical pointer is rescued only when the old row names its wire message."""
-    apply_migrations(db_url, "0044")
-    with engine.begin() as conn:
-        session_id = _session(conn, threaded=False)
-        message_id = uuid4()
-        conn.execute(
-            text(
-                """
-                INSERT INTO session_messages (
-                    message_id, session_id, role, status, content, agent_message_id,
-                    created_at, updated_at
-                ) VALUES (:message_id, :session_id, 'assistant', 'complete', '', 'msg_01', :n, :n)
-                """
-            ),
-            {"message_id": message_id, "session_id": session_id, "n": _NOW},
-        )
-        for payload in (
-            {"type": "assistant", "message": {"id": "msg_01"}},
-            {"type": "assistant", "message": {"id": "msg_01"}},
-        ):
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO session_frames (
-                        session_id, direction, kind, payload, partial, created_at, updated_at
-                    ) VALUES (:session_id, 'from_agent', 'assistant', CAST(:payload AS jsonb), false, :n, :n)
-                    """
-                ),
-                {"session_id": session_id, "payload": json.dumps(payload), "n": _NOW},
-            )
-
-    apply_migrations(db_url)
-
-    with engine.connect() as conn:
-        assert conn.execute(
-            text("SELECT source_first_frame_seq, source_last_frame_seq FROM session_messages WHERE message_id = :id"),
-            {"id": message_id},
-        ).one() == (1, 2)
-
-
-def test_unpointed_history_survives_the_constraint(db_url: str, engine: Engine) -> None:
-    """`NOT VALID` is the whole reason `0046` shipped without archaeology first.
-
-    An assistant row written before #4105 names no wire message, so `0045`'s backfill above cannot
-    reach it and it stays unpointed. Applying `0046` had to leave it exactly where it is rather
-    than refusing — the alternative was recovering or dropping history, and dropping it would have
-    deleted the `haku_index` chat corpus. It was dropped in the end (`0058`, and the purge that
-    preceded it), which is why this stops at the revision it is about.
-    """
-    apply_migrations(db_url, "0045")
-    with engine.begin() as conn:
-        message_id = _insert_message(conn, _session(conn, threaded=False), role="assistant")
-
-    apply_migrations(db_url, "0046")
-
-    with engine.connect() as conn:
-        assert conn.execute(
-            text("SELECT source_first_frame_seq, source_last_frame_seq FROM session_messages WHERE message_id = :id"),
-            {"id": message_id},
-        ).one() == (None, None)
-
-
 def test_a_range_cannot_end_where_it_never_began(db_url: str, engine: Engine) -> None:
-    """The shape `0045` left writable that is nonsense under either arm of the union: a far end
-    with no near end is neither a range nor the absence of one.
+    """The shape that is nonsense under either arm of the union: a far end with no near end is
+    neither a range nor the absence of one.
 
     On the prompt, since an assistant row is refused for the stricter reason below.
     """

@@ -1,4 +1,4 @@
-"""0077 takes `idle` back out of `ck_sessions_status`, and takes nothing else with it."""
+"""What `ck_sessions_status` admits: every status a replica writes, and not `idle`."""
 
 from __future__ import annotations
 
@@ -36,7 +36,6 @@ def _operator(conn: Connection) -> UUID:
 
 
 def _insert_session(conn: Connection, status: str) -> None:
-    """Naming `conversation_id` is the only way to insert a session from `0072` on."""
     operator_id, conversation_id = _operator(conn), uuid4()
     conn.execute(
         text("INSERT INTO conversation (conversation_id, operator_id, created_at) VALUES (:id, :o, :n)"),
@@ -62,14 +61,6 @@ def _insert_session(conn: Connection, status: str) -> None:
 def test_idle_is_what_the_narrowing_takes_away(db_url: str, engine: Engine) -> None:
     apply_migrations(db_url)
     with engine.begin() as conn, pytest.raises(IntegrityError, match="ck_sessions_status"):
-        _insert_session(conn, "idle")
-
-
-def test_the_revision_before_it_still_admitted_idle(db_url: str, engine: Engine) -> None:
-    """Which migration narrowed the constraint, rather than only that head is narrow: `0054` widened
-    it for a writer that never landed, and `0077` is where the widening is undone."""
-    apply_migrations(db_url, "0075")
-    with engine.begin() as conn:
         _insert_session(conn, "idle")
 
 

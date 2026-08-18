@@ -108,9 +108,9 @@ class PromptBody(BaseModel):
     # `channels/matrix/room_subscription.notice` is that reader.
     #
     # **Required, with no default**, because every default is a lie a reader acts on: guessing the
-    # SPA tells an attached room it owes a copy of a prompt it may already be showing. `0078`
-    # deleted the rows that had no key for this and constrains the table so none can come back, so
-    # a body missing it is a bug rather than an era.
+    # SPA tells an attached room it owes a copy of a prompt it may already be showing.
+    # `ck_session_events_prompt_origin` keeps a body missing it out of the table, so one is a bug
+    # rather than an era.
     origin: PromptOrigin = Field(
         discriminator="kind", description="The surface this prompt arrived through, and its own address for it."
     )

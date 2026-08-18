@@ -5,7 +5,7 @@ to it. The console-side summary is <../README.md> § MCP server (`/mcp`); this i
 full. Code: `agents/` (domain and routes), `mcp_agent_auth.py` (admission), `mcp_auth/`
 (the FastMCP composition adapter).
 
-Alembic revision `0010` is the single forward-only database baseline. It directly installs one
+Alembic revision `0081` is the single forward-only database baseline. It directly installs one
 graph shared by interactive OAuth and configured static Agents:
 
 ```text

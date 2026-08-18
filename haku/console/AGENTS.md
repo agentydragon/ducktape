@@ -12,8 +12,7 @@ the console booting on the next deploy.
 - **Walk the composite, never a single branch.** A walk over one tree reports "no forks" whether or
   not a sibling has already claimed the parent being attached to; the fork exists only in the union
   of the branches, so that is what has to be walked.
-- **Parse `revision` and `down_revision` out of file contents.** The filenames' numbering has real
-  gaps — there is no `0053` and no `0076` — which say nothing about the link structure, so a
-  filename sort is not the chain.
+- **Parse `revision` and `down_revision` out of file contents.** The filenames' numbering may have
+  gaps, which say nothing about the link structure, so a filename sort is not the chain.
 - **Never reserve a number in advance.** One that was free at authoring time is taken by merge
   time, so choose it as the branch goes out and re-check before every push.

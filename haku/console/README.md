@@ -256,7 +256,7 @@ per-reflection connect entirely).
 
 ### Canonical Agent authority and enrollment
 
-Alembic revision `0010` is the single forward-only database baseline: one Postgres graph shared by
+Alembic revision `0081` is the single forward-only database baseline: one Postgres graph shared by
 interactive OAuth and configured static Agents, where `Operator`, `Agent` and every
 authority-bearing relationship are local immutable UUIDs, a `CredentialBinding` owns credential
 lifecycle, and an Agent-originated tool call persists only its exact binding provenance — so
@@ -585,9 +585,9 @@ Postgres is **required**: it backs Operator/Agent authority, the approval ledger
 the Operator OAuth token store. The console applies its Alembic baseline once at startup (`app.main`,
 before serving) — never as a side effect of constructing a store. Since the Deployment rolls rather
 than recreating, a migration runs while the previous version is still serving, so each one must be
-backward compatible for the length of a roll (see Perimeter / deploy). Baseline `0010` directly creates
+backward compatible for the length of a roll (see Perimeter / deploy). Baseline `0081` directly creates
 the canonical Operator/identity and Agent/name/binding/grant/tool-principal graph. Its revision ID is
-deliberately retained from the deployed migration lineage: a database already stamped `0010` is a
+deliberately retained from the deployed migration lineage: a database already stamped `0081` is a
 no-op, while a fresh database creates the same frozen schema.
 
 Non-root, dropped caps, no service-account token. Credentials: the

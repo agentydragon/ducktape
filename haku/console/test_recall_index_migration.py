@@ -1,9 +1,9 @@
 """The index's two schema definitions must not drift.
 
 `haku/recall_index/schema.py` is what the code queries and what `store.ensure_schema` builds for
-the CLI and the tests; migration 0061 is what the deployed database gets. Nothing else compares
-them, and a column added to one and not the other would pass every other test in the repo and
-fail in production at the first query.
+the CLI and the tests; the console's Alembic baseline is what the deployed database gets. Nothing
+else compares them, and a column added to one and not the other would pass every other test in the
+repo and fail in production at the first query.
 """
 
 from __future__ import annotations
