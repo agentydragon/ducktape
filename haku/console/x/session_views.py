@@ -243,6 +243,12 @@ class ConversationUpdate(BaseModel):
     Whole rows rather than events to apply: a merge keyed on `message_id` is idempotent, so a
     duplicate costs nothing and re-reading from an older position is always correct. `event_seq` is
     the address — where the follower is — and these rows are what that position resolves to.
+
+    **The transcript arrives incrementally and everything else arrives whole.** Only the messages
+    and turns grow without bound, so only they are worth addressing by position; the rest of what a
+    conversation shows is a handful of rows, and sending them every time is what keeps a follower
+    from holding a copy nothing can correct. A field carried only in the snapshot would be a value
+    the tab can never be told has changed.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -252,8 +258,18 @@ class ConversationUpdate(BaseModel):
     session_id: UUID = Field(description="The session now holding the conversation, which a replacement changes.")
     status: SessionStatus
     error: str | None
+    provisioning: ClaudeSandboxProvisioningView | None = Field(
+        default=None,
+        description="The cluster's account of the sandbox this session is waiting on, while it is still waiting.",
+    )
     narration: list[SetupNarrationView] = Field(
         description="What that session has said while coming up, whole — replace by `frame_seq`."
+    )
+    attachments: list[ChannelAttachment] = Field(
+        description="The channels holding a copy of this conversation now — replaces what is held."
+    )
+    earlier_sessions: list[EarlierSession] = Field(
+        description="The sessions this conversation ran before `session_id`, newest first — replaces what is held."
     )
     messages: list[SessionMessageView] = Field(
         description="The messages that moved — merge them by `message_id` over the ones already held, never render them as a transcript."

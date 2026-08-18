@@ -192,9 +192,6 @@ def create_app(
     # per session. Constructed unconditionally: it listens on the session channel and sends on the
     # console one, neither of which depends on this replica running a Claude runtime.
     session_live_updates = SessionLiveUpdates(session_notifications, console_event_hub, db_sessions)
-    # A followed conversation's own socket. Constructed unconditionally for the same reason: it
-    # listens on the session channel and reads rows, neither of which needs a Claude runtime here.
-    follow = conversation_follow.ConversationFollow(session_store, session_notifications)
     session_service: session_runtime.SessionService | None = None
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
@@ -354,6 +351,14 @@ def create_app(
             mcp_token=mcp_agent.token,
             chat_frontend=matrix_surface,
         )
+    # A followed conversation's own socket. Behind the Claude runtime because a follower opens on
+    # the same read `GET /api/conversations/{id}` serves, which is the service's — a replica
+    # without one answers neither.
+    follow = (
+        None
+        if session_service is None
+        else conversation_follow.ConversationFollow(session_store, session_service, session_notifications)
+    )
     # The supervisor comes after the Claude runtime it provisions through, and announces via
     # the sync service, which holds the only Matrix credential — one login, one device,
     # whoever is speaking.
@@ -523,6 +528,7 @@ def create_app(
         # Its own lock and its own task, like the two above: what it does is bounded by the room's
         # send budget, and a room that is refusing sends must not hold up ingress or provisioning.
         noticing = matrix_notices.run() if matrix_notices is not None else contextlib.nullcontext()
+        following = follow.run() if follow is not None else contextlib.nullcontext()
         indexing = index_maintenance.run() if index_maintenance is not None else contextlib.nullcontext()
         async with (
             agent_authority.expiry_maintenance(),
@@ -540,7 +546,7 @@ def create_app(
                 # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
                 if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
                     await mcp_auth.storage.setup()
-                async with session_live_updates.run(), follow.run(), mcp_asgi.lifespan(app):
+                async with session_live_updates.run(), following, mcp_asgi.lifespan(app):
                     yield
             finally:
                 # Cancel in-flight approved-call executions (each marks its row cancelled) before the

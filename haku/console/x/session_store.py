@@ -582,7 +582,7 @@ class SessionStore:
                 # A conversation is only ever created alongside its first session, so this is a
                 # writer that committed one without the other rather than a thread waiting to start.
                 raise ValueError(f"a conversation has no sessions: {conversation_id=}")
-            current = sessions[0]
+            current, *earlier = sessions
             position = (await stream_head(db, conversation_id)).event_seq
             if not await _addressable(db, conversation_id, after):
                 raise PositionUnusableError(f"{after=} is not a position this conversation's log can answer from")
@@ -611,6 +611,7 @@ class SessionStore:
             if len(messages) > limit or len(turns) > limit:
                 raise PositionUnusableError(f"more than {limit} rows have moved since {after=}")
             narration = await setup_narration(db, current.session_id)
+            attachments = (await _live_attachments(db, {conversation_id}))[conversation_id]
             responding = await _open_turn(db, current.session_id) is not None
         return ConversationUpdate(
             position=position,
@@ -618,6 +619,11 @@ class SessionStore:
             status=live_status(current, responding=responding),
             error=current.error,
             narration=narration,
+            attachments=attachments,
+            earlier_sessions=[
+                EarlierSession(session_id=row.session_id, status=row.status, created_at=row.created_at)
+                for row in earlier
+            ],
             messages=messages,
             turns=turns,
         )

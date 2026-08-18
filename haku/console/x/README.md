@@ -713,6 +713,18 @@ and there is nothing for a caller to combine.
 - **Coalescing bounds the open message.** `content` is rewritten in place as prose arrives and a
   `TextDelta` is not a row, so every update re-sends the message being written, whole; without a
   window that is bytes quadratic in a turn's answer. 500ms, which also sets how fast prose appears.
+- **The transcript is incremental and everything else is whole.** Messages and turns are the only
+  part that grows without bound, so they are the only part worth addressing by position; the
+  attachments, the earlier sessions and the live session's own row go out every time. A field
+  carried only in the snapshot would be one a tab can never be told has changed — which obliges
+  the writers in turn: **anything that changes what a conversation shows must notify `UPDATE`**,
+  because this loop reads when it is woken and at no other time. `SessionStore.narrate` is the
+  example to copy.
+- **The sandbox is polled, not awaited.** What Kubernetes says about a claim, a pod and a runner is
+  an observation of another system, and no `session_events` row is written when a pod goes ready —
+  so there is no wake to carry it. While the session being followed is still coming up, the loop
+  re-reads on `SANDBOX_POLL` as well as on wakes, at the rate `OBSERVATION_TTL` already bounds
+  cluster reads to; a session past provisioning is not polled at all.
 - **The connection is the subscription.** One socket per followed conversation — the position and
   the reader task are all the per-connection state there is, and a send-only socket has no inbound
   protocol that could be talked into reading another operator's thread.

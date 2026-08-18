@@ -27,6 +27,22 @@ arrives and a `TextDelta` is deliberately not a row, so every pass re-sends the 
 written, whole. Sending on each wake would therefore cost bytes quadratic in a turn's prose and one
 read per delta per follower; `COALESCE_WINDOW` bounds both, at the price of prose reaching a tab in
 half-second steps rather than per token.
+
+**Everything a follower is shown moves, or it would not be here.** The transcript arrives
+incrementally because it is the only part that grows without bound; the attachments, the earlier
+sessions and the live session's own row are a handful of rows sent whole every time. A field that
+only ever arrived in the snapshot would be one a tab could never be told had changed, which is a
+UI quietly disagreeing with the database rather than a saving.
+
+That obliges the writers: **anything that changes what a conversation shows must notify `UPDATE`**,
+because this loop reads when it is woken and at no other time. `SessionStore.narrate` is the
+example to copy — it records the row, then announces it.
+
+**The sandbox is the exception, and is polled rather than awaited.** What Kubernetes says about a
+claim, a pod and a runner is an observation of another system: no `session_events` row is written
+when a pod goes ready, so no wake exists to carry it. While the session a follower is watching is
+still coming up, this loop therefore re-reads on `SANDBOX_POLL` as well as on wakes — which is what
+the browser's own polling used to do, at the same rate the observation cache already bounds.
 """
 
 from __future__ import annotations
@@ -36,16 +52,23 @@ import contextlib
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from datetime import timedelta
-from typing import Annotated, cast
+from typing import Annotated, Protocol, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from haku.console import operator_auth
+from haku.console.chat_models import SessionStatus
 from haku.console.console_events import OPERATOR_SESSION_EXPIRED_CLOSE_CODE
+from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.session_store import PositionUnusableError, SessionStore
-from haku.console.x.session_views import UPDATE_ROW_LIMIT, ConversationFollowMessage, ConversationSnapshot
+from haku.console.x.session_views import (
+    UPDATE_ROW_LIMIT,
+    ConversationFollowMessage,
+    ConversationSnapshot,
+    ConversationView,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["conversations"])
@@ -62,6 +85,26 @@ SESSION_REVALIDATION = timedelta(seconds=30)
 # second keeps prose reading as live while bounding both.
 COALESCE_WINDOW = timedelta(milliseconds=500)
 
+# How often a follower watching a session that is still coming up re-reads the cluster's account of
+# its sandbox, having no wake to wait for. `SessionService` reuses one observation for
+# `OBSERVATION_TTL`, so reading faster than that would return the same answer.
+SANDBOX_POLL = timedelta(seconds=2)
+
+
+class ConversationReader(Protocol):
+    """The conversation as every surface reads it, and the sandbox view that goes with it.
+
+    A port rather than the service itself, so a follow needs nothing from the Claude runtime but
+    these two answers — and so the snapshot a follower opens with is, by construction, the same
+    read `GET /api/conversations/{id}` returns rather than a second assembly of one.
+    """
+
+    async def conversation(self, operator_id: UUID, conversation_id: UUID) -> ConversationView: ...
+
+    async def provisioning_of(
+        self, session_id: UUID, status: SessionStatus
+    ) -> ClaudeSandboxProvisioningView | None: ...
+
 
 class ConversationFollow:
     """The follow operation, and this replica's map from a session's wake to its conversation.
@@ -71,11 +114,19 @@ class ConversationFollow:
     """
 
     def __init__(
-        self, store: SessionStore, notifications: SessionNotifications, *, window: timedelta = COALESCE_WINDOW
+        self,
+        store: SessionStore,
+        reader: ConversationReader,
+        notifications: SessionNotifications,
+        *,
+        window: timedelta = COALESCE_WINDOW,
+        sandbox_poll: timedelta = SANDBOX_POLL,
     ) -> None:
         self._store = store
+        self._reader = reader
         self._notifications = notifications
         self._window = window
+        self._sandbox_poll = sandbox_poll
         self._followers: dict[UUID, set[asyncio.Event]] = {}
         self._woken: set[UUID] = set()
         self._pending = asyncio.Event()
@@ -118,8 +169,9 @@ class ConversationFollow:
                 first = await self._caught_up(operator_id, conversation_id, after)
             position = first.position
             yield first
+            message = first
             while True:
-                await woken.wait()
+                await self._until_something_to_read(woken, message)
                 # Sleep first, so changes arriving inside the window join this pass rather than
                 # each buying one of their own.
                 await asyncio.sleep(self._window.total_seconds())
@@ -127,6 +179,20 @@ class ConversationFollow:
                 message = await self._caught_up(operator_id, conversation_id, position)
                 position = message.position
                 yield message
+
+    async def _until_something_to_read(self, woken: asyncio.Event, last: ConversationFollowMessage) -> None:
+        """Wait for this conversation to move — or, while its sandbox is coming up, for a poll.
+
+        A wake means a row was written. Nothing writes one when Kubernetes moves a pod, so the one
+        part of what a follower shows that lives in another system is the one part it has to go and
+        ask about.
+        """
+        if _still_coming_up(last):
+            with contextlib.suppress(TimeoutError):
+                async with asyncio.timeout(self._sandbox_poll.total_seconds()):
+                    await woken.wait()
+            return
+        await woken.wait()
 
     async def _caught_up(self, operator_id: UUID, conversation_id: UUID, position: int) -> ConversationFollowMessage:
         """What this follower is owed from *position* — an update, or the conversation whole.
@@ -136,13 +202,15 @@ class ConversationFollow:
         have carried most of a snapshot anyway.
         """
         try:
-            return await self._store.read_operator_conversation_changes(
+            update = await self._store.read_operator_conversation_changes(
                 operator_id, conversation_id, after=position, limit=UPDATE_ROW_LIMIT
             )
         except PositionUnusableError:
             return await self._snapshot(
                 operator_id, conversation_id, await self._store.conversation_position(conversation_id)
             )
+        sandbox = await self._reader.provisioning_of(update.session_id, update.status)
+        return update.model_copy(update={"provisioning": sandbox})
 
     async def _snapshot(self, operator_id: UUID, conversation_id: UUID, position: int) -> ConversationSnapshot:
         """The conversation whole, at a position its caller read **before** these rows.
@@ -151,7 +219,7 @@ class ConversationFollow:
         reads is carried by the follower's next update rather than by neither.
         """
         return ConversationSnapshot(
-            position=position, conversation=await self._store.get_operator_conversation(operator_id, conversation_id)
+            position=position, conversation=await self._reader.conversation(operator_id, conversation_id)
         )
 
     @contextlib.contextmanager
@@ -210,8 +278,14 @@ class ConversationFollow:
         return cached
 
 
-def _follow(websocket: WebSocket) -> ConversationFollow:
-    return cast(ConversationFollow, websocket.app.state.conversation_follow)
+def _still_coming_up(message: ConversationFollowMessage) -> bool:
+    """Whether the session this message describes is still waiting on its sandbox."""
+    status = message.conversation.session.status if isinstance(message, ConversationSnapshot) else message.status
+    return status == SessionStatus.PROVISIONING
+
+
+def _follow(websocket: WebSocket) -> ConversationFollow | None:
+    return cast(ConversationFollow | None, websocket.app.state.conversation_follow)
 
 
 @router.websocket("/api/conversations/{conversation_id}/follow")
@@ -234,7 +308,13 @@ async def follow_conversation(
     if not operator_auth.exact_operator_origin(websocket):
         await websocket.close(code=1008, reason="invalid websocket origin")
         return
-    messages = _follow(websocket).follow(actor.operator_id, conversation_id, after=after)
+    following = _follow(websocket)
+    if following is None:
+        # The same answer `GET /api/conversations/{id}` gives on such a replica, in this transport's
+        # vocabulary: 1013 is "try again later", which is what a client reconnecting should do.
+        await websocket.close(code=1013, reason="the session runtime is not configured")
+        return
+    messages = following.follow(actor.operator_id, conversation_id, after=after)
     await websocket.accept()
     expiry = asyncio.create_task(_close_when_expired(websocket))
     try:

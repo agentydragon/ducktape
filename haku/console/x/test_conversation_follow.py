@@ -15,12 +15,15 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ChatMessageStatus, FrameDirection, SessionStatus, TurnOutcome
 from haku.console.x.claude_code.frames import PROMPT_FRAME_KIND
+from haku.console.x.conftest import attach_channel
 from haku.console.x.conversation_events import FrameRange, MessageCompleted, MessageKey
 from haku.console.x.conversation_follow import ConversationFollow
 from haku.console.x.session_notifications import SessionNotifications
+from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import SessionStore, SpaSession
 from haku.console.x.session_views import (
     ConversationFollowMessage,
@@ -28,17 +31,22 @@ from haku.console.x.session_views import (
     ConversationUpdate,
     ConversationView,
 )
+from haku.console.x.testing.recording_claims import RecordingClaims
 
 # Long enough that several writes land inside one window on a loaded machine, short enough that
 # waiting one out does not try anyone's patience.
 WINDOW = timedelta(milliseconds=300)
+# The same for the sandbox re-read, which has no wake to arrive on.
+SANDBOX_POLL = timedelta(milliseconds=300)
 # How long a message is waited for before its absence is called deliberate.
 PATIENCE = WINDOW * 8
 
 
 @pytest.fixture
-async def following(chat_store: SessionStore, notifications: SessionNotifications) -> AsyncIterator[ConversationFollow]:
-    follow = ConversationFollow(chat_store, notifications, window=WINDOW)
+async def following(
+    chat_store: SessionStore, chat_service: SessionService, notifications: SessionNotifications
+) -> AsyncIterator[ConversationFollow]:
+    follow = ConversationFollow(chat_store, chat_service, notifications, window=WINDOW, sandbox_poll=SANDBOX_POLL)
     async with follow.run():
         yield follow
 
@@ -211,7 +219,7 @@ async def test_a_replacement_sessions_rows_reach_a_follower_that_never_named_it(
     """What addressing the thread rather than the runner buys. A session lives only as long as its
     sandbox, so a follower that had to name one would be reading a dead log after every replacement.
     """
-    _, conversation_id = await _started(chat_store, operator_id)
+    first, conversation_id = await _started(chat_store, operator_id)
     messages = following.follow(operator_id, conversation_id)
     assert isinstance(await _next(messages), ConversationSnapshot)
 
@@ -223,6 +231,9 @@ async def test_a_replacement_sessions_rows_reach_a_follower_that_never_named_it(
     assert isinstance(update, ConversationUpdate)
     assert update.session_id == replacement.session_id
     assert [message.content for message in update.messages] == ["carry on", "carrying on"]
+    # And the session it replaced is now one of the thread's earlier ones, which a follower is told
+    # rather than left to infer from a `session_id` it does not recognise.
+    assert [earlier.session_id for earlier in update.earlier_sessions] == [first]
     await messages.aclose()
 
 
@@ -268,6 +279,70 @@ async def test_a_conversation_another_operator_owns_cannot_be_followed(
 
     with pytest.raises(KeyError):
         await _next(following.follow(uuid4(), conversation_id))
+
+
+async def test_an_update_carries_the_channels_holding_the_conversation(
+    following: ConversationFollow,
+    chat_store: SessionStore,
+    operator_id: UUID,
+    migrated_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """A tab watching a thread a room later joins would otherwise show an attachment list from
+    whenever it connected — a UI disagreeing with the database until someone reloads it."""
+    session_id, conversation_id = await _started(chat_store, operator_id)
+    messages = following.follow(operator_id, conversation_id)
+    opened = await _next(messages)
+    assert isinstance(opened, ConversationSnapshot)
+    assert opened.conversation.attachments == []
+
+    await attach_channel(migrated_sessions, session_id, "!room:example.org")
+    await _exchange(chat_store, operator_id, session_id, "hello from the room", "hello back")
+    update = await _next(messages)
+
+    assert isinstance(update, ConversationUpdate)
+    assert [attachment.address for attachment in update.attachments] == ["!room:example.org"]
+    await messages.aclose()
+
+
+async def test_a_sandbox_still_coming_up_is_read_again_with_no_wake_to_carry_it(
+    following: ConversationFollow, chat_store: SessionStore, operator_id: UUID, recording_claims: RecordingClaims
+) -> None:
+    """Kubernetes writes no `session_events` row when a pod goes ready, so a follower waiting only
+    for wakes would show a provisioning panel frozen at whatever it opened on — during exactly the
+    phase that panel exists for."""
+    view, _ = await chat_store.create(operator_id, SpaSession())
+    conversation_id = await chat_store.conversation_of(view.session_id)
+    messages = following.follow(operator_id, conversation_id)
+
+    opened = await _next(messages)
+    assert isinstance(opened, ConversationSnapshot)
+    assert opened.conversation.session.status == SessionStatus.PROVISIONING
+    assert opened.conversation.session.provisioning is not None
+
+    # Nothing is written between these two, and the second still arrives.
+    polled = await _next(messages)
+    assert isinstance(polled, ConversationUpdate)
+    assert polled.provisioning is not None
+    assert recording_claims.inspected, "the cluster is what a provisioning view is read from"
+    await messages.aclose()
+
+
+async def test_a_session_past_provisioning_is_not_polled(
+    following: ConversationFollow, chat_store: SessionStore, operator_id: UUID, recording_claims: RecordingClaims
+) -> None:
+    """The poll is for the one field whose truth lives outside the log, and stops being paid for
+    the moment that field is `None`: a live transcript must not put a cluster read on its hot path.
+    """
+    _, conversation_id = await _started(chat_store, operator_id)
+    messages = following.follow(operator_id, conversation_id)
+    opened = await _next(messages)
+    assert isinstance(opened, ConversationSnapshot)
+    assert opened.conversation.session.provisioning is None
+
+    await _nothing_more(messages)
+
+    assert recording_claims.inspected == []
+    await messages.aclose()
 
 
 if __name__ == "__main__":

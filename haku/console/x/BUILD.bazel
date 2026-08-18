@@ -193,9 +193,11 @@ py_library(
     name = "conversation_follow",
     srcs = ["conversation_follow.py"],
     deps = [
+        ":sandbox_claims",
         ":session_notifications",
         ":session_store",
         ":session_views",
+        "//haku/console:chat_models",
         "//haku/console:console_events",
         "//haku/console:operator_auth",
         "@pypi//fastapi",
@@ -256,15 +258,18 @@ py_test(
         ":conversation_events",
         ":conversation_follow",
         ":session_notifications",
+        ":session_runtime",
         ":session_store",
         ":session_views",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console/x/claude_code:frames",
+        "//haku/console/x/testing:recording_claims",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 

@@ -51,7 +51,6 @@ from haku.console.x.session_views import (
     MAX_FRAME_PAGE,
     ConversationCursor,
     ConversationPage,
-    ConversationSessionView,
     ConversationView,
     SessionFramePage,
     SessionMessageView,
@@ -238,9 +237,8 @@ class SessionService:
 
     async def conversation(self, operator_id: UUID, conversation_id: UUID) -> ConversationView:
         view = await self._store.get_operator_conversation(operator_id, conversation_id)
-        return view.model_copy(
-            update={"session": view.session.model_copy(update={"provisioning": await self._provisioning(view.session)})}
-        )
+        sandbox = await self.provisioning_of(view.session.session_id, view.session.status)
+        return view.model_copy(update={"session": view.session.model_copy(update={"provisioning": sandbox})})
 
     async def sandbox_provisioning(self, operator_id: UUID, session_id: UUID) -> SessionProvisioningView:
         """How this one session's sandbox came up — asked of a session in any state.
@@ -261,17 +259,22 @@ class SessionService:
             sandbox=await self._observed(session_id),
         )
 
-    async def _provisioning(self, session: ConversationSessionView) -> ClaudeSandboxProvisioningView | None:
+    async def provisioning_of(self, session_id: UUID, status: SessionStatus) -> ClaudeSandboxProvisioningView | None:
         """What Kubernetes says about a sandbox still coming up, for a session still waiting on one.
 
         Only while it is what the operator is waiting on, unlike `sandbox_provisioning`: this read
-        is nested in the whole-conversation read, which a streaming turn refetches twice a second,
-        so asking for a session already past provisioning would put a cluster read on the
-        transcript's hot path.
+        goes out with every whole-conversation read and with every update a follower is sent, so
+        asking for a session already past provisioning would put a cluster read on the transcript's
+        hot path.
+
+        **Not a fact about the conversation**, which is why it is read here and not in the store: it
+        is an observation of another system, on that system's clock. Nothing in `session_events`
+        moves when a pod goes ready, so whoever shows this has to ask again rather than wait to be
+        told (`conversation_follow.SANDBOX_POLL`).
         """
-        if session.status != SessionStatus.PROVISIONING:
+        if status != SessionStatus.PROVISIONING:
             return None
-        return await self._observed(session.session_id)
+        return await self._observed(session_id)
 
     async def _observed(self, session_id: UUID) -> ClaudeSandboxProvisioningView:
         """The cluster's account of one session's sandbox — never raising, never hammered.
