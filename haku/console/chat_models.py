@@ -176,6 +176,18 @@ class ItemType(StrEnum):
     TOOL_CALL = "tool_call"
 
 
+class ToolOutcome(StrEnum):
+    """How a tool call went, in the harness vocabulary rather than any one tool's.
+
+    `UNKNOWN` is a real outcome and not a missing one: a call whose answer the backend reported
+    without saying whether it succeeded, which every harness protocol permits.
+    """
+
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
+
+
 class ItemStatus(StrEnum):
     """An item's lifecycle, and nothing else.
 
@@ -219,10 +231,6 @@ class ConversationEventKind(StrEnum):
     ITEM_STARTED = "item_started"
     ITEM_SEGMENT = "item_segment"
     ITEM_COMPLETED = "item_completed"
-
-
-# The two kinds that name a call rather than a message, and so carry `session_events.call_id`.
-TOOL_CALL_EVENT_KINDS = frozenset({ConversationEventKind.TOOL_CALL_STARTED, ConversationEventKind.TOOL_CALL_COMPLETED})
 
 
 class AuthoredEventKind(StrEnum):
