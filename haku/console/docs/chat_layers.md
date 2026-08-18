@@ -74,10 +74,10 @@ that re-derived everything would silently delete every fact no frame carries.
 
 ## Placing something new
 
-- **A table** belongs to the layer whose failure it survives. State that must outlive a runner is
-  not the session's; state only one messaging service can interpret — retry budgets, transport
-  ids, an addressable copy's revision — is that channel's own and lives below the channel boundary,
-  named after the channel. What is left is the conversation's.
+- **A table** goes to the layer that outlives what it holds. State only one messaging service can
+  interpret — retry budgets, transport ids, an addressable copy's revision — is that channel's own,
+  lives below the channel boundary and is named after the channel. State that must survive a runner
+  being replaced is not the session's. What is left is the conversation's.
 - **A port** is defined beside its caller and names no layer below it. The conversation offers one
   port outward — subscribe from a position, and offer input — and every channel is a consumer of
   it; a second channel is implementing that port and a cursor, and nothing else in the console
@@ -87,7 +87,7 @@ that re-derived everything would silently delete every fact no frame carries.
   a running turn reads is a session detail and needs no row; a kind a room or a tab renders is a
   conversation fact, however session-shaped it sounds.
 
-The four questions that check a change against all of this:
+Four questions check a change against all of this:
 
 - Does anything outside the channel layer name a channel — an import, a type, a parameter, a
   column, an address?
