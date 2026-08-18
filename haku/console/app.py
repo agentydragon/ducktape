@@ -302,6 +302,7 @@ def create_app(
             db_engine,
             matrix_sync.MatrixSyncStore(db_sessions),
             matrix_conversation_store,
+            operator_identity_store,
             matrix_conversation.MatrixTurns(
                 matrix_config, matrix_conversation_store, session_store, operator_identity_store, matrix_ledger
             ),

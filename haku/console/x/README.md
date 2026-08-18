@@ -498,8 +498,8 @@ with whatever the code does:
 - A fake `_listen` passed against a fake engine while the real one raised on **every** call
   in production, because it was written against psycopg3's API on an asyncpg engine.
 - A fake conversation store let a test bind a room to a session id that had never existed.
-  Postgres refuses: `matrix_conversation.session_id` is a foreign key, so that state is
-  unreachable and the test was describing a scenario the schema forbids.
+  Postgres refuses — the binding is a foreign key — so the test was describing a scenario the
+  schema forbids.
 
 The one deliberate exception is `FailingEngine`, which exists to make a connection fail —
 there is no way to ask a healthy Postgres for that.
@@ -700,9 +700,9 @@ dependency:
 - `MatrixConfig` and `Settings.matrix` in <../config.py>. Absent config, or a config whose
   reflected bot password has not landed yet, means the surface does not start and the console
   does.
-- `Session`, `SessionMessage`, `MatrixAccessToken`, `MatrixSyncWatermark`, and `MatrixConversation` in
-  <../database_schema.py>, plus their Alembic revisions — migrations are one lineage for the
-  whole database.
+- `Session`, `SessionMessage`, `Conversation`, `ChatAttachment`, `MatrixAccessToken` and
+  `MatrixSyncWatermark` in <../database_schema.py>, plus their Alembic revisions — migrations are
+  one lineage for the whole database.
 - The `ChatFrontend` port is defined next to the service that calls it (`session_runtime.py`);
   the three methods the status driver drives are `StatusFrontend`, declared beside that driver in
   `room_status.py`, and a frontend satisfies both by implementing one port. The composition in

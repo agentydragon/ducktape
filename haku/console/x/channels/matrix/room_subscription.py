@@ -143,8 +143,8 @@ class RoomNotices:
         if (room_id := await self._room()) is None:
             return False
         if (conversation_id := await self._conversations.conversation_of_room(room_id)) is None:
-            # A room bound by an invite the supervisor has not yet given a session: there is no
-            # conversation behind it, so there is nothing recorded to be behind on.
+            # A room this console holds no conversation for — never bound, or detached since — so
+            # there is nothing recorded to be behind on.
             return False
         subscription = Subscription(self._stream, RoomCursor(self._sessions, room_id), conversation_id)
         read = await subscription.read(limit=NOTICE_BATCH)

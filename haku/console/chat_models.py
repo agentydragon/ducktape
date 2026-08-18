@@ -26,10 +26,8 @@ class SessionStatus(StrEnum):
 class ChatSurface(StrEnum):
     """Which front end a session was created for.
 
-    Not cosmetic: a past conversation is only findable if the row says what it was, and until
-    this existed the room binding lived in `matrix_conversation`, which holds exactly one
-    `session_id` — so a replaced Matrix session became indistinguishable from an SPA one the
-    moment the supervisor moved on.
+    Not cosmetic: a past conversation is only findable if the row says what it was, so a Matrix
+    session that has been replaced stays distinguishable from an SPA one.
     """
 
     SPA = "spa"

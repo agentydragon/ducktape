@@ -169,6 +169,7 @@ async def _serve() -> None:
         engine,
         MatrixSyncStore(sessions),
         conversations,
+        identities,
         MatrixTurns(matrix, conversations, store, identities, ledger),
         RoomTranscript(sessions),
         RoomOutbox(sessions),

@@ -44,6 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from haku.console.chat_models import ChatMessageRole, PromptRejection
 from haku.console.config import MatrixConfig
 from haku.console.database_schema import MatrixAccessToken, MatrixSyncWatermark, SessionEvent
+from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.channels.matrix.client import (
     EventTag,
     InboundMessage,
@@ -169,6 +170,7 @@ class MatrixSyncService:
         engine: AsyncEngine,
         store: MatrixSyncStore,
         conversations: MatrixConversationStore,
+        identities: PostgresOperatorIdentityStore,
         turns: MatrixTurns,
         transcript: RoomTranscript,
         outbox: RoomOutbox,
@@ -182,6 +184,7 @@ class MatrixSyncService:
         self._engine = engine
         self._store = store
         self._conversations = conversations
+        self._identities = identities
         self._turns = turns
         self._transcript = transcript
         self._deliveries = deliveries
@@ -209,6 +212,16 @@ class MatrixSyncService:
         logger.info("Matrix: logged in as %s", self._config.user_id)
         return token
 
+    async def _operator_id(self) -> UUID:
+        """The canonical Operator behind the configured MXID.
+
+        Resolved per call rather than cached at startup, for the reason
+        `MatrixSessionSupervisor._operator_id` gives: the console comes up with the Matrix surface
+        configured even where identity resolution is not yet possible, and a cached failure would
+        never recover.
+        """
+        return await self._identities.resolve_configured_external_user_key(self._config.operator_subject)
+
     async def _handle_invite(self, token: str, invite: Invite) -> None:
         """Join invites from the operator, and only into the one live room."""
         if invite.inviter != self._config.operator_user_id:
@@ -216,12 +229,16 @@ class MatrixSyncService:
                 "Matrix: leaving invite to %s from %s pending — not the operator", invite.room_id, invite.inviter
             )
             return
-        if (live_room := await self._conversations.claim_room(self._config.user_id, invite.room_id)) != invite.room_id:
+        # Binding opens the room's conversation, so this needs the Operator it belongs to. An
+        # identity that cannot be resolved yet raises, leaving the invite unjoined; the homeserver
+        # keeps reporting it, so the next pass tries again.
+        bound = await self._conversations.bind_room(invite.room_id, await self._operator_id())
+        if bound.room_id != invite.room_id:
             # Joining would put Haku in a room nothing services, which reads as listening. Say
             # so where we can actually speak: the room already bound.
-            logger.warning("Matrix: refusing invite to %s — already serving %s", invite.room_id, live_room)
+            logger.warning("Matrix: refusing invite to %s — already serving %s", invite.room_id, bound.room_id)
             self._queue_notice(
-                live_room, f"invited to another room; still serving this one ({live_room})", RoomEventKind.ROOM
+                bound.room_id, f"invited to another room; still serving this one ({bound.room_id})", RoomEventKind.ROOM
             )
             return
         await self._client.join(token, invite.room_id)
@@ -242,8 +259,8 @@ class MatrixSyncService:
 
     async def bound_room(self) -> str | None:
         """The room this console services, or None before the operator has invited it into one."""
-        conversation = await self._conversations.load(self._config.user_id)
-        return None if conversation is None else conversation.room_id
+        binding = await self._conversations.bound_room()
+        return None if binding is None else binding.room_id
 
     async def show_status(self, body: str, session_id: UUID | None = None) -> None:
         """Make the room's single status line say *body*, creating or editing it.
@@ -267,10 +284,9 @@ class MatrixSyncService:
         """
         if body == self._status_body:
             return
-        conversation = await self._conversations.load(self._config.user_id)
-        if conversation is None:
+        if (binding := await self._conversations.bound_room()) is None:
             return
-        room_id = conversation.room_id
+        room_id = binding.room_id
         if (attachment_id := await self._conversations.attachment(room_id)) is None:
             logger.warning("Matrix: %s has no live attachment, leaving the status line alone", room_id)
             return
@@ -295,11 +311,10 @@ class MatrixSyncService:
         because the room could not be told it was thinking would not be. The homeserver expires the
         notice on its own, so a lost `False` is a stale indicator for seconds, not forever.
         """
-        conversation = await self._conversations.load(self._config.user_id)
-        if conversation is None:
+        if (binding := await self._conversations.bound_room()) is None:
             return
         try:
-            await self._client.set_typing(await self._token(), conversation.room_id, active=active)
+            await self._client.set_typing(await self._token(), binding.room_id, active=active)
         except Exception:
             logger.warning("Matrix: typing notification failed (active=%s)", active, exc_info=True)
 
@@ -315,10 +330,9 @@ class MatrixSyncService:
         """
         self._status_body = None
         self.pacer.drop_status()
-        conversation = await self._conversations.load(self._config.user_id)
-        if conversation is None:
+        if (binding := await self._conversations.bound_room()) is None:
             return
-        room_id = conversation.room_id
+        room_id = binding.room_id
         if (attachment_id := await self._conversations.attachment(room_id)) is None:
             return
 
@@ -348,11 +362,7 @@ class MatrixSyncService:
         Empty until something has been recorded for this room: a first-ever session and a session
         whose room only just bound read the same, and both are correct.
         """
-        conversation = await self._conversations.load(self._config.user_id)
-        if conversation is None:
-            return ()
-        conversation_id = await self._conversations.conversation_of_room(conversation.room_id)
-        if conversation_id is None:
+        if (binding := await self._conversations.bound_room()) is None:
             return ()
         return tuple(
             HistoryMessage(
@@ -362,7 +372,9 @@ class MatrixSyncService:
                 body=said.body,
                 sent_at=said.sent_at,
             )
-            for said in await self._transcript.recent(conversation_id, before_session=before_session, limit=limit)
+            for said in await self._transcript.recent(
+                binding.conversation_id, before_session=before_session, limit=limit
+            )
         )
 
     async def announce(self, body: str, kind: RoomEventKind = RoomEventKind.LIFECYCLE) -> None:
@@ -372,11 +384,10 @@ class MatrixSyncService:
         Matrix credential, so it speaks through the loop that has one. A no-op before any room is
         bound — there is genuinely nowhere to say it.
         """
-        conversation = await self._conversations.load(self._config.user_id)
-        if conversation is None:
+        if (binding := await self._conversations.bound_room()) is None:
             logger.info("Matrix: no room bound yet, dropping notice: %s", body)
             return
-        self._queue_notice(conversation.room_id, body, kind)
+        self._queue_notice(binding.room_id, body, kind)
 
     def _queue_notice(self, room_id: str, body: str, kind: RoomEventKind) -> None:
         tag = EventTag(kind=kind)
@@ -484,12 +495,12 @@ class MatrixSyncService:
         granting access. Without this, a room joined before the binding existed goes quiet forever
         with no way for the operator to revive it from a Matrix client.
         """
-        if (conversation := await self._conversations.load(self._config.user_id)) is not None:
-            return conversation.room_id
+        if (binding := await self._conversations.bound_room()) is not None:
+            return binding.room_id
         adopted = next((m.room_id for m in messages if m.sender == self._config.operator_user_id), None)
         if adopted is None:
             return None
-        room = await self._conversations.claim_room(self._config.user_id, adopted)
+        room = (await self._conversations.bind_room(adopted, await self._operator_id())).room_id
         logger.info("Matrix: adopted %s from traffic — no room was bound", room)
         self._queue_notice(room, "adopted this room — Haku had no room bound", RoomEventKind.ROOM)
         return room

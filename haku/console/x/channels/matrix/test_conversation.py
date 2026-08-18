@@ -16,9 +16,10 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import AuthoredEventKind, ChatMessageRole, PromptRejection, SessionStatus, TurnOutcome
-from haku.console.database_schema import ChatAttachment, Session
+from haku.console.database_schema import ChatAttachment, Conversation, Session
 from haku.console.x.channels.matrix.client import InboundMessage, RoomEventKind, UnmappableEvent
 from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
 from haku.console.x.channels.matrix.conversation import (
@@ -40,7 +41,7 @@ from haku.console.x.system_prompt import HistoryMessage, SystemPromptTemplate
 
 
 async def session_behind_the_room(conversations: MatrixConversationStore) -> UUID | None:
-    return await conversations.session_serving(MATRIX_USER)
+    return await conversations.session_serving()
 
 
 @pytest.fixture
@@ -84,9 +85,9 @@ async def test_does_nothing_before_a_room_is_bound(supervisor, recording_claims,
 
 
 async def test_provisions_a_session_for_a_freshly_bound_room(
-    supervisor, conversations, chat_store, recording_claims, announced
+    supervisor, conversations, operator_id, chat_store, recording_claims, announced
 ) -> None:
-    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
+    await conversations.bind_room(MATRIX_ROOM, operator_id)
 
     await supervisor.supervise_once()
 
@@ -96,8 +97,8 @@ async def test_provisions_a_session_for_a_freshly_bound_room(
     assert "provisioning a sandbox" in announced[0]
 
 
-async def test_leaves_a_live_session_alone(supervisor, conversations, recording_claims) -> None:
-    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
+async def test_leaves_a_live_session_alone(supervisor, conversations, operator_id, recording_claims) -> None:
+    await conversations.bind_room(MATRIX_ROOM, operator_id)
     await supervisor.supervise_once()
     [live] = recording_claims.created
 
@@ -106,9 +107,11 @@ async def test_leaves_a_live_session_alone(supervisor, conversations, recording_
     assert recording_claims.created == [live], "a live session was replaced"
 
 
-async def test_replaces_a_failed_session(supervisor, conversations, chat_store, recording_claims, announced) -> None:
+async def test_replaces_a_failed_session(
+    supervisor, conversations, operator_id, chat_store, recording_claims, announced
+) -> None:
     """A dead session over Matrix is invisible — the room would just stop answering."""
-    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
+    await conversations.bind_room(MATRIX_ROOM, operator_id)
     await supervisor.supervise_once()
     [dead] = recording_claims.created
     await chat_store.fail(dead, "the sandbox went away")
@@ -125,11 +128,11 @@ async def test_replaces_a_failed_session(supervisor, conversations, chat_store, 
 
 
 async def test_which_session_serves_the_room_is_read_off_the_thread(
-    supervisor, conversations, chat_store, recording_claims
+    supervisor, conversations, operator_id, chat_store, recording_claims
 ) -> None:
     """Nothing points the room at a session: the answer is the newest session of the conversation
     the room's attachment names, which is what makes replacement invisible to the channel."""
-    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
+    await conversations.bind_room(MATRIX_ROOM, operator_id)
     await supervisor.supervise_once()
     [first] = recording_claims.created
     await chat_store.fail(first, "the sandbox went away")
@@ -141,11 +144,11 @@ async def test_which_session_serves_the_room_is_read_off_the_thread(
 
 
 async def test_a_replacement_session_joins_the_room_s_conversation_and_the_attachment_stays_put(
-    supervisor, conversations, chat_store, recording_claims, migrated_sessions
+    supervisor, conversations, operator_id, chat_store, recording_claims, migrated_sessions
 ) -> None:
     """Session replacement is the supervisor's normal job, and the room's attachment is not touched
     by it: the successor joins the thread the attachment names."""
-    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
+    await conversations.bind_room(MATRIX_ROOM, operator_id)
     await supervisor.supervise_once()
     [first] = recording_claims.created
     await chat_store.fail(first, "the sandbox went away")
@@ -163,14 +166,14 @@ async def test_a_replacement_session_joins_the_room_s_conversation_and_the_attac
 
 
 async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(
-    supervisor, conversations, chat_store, recording_claims, migrated_sessions, announced
+    supervisor, conversations, operator_id, chat_store, recording_claims, migrated_sessions, announced
 ) -> None:
     """A replica that went away without recording anything leaves a live status nothing is working
     on, and supervision has to reclaim it rather than believe it — but only once the lease has been
     adoptable for a whole `ADOPTION_GRACE` and no runner took it, which is what makes a console
     roll survivable rather than fatal.
     """
-    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
+    await conversations.bind_room(MATRIX_ROOM, operator_id)
     await supervisor.supervise_once()
     [orphan] = recording_claims.created
     async with migrated_sessions.begin() as db:
@@ -186,14 +189,14 @@ async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(
 
 
 async def test_replaces_a_session_whose_row_is_gone(
-    supervisor, conversations, recording_claims, migrated_sessions
+    supervisor, conversations, operator_id, recording_claims, migrated_sessions
 ) -> None:
     """A deleted session leaves the room's thread unserved, and the next pass re-provisions.
 
     What the schema allows is the session row being deleted underneath the conversation, which
     leaves it with no session rather than a dangling reference.
     """
-    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
+    await conversations.bind_room(MATRIX_ROOM, operator_id)
     await supervisor.supervise_once()
     [vanished] = recording_claims.created
 
@@ -208,10 +211,10 @@ async def test_replaces_a_session_whose_row_is_gone(
 
 
 async def test_does_not_repeat_an_unchanged_status(
-    supervisor, conversations, chat_store, recording_claims, announced
+    supervisor, conversations, operator_id, chat_store, recording_claims, announced
 ) -> None:
     """Every transition is reported, but a poll that changes nothing must not spam the room."""
-    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
+    await conversations.bind_room(MATRIX_ROOM, operator_id)
     await supervisor.supervise_once()
     [session_id] = recording_claims.created
     # Provisioning already announced itself; the runner connecting is the next transition.
@@ -230,7 +233,7 @@ async def test_does_not_repeat_an_unchanged_status(
 @pytest.fixture
 async def bound(conversations: MatrixConversationStore, chat_store: SessionStore, operator_id: UUID) -> UUID:
     """A bound room, and a real session row for the prompt to be built for."""
-    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
+    await conversations.bind_room(MATRIX_ROOM, operator_id)
     view, _ = await chat_store.create(operator_id, SpaSession())
     return view.session_id
 
@@ -370,8 +373,24 @@ def transcript(migrated_sessions) -> RoomTranscript:
 
 @pytest.fixture
 async def thread(conversations: MatrixConversationStore, operator_id: UUID) -> UUID:
-    """The conversation the room holds a copy of, opened the way the supervisor opens it."""
-    return await conversations.conversation_for_room(MATRIX_ROOM, operator_id)
+    """The conversation the room holds a copy of, opened the way an invite opens it."""
+    return (await conversations.bind_room(MATRIX_ROOM, operator_id)).conversation_id
+
+
+async def another_thread(sessions: async_sessionmaker[AsyncSession], operator_id: UUID) -> UUID:
+    """A second conversation, inserted directly rather than bound.
+
+    `bind_room` refuses a second room by design, so a test about two threads cannot ask for one
+    through it — which is the point being made below.
+    """
+    conversation_id = uuid4()
+    async with sessions.begin() as db:
+        db.add(
+            Conversation(
+                conversation_id=conversation_id, operator_id=operator_id, created_at=datetime.datetime.now(datetime.UTC)
+            )
+        )
+    return conversation_id
 
 
 async def serving_session(chat_store: SessionStore, operator_id: UUID, conversation_id: UUID) -> UUID:
@@ -505,17 +524,14 @@ async def test_what_the_room_was_never_told_is_not_in_the_history(
 
 async def test_another_thread_is_not_this_thread(
     transcript: RoomTranscript,
-    conversations: MatrixConversationStore,
+    migrated_sessions: async_sessionmaker[AsyncSession],
     chat_store: SessionStore,
     operator_id: UUID,
     thread: UUID,
 ) -> None:
     """Threads are read apart even though the console services one room at a time, which is what a
     second attached room will need on the day one bot holds several."""
-    other_room = "!other:allegedly.works"
-    elsewhere = await serving_session(
-        chat_store, operator_id, await conversations.conversation_for_room(other_room, operator_id)
-    )
+    elsewhere = await serving_session(chat_store, operator_id, await another_thread(migrated_sessions, operator_id))
 
     await exchange(chat_store, operator_id, elsewhere, "[$a] hi", "hello")
 
@@ -542,12 +558,12 @@ def turns(
     return MatrixTurns(MATRIX_CONFIG, conversations, chat_store, migrated_identity_store, ledger)
 
 
-async def serving_room(conversations: MatrixConversationStore) -> None:
+async def serving_room(conversations: MatrixConversationStore, operator_id: UUID) -> None:
     """Bind the room, the way an invite does before the supervisor provisions anything.
 
     Which session then serves it is read off the thread, so binding is all there is to arrange.
     """
-    assert await conversations.claim_room(MATRIX_USER, MATRIX_ROOM) == MATRIX_ROOM
+    assert (await conversations.bind_room(MATRIX_ROOM, operator_id)).room_id == MATRIX_ROOM
 
 
 def operator_message(body: str, *, event_id: str, at: int) -> InboundMessage:
@@ -570,7 +586,7 @@ async def test_a_batch_a_ready_session_takes_becomes_its_prompt(
 ) -> None:
     """The accepted case, and what "one batch, one prompt" means: two events, one transcript row."""
     session_id = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations)
+    await serving_room(conversations, operator_id)
 
     admitted = await turns.offer(
         [operator_message("hi", event_id="$1", at=1), operator_message("and this", event_id="$2", at=2)]
@@ -593,7 +609,7 @@ async def test_a_batch_offered_mid_turn_is_rejected_with_the_reason_and_the_text
     row it hands back is the only copy of what was said — the homeserver will not offer it again
     once the caller acknowledges the batch."""
     session_id = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations)
+    await serving_room(conversations, operator_id)
     await chat_store.enqueue_prompt(operator_id, session_id, "first")
     assert await chat_store.next_prompt(session_id) is not None
 
@@ -612,7 +628,7 @@ async def test_a_batch_offered_before_a_session_exists_is_rejected_with_nothing_
 ) -> None:
     """A room bound before the supervisor has provisioned anything. There is no session to key an
     event to, so the operator's only account of it is the notice."""
-    assert await conversations.claim_room(MATRIX_USER, MATRIX_ROOM) == MATRIX_ROOM
+    assert (await conversations.bind_room(MATRIX_ROOM, operator_id)).room_id == MATRIX_ROOM
 
     admitted = await turns.offer([operator_message("hi", event_id="$1", at=1)])
 
@@ -634,7 +650,7 @@ async def test_a_batch_offered_to_a_session_that_is_gone_is_rejected_rather_than
     it is the one that has gone.
     """
     session_id = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations)
+    await serving_room(conversations, operator_id)
     async with migrated_sessions.begin() as db:
         await db.execute(delete(Session).where(Session.session_id == session_id))
 
@@ -657,7 +673,7 @@ async def test_an_accepted_batch_records_its_events_against_the_prompt_it_became
     homeserver re-offering it is the outcome we want.
     """
     await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations)
+    await serving_room(conversations, operator_id)
 
     await turns.offer([operator_message("hi", event_id="$1", at=1), operator_message("more", event_id="$2", at=2)])
 
@@ -673,7 +689,7 @@ async def test_a_rejected_batch_records_nothing_for_the_homeserver_to_be_deduped
     thread: UUID,
 ) -> None:
     session_id = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations)
+    await serving_room(conversations, operator_id)
     await chat_store.enqueue_prompt(operator_id, session_id, "first")
     assert await chat_store.next_prompt(session_id) is not None
 
@@ -697,7 +713,7 @@ async def test_an_unanswered_message_is_asked_again_and_its_events_follow_the_ne
     same message outstanding and asking a third time.
     """
     doomed = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations)
+    await serving_room(conversations, operator_id)
     await turns.offer([operator_message("did you see this", event_id="$1", at=1)])
     await chat_store.closed(doomed)
     replacement = await serving_session(chat_store, operator_id, thread)
@@ -724,7 +740,7 @@ async def test_an_unanswered_message_the_live_session_will_not_take_is_left_for_
     send this message again and has nothing to do about it — so the only correct answer is to ask
     once there is somewhere to ask."""
     doomed = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations)
+    await serving_room(conversations, operator_id)
     await turns.offer([operator_message("did you see this", event_id="$1", at=1)])
     await chat_store.closed(doomed)
 
@@ -745,7 +761,7 @@ async def test_an_unreadable_event_is_a_row_per_event_on_the_live_session(
     """What the notice says is a count and a set of types; what is kept is the events themselves
     (<../../../debug/channel_write_audit.md> row 12)."""
     session_id = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations)
+    await serving_room(conversations, operator_id)
 
     rows = await turns.unreadable([_unmappable("m.image"), _unmappable("m.audio")])
 
@@ -756,9 +772,9 @@ async def test_an_unreadable_event_is_a_row_per_event_on_the_live_session(
 
 
 async def test_an_unreadable_event_with_no_session_behind_the_room_records_nothing(
-    turns: MatrixTurns, conversations: MatrixConversationStore
+    turns: MatrixTurns, conversations: MatrixConversationStore, operator_id: UUID
 ) -> None:
-    assert await conversations.claim_room(MATRIX_USER, MATRIX_ROOM) == MATRIX_ROOM
+    assert (await conversations.bind_room(MATRIX_ROOM, operator_id)).room_id == MATRIX_ROOM
 
     assert await turns.unreadable([_unmappable("m.image")]) == ()
 

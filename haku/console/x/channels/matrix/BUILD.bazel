@@ -98,6 +98,7 @@ py_library(
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:database_schema",
+        "//haku/console:operator_identity_store",
         "//haku/console/x:delivery_log",
         "//haku/console/x:system_prompt",
         "@pypi//sqlalchemy",

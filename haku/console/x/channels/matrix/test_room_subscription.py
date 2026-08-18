@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import TurnOutcome
 from haku.console.database_schema import MatrixRoomCursor
-from haku.console.x.channels.matrix.conftest import MATRIX_ROOM, MATRIX_USER
+from haku.console.x.channels.matrix.conftest import MATRIX_ROOM
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore
 from haku.console.x.channels.matrix.room_subscription import ABORTED_BY_OPERATOR, RoomCursor, RoomNotices
 from haku.console.x.session_store import MatrixSession, SessionStore
@@ -62,8 +62,7 @@ def notices(
 @pytest.fixture
 async def served(chat_store: SessionStore, operator_id: UUID, conversations: MatrixConversationStore) -> UUID:
     """A ready session serving the bound room, on the conversation the room is attached to."""
-    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-    conversation_id = await conversations.conversation_for_room(MATRIX_ROOM, operator_id)
+    conversation_id = (await conversations.bind_room(MATRIX_ROOM, operator_id)).conversation_id
     view, token = await chat_store.create(operator_id, MatrixSession(), conversation_id=conversation_id)
     await chat_store.authenticate_bridge(view.session_id, token)
     return view.session_id
@@ -154,13 +153,11 @@ async def test_a_restarted_reader_resumes_from_the_position_it_kept(
 
 
 async def test_a_room_with_no_conversation_behind_it_is_not_behind_on_anything(
-    conversations, notices, room, migrated_sessions
+    notices, room, migrated_sessions
 ) -> None:
-    """A room bound by an invite the supervisor has not reached yet: nothing recorded, nothing
-    owed, and no position taken — the next pass, once it has a conversation, still starts at its
-    head rather than at zero."""
-    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-
+    """A room this console holds no conversation for: nothing recorded, nothing owed, and no
+    position taken — the next pass, once it has one, still starts at its head rather than at
+    zero."""
     assert await notices.reconcile_once() is False
     assert (room.said, await stored_position(migrated_sessions)) == ([], None)
 

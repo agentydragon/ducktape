@@ -19,7 +19,6 @@ from typing import Protocol
 from uuid import UUID, uuid4
 
 from sqlalchemy import and_, func, or_, select, text
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import (
@@ -31,14 +30,7 @@ from haku.console.chat_models import (
     SessionStatus,
 )
 from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
-from haku.console.database_schema import (
-    ChatAttachment,
-    Conversation,
-    MatrixConversation,
-    Session,
-    SessionEvent,
-    SessionMessage,
-)
+from haku.console.database_schema import ChatAttachment, Conversation, Session, SessionEvent, SessionMessage
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x import session_events
 from haku.console.x.channels.matrix.client import InboundMessage, RoomEventKind, UnmappableEvent
@@ -114,9 +106,9 @@ RE_AWAKENING_MESSAGES = 20
 async def live_attachment(db: AsyncSession, room_id: str) -> UUID | None:
     """This room's live attachment, which is what its deliveries hang off.
 
-    None where the room holds no conversation yet — bound by an invite before the supervisor has
-    given it a session, or detached — in which case there is nothing to record a send against and
-    the room notice is the only account of it.
+    None where the room holds no conversation — a room this console never bound, or one detached
+    since — in which case there is nothing to record a send against and the room notice is the only
+    account of it.
 
     Takes the caller's session so a channel can record what it sent in the transaction that records
     the send itself (`outbox.RoomOutbox.mark_sent`).
@@ -129,6 +121,34 @@ async def live_attachment(db: AsyncSession, room_id: str) -> UUID | None:
         )
     )
     return attachment_id
+
+
+@dataclass(frozen=True)
+class BoundRoom:
+    """The room this console services, and the conversation it holds a copy of."""
+
+    room_id: str
+    conversation_id: UUID
+
+
+async def _live_binding(db: AsyncSession) -> BoundRoom | None:
+    """The bound room, read off the attachment that is holding it.
+
+    Ordered so that the answer is the room bound first. One room at a time is `bind_room`'s
+    refusal rather than the schema's — it used to be a bot user's primary key, and
+    `chat_attachment` deliberately admits many live rows because one bot serving several rooms is
+    where this goes — so a second row that somehow appeared must not make the bound room flip
+    between reads.
+    """
+    row = (
+        await db.execute(
+            select(ChatAttachment.address, ChatAttachment.conversation_id)
+            .where(ChatAttachment.surface == ChatSurface.MATRIX, ChatAttachment.detached_at.is_(None))
+            .order_by(ChatAttachment.attached_at, ChatAttachment.attachment_id)
+            .limit(1)
+        )
+    ).first()
+    return None if row is None else BoundRoom(room_id=row.address, conversation_id=row.conversation_id)
 
 
 class MatrixConversationStore:
@@ -146,91 +166,26 @@ class MatrixConversationStore:
         async with self._sessions() as db:
             return await live_attachment(db, room_id)
 
-    async def load(self, user_id: str) -> MatrixConversation | None:
+    async def bound_room(self) -> BoundRoom | None:
+        """The room this console services, or None before the operator has invited it into one."""
         async with self._sessions() as db:
-            row: MatrixConversation | None = await db.scalar(
-                select(MatrixConversation).where(MatrixConversation.user_id == user_id)
-            )
-            return row
+            return await _live_binding(db)
 
-    async def claim_room(self, user_id: str, room_id: str) -> str:
-        """Bind `room_id` if no room is bound yet; return whichever room is live.
+    async def bind_room(self, room_id: str, operator_id: UUID) -> BoundRoom:
+        """Attach `room_id` if no room is attached yet; return whichever room is live.
 
-        A caller that gets back a different room than it asked for has been refused. The
-        insert-or-nothing is what makes that decision atomic — two replicas racing on the same
-        invite cannot each conclude they bound it.
+        A caller that gets back a different room than it asked for has been refused. Binding opens
+        the conversation the room holds a copy of, in the same transaction — so a bound room always
+        has one, and the attachment outlives every session that serves it: a replacement joins the
+        conversation the attachment already names instead of the attachment being re-pointed at it.
+
+        Read-then-insert rather than insert-or-nothing, serialized by the sync loop's election:
+        only its leader handles invites, so the read and the insert cannot interleave with another
+        replica's. `uq_chat_attachment_live_address` is the backstop if that ever stops holding.
         """
         async with self._sessions() as db, db.begin():
-            await db.execute(
-                insert(MatrixConversation)
-                .values(user_id=user_id, room_id=room_id, joined_at=datetime.datetime.now(datetime.UTC))
-                .on_conflict_do_nothing(index_elements=["user_id"])
-            )
-        row = await self.load(user_id)
-        if row is None:
-            raise RuntimeError(f"matrix conversation vanished immediately after claiming {room_id=}")
-        return row.room_id
-
-    async def session_serving(self, user_id: str) -> UUID | None:
-        """The session behind this bot's room, or None while nothing is serving it.
-
-        Read through the conversation the room's live attachment names rather than through a
-        pointer this table keeps: successive sessions of one thread share `conversation_id`, so the
-        newest of them is the answer and a replacement needs nothing re-pointed at it.
-        """
-        async with self._sessions() as db:
-            session_id: UUID | None = await db.scalar(
-                select(Session.session_id)
-                .join(ChatAttachment, ChatAttachment.conversation_id == Session.conversation_id)
-                .join(MatrixConversation, MatrixConversation.room_id == ChatAttachment.address)
-                .where(
-                    MatrixConversation.user_id == user_id,
-                    ChatAttachment.surface == ChatSurface.MATRIX,
-                    ChatAttachment.detached_at.is_(None),
-                )
-                .order_by(Session.created_at.desc(), Session.session_id.desc())
-                .limit(1)
-            )
-            return session_id
-
-    async def conversation_of_room(self, room_id: str) -> UUID | None:
-        """The conversation this room holds a copy of, or None where it holds none yet.
-
-        The read-only half of `conversation_for_room`: a subscriber must not open a thread as a
-        side effect of looking for one, and a room bound by an invite the supervisor has not
-        reached yet genuinely has nothing to read.
-        """
-        async with self._sessions() as db:
-            conversation_id: UUID | None = await db.scalar(
-                select(ChatAttachment.conversation_id).where(
-                    ChatAttachment.surface == ChatSurface.MATRIX,
-                    ChatAttachment.address == room_id,
-                    ChatAttachment.detached_at.is_(None),
-                )
-            )
-            return conversation_id
-
-    async def conversation_for_room(self, room_id: str, operator_id: UUID) -> UUID:
-        """The conversation this room holds a copy of, opening one the first time it is asked.
-
-        The room's live `chat_attachment` row is the answer, and it outlives every session that
-        served the room — which is the whole point: a replacement session joins the conversation the
-        attachment already names instead of the attachment being re-pointed at the replacement.
-
-        Read-then-insert rather than insert-or-nothing because the only caller is the session
-        supervisor, which runs under its own advisory lock; a second writer would want
-        `uq_chat_attachment_live_address` as the arbiter instead.
-        """
-        async with self._sessions() as db, db.begin():
-            conversation_id: UUID | None = await db.scalar(
-                select(ChatAttachment.conversation_id).where(
-                    ChatAttachment.surface == ChatSurface.MATRIX,
-                    ChatAttachment.address == room_id,
-                    ChatAttachment.detached_at.is_(None),
-                )
-            )
-            if conversation_id is not None:
-                return conversation_id
+            if (live := await _live_binding(db)) is not None:
+                return live
             now = datetime.datetime.now(datetime.UTC)
             conversation_id = uuid4()
             db.add(Conversation(conversation_id=conversation_id, operator_id=operator_id, created_at=now))
@@ -247,6 +202,39 @@ class MatrixConversationStore:
                     address=room_id,
                     attached_at=now,
                     detached_at=None,
+                )
+            )
+            return BoundRoom(room_id=room_id, conversation_id=conversation_id)
+
+    async def session_serving(self) -> UUID | None:
+        """The session behind the bound room, or None while nothing is serving it.
+
+        Read through the conversation the room's live attachment names rather than through a
+        pointer: successive sessions of one thread share `conversation_id`, so the newest of them
+        is the answer and a replacement needs nothing re-pointed at it.
+        """
+        async with self._sessions() as db:
+            session_id: UUID | None = await db.scalar(
+                select(Session.session_id)
+                .join(ChatAttachment, ChatAttachment.conversation_id == Session.conversation_id)
+                .where(ChatAttachment.surface == ChatSurface.MATRIX, ChatAttachment.detached_at.is_(None))
+                .order_by(Session.created_at.desc(), Session.session_id.desc())
+                .limit(1)
+            )
+            return session_id
+
+    async def conversation_of_room(self, room_id: str) -> UUID | None:
+        """The conversation *room_id* holds a copy of, or None where it holds none.
+
+        Addressed by room rather than answered from the binding, because a subscriber is told which
+        room it is reading for and a room that is not the bound one holds nothing.
+        """
+        async with self._sessions() as db:
+            conversation_id: UUID | None = await db.scalar(
+                select(ChatAttachment.conversation_id).where(
+                    ChatAttachment.surface == ChatSurface.MATRIX,
+                    ChatAttachment.address == room_id,
+                    ChatAttachment.detached_at.is_(None),
                 )
             )
             return conversation_id
@@ -386,7 +374,7 @@ class MatrixTurns:
         return True
 
     async def _enqueue(self, prompt_text: str, event_ids: tuple[str, ...]) -> Admission:
-        session_id = await self._conversations.session_serving(self._config.user_id)
+        session_id = await self._conversations.session_serving()
         if session_id is None:
             logger.info("Matrix: no session behind the room, rejecting %d event(s)", len(event_ids))
             return PromptRejected(reason=PromptRejection.NO_SESSION, event=None)
@@ -420,7 +408,7 @@ class MatrixTurns:
         Empty where no session is bound, on the same terms as `PromptRejected.event`: what
         arrived is still announced in the room, and the record keeps nothing.
         """
-        session_id = await self._conversations.session_serving(self._config.user_id)
+        session_id = await self._conversations.session_serving()
         if session_id is None:
             return ()
         now = datetime.datetime.now(datetime.UTC)
@@ -575,7 +563,7 @@ class MatrixSessionSupervisor:
 
     async def supervise_once(self) -> None:
         """Bring the live room's session back to a working state, if it is not already."""
-        binding = await self._conversations.load(self._config.user_id)
+        binding = await self._conversations.bound_room()
         if binding is None:
             return  # No room yet — nothing to serve, and nowhere to say so.
 
@@ -585,7 +573,7 @@ class MatrixSessionSupervisor:
         # anything reporting a failure.
         await self._chat_store.expire_stale_leases()
 
-        session_id = await self._conversations.session_serving(self._config.user_id)
+        session_id = await self._conversations.session_serving()
         outcome = await self._chat_store.outcome(session_id) if session_id is not None else None
         status = outcome.status if outcome is not None else None
         if status in OPEN_SESSION_STATUSES:
@@ -603,13 +591,10 @@ class MatrixSessionSupervisor:
             # this is the idempotent sweep rather than a targeted delete.
             await self._chat.reconcile_terminal_claims()
 
-        operator_id = await self._operator_id()
         # The replacement joins the conversation the room is already attached to, so the attachment
         # is not touched and the thread survives the session that was running it.
         session = await self._chat.create(
-            operator_id,
-            MatrixSession(),
-            conversation_id=await self._conversations.conversation_for_room(binding.room_id, operator_id),
+            await self._operator_id(), MatrixSession(), conversation_id=binding.conversation_id
         )
         self._last_announced = SessionStatus.PROVISIONING
         await self._announce(f"provisioning a sandbox · session {session.session_id}")
@@ -634,7 +619,7 @@ class MatrixSessionSupervisor:
         for what no transition announces — a room bound for the first time, or a session row
         disappearing underneath us.
         """
-        session_id = await self._conversations.session_serving(self._config.user_id)
+        session_id = await self._conversations.session_serving()
         if session_id is None:
             await asyncio.sleep(SUPERVISE_INTERVAL.total_seconds())
             return

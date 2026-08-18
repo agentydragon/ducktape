@@ -33,7 +33,13 @@ from haku.console.x.channels.matrix.client import (
     UnmappableEvent,
 )
 from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
-from haku.console.x.channels.matrix.conversation import Admission, PromptAccepted, PromptRejected, RoomTranscript
+from haku.console.x.channels.matrix.conversation import (
+    Admission,
+    MatrixConversationStore,
+    PromptAccepted,
+    PromptRejected,
+    RoomTranscript,
+)
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger, Unanswered
 from haku.console.x.channels.matrix.outbox import PendingReply
 from haku.console.x.channels.matrix.pacer import RoomPacer
@@ -155,7 +161,9 @@ def transcript(migrated_sessions) -> RoomTranscript:
     return RoomTranscript(migrated_sessions)
 
 
-def _replica(sync_store, conversations, turns, transcript, matrix, migrated_sessions, ledger) -> MatrixSyncService:
+def _replica(
+    sync_store, conversations, identities, turns, transcript, matrix, migrated_sessions, ledger
+) -> MatrixSyncService:
     """One console replica's sync service, unthrottled.
 
     The real budget is `test_pacer`'s subject; at the room's true rate each of these would wait
@@ -167,6 +175,7 @@ def _replica(sync_store, conversations, turns, transcript, matrix, migrated_sess
         engine=cast(Any, None),  # only `run()` takes the advisory lock; these drive one pass
         store=sync_store,
         conversations=conversations,
+        identities=identities,
         turns=cast(Any, turns),
         transcript=transcript,
         # Answers are outbox rows, drained by a task `run()` starts; these tests drive one sync
@@ -181,9 +190,13 @@ def _replica(sync_store, conversations, turns, transcript, matrix, migrated_sess
 
 
 @pytest.fixture
-async def service(sync_store, conversations, turns, transcript, matrix, migrated_sessions, ledger):
+async def service(
+    sync_store, conversations, migrated_identity_store, turns, transcript, matrix, migrated_sessions, ledger
+):
     """The service with its outbound queue running, because every send goes through it."""
-    service = _replica(sync_store, conversations, turns, transcript, matrix, migrated_sessions, ledger)
+    service = _replica(
+        sync_store, conversations, migrated_identity_store, turns, transcript, matrix, migrated_sessions, ledger
+    )
     async with service.pacer.run():
         yield service
 
@@ -194,15 +207,12 @@ async def settled(service: MatrixSyncService) -> None:
 
 
 @pytest.fixture
-async def bound_room(conversations, operator_id: UUID) -> str:
+async def bound_room(conversations: MatrixConversationStore, operator_id: UUID) -> str:
     """Most tests start from a room already bound; the adoption/invite ones do not use this.
 
-    Attached as well as bound, which is what the supervisor leaves behind once the room has a
-    session, and is the row the status line's own event id hangs off.
+    Binding is what attaches it, so this is also the row the status line's own event id hangs off.
     """
-    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-    await conversations.conversation_for_room(MATRIX_ROOM, operator_id)
-    return MATRIX_ROOM
+    return (await conversations.bind_room(MATRIX_ROOM, operator_id)).room_id
 
 
 async def watermark(store: MatrixSyncStore) -> str | None:
@@ -722,7 +732,16 @@ async def test_the_line_is_redacted_when_the_turn_ends(service, matrix, bound_ro
 
 
 async def test_a_replica_that_adopts_the_session_edits_the_line_it_inherits(
-    service, sync_store, conversations, turns, transcript, matrix, migrated_sessions, ledger, bound_room
+    service,
+    sync_store,
+    conversations,
+    migrated_identity_store,
+    turns,
+    transcript,
+    matrix,
+    migrated_sessions,
+    ledger,
+    bound_room,
 ) -> None:
     """The status line outlives the process that posted it. Whichever replica holds the session's
     lease drives the line, so one starting with an empty process would post a second line beside
@@ -730,7 +749,9 @@ async def test_a_replica_that_adopts_the_session_edits_the_line_it_inherits(
     await service.show_status("running Bash")
     await settled(service)
 
-    successor = _replica(sync_store, conversations, turns, transcript, matrix, migrated_sessions, ledger)
+    successor = _replica(
+        sync_store, conversations, migrated_identity_store, turns, transcript, matrix, migrated_sessions, ledger
+    )
     async with successor.pacer.run():
         await successor.show_status("running Read")
         await settled(successor)
@@ -832,7 +853,7 @@ async def test_history_is_read_from_our_record_and_not_from_the_homeserver(
     view, token = await chat_store.create(
         operator_id,
         MatrixSession(),
-        conversation_id=await conversations.conversation_for_room(MATRIX_ROOM, operator_id),
+        conversation_id=(await conversations.bind_room(MATRIX_ROOM, operator_id)).conversation_id,
     )
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "[$a] hi")

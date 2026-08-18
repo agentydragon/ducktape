@@ -32,7 +32,7 @@ def outbox(migrated_sessions: async_sessionmaker[AsyncSession]) -> RoomOutbox:
 @pytest.fixture
 async def attachment_id(conversations: MatrixConversationStore, operator_id: UUID) -> UUID:
     """The room's attachment, which is what a sent reply is recorded against."""
-    await conversations.conversation_for_room(MATRIX_ROOM, operator_id)
+    await conversations.bind_room(MATRIX_ROOM, operator_id)
     attachment_id = await conversations.attachment(MATRIX_ROOM)
     assert attachment_id is not None
     return attachment_id
@@ -47,7 +47,7 @@ async def session_id(chat_store: SessionStore, conversations: MatrixConversation
     view, token = await chat_store.create(
         operator_id,
         MatrixSession(),
-        conversation_id=await conversations.conversation_for_room(MATRIX_ROOM, operator_id),
+        conversation_id=(await conversations.bind_room(MATRIX_ROOM, operator_id)).conversation_id,
     )
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     return view.session_id
