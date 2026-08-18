@@ -88,6 +88,18 @@ py_library(
 )
 
 py_library(
+    name = "conversation_log",
+    srcs = ["conversation_log.py"],
+    deps = [
+        ":conversation_events",
+        ":session_events",
+        "//haku/console:chat_models",
+        "//haku/console:database_schema",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "session_events",
     srcs = ["session_events.py"],
     deps = [

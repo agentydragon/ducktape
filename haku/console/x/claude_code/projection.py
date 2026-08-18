@@ -23,17 +23,22 @@ share of production frames is a dated observation and belongs in a dated documen
 | `stop_reason` is never set                                       | Nothing reads it; there is no "the provider said it was done" branch to be wrong                                                           |
 | A `user` frame can land between two frames of one message        | A `user` frame never closes a message. Its `FrameRange` spans the interruption, which is what a range means                                |
 | `content` is usually prose, sometimes tool names and no payload  | `content` is rendered to text whatever shape it arrived in, and the real output rides beside it as `structured` (`tool_use_result`, many per-tool shapes) |
-| `is_error` is often absent, and `result.is_error` is never true  | `Outcome.UNKNOWN` where it is absent, and a turn's outcome comes from `subtype` — `is_error` is read nowhere                               |
+| `is_error` is often absent, and `result.is_error` is never true  | `ToolOutcome.UNKNOWN` where it is absent, and a turn's outcome comes from `subtype` — `is_error` is read nowhere                           |
 | Most of the wire is `system`, and most of that is one constant   | `_IGNORED_KINDS` / `_IGNORED_SYSTEM_SUBTYPES` are frozenset lookups that return before anything is allocated                               |
 | Frame classes and `system` subtypes exist that `protocol.md` omits | The default branch counts into `Projection.unprojected` — neither a crash nor a silent drop                                                |
 | `command_lifecycle` is not a clean triple                        | It is not read at all: turn boundaries come from `result`, so no sequence assumption exists to be violated                                 |
 
-Where a `TextDelta` is cut is the only thing the wire and the stored log disagree about — see
+Where an `ItemSegment` is cut is the only thing the wire and the stored log disagree about — see
 `DeltaSource`.
 
 **`result.result` is not projected as prose.** It repeats the final message, so minting one from it
-would double every answer. A turn that produced no `MessageCompleted` said nothing, which is a fact
-worth being able to see.
+would double every answer. A turn that produced no message item said nothing, which is a fact worth
+being able to see.
+
+**A `thinking` block is a whole reasoning item**, opened, segmented and completed by the one frame
+that carries it — Claude nests it in an assistant message, and unnesting it here is what keeps that
+one backend's shape out of the record. `redacted_thinking` completes with no segments at all, which
+is the case `ReasoningDisclosure.WITHHELD` exists to render.
 """
 
 from __future__ import annotations
@@ -45,20 +50,22 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Any
 
-from haku.console.chat_models import TurnOutcome
+from haku.console.chat_models import ReasoningDisclosure, ToolOutcome, TurnOutcome
 from haku.console.x.claude_code import frames
 from haku.console.x.conversation_events import (
+    CallRef,
     ConversationEvent,
     FrameRange,
+    ItemKey,
+    ItemSegment,
     Json,
     MessageCompleted,
-    MessageKey,
-    OpenMessage,
-    Outcome,
+    MessageStarted,
+    OpenItem,
     Projection,
     ProjectionState,
-    Reasoning,
-    TextDelta,
+    ReasoningCompleted,
+    ReasoningStarted,
     ToolCallCompleted,
     ToolCallStarted,
     TurnCompleted,
@@ -85,10 +92,10 @@ _IGNORED_SYSTEM_SUBTYPES = frozenset({"thinking_tokens", "status", "init"})
 
 
 class DeltaSource(StrEnum):
-    """Which frames a projection cuts its `TextDelta`s from.
+    """Which frames a projection cuts its `ItemSegment`s from.
 
-    Granularity, not content: `MessageCompleted.text` is the same prose whichever is chosen, and
-    the vocabulary already says how finely a backend cuts an increment is the adapter's business.
+    Granularity, not content: an item's whole text is the same prose whichever is chosen, and the
+    vocabulary already says how finely a backend cuts an increment is the adapter's business.
 
     `COMPLETED_BLOCKS` is the only honest reading of a *stored* log: most sessions emit no
     `stream_event` at all, those that do are mostly `input_json_delta` (tool arguments, not prose),
@@ -148,12 +155,11 @@ def finish(state: ProjectionState) -> Projection:
     return Projection(events=(_completed(open_message),), unprojected=MappingProxyType({}))
 
 
-def _completed(open_message: OpenMessage) -> MessageCompleted:
+def _completed(open_message: OpenItem) -> MessageCompleted:
+    """The message's close. It carries no prose: the segments already delivered every word."""
     return MessageCompleted(
-        message=open_message.key,
-        # Joined bare, because the deltas are increments of one answer rather than paragraphs of it.
-        text="".join(open_message.texts) or None,
-        agent_message_id=open_message.agent_message_id,
+        item=open_message.key,
+        backend_item_id=open_message.backend_item_id,
         provenance=FrameRange(open_message.key.opened_at_frame_seq, open_message.last_frame_seq),
     )
 
@@ -169,7 +175,7 @@ def project_log(
 @dataclass(slots=True)
 class _Projector:
     delta_source: DeltaSource
-    open_message: OpenMessage | None
+    open_message: OpenItem | None
     events: list[ConversationEvent] = field(default_factory=list)
     unprojected: dict[str, int] = field(default_factory=dict)
 
@@ -208,40 +214,57 @@ class _Projector:
     def _stream_delta(self, frame: RecordedFrame) -> None:
         """One increment of an answer still being written, for a consumer holding the live wire.
 
-        **It opens no message.** A delta carries no `message.id` to group by; the completed block
-        that follows says which message the prose belonged to. Its `MessageKey` is therefore the
-        delta's own frame — enough for a consumer tracking one open message at a time, which every
-        live one does, since a CLI writes one answer at a time.
+        **It attaches to the open message rather than keying itself.** A delta carries no
+        `message.id` to group by, and prose belongs to an item — so a delta arriving with nothing
+        open opens a message at its own frame, and every delta after it joins that one. Keying each
+        delta separately would mint an item per increment, which is the shape this vocabulary
+        exists to rule out. A CLI writes one answer at a time, which is what makes "the open one"
+        unambiguous.
         """
         event = frame.payload.get("event")
         if not isinstance(event, dict) or not (text := frames.text_delta(event)):
             return
-        self.events.append(
-            TextDelta(
-                message=MessageKey(opened_at_frame_seq=frame.frame_seq),
-                text=text,
-                provenance=FrameRange(frame.frame_seq, frame.frame_seq),
+        if (open_message := self.open_message) is None:
+            open_message = OpenItem(
+                key=ItemKey(opened_at_frame_seq=frame.frame_seq), backend_item_id=None, last_frame_seq=frame.frame_seq
             )
+            self.open_message = open_message
+            self.events.append(
+                MessageStarted(item=open_message.key, provenance=FrameRange(frame.frame_seq, frame.frame_seq))
+            )
+        else:
+            self.open_message = replace(open_message, last_frame_seq=frame.frame_seq)
+        self.events.append(
+            ItemSegment(item=open_message.key, text=text, provenance=FrameRange(frame.frame_seq, frame.frame_seq))
         )
 
     def _assistant(self, frame: RecordedFrame) -> None:
-        message = self._message_for(frame)
         where = FrameRange(frame.frame_seq, frame.frame_seq)
-        for block in frames.content_blocks(frame.payload):
+        for index, block in enumerate(frames.content_blocks(frame.payload)):
+            # Every item a frame opens beside its message needs a key of its own, and one frame can
+            # carry several: the block's own position is what distinguishes them, deterministically.
+            beside = ItemKey(opened_at_frame_seq=frame.frame_seq, within_frame=index + 1)
             match block.get("type"):
                 case "text" if isinstance(text := block.get("text"), str):
-                    message = replace(message, texts=(*message.texts, text))
-                    self.open_message = message
+                    message = self._message_for(frame)
                     # Under `STREAM_EVENTS` the deltas already delivered this prose; emitting it
                     # again as a whole would have a consumer render the answer twice.
                     if self.delta_source is DeltaSource.COMPLETED_BLOCKS:
-                        self.events.append(TextDelta(message=message.key, text=text, provenance=where))
+                        self.events.append(ItemSegment(item=message.key, text=text, provenance=where))
                 case "thinking":
                     summary = block.get("thinking")
+                    self.events.append(ReasoningStarted(item=beside, provenance=where))
+                    if isinstance(summary, str) and summary:
+                        self.events.append(ItemSegment(item=beside, text=summary, provenance=where))
                     self.events.append(
-                        Reasoning(
-                            message=message.key, summary=summary if isinstance(summary, str) else None, provenance=where
-                        )
+                        ReasoningCompleted(item=beside, disclosure=ReasoningDisclosure.SUMMARY, provenance=where)
+                    )
+                case "redacted_thinking":
+                    # The model thought and none of it is available. Rendered as an item with no
+                    # segments, which is the one thing an empty string could not say.
+                    self.events.append(ReasoningStarted(item=beside, provenance=where))
+                    self.events.append(
+                        ReasoningCompleted(item=beside, disclosure=ReasoningDisclosure.WITHHELD, provenance=where)
                     )
                 case "tool_use" if (
                     isinstance(call_id := block.get("id"), str)
@@ -250,13 +273,13 @@ class _Projector:
                 ):
                     self.events.append(
                         ToolCallStarted(
-                            message=message.key, call_id=call_id, tool_name=name, arguments=arguments, provenance=where
+                            item=beside, call_id=call_id, tool_name=name, arguments=arguments, provenance=where
                         )
                     )
                 case block_type:
                     self._unprojected(f"{frames.ASSISTANT_FRAME_KIND}/{block_type}")
 
-    def _message_for(self, frame: RecordedFrame) -> OpenMessage:
+    def _message_for(self, frame: RecordedFrame) -> OpenItem:
         """The message this frame continues, or a new one.
 
         The run is defined by `message.id` and closed by a different one — not by the next
@@ -265,23 +288,23 @@ class _Projector:
         grouped, so it is its own message; the wire supplies one essentially always, the exceptions
         being the console's own reconstructions.
         """
-        agent_message_id = frames.agent_message_id(frame.payload)
+        backend_item_id = frames.agent_message_id(frame.payload)
         if (
             (open_message := self.open_message) is not None
-            and agent_message_id is not None
-            and open_message.agent_message_id == agent_message_id
+            and backend_item_id is not None
+            and open_message.backend_item_id == backend_item_id
         ):
             continued = replace(open_message, last_frame_seq=frame.frame_seq)
             self.open_message = continued
             return continued
         self.close_message()
-        started = OpenMessage(
-            key=MessageKey(opened_at_frame_seq=frame.frame_seq),
-            agent_message_id=agent_message_id,
+        started = OpenItem(
+            key=ItemKey(opened_at_frame_seq=frame.frame_seq),
+            backend_item_id=backend_item_id,
             last_frame_seq=frame.frame_seq,
-            texts=(),
         )
         self.open_message = started
+        self.events.append(MessageStarted(item=started.key, provenance=FrameRange(frame.frame_seq, frame.frame_seq)))
         return started
 
     def _user(self, frame: RecordedFrame) -> None:
@@ -305,10 +328,14 @@ class _Projector:
         for block in content:
             match block.get("type") if isinstance(block, dict) else None:
                 case "tool_result" if isinstance(call_id := block.get("tool_use_id"), str):
+                    # Addressed by the call id: the ask was frames ago, and a fold resuming from a
+                    # cursor after it has no position to name.
+                    answered = CallRef(call_id=call_id)
+                    if rendered := _result_content(block.get("content")):
+                        self.events.append(ItemSegment(item=answered, text=rendered, provenance=where))
                     self.events.append(
                         ToolCallCompleted(
-                            call_id=call_id,
-                            content=_result_content(block.get("content")),
+                            item=answered,
                             structured=structured,
                             outcome=_result_outcome(block.get("is_error")),
                             provenance=where,
@@ -362,12 +389,12 @@ def _result_content(content: Any) -> str:
     return json.dumps(content)
 
 
-def _result_outcome(is_error: Any) -> Outcome:
+def _result_outcome(is_error: Any) -> ToolOutcome:
     match is_error:
         case True:
-            return Outcome.FAILED
+            return ToolOutcome.FAILED
         case False:
-            return Outcome.SUCCEEDED
+            return ToolOutcome.SUCCEEDED
         case _:
             # Routinely absent rather than false, so `"is_error" in block` tests nothing.
-            return Outcome.UNKNOWN
+            return ToolOutcome.UNKNOWN

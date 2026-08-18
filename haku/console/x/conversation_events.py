@@ -4,6 +4,18 @@ The vocabulary every surface renders and every backend adapter produces. Nothing
 Claude-shaped: no `assistant`, no content block, no `msg_…`, no `tool_use_result`. The Claude
 adapter is <claude_code/projection.py> (<README.md> § The neutral projection).
 
+**Everything is an item, and an item is a type, a key, and three events**: started, then any number
+of segments, then completed. Both stream-native harness protocols reached that decomposition
+independently — Codex's `item/started` → `item/*/delta` → `item/completed` and the Responses API's
+`output_item.added` → `output_text.delta` → `output_item.done` — which is the argument that it is
+not our invention (<../docs/conversation_schema.md> § 1).
+
+**Prose exists only as segments, and a completion carries none.** A backend that streams has its
+adapter cut the stream into `ItemSegment`s; one that produces a final string emits exactly one
+segment and then completes. So an item's text is the concatenation of its segments by construction,
+a consumer replaying from a position never reprints prose it already printed, and the fold carries
+no half-built string from one batch to the next.
+
 **Tool calls are conversation, not debug**, and a lifecycle rather than records stapled to a
 finished message — the room renders a call while it is still running.
 
@@ -26,10 +38,9 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
-from enum import StrEnum
 from types import MappingProxyType
 
-from haku.console.chat_models import TurnOutcome
+from haku.console.chat_models import ReasoningDisclosure, ToolOutcome, TurnOutcome
 
 # Whatever a provider put in a field this layer passes through rather than reads. Open by nature:
 # a tool's structured result is per-tool, not per-protocol.
@@ -60,96 +71,141 @@ type Provenance = FrameRange | Authored
 
 
 @dataclass(frozen=True, slots=True)
-class MessageKey:
-    """Which agent message an event belongs to, within one session's projection.
+class ItemKey:
+    """Which item an event belongs to, within one session's projection.
 
     The `frame_seq` it opened at — ours, deterministic, a pointer back into the log. Not the
-    agent's own message id, which many production rows lack; that rides on `MessageCompleted` as
-    provenance, where its absence costs nothing.
+    backend's own id for the item, which many production rows lack and no delta carries; that rides
+    on the completion as provenance, where its absence costs nothing.
+
+    Deterministic is the load-bearing word: the fold is a pure function of frames, so re-folding a
+    session produces the same keys and a rebuild can compare what it derived against what is stored.
+    An item the console authored has no frame and is keyed by the store instead.
+
+    **`within_frame` is why a position alone is not enough.** One Claude `assistant` frame can open
+    a message and two tool calls, which are three items sharing a `frame_seq`; the ordinal is their
+    order within it. It stays deterministic, which is the property the key exists for.
     """
 
     opened_at_frame_seq: int
+    within_frame: int = 0
 
 
 @dataclass(frozen=True, slots=True)
-class TextDelta:
-    """Prose that became visible, as an increment rather than as a whole.
+class CallRef:
+    """An item addressed by the id the tool protocol gave it, rather than by where it opened.
 
-    A channel renders these as they arrive; `MessageCompleted.text` is the same prose joined. How
-    finely a backend cuts them is the adapter's business.
+    A call's answer arrives frames after its ask, and the frame carrying it says only `call_id` —
+    so a fold resuming from a cursor after the ask cannot name the position the item opened at, and
+    should not have to. Every harness protocol supplies this id precisely so the two halves can be
+    paired, and the store's unique index on `(conversation_id, call_id)` is what resolves it.
     """
 
-    message: MessageKey
-    text: str
+    call_id: str
+
+
+type ItemRef = ItemKey | CallRef
+
+
+@dataclass(frozen=True, slots=True)
+class MessageStarted:
+    """The agent began saying something. Its prose follows as segments."""
+
+    item: ItemKey
     provenance: Provenance
 
 
 @dataclass(frozen=True, slots=True)
-class MessageCompleted:
-    """One agent message, finished. `text` is None for a message that was all thinking and tools.
+class ReasoningStarted:
+    """The agent began thinking.
 
-    `agent_message_id` is provenance, not identity: it is what the frames called this message, and
-    it is absent whenever the wire did not supply one.
+    Its own item, a sibling of the message rather than a part of one. Only Claude nests reasoning
+    inside an assistant message, as a `thinking` block; Codex and the Responses API both make it a
+    separate output item with its own id, so a shape that nested it would be one backend's promoted
+    upward.
     """
 
-    message: MessageKey
-    text: str | None
-    agent_message_id: str | None
-    provenance: Provenance
-
-
-@dataclass(frozen=True, slots=True)
-class Reasoning:
-    """The agent thought, with a summary where it gave one.
-
-    A state rather than empty prose: many real messages are thinking and nothing else, and a
-    transcript modelling only text renders them blank.
-    """
-
-    message: MessageKey
-    summary: str | None
+    item: ItemKey
     provenance: Provenance
 
 
 @dataclass(frozen=True, slots=True)
 class ToolCallStarted:
-    message: MessageKey
+    """A call was asked, with the arguments it was asked with.
+
+    **Arguments are complete or the call has not started.** Two of three backends stream them as
+    partial JSON, so an adapter emits this from the frame that finishes them — "a call is being
+    composed" is deliberately not expressible, and a channel learns of a call when there is
+    something true to say about it.
+    """
+
+    item: ItemKey
     call_id: str
     tool_name: str
     arguments: Mapping[str, Json]
     provenance: Provenance
 
 
-class Outcome(StrEnum):
-    """How a step ended, where "cannot tell" is a first-class answer rather than a default.
+@dataclass(frozen=True, slots=True)
+class ItemSegment:
+    """Prose that became visible, as an increment rather than as a whole.
 
-    `UNKNOWN` is the common case, not the corner: the field a provider would report failure in is
-    routinely absent, and collapsing that into `SUCCEEDED` reports every unanswerable case as fine.
+    A channel renders these as they arrive, and their concatenation is the item's whole text. How
+    finely a backend cuts them is the adapter's business: one segment for a backend that only ever
+    produces a final string is as valid as hundreds for one that streams.
+
+    It carries any item's prose, not a message's — a reasoning summary and a tool result's rendered
+    output are the same kind of thing to every channel that shows them.
     """
 
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    UNKNOWN = "unknown"
+    item: ItemRef
+    text: str
+    provenance: Provenance
+
+
+@dataclass(frozen=True, slots=True)
+class MessageCompleted:
+    """One agent message, finished.
+
+    Carries no text: the segments were the text. `backend_item_id` is provenance, not identity — it
+    is what the frames called this message, and it is absent whenever the wire supplied none.
+    """
+
+    item: ItemKey
+    backend_item_id: str | None
+    provenance: Provenance
+
+
+@dataclass(frozen=True, slots=True)
+class ReasoningCompleted:
+    """The agent finished thinking, and says how much of it you may see.
+
+    No backend we adapt returns raw chain of thought, so the distinction worth carrying is not
+    summary-versus-reasoning but whether anything was disclosed at all. Without it a withheld item
+    is an empty string no surface can explain.
+    """
+
+    item: ItemKey
+    disclosure: ReasoningDisclosure
+    provenance: Provenance
 
 
 @dataclass(frozen=True, slots=True)
 class ToolCallCompleted:
     """What a call answered: the part a channel can show, and the part it cannot.
 
-    **`content` is the result rendered, not the result.** A tool result's structure is the
-    provider's — one tool's block shape on one harness — so an adapter reduces it to the text a
-    transcript prints, and a channel branching on a variant would be branching on a shape only one
-    backend produces.
+    **The showable part is segments**, like every other item's prose. A tool result's structure is
+    the provider's — one tool's block shape on one harness — so an adapter reduces it to the text a
+    transcript prints and emits that as segments before this event.
 
     `structured` is the exit code, the patch, the MCP `structuredContent` — an open set of per-tool
     shapes no string carries — and is None when the provider carried none. It is not derivable from
-    `content`: a rendered result and a tool's own output are different answers.
+    the segments: a rendered result and a tool's own output are different answers.
     """
 
-    call_id: str
-    content: str
+    item: CallRef
     structured: Json
-    outcome: Outcome
+    outcome: ToolOutcome
     provenance: Provenance
 
 
@@ -161,7 +217,9 @@ class TurnCompleted:
     provenance: Provenance
 
 
-type ConversationEvent = TextDelta | MessageCompleted | Reasoning | ToolCallStarted | ToolCallCompleted | TurnCompleted
+type ItemStarted = MessageStarted | ReasoningStarted | ToolCallStarted
+type ItemCompleted = MessageCompleted | ReasoningCompleted | ToolCallCompleted
+type ConversationEvent = ItemStarted | ItemSegment | ItemCompleted | TurnCompleted
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,18 +248,12 @@ class Projection:
 
 
 @dataclass(frozen=True, slots=True)
-class OpenMessage:
-    """An agent message the fold has seen the start of and not the end of.
+class OpenItem:
+    """An item the fold has seen the start of and not the end of."""
 
-    `texts` is the message's deltas in order rather than the joined prose: the vocabulary's
-    contract is that they concatenate to exactly the `text` its `MessageCompleted` carries, and
-    keeping them apart is what lets the join happen once, where that event is minted.
-    """
-
-    key: MessageKey
-    agent_message_id: str | None
+    key: ItemKey
+    backend_item_id: str | None
     last_frame_seq: int
-    texts: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,8 +264,11 @@ class ProjectionState:
     both a live consumer between frames and a cursor-driven one reloading. The default is a stream
     nothing has been read from yet.
 
-    Only an open message is in flight. Everything else the fold decides — a tool call's identity,
-    an activity's pairing, a turn's outcome — is settled by the frame that produced it.
+    **Only the streaming item is in flight**, and it carries no accumulated prose — the segments
+    were emitted as they arrived, so nothing has to be held to be joined later. A tool call opened
+    in one batch and answered in another needs no state either: its completion names its `call_id`,
+    which is what the store looks the item up by.
     """
 
-    open_message: OpenMessage | None = None
+    open_message: OpenItem | None = None
+    open_reasoning: OpenItem | None = None

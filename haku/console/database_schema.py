@@ -1157,8 +1157,9 @@ class ConversationItem(Base):
     arguments: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     outcome: Mapped[ToolOutcome | None] = mapped_column(TextBackedStrEnumColumn(ToolOutcome), nullable=True)
     # The per-tool result payload, behind `Json` on purpose: a channel rendering a shell result's
-    # `exitCode` knows shell commands, not one backend.
-    structured: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # `exitCode` knows shell commands, not one backend. Typed as any JSON value rather than an
+    # object, because it is one — production sends lists of blocks and bare strings here too.
+    structured: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
     disclosure: Mapped[ReasoningDisclosure | None] = mapped_column(
         TextBackedStrEnumColumn(ReasoningDisclosure), nullable=True
     )
