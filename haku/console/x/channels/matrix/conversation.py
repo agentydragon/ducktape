@@ -134,8 +134,9 @@ async def live_attachment(db: AsyncSession, room_id: str) -> UUID | None:
 class MatrixConversationStore:
     """Which conversation the bound room holds a copy of, and which session is running under it.
 
-    The conversation is the durable half and the one a replacement session joins;
-    `matrix_conversation.session_id` names only whichever session is serving the room right now.
+    The conversation is the durable half and the one a replacement session joins, so which session
+    is serving the room is derived from it (`session_serving`) rather than kept as a pointer that
+    has to be re-aimed.
     """
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]):
@@ -162,22 +163,13 @@ class MatrixConversationStore:
         async with self._sessions() as db, db.begin():
             await db.execute(
                 insert(MatrixConversation)
-                .values(
-                    user_id=user_id, room_id=room_id, session_id=None, joined_at=datetime.datetime.now(datetime.UTC)
-                )
+                .values(user_id=user_id, room_id=room_id, joined_at=datetime.datetime.now(datetime.UTC))
                 .on_conflict_do_nothing(index_elements=["user_id"])
             )
         row = await self.load(user_id)
         if row is None:
             raise RuntimeError(f"matrix conversation vanished immediately after claiming {room_id=}")
         return row.room_id
-
-    async def set_session(self, user_id: str, session_id: UUID | None) -> None:
-        async with self._sessions() as db, db.begin():
-            row = await db.scalar(select(MatrixConversation).where(MatrixConversation.user_id == user_id))
-            if row is None:
-                raise RuntimeError("cannot bind a session before a room is bound")
-            row.session_id = session_id
 
     async def session_serving(self, user_id: str) -> UUID | None:
         """The session behind this bot's room, or None while nothing is serving it.
@@ -609,7 +601,6 @@ class MatrixSessionSupervisor:
             )
             # The claim may already be gone — `handle_runner` deletes it on the way out — so
             # this is the idempotent sweep rather than a targeted delete.
-            await self._conversations.set_session(self._config.user_id, None)
             await self._chat.reconcile_terminal_claims()
 
         operator_id = await self._operator_id()
@@ -620,7 +611,6 @@ class MatrixSessionSupervisor:
             MatrixSession(room_id=binding.room_id),
             conversation_id=await self._conversations.conversation_for_room(binding.room_id, operator_id),
         )
-        await self._conversations.set_session(self._config.user_id, session.session_id)
         self._last_announced = SessionStatus.PROVISIONING
         await self._announce(f"provisioning a sandbox · session {session.session_id}")
         logger.info("Matrix: provisioned session %s for room %s", session.session_id, binding.room_id)

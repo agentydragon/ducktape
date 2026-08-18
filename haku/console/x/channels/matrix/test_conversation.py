@@ -229,10 +229,9 @@ async def test_does_not_repeat_an_unchanged_status(
 
 @pytest.fixture
 async def bound(conversations: MatrixConversationStore, chat_store: SessionStore, operator_id: UUID) -> UUID:
-    """A room bound to a real session row — `session_id` is a foreign key, not a free UUID."""
+    """A bound room, and a real session row for the prompt to be built for."""
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
     view, _ = await chat_store.create(operator_id, SpaSession())
-    await conversations.set_session(MATRIX_USER, view.session_id)
     return view.session_id
 
 
@@ -545,10 +544,12 @@ def turns(
     return MatrixTurns(MATRIX_CONFIG, conversations, chat_store, migrated_identity_store, ledger)
 
 
-async def serving_room(conversations: MatrixConversationStore, session_id: UUID) -> None:
-    """Point the room at *session_id*, the way the supervisor does once a session is provisioned."""
+async def serving_room(conversations: MatrixConversationStore) -> None:
+    """Bind the room, the way an invite does before the supervisor provisions anything.
+
+    Which session then serves it is read off the thread, so binding is all there is to arrange.
+    """
     assert await conversations.claim_room(MATRIX_USER, MATRIX_ROOM) == MATRIX_ROOM
-    await conversations.set_session(MATRIX_USER, session_id)
 
 
 def operator_message(body: str, *, event_id: str, at: int) -> InboundMessage:
@@ -571,7 +572,7 @@ async def test_a_batch_a_ready_session_takes_becomes_its_prompt(
 ) -> None:
     """The accepted case, and what "one batch, one prompt" means: two events, one transcript row."""
     session_id = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations, session_id)
+    await serving_room(conversations)
 
     admitted = await turns.offer(
         [operator_message("hi", event_id="$1", at=1), operator_message("and this", event_id="$2", at=2)]
@@ -594,7 +595,7 @@ async def test_a_batch_offered_mid_turn_is_rejected_with_the_reason_and_the_text
     row it hands back is the only copy of what was said — the homeserver will not offer it again
     once the caller acknowledges the batch."""
     session_id = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations, session_id)
+    await serving_room(conversations)
     await chat_store.enqueue_prompt(operator_id, session_id, "first")
     assert await chat_store.next_prompt(session_id) is not None
 
@@ -635,7 +636,7 @@ async def test_a_batch_offered_to_a_session_that_is_gone_is_rejected_rather_than
     it is the one that has gone.
     """
     session_id = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations, session_id)
+    await serving_room(conversations)
     async with migrated_sessions.begin() as db:
         await db.execute(delete(Session).where(Session.session_id == session_id))
 
@@ -657,8 +658,8 @@ async def test_an_accepted_batch_records_its_events_against_the_prompt_it_became
     A rejected batch records nothing, because there is no prompt for a row to name and the
     homeserver re-offering it is the outcome we want.
     """
-    session_id = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations, session_id)
+    await serving_session(chat_store, operator_id, thread)
+    await serving_room(conversations)
 
     await turns.offer([operator_message("hi", event_id="$1", at=1), operator_message("more", event_id="$2", at=2)])
 
@@ -674,7 +675,7 @@ async def test_a_rejected_batch_records_nothing_for_the_homeserver_to_be_deduped
     thread: UUID,
 ) -> None:
     session_id = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations, session_id)
+    await serving_room(conversations)
     await chat_store.enqueue_prompt(operator_id, session_id, "first")
     assert await chat_store.next_prompt(session_id) is not None
 
@@ -698,11 +699,10 @@ async def test_an_unanswered_message_is_asked_again_and_its_events_follow_the_ne
     same message outstanding and asking a third time.
     """
     doomed = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations, doomed)
+    await serving_room(conversations)
     await turns.offer([operator_message("did you see this", event_id="$1", at=1)])
     await chat_store.closed(doomed)
     replacement = await serving_session(chat_store, operator_id, thread)
-    await conversations.set_session(MATRIX_USER, replacement)
 
     unanswered = await ledger.unanswered()
     assert unanswered is not None
@@ -726,10 +726,9 @@ async def test_an_unanswered_message_the_live_session_will_not_take_is_left_for_
     send this message again and has nothing to do about it — so the only correct answer is to ask
     once there is somewhere to ask."""
     doomed = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations, doomed)
+    await serving_room(conversations)
     await turns.offer([operator_message("did you see this", event_id="$1", at=1)])
     await chat_store.closed(doomed)
-    await conversations.set_session(MATRIX_USER, None)
 
     unanswered = await ledger.unanswered()
     assert unanswered is not None
@@ -748,7 +747,7 @@ async def test_an_unreadable_event_is_a_row_per_event_on_the_live_session(
     """What the notice says is a count and a set of types; what is kept is the events themselves
     (<../../../debug/channel_write_audit.md> row 12)."""
     session_id = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations, session_id)
+    await serving_room(conversations)
 
     rows = await turns.unreadable([_unmappable("m.image"), _unmappable("m.audio")])
 

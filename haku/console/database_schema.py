@@ -1533,35 +1533,31 @@ class MatrixSyncWatermark(Base):
 
 
 class MatrixConversation(Base):
-    """The one room Haku services, and the chat session bound to it.
+    """The one room Haku services.
 
     CLEANUP(added 2026-08-17): superseded by `ChatAttachment` above, which holds the same binding
-      keyed on the conversation instead of on the bot user. `session_id` is already write-only
-      here; the room binding is the last thing still read off it. Unmap this class once nothing
-      selects it — `rg MatrixConversation haku/` naming only this file — and drop the table a
-      release after that unmapping has converged.
+      keyed on the conversation instead of on the bot user. Nothing writes `session_id` any more,
+      and the room binding (`user_id` → `room_id`, read by `MatrixConversationStore.load`) is the
+      last thing anything still selects. Next: move that read onto `chat_attachment` and unmap
+      this class, once no replica on an image predating the change that stopped writing
+      `session_id` is still reading the column — i.e. once that roll has converged in production.
+      Drop the table a release after the unmapping has converged in turn.
 
     Keyed by bot user rather than by room, which is what makes "one room at a time" a property of
     the schema instead of a rule the code has to remember: a second room cannot be recorded without
     displacing the first. That singleton is the thing on its way out, not a guarantee to build on —
     one bot serving several rooms is where this goes, and `ChatAttachment`'s partial unique index is
     the form of the rule that survives it.
-
-    Separate from `matrix_sync_watermark` though both are singletons keyed the same way: separate
-    rows keep a slow session claim from contending with the watermark write on every pass.
     """
 
     __tablename__ = "matrix_conversation"
 
     user_id: Mapped[str] = mapped_column(Text, primary_key=True)
     room_id: Mapped[str] = mapped_column(Text, nullable=False)
-    # The chat session currently serving the room. NULL between a session dying and the
-    # supervisor replacing it — an expected state, not a broken one.
-    #
-    # Nothing here selects it: which session serves a room is the newest session of the
-    # conversation the room's `chat_attachment` names, which needs no agreement between two rows.
-    # `MatrixSessionSupervisor` keeps writing it for the length of a roll, because the previous
-    # image still reads it; it goes with the rest of this class under the CLEANUP above.
+    # Dead, and mapped only so the column stays declared while old replicas still read it: which
+    # session serves a room is the newest session of the conversation the room's `chat_attachment`
+    # names, which needs no agreement between two rows. Whatever value a row carries was written by
+    # a release before this one, and it goes with the rest of this class under the CLEANUP above.
     session_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="SET NULL"), nullable=True
     )
