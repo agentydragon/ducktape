@@ -633,9 +633,10 @@ end to end on its own before contracting — a test driving `pg_notify` on exact
 
 The console's own live channel (<../console_events.py>) reaches every tab the operator has open,
 and this is what puts session changes on it: a `SessionChangedEvent` naming the session whose rows
-moved. **An invalidation, not a payload** — the transcript stays a REST read, so a tab that missed
-events lands correct by refetching and no consumer has to decide whether the socket or the API is
-the truth.
+moved. **An invalidation, not a payload** — the surfaces reading it hold a list and refetch it, so
+a tab that missed events lands correct by reading again and no consumer has to decide whether the
+socket or the API is the truth. A surface that holds a transcript and a position follows the
+conversation instead (below); this is for the ones that hold neither.
 
 What it is deliberate about:
 
@@ -646,8 +647,9 @@ What it is deliberate about:
   (`ConsoleEventHub.deliver_locally`). Relaying through `broadcast` would notify twice for one
   change and deliver it to every tab twice.
 - **Coalescing is the point, not tidiness.** `UPDATE` fires per stream delta, and each event costs
-  every open tab a whole transcript — far more than the notification that triggered it. One event
-  per session per `COALESCE_WINDOW` (500ms) is what keeps the invalidation cheaper than the refetch.
+  every listening tab a whole list read — far more than the notification that triggered it. One
+  event per session per `COALESCE_WINDOW` (500ms) is what keeps the invalidation cheaper than the
+  read it triggers.
 
 Routing costs a lookup: `SessionEvent` carries no operator and the hub delivers per operator, so
 the session's owner is resolved once per session and kept (a session's owner never changes).
@@ -685,8 +687,39 @@ Three consequences worth knowing:
   Every read is "everything after N", which makes a hole undetectable by construction rather than
   something to notice.
 
-The consumers today are the Matrix room's notices (below) and, once #4257 lands,
-`GET /api/sessions/{session_id}/changes?after=N` — whose `after` is exactly a `ClientHeldCursor`.
+The consumers today are the Matrix room's notices (below) and `conversation_follow.py`, whose
+follower carries exactly a `ClientHeldCursor`.
+
+## `conversation_follow.py` — following a conversation, as one operation
+
+A follower names a conversation and is sent its state, then the changes to it:
+`WS /api/conversations/{conversation_id}/follow`, optionally carrying `?after=N`. **The snapshot
+and the updates are one call**, so initial load and reconnect are the same code path on both ends
+and there is nothing for a caller to combine.
+
+- **A snapshot replaces, an update merges.** Every message names the `event_seq` it leaves the
+  follower at; updates carry whole rows keyed on `message_id`, so a duplicate costs nothing,
+  delivery need not be exactly-once or ordered, and re-reading from an older position is always
+  correct.
+- **The ordering is inside the operation.** Wakes are registered before the state is read, so a
+  change landing between the two cannot be lost — and it costs a flag rather than a buffer, because
+  the wake carries no payload and the read that follows it is positional.
+- **A position that cannot be served is answered with the conversation whole**, never an error: a
+  log that no longer holds the position and an update that would carry most of a snapshot recover
+  the same way, so a client has no repair path to get wrong.
+- **What crosses replicas is still an id.** `pg_notify` carries `{kind, session_id}`; the replica
+  holding the socket reads the rows itself. Nothing about a payload rides the notification, which
+  is what keeps the 8000-byte cap and the expand/contract discipline out of this.
+- **Coalescing bounds the open message.** `content` is rewritten in place as prose arrives and a
+  `TextDelta` is not a row, so every update re-sends the message being written, whole; without a
+  window that is bytes quadratic in a turn's answer. 500ms, which also sets how fast prose appears.
+- **The connection is the subscription.** One socket per followed conversation — the position and
+  the reader task are all the per-connection state there is, and a send-only socket has no inbound
+  protocol that could be talked into reading another operator's thread.
+
+Addressed by the conversation and never by the session: a session exists only while it holds a
+sandbox, so a follower naming one would be reading a dead log after every replacement. The rows an
+update carries are whichever sessions moved, and `session_id` says which one holds the thread now.
 
 ## Cross-replica state, and the trap it sets
 

@@ -73,7 +73,7 @@ from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import RecallIndexMaintenance
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
-from haku.console.x import delivery_log, sandbox_claims, session_runtime, subscription
+from haku.console.x import conversation_follow, delivery_log, sandbox_claims, session_runtime, subscription
 
 # Aliased: bare `conversation`, `sync` and `outbox` would each collide with something this module
 # already talks about (the console's own conversation record, the index sweeps, the push queue).
@@ -192,6 +192,9 @@ def create_app(
     # per session. Constructed unconditionally: it listens on the session channel and sends on the
     # console one, neither of which depends on this replica running a Claude runtime.
     session_live_updates = SessionLiveUpdates(session_notifications, console_event_hub, db_sessions)
+    # A followed conversation's own socket. Constructed unconditionally for the same reason: it
+    # listens on the session channel and reads rows, neither of which needs a Claude runtime here.
+    follow = conversation_follow.ConversationFollow(session_store, session_notifications)
     session_service: session_runtime.SessionService | None = None
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
@@ -536,7 +539,7 @@ def create_app(
                 # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
                 if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
                     await mcp_auth.storage.setup()
-                async with session_live_updates.run(), mcp_asgi.lifespan(app):
+                async with session_live_updates.run(), follow.run(), mcp_asgi.lifespan(app):
                     yield
             finally:
                 # Cancel in-flight approved-call executions (each marks its row cancelled) before the
@@ -574,6 +577,7 @@ def create_app(
     app.state.console_event_hub = console_event_hub
     app.state.session_store = session_store
     app.state.session_notifications = session_notifications
+    app.state.conversation_follow = follow
     app.state.session_service = session_service
     app.state.in_process_servers = in_process_servers
     app.state.mcp_dispatcher = dispatcher
@@ -619,6 +623,7 @@ def create_app(
     operator_only = [Depends(operator_auth.require_operator), Depends(operator_auth.require_operator_mutation_origin)]
     app.include_router(capabilities.router, dependencies=operator_only)
     app.include_router(session_runtime.router, dependencies=operator_only)
+    app.include_router(conversation_follow.router, dependencies=operator_only)
     app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(mcp_approval.router, dependencies=operator_only)
     app.include_router(mcp_operator_oauth.router, dependencies=operator_only)

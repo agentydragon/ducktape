@@ -12,7 +12,7 @@ from bisect import bisect_left, bisect_right
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -221,6 +221,60 @@ class ConversationView(BaseModel):
     earlier_sessions: list[EarlierSession]
 
 
+class ConversationSnapshot(BaseModel):
+    """A conversation whole, at the position the updates after it continue from.
+
+    First of a follow, and again whenever a position can no longer be served from — a client
+    replaces what it holds and reads on, without a second way of asking.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    message_type: Literal["snapshot"] = "snapshot"
+    position: int = Field(
+        description="The conversation's `event_seq` this state was read at. Everything after it arrives as updates."
+    )
+    conversation: ConversationView
+
+
+class ConversationUpdate(BaseModel):
+    """What moved in a conversation since a position, for a follower that already holds the rest.
+
+    Whole rows rather than events to apply: a merge keyed on `message_id` is idempotent, so a
+    duplicate costs nothing and re-reading from an older position is always correct. `event_seq` is
+    the address — where the follower is — and these rows are what that position resolves to.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    message_type: Literal["update"] = "update"
+    position: int = Field(description="Where applying this leaves the follower; what a reconnect asks from.")
+    session_id: UUID = Field(description="The session now holding the conversation, which a replacement changes.")
+    status: SessionStatus
+    error: str | None
+    narration: list[SetupNarrationView] = Field(
+        description="What that session has said while coming up, whole — replace by `frame_seq`."
+    )
+    messages: list[SessionMessageView] = Field(
+        description="The messages that moved — merge them by `message_id` over the ones already held, never render them as a transcript."
+    )
+    turns: list[ConversationTurnView] = Field(description="The turns that moved, newest first.")
+
+
+type ConversationFollowMessage = Annotated[
+    ConversationSnapshot | ConversationUpdate, Field(discriminator="message_type")
+]
+
+
+# Rows of one update, in either collection. A message carries its prose plus every tool call it
+# made and the result each got, so what bounds a message is payload rather than row count — the
+# lesson `/api/tool-calls` learned at `le=500` (`frontend/tool_calls_page.tsx`). One update is
+# normally one coalescing window's worth of rows; past this the follower is sent the conversation
+# whole instead, which is cheaper than an update that carries most of it twice over.
+DEFAULT_CHANGED_ROWS = 50
+MAX_CHANGED_ROWS = 200
+
+
 class SessionProvisioningView(BaseModel):
     """What one session says about the sandbox it asked for — in whatever state that session is now.
 
@@ -362,15 +416,20 @@ def _frame_of(asked: tuple[int, RecordedToolCall]) -> int:
     return asked[0]
 
 
-async def tool_calls(db: AsyncSession, session_id: UUID) -> SessionToolCalls:
-    """Read the calls and their answers out of the session's stored events."""
-    rows = (
-        await db.scalars(
-            select(SessionEvent)
-            .where(SessionEvent.session_id == session_id, SessionEvent.kind.in_(TOOL_CALL_EVENT_KINDS))
-            .order_by(SessionEvent.source_first_frame_seq, SessionEvent.event_seq)
-        )
-    ).all()
+async def tool_calls(db: AsyncSession, session_id: UUID, *, since_frame_seq: int | None) -> SessionToolCalls:
+    """Read the calls and their answers out of the session's stored events.
+
+    *since_frame_seq* bounds the read to a window of the log; None is the whole session, which is
+    what a view of the whole transcript needs. An update passes the first frame of the oldest turn
+    it carries: a message's calls fall inside that message's own span, so a call belonging to any
+    message the update carries is at or after that frame.
+    """
+    query = select(SessionEvent).where(
+        SessionEvent.session_id == session_id, SessionEvent.kind.in_(TOOL_CALL_EVENT_KINDS)
+    )
+    if since_frame_seq is not None:
+        query = query.where(SessionEvent.source_first_frame_seq >= since_frame_seq)
+    rows = (await db.scalars(query.order_by(SessionEvent.source_first_frame_seq, SessionEvent.event_seq))).all()
     return SessionToolCalls(
         asked=[_asked(row) for row in rows if row.kind is ConversationEventKind.TOOL_CALL_STARTED],
         results=dict(_answered(row) for row in rows if row.kind is ConversationEventKind.TOOL_CALL_COMPLETED),
@@ -455,20 +514,23 @@ def _view(message: SessionMessage, *, tool_calls: list[SessionToolCallView]) -> 
     )
 
 
-def session_view(
-    record: Session, messages: list[SessionMessage], *, responding: bool, calls: SessionToolCalls
-) -> SessionView:
-    """The session as the SPA reads it, with `responding` derived from an open turn.
+def live_status(record: Session, *, responding: bool) -> SessionStatus:
+    """The status a reader is told, with `responding` derived from an open turn.
 
     `status` is the frontend's contract (`frontend/x/conversations_page.tsx` switches on it); the
     column underneath carries no turn state. The session's own lifecycle — provisioning, closing,
     closed, failed — always wins, because a turn left open by a dead replica says nothing about a
     session the sweep has since failed.
     """
-    status = SessionStatus.RESPONDING if responding and record.status == SessionStatus.READY else record.status
+    return SessionStatus.RESPONDING if responding and record.status == SessionStatus.READY else record.status
+
+
+def session_view(
+    record: Session, messages: list[SessionMessage], *, responding: bool, calls: SessionToolCalls
+) -> SessionView:
     return SessionView(
         session_id=record.session_id,
-        status=status,
+        status=live_status(record, responding=responding),
         error=record.error,
         created_at=record.created_at,
         updated_at=record.updated_at,

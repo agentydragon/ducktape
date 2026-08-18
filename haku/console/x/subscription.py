@@ -131,13 +131,23 @@ class ConversationStream:
         """Where this conversation's stream has got to — the position a subscriber joining it now
         would already be caught up at."""
         async with self._sessions() as db:
-            highest: int | None = await db.scalar(
-                select(func.max(SessionEvent.event_seq))
-                .select_from(SessionEvent)
-                .join(Session, Session.session_id == SessionEvent.session_id)
-                .where(Session.conversation_id == conversation_id)
-            )
-        return StreamPosition(event_seq=highest or START.event_seq)
+            return await stream_head(db, conversation_id)
+
+
+async def stream_head(db: AsyncSession, conversation_id: UUID) -> StreamPosition:
+    """Where this conversation's stream has got to, inside a caller's own transaction.
+
+    Beside `ConversationStream.head` because a reader that also returns rows has to take the
+    position **before** them, in the same read: a row written between the two is then replayed to
+    the subscriber rather than reaching neither.
+    """
+    highest: int | None = await db.scalar(
+        select(func.max(SessionEvent.event_seq))
+        .select_from(SessionEvent)
+        .join(Session, Session.session_id == SessionEvent.session_id)
+        .where(Session.conversation_id == conversation_id)
+    )
+    return StreamPosition(event_seq=highest or START.event_seq)
 
 
 def _streamed(row: SessionEvent) -> StreamedEvent:

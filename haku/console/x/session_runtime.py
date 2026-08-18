@@ -58,7 +58,6 @@ from haku.console.x.session_views import (
     SessionProvisioningView,
     SessionView,
 )
-from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 from haku.runtime.x.bridge.cli_client import ClaudeCli, ReceivedFrame, RecordedFrame, SentPrompt, cli_over_websocket
 from haku.runtime.x.bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch
 from haku.runtime.x.bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, TextWebSocket
@@ -349,9 +348,7 @@ class SessionService:
 
         async def report(detail: str) -> None:
             logger.info("Claude sandbox %s: %s", session_id, detail)
-            await self._store.record_frame(
-                session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, setup_output_frame(detail)
-            )
+            await self._store.narrate(session_id, detail)
             if frontend is not None:
                 await frontend.report(detail)
 

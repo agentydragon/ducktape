@@ -932,6 +932,7 @@ py_library(
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//haku/console/tools:gmail",
         "//haku/console/tools:routine",
+        "//haku/console/x:conversation_follow",
         "//haku/console/x:session_live_updates",
         "//haku/console/x:session_runtime",
         "//haku/console/x:session_store",

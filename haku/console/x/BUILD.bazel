@@ -117,6 +117,7 @@ py_library(
         ":session_notifications",
         ":session_views",
         ":setup_output",
+        ":subscription",
         ":transcript_entries",
         "//haku/cli_protocol:frame_identity",
         "//haku/console:chat_models",
@@ -189,6 +190,19 @@ py_library(
 )
 
 py_library(
+    name = "conversation_follow",
+    srcs = ["conversation_follow.py"],
+    deps = [
+        ":session_notifications",
+        ":session_store",
+        ":session_views",
+        "//haku/console:console_events",
+        "//haku/console:operator_auth",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
     name = "session_live_updates",
     srcs = ["session_live_updates.py"],
     deps = [
@@ -230,6 +244,27 @@ py_library(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_conversation_follow",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_conversation_follow.py"],
+    deps = [
+        ":conftest",
+        ":conversation_events",
+        ":conversation_follow",
+        ":session_notifications",
+        ":session_store",
+        ":session_views",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console:conftest",
+        "//haku/console/x/claude_code:frames",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -408,6 +443,7 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "//haku/console/x/claude_code:frames",
         "//haku/console/x/claude_code/testing:wire",
         "@pypi//more_itertools",
         "@pypi//pytest",
