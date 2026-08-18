@@ -357,3 +357,62 @@ occurrence rows, and the instance goes there. Full design:
 <../plans/information_trust_tiers.md>. The wider inventory — the drilldown tools, the identity it
 keys on, and the RLS-scoped-Postgres-role alternative — stays in <../recall_index/README.md>
 § Read scoping.
+
+## A second runner, and binding an agent to one
+
+Two wants on one axis: the console launches a runner that is not Claude Code, and it holds several
+agent identities that differ in which runner each gets. They are the same work because choosing a
+backend per session is what an agent-to-runner binding decides.
+
+### A runner that talks to OpenAI models
+
+Through the Codex app server, or directly against the Responses API, either way routed at the
+in-cluster LiteLLM — <../../cluster/k8s/litellm/app/proxy-config.yaml> already carries `*-chatgpt`
+models on the `openai/` provider. Today `x/claude_code/` is the only runner, reached over the
+bridge; the frame log and its adapter are what keep a runner's shape below the conversation layer
+(<docs/chat_layers.md>).
+
+**This is the first real test of the neutrality the conversation layer claims.**
+`ConversationEventKind` and the frame adapter exist so that a second backend is possible, and
+nothing has ever exercised that — every claim in this repo about one is read from the sketch in
+<../runtime/x/bridge/docs/second_backend.md> rather than measured. That sketch is the runner-side
+design and stays accurate: what `CliBackend` asks for, what the envelope gives away free, and the
+three seams it deliberately does not cover (selecting an adapter, the control channel's
+`control_request` spelling, choosing a backend per session).
+
+Two obstacles it does not carry:
+
+- **<x/README.md> claims a neutrality the live path does not have.** It says the live path "does
+  not know that `assistant`, `stream_event` and `result` exist", while `_run_turn` reads `subtype`,
+  `stop_reason` and `result` straight off the payload. The code is the honest half — both reads
+  name themselves escape hatches — so what a second backend needs is those two answers coming from
+  the vocabulary: why a turn failed, and a turn's final text when it arrived nowhere else. The
+  chat-runtime plan already schedules the correction (<plans/conversation_layers.md>); check there
+  before writing it again.
+- **A direct Responses-API runner is not a CLI at all**, so `CliBackend` does not describe it: there
+  is no binary to resolve, no argv, no stdio frames, and `replayable` has no wire kind to answer
+  about. The Codex app server fits the existing seam; the Responses API is a second shape that
+  reaches the bridge with a loop of its own. Deciding which of the two lands first decides how much
+  of the runner image is reusable.
+
+### More than one agent
+
+Several agent identities, each with its own permissions and its own session runner — an
+OpenAI-driven agent with one permission set on one runner, Haku with another on Claude Code.
+
+Most of agent identity is built: `agents/` holds the canonical Agent domain, and enrollment picks
+that Agent's auto-approval policy from the roots `config.yaml` defines (`AutoApprovalPolicyRegistry`
+in <auto_approval.py>), so distinct permissions per agent already has a home. What is missing is the
+binding to a runner implementation, and three facts say the console has never had to name one:
+
+- **`sessions` carries `operator_id` and `conversation_id`, and no agent.** The Agent domain names
+  the caller of the console's MCP surface; a session names the runner the console launches. Whether
+  those are one identity is the question this answers, and it decides whether the binding is a
+  column on `sessions` or a property of the conversation.
+- **Every runner authenticates as the same Agent.** `ClaudeRuntimeConfig.mcp_static_agent_id` is one
+  id and `x/session_runtime.py` hands every launch the same bearer, so per-agent permissions do not
+  reach a session today however well `agents/` models them.
+- **`ClaudeRuntimeConfig` is singular throughout** — one namespace, one warm pool, one
+  `oauth_placeholder`, one system-prompt template, one `mcp_url`. Several agents makes it a keyed
+  set, and which key (the agent, the conversation, or a named runner profile referenced by both) is
+  the design decision the rest follows from.
