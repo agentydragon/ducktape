@@ -305,7 +305,15 @@ mcp:
           X-MCP-Toolsets: default,actions
         auth:
           kind: remote_server_oauth
-          scopes: [] # GitHub App permissions are the least-privilege boundary.
+          # Scopes deliberately omitted (NOT `scopes: []`, which sends an explicit
+          # *empty*-scope OAuth request per mcp_operator_oauth.py's `oauth.scopes is not
+          # None` check -- that was this line's actual effect, confirmed 2026-08-18).
+          # Omitting the field makes the flow ask GitHub's server for its own default,
+          # which per github-mcp-server's docs is "the full supported set." The real
+          # permission boundary is (1) whichever scopes the OAuth App is configured to
+          # allow on GitHub's own side (fenced there, operator, 2026-08-18) and (2)
+          # haku-console's own approval policy: github_reads auto-approves reads, every
+          # write stays in the per-call operator approval queue.
           client_registration:
             kind: preregistered
             client_id_env_var: HAKU_CONSOLE_GITHUB_MCP_CLIENT_ID
