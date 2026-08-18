@@ -552,8 +552,8 @@ class SessionStore:
 
         Addressed by the thread rather than by the session running it, so a position survives a
         session being replaced: reading only the live session's rows would skip whatever its
-        predecessor wrote after the follower's position, and a session now exists only while it
-        holds a sandbox.
+        predecessor wrote after the follower's position, and a session lives only as long as the
+        sandbox it holds.
 
         **`event_seq` is the address; whole message rows are the payload.** Folding events into
         messages a second time in the browser would be one meaning maintained in two languages,
