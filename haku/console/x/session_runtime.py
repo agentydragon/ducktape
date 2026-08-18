@@ -250,19 +250,16 @@ class SessionService:
         that died has its own account of why; the conversation read below carries this for the
         current session only.
 
-        `idle` is answered without asking Kubernetes: a session holds no claim until one is created
-        for it, so an idle session provably has none. Every other state is the live
-        claim/Sandbox/Pod/runner graph — `failed` included, which is the whole point of asking a
-        non-provisioning session. Once cleanup deletes the claim the answer becomes `claim_absent`,
-        which is truthful rather than an error.
+        The answer is the live claim/Sandbox/Pod/runner graph in every state — `failed` included,
+        which is the whole point of asking a non-provisioning session. Once cleanup deletes the
+        claim the answer becomes `claim_absent`, which is truthful rather than an error.
 
         Raises `KeyError` for a session this Operator does not own.
         """
-        status = await self._store.operator_status(operator_id, session_id)
         return SessionProvisioningView(
             session_id=session_id,
-            status=status,
-            sandbox=None if status is SessionStatus.IDLE else await self._observed(session_id),
+            status=await self._store.operator_status(operator_id, session_id),
+            sandbox=await self._observed(session_id),
         )
 
     async def _provisioning(self, session: ConversationSessionView) -> ClaudeSandboxProvisioningView | None:

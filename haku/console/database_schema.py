@@ -1024,8 +1024,7 @@ class Session(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('idle','provisioning','ready','responding','closing','closed','failed')",
-            name="ck_sessions_status",
+            "status IN ('provisioning','ready','responding','closing','closed','failed')", name="ck_sessions_status"
         ),
         CheckConstraint("surface IN ('spa','matrix')", name="ck_sessions_surface"),
         Index("idx_sessions_operator", "operator_id", "created_at"),

@@ -1617,31 +1617,6 @@ async def test_a_cancelled_runner_hands_the_session_back_without_stranding_it(
     assert await chat_store.status(view.session_id) == SessionStatus.FAILED
 
 
-async def _force_status(sessions: async_sessionmaker[AsyncSession], session_id: UUID, status: SessionStatus) -> None:
-    """Put a session in *status* directly.
-
-    `idle` has no writer yet (see `SessionStatus.IDLE`) — it is the state a session sits in once a
-    prompt rather than its creation buys the sandbox — so a test about it writes the row itself.
-    """
-    async with sessions.begin() as db:
-        await db.execute(update(Session).where(Session.session_id == session_id).values(status=status))
-
-
-async def test_a_session_that_never_asked_for_a_sandbox_reports_nothing_and_asks_kubernetes_nothing(
-    chat_service, recording_claims, migrated_sessions, operator_id
-) -> None:
-    """No claim exists until allocation makes one, so an idle session's "nothing to report" is
-    provable from the row — and must stay free, being the state a room nobody has spoken in sits
-    in."""
-    session = await chat_service.create(operator_id, SpaSession())
-    await _force_status(migrated_sessions, session.session_id, SessionStatus.IDLE)
-
-    view = await chat_service.sandbox_provisioning(operator_id, session.session_id)
-
-    assert (view.status, view.sandbox) == (SessionStatus.IDLE, None)
-    assert recording_claims.inspected == [], "an idle session has no claim to read"
-
-
 async def test_a_session_that_failed_to_come_up_still_says_what_it_was_stuck_behind(
     chat_store, chat_service, recording_claims, operator_id
 ) -> None:
@@ -1661,16 +1636,15 @@ async def test_a_session_that_failed_to_come_up_still_says_what_it_was_stuck_beh
     view = await chat_service.sandbox_provisioning(operator_id, session.session_id)
 
     assert view.status is SessionStatus.FAILED
-    assert view.sandbox is not None
     assert view.sandbox.step is ProvisioningStep.WAITING_FOR_POD
     assert view.sandbox.claim_message == "no warm sandbox available"
 
 
-async def test_a_reclaimed_claim_is_not_the_same_answer_as_never_having_asked(
+async def test_a_reclaimed_claim_is_reported_as_gone_rather_than_as_nothing(
     chat_store, chat_service, recording_claims, operator_id
 ) -> None:
     """`_cleanup_terminal_claim` deletes the claim once a session ends, so the cluster has nothing
-    to show — which is a different answer from an idle session's, and neither of them is `null`."""
+    to show — a claim that is gone being a fact rather than an absence of one."""
     session = await chat_service.create(operator_id, SpaSession())
     recording_claims.answer(provisioning_view(f"claude-{session.session_id.hex}", step=ProvisioningStep.CLAIM_ABSENT))
     await chat_store.closed(session.session_id)
@@ -1678,21 +1652,19 @@ async def test_a_reclaimed_claim_is_not_the_same_answer_as_never_having_asked(
     view = await chat_service.sandbox_provisioning(operator_id, session.session_id)
 
     assert view.status is SessionStatus.CLOSED
-    assert view.sandbox is not None, "a claim that is gone is a fact, not an absence of one"
     assert view.sandbox.step is ProvisioningStep.CLAIM_ABSENT
 
 
 async def test_a_cluster_that_cannot_be_read_says_so_instead_of_failing_the_request(
     chat_service, recording_claims, operator_id
 ) -> None:
-    """The third of the three answers: not "nothing here" and not "the claim is gone", but "I could
-    not look" — which is the one a reader must not act on."""
+    """The other answer a reader must tell apart from "the claim is gone": "I could not look" — the
+    one it must not act on."""
     session = await chat_service.create(operator_id, SpaSession())
     recording_claims.fail(RuntimeError("kubernetes: connection refused"))
 
     view = await chat_service.sandbox_provisioning(operator_id, session.session_id)
 
-    assert view.sandbox is not None
     assert view.sandbox.observation_error == "kubernetes: connection refused"
 
 

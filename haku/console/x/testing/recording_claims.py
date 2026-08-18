@@ -39,8 +39,8 @@ class RecordingClaims:
         self.deleted: list[UUID] = []
         self.renewed: list[tuple[UUID, datetime]] = []
         self.tokens: dict[UUID, str] = {}
-        # Every `inspect`, so a test can assert that a state which cannot have a claim — an idle
-        # session — was answered without the cluster being asked at all.
+        # Every `inspect`, so a test can assert which reads reached the cluster and which were
+        # answered off the cached observation.
         self.inspected: list[UUID] = []
         self._answer: ClaudeSandboxProvisioningView | None = None
         self._failure: Exception | None = None

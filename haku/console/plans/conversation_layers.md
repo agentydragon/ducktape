@@ -561,8 +561,8 @@ user serve exactly one room ever. Losing that rule is **the point rather than th
   out — it is now prevented by the invite creating the thing that services it, rather than by
   refusing the invite.
 
-  **This promotes idle sessions from tidy-up to prerequisite.** One room could afford a sandbox held
-  open; ten cannot, and a room nobody is talking to must not hold one.
+  **This promotes on-demand allocation (step 3) from tidy-up to prerequisite.** One room could
+  afford a sandbox held open; ten cannot, and a room nobody is talking to must not hold one.
 
 **Still open.**
 
@@ -653,24 +653,25 @@ having even if the loop is never built. The dependency edges are at the end.
     conversation on every poll. `Subscription` over a `ClientHeldCursor` is the server-side half;
     the position-addressed route and the frontend consumer are what is left.
 
-3.  **Allocate a sandbox because there is something to do** — open as #4231. An idle room holds a
-    sandbox permanently: the supervisor provisions whenever the room has no live session, and the
-    warm pool is `replicas: 0` so every claim is a cold start. That is ~1 CPU / 2Gi of an 8 CPU /
-    16Gi quota standing idle for a room nobody speaks in. The SPA has a gesture that means "I want a
-    session" and Matrix has none, so the supervisor substitutes by assuming demand permanently; the
-    prompt is the honest substitute.
+3.  **Allocate a sandbox because there is something to do.** A quiet room holds a sandbox
+    permanently: the supervisor provisions whenever the room has no live session, and the warm pool
+    is `replicas: 0` so every claim is a cold start. That is ~1 CPU / 2Gi of an 8 CPU / 16Gi quota
+    standing idle for a room nobody speaks in. The SPA has a gesture that means "I want a session"
+    and Matrix has none, so the supervisor substitutes by assuming demand permanently; the prompt is
+    the honest substitute.
 
-    `create()` writes the row and stops in `idle`; `allocate()` mints the credential and the claim
-    and moves to `provisioning`; admission accepts on `idle`, so `enqueue_prompt` creates demand.
-    **The demand signal is the same on every surface**: an unclaimed prompt against an idle session,
-    swept by a channel-neutral `SandboxAllocator` (`x/sandbox_allocation.py`) under its own `SBOX`
-    election — never from the request path, and never from a channel's supervisor, which now only
-    creates its room's session and announces what it sees. `POST /api/conversations` therefore
-    returns an idle conversation holding no sandbox, exactly as a quiet room does. The enum widening shipped
-    a release early (#4190) because `TextBackedStrEnumColumn` parses the column; the writer is the
-    second half. **Cost, stated plainly:** the first message after quiet pays the full cold start.
-    Measure it rather than assume it away. **Done when** an idle room holds no sandbox and the first
-    message provisions one.
+    **The demand lives on the conversation, not on a session.** The conversation holds an incoming
+    prompt until a session provisions, so a session is created only where there is demand and is
+    created straight into `provisioning` — an unclaimed prompt against a conversation with no live
+    session is the signal, and it is the same on every surface. It is swept by a channel-neutral
+    `SandboxAllocator` (`x/sandbox_allocation.py`) under its own `SBOX` election — never from the
+    request path, and never from a channel's supervisor, which now only announces what it sees.
+    `POST /api/conversations` therefore returns a conversation holding no sandbox, exactly as a quiet
+    room does. The rejected alternative was a session created in an `idle` status that a prompt then
+    bought a sandbox for (#4231, closed): it made "exists" and "is wanted" two different facts about
+    one row, and the enum member it needed is gone again. **Cost, stated plainly:** the first message
+    after quiet pays the full cold start. Measure it rather than assume it away. **Done when** a
+    quiet room holds no sandbox and the first message provisions one.
 
 4.  **Matrix becomes a subscriber** (§ 2's primitive) for every kind, not just the one
     `RoomNotices` reads. One loop per `(channel, conversation)`, reading the record from its cursor
@@ -788,9 +789,8 @@ having even if the loop is never built. The dependency edges are at the end.
     split them. Four go outright — `test_message_tool_calls_migration.py`,
     `test_neutral_turn_usage_migration.py`, `test_session_claim_cleaned_at_migration.py` and
     `test_frame_runner_seq_migration.py`, each asserting a backfill or a nullability the schema has
-    since moved past. `test_session_idle_status_migration.py` **becomes a constraint test**, since
-    both its assertions are about what `ck_sessions_status` admits — not before step 3 ships, while
-    the widening is still the live half of a two-release change. And
+    since moved past. `test_session_status_narrowing_migration.py` **becomes a constraint test**,
+    since both its assertions are about what `ck_sessions_status` admits. And
     `test_recall_index_migration.py` **stays, rebased**: it compares
     <../../recall_index/schema.py> against what the deployed database gets, and nothing else does.
     No coverage is lost, because the two tests that assert the property a squash actually endangers
@@ -825,7 +825,7 @@ having even if the loop is never built. The dependency edges are at the end.
 it from an open `session_turns` row — the SPA switches on the API field, so the column stopped
 carrying it with no frontend release. Of the rest, `provisioning`/`ready` follow from
 `bridge_connected_at`, and `failed` from `error IS NOT NULL`. Only `closing` and `closed` have no
-evidence in the row today, and `idle` has none until the writer lands.
+evidence in the row today.
 
 **Lossy, which is the stronger argument.** `provisioning` stands for several distinct facts — claim
 submitted, pod scheduled, sandbox running, runner dialled back — and the row records exactly one of

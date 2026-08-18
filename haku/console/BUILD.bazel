@@ -1530,9 +1530,9 @@ py_test(
 )
 
 py_test(
-    name = "test_session_idle_status_migration",
+    name = "test_session_status_narrowing_migration",
     size = "medium",
-    srcs = ["test_session_idle_status_migration.py"],
+    srcs = ["test_session_status_narrowing_migration.py"],
     data = [
         "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",

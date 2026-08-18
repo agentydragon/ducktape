@@ -217,12 +217,11 @@ second by a streaming turn, and a cluster read per refetch is not worth paying f
 already answered. Both go through one `_observed`, so the two surfaces cannot disagree about what
 the cluster said; what differs is when each asks.
 
-**Nothing here is reported by being absent.** A `null` means one thing only: a session that has
-never asked for a sandbox — the state a session sits in once a prompt rather than its creation buys
-one — and it costs no cluster read, because a claim provably does not exist. A claim Kubernetes does
-not have (never created, or reclaimed by `_cleanup_terminal_claim` once the session ended) is
-`claim_absent`. A cluster that could not be read at all is `observation_error` on an otherwise empty
-view. Three answers, three shapes.
+**Nothing here is reported by being absent.** Every session has a sandbox to report on — one is
+created only once a sandbox is being claimed for it — so the view is never `null`. A claim
+Kubernetes does not have (never created, or reclaimed by `_cleanup_terminal_claim` once the session
+ended) is `claim_absent`. A cluster that could not be read at all is `observation_error` on an
+otherwise empty view. Two answers, two shapes.
 
 **One observation is reused for `OBSERVATION_TTL`.** A poll costs up to three Kubernetes reads, and
 this is an operator-facing GET a browser watching a sandbox come up will poll — so the API server
