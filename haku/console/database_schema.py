@@ -976,10 +976,6 @@ class Session(Base):
     conversation_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("conversation.conversation_id", ondelete="CASCADE"), nullable=False
     )
-    # Every writer names this column, so no row is null today. Nullable is what an `INSERT` that
-    # stops naming it gets instead of a `NOT NULL` violation, and absent is the honest record for a
-    # session whose channel the attachment holds instead (`0075`).
-    surface: Mapped[ChatSurface] = mapped_column(TextBackedStrEnumColumn(ChatSurface), nullable=True)
     status: Mapped[SessionStatus] = mapped_column(TextBackedStrEnumColumn(SessionStatus), nullable=False)
     # The verifier for this session's rendezvous credential — SHA-256 of a bearer minted once at
     # creation and never stored. It answers only "does this redialling runner hold this session's
@@ -1018,7 +1014,6 @@ class Session(Base):
         CheckConstraint(
             "status IN ('provisioning','ready','responding','closing','closed','failed')", name="ck_sessions_status"
         ),
-        CheckConstraint("surface IN ('spa','matrix')", name="ck_sessions_surface"),
         Index("idx_sessions_operator", "operator_id", "created_at"),
         Index("idx_sessions_conversation", "conversation_id", "created_at"),
         Index(
@@ -1506,7 +1501,15 @@ UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset({"matrix_conversation"}
 #   `sessions`, whether or not any code reads the attribute, so the drop waits a release after
 #   this unmapping. A session reaches its room through `conversation_id` and that conversation's
 #   live `chat_attachment`.
-UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset({("sessions", "room_id")})
+#
+# CLEANUP(added 2026-08-18): drop `sessions.surface`, and with it `ck_sessions_surface`, once no
+#   replica predating this commit is still serving — same reason as above, and `0075` made the
+#   column nullable so the first `INSERT` of this roll does not fail on a `NOT NULL` the release
+#   no longer names. Which channels hold a conversation is `chat_attachment`, one row per channel,
+#   which is what a single enum on the session could not say.
+UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
+    {("sessions", "room_id"), ("sessions", "surface")}
+)
 
 # Indexes the database has and no ORM class declares. Reachable only through a column above: an
 # index over columns that are all still mapped would be drift rather than an unfinished drop.

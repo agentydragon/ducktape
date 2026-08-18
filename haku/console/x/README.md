@@ -148,7 +148,8 @@ level is the fix, not reinstating the models on the tool.
 
 `POST /api/sessions/{session_id}/messages` and `/abort` ask **who owns the session**, never which
 surface opened it: `enqueue_prompt` checks `operator_id`, `READY`, no open turn and no queued
-prompt, and nothing in the route or the store reads `sessions.surface`. So the conversation detail
+prompt, and no session records which surface opened it — `sessions.surface` is unmapped and
+awaiting its drop, and which channels hold a conversation is `chat_attachment`. So the conversation detail
 view carries a composer (`frontend/x/conversation_composer.tsx`) for any session it can read,
 a room's included — the reply then goes wherever that session's channel sends replies, so a prompt
 typed in the browser also lands in the room.

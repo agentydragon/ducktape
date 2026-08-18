@@ -431,8 +431,8 @@ session's frontend? why would a session care?"_). It is worth stating flatly bec
 as though it were.
 
 What is actually there: `SessionService` holds **one** `ChatFrontend`, the Matrix one, and
-`_frontend_for` is not a lookup but a filter — is this session's `surface` the one my single
-frontend serves? The name promises a mapping where there is a global and a guard.
+`_frontend_for` is not a lookup but a filter — does a channel hold a copy of this session's
+conversation? The name promises a mapping where there is a global and a guard.
 
 **A session does not care, and nothing about a session should.** What cares is the turn loop, and
 only because the turn loop is doing the channel's job: `report`, `report_silent_turn`, `_speak` and
@@ -613,10 +613,8 @@ exists to remove:
 having even if the loop is never built. The dependency edges are at the end.
 
 1.  **Read through `conversation_id`, then unmap what it subsumes.** `0064` is additive, so
-    `matrix_conversation` and `sessions.surface` are still authoritative. `sessions.room_id` is
-    unmapped and awaiting its drop; `surface` follows the same three releases, and `0075` already
-    made it nullable so the release that stops naming it does not break the first `INSERT` of the
-    roll.
+    `matrix_conversation` is still authoritative. `sessions.room_id` and `sessions.surface` are
+    both unmapped and awaiting their drops.
 
 2.  **The conversation detail page reads the increment** instead of refetching the whole
     conversation on every poll. `Subscription` over a `ClientHeldCursor` is the server-side half;

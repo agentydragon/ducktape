@@ -46,7 +46,7 @@ from haku.console.x.channels.matrix.pacer import RoomPacer
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.delivery_log import DeliveryLog
 from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
-from haku.console.x.session_store import BridgeAuthentication, MatrixSession, SessionStore, SpaSession
+from haku.console.x.session_store import BridgeAuthentication, SessionStore
 
 
 @dataclass
@@ -146,7 +146,7 @@ def sync_store(migrated_sessions) -> MatrixSyncStore:
 @pytest.fixture
 async def turns(chat_store: SessionStore, operator_id: UUID) -> _FakeTurns:
     """Ingress over a real session, since what it hands the loop are rows keyed to one."""
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view, _ = await chat_store.create(operator_id)
     return _FakeTurns(view.session_id)
 
 
@@ -272,7 +272,7 @@ async def carried_prompt(
     chat_store: SessionStore, operator_id: UUID, ledger: IngressLedger, event_id: str, body: str
 ) -> UUID:
     """A prompt in the record carrying *event_id*, as an accepted batch leaves one behind."""
-    view, token = await chat_store.create(operator_id, MatrixSession())
+    view, token = await chat_store.create(operator_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(
         operator_id,
@@ -857,9 +857,7 @@ async def test_history_is_read_from_our_record_and_not_from_the_homeserver(
     the outside.
     """
     view, token = await chat_store.create(
-        operator_id,
-        MatrixSession(),
-        conversation_id=(await conversations.bind_room(MATRIX_ROOM, operator_id)).conversation_id,
+        operator_id, conversation_id=(await conversations.bind_room(MATRIX_ROOM, operator_id)).conversation_id
     )
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "[$a] hi", SPA_ORIGIN)

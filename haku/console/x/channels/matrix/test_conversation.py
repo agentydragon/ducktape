@@ -45,7 +45,7 @@ from haku.console.x.conftest import runtime_config
 from haku.console.x.session_events import PromptBody
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
-from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, MatrixSession, SessionStore, SpaSession
+from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, SessionStore
 from haku.console.x.system_prompt import HistoryMessage, SystemPromptTemplate
 
 
@@ -243,7 +243,7 @@ async def test_does_not_repeat_an_unchanged_status(
 async def bound(conversations: MatrixConversationStore, chat_store: SessionStore, operator_id: UUID) -> UUID:
     """A bound room, and a real session row for the prompt to be built for."""
     await conversations.bind_room(MATRIX_ROOM, operator_id)
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view, _ = await chat_store.create(operator_id)
     return view.session_id
 
 
@@ -404,7 +404,7 @@ async def another_thread(sessions: async_sessionmaker[AsyncSession], operator_id
 
 async def serving_session(chat_store: SessionStore, operator_id: UUID, conversation_id: UUID) -> UUID:
     """A Matrix session ready to take prompts, made the way the supervisor and a runner make one."""
-    view, token = await chat_store.create(operator_id, MatrixSession(), conversation_id=conversation_id)
+    view, token = await chat_store.create(operator_id, conversation_id=conversation_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     return view.session_id
 

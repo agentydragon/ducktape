@@ -20,7 +20,7 @@ from haku.console.x.claude_code import frames
 from haku.console.x.claude_code.projection import RecordedFrame, project_log
 from haku.console.x.conversation_events import ToolCallCompleted, ToolCallStarted
 from haku.console.x.frame_projection import projected
-from haku.console.x.session_store import BridgeAuthentication, SpaSession
+from haku.console.x.session_store import BridgeAuthentication
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 
 # A bearer smuggled into the log the only realistic way one gets there: an operator ran a command
@@ -73,7 +73,7 @@ SESSION_FRAMES: list[dict[str, Any]] = [
 @pytest.fixture
 async def exported(chat_store, migrated_sessions, operator_id) -> frame_export.ExportedSession:
     """One session recorded through the write path, with a console-authored `setup_output` row in it."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await chat_store.create(operator_id)
     session_id: UUID = view.session_id
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.record_frame(

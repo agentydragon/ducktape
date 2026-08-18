@@ -77,7 +77,6 @@ async def say(sessions: async_sessionmaker[AsyncSession], operator_id: UUID, con
                 session_id=session_id,
                 operator_id=operator_id,
                 conversation_id=conversation_id,
-                surface=ChatSurface.SPA,
                 status=SessionStatus.CLOSED,
                 bridge_token_fingerprint=b"fingerprint",
                 lease_expires_at=_NOW,

@@ -18,7 +18,7 @@ from haku.console.database_schema import MatrixRoomCursor
 from haku.console.x.channels.matrix.conftest import MATRIX_ROOM
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore
 from haku.console.x.channels.matrix.room_subscription import ABORTED_BY_OPERATOR, RoomCursor, RoomNotices
-from haku.console.x.session_store import MatrixSession, SessionStore
+from haku.console.x.session_store import SessionStore
 from haku.console.x.subscription import START, ConversationStream, StreamPosition
 
 
@@ -63,7 +63,7 @@ def notices(
 async def served(chat_store: SessionStore, operator_id: UUID, conversations: MatrixConversationStore) -> UUID:
     """A ready session serving the bound room, on the conversation the room is attached to."""
     conversation_id = (await conversations.bind_room(MATRIX_ROOM, operator_id)).conversation_id
-    view, token = await chat_store.create(operator_id, MatrixSession(), conversation_id=conversation_id)
+    view, token = await chat_store.create(operator_id, conversation_id=conversation_id)
     await chat_store.authenticate_bridge(view.session_id, token)
     return view.session_id
 

@@ -18,7 +18,7 @@ import pytest_bazel
 
 from haku.console.chat_models import SPA_ORIGIN, TurnOutcome
 from haku.console.x.session_events import PromptBody
-from haku.console.x.session_store import SessionStore, SpaSession
+from haku.console.x.session_store import SessionStore
 from haku.console.x.subscription import (
     START,
     Backlog,
@@ -45,7 +45,7 @@ def stream(migrated_sessions) -> ConversationStream:
 
 async def a_thread(chat_store: SessionStore, operator_id: UUID, *said: str) -> Thread:
     """A ready session whose conversation holds one `prompt_enqueued` event per prompt."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await chat_store.create(operator_id)
     await chat_store.authenticate_bridge(view.session_id, token)
     thread = Thread(conversation_id=await chat_store.conversation_of(view.session_id), session_id=view.session_id)
     for prompt in said:
@@ -153,7 +153,7 @@ async def test_a_replacement_session_continues_the_same_stream(chat_store, opera
     """The stream is keyed by the thread, so a subscriber holding a position from before the sandbox
     died reads on into its replacement's rows."""
     thread = await a_thread(chat_store, operator_id, "before")
-    replacement, token = await chat_store.create(operator_id, SpaSession(), conversation_id=thread.conversation_id)
+    replacement, token = await chat_store.create(operator_id, conversation_id=thread.conversation_id)
     await chat_store.authenticate_bridge(replacement.session_id, token)
     await chat_store.enqueue_prompt(operator_id, replacement.session_id, "after", SPA_ORIGIN)
 
@@ -165,7 +165,7 @@ async def test_the_head_of_a_conversation_nothing_has_been_said_in_is_the_start(
 ) -> None:
     """Zero is a position no row can carry, so "nothing recorded yet" and "read everything" are one
     number rather than two states."""
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view, _ = await chat_store.create(operator_id)
 
     assert await stream.head(await chat_store.conversation_of(view.session_id)) == START
 

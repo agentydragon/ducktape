@@ -24,7 +24,7 @@ from haku.console.x.conversation_events import FrameRange, MessageCompleted, Mes
 from haku.console.x.conversation_follow import ConversationFollow
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
-from haku.console.x.session_store import SessionStore, SpaSession
+from haku.console.x.session_store import SessionStore
 from haku.console.x.session_views import (
     ConversationFollowMessage,
     ConversationSnapshot,
@@ -64,7 +64,7 @@ async def _nothing_more(messages: AsyncIterator[ConversationFollowMessage]) -> N
 
 
 async def _started(chat_store: SessionStore, operator_id: UUID) -> tuple[UUID, UUID]:
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await chat_store.create(operator_id)
     await chat_store.authenticate_bridge(view.session_id, token)
     return view.session_id, await chat_store.conversation_of(view.session_id)
 
@@ -223,7 +223,7 @@ async def test_a_replacement_sessions_rows_reach_a_follower_that_never_named_it(
     messages = following.follow(operator_id, conversation_id)
     assert isinstance(await _next(messages), ConversationSnapshot)
 
-    replacement, token = await chat_store.create(operator_id, SpaSession(), conversation_id=conversation_id)
+    replacement, token = await chat_store.create(operator_id, conversation_id=conversation_id)
     await chat_store.authenticate_bridge(replacement.session_id, token)
     await _exchange(chat_store, operator_id, replacement.session_id, "carry on", "carrying on")
     update = await _next(messages)
@@ -310,7 +310,7 @@ async def test_a_sandbox_still_coming_up_is_read_again_with_no_wake_to_carry_it(
     """Kubernetes writes no `session_events` row when a pod goes ready, so a follower waiting only
     for wakes would show a provisioning panel frozen at whatever it opened on — during exactly the
     phase that panel exists for."""
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view, _ = await chat_store.create(operator_id)
     conversation_id = await chat_store.conversation_of(view.session_id)
     messages = following.follow(operator_id, conversation_id)
 

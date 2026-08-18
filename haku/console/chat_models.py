@@ -38,8 +38,9 @@ class PromptOriginKind(StrEnum):
     """Which arm of `PromptOrigin` a prompt carries.
 
     Its members coincide with `ChatSurface`'s and it stays its own vocabulary: this discriminates a
-    value stored inside a `prompt_enqueued` body, `ChatSurface` names how a session was created, and
-    one enum for both would make a change to either meaning rewrite the other's stored strings.
+    value stored inside a `prompt_enqueued` body, `ChatSurface` names which kind of channel holds a
+    conversation, and one enum for both would make a change to either meaning rewrite the other's
+    stored strings.
     """
 
     SPA = "spa"

@@ -20,7 +20,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Any, ClassVar, Protocol, cast
+from typing import Any, Protocol, cast
 from uuid import UUID, uuid4
 
 from sqlalchemy import ColumnElement, CursorResult, Select, delete, func, literal, or_, select, text, tuple_, update
@@ -240,29 +240,6 @@ class BridgeAuthentication(StrEnum):
     HELD = "held"
 
 
-@dataclass(frozen=True)
-class SpaSession:
-    """A session created by the browser chat view, which has no room."""
-
-    # What the row records for this variant, carried on the variant rather than derived by an
-    # `isinstance` chain at the call site: a third surface is a dataclass, not another arm.
-    surface_column: ClassVar[ChatSurface] = ChatSurface.SPA
-
-
-@dataclass(frozen=True)
-class MatrixSession:
-    """A session created to serve one Matrix room.
-
-    Which room is the conversation's live `chat_attachment`; this variant says only what the
-    session's `surface` column records.
-    """
-
-    surface_column: ClassVar[ChatSurface] = ChatSurface.MATRIX
-
-
-SessionSurface = SpaSession | MatrixSession
-
-
 @dataclass(frozen=True, slots=True)
 class TurnStart:
     """A prompt taken off the queue together with the turn opened to answer it."""
@@ -349,14 +326,16 @@ class SessionStore:
     def _fingerprint(token: str) -> bytes:
         return hashlib.sha256(token.encode()).digest()
 
-    async def create(
-        self, operator_id: UUID, surface: SessionSurface, *, conversation_id: UUID | None = None
-    ) -> tuple[SessionView, str]:
+    async def create(self, operator_id: UUID, *, conversation_id: UUID | None = None) -> tuple[SessionView, str]:
         """Start a session, continuing *conversation_id* or opening a conversation of its own.
 
         Absent is not "unknown": it is a caller with no thread to continue, which is every session
         the browser starts. A channel that holds a copy passes the conversation its attachment
         names, which is what makes replacing a dead session invisible to that channel.
+
+        **Nothing here says which channel the session is for.** A channel attaches to the
+        conversation, so which ones hold a copy is `chat_attachment` — however many — and a
+        session is the same object whoever asked for it.
         """
         now = datetime.now(UTC)
         session_id = uuid4()
@@ -373,7 +352,6 @@ class SessionStore:
                     session_id=session_id,
                     operator_id=operator_id,
                     conversation_id=conversation_id,
-                    surface=surface.surface_column,
                     status=SessionStatus.PROVISIONING,
                     bridge_token_fingerprint=self._fingerprint(bridge_token),
                     bridge_connected_at=None,

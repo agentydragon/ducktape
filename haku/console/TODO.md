@@ -328,9 +328,9 @@ cross-session reads stay open within a tier, so an agent keeps its own history.
 
 Three things it needs, in order:
 
-1. **A tier on `sessions`**, beside the `surface`/`room_id` that landed in `0030` —
-   from the room's fixed tier for a Matrix session, from the agent kind otherwise, with the room's
-   authoritative where both exist.
+1. **A tier on `sessions`** — from the room's fixed tier for a Matrix conversation, from the agent
+   kind otherwise, with the room's authoritative where both exist. A session's room is its
+   conversation's live `chat_attachment`, not a column on the session.
 2. **Unlabelled reads as highest**, so every session predating the column is unreadable by a lower
    tier rather than treated as unclassified-therefore-fine.
 3. **The decision function at the one call site** R5.3a identified, in the shape the approval

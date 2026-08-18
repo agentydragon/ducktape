@@ -39,7 +39,7 @@ from haku.console.x.channels.matrix.ingress_ledger import IngressLedger, Unanswe
 from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.session_runtime import SessionService
-from haku.console.x.session_store import REPLICA, MatrixSession, PromptRefusedError, SessionStore
+from haku.console.x.session_store import REPLICA, PromptRefusedError, SessionStore
 from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, SystemPromptTemplate
 
 logger = logging.getLogger(__name__)
@@ -452,8 +452,9 @@ def _as_prompt(messages: Sequence[InboundMessage]) -> str:
 class MatrixSurface:
     """What a turn running under this room's conversation says into it.
 
-    No session filtering in any method: the console picks this surface by reading the session's own
-    `surface`, so being called at all is the statement that this session serves the bound room.
+    No session filtering in any method: the console picks this surface by asking whether a channel
+    holds a copy of the session's conversation, so being called at all is the statement that this
+    session serves the bound room.
 
     History is read here rather than carried forward from the previous session, because by the time
     a replacement session starts, the one that held the context is gone. **Our own transcript is
@@ -619,9 +620,7 @@ class MatrixSessionSupervisor:
 
         # The replacement joins the conversation the room is already attached to, so the attachment
         # is not touched and the thread survives the session that was running it.
-        session = await self._chat.create(
-            await self._operator_id(), MatrixSession(), conversation_id=binding.conversation_id
-        )
+        session = await self._chat.create(await self._operator_id(), conversation_id=binding.conversation_id)
         self._last_announced = SessionStatus.PROVISIONING
         await self._announce(f"provisioning a sandbox · session {session.session_id}")
         logger.info("Matrix: provisioned session %s for room %s", session.session_id, binding.room_id)

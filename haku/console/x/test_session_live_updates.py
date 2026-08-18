@@ -24,7 +24,7 @@ from haku.console.console_events import ConsoleEvent, ConsoleEventHub
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.session_live_updates import SessionLiveUpdates
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications, notify
-from haku.console.x.session_store import SessionStore, SpaSession
+from haku.console.x.session_store import SessionStore
 
 # Long enough that several notifications land inside one window on a loaded machine, short enough
 # that asserting a flush does not wait out anyone's patience.
@@ -100,7 +100,7 @@ async def test_a_write_that_changes_a_session_reaches_the_owning_operators_tab(
 ) -> None:
     """Through an ordinary store write, not a hand-rolled notify: the publish belongs to the
     transaction that makes the change, so a change that rolled back announces nothing."""
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view, _ = await chat_store.create(operator_id)
     socket = await _tab(hub, operator_id)
 
     await chat_store.request_close(operator_id, view.session_id)
@@ -119,7 +119,7 @@ async def test_the_event_says_only_which_session_changed(
 ) -> None:
     """The wire shape is the contract: an invalidation, never the transcript itself, which would
     make the socket a second source of truth for what a session holds."""
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view, _ = await chat_store.create(operator_id)
     socket = await _tab(hub, operator_id)
 
     async with migrated_sessions.begin() as db:
@@ -137,7 +137,7 @@ async def test_a_burst_of_changes_becomes_one_invalidation(
 ) -> None:
     """A streaming turn changes a session per delta, and each event costs a tab a whole
     transcript — so coalescing is what keeps the notification cheaper than what it triggers."""
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view, _ = await chat_store.create(operator_id)
     socket = await _tab(hub, operator_id)
 
     async with migrated_sessions.begin() as db:
@@ -155,8 +155,8 @@ async def test_two_sessions_changing_together_are_invalidated_separately(
     operator_id: UUID,
 ) -> None:
     """One window collapses a session's own changes, never two sessions into one event."""
-    first, _ = await chat_store.create(operator_id, SpaSession())
-    second, _ = await chat_store.create(operator_id, SpaSession())
+    first, _ = await chat_store.create(operator_id)
+    second, _ = await chat_store.create(operator_id)
     socket = await _tab(hub, operator_id)
 
     async with migrated_sessions.begin() as db:
@@ -177,7 +177,7 @@ async def test_an_update_is_not_delivered_to_another_operators_tab(
 ) -> None:
     """`SessionEvent` carries no operator, so the routing rests entirely on the session's row."""
     other_operator = await migrated_identity_store.resolve_configured_external_user_key("another-authentik-user-id")
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view, _ = await chat_store.create(operator_id)
     mine = await _tab(hub, operator_id)
     theirs = await _tab(hub, other_operator)
 
@@ -215,7 +215,7 @@ async def test_a_failed_flush_does_not_stop_the_next_one(
     updates again, so the loop has to outlive what fails inside it."""
     flaky = FlakyHub(migrated_db_url, operator_identity_store=migrated_identity_store)
     await flaky.start()
-    view, _ = await chat_store.create(operator_id, SpaSession())
+    view, _ = await chat_store.create(operator_id)
     socket = await _tab(flaky, operator_id)
     try:
         async with SessionLiveUpdates(notifications, flaky, migrated_sessions, window=WINDOW).run():

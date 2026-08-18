@@ -31,7 +31,7 @@ from haku.console.database_schema import SessionFrame
 from haku.console.x.conftest import MCP_TOKEN, runtime_config
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService, internal_router
-from haku.console.x.session_store import SessionStore, SpaSession
+from haku.console.x.session_store import SessionStore
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 from haku.console.x.testing.recording_claims import RecordingClaims
 from util.bazel.runfiles import get_required_path
@@ -119,7 +119,7 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     workspace.mkdir()
     stub_state = tmp_path / "stub"
     stub_state.mkdir()
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await chat_store.create(operator_id)
     session_id = view.session_id
     # One port for both consoles: the runner redials the address its claim was created with, so
     # surviving a roll means surviving on that address rather than being told a new one.

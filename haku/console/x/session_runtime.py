@@ -42,8 +42,6 @@ from haku.console.x.session_store import (
     PromptRefusedError,
     ResumedTurn,
     SessionStore,
-    SessionSurface,
-    SpaSession,
     TurnStart,
 )
 from haku.console.x.session_views import (
@@ -153,7 +151,8 @@ class ChatFrontend(StatusFrontend, Protocol):
     typing indicator need are `StatusFrontend`, declared beside the driver that calls them
     (<room_status.py>).
 
-    Which sessions it serves is the session's `surface`. The SPA needs none of this — its client
+    Which sessions it serves is whether a channel holds a copy of the conversation they run
+    (`SessionStore.attached`). The SPA needs none of this — its client
     reads the message rows over SSE, so a finished turn is delivered by being written down. A room
     has to be spoken to.
 
@@ -211,10 +210,8 @@ class SessionService:
             raise KeyError(session_id)
         return await self._store.request_abort(session_id)
 
-    async def create(
-        self, operator_id: UUID, surface: SessionSurface, *, conversation_id: UUID | None = None
-    ) -> SessionView:
-        view, token = await self._store.create(operator_id, surface, conversation_id=conversation_id)
+    async def create(self, operator_id: UUID, *, conversation_id: UUID | None = None) -> SessionView:
+        view, token = await self._store.create(operator_id, conversation_id=conversation_id)
         try:
             await self._claims.create(
                 session_id=view.session_id,
@@ -232,7 +229,7 @@ class SessionService:
 
     async def create_conversation(self, operator_id: UUID) -> ConversationView:
         """Open a thread and the session that runs it, and read the thread back."""
-        view = await self.create(operator_id, SpaSession())
+        view = await self.create(operator_id)
         return await self.conversation(operator_id, await self._store.conversation_of(view.session_id))
 
     async def conversation(self, operator_id: UUID, conversation_id: UUID) -> ConversationView:

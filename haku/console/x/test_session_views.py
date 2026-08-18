@@ -12,7 +12,7 @@ from haku.console.chat_models import SPA_ORIGIN, ConversationEventKind, EventPro
 from haku.console.database_schema import SessionEvent, SessionFrame
 from haku.console.x import session_views
 from haku.console.x.claude_code import projection
-from haku.console.x.session_store import BridgeAuthentication, SpaSession
+from haku.console.x.session_store import BridgeAuthentication
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 
 
@@ -22,7 +22,7 @@ async def _detail(chat_store, operator_id, session_id):
 
 
 async def test_narration_reads_back_in_the_order_the_sandbox_produced_it(chat_store, operator_id) -> None:
-    session, _ = await chat_store.create(operator_id, SpaSession())
+    session, _ = await chat_store.create(operator_id)
     for line in ("Cloning into 'haku-state'...", "done.", "Starting Claude Code."):
         await chat_store.record_frame(
             session.session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, setup_output_frame(line)
@@ -43,7 +43,7 @@ async def test_narration_reads_back_in_the_order_the_sandbox_produced_it(chat_st
 async def test_two_identical_narration_lines_are_two_lines(chat_store, operator_id) -> None:
     """The rows carry no frame identity, so nothing may collapse a repeat into a replay: a
     bootstrap that says "retrying" twice retried twice."""
-    session, _ = await chat_store.create(operator_id, SpaSession())
+    session, _ = await chat_store.create(operator_id)
     for _ in range(2):
         await chat_store.record_frame(
             session.session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, setup_output_frame("retrying")
@@ -56,8 +56,8 @@ async def test_two_identical_narration_lines_are_two_lines(chat_store, operator_
 
 
 async def test_narration_carries_only_this_session_and_only_setup_output(chat_store, operator_id) -> None:
-    session, _ = await chat_store.create(operator_id, SpaSession())
-    other, _ = await chat_store.create(operator_id, SpaSession())
+    session, _ = await chat_store.create(operator_id)
+    other, _ = await chat_store.create(operator_id)
     await chat_store.record_frame(
         session.session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, setup_output_frame("mine")
     )
@@ -74,7 +74,7 @@ async def test_narration_carries_only_this_session_and_only_setup_output(chat_st
 
 
 async def test_a_session_that_narrated_nothing_reports_no_narration(chat_store, operator_id) -> None:
-    session, _ = await chat_store.create(operator_id, SpaSession())
+    session, _ = await chat_store.create(operator_id)
 
     detail = await _detail(chat_store, operator_id, session.session_id)
 
@@ -86,7 +86,7 @@ _STORED_CONTENT = {"toolu_text": {"shape": "text", "text": "a.py\nb.py"}, "toolu
 
 async def test_a_stored_result_reads_back_as_its_text(chat_store, migrated_sessions, operator_id) -> None:
     """`text` is the only stored shape, and an empty result is a result rather than an absent one."""
-    view, token = await chat_store.create(operator_id, SpaSession())
+    view, token = await chat_store.create(operator_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "list the files", SPA_ORIGIN)
     started = await chat_store.next_prompt(view.session_id)

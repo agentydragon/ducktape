@@ -14,7 +14,7 @@ import pytest_bazel
 
 from haku.console.chat_models import SPA_ORIGIN, MatrixOrigin
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger, Unanswered
-from haku.console.x.session_store import BridgeAuthentication, MatrixSession, PromptRefusedError, SessionStore
+from haku.console.x.session_store import BridgeAuthentication, PromptRefusedError, SessionStore
 
 ROOM = "!room:allegedly.works"
 
@@ -26,7 +26,7 @@ def _from_room(*event_ids: str) -> MatrixOrigin:
 
 async def ready_session(chat_store: SessionStore, operator_id: UUID) -> UUID:
     """A Matrix session that will take a prompt, made the way the supervisor and a runner make one."""
-    view, token = await chat_store.create(operator_id, MatrixSession())
+    view, token = await chat_store.create(operator_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     return view.session_id
 
