@@ -245,7 +245,7 @@ class TurnStart:
     """A prompt taken off the queue together with the turn opened to answer it."""
 
     turn_id: UUID
-    message_id: UUID
+    item_id: UUID
     prompt: str
 
 
@@ -269,22 +269,22 @@ class ResumedTurn:
 
 @dataclass(frozen=True, slots=True)
 class TurnState:
-    """How far a turn has got, as `session_turns` records it.
+    """How far a turn has got, read off the items it opened.
 
-    Every field is written in the same transaction as the effect it describes, so this is the
-    turn's state rather than a reading of its side effects, and it says the same thing to the
-    process that opened the turn and to the one that inherits it.
+    Derived rather than recorded: what a turn is streaming into is its one open message item, and
+    whether it said anything is whether it has a completed one. The columns this replaces were the
+    turn loop's own bookkeeping kept on the turn row, which is a second place the same facts could
+    be wrong.
+
+    Delivery is deliberately absent. Whether a room has been told is the channel's, and it reads
+    the log forward from its own cursor rather than being handed a flag by the turn that produced
+    the words.
     """
 
-    # The assistant message being streamed into. None between messages: either nothing has been
-    # said yet, or the last one completed and closed.
-    assistant_message_id: UUID | None
-    # The empty prefix of an answer, not an absent one — `assistant_message_id` is what says
-    # whether a message is open at all. The message row's own content, which the stream writes on
-    # every delta, rather than a second copy kept on the turn.
-    streamed: str
+    # The prose of the message still being streamed into, or None when none is open. Empty string
+    # is a real state — a message opened and not yet spoken into.
+    streaming: str | None
     said_anything: bool
-    queued_reply: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -768,18 +768,19 @@ class SessionStore:
         prompt_text: str,
         origin: PromptOrigin,
         records: PromptRecords | None = None,
-    ) -> SessionMessageView:
-        """Accept a prompt, recording which surface it arrived through.
+    ) -> UUID:
+        """Accept a prompt, recording which surface it arrived through. Returns its item.
 
-        The origin rides on the `PROMPT_ENQUEUED` event rather than on the transcript row, because
-        that event is already the prompt's provider-neutral place in the stream — and a surface
-        deciding whether it has already shown this prompt reads the stream, not the transcript.
+        The prompt is an item like any other — opened, spoken and closed in one breath, because its
+        whole text is known when it is accepted — and it takes the authored provenance arm, since
+        admission happens before anything crosses a wire.
 
-        Required, with no default. A default of the console's own surface would mean a channel
-        that forgot to pass one recorded the operator as having typed it into a browser — and the
-        reader this exists for would then post that prompt into every room including the one it
-        came from, which is the exact duplicate the origin is here to prevent. Silent, and in the
-        one direction that matters, so the type system holds it instead.
+        The origin rides on the item's opening event, because that is the prompt's provider-neutral
+        place in the stream, and a surface deciding whether it has already shown this prompt reads
+        the stream. Required, with no default: a default of the console's own surface would mean a
+        channel that forgot to pass one recorded the operator as having typed it into a browser, and
+        the reader this exists for would post that prompt into every room including the one it came
+        from. Silent, and in the one direction that matters, so the type system holds it instead.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -794,40 +795,26 @@ class SessionStore:
                 raise PromptRefusedError(PromptRejection.SESSION_NOT_READY)
             # Admission asks about the turn, not the session's status: gating on `READY` alone
             # would accept a prompt mid-turn, which is mid-turn steering arriving by accident with
-            # no fold path wired.
-            if await _open_turn(db, session_id) is not None:
+            # no fold path wired. Asked of the conversation, because that is where the rule lives.
+            if await _open_turn(db, chat.conversation_id) is not None:
                 raise PromptRefusedError(PromptRejection.TURN_IN_FLIGHT)
-            if await _queued_prompt(db, session_id) is not None:
+            if await _queued_prompt(db, chat.conversation_id) is not None:
                 raise PromptRefusedError(PromptRejection.PROMPT_QUEUED)
-            # `pending` is how the SPA renders a prompt that has not started; the row is what this
-            # call hands back.
-            message = SessionMessage(
-                message_id=uuid4(),
-                session_id=session_id,
-                role=ChatMessageRole.USER,
-                status=ChatMessageStatus.PENDING,
-                content=prompt_text,
-                error=None,
-                created_at=now,
-                updated_at=now,
+            writer = await conversation_log.writer_for(
+                db, chat.conversation_id, session_id=session_id, turn_id=None, now=now
             )
-            db.add(message)
+            item_id = await writer.authored_prompt(prompt_text, origin)
             db.add(
-                SessionPrompt(prompt_id=uuid4(), session_id=session_id, message_id=message.message_id, queued_at=now)
-            )
-            # In this transaction, so the ordered stream gains the operator's turn exactly when the
-            # transcript does. Without it `session_events` holds only the agent's half.
-            db.add(
-                session_events.prompt_enqueued(
-                    session_id=session_id, message_id=message.message_id, text=prompt_text, origin=origin, now=now
+                ConversationPrompt(
+                    prompt_id=uuid4(), conversation_id=chat.conversation_id, item_id=item_id, queued_at=now
                 )
             )
             chat.updated_at = now
             if records is not None:
-                await records(db, message.message_id)
+                await records(db, item_id)
             await notify(db, SessionEventKind.PROMPT, session_id)
             await notify(db, SessionEventKind.UPDATE, session_id)
-        return user_message_view(message)
+        return item_id
 
     async def next_prompt(self, session_id: UUID) -> TurnStart | None:
         """Take the queued prompt and open the turn that will answer it, or None if there is none.
@@ -845,32 +832,36 @@ class SessionStore:
             if chat is None or chat.status in ENDED_SESSION_STATUSES:
                 return None
             now = datetime.now(UTC)
-            if (queued := await _queued_prompt(db, session_id, lock=True)) is None:
+            if (queued := await _queued_prompt(db, chat.conversation_id, lock=True)) is None:
                 return None
-            queued.claimed_at = now
-            message = await db.get(SessionMessage, queued.message_id)
-            if message is None:
-                # The row the queue points at is gone, so there is no prompt to run and no text to
+            item = await db.get(ConversationItem, queued.item_id)
+            if item is None:
+                # The item the queue points at is gone, so there is no prompt to run and no text to
                 # run it with. Claiming it anyway is what stops the session retrying a prompt it
                 # can never read.
-                logger.error("prompt %s has no message row", queued.prompt_id)
+                logger.error("prompt %s has no item row", queued.prompt_id)
+                queued.claimed_at = now
+                queued.claimed_by_session_id = session_id
                 return None
-            message.status = ChatMessageStatus.COMPLETE
-            message.updated_at = now
-            chat.updated_at = now
             # The bracket's lower bound, taken before the prompt reaches the CLI so every frame
             # the exchange produces falls inside it.
             highest = await db.scalar(
                 select(func.max(SessionFrame.frame_seq)).where(SessionFrame.session_id == session_id)
             )
             chat.projected_frame_seq = highest or 0
-            turn_id = uuid4()
-            db.add(
-                SessionTurn(turn_id=turn_id, session_id=session_id, first_frame_seq=(highest or 0) + 1, started_at=now)
-            )
-            db.add(SessionTurnPrompt(turn_id=turn_id, message_id=message.message_id))
+            turn, _ = await conversation_log.open_turn(db, chat.conversation_id, session_id=session_id, now=now)
+            turn.first_frame_seq = (highest or 0) + 1
+            queued.claimed_at = now
+            queued.claimed_by_session_id = session_id
+            # Many prompts may name one turn — mid-turn steering, said once — which is what this
+            # replaces the join table with.
+            queued.turn_id = turn.turn_id
+            item.session_id = session_id
+            item.turn_id = turn.turn_id
+            item.updated_at = now
+            chat.updated_at = now
             await notify(db, SessionEventKind.UPDATE, session_id)
-            return TurnStart(turn_id=turn_id, message_id=message.message_id, prompt=message.content)
+            return TurnStart(turn_id=turn.turn_id, item_id=item.item_id, prompt=item.item_text)
 
     async def turn_state(self, turn_id: UUID) -> TurnState:
         """How far *turn_id* has got, read off its row.
@@ -1206,203 +1197,40 @@ class SessionStore:
     async def apply_frame(
         self, session_id: UUID, turn_id: UUID, frame_seq: int, events: Sequence[ConversationEvent]
     ) -> TurnState:
-        """Write what one frame's events imply, and move the cursor past that frame, together.
+        """Append what one frame's events say, and move the cursor past that frame, together.
 
-        **One transaction, and the cursor is inside it.** The message row, the neutral event rows,
-        the room's outbox row, the turn's state and `sessions.projected_frame_seq` commit or do not
-        commit as one, which is what makes those effects exactly-once: a process that dies anywhere
-        leaves the cursor naming the last frame whose effects are durable, so whoever adopts the
-        session redoes exactly the frames whose effects did not commit (<README.md> § The cursor).
+        **One transaction, and the cursor is inside it.** The log rows, the items they materialise
+        and `sessions.projected_frame_seq` commit or do not commit as one, which is what makes those
+        effects exactly-once: a process that dies anywhere leaves the cursor naming the last frame
+        whose effects are durable, so whoever adopts the session redoes exactly the frames whose
+        effects did not commit (<README.md> § The cursor).
+
+        **Nothing is queued for a channel here.** The turn writes the log and stops; a channel reads
+        forward from its own cursor and decides what it owes. That is the seam this method used to
+        cross — it wrote the room's outbox row inside the turn's transaction, which tied the
+        conversation's writer to one channel's address.
 
         **A frame that ends the turn does not come here.** Closing the turn is `end_turn`'s
-        transaction and the turn's last word is written before it, so advancing the cursor here for
-        that frame would put it ahead of writes still to come; `end_turn` takes it instead.
-
-        The returned state is the turn's after these writes, so the caller holds no message
-        identity or accumulated prose of its own between frames.
+        transaction, so advancing the cursor here for that frame would put it ahead of writes still
+        to come; `end_turn` takes it instead.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
-            turn = await db.get(SessionTurn, turn_id, with_for_update=True)
+            turn = await db.get(ConversationTurn, turn_id, with_for_update=True)
             if turn is None:
                 raise KeyError(turn_id)
             chat = await db.get(Session, session_id)
             if chat is None:
                 raise KeyError(session_id)
-            message = (
-                None if turn.assistant_message_id is None else await db.get(SessionMessage, turn.assistant_message_id)
+            writer = await conversation_log.writer_for(
+                db, turn.conversation_id, session_id=session_id, turn_id=turn_id, now=now
             )
             for event in events:
-                match event:
-                    case TextDelta():
-                        message = message or await _open_assistant(db, session_id, turn, frame_seq, now)
-                        message.content += event.text
-                        message.source_last_frame_seq = frame_seq
-                        message.status = ChatMessageStatus.STREAMING
-                        message.updated_at = now
-                    case MessageCompleted():
-                        message = message or await _open_assistant(db, session_id, turn, frame_seq, now)
-                        message.content = (event.text or "").strip() or message.content.strip()
-                        # Provenance, not identity: it is what the frames called this message, and
-                        # it is what lets a reader find its calls in the log rather than match by
-                        # position. Absent on thousands of production rows, which is why nothing
-                        # keys on it.
-                        if event.agent_message_id is not None:
-                            message.agent_message_id = event.agent_message_id
-                        message.source_last_frame_seq = frame_seq
-                        message.status = ChatMessageStatus.COMPLETE
-                        message.updated_at = now
-                        # Each message is queued for the room as it finishes rather than only the
-                        # final answer, so a turn that narrates, works and reports back is three
-                        # messages in the room and not just its conclusion.
-                        owed = await _enqueue_reply(
-                            db,
-                            chat,
-                            message.content,
-                            message_id=message.message_id,
-                            agent_message_id=message.agent_message_id,
-                            turn_id=None,
-                            now=now,
-                        )
-                        turn.assistant_message_id = None
-                        turn.said_anything = True
-                        turn.queued_reply = turn.queued_reply or owed
-                        message = None
-                    case _:
-                        # Every event is stored below; this arm is only what the *message* row
-                        # makes of one — nothing, for reasoning, a tool call and its answer.
-                        pass
-            # In this transaction, so a row exists here exactly when the cursor says its frame was
-            # projected: a process that dies leaves no half-written stream to reconcile.
-            db.add_all(
-                stored
-                for event in events
-                if (stored := session_events.row(event, session_id=session_id, turn_id=turn_id, now=now)) is not None
-            )
+                await writer.append(event)
             _advance_cursor(chat, frame_seq)
             chat.updated_at = now
             await notify(db, SessionEventKind.UPDATE, session_id)
-            return TurnState(
-                assistant_message_id=turn.assistant_message_id,
-                streamed="" if message is None else message.content,
-                said_anything=turn.said_anything,
-                queued_reply=turn.queued_reply,
-            )
-
-    async def begin_assistant(self, session_id: UUID, turn_id: UUID, *, source_first_frame_seq: int) -> UUID:
-        """Open the message this turn is about to stream into, and point the turn at it.
-
-        One transaction, because the pointer is what makes the message the *turn's*: a replica
-        dying with a message row nothing names would leave its replacement to guess which of the
-        session's messages it was in the middle of.
-
-        *source_first_frame_seq* is written here rather than on every update: this is the one
-        moment that knows where the message began, and a resumed turn picks its message up from the
-        turn row without passing through here, so a later write would walk `first` forward past
-        frames the earlier process already projected. Required, because
-        `ck_session_messages_assistant_pointed` refuses a row without it.
-        """
-        now = datetime.now(UTC)
-        async with self._sessions.begin() as db:
-            if (turn := await db.get(SessionTurn, turn_id)) is None:
-                raise KeyError(turn_id)
-            message = await _open_assistant(db, session_id, turn, source_first_frame_seq, now)
-            return message.message_id
-
-    async def update_assistant(
-        self,
-        session_id: UUID,
-        message_id: UUID,
-        content: str,
-        *,
-        agent_message_id: str | None = None,
-        source_last_frame_seq: int | None = None,
-        complete: bool = False,
-    ) -> bool:
-        """Write what this assistant message says so far. True once the room owes it.
-
-        **A completed message queues the room's copy in this same transaction** — writing it at
-        delivery time instead loses the answer whenever the turn raises in between
-        (<../debug/message_drops.md> E4) — **and closes the turn's state in it too**. The turn is
-        the one pointing at this message, so no caller has to name it and the three writes cannot
-        come apart: `queued_reply` is set by the statement that inserts the outbox row, never by
-        one that merely tried.
-        """
-        now = datetime.now(UTC)
-        async with self._sessions.begin() as db:
-            message = await db.get(SessionMessage, message_id)
-            chat = await db.get(Session, session_id)
-            if message is None or chat is None:
-                return False
-            message.content = content
-            if agent_message_id is not None:
-                message.agent_message_id = agent_message_id
-            # Only the far end moves here. `begin_assistant` set the near end once, and frames
-            # within a message arrive in order, so this only ever widens the range.
-            if source_last_frame_seq is not None:
-                message.source_last_frame_seq = source_last_frame_seq
-            message.status = ChatMessageStatus.COMPLETE if complete else ChatMessageStatus.STREAMING
-            message.updated_at = now
-            chat.updated_at = now
-            await notify(db, SessionEventKind.UPDATE, session_id)
-            if not complete:
-                return False
-            owed = await _enqueue_reply(
-                db,
-                chat,
-                content,
-                message_id=message_id,
-                agent_message_id=message.agent_message_id,
-                turn_id=None,
-                now=now,
-            )
-            await db.execute(
-                update(SessionTurn)
-                .where(SessionTurn.assistant_message_id == message_id)
-                .values(
-                    assistant_message_id=None,
-                    said_anything=True,
-                    queued_reply=or_(SessionTurn.queued_reply, literal(owed)),
-                )
-            )
-            return owed
-
-    async def set_message_source_frames(self, session_id: UUID, message_id: UUID, frame_seq: int) -> None:
-        """Point an already-written message at the single frame it went out as.
-
-        For the operator's own prompt, whose row exists before the frame does.
-        """
-        now = datetime.now(UTC)
-        async with self._sessions.begin() as db:
-            message = await db.get(SessionMessage, message_id)
-            if message is None or message.session_id != session_id:
-                return
-            message.source_first_frame_seq = frame_seq
-            message.source_last_frame_seq = frame_seq
-            message.updated_at = now
-            await notify(db, SessionEventKind.UPDATE, session_id)
-
-    async def enqueue_turn_reply(self, session_id: UUID, turn_id: UUID, text: str) -> bool:
-        """Queue a turn's last word, the one reply no transcript row holds. True if it is owed.
-
-        One caller, at most once per turn: `result.result` on a turn whose completed assistant
-        messages were all empty — a turn that completed none at all has a row minted for it
-        instead. `turn_id` is the idempotence key that makes re-derivation by a replacement replica
-        a no-op rather than a second copy in the room.
-
-        False for an empty body and for a session serving no room; the SPA reads the message rows
-        this turn already wrote.
-        """
-        now = datetime.now(UTC)
-        async with self._sessions.begin() as db:
-            if (chat := await db.get(Session, session_id)) is None:
-                return False
-            owed = await _enqueue_reply(
-                db, chat, text, message_id=None, agent_message_id=None, turn_id=turn_id, now=now
-            )
-            if owed:
-                await db.execute(update(SessionTurn).where(SessionTurn.turn_id == turn_id).values(queued_reply=True))
-            return owed
+            return await _turn_state(db, turn_id)
 
     async def fail(self, session_id: UUID, error: str, message_id: UUID | None = None) -> None:
         # Logged as well as persisted. The column is the operator-facing record, but it is not
@@ -1668,19 +1496,43 @@ async def _open_assistant(
     return message
 
 
-async def _queued_prompt(db: AsyncSession, session_id: UUID, *, lock: bool = False) -> SessionPrompt | None:
-    """The prompt *session_id* is waiting to run, if it has one.
+async def _queued_prompt(db: AsyncSession, conversation_id: UUID, *, lock: bool = False) -> ConversationPrompt | None:
+    """The prompt this conversation is waiting to run, if it has one.
 
-    `SKIP LOCKED` when claiming, so two replicas racing on one session take different rows rather
-    than blocking on each other — though a partial unique index means there is at most one to take.
+    Keyed by the conversation, so a prompt accepted before any runner exists is still findable —
+    which is what lets a thread hold demand while its sandbox is still being provisioned.
+
+    `SKIP LOCKED` when claiming, so two replicas racing on one conversation take different rows
+    rather than blocking on each other — though a partial unique index means there is at most one.
     """
     query = (
-        select(SessionPrompt)
-        .where(SessionPrompt.session_id == session_id, SessionPrompt.claimed_at.is_(None))
-        .order_by(SessionPrompt.queued_at)
+        select(ConversationPrompt)
+        .where(ConversationPrompt.conversation_id == conversation_id, ConversationPrompt.claimed_at.is_(None))
+        .order_by(ConversationPrompt.queued_at)
     )
-    prompt: SessionPrompt | None = await db.scalar(query.with_for_update(skip_locked=True) if lock else query)
+    prompt: ConversationPrompt | None = await db.scalar(query.with_for_update(skip_locked=True) if lock else query)
     return prompt
+
+
+async def _turn_state(db: AsyncSession, turn_id: UUID) -> TurnState:
+    """How far a turn has got, derived from the items it opened rather than from columns on it."""
+    streaming: str | None = await db.scalar(
+        select(ConversationItem.item_text).where(
+            ConversationItem.turn_id == turn_id,
+            ConversationItem.item_type == ItemType.MESSAGE,
+            ConversationItem.status == ItemStatus.OPEN,
+        )
+    )
+    spoke = await db.scalar(
+        select(func.count())
+        .select_from(ConversationItem)
+        .where(
+            ConversationItem.turn_id == turn_id,
+            ConversationItem.item_type == ItemType.MESSAGE,
+            ConversationItem.status == ItemStatus.COMPLETE,
+        )
+    )
+    return TurnState(streaming=streaming, said_anything=bool(spoke))
 
 
 async def _enqueue_reply(
