@@ -1727,7 +1727,9 @@ def test_a_projected_event_kind_cannot_claim_the_console_authored_it(db_url: str
                 },
             )
             # The other category is what the arm is for, so the rule must leave it writable.
-            conn.execute(_EVENT, {"session_id": session_id, "kind": "prompt_enqueued", "now": now})
+            # `lease_expired` rather than `prompt_enqueued`, whose own CHECK wants an origin in a
+            # body this statement leaves empty.
+            conn.execute(_EVENT, {"session_id": session_id, "kind": "lease_expired", "now": now})
         with pytest.raises(IntegrityError, match="ck_session_events_frame_derived_kinds"), engine.begin() as conn:
             conn.execute(_EVENT, {"session_id": session_id, "kind": "reasoning", "now": now})
     finally:

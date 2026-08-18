@@ -733,7 +733,7 @@ async def test_an_unanswered_message_is_asked_again_and_its_events_follow_the_ne
 
     start = await chat_store.next_prompt(replacement)
     assert start is not None
-    assert start.prompt == "[$1] did you see this"
+    assert start.prompt == "did you see this"
     assert await ledger.unanswered() is None, "the re-offered prompt is the one answering for it now"
 
 
@@ -794,13 +794,14 @@ async def test_a_batch_records_the_room_events_it_was_folded_from(
     chat_store: SessionStore,
     migrated_sessions,
     operator_id: UUID,
+    thread: UUID,
 ) -> None:
     """The prompt is what was said; which events said it rides on the prompt's own event, in the
     order they were folded. Nothing puts an event id in the text any more, so this is the
     only copy — and it names the room as well as the event, which is what a reader comparing
     origins needs once one bot serves more than one.
     """
-    session_id = await serving_session(chat_store, operator_id)
+    session_id = await serving_session(chat_store, operator_id, thread)
     await serving_room(conversations)
 
     offered = await turns.offer(
