@@ -23,13 +23,14 @@ def _session(
     updated_at: datetime.datetime,
     threaded: bool = True,
 ) -> UUID:
-    """*threaded* is False for a revision older than `0064`, which is where `conversation` and the
-    column pointing at it begin; from `0072` on, naming it is the only way to insert a session."""
+    """*threaded* names the schema era, and two columns turn on it. False is a revision older than
+    `0064`, which is where `conversation` and the column pointing at it begin, and where `surface`
+    is still `NOT NULL`. True is head: from `0072` on, naming `conversation_id` is the only way to
+    insert a session, and `surface` no longer exists to name."""
     session_id = uuid4()
     columns: dict[str, object] = {
         "session_id": session_id,
         "operator_id": operator_id,
-        "surface": "spa",
         "status": status,
         "bridge_token_fingerprint": fingerprint,
     }
@@ -40,6 +41,8 @@ def _session(
             {"id": conversation_id, "o": operator_id, "n": _NOW},
         )
         columns["conversation_id"] = conversation_id
+    else:
+        columns["surface"] = "spa"
     named = ", ".join(columns)
     conn.execute(
         text(

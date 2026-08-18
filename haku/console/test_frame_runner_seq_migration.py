@@ -33,9 +33,9 @@ def _session(conn: Connection) -> UUID:
         text(
             """
             INSERT INTO sessions (
-                session_id, operator_id, conversation_id, surface, status, bridge_token_fingerprint,
+                session_id, operator_id, conversation_id, status, bridge_token_fingerprint,
                 lease_expires_at, created_at, updated_at
-            ) VALUES (:session_id, :operator_id, :conversation_id, 'spa', 'ready', :fingerprint, :n, :n, :n)
+            ) VALUES (:session_id, :operator_id, :conversation_id, 'ready', :fingerprint, :n, :n, :n)
             """
         ),
         {

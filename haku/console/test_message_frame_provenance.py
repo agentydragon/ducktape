@@ -29,8 +29,10 @@ def _conversation(conn: Connection, operator_id: UUID) -> UUID:
 def _session(conn: Connection, *, threaded: bool = True) -> UUID:
     """One operator serving one session: the two foreign keys a message hangs off.
 
-    *threaded* is False for a revision older than `0064`, which is where `conversation` and the
-    column pointing at it begin; from `0072` on, naming it is the only way to insert a session.
+    *threaded* names the schema era, and two columns turn on it. False is a revision older than
+    `0064`, which is where `conversation` and the column pointing at it begin, and where `surface`
+    is still `NOT NULL`. True is head: from `0072` on, naming `conversation_id` is the only way to
+    insert a session, and `surface` no longer exists to name.
     """
     operator_id, session_id = uuid4(), uuid4()
     conn.execute(
@@ -40,12 +42,13 @@ def _session(conn: Connection, *, threaded: bool = True) -> UUID:
     columns: dict[str, object] = {
         "session_id": session_id,
         "operator_id": operator_id,
-        "surface": "spa",
         "status": "ready",
         "bridge_token_fingerprint": b"fingerprint",
     }
     if threaded:
         columns["conversation_id"] = _conversation(conn, operator_id)
+    else:
+        columns["surface"] = "spa"
     named = ", ".join(columns)
     conn.execute(
         text(
