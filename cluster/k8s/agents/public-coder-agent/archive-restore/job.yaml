@@ -1,13 +1,13 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: public-coder-agent-state-restore-20260817-v2
+  name: public-coder-agent-state-restore-20260817-v3
   namespace: public-coder-agent
   labels:
     app.kubernetes.io/name: public-coder-agent-archive-restore
 spec:
   # v1 stopped after extracting roughly 2.8 GiB: a read-only archived cache
-  # directory prevented UID 1000 from extracting a later child. v2 accepts
+  # directory prevented UID 1000 from extracting a later child. v3 accepts
   # only that recognizable, sub-5-GiB partial state, removes it, and extracts
   # as root so tar can restore archived modes and ownership faithfully.
   backoffLimit: 0
