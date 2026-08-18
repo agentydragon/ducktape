@@ -680,8 +680,8 @@ having even if the loop is never built. The dependency edges are at the end.
     global — one election supervising every attachment is cheaper than a lock per conversation, and
     the thing that must not be global is the _lease_, which is already per session.
 
-    **Depends on 1 and on 2**, and the last two are the ones the dependency line is easy to
-    get wrong. Ten rooms each holding a sandbox is the failure this would ship without 2. And an
+    **Depends on 1 and on 2**, both of which the dependency line is easy to get wrong. Ten rooms
+    each holding a sandbox is the failure this would ship without 1. And an
     audit found **eleven** things that assume one bot serves one room, seven of which are per-bot
     process state that step 2 deletes: `_status_body`, `_last_announced`, the single `RoomPacer`
     with its one collapsing status slot, `_serviced`/`_live_room`, and `RoomOutboxDrain` claiming
@@ -762,8 +762,8 @@ having even if the loop is never built. The dependency edges are at the end.
   loop-side bugs block it and `session_runtime._projected` names both. Pull it in when a message
   spanning frames needs to be one row.
 
-**Dependencies.** 1 gates 4. 2 gates 3 and 4. Everything else — 5 through 11 and the
-smaller items — depends on nothing here and can be dispatched in any order.
+**Dependencies.** 1 gates 4. 2 gates 3 and 4. Everything else — 5 through 11 and the smaller
+items — depends on nothing here and can be dispatched in any order.
 
 ## 10. `sessions.status` is derived, and lossy
 
