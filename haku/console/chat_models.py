@@ -198,8 +198,16 @@ class AuthoredEventKind(StrEnum):
     claimed never sends it at all. The frame that eventually carries it, if one does, projects to
     nothing — the console already holds the text (`x/claude_code/projection._user`).
 
-    `TURN_ABORTED` is the one member that **names its turn**: the operator stopping an exchange is
-    a fact about that exchange. So a reader of this arm cannot assume `turn_id IS NULL`.
+    Several members **name their turn**: the operator stopping an exchange, and the exchange's own
+    two ends. So a reader of this arm cannot assume `turn_id IS NULL`.
+
+    **A turn's two ends are here rather than in `ConversationEventKind`, and the bracket is why.**
+    A turn is the console's construct, not the wire's: `database_schema.SessionTurn` records it as a
+    range because the CLI folds a prompt sent mid-turn into the running one, so one `result` frame
+    can answer two of these. `next_prompt` opens a turn before anything crosses the wire, and
+    `end_turn` closes one that ended on no frame at all — a failure, or an abort whose `result`
+    never arrived. So neither end can name the frames it was read from, which is what the
+    frame-derived arm requires.
     """
 
     PROMPT_ENQUEUED = "prompt_enqueued"
@@ -214,6 +222,21 @@ class AuthoredEventKind(StrEnum):
     SESSION_ADOPTED = "session_adopted"
     LEASE_EXPIRED = "lease_expired"
     TURN_ABORTED = "turn_aborted"
+    # A sandbox is being provisioned for this thread. The only account of it today is the Matrix
+    # supervisor's stack frame, so a thread whose session failed before a room was bound has none.
+    SESSION_PROVISIONING = "session_provisioning"
+    # How a session ended, with the reason it ended for. `sessions.status` and `sessions.error` hold
+    # the current values and the next transition overwrites them, so without this row "when did this
+    # fail, and why" has no answer once the session has been replaced.
+    SESSION_ENDED = "session_ended"
+    # One line the sandbox printed while coming up. A `SetupOutput` envelope does cross the wire, but
+    # what is stored is one decoded line of it rather than the frame, so the console is the witness
+    # to the row (`x/setup_output.py`).
+    SETUP_NARRATION = "setup_narration"
+    # The two ends of one exchange, as the stream states them: without these a reader outside the
+    # session has to open `session_turns` to know a turn is running.
+    TURN_STARTED = "turn_started"
+    TURN_ENDED = "turn_ended"
 
 
 # What `session_events.kind` holds, over both categories of the one ordered stream.

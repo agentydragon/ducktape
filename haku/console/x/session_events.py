@@ -34,6 +34,8 @@ from haku.console.chat_models import (
     LeaseExpiryReason,
     PromptOrigin,
     PromptRejection,
+    SessionStatus,
+    TurnOutcome,
 )
 from haku.console.database_schema import SessionEvent
 from haku.console.x.conversation_events import (
@@ -150,10 +152,69 @@ class TurnAbortedBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class TurnStartedBody(BaseModel):
+    """No fields: the turn this row names and the instant it was written are the whole fact.
+
+    What a channel needs from it is the span to fold into — when the exchange began, so a status
+    line can wait out its lazy-creation threshold, and which `turn_id` the events that follow belong
+    to. The turn's frame bracket is deliberately absent: frame numbers are one session's, and a
+    reader outside the session it came from cannot compare them.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class TurnEndedBody(BaseModel):
+    """How the exchange this row names came out.
+
+    The outcome and nothing else. `said_anything`, `queued_reply` and the frame bracket stay on
+    `session_turns`: they are how the turn loop and the outbox find their place, and a channel
+    folding the stream reaches the same conclusions from the events it already receives.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: TurnOutcome
+
+
+class SessionProvisioningBody(BaseModel):
+    """No fields: that this session is being provisioned for its conversation is the whole fact."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SessionEndedBody(BaseModel):
+    """How a session ended, kept because the row it is read off is overwritten.
+
+    `sessions.status` and `sessions.error` are the current values, and the session that replaces
+    this one is the next thing to write them — so a thread's account of why its predecessor died
+    exists only here.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: SessionStatus
+    error: str | None = Field(description="The sentence the ending path recorded, where it recorded one.")
+
+
+class SetupNarrationBody(BaseModel):
+    """One line the sandbox printed while coming up."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str
+
+
 type AuthoredBody = PromptRejectedBody | UnreadableInputBody | SessionAdoptedBody | LeaseExpiredBody
 
-# Every shape `session_events.body` is ever written from. A reader dispatches on these rather than
+# Every shape `session_events.body` is ever read back as. A reader dispatches on these rather than
 # on `kind`, which keeps the discriminator and the payload from disagreeing.
+#
+# **Wider than `AuthoredBody`, and deliberately so.** The five lifecycle shapes have no writer in
+# this release: a row of one of those kinds reaching an image that cannot parse it fails on *read*
+# — `TextBackedStrEnumUnionColumn` raises `KeyError` on a kind it does not know, and
+# `subscription.ConversationStream.read` selects whole rows with no kind filter — so every replica
+# has to be able to read one before any replica writes one.
 type StoredBody = (
     MessageBody
     | ReasoningBody
@@ -161,10 +222,15 @@ type StoredBody = (
     | ToolResultBody
     | PromptBody
     | TurnAbortedBody
+    | TurnStartedBody
+    | TurnEndedBody
     | PromptRejectedBody
     | UnreadableInputBody
     | SessionAdoptedBody
     | LeaseExpiredBody
+    | SessionProvisioningBody
+    | SessionEndedBody
+    | SetupNarrationBody
 )
 
 
@@ -276,6 +342,16 @@ def body_of(row: SessionEvent) -> StoredBody:
             return SessionAdoptedBody.model_validate(row.body)
         case AuthoredEventKind.LEASE_EXPIRED:
             return LeaseExpiredBody.model_validate(row.body)
+        case AuthoredEventKind.TURN_STARTED:
+            return TurnStartedBody.model_validate(row.body)
+        case AuthoredEventKind.TURN_ENDED:
+            return TurnEndedBody.model_validate(row.body)
+        case AuthoredEventKind.SESSION_PROVISIONING:
+            return SessionProvisioningBody.model_validate(row.body)
+        case AuthoredEventKind.SESSION_ENDED:
+            return SessionEndedBody.model_validate(row.body)
+        case AuthoredEventKind.SETUP_NARRATION:
+            return SetupNarrationBody.model_validate(row.body)
 
 
 def row(event: ConversationEvent, *, session_id: UUID, turn_id: UUID, now: datetime) -> SessionEvent | None:

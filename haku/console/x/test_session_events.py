@@ -16,6 +16,7 @@ from haku.console.chat_models import (
     EventProvenance,
     LeaseExpiryReason,
     MatrixOrigin,
+    StoredEventKind,
     TurnOutcome,
 )
 from haku.console.database_schema import SessionEvent
@@ -173,6 +174,52 @@ def test_the_kind_of_an_authored_row_follows_from_its_body() -> None:
 
     assert lapsed.kind == AuthoredEventKind.LEASE_EXPIRED
     assert lapsed.body == {"reason": "unadopted", "last_holder": None}
+
+
+# One stored body per kind the column may hold. A kind added without an entry fails
+# `test_every_kind_the_column_may_hold_can_be_read_back` rather than reaching a replica that
+# cannot parse it.
+_BODIES: dict[StoredEventKind, dict[str, object]] = {
+    ConversationEventKind.MESSAGE_COMPLETED: {"text": "done", "agent_message_id": "msg_1"},
+    ConversationEventKind.REASONING: {"summary": "thinking about it"},
+    ConversationEventKind.TOOL_CALL_STARTED: {"tool_name": "Bash", "arguments": {"command": "ls"}},
+    ConversationEventKind.TOOL_CALL_COMPLETED: {
+        "content": {"shape": "text", "text": "a.py"},
+        "structured": {"exit_code": 0},
+        "outcome": "succeeded",
+    },
+    AuthoredEventKind.PROMPT_ENQUEUED: {"message_id": str(uuid4()), "text": "hello", "origin": {"kind": "spa"}},
+    AuthoredEventKind.PROMPT_REJECTED: {"reason": "turn_in_flight", "text": "wait"},
+    AuthoredEventKind.UNREADABLE_INPUT: {"media_type": "m.image"},
+    AuthoredEventKind.SESSION_ADOPTED: {"previous_holder": None, "holder": "haku-console-a"},
+    AuthoredEventKind.LEASE_EXPIRED: {"reason": "unadopted", "last_holder": None},
+    AuthoredEventKind.TURN_ABORTED: {},
+    AuthoredEventKind.TURN_STARTED: {},
+    AuthoredEventKind.TURN_ENDED: {"outcome": "answered"},
+    AuthoredEventKind.SESSION_PROVISIONING: {},
+    AuthoredEventKind.SESSION_ENDED: {"status": "failed", "error": "the claim was never satisfied"},
+    AuthoredEventKind.SETUP_NARRATION: {"text": "cloning haku-state"},
+}
+
+
+def test_every_kind_the_column_may_hold_can_be_read_back() -> None:
+    """The property a roll depends on, which is stronger than the type check behind it.
+
+    `TextBackedStrEnumUnionColumn` raises on a value it does not know and
+    `subscription.ConversationStream.read` selects whole rows with no kind filter, so a row of a
+    kind some serving replica cannot parse wedges that replica's reader rather than being skipped.
+    This is what says the vocabulary is complete before any writer uses it.
+    """
+    unreadable = [
+        kind
+        for kind in (*ConversationEventKind, *AuthoredEventKind)
+        if session_events.body_of(
+            SessionEvent(kind=kind, body=_BODIES[kind], created_at=NOW, provenance=EventProvenance.AUTHORED)
+        )
+        is None
+    ]
+
+    assert unreadable == []
 
 
 def test_the_two_events_with_a_durable_home_elsewhere_get_no_row() -> None:

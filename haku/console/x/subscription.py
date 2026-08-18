@@ -66,7 +66,10 @@ class StreamedEvent:
     """
 
     position: StreamPosition
-    session_id: UUID
+    # Absent for a fact the conversation holds that no session has taken. A subscriber that renders
+    # the stream needs neither, and one that reaches for the session is asking a question the layer
+    # below it owns.
+    session_id: UUID | None
     turn_id: UUID | None
     created_at: datetime
     body: session_events.StoredBody

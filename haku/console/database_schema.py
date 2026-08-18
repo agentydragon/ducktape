@@ -1212,6 +1212,11 @@ class SessionEvent(Base):
     lapsing, an operator stopping a turn, and the operator's own prompt, which is accepted before
     it crosses any wire (`x/session_store.enqueue_prompt`) and so takes the `authored` arm and
     names no turn.
+
+    **The thread is the key and the session is a field**, which is what makes this the conversation's
+    record rather than a session's. A fact the console authors before any runner exists — a prompt
+    accepted while a sandbox provisions — names its conversation and no session; a fact folded out of
+    frames names both, because frames are a session's.
     """
 
     __tablename__ = "session_events"
@@ -1219,8 +1224,16 @@ class SessionEvent(Base):
     # Database-assigned, so the order events were written in survives a replica being replaced
     # mid-turn. Ordering by frame is coarser: several events come out of one frame.
     event_seq: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
-    session_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False
+    # Nullable while the writers are being moved onto it, and read by nothing yet: every row a
+    # previous image inserts during a roll leaves it NULL, so it cannot be required until every
+    # writer names it.
+    conversation_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("conversation.conversation_id", ondelete="CASCADE"), nullable=True
+    )
+    # NULL for a fact the conversation holds that no session has taken: a prompt accepted before a
+    # sandbox exists. A frame-derived row always names one, which the constraint below states.
+    session_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=True
     )
     # A projected event belongs to an exchange, because the fold only runs while a turn is open. An
     # authored one need not: a session that died before it ever reached a turn is the case that
@@ -1251,7 +1264,8 @@ class SessionEvent(Base):
         CheckConstraint(
             "kind IN ('message_completed','reasoning','tool_call_started',"
             "'tool_call_completed','prompt_enqueued','prompt_rejected','unreadable_input',"
-            "'session_adopted','lease_expired','turn_aborted')",
+            "'session_adopted','lease_expired','turn_aborted','session_provisioning',"
+            "'session_ended','setup_narration','turn_started','turn_ended')",
             name="ck_session_events_kind",
         ),
         CheckConstraint("provenance IN ('frame_range','authored')", name="ck_session_events_provenance"),
@@ -1288,7 +1302,16 @@ class SessionEvent(Base):
         CheckConstraint(
             "kind <> 'prompt_enqueued' OR jsonb_exists(body, 'origin')", name="ck_session_events_prompt_origin"
         ),
+        # A row folded out of frames is a session's by construction — the frames are the session's —
+        # so the session it names is required on exactly that arm. What `session_id` is now free to
+        # be absent for is the other arm, and only where the console had no session to name.
+        CheckConstraint(
+            "provenance <> 'frame_range' OR session_id IS NOT NULL", name="ck_session_events_frame_range_session"
+        ),
         Index("idx_session_events_session", "session_id", "event_seq"),
+        # How a channel reads its thread: everything after a position, without joining `sessions` to
+        # find out which rows are this conversation's — a join that cannot see a row no session owns.
+        Index("idx_session_events_conversation", "conversation_id", "event_seq"),
     )
 
 

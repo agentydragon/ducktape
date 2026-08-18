@@ -79,7 +79,7 @@ that has no row, so a leader handover re-announces. § 3.
 
 ### Why those edges cannot simply be deleted
 
-Four facts the record does not hold, each the reason one push above still exists:
+Five facts the record does not hold, each the reason one push above still exists:
 
 - **Turn lifecycle.** `ConversationEventKind` says it outright: a `TurnCompleted` _is_ the
   `session_turns` row. Nothing records a turn starting, so a room's status line has nothing to
@@ -87,8 +87,15 @@ Four facts the record does not hold, each the reason one push above still exists
 - **Provisioning.** "A session is being provisioned for this conversation" is stored nowhere, so the
   only account of it is the supervisor's stack frame.
 - **Setup narration.** `SessionStore.narrate` writes a `setup_output` row into `session_frames` —
-  the console minting a wire frame for a fact that crossed no wire — and both surfaces read it back
-  out by kind.
+  the console minting a wire frame for a fact that crossed no wire. The SPA reads it back out by
+  kind (`session_views.setup_narration`); the room is handed the same text a second time by
+  `_progress_reporter`, so the fact is durable and the room's copy of it is not.
+- **The turn's last message.** `update_assistant` writes the transcript row and the outbox row and
+  **no `message_completed` event**, so the stream is missing the final message of any turn whose
+  prose no completing frame closed, and the whole message of a turn whose only text came off
+  `result.result`. A fold over the stream therefore cannot answer "did this turn say anything",
+  which is what `report_silent_turn` announces, and cannot see a message a channel is owed. Fixing
+  it is one writer, and it gates 3's C and D as surely as the turn's own lifecycle does.
 - **Room binding.** "Joined — this is now Haku's room", "invited elsewhere, still serving this one":
   queued notices with nothing behind them.
 
@@ -669,11 +676,26 @@ exists to remove:
 having even if the loop is never built. The dependency edges are at the end.
 
 1.  **Re-key the neutral log to the conversation, and record what only a stack frame holds.** The
-    log is the conversation's record wearing a session's key (§ 1). One migration: `session_id`
-    becomes nullable beside a `conversation_id NOT NULL`, the table takes the name of the layer it
-    serves, and the authored arm gains the kinds nothing can record today — a turn's lifecycle,
-    "a session is being provisioned for this conversation", and the sandbox's setup narration, which
-    is a forged `setup_output` frame until it has a row.
+    log is the conversation's record wearing a session's key (§ 1). `session_id` becomes nullable
+    beside a `conversation_id NOT NULL`, and the authored arm gains the kinds nothing can record
+    today — a turn's two ends, "a session is being provisioned for this conversation", how a session
+    ended, and the sandbox's setup narration, which is a forged `setup_output` frame until it has a
+    row.
+
+    **Two migrations rather than one, with a release between them.** `conversation_id` arrives
+    nullable, because the previous image inserts rows without naming it for the length of a roll and
+    no column default can express "this session's conversation"; `SET NOT NULL` follows once every
+    writer names it. **The widened `kind` CHECK has to converge before any writer uses it**, which is
+    the sharper constraint: an unknown kind fails on _read_, since
+    `TextBackedStrEnumUnionColumn.process_result_value` raises and
+    `subscription.ConversationStream.read` selects whole rows with no kind filter under the `MXNT`
+    election — so a row a serving replica cannot parse wedges that replica's room cursor rather than
+    being skipped. The first migration therefore ships the schema and the vocabulary and no writer.
+
+    **The table's name trails.** `ALTER TABLE … RENAME` is not roll-safe on a table this hot, the
+    invariant is enforced by the key rather than by the name, and `session_notifications.CHANNEL` is
+    the same string — a rename invites changing a cross-replica channel name its own docstring calls
+    destructive. It goes as its own expand/contract pair, carrying the Python module rename with it.
 
     **This is what dissolves three separate dead ends**, which is why it goes ahead of the steps
     that each hit one of them:
@@ -689,13 +711,20 @@ having even if the loop is never built. The dependency edges are at the end.
     `conversation_id NOT NULL`, `session_id` nullable — NULL meaning a user prompt written before
     any session took it. An assistant row stays session-scoped, because its frame pointers are.
 
-    **The wake moves too.** `pg_notify` carries `{kind, session_id}`, so a channel subscribing to a
-    conversation subscribes by session; it carries the conversation instead.
+    **The wake is not part of this and cannot ride with it.** The notification names a session, so a
+    channel subscribing to a conversation subscribes by session — and
+    `session_notifications.SessionEvent` is `extra="forbid"`, so a replica that adds a field to the
+    payload makes an older replica's parse raise and **drop** the wake for the length of every roll.
+    That docstring's "add fields, never rename or remove one" is the rule `extra="forbid"` makes
+    false. Relaxing it to `extra="ignore"` and letting that converge is the first of its own three
+    releases.
 
-    **Done when** a conversation with no session can hold a prompt, a provisioning fact and a line
-    of setup narration; when no channel read names a session; and when no authored kind needs a
-    session in order to be written. Expand/contract on hot tables, so it stacks rather than races
-    (§ 12).
+    **Done when** the log admits a row that names no session, every authored kind can be written
+    without one, and the turn's two ends, provisioning, a session's ending and setup narration are
+    rows rather than stack frames. **Deliberately not here:** a conversation with no session at all.
+    `get_operator_conversation` and `read_operator_conversation_changes` both refuse one, and
+    `ConversationUpdate.session_id` is not optional, so the read surface admitting a sessionless
+    thread belongs with step 2 — which is what creates one.
 
 2.  **Allocate a sandbox because there is something to do.** A quiet room holds a sandbox
     permanently: the supervisor provisions whenever the room has no live session, and the warm pool
@@ -759,12 +788,17 @@ having even if the loop is never built. The dependency edges are at the end.
       it only by reading a session-keyed table. There is nothing to fold until a turn's lifecycle is
       on the stream.
     - **C — replies stop being pushed.** `_enqueue_reply` stops reading the attachment's address;
-      the channel derives what the room is owed from the record and its own cursor.
+      the channel derives what the room is owed from the record and its own cursor. **Also blocked
+      on the turn's last message reaching the stream** (§ 1): a channel cannot derive what it is
+      owed from a record that omits the message.
     - **D — the turn loop stops holding a channel.** `_frontend_for`, `ChatFrontend`, `report`,
       `report_silent_turn` and `SessionIntroduction.room_id` go. **Blocked on step 1** for the same
       reason in the other direction: setup narration exists only as a forged `setup_output` frame
       and a silent turn's notice only in the stack frame that noticed it, so deleting the push
-      deletes the fact. Recording them first is what turns a deletion into a projection.
+      deletes the fact. Recording them first is what turns a deletion into a projection. **Step 1 is
+      not sufficient on its own**, which the dependency line below understates: `report_silent_turn`
+      announces that a turn said nothing, and that is foldable only once `update_assistant` writes
+      the `message_completed` event it does not write today (§ 1).
 
     **`_frontend_for` is deleted in D, not improved** (§ 5): the question "which frontend is this
     session's" stops being asked rather than being answered better. Three things go with it, none
