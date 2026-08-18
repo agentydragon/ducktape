@@ -135,10 +135,9 @@ async def _live_binding(db: AsyncSession) -> BoundRoom | None:
     """The bound room, read off the attachment that is holding it.
 
     Ordered so that the answer is the room bound first. One room at a time is `bind_room`'s
-    refusal rather than the schema's — it used to be a bot user's primary key, and
-    `chat_attachment` deliberately admits many live rows because one bot serving several rooms is
-    where this goes — so a second row that somehow appeared must not make the bound room flip
-    between reads.
+    refusal rather than the schema's — `chat_attachment` deliberately admits many live rows,
+    because one bot serving several rooms is where this goes — so a second row that somehow
+    appeared must not make the bound room flip between reads.
     """
     row = (
         await db.execute(

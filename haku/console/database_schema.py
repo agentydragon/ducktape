@@ -1483,7 +1483,12 @@ metadata = Base.metadata
 # one that stopped naming it, because `maxUnavailable: 0` keeps the previous image serving through
 # the roll and that image selects every table it maps. `test_agent_authority_schema` excludes these
 # from its ORM-versus-database comparison, which is otherwise exact.
-UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset()
+#
+# CLEANUP(added 2026-08-18): drop `matrix_conversation` once no replica predating this commit is
+#   still serving — the image that mapped it selects the table by name, so the drop is a 500 on
+#   that replica rather than a lint failure, and it waits a release after this unmapping. The room
+#   binding it held lives on `chat_attachment`, keyed on the conversation.
+UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset({"matrix_conversation"})
 
 # The same for `(table, column)` pairs in tables that stay. A separate set rather than an entry
 # in the one above, which hides a whole table — naming `session_messages` there would stop the
@@ -1527,38 +1532,6 @@ class MatrixSyncWatermark(Base):
 
     user_id: Mapped[str] = mapped_column(Text, primary_key=True)
     next_batch: Mapped[str] = mapped_column(Text, nullable=False)
-
-
-class MatrixConversation(Base):
-    """The one room Haku services.
-
-    CLEANUP(added 2026-08-17): superseded by `ChatAttachment` above, which holds the same binding
-      keyed on the conversation instead of on the bot user. Nothing writes `session_id` any more,
-      and the room binding (`user_id` → `room_id`, read by `MatrixConversationStore.load`) is the
-      last thing anything still selects. Next: move that read onto `chat_attachment` and unmap
-      this class, once no replica on an image predating the change that stopped writing
-      `session_id` is still reading the column — i.e. once that roll has converged in production.
-      Drop the table a release after the unmapping has converged in turn.
-
-    Keyed by bot user rather than by room, which is what makes "one room at a time" a property of
-    the schema instead of a rule the code has to remember: a second room cannot be recorded without
-    displacing the first. That singleton is the thing on its way out, not a guarantee to build on —
-    one bot serving several rooms is where this goes, and `ChatAttachment`'s partial unique index is
-    the form of the rule that survives it.
-    """
-
-    __tablename__ = "matrix_conversation"
-
-    user_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    room_id: Mapped[str] = mapped_column(Text, nullable=False)
-    # Dead, and mapped only so the column stays declared while old replicas still read it: which
-    # session serves a room is the newest session of the conversation the room's `chat_attachment`
-    # names, which needs no agreement between two rows. Whatever value a row carries was written by
-    # a release before this one, and it goes with the rest of this class under the CLEANUP above.
-    session_id: Mapped[UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="SET NULL"), nullable=True
-    )
-    joined_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class MatrixRoomCursor(Base):
