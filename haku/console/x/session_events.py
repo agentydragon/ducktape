@@ -107,7 +107,7 @@ class PromptBody(BaseModel):
     # of being handed what the turn loop produced (#4254 § 9 step 9).
     #
     # **Required, with no default**, because every default is a lie a reader acts on: guessing the
-    # SPA tells an attached room it owes a copy of a prompt it may already be showing. `0076`
+    # SPA tells an attached room it owes a copy of a prompt it may already be showing. `0078`
     # deleted the rows that had no key for this and constrains the table so none can come back, so
     # a body missing it is a bug rather than an era.
     origin: PromptOrigin = Field(
