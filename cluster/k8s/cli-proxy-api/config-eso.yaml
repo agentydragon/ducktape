@@ -1,5 +1,5 @@
-# CLIProxyAPI requires a single config file. ESO renders the API key from the
-# SOPS-managed client-key Secret, so this template remains safe to review and edit.
+# CLIProxyAPI requires a single config file. ESO renders its API key from a
+# dedicated SOPS-managed Secret, so this template remains safe to review and edit.
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
@@ -7,7 +7,7 @@ metadata:
   namespace: cli-proxy-api
   annotations:
     description: >-
-      CLIProxyAPI config.yaml rendered from the client-key Secret. Retry an upstream stream up
+      CLIProxyAPI config.yaml rendered from its dedicated API key Secret. Retry an upstream stream up
       to three times only before its first response byte reaches the caller.
 spec:
   refreshInterval: 1h
@@ -25,11 +25,12 @@ spec:
           port: 8317
           auth-dir: "/data/auth"
           api-keys:
-            - "{{ .client_key }}"
+            - "{{ .api_key }}"
+          debug: false
           streaming:
             bootstrap-retries: 3
   data:
-    - secretKey: client_key
+    - secretKey: api_key
       remoteRef:
-        key: cli-proxy-api-client-key
-        property: client-key
+        key: cli-proxy-api-config-key
+        property: api-key
