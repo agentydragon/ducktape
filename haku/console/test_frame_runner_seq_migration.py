@@ -1,4 +1,4 @@
-"""0050 adds the runner's frame number without changing what an existing writer may do."""
+"""The runner's own frame number is optional, so a writer that never heard of it still records."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ _NOW = datetime.datetime(2026, 8, 16, tzinfo=datetime.UTC)
 
 
 def _conversation(conn: Connection, operator_id: UUID) -> UUID:
-    """The thread a session runs, which `0064` made every session carry and `0072` made it owe."""
+    """The thread a session runs, which every session carries and owes."""
     conversation_id = uuid4()
     conn.execute(
         text("INSERT INTO conversation (conversation_id, operator_id, created_at) VALUES (:id, :operator_id, :n)"),

@@ -33,7 +33,7 @@ from util.testing.postgres_fixtures import start_postgres_container
 
 @pytest.fixture(scope="session")
 def postgres_container() -> Any:
-    """Postgres **with pgvector**: migration 0037 creates `vector` columns, and this file migrates
+    """Postgres **with pgvector**: the baseline creates `vector` columns, and this file migrates
     a fresh database to head. The deployed database gets the extension from CNPG's `Database` CR."""
     container = start_postgres_container(PGVECTOR_PG18)
     try:
@@ -595,180 +595,6 @@ def test_fresh_baseline_matches_sqlalchemy_metadata(db_url: str) -> None:
                 conn, opts={"compare_type": True, "include_name": _not_awaiting_its_drop}
             )
             assert compare_metadata(context, metadata) == []
-    finally:
-        engine.dispose()
-
-
-def test_oauth_token_state_migration_preserves_all_association_tokens(db_url: str) -> None:
-    apply_migrations(db_url, "0015")
-    engine = create_engine(db_url)
-    operator_id = uuid4()
-    now = _now()
-    expires_at = now + datetime.timedelta(hours=1)
-    try:
-        with engine.begin() as conn:
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO operators (operator_id, status, created_at, updated_at)
-                    VALUES (:operator_id, 'active', :now, :now)
-                    """
-                ),
-                {"operator_id": operator_id, "now": now},
-            )
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO mcp_operator_oauth_associations (
-                        server_id, operator_id, association_id, token_revision, created_at, updated_at,
-                        client_id, token_endpoint, access_token, refresh_token, token_type, scope,
-                        token_expires_at
-                    ) VALUES (
-                        'remote', :operator_id, :association_id, 3, :now, :now,
-                        'client', 'https://issuer.test/token', 'mcp-access', 'mcp-refresh', 'Bearer',
-                        'mcp-scope', :expires_at
-                    )
-                    """
-                ),
-                {"operator_id": operator_id, "association_id": uuid4(), "now": now, "expires_at": expires_at},
-            )
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO provider_connections (
-                        operator_id, connection_name, provider_name, provider, connection_id,
-                        token_revision, created_at, updated_at, access_token, refresh_token,
-                        token_type, scope, token_expires_at
-                    ) VALUES (
-                        :operator_id, 'google_mail', 'google', 'google', :connection_id,
-                        4, :now, :now, 'provider-access', 'provider-refresh', 'Bearer',
-                        'provider-scope', :expires_at
-                    )
-                    """
-                ),
-                {"operator_id": operator_id, "connection_id": uuid4(), "now": now, "expires_at": expires_at},
-            )
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO operator_authentik_tokens (
-                        operator_id, token_revision, created_at, updated_at, access_token,
-                        refresh_token, token_type, scope, token_expires_at
-                    ) VALUES (
-                        :operator_id, 5, :now, :now, 'login-access', 'login-refresh',
-                        'Bearer', 'login-scope', :expires_at
-                    )
-                    """
-                ),
-                {"operator_id": operator_id, "now": now, "expires_at": expires_at},
-            )
-
-        apply_migrations(db_url)
-
-        with engine.connect() as conn:
-            rows = conn.execute(
-                text(
-                    """
-                    SELECT access_token, refresh_token, token_revision, scope, token_expires_at
-                    FROM oauth_token_states
-                    WHERE operator_id = :operator_id
-                    ORDER BY access_token
-                    """
-                ),
-                {"operator_id": operator_id},
-            ).tuples()
-            assert list(rows) == [
-                ("login-access", "login-refresh", 5, "login-scope", expires_at),
-                ("mcp-access", "mcp-refresh", 3, "mcp-scope", expires_at),
-                ("provider-access", "provider-refresh", 4, "provider-scope", expires_at),
-            ]
-            assert (
-                conn.execute(
-                    text(
-                        """
-                    SELECT count(*)
-                    FROM (
-                        SELECT token_state_id FROM mcp_operator_oauth_associations
-                        UNION ALL SELECT token_state_id FROM provider_connections
-                        UNION ALL SELECT token_state_id FROM operator_authentik_tokens
-                    ) AS owners
-                    JOIN oauth_token_states USING (token_state_id)
-                    """
-                    )
-                ).scalar_one()
-                == 3
-            )
-    finally:
-        engine.dispose()
-
-
-def test_operator_connection_key_migration_discards_ambiguous_provider_grants(db_url: str) -> None:
-    apply_migrations(db_url, "0012")
-    engine = create_engine(db_url)
-    operator_id = uuid4()
-    now = _now()
-    try:
-        with engine.begin() as conn:
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO operators (operator_id, status, created_at, updated_at)
-                    VALUES (:operator_id, 'active', :now, :now)
-                    """
-                ),
-                {"operator_id": operator_id, "now": now},
-            )
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO provider_connections (
-                        operator_id, provider, connection_id, token_revision, created_at, updated_at,
-                        access_token, refresh_token, token_type, scope, token_expires_at
-                    ) VALUES (
-                        :operator_id, 'google', :connection_id, 0, :now, :now,
-                        'old-access', 'old-refresh', 'Bearer', 'old-broad-scope', NULL
-                    )
-                    """
-                ),
-                {"operator_id": operator_id, "connection_id": uuid4(), "now": now},
-            )
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO provider_connection_flows (
-                        state, operator_id, provider, created_at, expires_at,
-                        redirect_uri, code_verifier, scope
-                    ) VALUES (
-                        'old-flow', :operator_id, 'google', :now, :now,
-                        'https://haku.test/callback', 'verifier', 'old-broad-scope'
-                    )
-                    """
-                ),
-                {"operator_id": operator_id, "now": now},
-            )
-
-        apply_migrations(db_url, "0013")
-
-        with engine.connect() as conn:
-            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0013"
-            assert "provider_name" not in {
-                row.column_name
-                for row in conn.execute(
-                    text(
-                        """
-                        SELECT column_name
-                        FROM information_schema.columns
-                        WHERE table_schema = 'public' AND table_name = 'provider_connections'
-                        """
-                    )
-                )
-            }
-
-        apply_migrations(db_url)
-
-        with engine.connect() as conn:
-            assert conn.execute(text("SELECT count(*) FROM provider_connections")).scalar_one() == 0
-            assert conn.execute(text("SELECT count(*) FROM provider_connection_flows")).scalar_one() == 0
     finally:
         engine.dispose()
 
@@ -1544,80 +1370,9 @@ if __name__ == "__main__":
     pytest_bazel.main()
 
 
-def test_lease_backfill_reclaims_a_session_no_replica_is_holding(db_url: str) -> None:
-    """A session written before 0027 has no lease, so the sweep cannot see it.
-
-    That is exactly how the Matrix room stayed on "responding" after the lease shipped: the
-    wedged session predated the column, and `expire_stale_leases` only looks at leases that
-    exist and have passed. A live row must come out of this migration holding a lease that will
-    expire unless somebody renews it, and a terminal row must not be resurrected.
-    """
-    apply_migrations(db_url, "0027")
-    engine = create_engine(db_url)
-    operator_id = uuid4()
-    orphan, healthy, finished = uuid4(), uuid4(), uuid4()
-    now = _now()
-    try:
-        with engine.begin() as conn:
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO operators (operator_id, status, created_at, updated_at)
-                    VALUES (:operator_id, 'active', :now, :now)
-                    """
-                ),
-                {"operator_id": operator_id, "now": now},
-            )
-            for session_id, status in ((orphan, "responding"), (healthy, "ready"), (finished, "closed")):
-                conn.execute(
-                    text(
-                        """
-                        -- The historical name on purpose: this writes at revision 0027, where
-                        -- `sessions` does not exist yet (0040 is what renames it).
-                        INSERT INTO claude_chat_sessions (
-                            session_id, operator_id, status, bridge_token_fingerprint,
-                            bridge_connected_at, error, lease_expires_at, created_at, updated_at
-                        ) VALUES (
-                            :session_id, :operator_id, :status, :fingerprint,
-                            NULL, NULL, NULL, :now, :now
-                        )
-                        """
-                    ),
-                    {
-                        "session_id": session_id,
-                        "operator_id": operator_id,
-                        "status": status,
-                        "fingerprint": b"fingerprint",
-                        "now": now,
-                    },
-                )
-
-        # `0028`, the revision under test, rather than head: a row this old has no `surface`, and
-        # `0058` requires one now that the purge has deleted the rows that had none.
-        apply_migrations(db_url, "0028")
-
-        with engine.connect() as conn:
-            leases: dict[UUID, datetime.datetime | None] = {
-                row.session_id: row.lease_expires_at
-                for row in conn.execute(text("SELECT session_id, lease_expires_at FROM claude_chat_sessions"))
-            }
-        # Grace, not an expired lease: a replica that is genuinely alive renews inside the TTL,
-        # so the backfill must not declare every healthy session dead the moment it runs.
-        for live in (orphan, healthy):
-            lease = leases[live]
-            assert lease is not None, "0027 rows must not stay leaseless"
-            assert lease > now, "a live session must get grace to prove its holder exists"
-        assert leases[finished] == now, "a terminal session's lease ended when the row last changed"
-    finally:
-        engine.dispose()
-
-
 def test_a_chat_session_cannot_be_written_without_a_lease(db_url: str) -> None:
-    """The point of 0029: "live but unreclaimable" stops being a state you can reach.
-
-    0028 repaired the rows already in it, but repair alone leaves the next forgotten insert
-    free to recreate it, and the failure is invisible — the session simply never recovers.
-    """
+    """ "Live but unreclaimable" is not a state you can reach: a lease is required, because the
+    failure of a forgotten one is invisible — the session simply never recovers."""
     apply_migrations(db_url)
     engine = create_engine(db_url)
     operator_id, conversation_id = uuid4(), uuid4()
@@ -1678,7 +1433,7 @@ _EVENT = text(
 
 
 def test_a_projected_event_kind_cannot_claim_the_console_authored_it(db_url: str) -> None:
-    """0073: `ConversationEventKind` is by definition what folding a recorded frame produced, so a
+    """`ConversationEventKind` is by definition what folding a recorded frame produced, so a
     row of one on the `authored` arm names no frames to appeal its normalization to — and the write
     succeeding is what makes `session_views._asked` meet it as an unreadable transcript instead.
     """

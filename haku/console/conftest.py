@@ -189,7 +189,7 @@ async def resolve_operator_identity(
 def postgres_container() -> Generator[PostgresContainer]:
     """Postgres **with pgvector**, overriding the shared stock-image fixture.
 
-    Migration 0037 creates `vector` columns, so every test that migrates to head needs an image
+    The baseline creates `vector` columns, so every test that migrates to head needs an image
     that has the extension — the same capability production gets from the CNPG image.
     """
     container = start_postgres_container(PGVECTOR_PG18)

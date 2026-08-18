@@ -1,10 +1,4 @@
-"""0078 deletes the prompt rows that name no origin, then makes new ones impossible.
-
-The delete is authorized destruction (operator, 2026-08-17): the field is new in this release, so
-every older `prompt_enqueued` body lacks the key, and no backfill can invent the answer without
-telling an attached room it owes a copy of a prompt. The constraint behind it is the roll guard —
-the previous image is still serving while this applies and still writes bodies without the key.
-"""
+"""`ck_session_events_prompt_origin`: an enqueued prompt has to say where it came from."""
 
 from __future__ import annotations
 
@@ -20,7 +14,6 @@ from sqlalchemy.exc import IntegrityError
 from haku.console.database_migrate import apply_migrations, sync_database_url
 
 _NOW = datetime.datetime(2026, 8, 17, tzinfo=datetime.UTC)
-_BEFORE = "0077"
 
 
 def _session(conn: Connection) -> UUID:
@@ -33,7 +26,6 @@ def _session(conn: Connection) -> UUID:
         text("INSERT INTO conversation (conversation_id, operator_id, created_at) VALUES (:id, :o, :n)"),
         {"id": conversation_id, "o": operator_id, "n": _NOW},
     )
-    # `sessions.conversation_id` is NOT NULL from `0072`, which `_BEFORE` is past.
     conn.execute(
         text(
             """
@@ -70,30 +62,6 @@ def _authored(conn: Connection, session_id: UUID, kind: str, body: object) -> No
 
 def _message(text_: str) -> dict[str, object]:
     return {"message_id": str(uuid4()), "text": text_}
-
-
-def test_the_prompts_that_name_no_origin_go_and_the_ones_that_do_stay(db_url: str) -> None:
-    """Only `prompt_enqueued` is touched, and only where the key is absent: an authored row of
-    another kind has no origin to name and is not evidence of the era this deletes."""
-    apply_migrations(db_url, _BEFORE)
-    engine = create_engine(sync_database_url(db_url))
-    try:
-        with engine.begin() as conn:
-            session_id = _session(conn)
-            _authored(conn, session_id, "prompt_enqueued", _message("written before the field existed"))
-            _authored(conn, session_id, "prompt_enqueued", _message("from the SPA") | {"origin": {"kind": "spa"}})
-            _authored(conn, session_id, "lease_expired", {"reason": "holder_gone"})
-
-        apply_migrations(db_url)
-
-        with engine.connect() as conn:
-            survivors = conn.execute(text("SELECT kind, body FROM session_events ORDER BY kind"))
-            assert [(row.kind, row.body.get("text")) for row in survivors] == [
-                ("lease_expired", None),
-                ("prompt_enqueued", "from the SPA"),
-            ]
-    finally:
-        engine.dispose()
 
 
 def test_a_prompt_without_an_origin_can_no_longer_be_written(db_url: str) -> None:

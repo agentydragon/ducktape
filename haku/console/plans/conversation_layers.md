@@ -440,7 +440,7 @@ Matrix queue to know how far Matrix has got.
 
 ### `chat_delivery` is a revision index, and most of it is write-only
 
-`chat_delivery` (`0067`) is shared by every channel that attaches, and its shape assumes more about
+`chat_delivery` is shared by every channel that attaches, and its shape assumes more about
 a channel than the layer model lets us assume (operator, 2026-08-17, on a channel that is _"a
 teletype printing everything as it happens"_, _"an old timey pager"_, or _"a telegraph key that
 sends a constant message when pressed and doesn't display anything"_).
@@ -515,7 +515,7 @@ it is deleted, not improved, and polishing it buys a rename in exchange for entr
 
 ## 6. The conversation is identity only
 
-`conversation(conversation_id, operator_id, created_at)` and `chat_attachment` exist (`0064`), with
+`conversation(conversation_id, operator_id, created_at)` and `chat_attachment` exist, with
 the partial unique index on `(surface, address) where detached_at is null`. What forces the entity
 is a combination rather than a cardinality: **many sessions × many channels**. When the sandbox dies
 and session A is replaced by B, what has to move is _the set of attachments_, and a set has no name.
@@ -887,9 +887,8 @@ having even if the loop is never built. The dependency edges are at the end.
     are gone, so all that stands between it and the database is writing it in the ORM as well as
     the migration, once
     `SELECT count(*) FROM session_frames WHERE runner_seq IS NULL AND direction = 'from_agent'`
-    returns zero. `test_message_tool_calls_migration.py`, `test_neutral_turn_usage_migration.py`,
-    `test_session_claim_cleaned_at_migration.py` and `test_frame_runner_seq_migration.py` each
-    assert a backfill or a nullability the schema has since moved past, and go outright.
+    returns zero. `test_session_claim_cleaned_at.py` and `test_frame_runner_seq_migration.py`
+    each assert a nullability the schema has since moved past, and go outright.
 
 12. **The read surfaces stop maintaining two model families over one query** (§ 14). Two small
     changes, neither of which needs a transport decision.

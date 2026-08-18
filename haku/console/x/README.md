@@ -52,8 +52,9 @@ plumbing, the sandbox lifecycle, the `ChatFrontend` port and the SPA's own route
 inherits the store unchanged, which is why it stays at the runtime level and imports nothing under
 `channels/`.
 
-**The tables are `sessions` and `session_*`.** Migrations `0040` and `0041` are the expand and
-contract of the rename off `claude_chat_*`, which is why the lineage has two revisions for it.
+**The tables are `sessions` and `session_*`.** They were `claude_chat_*` until an expand/contract
+rename, whose old names the baseline still reproduces for the NOT NULL constraints and the frame
+log's identity sequence.
 
 **A turn is a row, and it is a range over the frame log.** `next_prompt` dequeues a prompt and opens
 `session_turns` in one transaction; `_run_turn` is that turn's span and closes it on every exit. At

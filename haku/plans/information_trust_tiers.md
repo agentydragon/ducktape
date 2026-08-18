@@ -311,7 +311,7 @@ Six consequences, in the order they will bite:
   the coordination room"). Hanging them off `session_id` loses every subscription at each
   rotation — the same data-losing shape R11.3a already flags for room bindings. An attachment is
   owned by the conversation, and which session runs under it moves freely.
-- **`chat_attachment` is the right table, with a role.** Migration `0064` creates it as
+- **`chat_attachment` is the right table, with a role.** It is
   `(attachment_id, conversation_id, surface, address, attached_at, detached_at)` with a partial
   unique index on the address. What this section asks of that design: add `role`, and a
   second partial unique index enforcing **at most one attached room per agent**. One table, and

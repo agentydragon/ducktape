@@ -222,9 +222,9 @@ bb run //haku/recall_index:main -- query-chat "intake" --session-id 0e4b…
 ## Deployed, in the console
 
 - **Schema ownership.** `store.ensure_schema` creates the extension, schema, and tables for the
-  CLI and the tests, which own their whole database. The deployed index gets them from migration
-  `0037` in the console's Alembic chain — the console's CNPG cluster is the home because the chat
-  corpus's source tables are already there.
+  CLI and the tests, which own their whole database. The deployed index gets them from the console's Alembic
+  baseline — the console's CNPG cluster is the home because the chat corpus's source tables are
+  already there.
 - **The MCP tool surface.** `haku_index` (<../console/tools/recall_index.py>) is an in-process
   FastMCP server in haku-console: one `search` with a `corpus` argument (`haku_state`,
   `conversations`, or both), plus `index_status`.
@@ -273,9 +273,9 @@ bb run //haku/recall_index:main -- query-chat "intake" --session-id 0e4b…
   `ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie`, the image the console's CNPG cluster
   runs, so nothing had to be rebuilt.
 
-  Migration `0061` rebuilds the derived schema and assumes the extension is there. If it is not,
-  the migration fails, the new replica never becomes Ready, and `maxUnavailable: 0` leaves the
-  running version serving — so a change to either side wants the `Database` CR reconciled first.
+  The migration that builds the derived schema assumes the extension is there. If it is not, the
+  migration fails, the new replica never becomes Ready, and `maxUnavailable: 0` leaves the running
+  version serving — so a change to either side wants the `Database` CR reconciled first.
 
 - **Sync.** `haku/console/recall_index_sync.py` sweeps both corpora from the console process:
   chat every minute over its own tables, haku-state every thirty seconds against a bare mirror on
