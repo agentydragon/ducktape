@@ -52,9 +52,9 @@ from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, Sy
 logger = logging.getLogger(__name__)
 
 # Distinct from the sync loop's lock in `sync` and the OAuth refresh lock. Its own rather than the
-# sync loop's because a stalled claim must not wedge ingress, which keeps accepting messages while
-# no sandbox is up, and sharing one lock would mean a supervisor stall could only be resolved by
-# giving up ingress leadership too.
+# sync loop's because a stalled claim must not wedge ingress, which keeps reading the room and
+# telling it what it is waiting for while no sandbox is up, and sharing one lock would mean a
+# supervisor stall could only be resolved by giving up ingress leadership too.
 _SUPERVISOR_ADVISORY_LOCK = 0x4D58_5345  # "MXSE"
 
 # What the room hears when a turn ends with no text at all. Phrased as an outcome rather than an

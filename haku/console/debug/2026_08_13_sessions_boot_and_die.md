@@ -195,8 +195,7 @@ session that cannot outlive a node drain either.
 
 The owner's first instinct was to allocate the sandbox only when there is a prompt to process, which
 would stop idle rooms from generating boot-and-die records. That is worth doing on its own merits
-(<../plans/conversation_layers.md> § 9 step 3), but it is **not the fix for this symptom**, and
-doing it
+(<../plans/conversation_layers.md> § 9), but it is **not the fix for this symptom**, and doing it
 first would make the symptom harder to see rather than better: if the first cause is the bootstrap,
 the failure simply moves from "always" to "whenever somebody speaks", which is when it costs a
 person something. Fix the reason-reporting and the crashloop first; allocate lazily once a session

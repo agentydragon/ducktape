@@ -513,8 +513,8 @@ def create_app(
             await session_service.reconcile_terminal_claims()
         matrix_running = matrix_sync_service.run() if matrix_sync_service is not None else contextlib.nullcontext()
         # A sibling of the sync loop, not a child of it: sharing the advisory lock keeps one
-        # replica provisioning, while staying a separate task keeps a stalled sandbox claim
-        # from wedging ingress, which must keep enqueueing with no sandbox up.
+        # replica provisioning, while staying a separate task keeps a stalled sandbox claim from
+        # wedging ingress, which must keep reading the room and answering it with no sandbox up.
         supervising = matrix_supervisor.run() if matrix_supervisor is not None else contextlib.nullcontext()
         # Its own lock and its own task, like the two above: what it does is bounded by the room's
         # send budget, and a room that is refusing sends must not hold up ingress or provisioning.

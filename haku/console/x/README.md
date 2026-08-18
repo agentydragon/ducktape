@@ -412,6 +412,8 @@ the test that reads it, as `test_diverse_session` has.
   says them, recording which room event each became.
 - `room_subscription.py` — the room as a subscriber: its durable position in the conversation
   (`matrix_room_cursor`) and the notices it says from it.
+- `ingress_ledger.py` — which inbound events a prompt in the record carries (`matrix_ingress_event`)
+  and which of those prompts nothing answered.
 - `formatted_body.py` — Haku's Markdown into the HTML subset Matrix clients render.
 
 **The room reads the record; it is not pushed at.** A fact with a `session_events` row reaches the
@@ -467,11 +469,14 @@ Behaviours worth knowing before reading the code:
   record of it and the operator's only account of what happened. The room notice is a rendering of
   that row. The one rejection with no row is a room whose session has not been provisioned yet:
   a `session_events` row names a session, and there is none to name.
-- **An accepted batch is acknowledged at once, and that has a cost.** A prompt is a row on the
-  session that took it, so a session ending before it claims that prompt leaves the message
-  unanswered by anything (<../debug/message_drops.md> I3). What carries it forward is the
-  replacement session's waking context: `RoomTranscript.recent` reads every session of the
-  conversation, so an accepted-and-unanswered prompt is in the history the replacement is handed.
+- **An accepted batch is acknowledged at once, so what is still owed is read from the record.** A
+  prompt is a row on the session that took it, and nothing re-delivers a message the homeserver has
+  been acknowledged for — so a session ending before it claims that prompt would leave the message
+  unanswered by anything (<../debug/message_drops.md> I3). `channels/matrix/ingress_ledger.py`
+  records the events a prompt carries in that prompt's own transaction, which makes both directions
+  answerable from the record: a re-delivered event is one a prompt already carries, and a stranded
+  prompt is one whose session ended without claiming it, offered again to the session that replaces
+  it.
 - **An event Haku cannot read is announced, not held.** `m.text` and `m.emote` are prose and are
   serviced; an `m.image`, `m.file`, voice memo, or an msgtype invented after this release is
   carried out of the sync as an `UnmappableEvent`, said out loud in the room, and then

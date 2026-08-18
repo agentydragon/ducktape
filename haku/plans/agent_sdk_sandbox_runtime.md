@@ -277,5 +277,5 @@ MCP path) and the behavioral gotchas recorded in <../TODO.md> § haku-traces.
   beside it as a claim (`x/sandbox_claims.py`).
 - Whether an idle session should dispose its sandbox automatically, and what the operator sees
   when it does. **Still open, and now designed rather than merely asked:**
-  <../console/plans/conversation_layers.md> § 9 step 3 is the answer this question was waiting
-  for; today an idle room holds a sandbox indefinitely.
+  <../console/plans/conversation_layers.md> § 9's conversation-owned prompt queue is the answer
+  this question was waiting for; today an idle room holds a sandbox indefinitely.

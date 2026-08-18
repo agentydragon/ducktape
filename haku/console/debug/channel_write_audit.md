@@ -270,7 +270,7 @@ inherit.
 **5. Self-exclusion is a sender field.** `MatrixClient._read` drops everything whose sender is us
 (R1.5), which is the first of the two guards against a self-feeding loop; `m.notice` being ignored
 is the second. Both are Matrix affordances. The relay message
-(<../plans/conversation_layers.md> § 9 step 8) — the console posting the operator's own text —
+(<../plans/conversation_layers.md> § 9) — the console posting the operator's own text —
 works **only** because it goes out under `@haku` and is therefore
 excluded from ingress by construction. A channel where the console posts as the operator would
 loop, and there is no second guard to catch it.

@@ -30,6 +30,38 @@ watch out for Element consuming leading-slash verbs before they ever reach the r
 the R7.2 notice, a `matrix.to` permalink back, session ↔ tool calls. A posted Matrix event is
 permanent and federated, so mint links only under routes chosen to survive.
 
+## Squash the alembic chain into a single baseline
+
+65 revisions rooted at `0010`. The squash writes one file carrying the then-current head's revision
+id with `down_revision = None`, creating the schema directly, and deletes the rest — the shape
+`0010` itself already is.
+
+**The gate, all three:**
+
+1. **No open PR carries a migration.** A `down_revision` pointing into the collapsed range breaks
+   on merge.
+2. **Production is stamped at the head being collapsed to.** A database stamped strictly between
+   the base and the new baseline becomes permanently unmigratable (`Can't locate revision`), so a
+   long-lived non-production database mid-chain is recreated rather than migrated.
+3. **No expand/contract is mid-flight.** `test_fresh_baseline_matches_sqlalchemy_metadata` excludes
+   names awaiting their drop, so the schema legitimately carries unmapped-but-not-yet-dropped
+   columns; the baseline creates those too or a fresh database stops matching production.
+
+Two things that would otherwise be rediscovered: the baseline must reproduce **physical** names
+rather than an equivalent schema (`0010` kept the deployed `haku_0009_*` function and trigger
+names for exactly this reason); and it deletes the tests pinning an intermediate revision through
+`apply_migrations(db_url, "00NN")`, which is correct — a data migration that has converged
+everywhere can only run against an empty database afterwards.
+
+**Two of those files are not about migration at all, so split them out before deleting the rest.**
+`test_session_status_narrowing_migration.py` **becomes a constraint test**, since both its
+assertions are about what `ck_sessions_status` admits. `test_recall_index_migration.py` **stays,
+rebased**: it compares <../recall_index/schema.py> against what the deployed database gets, and
+nothing else does. No coverage is lost either way, because the two tests that assert the property
+a squash actually endangers live in `test_agent_authority_schema.py` — a fresh baseline matching
+the ORM metadata, and a database already at head being unchanged — and both must pass before the
+squash lands as well as after.
+
 ## Notification text per tool kind
 
 A push notification is titled with the tool's shared action description
@@ -192,10 +224,10 @@ genuinely operational knobs should move onto the config model:
   `STATUS_EDIT_INTERVAL_SECONDS` (5s edit floor, R6.5), `TYPING_REFRESH_SECONDS`.
 - `x/session_store.py` — `LEASE_TTL` / `LEASE_RENEW_INTERVAL`, `PROVISION_LEASE`, `ADOPTION_GRACE`.
 - `x/channels/matrix/pacer.py` — `SENDS_PER_SECOND`, `SEND_BURST`, `MAX_QUEUED_SENDS`, `FLUSH_SECONDS`.
-- `x/channels/matrix/conversation.py` — `SUPERVISE_INTERVAL`, `LEADER_RETRY`, `PROVISION_BACKOFF`,
+- `x/channels/matrix/conversation.py` — `SUPERVISE_INTERVAL`, `PROVISION_BACKOFF`,
   `RE_AWAKENING_MESSAGES` (the N of R3.3a).
-- `x/channels/matrix/sync.py` — `ERROR_BACKOFF`, `REFUSED_BATCH_BACKOFF`, and `MAX_BACKFILL_PAGES` /
-  `TIMELINE_LIMIT` from `x/channels/matrix/client.py`.
+- `x/channels/matrix/room_subscription.py` — `LEADER_RETRY`, `ERROR_BACKOFF`; and
+  `MAX_BACKFILL_PAGES` / `TIMELINE_LIMIT` from `x/channels/matrix/client.py`.
 - `runtime/x/bridge/runner.py` — `MAX_DISCONNECTED_SECONDS`, `REPLAY_WINDOW`,
   `RECONNECT_{BASE,MAX}_DELAY`. **These live in the runner**, whose image is pinned at claim
   creation, so they are not console config at all: they reach a running sandbox only through the

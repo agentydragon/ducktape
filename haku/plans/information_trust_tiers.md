@@ -254,9 +254,9 @@ credential and a per-account sync lock rather than a schema change.
 
 **Budget for the sandboxes before doing this.** Sessions are always-up, so N rooms hold N sandboxes
 continuously — at ~1 CPU / 2Gi against an 8 CPU / 16Gi quota, two idle rooms is a quarter of it
-doing nothing. <../console/plans/conversation_layers.md> § 9 step 3 (allocate because there is
-something to do) is what makes this scale, and it is worth landing with multi-session rather than
-after it.
+doing nothing. <../console/plans/conversation_layers.md> § 9's conversation-owned prompt queue —
+a sandbox because there is something to do — is what makes this scale, and it is worth landing
+with multi-session rather than after it.
 
 ### Talking to a particular agent: one Matrix account each
 
