@@ -41,7 +41,7 @@ spec:
               rclone --config '' cat archive:"$bucket/$marker" > /tmp/verified.json
               grep -Fq "\"archive\":\"$partial\"" /tmp/verified.json
               test -z "$(find /state -mindepth 1 -maxdepth 1 -print -quit)"
-              rclone --config '' cat --bwlimit 10M archive:"$bucket/$partial" | tar -C /state -xf -
+              rclone --config '' cat archive:"$bucket/$partial" | tar -C /state -xf -
               test -d /state/workspace/.openclaw
               test -d /state/agents
           env:
