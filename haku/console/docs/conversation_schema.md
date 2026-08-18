@@ -73,28 +73,32 @@ consumer does. It is the missing piece rather than a cost.
 ### Reasoning survives, in a changed shape
 
 The vocabulary a second backend is most likely to break on is the one whose current shape is
-Claude's, and reasoning is that one. Both its defects are a provider's shape promoted upward:
+Claude's, and reasoning is that one. It carries two defects — one a provider's shape promoted
+upward, one a distinction never recorded at all:
 
 - **Reasoning is not part of a message.** In Codex and in the Responses API it is its own output
   item, a sibling of the assistant message with its own id. Only Claude nests it, as a `thinking`
   content block. A neutral event carrying a message key therefore asserts a containment two of three
   backends do not have.
-- **One field means two different artifacts.** Claude's thinking text is the model's reasoning;
-  OpenAI's `summary` is a separate, generated object, produced _because_ the reasoning itself is
-  returned encrypted or withheld. Storing both under one `summary` leaves a channel unable to tell
-  which it is showing, and unable to say anything at all for a model that discloses neither.
+- **No backend hands back the raw chain of thought, so the field's name is not the distinction that
+  matters.** Anthropic returns _summarised_ thinking, OpenAI returns a generated summary over
+  content it keeps encrypted, and Codex streams a summary too. Calling one field `summary` is
+  therefore accurate everywhere; what it fails to record is whether anything was disclosed at all,
+  so a model that discloses nothing is an empty string with no explanation.
 
 So reasoning is an item like any other, its renderable prose is segments like any other item's, and
 its completion carries a **disclosure** discriminator:
 
-| Disclosure | What it means                                               | Where it comes from                                                                 |
-| ---------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `full`     | the segments are the model's reasoning                      | Claude `thinking` blocks                                                            |
-| `summary`  | the segments are a summary; the reasoning is not obtainable | Responses `reasoning_summary_text.*`, Codex `item/reasoning/summaryTextDelta`       |
-| `withheld` | reasoning happened and none of it is available; no segments | Responses `encrypted_content` with no summary requested, Claude `redacted_thinking` |
+| Disclosure | What it means                                                                | Where it comes from                                                                                     |
+| ---------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `summary`  | the segments summarise the reasoning; the reasoning itself is not obtainable | Claude `thinking` blocks, Responses `reasoning_summary_text.*`, Codex `item/reasoning/summaryTextDelta` |
+| `withheld` | reasoning happened and none of it is disclosed; no segments                  | Claude `redacted_thinking`, Responses `encrypted_content` with no summary requested                     |
 
 That is what makes "the agent thought and you may not see it" renderable. Without it a withheld
 reasoning item is an empty string, and no surface can explain the emptiness.
+
+There is no `full`. It would name a disclosure no backend we target performs, so every channel would
+have to write a branch it never takes.
 
 ### The turn is at this layer
 
@@ -235,7 +239,7 @@ conversation_item
   arguments        JSONB NULL        tool_call only
   outcome          NULL              tool_call only, once closed: succeeded | failed | unknown
   structured       JSONB NULL        tool_call only: the per-tool payload
-  disclosure       NULL              reasoning only, once closed: full | summary | withheld
+  disclosure       NULL              reasoning only, once closed: summary | withheld
   created_at, updated_at
 ```
 
@@ -305,24 +309,29 @@ come to disagree about what was asked.
 
 ### Channel state
 
-| Table                                                                     | What it is                                                                              |
-| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `chat_attachment`                                                         | one channel holding a copy of a conversation, at its own address. Unchanged.            |
-| `channel_cursor(attachment_id, event_seq)`                                | how far this attachment has read the conversation's log                                 |
-| `channel_revision(attachment_id, subject, sent_ref, sent_at, retired_at)` | what a revising channel is currently showing, and where                                 |
-| `matrix_outbox`                                                           | the Matrix channel's retry queue against its homeserver                                 |
-| `matrix_sync_watermark`, `matrix_ingress_event`, `matrix_access_token`    | the Matrix channel's own, unchanged but for `matrix_ingress_event` naming a prompt item |
+| Table                                                                    | What it is                                                                              |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `chat_attachment`                                                        | one channel holding a copy of a conversation, at its own address. Unchanged.            |
+| `channel_cursor(attachment_id, event_seq)`                               | how far this attachment has read the conversation's log                                 |
+| `matrix_outbox`                                                          | the Matrix channel's retry queue against its homeserver                                 |
+| `matrix_revision(attachment_id, subject, event_id, sent_at, retired_at)` | which homeserver event Matrix is currently editing for a revisable subject              |
+| `matrix_sync_watermark`, `matrix_ingress_event`, `matrix_access_token`   | the Matrix channel's own, unchanged but for `matrix_ingress_event` naming a prompt item |
 
-**A channel's two halves are keyed the same way.** The cursor is keyed by `attachment_id`, not by a
-room id, so a channel no longer joins its position to its deliveries through its own address. That
-also makes the cursor shared rather than Matrix-private without contradicting the rule that a
-browser tab keeps no durable position: an attachment row exists only for a channel that holds a
-copy, so keying by attachment already excludes tabs.
+**Only the cursor is channel-generic.** A position in the log is what the conversation layer has to
+know about an attachment — it is the resume contract, and the same integer answers it for every
+channel. Everything else a channel keeps is its own rendering state, held in its own tables, so a
+second channel is a new table rather than a widened shared one.
 
-`channel_revision` is what `chat_delivery` is once narrowed to what it is read for. It holds
-subjects a channel can **revise** — a status line it edits and retires — and nothing else. A row per
-delivered message is a flushed-up-to position materialised one row at a time, and the cursor holds
-that properly.
+`matrix_revision` is what `chat_delivery` is once narrowed to what it is read for, and it is
+Matrix's: it holds the subjects that channel can **revise** — a status line it edits and retires —
+against the homeserver event ids it edits them at. Nothing outside Matrix reads it, and a channel
+that cannot edit what it sent has no use for the shape. A row per delivered message is a
+flushed-up-to position materialised one row at a time, and the cursor holds that properly.
+
+Keying it by `attachment_id` rather than by a room id is still worth doing, so a channel does not
+join its own state through its public address. That the cursor is keyed the same way does not make a
+browser tab durable: an attachment row exists only for a channel that holds a copy, so keying by
+attachment already excludes tabs.
 
 `matrix_outbox` is `session_outbox` with the session removed. It is keyed by `attachment_id`, holds
 `subject` as its idempotence key, and **is written by the channel and never by a turn**: the turn
@@ -347,7 +356,7 @@ for no shared benefit.
 | `conversation_turn`          | materialised entity | `turn_id`                      | the log, wholly                                                              |
 | `conversation_prompt`        | queue state         | `prompt_id`                    | `queued_at` from the log; the claim is not derivable                         |
 | `channel_cursor`             | channel state       | `attachment_id`                | —                                                                            |
-| `channel_revision`           | channel state       | `(attachment_id, subject)`     | —                                                                            |
+| `matrix_revision`            | channel state       | `(attachment_id, subject)`     | —                                                                            |
 | `matrix_outbox`              | channel state       | `outbox_id`                    | —                                                                            |
 | `sessions`, `session_frames` | session state       | `session_id`                   | —                                                                            |
 
@@ -367,8 +376,8 @@ whole streaming path depends on and it is cheap to state.
 
 **A channel stores one integer.** `channel_cursor.event_seq` is a position in the conversation's
 log, and "I have already shown this" points at that position — never at a message id, never at an
-address. A channel that also revises what it showed keeps `channel_revision` rows beside it, whose
-natural subject is an `item_id`.
+address. A channel that also revises what it showed keeps that in its own table — `matrix_revision`
+for Matrix — whose natural subject is an `item_id`.
 
 **A non-revising channel needs nothing else.** What makes a position sufficient are properties of
 the log, none of which holds under a schema where prose is a mutated column:
@@ -401,7 +410,7 @@ threads stay; what hangs beneath them goes.
 | Change        | Tables                                                                                                                                                                                                                            |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Dropped**   | `session_messages`, `session_prompts`, `session_turns`, `session_turn_prompts`, `session_events`, `session_outbox`, `chat_delivery`, `matrix_room_cursor`, `matrix_ingress_event`                                                 |
-| **Created**   | `conversation_event`, `conversation_item`, `conversation_turn`, `conversation_prompt`, `channel_cursor`, `channel_revision`, `matrix_outbox`, and `matrix_ingress_event` re-pointed at a prompt item                              |
+| **Created**   | `conversation_event`, `conversation_item`, `conversation_turn`, `conversation_prompt`, `channel_cursor`, `matrix_revision`, `matrix_outbox`, and `matrix_ingress_event` re-pointed at a prompt item                               |
 | **Emptied**   | `sessions` and `session_frames` — every row, the tables kept                                                                                                                                                                      |
 | **Untouched** | `conversation`, `chat_attachment`, `matrix_sync_watermark`, `matrix_access_token`, the approval ledger, the agent authority graph, the OAuth and operator tables, push subscriptions, node daemons, the recall index's own tables |
 
