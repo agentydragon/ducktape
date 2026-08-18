@@ -1,12 +1,15 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: public-coder-agent-state-restore-20260817
+  name: public-coder-agent-state-restore-20260817-v2
   namespace: public-coder-agent
   labels:
     app.kubernetes.io/name: public-coder-agent-archive-restore
 spec:
-  # A failed restore must be inspected before rewriting the worker-local PVC.
+  # v1 stopped after extracting part of workspace: a read-only archived cache
+  # directory prevented UID 1000 from extracting a later child.  v2 accepts
+  # only that known partial state, removes it, and extracts as root so tar can
+  # restore archived modes and ownership faithfully.
   backoffLimit: 0
   template:
     metadata:
@@ -20,9 +23,8 @@ spec:
       securityContext:
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
+        runAsUser: 0
+        runAsGroup: 0
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -40,6 +42,9 @@ spec:
               marker="${prefix}/public-coder-agent-state.tar.verified.json"
               rclone --config '' cat archive:"$bucket/$marker" > /tmp/verified.json
               grep -Fq "\"archive\":\"$partial\"" /tmp/verified.json
+              test -d /state/workspace/.openclaw
+              test ! -d /state/agents
+              find /state -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
               test -z "$(find /state -mindepth 1 -maxdepth 1 -print -quit)"
               rclone --config '' cat archive:"$bucket/$partial" | tar -C /state -xf -
               test -d /state/workspace/.openclaw
