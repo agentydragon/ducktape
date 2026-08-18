@@ -4,3 +4,4 @@ resources:
   - bucket.yaml
   - iam.yaml
   - secret-reference-grant.yaml
+  - credentials-secret.yaml
