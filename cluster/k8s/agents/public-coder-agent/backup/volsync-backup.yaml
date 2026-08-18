@@ -1,0 +1,48 @@
+# Encrypted, deduplicated snapshots of the worker-local OpenClaw state.
+# Direct copies are crash-consistent: run and retain a restore drill before
+# treating them as a replacement for the old PVC/rescue archive.
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationSource
+metadata:
+  name: public-coder-agent-state-v2-restic
+  namespace: public-coder-agent
+spec:
+  sourcePVC: public-coder-agent-state-v2
+  trigger:
+    # 09:17 UTC is 02:17 PDT / 01:17 PST; run away from normal interactive use.
+    schedule: "17 09 * * *"
+  restic:
+    repository: public-coder-agent-state-v2-restic
+    copyMethod: Direct
+    pruneIntervalDays: 7
+    retain:
+      daily: 7
+      weekly: 4
+      monthly: 6
+    cacheStorageClassName: local-path-ovh-hdd
+    cacheAccessModes: [ReadWriteOnce]
+    cacheCapacity: 1Gi
+    moverPodLabels:
+      app.kubernetes.io/name: public-coder-agent-volsync
+    moverResources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+    moverSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+    moverAffinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: kubernetes.io/hostname
+                  operator: In
+                  values: [ovh-ns102453]

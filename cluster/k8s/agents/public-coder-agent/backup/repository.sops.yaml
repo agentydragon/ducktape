@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: public-coder-agent-volsync-restic-password
+    namespace: public-coder-agent
+type: Opaque
+stringData:
+    RESTIC_PASSWORD: ENC[AES256_GCM,data:x+mPbXA0OP2/lnE6odWNzQcPssgFZMa9XQEqaRwBmLioZJcLepl0ba6rBZJnM6ZW9F8VXUX2+L0BKhHWK86HFA==,iv:oZMJFNQjc2x6jm3b72CGN1cWE07sZTQGyR5tusmPxLk=,tag:Pp2oFBQigPpBm24xCAeqkg==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBhOTJEQkZTcjg0d1ZkYkhu
+            YmZ1eEhJakxtNEdEdlZGWGRKNk56b013MlNNCmxtajdEWitzMGNLZjBqOTQ3dm1w
+            WEZMdXM4MkhJMndxRmhMdmdkNzRyUncKLS0tIFpIazMxVlY4OFZSSUZUWUFwR3Nn
+            anpHaVFPbCtTY0poRUhKMWdIV2RoNzQKS5ibqFwXwGfSR9dfSdZyPMlmtO6i6Vm8
+            PdfA8LwRFO3h6yIInPPz9a/bc0sfgxbm4CEh4dNwIq93z/6NNmx4JQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBUNTA2WDlpZERBa1NoUTFG
+            QlNqblJ3QmpDaC9FbDEyRGxVWmhYUWZsSERNCm9rb1lKU3ROQkdVaWdCYlkzdkVt
+            TzRMQ0x3SHZ0QTU4aHFvbkY3YmN5L1UKLS0tIEwyU3dhem5nSEJIeWN4Nk9ZejdP
+            c3NUN2lOM1VTYnlkQmFIMUl1d1JnWWsKzWUv96oPtznHgf8upKa8dTMRSmfNyrG5
+            vWWoauPLWJrjS7SIG4WI57spAkCSu8WMUNjqKvizjLPipgNQ8yJ6AQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-08-18T07:20:41Z"
+    mac: ENC[AES256_GCM,data:7J7KaP8y62atIdcBC2iedW7UYCOowfWDPJ8RbYNk3szqZAE8lwsRTLBDKdXBgGLb7Fwt8s3yu8Eg1EcvdgjCha6H/HnwyWX2dqrQiSrZMLpKhGEi0mG9W9AeNStbMSlLCcCOoEofVGxy/QHXOOAJRN1Q7hUe1kHHDhIvH/XaEfs=,iv:sGCgKrENy+RBzxyzl2ZDVw2s9NymVmzP0QaPTtURKAY=,tag:jYJzBBA24LEpasSKVXbEBA==,type:str]
+    version: 3.13.3

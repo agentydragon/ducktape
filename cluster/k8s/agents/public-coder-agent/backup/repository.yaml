@@ -1,0 +1,32 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: public-coder-agent-state-v2-restic
+  namespace: public-coder-agent
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: SecretStore
+    name: public-coder-agent-volsync-s3
+  target:
+    name: public-coder-agent-state-v2-restic
+    creationPolicy: Owner
+    template:
+      type: Opaque
+      templateFrom:
+        - literal: |
+            RESTIC_REPOSITORY: s3:http://seaweedfs-s3.seaweedfs.svc:8333/public-coder-agent-backups
+            AWS_DEFAULT_REGION: us-east-1
+  data:
+    - secretKey: AWS_ACCESS_KEY_ID
+      remoteRef:
+        key: public-coder-agent-volsync-s3
+        property: AWS_ACCESS_KEY_ID
+    - secretKey: AWS_SECRET_ACCESS_KEY
+      remoteRef:
+        key: public-coder-agent-volsync-s3
+        property: AWS_SECRET_ACCESS_KEY
+    - secretKey: RESTIC_PASSWORD
+      remoteRef:
+        key: public-coder-agent-volsync-restic-password
+        property: RESTIC_PASSWORD
