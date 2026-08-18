@@ -729,6 +729,11 @@ and there is nothing for a caller to combine.
 - **The connection is the subscription.** One socket per followed conversation — the position and
   the reader task are all the per-connection state there is, and a send-only socket has no inbound
   protocol that could be talked into reading another operator's thread.
+- **The browser's types for these messages are generated from these models.** A WebSocket has no
+  route for FastAPI to document, so `export_schema.py` publishes `ConversationFollowMessage` into
+  the OpenAPI document the SPA is generated from; the messages reuse the components a conversation
+  read already defines rather than describing those rows a second time. Renaming a field here is a
+  compile error in `frontend/x/conversation_follow.ts`, not a message a tab cannot read.
 
 Addressed by the conversation and never by the session: a session exists only while it holds a
 sandbox, so a follower naming one would be reading a dead log after every replacement. The rows an

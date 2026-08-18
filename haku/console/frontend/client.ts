@@ -40,6 +40,11 @@ export type ConversationPage = components["schemas"]["ConversationPage"];
 export type ConversationCursor = components["schemas"]["ConversationCursor"];
 export type Conversation = components["schemas"]["ConversationView"];
 export type ConversationSession = components["schemas"]["ConversationSessionView"];
+// What `WS /api/conversations/{id}/follow` sends. Generated like every type above: the schema
+// carries these components because the exporter publishes them (//haku/console:export_schema),
+// a WebSocket having no route for FastAPI to document.
+export type ConversationFollowMessage = components["schemas"]["ConversationFollowMessage"];
+export type ConversationUpdate = components["schemas"]["ConversationUpdate"];
 export type SessionFrame = components["schemas"]["SessionFrameView"];
 export type SessionFramePage = components["schemas"]["SessionFramePage"];
 export type AgentListResponse = components["schemas"]["AgentListResponse"];

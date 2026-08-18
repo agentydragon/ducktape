@@ -51,7 +51,9 @@ emitted `.js`, and vitest runs the emitted `.test.js`.
   the next one discards. Used by the history page and both conversation surfaces.
 - `client.ts` — typed `openapi-fetch` client; the types come from the backend's
   OpenAPI schema (the `:schema` target runs `//haku/console:export_schema_bin`), so
-  the Pydantic models are the single source of truth for the wire contract. Includes the
+  the Pydantic models are the single source of truth for the wire contract — including
+  `ConversationFollowMessage`, which the exporter publishes as a component because the socket
+  carrying it has no route for FastAPI to document. Includes the
   launch-routine helper, MCP approval queue helpers (`pending`, approve, deny), and
   MCP operator-account association helpers.
 - `confirm_dialog.tsx` — trusted top-layer confirmations for bridge launches, geolocation

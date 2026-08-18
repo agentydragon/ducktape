@@ -989,7 +989,18 @@ py_library(
         ":app",
         ":config",
         "//haku/console/agents:authorization",
+        "//haku/console/x:session_views",
         "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_export_schema",
+    srcs = ["test_export_schema.py"],
+    deps = [
+        ":export_schema",
+        "//:conftest",
+        "@pypi//pytest_bazel",
     ],
 )
 

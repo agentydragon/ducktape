@@ -283,6 +283,10 @@ class ConversationUpdate(BaseModel):
     turns: list[ConversationTurnView] = Field(description="The turns that moved, newest first.")
 
 
+# The browser's types for these come from here: `haku.console.export_schema` publishes this union
+# into the OpenAPI document the frontend generates from, a WebSocket having no route for FastAPI to
+# document. A field renamed on either model is a compile error in `frontend/x/conversation_follow.ts`
+# rather than a message a tab cannot read.
 type ConversationFollowMessage = Annotated[
     ConversationSnapshot | ConversationUpdate, Field(discriminator="message_type")
 ]

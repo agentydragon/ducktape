@@ -1,43 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { Conversation, ConversationSession } from "../client";
+import type { Conversation, ConversationFollowMessage } from "../client";
 import { redirectToOperatorLogin } from "../operator_login";
 
 // The one close the shell acts on instead of reconnecting: the operator session reached its
 // absolute deadline, so every reconnect would be refused until the browser re-authenticates.
 // Mirrors `OPERATOR_SESSION_EXPIRED_CLOSE_CODE` in ../../console_events.py.
 const OPERATOR_SESSION_EXPIRED_CLOSE_CODE = 4001;
-
-/** What a follow socket sends, mirroring `ConversationSnapshot` in ../../x/session_views.py.
- *
- * Hand-written because these cross a WebSocket rather than a documented route, so the generated
- * schema has no entry for them. Every field's *type* still comes from the generated models, which
- * is what a change to one of those rows would break here.
- */
-export type ConversationSnapshotMessage = {
-  message_type: "snapshot";
-  position: number;
-  conversation: Conversation;
-};
-
-/** Mirrors `ConversationUpdate` in ../../x/session_views.py. */
-export type ConversationUpdateMessage = {
-  message_type: "update";
-  position: number;
-  session_id: string;
-  status: ConversationSession["status"];
-  error: string | null;
-  created_at: string;
-  updated_at: string;
-  provisioning: ConversationSession["provisioning"];
-  narration: ConversationSession["narration"];
-  attachments: Conversation["attachments"];
-  earlier_sessions: Conversation["earlier_sessions"];
-  messages: ConversationSession["messages"];
-  turns: ConversationSession["turns"];
-};
-
-export type FollowMessage = ConversationSnapshotMessage | ConversationUpdateMessage;
 
 /** The health of a followed conversation, for chrome that shows when the view has stopped moving.
  *
@@ -75,7 +44,7 @@ function merged<T>(held: readonly T[], arriving: readonly T[], id: (row: T) => s
  * An update with nothing to merge into is a protocol violation rather than a state to render: a
  * position is only ever sent back after a snapshot established what it addresses.
  */
-export function followed(held: Conversation | null, message: FollowMessage): Conversation {
+export function followed(held: Conversation | null, message: ConversationFollowMessage): Conversation {
   if (message.message_type === "snapshot") return message.conversation;
   if (held === null) throw new Error("a conversation update arrived before any snapshot");
   return {
@@ -163,7 +132,7 @@ export function useFollowedConversation(conversationId: string): {
       socket.onmessage = (event) => {
         if (closed) return;
         try {
-          const message = JSON.parse(String(event.data)) as FollowMessage;
+          const message = JSON.parse(String(event.data)) as ConversationFollowMessage;
           const next = followed(held.current, message);
           held.current = next;
           position.current = message.position;

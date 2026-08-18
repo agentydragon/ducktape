@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { Conversation, ConversationSession } from "../client";
-import { followed, type ConversationUpdateMessage } from "./conversation_follow";
+import type { Conversation, ConversationSession, ConversationUpdate } from "../client";
+import { followed } from "./conversation_follow";
 
 type Message = ConversationSession["messages"][number];
 
@@ -40,7 +40,7 @@ function conversation(messages: Message[]): Conversation {
   };
 }
 
-function update(fields: Partial<ConversationUpdateMessage>): ConversationUpdateMessage {
+function update(fields: Partial<ConversationUpdate>): ConversationUpdate {
   return {
     message_type: "update",
     position: 10,
