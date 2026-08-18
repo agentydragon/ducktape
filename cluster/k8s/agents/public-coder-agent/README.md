@@ -117,3 +117,10 @@ proxy environment handling.
   Before treating this as durable agent storage, evaluate extending the
   OpenEBS LVM provisioner to OVH workers and migrating this claim to a
   size-enforcing LVM-backed StorageClass (or another quota-enforcing design).
+- **Runtime image closure.** Profile and reduce the OpenClaw image before its
+  next substantial expansion. The 2026-08-17 image is 2.61 GiB compressed
+  across 99 layers. It intentionally includes the gateway and Matrix plugin,
+  but also the broad `devtools` and git-hook closures (Bazel/`bbr`, Ansible,
+  AWS CLI, Checkov, Rust tooling, and formatter/pre-commit tooling). Identify
+  the actual runtime-required subset and move the rest to the dedicated
+  devbox or on-demand tooling without breaking agent workflows.
