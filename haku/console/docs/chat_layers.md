@@ -7,6 +7,9 @@ is the only thing the other two talk to:
 >
 > A **session** listens to and sends to the **conversation**, never to a channel.
 
+The tables that realise this, and the evidence that their vocabulary belongs to no one backend, are
+in <conversation_schema.md>.
+
 ## What each layer owns
 
 **Session** — one runner incarnation. It owns the wire log (`session_frames`), the turns cut out of
