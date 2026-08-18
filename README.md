@@ -98,6 +98,10 @@ When a component has one central plan, put it at `<dir>/PLAN.md` instead of a si
 
 **Durable requirements and design go somewhere durable.** State the invariant at the code site if one place depends on it, in the component's `SPEC.md` if it is part of what that component guarantees, or as a design doc under `<dir>/docs/` if several places reason from it. Then the plan entry is free to disappear when the work does.
 
+**But the goal a plan exists to reach is plan content.** A rule the code does not hold to yet — stated so every step can be checked against it — belongs in the plan, and leaves with the last step that achieves it. Naming the target is what a plan is for, and a plan whose steps cannot be checked against anything is a list of chores.
+
+The test is whether the statement outlives the work. A rule the finished system still needs stated is durable and goes above; a rule that becomes unremarkable once the work lands is the plan's own. A design doc describing the target architecture is the usual companion: it says how the finished thing is meant to work, the plan says what is left before that is true, and the plan may point at the doc.
+
 ### `debug/`
 
 `<dir>/debug/<topic>.md` holds investigation notes, RCAs, and debug logs. The `cluster/` subproject uses `cluster/docs/lessons_learned/` instead.
