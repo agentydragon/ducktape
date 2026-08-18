@@ -613,8 +613,8 @@ exists to remove:
 having even if the loop is never built. The dependency edges are at the end.
 
 1.  **Read through `conversation_id`, then unmap what it subsumes.** `0064` is additive, so
-    `matrix_conversation` is still authoritative. `sessions.room_id` and `sessions.surface` are
-    both unmapped and awaiting their drops.
+    `matrix_conversation` is still authoritative. `sessions.room_id` is gone; `sessions.surface` is
+    unmapped and awaiting its drop.
 
 2.  **The conversation detail page reads the increment** instead of refetching the whole
     conversation on every poll. `Subscription` over a `ClientHeldCursor` is the server-side half;

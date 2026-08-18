@@ -1,4 +1,4 @@
-"""0075 lets a session be inserted without naming `surface` or pairing it with `room_id`."""
+"""0075 lets a session be inserted without naming `surface`."""
 
 from __future__ import annotations
 
@@ -80,19 +80,16 @@ def test_a_session_inserted_without_a_surface_records_none(db_url: str) -> None:
         engine.dispose()
 
 
-def test_surface_and_room_id_are_no_longer_coupled(db_url: str) -> None:
-    """`ck_sessions_matrix_room` made each column's value a statement about the other, so unmapping
-    either one on its own wrote a row the equivalence rejected."""
+def test_a_matrix_session_names_no_room(db_url: str) -> None:
+    """`ck_sessions_matrix_room` required a `matrix` session to carry a room id, and the room it
+    carried is now the `address` of its conversation's live attachment."""
     apply_migrations(db_url)
     engine = create_engine(sync_database_url(db_url))
     try:
         with engine.begin() as conn:
-            conversation_id = _conversation(conn)
-            matrix_without_a_room = _insert_session(conn, conversation_id, surface="matrix")
-            room_without_a_matrix_surface = _insert_session(conn, conversation_id, room_id="!room:example.org")
+            session_id = _insert_session(conn, _conversation(conn), surface="matrix")
         with engine.connect() as conn:
-            assert _surface(conn, matrix_without_a_room) == "matrix"
-            assert _surface(conn, room_without_a_matrix_surface) is None
+            assert _surface(conn, session_id) == "matrix"
     finally:
         engine.dispose()
 

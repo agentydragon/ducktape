@@ -1496,20 +1496,12 @@ UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset({"matrix_conversation"}
 # in the one above, which hides a whole table — naming `session_messages` there would stop the
 # comparison noticing any drift in it.
 #
-# CLEANUP(added 2026-08-18): drop `sessions.room_id` once no replica predating this commit is
-#   still serving — the image that mapped it names the column in every `SELECT` it emits against
-#   `sessions`, whether or not any code reads the attribute, so the drop waits a release after
-#   this unmapping. A session reaches its room through `conversation_id` and that conversation's
-#   live `chat_attachment`.
-#
 # CLEANUP(added 2026-08-18): drop `sessions.surface`, and with it `ck_sessions_surface`, once no
 #   replica predating this commit is still serving — same reason as above, and `0075` made the
 #   column nullable so the first `INSERT` of this roll does not fail on a `NOT NULL` the release
 #   no longer names. Which channels hold a conversation is `chat_attachment`, one row per channel,
 #   which is what a single enum on the session could not say.
-UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
-    {("sessions", "room_id"), ("sessions", "surface")}
-)
+UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset({("sessions", "surface")})
 
 # Indexes the database has and no ORM class declares. Reachable only through a column above: an
 # index over columns that are all still mapped would be drift rather than an unfinished drop.
