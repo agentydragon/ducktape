@@ -1283,7 +1283,7 @@ async def test_an_event_row_cannot_be_written_without_a_provenance_union(
 
 async def _exchange(chat_store, operator_id, session_id: UUID, prompt: str, answer: str) -> None:
     """One prompt through to one finished answer, with the frames it took, as the loop writes them."""
-    await chat_store.enqueue_prompt(operator_id, session_id, prompt)
+    await chat_store.enqueue_prompt(operator_id, session_id, prompt, SPA_ORIGIN)
     turn = await chat_store.next_prompt(session_id)
     assert turn is not None
     sent = await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, PROMPT_FRAME_KIND, {"type": "user"})
@@ -1363,7 +1363,7 @@ async def test_a_prompt_leaving_pending_reaches_a_reader_that_no_event_told(chat
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     conversation_id = await chat_store.conversation_of(view.session_id)
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
     enqueued = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=0, limit=50)
     assert [(row.content, row.status) for row in enqueued.messages] == [("why did it fail?", ChatMessageStatus.PENDING)]
 
@@ -1387,7 +1387,7 @@ async def test_a_position_the_log_cannot_answer_from_is_refused_rather_than_read
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     conversation_id = await chat_store.conversation_of(view.session_id)
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
     held = await chat_store.conversation_position(conversation_id)
 
     with pytest.raises(PositionUnusableError):

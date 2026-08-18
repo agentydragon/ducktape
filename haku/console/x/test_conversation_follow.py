@@ -16,7 +16,7 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 
-from haku.console.chat_models import ChatMessageStatus, FrameDirection, SessionStatus, TurnOutcome
+from haku.console.chat_models import SPA_ORIGIN, ChatMessageStatus, FrameDirection, SessionStatus, TurnOutcome
 from haku.console.x.claude_code.frames import PROMPT_FRAME_KIND
 from haku.console.x.conversation_events import FrameRange, MessageCompleted, MessageKey
 from haku.console.x.conversation_follow import ConversationFollow
@@ -63,7 +63,7 @@ async def _started(chat_store: SessionStore, operator_id: UUID) -> tuple[UUID, U
 
 async def _exchange(chat_store: SessionStore, operator_id: UUID, session_id: UUID, prompt: str, answer: str) -> None:
     """One prompt through to one finished answer, with the frames it took, as the loop writes them."""
-    await chat_store.enqueue_prompt(operator_id, session_id, prompt)
+    await chat_store.enqueue_prompt(operator_id, session_id, prompt, SPA_ORIGIN)
     turn = await chat_store.next_prompt(session_id)
     assert turn is not None
     sent = await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, PROMPT_FRAME_KIND, {"type": "user"})
@@ -130,7 +130,7 @@ async def test_a_change_landing_during_the_snapshot_is_carried_by_the_update_aft
     whole = chat_store.get_operator_conversation
 
     async def write_while_reading(operator: UUID, conversation: UUID) -> ConversationView:
-        await chat_store.enqueue_prompt(operator_id, session_id, "written mid-read")
+        await chat_store.enqueue_prompt(operator_id, session_id, "written mid-read", SPA_ORIGIN)
         return await whole(operator, conversation)
 
     monkeypatch.setattr(chat_store, "get_operator_conversation", write_while_reading)
@@ -183,7 +183,7 @@ async def test_a_streaming_turns_deltas_become_one_update(
     the open message whole. Coalescing is what keeps that from costing bytes quadratic in the
     answer's length — and the follower still lands on the prose so far."""
     session_id, conversation_id = await _started(chat_store, operator_id)
-    await chat_store.enqueue_prompt(operator_id, session_id, "explain")
+    await chat_store.enqueue_prompt(operator_id, session_id, "explain", SPA_ORIGIN)
     turn = await chat_store.next_prompt(session_id)
     assert turn is not None
     messages = following.follow(operator_id, conversation_id)
