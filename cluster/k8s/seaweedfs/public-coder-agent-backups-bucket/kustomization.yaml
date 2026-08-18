@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - bucket.yaml
   - iam.yaml
+  - secret-reference-grant.yaml
