@@ -100,6 +100,29 @@ ts_library(
 )
 
 ts_library(
+    name = "conversation_follow",
+    srcs = ["conversation_follow.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//haku/console/frontend:client",
+        "//haku/console/frontend:operator_login",
+    ],
+)
+
+ts_library(
+    name = "conversation_follow_test",
+    srcs = ["conversation_follow.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":conversation_follow",
+        "//:node_modules/vitest",
+        "//haku/console/frontend:client",
+    ],
+)
+
+ts_library(
     name = "conversations_page",
     srcs = ["conversations_page.tsx"],
     tsconfig = TSCONFIG,
@@ -107,6 +130,7 @@ ts_library(
         ":bootstrap_narration",
         ":chat_scroll",
         ":conversation_composer",
+        ":conversation_follow",
         ":conversation_timeline",
         ":markdown",
         ":sandbox_provisioning",

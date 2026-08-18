@@ -1177,6 +1177,7 @@ vitest_bin.vitest_test(
         "//haku/console/frontend/tool_rendering/tana:requests_test",
         "//haku/console/frontend/x:bootstrap_narration_test",
         "//haku/console/frontend/x:chat_scroll_test",
+        "//haku/console/frontend/x:conversation_follow_test",
         "//haku/console/frontend/x:conversation_timeline_test",
         "//haku/console/frontend/x:frame_log_test",
         "//haku/console/frontend/x:markdown_test",

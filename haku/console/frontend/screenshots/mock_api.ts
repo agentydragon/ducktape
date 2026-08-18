@@ -627,3 +627,35 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
   if (realFetch) return realFetch(input, init);
   return jsonResponse({});
 }) as typeof fetch;
+
+// The conversation detail page follows a socket rather than fetching, so the canned answer above
+// reaches it through one: a single snapshot carrying the same fixture, then silence.
+//
+// Every other socket is **refused**, which is what a real browser does here — nothing in this
+// harness serves `/api/events/ws`, and the shell renders the failure as a sync error. Leaving one
+// hanging instead would hold the shell at "connecting", which reads as a spinner that never stops.
+class HarnessSocket {
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onclose: ((event: { code: number; reason: string }) => void) | null = null;
+  onerror: (() => void) | null = null;
+
+  constructor(url: string | URL) {
+    const follows = String(url).includes("/follow");
+    queueMicrotask(() => {
+      if (!follows) {
+        this.onerror?.();
+        this.onclose?.({ code: 1006, reason: "" });
+        return;
+      }
+      this.onopen?.();
+      this.onmessage?.({
+        data: JSON.stringify({ message_type: "snapshot", position: 1, conversation: conversationDetailForScene }),
+      });
+    });
+  }
+
+  close(): void {}
+}
+
+globalThis.WebSocket = HarnessSocket as unknown as typeof WebSocket;

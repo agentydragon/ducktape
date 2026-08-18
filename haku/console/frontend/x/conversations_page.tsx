@@ -1,11 +1,10 @@
 import { Badge, Box, Button, Code, Divider, Group, Loader, Paper, Stack, Text, Title } from "@mantine/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   closeSession,
   createConversation,
   displayableError,
-  fetchConversation,
   fetchConversations,
   type ClaudeChatMessage,
   type Conversation,
@@ -15,6 +14,7 @@ import {
 } from "../client";
 import { useCoalescedRefresh } from "../coalesced_refresh";
 import { changedSessionId, useConsoleEvents } from "../console_events";
+import { useFollowedConversation } from "./conversation_follow";
 import { conversationPath, CONVERSATIONS_PATH, navigateToConsolePath, sessionFramesPath } from "../routing";
 import { bootstrapNarration, type BootstrapNarration } from "./bootstrap_narration";
 import { isNearChatBottom } from "./chat_scroll";
@@ -358,52 +358,21 @@ function EarlierSessions({ sessions }: { sessions: Conversation["earlier_session
 }
 
 function ConversationDetailPage({ conversationId }: { conversationId: string }) {
-  const [conversation, setConversation] = useState<Conversation | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
-  // Which conversation is on screen, for the two readers that must not close over a stale one:
-  // the live-event callback, registered once, and a response landing after the operator moved on.
-  const shownRef = useRef(conversationId);
-  // The session whose invalidations this page cares about. A conversation is not named by
-  // `session_changed`, so the page maps the wake back onto itself through the session it is
-  // showing — and a replacement session arrives on the next whole-conversation read.
-  const sessionRef = useRef<string | null>(null);
 
-  const read = useCallback(async () => {
-    const requested = shownRef.current;
-    try {
-      const item = await fetchConversation(requested);
-      if (shownRef.current === requested) {
-        setConversation(item);
-        sessionRef.current = item.session.session_id;
-        setError(null);
-      }
-    } catch (reason: unknown) {
-      if (shownRef.current === requested) setError(displayableError(reason));
-    }
-  }, []);
-  const { refresh } = useCoalescedRefresh(read);
+  // One socket, carrying this conversation's state and then every change to it. Nothing here
+  // refetches: the page holds a position rather than a timer, and what it shows moves when the
+  // conversation does — including a session replaced under it, which arrives as an ordinary update.
+  const { conversation, status: liveStatus, error: followError } = useFollowedConversation(conversationId);
+  const error = actionError ?? followError;
 
   useEffect(() => {
-    // On mount the ref already holds this id and the live-event hook's own initial read covers
-    // it; this effect exists for the operator opening a *different* conversation in place.
-    if (shownRef.current === conversationId) return;
-    shownRef.current = conversationId;
-    sessionRef.current = null;
-    setConversation(null);
-    setError(null);
+    setActionError(null);
     stickToBottomRef.current = true;
-    refresh();
-  }, [conversationId, refresh]);
-
-  // Live: the initial read, this conversation's own invalidations, and a catch-up on every
-  // reconnect. A refetch rather than a delta stream makes a missed event cost nothing — the page
-  // lands on the current transcript whether it heard one event or none.
-  useConsoleEvents((event) => {
-    if (event.event_type === "sync" || changedSessionId(event) === sessionRef.current) refresh();
-  });
+  }, [conversationId]);
 
   // A transcript opens on its newest message: the operator came to read what just happened, not
   // the first thing said. The layout settles a frame after the transcript renders, so the scroll
@@ -451,10 +420,10 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
   const close = async (sessionId: string) => {
     setClosing(true);
     try {
+      // No refetch afterwards: closing writes rows, and the follow socket carries what they became.
       await closeSession(sessionId);
-      refresh();
     } catch (reason: unknown) {
-      setError(displayableError(reason));
+      setActionError(displayableError(reason));
     } finally {
       setClosing(false);
     }
@@ -498,6 +467,13 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
             <Badge color={statusColor(session.status)} variant="light">
               {session.status}
             </Badge>
+            {/* A dead socket means this transcript has stopped moving, and nothing else on the page
+                would say so: there is no timer behind it to paper over the gap. */}
+            {liveStatus === "offline" && (
+              <Badge color="orange" variant="light">
+                reconnecting
+              </Badge>
+            )}
           </Group>
         </div>
       </header>
@@ -535,9 +511,9 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
             status={session.status}
             onSent={() => {
               // The accepted prompt is the operator's own, so the transcript follows it down
-              // rather than holding whatever they had scrolled back to.
+              // rather than holding whatever they had scrolled back to. The prompt row itself
+              // arrives on the follow socket, like every other thing that happens here.
               stickToBottomRef.current = true;
-              refresh();
             }}
           />
         )}
