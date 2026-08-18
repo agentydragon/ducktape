@@ -399,6 +399,29 @@ turns that replay into a genuine duplicate, which is the channel's own problem t
 One migration. Existing conversation data is discarded rather than migrated, which is what makes
 this affordable and is also the only reason it can be done once.
 
+**It creates the target tables outright; it never alters an old one.** Nothing is carried across, so
+there is no `ALTER` to write, and the migration's `upgrade()` is the target schema stated once —
+which is also what lets it become the baseline (below) with no second authoring.
+
+### It becomes the baseline, in two steps because a stamped database allows no fewer
+
+The chain is a single baseline plus one revision (`0081`, `0082`), and this should not stack a third
+on it indefinitely: the end state is one file that creates the target schema from nothing. Getting
+there is two steps, and the reason is worth stating so the second is not read as an oversight.
+
+1. **The cut lands as a revision on `0082`.** Production is stamped there, and a stamped database
+   reaches a new schema only by applying something. A file that no-ops for a stamped database
+   cannot also transform it, so the transformation is a revision like any other.
+2. **Once it has rolled, the three collapse into one.** `0081`, `0082` and the cut merge into a
+   single baseline rooted at the cut's own revision — the same move that produced `0081`, now over
+   three files instead of seventy, against a production already stamped at the new root.
+
+Step 2 inherits step 1's verification rather than a lighter one: the schema alembic can diff is not
+the schema, and `compare_metadata` sees no CHECK constraint, function, trigger, constraint name or
+identity sequence. Both steps are checked by building one database through the old path and one
+through the new and comparing `pg_dump --schema-only` output — the check that caught a `SERIAL`
+where the chain had a `smallint`, and 34 function bodies differing only in indentation.
+
 **Purge live sessions first, while the claim sweep can still reap their sandboxes.** The sweep finds
 its work through `sessions`; once the chat tables are gone it cannot, and every sandbox claim is
 orphaned. So `DELETE FROM sessions` runs before the migration, not inside it.
