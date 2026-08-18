@@ -20,10 +20,9 @@ metadata:
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
-  # Hold the agent down until its local-PV state has been restored on the
-  # worker-local replacement claim. This is intentionally GitOps-owned: an
-  # imperative scale-to-zero would be reverted by Flux.
-  replicas: 0
+  # State has been verified after restoration onto the worker-local v2 claim.
+  # Keep this GitOps-owned so a manual scale-to-zero cannot drift from Flux.
+  replicas: 1
   strategy:
     type: Recreate
   selector:
@@ -228,7 +227,7 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: public-coder-agent-state
+            claimName: public-coder-agent-state-v2
         - name: kubeconfig
           configMap:
             name: public-coder-agent-kubeconfig
