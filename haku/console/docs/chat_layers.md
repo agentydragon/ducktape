@@ -1,7 +1,7 @@
 # The chat runtime's three layers
 
-The console's chat runtime is a session, a conversation and a channel, and the conversation is the
-only thing the other two talk to:
+The console's chat runtime has three layers — session, conversation, channel — and the conversation
+is the only thing the other two talk to:
 
 > A **channel** listens to and sends to the **conversation**, never to a session.
 >
@@ -42,13 +42,13 @@ Two do not:
 - **channel → session.** Nothing at the channel layer names a session, reads a session-keyed row,
   keys its own durable state by a session, or creates, replaces or tends one.
 
-Three consequences worth stating, because they are the ones that get argued:
+Three consequences, since they are the ones that get argued:
 
 - **A session id is not a channel-visible identifier.** A channel that means "the same thread" says
   `conversation_id`. This binds what a channel stores outside Postgres hardest of all: a room event
   is permanent and federated, so an id in its tag outlives every session it could name.
 - **A fact a channel shows exists conversation-side first.** Recording it is what makes it
-  showable; pushing it at the channel from wherever noticed it is not. A fact whose only copy is a
+  showable; handing it to the channel from whatever noticed it is not. A fact whose only copy is a
   stack frame, a per-process latch or a queued closure is one a second channel cannot show and a
   SIGKILL erases.
 - **The layer of a fact is not the layer of its cause.** "This session's lease lapsed" is caused by
