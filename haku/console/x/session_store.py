@@ -598,7 +598,7 @@ class SessionStore:
                 raise PositionUnusableError(f"more than {limit} rows have moved since {after=}")
             narration = await setup_narration(db, current.session_id)
             attachments = (await _live_attachments(db, {conversation_id}))[conversation_id]
-            responding = await _open_turn(db, current.session_id) is not None
+            responding = await _open_turn(db, conversation_id) is not None
         return ConversationUpdate(
             position=position,
             session_id=current.session_id,
@@ -1467,7 +1467,8 @@ class SessionStore:
         the runner's bridge websocket, while the operator's HTTP request is balanced across all.
         """
         async with self._sessions.begin() as db:
-            if await _open_turn(db, session_id) is None:
+            chat = await db.get(Session, session_id)
+            if chat is None or await _open_turn(db, chat.conversation_id) is None:
                 return False
             await notify(db, SessionEventKind.ABORT, session_id)
             return True

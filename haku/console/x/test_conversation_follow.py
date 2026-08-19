@@ -17,10 +17,10 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import SPA_ORIGIN, ChatMessageStatus, FrameDirection, SessionStatus, TurnOutcome
+from haku.console.chat_models import SPA_ORIGIN, FrameDirection, ItemStatus, ItemType, SessionStatus, TurnOutcome
 from haku.console.x.claude_code.frames import PROMPT_FRAME_KIND
 from haku.console.x.conftest import attach_channel
-from haku.console.x.conversation_events import FrameRange, MessageCompleted, MessageKey
+from haku.console.x.conversation_events import FrameRange, ItemSegment, MessageCompleted, MessageStarted, OpenRef
 from haku.console.x.conversation_follow import ConversationFollow
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
@@ -74,20 +74,17 @@ async def _exchange(chat_store: SessionStore, operator_id: UUID, session_id: UUI
     await chat_store.enqueue_prompt(operator_id, session_id, prompt, SPA_ORIGIN)
     turn = await chat_store.next_prompt(session_id)
     assert turn is not None
-    sent = await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, PROMPT_FRAME_KIND, {"type": "user"})
-    await chat_store.set_message_source_frames(session_id, turn.message_id, sent.frame_seq)
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, PROMPT_FRAME_KIND, {"type": "user"})
     spoke = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "assistant", {"type": "assistant"})
+    where = FrameRange(spoke.frame_seq, spoke.frame_seq)
     await chat_store.apply_frame(
         session_id,
         turn.turn_id,
         spoke.frame_seq,
         [
-            MessageCompleted(
-                message=MessageKey(opened_at_frame_seq=spoke.frame_seq),
-                text=answer,
-                agent_message_id=None,
-                provenance=FrameRange(spoke.frame_seq, spoke.frame_seq),
-            )
+            MessageStarted(provenance=where),
+            ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text=answer, provenance=where),
+            MessageCompleted(backend_item_id=None, provenance=where),
         ],
     )
     await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED, last_frame_seq=spoke.frame_seq)
@@ -104,7 +101,7 @@ async def test_a_follow_opens_with_the_conversation_whole(
     opened = await _next(following.follow(operator_id, conversation_id))
 
     assert isinstance(opened, ConversationSnapshot)
-    assert [message.content for message in opened.conversation.session.messages] == ["first", "one"]
+    assert [item.text for item in opened.conversation.session.items] == ["first", "one"]
     assert opened.position == await chat_store.conversation_position(conversation_id)
 
 
@@ -121,7 +118,7 @@ async def test_what_moves_after_the_snapshot_arrives_as_an_update(
     update = await _next(messages)
 
     assert isinstance(update, ConversationUpdate)
-    assert [message.content for message in update.messages] == ["second", "two"]
+    assert [item.text for item in update.items] == ["second", "two"]
     assert [turn.outcome for turn in update.turns] == [TurnOutcome.ANSWERED]
     await messages.aclose()
 
@@ -149,7 +146,7 @@ async def test_a_change_landing_during_the_snapshot_is_carried_by_the_update_aft
     assert isinstance(snapshot, ConversationSnapshot)
     update = await _next(messages)
     assert isinstance(update, ConversationUpdate)
-    assert [message.content for message in update.messages] == ["written mid-read"]
+    assert [item.text for item in update.items] == ["written mid-read"]
     await messages.aclose()
 
 
@@ -166,7 +163,7 @@ async def test_a_resume_is_told_what_it_missed_at_once(
     resumed = await _next(following.follow(operator_id, conversation_id, after=held))
 
     assert isinstance(resumed, ConversationUpdate)
-    assert [message.content for message in resumed.messages] == ["second", "two"]
+    assert [item.text for item in resumed.items] == ["second", "two"]
 
 
 async def test_a_position_the_log_cannot_answer_from_is_answered_with_the_conversation_whole(
@@ -181,15 +178,15 @@ async def test_a_position_the_log_cannot_answer_from_is_answered_with_the_conver
     opened = await _next(following.follow(operator_id, conversation_id, after=beyond))
 
     assert isinstance(opened, ConversationSnapshot)
-    assert [message.content for message in opened.conversation.session.messages] == ["first", "one"]
+    assert [item.text for item in opened.conversation.session.items] == ["first", "one"]
 
 
-async def test_a_streaming_turns_deltas_become_one_update(
+async def test_a_streaming_turns_segments_become_one_update(
     following: ConversationFollow, chat_store: SessionStore, operator_id: UUID
 ) -> None:
-    """`content` is rewritten in place per delta and a delta is not a row, so every update re-sends
-    the open message whole. Coalescing is what keeps that from costing bytes quadratic in the
-    answer's length — and the follower still lands on the prose so far."""
+    """An item's `text` is rewritten in place as its segments land, so every update re-sends the
+    open item whole. Coalescing is what keeps that from costing bytes quadratic in the answer's
+    length — and the follower still lands on the prose so far, marked as still being written."""
     session_id, conversation_id = await _started(chat_store, operator_id)
     await chat_store.enqueue_prompt(operator_id, session_id, "explain", SPA_ORIGIN)
     turn = await chat_store.next_prompt(session_id)
@@ -197,17 +194,19 @@ async def test_a_streaming_turns_deltas_become_one_update(
     messages = following.follow(operator_id, conversation_id)
     assert isinstance(await _next(messages), ConversationSnapshot)
 
-    message_id = await chat_store.begin_assistant(session_id, turn.turn_id, source_first_frame_seq=1)
-    prose = ""
-    for word in ("the ", "answer ", "so ", "far"):
-        prose += word
-        await chat_store.update_assistant(session_id, message_id, prose)
+    where = FrameRange(1, 1)
+    await chat_store.apply_frame(session_id, turn.turn_id, 1, [MessageStarted(provenance=where)])
+    for seq, word in enumerate(("the ", "answer ", "so ", "far"), start=2):
+        await chat_store.apply_frame(
+            session_id,
+            turn.turn_id,
+            seq,
+            [ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text=word, provenance=FrameRange(seq, seq))],
+        )
     update = await _next(messages)
 
     assert isinstance(update, ConversationUpdate)
-    assert ("the answer so far", ChatMessageStatus.STREAMING) in [
-        (message.content, message.status) for message in update.messages
-    ]
+    assert ("the answer so far", ItemStatus.OPEN) in [(item.text, item.status) for item in update.items]
     assert update.status == SessionStatus.RESPONDING
     await _nothing_more(messages)
     await messages.aclose()
@@ -230,7 +229,7 @@ async def test_a_replacement_sessions_rows_reach_a_follower_that_never_named_it(
 
     assert isinstance(update, ConversationUpdate)
     assert update.session_id == replacement.session_id
-    assert [message.content for message in update.messages] == ["carry on", "carrying on"]
+    assert [item.text for item in update.items] == ["carry on", "carrying on"]
     # And the session it replaced is now one of the thread's earlier ones, which a follower is told
     # rather than left to infer from a `session_id` it does not recognise.
     assert [earlier.session_id for earlier in update.earlier_sessions] == [first]
