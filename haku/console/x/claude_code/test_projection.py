@@ -14,10 +14,11 @@ from collections.abc import Iterable, Iterator, Sequence
 from functools import reduce
 from itertools import product
 
+import pytest
 import pytest_bazel
 
 from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
-from haku.console.x.claude_code.projection import DeltaSource, RecordedFrame, finish, project, project_log
+from haku.console.x.claude_code.projection import DeltaSource, RecordedFrame, finish, project, project_log, undelivered
 from haku.console.x.claude_code.testing.wire import (
     assistant,
     command_lifecycle,
@@ -369,6 +370,26 @@ def test_a_live_consumer_cuts_the_same_prose_where_the_wire_cut_it():
     assert "".join(event.text for event in live if isinstance(event, ItemSegment)) == "".join(
         event.text for event in project_log(frames).events if isinstance(event, ItemSegment)
     )
+
+
+@pytest.mark.parametrize(
+    ("text", "delivered", "expected"),
+    [
+        # One process folding the whole message: the delivered prose is this block's own prefix.
+        pytest.param("Looking at the migration.", "Looking at ", "the migration.", id="mid-stream"),
+        # A backend that streams nothing has delivered nothing, so the block is emitted whole.
+        pytest.param("Looking at the migration.", "", "Looking at the migration.", id="no-deltas"),
+        # A fold resuming an item another process left open inherits that item's prose entire, of
+        # which only a suffix belongs to the block now arriving.
+        pytest.param("the migration.", "Looking at ", "the migration.", id="inherited-earlier-block"),
+        pytest.param("Looking at the migration.", "First. Looking at ", "the migration.", id="inherited-and-streaming"),
+    ],
+)
+def test_a_completed_block_is_emitted_minus_what_was_already_said(text: str, delivered: str, expected: str) -> None:
+    """The completed block repeats its deltas, so emitting it whole would say the answer twice — and
+    subtracting a length rather than the overlap would eat the answer of a resumed message whose
+    inherited prose came from an earlier block."""
+    assert undelivered(text, delivered) == expected
 
 
 def test_a_live_consumer_is_not_shown_tool_arguments_as_prose():
