@@ -19,11 +19,11 @@ export type BootstrapNarration = {
  *
  * It opens **expanded when nothing else is happening yet**: while the session is still
  * provisioning, and whenever the transcript is empty — including the session that died during
- * setup, where this is the entire account of what happened. Once there are messages the transcript
- * is what the operator came for, so the narration collapses out of its way.
+ * setup, where this is the entire account of what happened. Once the transcript has anything in it
+ * that is what the operator came for, so the narration collapses out of its way.
  */
 export function bootstrapNarration(
-  session: Pick<ConversationSession, "status" | "narration" | "messages">
+  session: Pick<ConversationSession, "status" | "narration" | "items">
 ): BootstrapNarration | null {
   if (session.narration.length === 0) return null;
   return {
