@@ -8,7 +8,6 @@ acknowledges it.
 from __future__ import annotations
 
 import asyncio
-import datetime
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -18,11 +17,16 @@ import pytest
 import pytest_bazel
 from pydantic import SecretStr
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 
-from haku.console.chat_models import SPA_ORIGIN, AuthoredEventKind, MatrixOrigin, PromptRejection, StoredEventKind
-from haku.console.database_schema import SessionEvent
-from haku.console.x import session_events
+from haku.console.chat_models import (
+    SPA_ORIGIN,
+    AuthoredEventKind,
+    ItemType,
+    MatrixOrigin,
+    PromptRejection,
+    StoredEventKind,
+)
+from haku.console.database_schema import ConversationEvent
 from haku.console.x.channels.matrix.client import (
     EventTag,
     InboundMessage,
@@ -35,16 +39,18 @@ from haku.console.x.channels.matrix.client import (
 from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
 from haku.console.x.channels.matrix.conversation import (
     Admission,
+    ConversationFacts,
     MatrixConversationStore,
     PromptAccepted,
     PromptRejected,
     RoomTranscript,
 )
-from haku.console.x.channels.matrix.ingress_ledger import IngressLedger, Unanswered
+from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply
 from haku.console.x.channels.matrix.pacer import RoomPacer
+from haku.console.x.channels.matrix.revisions import RevisionLog
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
-from haku.console.x.delivery_log import DeliveryLog
+from haku.console.x.conversation_events import FrameRange, ItemSegment, MessageCompleted, MessageStarted, OpenRef
 from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
 from haku.console.x.session_store import BridgeAuthentication, SessionStore
 
@@ -104,38 +110,34 @@ class _FakeMatrix:
 class _FakeTurns:
     """Ingress as the loop sees it: it accepts or rejects a batch, and says what to record.
 
-    The rows it hands back are the real ones (`session_events.authored`), keyed to a real session,
-    because what the loop does with them is insert them. `session_id = None` is the room with
-    nothing behind it, where there is no row to key a fact to and the notice is all there is.
+    What it hands back are bodies and the conversation they belong to, because an authored row's
+    position is allocated under that conversation's lock — so what the loop does with them is append
+    them where it moves the watermark. `conversation_id = None` is the room bound to nothing, where
+    there is nowhere to record and nowhere to say it either.
     """
 
-    session_id: UUID | None
+    conversation_id: UUID | None
+    session_id: UUID | None = None
     accepts: bool = True
     reason: PromptRejection = PromptRejection.TURN_IN_FLIGHT
     offered: list[list[str]] = field(default_factory=list)
-    re_offered: list[Unanswered] = field(default_factory=list)
-
-    async def re_offer(self, unanswered: Unanswered) -> bool:
-        self.re_offered.append(unanswered)
-        return self.accepts
 
     async def offer(self, messages: Sequence[InboundMessage]) -> Admission:
         self.offered.append([message.body for message in messages])
         if self.accepts:
-            return PromptAccepted(message_id=uuid4())
+            return PromptAccepted(item_id=uuid4())
         return PromptRejected(
             reason=self.reason,
-            event=self._authored(PromptRejectedBody(reason=self.reason, text="\n".join(self.offered[-1]))),
+            facts=self._facts(PromptRejectedBody(reason=self.reason, text="\n".join(self.offered[-1]))),
         )
 
-    async def unreadable(self, events: Sequence[UnmappableEvent]) -> tuple[SessionEvent, ...]:
-        rows = (self._authored(UnreadableInputBody(media_type=event.msgtype)) for event in events)
-        return tuple(row for row in rows if row is not None)
+    async def unreadable(self, events: Sequence[UnmappableEvent]) -> ConversationFacts | None:
+        return self._facts(*(UnreadableInputBody(media_type=event.msgtype) for event in events))
 
-    def _authored(self, body: PromptRejectedBody | UnreadableInputBody) -> SessionEvent | None:
-        if self.session_id is None:
+    def _facts(self, *bodies: PromptRejectedBody | UnreadableInputBody) -> ConversationFacts | None:
+        if self.conversation_id is None:
             return None
-        return session_events.authored(body, session_id=self.session_id, now=datetime.datetime.now(datetime.UTC))
+        return ConversationFacts(conversation_id=self.conversation_id, session_id=self.session_id, bodies=tuple(bodies))
 
 
 @pytest.fixture
@@ -145,9 +147,9 @@ def sync_store(migrated_sessions) -> MatrixSyncStore:
 
 @pytest.fixture
 async def turns(chat_store: SessionStore, operator_id: UUID) -> _FakeTurns:
-    """Ingress over a real session, since what it hands the loop are rows keyed to one."""
+    """Ingress over a real conversation, since what it hands the loop is appended to one."""
     view, _ = await chat_store.create(operator_id)
-    return _FakeTurns(view.session_id)
+    return _FakeTurns(await chat_store.conversation_of(view.session_id), view.session_id)
 
 
 @pytest.fixture
@@ -181,7 +183,7 @@ def _replica(
         # Answers are outbox rows, drained by a task `run()` starts; these tests drive one sync
         # pass and assert the narration, which never touches the table (`test_outbox` does).
         outbox=cast(Any, None),
-        deliveries=DeliveryLog(migrated_sessions),
+        revisions=RevisionLog(migrated_sessions),
         ledger=ledger,
     )
     service._client = cast(Any, matrix)
@@ -222,24 +224,18 @@ async def watermark(store: MatrixSyncStore) -> str | None:
 async def recorded(sessions) -> list[tuple[StoredEventKind, dict[str, Any]]]:
     """The authored rows a pass wrote, oldest first — the durable half of what the room hears."""
     async with sessions() as db:
-        rows = (await db.scalars(select(SessionEvent).order_by(SessionEvent.event_seq))).all()
+        rows = (await db.scalars(select(ConversationEvent).order_by(ConversationEvent.event_seq))).all()
     return [(row.kind, row.body) for row in rows]
 
 
 SESSION = UUID("11111111-2222-3333-4444-555555555555")
 
 
-def _queued(body: str, *, message_id: UUID | None = None, agent_message_id: str | None = None) -> PendingReply:
+def _queued(body: str, *, item_id: UUID | None = None) -> PendingReply:
     """A row as the drain would hand it over, without going near the table it came out of."""
+    subject = item_id or uuid4()
     return PendingReply(
-        outbox_id=uuid4(),
-        session_id=SESSION,
-        room_id=MATRIX_ROOM,
-        body=body,
-        message_id=message_id,
-        agent_message_id=agent_message_id,
-        turn_id=None if message_id is not None else uuid4(),
-        attempts=1,
+        outbox_id=uuid4(), attachment_id=uuid4(), room_id=MATRIX_ROOM, subject=subject.hex, body=body, attempts=1
     )
 
 
@@ -314,43 +310,6 @@ async def test_only_the_re_delivered_half_of_a_batch_is_dropped(
     assert turns.offered == [["and this"]]
 
 
-async def test_a_message_no_session_ever_answered_is_offered_again_and_said_in_the_room(
-    service, matrix, turns, chat_store, operator_id, ledger, bound_room
-):
-    """Suppression is not acknowledgement. The batch was acknowledged to the homeserver, so nothing
-    re-delivers it: the prompt row is the only copy left, and its session died holding it.
-
-    The room is told, because a question reappearing with no operator gesture behind it otherwise
-    reads as Haku answering something twice.
-    """
-    stranded = await carried_prompt(chat_store, operator_id, ledger, "$a", "hello")
-    await chat_store.closed(stranded)
-    matrix.result = SyncResult("s2", (), ())
-
-    await service.sync_once("tok")
-    await settled(service)
-
-    assert turns.re_offered == [Unanswered(text="[$a] hello", event_ids=("$a",))]
-    assert matrix.notices == [(bound_room, "asking again about a message the previous session never answered")]
-
-
-async def test_an_unanswered_message_nothing_will_take_yet_is_not_announced(
-    service, matrix, turns, chat_store, operator_id, ledger, bound_room
-):
-    """Every pass asks, so a pass that says so would fill the room while the operator waits for a
-    sandbox — and there is nothing for them to do about it either way."""
-    stranded = await carried_prompt(chat_store, operator_id, ledger, "$a", "hello")
-    await chat_store.closed(stranded)
-    turns.accepts = False
-    matrix.result = SyncResult("s2", (), ())
-
-    await service.sync_once("tok")
-    await settled(service)
-
-    assert len(turns.re_offered) == 1
-    assert matrix.notices == []
-
-
 async def test_a_rejected_batch_is_acknowledged_and_recorded_in_one_go(
     service, matrix, turns, sync_store, migrated_sessions, bound_room
 ):
@@ -374,17 +333,17 @@ async def test_a_rejected_batch_is_acknowledged_and_recorded_in_one_go(
 
 
 async def test_a_recording_that_cannot_be_written_takes_the_watermark_with_it(sync_store, migrated_sessions):
-    """The transaction, tested by breaking it: an event naming a session that does not exist
-    violates the foreign key, and what must not survive that is the acknowledgement.
+    """The transaction, tested by breaking it: a fact naming a conversation that does not exist has
+    nowhere to take a position from, and what must not survive that is the acknowledgement.
 
     Advancing separately would leave the homeserver told the message was handled with nothing
     written about it and nothing said."""
-    orphan = session_events.authored(
-        UnreadableInputBody(media_type="m.image"), session_id=uuid4(), now=datetime.datetime.now(datetime.UTC)
+    orphan = ConversationFacts(
+        conversation_id=uuid4(), session_id=None, bodies=(UnreadableInputBody(media_type="m.image"),)
     )
 
-    with pytest.raises(IntegrityError):
-        await sync_store.advance(MATRIX_USER, "s2", [orphan])
+    with pytest.raises(KeyError):
+        await sync_store.advance(MATRIX_USER, "s2", orphan)
 
     assert await watermark(sync_store) is None
     assert await recorded(migrated_sessions) == []
@@ -436,13 +395,17 @@ async def test_a_message_arriving_mid_turn_is_recorded_as_undelivered(
     ]
 
 
-async def test_a_rejection_with_no_session_is_announced_and_not_recorded(
+async def test_a_rejection_with_no_session_behind_the_room_is_still_recorded(
     service, matrix, turns, sync_store, migrated_sessions, bound_room
 ):
-    """The one rejection with nowhere to write itself: a `session_events` row names a session, and
-    a room whose session has not been provisioned yet has none. The operator still hears it, the
-    watermark still moves, and the record keeps nothing, for want of an entity above the session to
-    key the fact to."""
+    """The rejection that used to have nowhere to write itself.
+
+    A row named a session, and a room whose sandbox has not been provisioned has none — so this was
+    said into the room by ingress and kept nowhere. What a refusal is about is the conversation, and
+    that exists from the moment the room is bound, so it is a row like every other refusal's, with
+    no session named because there was none. `RoomNotices` says it from that row, which is why this
+    pass says nothing itself.
+    """
     matrix.result = SyncResult("s2", (_message("hello"),), ())
     turns.accepts = False
     turns.reason = PromptRejection.NO_SESSION
@@ -452,9 +415,10 @@ async def test_a_rejection_with_no_session_is_announced_and_not_recorded(
     await settled(service)
 
     assert await watermark(sync_store) == "s2"
-    assert await recorded(migrated_sessions) == []
-    [(_, body)] = matrix.notices
-    assert "no session behind this room yet" in body
+    assert await recorded(migrated_sessions) == [
+        (AuthoredEventKind.PROMPT_REJECTED, {"reason": PromptRejection.NO_SESSION, "text": "hello"})
+    ]
+    assert matrix.notices == []
 
 
 async def test_an_unreadable_event_is_recorded_and_the_batch_moves_on(
@@ -785,20 +749,14 @@ async def test_clearing_a_turn_that_never_showed_anything_does_nothing(service, 
     assert matrix.redacted == []
 
 
-async def test_a_reply_says_which_transcript_row_it_is(service, matrix, sync_store, bound_room) -> None:
-    """Which message an event shows is a lookup rather than a match on order and timing, which is
-    cheap only if the event said so when it was sent."""
-    message_id = UUID("99999999-8888-7777-6666-555555555555")
-
-    await service.post_reply(_queued("the answer", message_id=message_id, agent_message_id="msg_01abc"))
+async def test_a_reply_says_what_it_is(service, matrix, sync_store, bound_room) -> None:
+    """The tag is write-only and for a person reading the room's event source, so what it carries is
+    the kind and nothing that would publish the same thing twice. Which item an event shows is the
+    outbox row's `subject`, which is the transaction it went out under."""
+    await service.post_reply(_queued("the answer"))
 
     [tag] = matrix.tags
-    assert (tag.kind, tag.session_id, tag.message_id, tag.agent_message_id) == (
-        RoomEventKind.REPLY,
-        SESSION,
-        message_id,
-        "msg_01abc",
-    )
+    assert (tag.kind, tag.session_id) == (RoomEventKind.REPLY, None)
 
 
 async def test_a_redriven_reply_is_the_same_transaction(service, matrix, sync_store, bound_room) -> None:
@@ -823,25 +781,18 @@ async def test_a_status_edit_is_a_new_transaction_every_time(service, matrix, bo
     assert len(set(matrix.transactions)) == len(matrix.transactions) == 2
 
 
-async def test_each_kind_of_notice_says_which_it_is(service, matrix, turns, bound_room) -> None:
-    """Four different things, each saying which it is — where msgtype answered "is this
-    conversational" only because everything worth excluding happened to be a notice."""
-    matrix.result = SyncResult("s2", (_message("hello"),), ())
-    turns.accepts = False
-    # The refusal that reaches no row, since that is the one this loop still says itself.
-    turns.session_id = None
-    await service.sync_once("tok")
+async def test_each_kind_of_notice_says_which_it_is(service, matrix, bound_room) -> None:
+    """Three different things, each saying which it is — where msgtype answered "is this
+    conversational" only because everything worth excluding happened to be a notice.
+
+    A refusal is not among them any more: it is a recorded row, and `RoomNotices` is what says it.
+    """
     await service.announce("provisioning a sandbox")
     await service.announce("cloning haku-state", RoomEventKind.NARRATION)
     await service.show_status("running Bash", SESSION)
     await settled(service)
 
-    assert [tag.kind for tag in matrix.tags] == [
-        RoomEventKind.REJECTED,
-        RoomEventKind.LIFECYCLE,
-        RoomEventKind.NARRATION,
-        RoomEventKind.STATUS,
-    ]
+    assert [tag.kind for tag in matrix.tags] == [RoomEventKind.LIFECYCLE, RoomEventKind.NARRATION, RoomEventKind.STATUS]
 
 
 async def test_history_is_read_from_our_record_and_not_from_the_homeserver(
@@ -849,27 +800,33 @@ async def test_history_is_read_from_our_record_and_not_from_the_homeserver(
 ) -> None:
     """What a replacement session is told it said, at the seam.
 
-    A role becomes an MXID here because that is the per-channel half of the answer: the record
-    knows who spoke, and only the channel knows what to call them. `matrix` is asserted untouched
-    because "we asked the homeserver" and "we asked ourselves" are otherwise indistinguishable from
-    the outside.
+    An item type becomes an MXID here because that is the per-channel half of the answer: the record
+    knows what kind of item it was, and only the channel knows what to call whoever produced it.
+    `matrix` is asserted untouched because "we asked the homeserver" and "we asked ourselves" are
+    otherwise indistinguishable from the outside.
     """
     view, token = await chat_store.create(
         operator_id, conversation_id=(await conversations.bind_room(MATRIX_ROOM, operator_id)).conversation_id
     )
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "[$a] hi", SPA_ORIGIN)
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "hi", SPA_ORIGIN)
     start = await chat_store.next_prompt(view.session_id)
     assert start is not None
-    message_id = await chat_store.begin_assistant(view.session_id, start.turn_id, source_first_frame_seq=1)
-    await chat_store.update_assistant(view.session_id, message_id, "hello", complete=True)
+    where = FrameRange(1, 1)
+    await chat_store.apply_frame(
+        view.session_id,
+        start.turn_id,
+        1,
+        [
+            MessageStarted(provenance=where),
+            ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text="hello", provenance=where),
+            MessageCompleted(backend_item_id=None, provenance=where),
+        ],
+    )
 
     said = await service.recent_history(uuid4(), 20)
 
-    assert [(message.sender, message.body) for message in said] == [
-        (MATRIX_OPERATOR, "[$a] hi"),
-        (MATRIX_USER, "hello"),
-    ]
+    assert [(message.sender, message.body) for message in said] == [(MATRIX_OPERATOR, "hi"), (MATRIX_USER, "hello")]
     assert matrix.since is None, "the homeserver was not asked anything to answer this"
 
 
