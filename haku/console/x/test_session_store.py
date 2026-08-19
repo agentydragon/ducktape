@@ -8,6 +8,7 @@ channel).
 from __future__ import annotations
 
 import asyncio
+import itertools
 from datetime import UTC, datetime
 from unittest.mock import patch
 from uuid import UUID, uuid4
@@ -23,32 +24,35 @@ from haku.console.chat_models import (
     OPEN_SESSION_STATUSES,
     SPA_ORIGIN,
     AuthoredEventKind,
-    ChatMessageRole,
-    ChatMessageStatus,
     ConversationEventKind,
     EventProvenance,
     FrameDirection,
+    ItemStatus,
+    ItemType,
     LeaseExpiryReason,
     MatrixOrigin,
     PromptRejection,
     SessionStatus,
     SpaOrigin,
+    ToolOutcome,
     TurnOutcome,
 )
-from haku.console.database_schema import Conversation, Session, SessionEvent, SessionMessage, SessionPrompt
+from haku.console.database_schema import Conversation, ConversationEvent, ConversationItem, ConversationPrompt, Session
 from haku.console.x.claude_code.frames import PROMPT_FRAME_KIND
 from haku.console.x.claude_code.testing.wire import assistant, result, text_block, text_delta
-from haku.console.x.conftest import age_lease, attach_channel, lease_of, answers
+from haku.console.x.conftest import age_lease, answers, attach_channel, lease_of
 from haku.console.x.conversation_events import (
+    CallRef,
     FrameRange,
+    ItemSegment,
     MessageCompleted,
-    MessageKey,
-    Outcome,
+    MessageStarted,
+    OpenRef,
     ToolCallCompleted,
     ToolCallStarted,
 )
 from haku.console.x.conversation_records import FrameCursor, SessionCursor, TranscriptCursor, TurnCursor
-from haku.console.x.session_events import PromptBody
+from haku.console.x.session_events import PromptStartedBody
 from haku.console.x.session_notifications import SessionEventKind
 from haku.console.x.session_store import (
     ADOPTION_GRACE,
@@ -57,6 +61,7 @@ from haku.console.x.session_store import (
     PositionUnusableError,
     PromptRefusedError,
     SessionStore,
+    TurnState,
 )
 
 ROOM = "!room:example.org"
@@ -136,12 +141,14 @@ async def test_a_cleaned_up_session_admits_nobody_and_says_which_of_the_two_reas
     assert await chat_store.authenticate_bridge(view.session_id, "wrong") == BridgeAuthentication.REJECTED
 
 
-async def test_a_turn_records_the_message_it_finished_rather_than_the_frames_it_left(
+async def test_how_far_a_turn_has_got_is_derived_from_the_items_it_opened(
     chat_store, migrated_sessions, operator_id
 ) -> None:
-    """A completed message clears the pointer, records that this turn has spoken, and — for a
-    session serving a room — records that the room's outbox holds it, in the transaction that puts
-    it there. Reading that off the `assistant` frames could only answer "one was recorded".
+    """Which is what replaces the two columns the turn used to carry.
+
+    What a turn is streaming into is its one open message item, and whether it said anything is
+    whether it has a completed one — so there is one place either fact can be wrong rather than two
+    that can disagree, and a replica adopting the turn reads the same answer.
     """
     view, token = await chat_store.create(operator_id)
     session_id = view.session_id
@@ -150,13 +157,23 @@ async def test_a_turn_records_the_message_it_finished_rather_than_the_frames_it_
     await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
-    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id, source_first_frame_seq=1)
+    assert await chat_store.turn_state(started.turn_id) == TurnState(streaming=None, said_anything=False)
 
-    assert await chat_store.update_assistant(session_id, assistant_id, "a bad config", complete=True)
+    where = FrameRange(1, 1)
+    await chat_store.apply_frame(session_id, started.turn_id, 1, [MessageStarted(provenance=where)])
+    await chat_store.apply_frame(
+        session_id,
+        started.turn_id,
+        2,
+        [ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text="a bad config", provenance=FrameRange(2, 2))],
+    )
+    assert await chat_store.turn_state(started.turn_id) == TurnState(streaming="a bad config", said_anything=False)
 
-    state = await chat_store.turn_state(started.turn_id)
-    assert state.assistant_message_id is None, "a completed message leaves no half-written answer behind"
-    assert (state.streamed, state.said_anything, state.queued_reply) == ("", True, True)
+    await chat_store.apply_frame(
+        session_id, started.turn_id, 3, [MessageCompleted(backend_item_id=None, provenance=FrameRange(3, 3))]
+    )
+
+    assert await chat_store.turn_state(started.turn_id) == TurnState(streaming=None, said_anything=True)
     assert await answers(migrated_sessions, session_id) == ["a bad config"]
 
 
@@ -417,9 +434,9 @@ async def test_a_prompt_records_the_channel_events_it_was_folded_from(
     await chat_store.enqueue_prompt(operator_id, view.session_id, "do the thing", SPA_ORIGIN)
 
     asked = [
-        PromptBody.model_validate(event.body)
-        for event in await authored_events(migrated_sessions, view.session_id)
-        if event.kind == AuthoredEventKind.PROMPT_ENQUEUED
+        PromptStartedBody.model_validate(row.body)
+        for row in await item_events(migrated_sessions, view.session_id)
+        if row.kind == ConversationEventKind.ITEM_STARTED and row.body.get("item_type") == ItemType.PROMPT
     ]
 
     assert [body.origin for body in asked] == [MatrixOrigin(address=ROOM, refs=("$a", "$b")), SpaOrigin()]
@@ -576,7 +593,7 @@ async def test_operator_conversation_read_surface_keeps_inventory_and_transcript
     assert page.conversations[0].message_count == 1
     assert [attachment.address for attachment in detail.attachments] == [ROOM]
     assert detail.session.session_id == matrix.session_id
-    assert detail.session.messages[0].content == "What is happening?"
+    assert detail.session.items[0].text == "What is happening?"
     assert detail.session.turns == []
     assert detail.earlier_sessions == []
 
@@ -597,7 +614,7 @@ async def test_a_conversation_a_channel_holds_takes_a_prompt_typed_in_the_browse
         operator_id, await chat_store.conversation_of(matrix.session_id)
     )
 
-    assert [message.content for message in detail.session.messages] == ["typed into the tab"]
+    assert [item.text for item in detail.session.items] == ["typed into the tab"]
     assert [attachment.address for attachment in detail.attachments] == [ROOM]
 
 
@@ -670,24 +687,26 @@ async def test_a_prompt_is_taken_off_the_queue_rather_than_found_by_status(
     chat_store, migrated_sessions, operator_id
 ) -> None:
     """The queue row is what says a prompt is waiting, and claiming it is what says it no longer is
-    — the transcript row's status cannot mean that, since `COMPLETE` on an assistant row means the
-    answer finished."""
+    — the item's own status cannot mean that, since a prompt is complete the moment it is accepted.
+
+    Keyed by the conversation, so a prompt may outlive the session that took it."""
     view, token = await chat_store.create(operator_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
 
+    conversation_id = await chat_store.conversation_of(view.session_id)
     async with migrated_sessions() as db:
-        queued = list(await db.scalars(select(SessionPrompt)))
-    assert [(row.session_id, row.claimed_at) for row in queued] == [(view.session_id, None)]
+        queued = list(await db.scalars(select(ConversationPrompt)))
+    assert [(row.conversation_id, row.claimed_at) for row in queued] == [(conversation_id, None)]
 
     turn = await chat_store.next_prompt(view.session_id)
 
     assert turn is not None
-    assert turn.prompt == "why did it fail?", "the text comes from the transcript row the queue names"
+    assert turn.prompt == "why did it fail?", "the text comes from the item the queue names"
     async with migrated_sessions() as db:
-        [claimed] = list(await db.scalars(select(SessionPrompt)))
-    assert claimed.claimed_at is not None
-    assert claimed.message_id == turn.message_id
+        [claimed] = list(await db.scalars(select(ConversationPrompt)))
+    assert (claimed.claimed_at is not None, claimed.claimed_by_session_id) == (True, view.session_id)
+    assert claimed.item_id == turn.item_id
 
 
 async def test_one_prompt_in_flight_is_a_schema_property(chat_store, migrated_sessions, operator_id) -> None:
@@ -697,44 +716,50 @@ async def test_one_prompt_in_flight_is_a_schema_property(chat_store, migrated_se
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "first", SPA_ORIGIN)
 
+    conversation_id = await chat_store.conversation_of(view.session_id)
     async with migrated_sessions() as db:
-        message = SessionMessage(
-            message_id=uuid4(),
+        item = ConversationItem(
+            item_id=uuid4(),
+            conversation_id=conversation_id,
             session_id=view.session_id,
-            role=ChatMessageRole.USER,
-            status=ChatMessageStatus.PENDING,
-            content="second",
-            error=None,
+            item_type=ItemType.PROMPT,
+            status=ItemStatus.COMPLETE,
+            opened_seq=100,
+            closed_seq=102,
+            item_text="second",
+            origin=SPA_ORIGIN.model_dump(mode="json"),
             created_at=datetime.now(UTC),
             updated_at=datetime.now(UTC),
         )
-        db.add(message)
+        db.add(item)
+        await db.flush()
         db.add(
-            SessionPrompt(
-                prompt_id=uuid4(),
-                session_id=view.session_id,
-                message_id=message.message_id,
-                queued_at=datetime.now(UTC),
+            ConversationPrompt(
+                prompt_id=uuid4(), conversation_id=conversation_id, item_id=item.item_id, queued_at=datetime.now(UTC)
             )
         )
         with pytest.raises(IntegrityError):
             await db.flush()
 
 
-async def test_a_pending_row_with_no_queue_row_is_not_a_prompt(chat_store, migrated_sessions, operator_id) -> None:
-    """The queue is the only admission record. A `pending` transcript row on its own is the
-    residue of a session that was already stuck, not a prompt waiting to run."""
+async def test_a_prompt_item_with_no_queue_row_is_not_a_prompt(chat_store, migrated_sessions, operator_id) -> None:
+    """The queue is the only admission record. A prompt item on its own is transcript — one already
+    answered, or the residue of a session that was stuck — not a prompt waiting to run."""
     view, token = await chat_store.create(operator_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    conversation_id = await chat_store.conversation_of(view.session_id)
     async with migrated_sessions.begin() as db:
         db.add(
-            SessionMessage(
-                message_id=uuid4(),
+            ConversationItem(
+                item_id=uuid4(),
+                conversation_id=conversation_id,
                 session_id=view.session_id,
-                role=ChatMessageRole.USER,
-                status=ChatMessageStatus.PENDING,
-                content="orphaned transcript row",
-                error=None,
+                item_type=ItemType.PROMPT,
+                status=ItemStatus.COMPLETE,
+                opened_seq=100,
+                closed_seq=102,
+                item_text="an item nothing queued",
+                origin=SPA_ORIGIN.model_dump(mode="json"),
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
             )
@@ -855,14 +880,42 @@ async def test_a_session_opens_its_own_conversation_unless_it_is_given_one(
         assert (await db.get(Session, continued.session_id)).conversation_id == opened
 
 
-async def authored_events(migrated_sessions, session_id: UUID) -> list[SessionEvent]:
-    """Every row of *session_id*'s stream the console authored rather than folded, oldest first."""
+async def _items(migrated_sessions, session_id: UUID) -> list[UUID]:
+    """This session's items, oldest first."""
     async with migrated_sessions() as db:
         return list(
             await db.scalars(
-                select(SessionEvent)
-                .where(SessionEvent.session_id == session_id, SessionEvent.provenance == EventProvenance.AUTHORED)
-                .order_by(SessionEvent.event_seq)
+                select(ConversationItem.item_id)
+                .where(ConversationItem.session_id == session_id)
+                .order_by(ConversationItem.opened_seq)
+            )
+        )
+
+
+async def item_events(migrated_sessions, session_id: UUID) -> list[ConversationEvent]:
+    """Every row of *session_id*'s stream that is about an item, oldest first."""
+    async with migrated_sessions() as db:
+        return list(
+            await db.scalars(
+                select(ConversationEvent)
+                .where(ConversationEvent.session_id == session_id, ConversationEvent.item_id.isnot(None))
+                .order_by(ConversationEvent.event_seq)
+            )
+        )
+
+
+async def authored_events(migrated_sessions, session_id: UUID) -> list[ConversationEvent]:
+    """Every row of *session_id*'s stream that is about the session rather than about an item.
+
+    The authored arm alone is not the distinction any more: a prompt is authored too, because it is
+    accepted before anything crosses a wire.
+    """
+    async with migrated_sessions() as db:
+        return list(
+            await db.scalars(
+                select(ConversationEvent)
+                .where(ConversationEvent.session_id == session_id, ConversationEvent.item_id.is_(None))
+                .order_by(ConversationEvent.event_seq)
             )
         )
 
@@ -943,22 +996,29 @@ async def accepted_prompt(chat_store: SessionStore, operator_id: UUID) -> tuple[
     prompt = await chat_store.enqueue_prompt(
         operator_id, view.session_id, "what were we doing", MatrixOrigin(address=ROOM, refs=("$asked",))
     )
-    return view.session_id, prompt.message_id
+    return view.session_id, prompt
 
 
-async def test_an_accepted_prompt_is_a_row_in_the_stream_as_well_as_in_the_transcript(
-    chat_store, migrated_sessions, operator_id
-) -> None:
-    """The operator's own question, addressed by `event_seq` like the agent's answer is — without
-    it a reader following the stream sees answers to questions that are not in it."""
+async def test_an_accepted_prompt_is_an_item_like_any_other(chat_store, migrated_sessions, operator_id) -> None:
+    """The operator's own question, opened, spoken and closed in one breath — its whole text is
+    known when it is accepted, so it has exactly one segment and no window in which it is open.
+
+    Addressed by `event_seq` like the agent's answer is, because without it a reader following the
+    stream sees answers to questions that are not in it."""
     view, token = await chat_store.create(operator_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
 
-    prompt = await chat_store.enqueue_prompt(operator_id, view.session_id, "list the files", SPA_ORIGIN)
+    item_id = await chat_store.enqueue_prompt(operator_id, view.session_id, "list the files", SPA_ORIGIN)
 
-    asked = one(await authored_events(migrated_sessions, view.session_id))
-    assert asked.kind == AuthoredEventKind.PROMPT_ENQUEUED
-    assert asked.body == {"message_id": str(prompt.message_id), "text": "list the files", "origin": {"kind": "spa"}}
+    asked, said, closed = await item_events(migrated_sessions, view.session_id)
+    assert [row.kind for row in (asked, said, closed)] == [
+        ConversationEventKind.ITEM_STARTED,
+        ConversationEventKind.ITEM_SEGMENT,
+        ConversationEventKind.ITEM_COMPLETED,
+    ]
+    assert {row.item_id for row in (asked, said, closed)} == {item_id}
+    assert asked.body == {"item_type": "prompt", "origin": {"kind": "spa"}}
+    assert said.body == {"text": "list the files"}
     # No frames because nothing has been sent yet, and no turn because admission refuses a prompt
     # while one is open — so a prompt is accepted exactly when there is none to name.
     assert (asked.turn_id, asked.source_first_frame_seq) == (None, None)
@@ -969,8 +1029,9 @@ async def test_an_aborted_turn_is_a_row_in_the_stream_and_names_its_turn(
 ) -> None:
     """The operator's stop, in the ordered stream a channel reads rather than only in a column.
 
-    It is the one authored kind that names a turn: what was stopped is the exchange, so a reader
-    folding the stream knows which one, and the room's "aborted" line is this row rendered.
+    An abort is a turn's **outcome** rather than an event of its own — which is where every backend
+    protocol puts it — so what a reader folding the stream sees is the exchange ending, with the
+    reason on it, and the room's "aborted" line is that row rendered.
     """
     session_id, _ = accepted_prompt
     turn = await chat_store.next_prompt(session_id)
@@ -981,16 +1042,16 @@ async def test_an_aborted_turn_is_a_row_in_the_stream_and_names_its_turn(
     stopped = one(
         event
         for event in await authored_events(migrated_sessions, session_id)
-        if event.kind == AuthoredEventKind.TURN_ABORTED
+        if event.kind == AuthoredEventKind.TURN_ENDED
     )
-    assert (stopped.turn_id, stopped.body) == (turn.turn_id, {})
+    assert (stopped.turn_id, stopped.body) == (turn.turn_id, {"outcome": TurnOutcome.ABORTED})
 
 
 async def test_a_turn_that_ended_any_other_way_leaves_no_abort_row(
     chat_store, migrated_sessions, accepted_prompt
 ) -> None:
     """A turn that answered was not stopped, and a second close cannot re-decide that — the same
-    early return that keeps the first outcome keeps this row from being minted after it."""
+    early return that keeps the first outcome keeps a second row from being minted after it."""
     session_id, _ = accepted_prompt
     turn = await chat_store.next_prompt(session_id)
     assert turn is not None
@@ -998,8 +1059,12 @@ async def test_a_turn_that_ended_any_other_way_leaves_no_abort_row(
     await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
     await chat_store.end_turn(turn.turn_id, TurnOutcome.ABORTED)
 
-    kinds = [event.kind for event in await authored_events(migrated_sessions, session_id)]
-    assert kinds == [AuthoredEventKind.PROMPT_ENQUEUED]
+    outcomes = [
+        event.body["outcome"]
+        for event in await authored_events(migrated_sessions, session_id)
+        if event.kind == AuthoredEventKind.TURN_ENDED
+    ]
+    assert outcomes == [TurnOutcome.ANSWERED]
 
 
 async def test_a_refused_prompt_is_not_in_the_stream(chat_store, migrated_sessions, operator_id) -> None:
@@ -1012,8 +1077,12 @@ async def test_a_refused_prompt_is_not_in_the_stream(chat_store, migrated_sessio
         await chat_store.enqueue_prompt(operator_id, view.session_id, "second", SPA_ORIGIN)
     assert refusal.value.reason is PromptRejection.PROMPT_QUEUED
 
-    asked = one(await authored_events(migrated_sessions, view.session_id))
-    assert asked.body["text"] == "first"
+    said = one(
+        row
+        for row in await item_events(migrated_sessions, view.session_id)
+        if row.kind == ConversationEventKind.ITEM_SEGMENT
+    )
+    assert said.body["text"] == "first"
 
 
 async def test_a_live_session_whose_holder_stopped_renewing_is_failed(
@@ -1152,21 +1221,17 @@ async def test_a_frames_events_land_as_rows_with_the_cursor_that_says_they_did(
     await chat_store.enqueue_prompt(operator_id, session_id, "list the files", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
-    message = MessageKey(opened_at_frame_seq=7)
-
     await chat_store.apply_frame(
         session_id,
         started.turn_id,
         7,
         [
             ToolCallStarted(
-                message=message,
-                call_id="toolu_1",
-                tool_name="Bash",
-                arguments={"command": "ls"},
-                provenance=FrameRange(7, 7),
+                call_id="toolu_1", tool_name="Bash", arguments={"command": "ls"}, provenance=FrameRange(7, 7)
             ),
-            MessageCompleted(message=message, text="looking", agent_message_id=None, provenance=FrameRange(7, 7)),
+            MessageStarted(provenance=FrameRange(7, 7)),
+            ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text="looking", provenance=FrameRange(7, 7)),
+            MessageCompleted(backend_item_id=None, provenance=FrameRange(7, 7)),
         ],
     )
     await chat_store.apply_frame(
@@ -1176,13 +1241,13 @@ async def test_a_frames_events_land_as_rows_with_the_cursor_that_says_they_did(
         # A result comes back on its own frame, and finds its call by the id rather than by
         # anything the message said.
         [
+            ItemSegment(item=CallRef(call_id="toolu_1"), text="a.py", provenance=FrameRange(8, 8)),
             ToolCallCompleted(
-                call_id="toolu_1",
-                content="a.py",
+                item=CallRef(call_id="toolu_1"),
                 structured={"exit_code": 0},
-                outcome=Outcome.SUCCEEDED,
+                outcome=ToolOutcome.SUCCEEDED,
                 provenance=FrameRange(8, 8),
-            )
+            ),
         ],
     )
 
@@ -1190,21 +1255,28 @@ async def test_a_frames_events_land_as_rows_with_the_cursor_that_says_they_did(
         rows = list(
             (
                 await db.scalars(
-                    select(SessionEvent).where(SessionEvent.session_id == session_id).order_by(SessionEvent.event_seq)
+                    select(ConversationEvent)
+                    .where(ConversationEvent.session_id == session_id)
+                    .order_by(ConversationEvent.event_seq)
                 )
             ).all()
         )
         assert (await db.get(Session, session_id)).projected_frame_seq == 8
-    assert [row.kind for row in rows] == [
-        AuthoredEventKind.PROMPT_ENQUEUED,
-        ConversationEventKind.TOOL_CALL_STARTED,
-        ConversationEventKind.MESSAGE_COMPLETED,
-        ConversationEventKind.TOOL_CALL_COMPLETED,
+    assert [row.kind for row in rows if row.provenance is EventProvenance.FRAME_RANGE] == [
+        ConversationEventKind.ITEM_STARTED,  # the call
+        ConversationEventKind.ITEM_STARTED,  # the message
+        ConversationEventKind.ITEM_SEGMENT,
+        ConversationEventKind.ITEM_COMPLETED,
+        ConversationEventKind.ITEM_SEGMENT,  # what the call printed
+        ConversationEventKind.ITEM_COMPLETED,
     ]
     assert {row.turn_id for row in rows if row.provenance is EventProvenance.FRAME_RANGE} == {started.turn_id}
-    answered = one(row for row in rows if row.kind == ConversationEventKind.TOOL_CALL_COMPLETED)
-    assert answered.call_id == "toolu_1"
-    assert answered.body["content"] == {"shape": "text", "text": "a.py"}
+    # The result's two rows found the call by its id, frames after the ask, and landed on the same
+    # item as the ask itself.
+    asked = one(row for row in rows if row.body.get("call_id") == "toolu_1")
+    answered = rows[-2:]
+    assert {row.item_id for row in answered} == {asked.item_id}
+    assert answered[0].body == {"text": "a.py"}
 
 
 async def test_an_event_row_cannot_be_written_without_a_provenance_union(
@@ -1212,12 +1284,13 @@ async def test_an_event_row_cannot_be_written_without_a_provenance_union(
 ) -> None:
     """Either arm is writable and neither can be written half: `frame_range` without a range, and
     `authored` with one, are both refused by the table rather than by whoever remembers. The turn
-    goes the same way — required of a projected row, since the fold only runs inside one, and
-    optional on the arm the console authors about the session itself.
+    and the item go the same way — required of a projected row, since the fold only runs inside a
+    turn and only ever produces item rows, and absent on the facts the console authors about the
+    session itself.
 
-    Which arm a row may take follows from its kind, so the arms are not interchangeable: a
-    `ConversationEventKind` is what folding a frame produced and cannot claim the console authored
-    it.
+    **Which arm a row may take does not follow from its kind.** An item kind takes either — a
+    prompt is authored, an assistant message is folded — so what the kind states is only whether an
+    item is named at all, and `conversation_item.item_type` is where the arm actually follows from.
     """
     view, token = await chat_store.create(operator_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -1225,28 +1298,35 @@ async def test_an_event_row_cannot_be_written_without_a_provenance_union(
     started = await chat_store.next_prompt(view.session_id)
     assert started is not None
 
-    def event(**overrides) -> SessionEvent:
+    conversation_id = await chat_store.conversation_of(view.session_id)
+    item_id = one(await _items(migrated_sessions, view.session_id))
+    seq = itertools.count(1_000)
+
+    def event(**overrides) -> ConversationEvent:
         values = {
+            "conversation_id": conversation_id,
+            "event_seq": next(seq),
             "session_id": view.session_id,
             "turn_id": started.turn_id,
-            "kind": ConversationEventKind.REASONING,
+            "item_id": item_id,
+            "kind": ConversationEventKind.ITEM_STARTED,
             "provenance": EventProvenance.FRAME_RANGE,
             "source_first_frame_seq": 3,
             "source_last_frame_seq": 4,
-            "call_id": None,
-            "body": {"summary": None},
+            "body": {"item_type": "reasoning"},
             "created_at": datetime.now(UTC),
         }
-        return SessionEvent(**(values | overrides))
+        return ConversationEvent(**(values | overrides))
 
     for unwritable in (
         event(source_first_frame_seq=None, source_last_frame_seq=None),
         event(source_last_frame_seq=None),
         event(provenance=EventProvenance.AUTHORED),
         event(source_first_frame_seq=9),
-        event(call_id="toolu_1"),
         event(turn_id=None),
-        event(provenance=EventProvenance.AUTHORED, source_first_frame_seq=None, source_last_frame_seq=None),
+        # An item kind names an item and the rest do not: `ck_conversation_event_item_kinds`.
+        event(item_id=None),
+        event(kind=AuthoredEventKind.SESSION_ADOPTED, body={"previous_holder": None, "holder": "a"}),
     ):
         async with migrated_sessions() as db:
             db.add(unwritable)
@@ -1255,12 +1335,19 @@ async def test_an_event_row_cannot_be_written_without_a_provenance_union(
 
     authored = {
         "kind": AuthoredEventKind.SESSION_ADOPTED,
+        "item_id": None,
         "provenance": EventProvenance.AUTHORED,
         "source_first_frame_seq": None,
         "source_last_frame_seq": None,
         "body": {"previous_holder": None, "holder": "haku-console-a"},
     }
-    for writable in (event(**authored), event(**authored, turn_id=None)):
+    # And the arm an item kind may still take: a prompt is an item the console authored, so
+    # "folded from frames" is not what an item kind means.
+    for writable in (
+        event(**authored),
+        event(**authored, turn_id=None),
+        event(provenance=EventProvenance.AUTHORED, source_first_frame_seq=None, source_last_frame_seq=None),
+    ):
         async with migrated_sessions() as db:
             db.add(writable)
             await db.commit()
@@ -1271,20 +1358,20 @@ async def _exchange(chat_store, operator_id, session_id: UUID, prompt: str, answ
     await chat_store.enqueue_prompt(operator_id, session_id, prompt, SPA_ORIGIN)
     turn = await chat_store.next_prompt(session_id)
     assert turn is not None
-    sent = await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, PROMPT_FRAME_KIND, {"type": "user"})
-    await chat_store.set_message_source_frames(session_id, turn.message_id, sent.frame_seq)
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, PROMPT_FRAME_KIND, {"type": "user"})
     spoke = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "assistant", {"type": "assistant"})
     await chat_store.apply_frame(
         session_id,
         turn.turn_id,
         spoke.frame_seq,
         [
-            MessageCompleted(
-                message=MessageKey(opened_at_frame_seq=spoke.frame_seq),
+            MessageStarted(provenance=FrameRange(spoke.frame_seq, spoke.frame_seq)),
+            ItemSegment(
+                item=OpenRef(item_type=ItemType.MESSAGE),
                 text=answer,
-                agent_message_id=None,
                 provenance=FrameRange(spoke.frame_seq, spoke.frame_seq),
-            )
+            ),
+            MessageCompleted(backend_item_id=None, provenance=FrameRange(spoke.frame_seq, spoke.frame_seq)),
         ],
     )
     await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED, last_frame_seq=spoke.frame_seq)
@@ -1306,13 +1393,13 @@ async def test_an_update_carries_the_rows_the_events_after_a_position_name(chat_
     await _exchange(chat_store, operator_id, session_id, "second", "two")
     changes = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=held, limit=50)
 
-    assert [message.content for message in changes.messages] == ["second", "two"]
+    assert [item.text for item in changes.items] == ["second", "two"]
     assert [turn.outcome for turn in changes.turns] == [TurnOutcome.ANSWERED]
     assert changes.position > held
-    # Re-reading the same position is the same answer: the merge is keyed on `message_id`, so a
+    # Re-reading the same position is the same answer: the merge is keyed on `item_id`, so a
     # duplicate costs nothing and nothing about delivery has to be exactly-once.
     again = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=held, limit=50)
-    assert [message.message_id for message in again.messages] == [message.message_id for message in changes.messages]
+    assert [item.item_id for item in again.items] == [item.item_id for item in changes.items]
 
 
 async def test_an_update_carries_what_a_replaced_session_wrote_after_the_position(chat_store, operator_id) -> None:
@@ -1330,7 +1417,7 @@ async def test_an_update_carries_what_a_replaced_session_wrote_after_the_positio
     await _exchange(chat_store, operator_id, second.session_id, "after it was replaced", "answered again")
     changes = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=held, limit=50)
 
-    assert [message.content for message in changes.messages] == [
+    assert [item.text for item in changes.items] == [
         "before the sandbox died",
         "answered",
         "after it was replaced",
@@ -1339,27 +1426,27 @@ async def test_an_update_carries_what_a_replaced_session_wrote_after_the_positio
     assert changes.session_id == second.session_id
 
 
-async def test_a_prompt_leaving_pending_reaches_a_reader_that_no_event_told(chat_store, operator_id) -> None:
-    """`next_prompt` moves the operator's own question out of `pending` and writes no event.
+async def test_a_claim_reaches_a_reader_that_no_event_told(chat_store, operator_id) -> None:
+    """`next_prompt` takes the operator's question off the queue and writes no event of its own.
 
-    The address alone would leave a tab rendering it as still queued forever, which is why the
-    newest turn's own rows ride along on every read rather than waiting to be named.
+    The address alone would leave a tab showing a thread that never started working, which is why
+    the newest turn's own rows ride along on every read rather than waiting to be named.
     """
     view, token = await chat_store.create(operator_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     conversation_id = await chat_store.conversation_of(view.session_id)
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
     enqueued = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=0, limit=50)
-    assert [(row.content, row.status) for row in enqueued.messages] == [("why did it fail?", ChatMessageStatus.PENDING)]
+    assert [(row.item_type, row.text) for row in enqueued.items] == [(ItemType.PROMPT, "why did it fail?")]
+    assert enqueued.turns == []
 
     assert await chat_store.next_prompt(view.session_id) is not None
     claimed = await chat_store.read_operator_conversation_changes(
         operator_id, conversation_id, after=enqueued.position, limit=50
     )
 
-    assert [(row.content, row.status) for row in claimed.messages] == [("why did it fail?", ChatMessageStatus.COMPLETE)]
-    assert claimed.position == enqueued.position, "a claim writes no event, so the position does not move"
-    assert [turn.ended_at for turn in claimed.turns] == [None]
+    assert [turn.ended_at for turn in claimed.turns] == [None], "the turn that opened is what says so"
+    assert claimed.status == SessionStatus.RESPONDING
 
 
 async def test_a_position_the_log_cannot_answer_from_is_refused_rather_than_read_as_empty(
@@ -1392,7 +1479,7 @@ async def test_an_update_over_its_limit_is_refused_rather_than_shortened(chat_st
         await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=0, limit=2)
 
     whole = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=0, limit=50)
-    assert len(whole.messages) == 4
+    assert len(whole.items) == 4
 
 
 async def test_the_update_refuses_a_conversation_another_operator_owns(chat_store, operator_id) -> None:
