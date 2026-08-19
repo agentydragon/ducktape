@@ -22,15 +22,16 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
-from haku.console.chat_models import TurnOutcome
+from haku.console.chat_models import ToolOutcome, TurnOutcome
 from haku.console.x.claude_code.projection import RecordedFrame, project_log
 from haku.console.x.conversation_events import (
     FrameRange,
+    ItemSegment,
     MessageCompleted,
-    Outcome,
+    MessageStarted,
     Projection,
-    Reasoning,
-    TextDelta,
+    ReasoningCompleted,
+    ReasoningStarted,
     ToolCallCompleted,
     ToolCallStarted,
     TurnCompleted,
@@ -66,9 +67,12 @@ def test_the_capture_folds_to_two_turns(projection: Projection):
     rather than because the subagent's completion closed anything — both `result` frames have a null
     `parent_tool_use_id`."""
     assert Counter(type(event) for event in projection.events) == {
-        Reasoning: 7,
-        TextDelta: 7,
+        ReasoningStarted: 7,
+        ReasoningCompleted: 7,
+        MessageStarted: 7,
         MessageCompleted: 7,
+        # One per message, one per reasoning item, and one per tool result that had prose to show.
+        ItemSegment: 18,
         ToolCallStarted: 4,
         ToolCallCompleted: 4,
         TurnCompleted: 2,
@@ -103,8 +107,8 @@ def test_a_backgrounded_call_succeeds_long_before_its_command_ends(projection: P
     Nothing folded says when the command actually ended: the `task_notification` reporting it,
     sixty frames later, is unprojected. A background command's end is in `session_frames` alone."""
     started = one(e for e in projection.events if isinstance(e, ToolCallStarted) and e.call_id == _BASH_CALL)
-    completed = one(e for e in projection.events if isinstance(e, ToolCallCompleted) and e.call_id == _BASH_CALL)
-    assert (started.tool_name, completed.outcome) == ("Bash", Outcome.SUCCEEDED)
+    completed = one(e for e in projection.events if isinstance(e, ToolCallCompleted) and e.item.call_id == _BASH_CALL)
+    assert (started.tool_name, completed.outcome) == ("Bash", ToolOutcome.SUCCEEDED)
 
     ended = one(
         index
@@ -152,8 +156,8 @@ def test_no_folded_event_says_whether_the_subagent_succeeded(projection: Project
     """The `Agent` call completes with no outcome the CLI made explicit, and the `task_notification`
     that reported `completed` is unprojected — so a subagent's success is in the frames only. That
     is the accepted cost of the neutral vocabulary carrying no provider's task concept."""
-    call = one(e for e in projection.events if isinstance(e, ToolCallCompleted) and e.call_id == _AGENT_CALL)
-    assert call.outcome is Outcome.UNKNOWN
+    call = one(e for e in projection.events if isinstance(e, ToolCallCompleted) and e.item.call_id == _AGENT_CALL)
+    assert call.outcome is ToolOutcome.UNKNOWN
 
     reported = one(
         record["frame"]

@@ -28,16 +28,17 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
-from haku.console.chat_models import TurnOutcome
+from haku.console.chat_models import ToolOutcome, TurnOutcome
 from haku.console.tools.conversations import MAX_PAGE_BYTES
 from haku.console.x.claude_code.projection import RecordedFrame, project_log
 from haku.console.x.conversation_events import (
     FrameRange,
+    ItemSegment,
     MessageCompleted,
-    Outcome,
+    MessageStarted,
     Projection,
-    Reasoning,
-    TextDelta,
+    ReasoningCompleted,
+    ReasoningStarted,
     ToolCallCompleted,
     ToolCallStarted,
     TurnCompleted,
@@ -72,19 +73,21 @@ def projection() -> Projection:
 def test_the_capture_folds_to_the_session_it_recorded(projection: Projection):
     """Four answers, each reasoned then written then acted on, and a turn that ended."""
     assert Counter(type(event) for event in projection.events) == {
-        Reasoning: 4,
-        TextDelta: 4,
+        ReasoningStarted: 4,
+        ReasoningCompleted: 4,
+        MessageStarted: 4,
+        MessageCompleted: 4,
+        # One per message, one per reasoning item, and one per tool result that had prose to show.
+        ItemSegment: 12,
         ToolCallStarted: 4,
         ToolCallCompleted: 4,
-        MessageCompleted: 4,
         TurnCompleted: 1,
     }
     # Every message said something and thought something: the fold read both block types out of
     # the frames that carried them, rather than the text of one message landing on another.
     messages = [event for event in projection.events if isinstance(event, MessageCompleted)]
-    assert all(message.text and message.agent_message_id for message in messages)
-    assert len({message.agent_message_id for message in messages}) == len(messages)
-    assert all(event.summary for event in projection.events if isinstance(event, Reasoning))
+    assert all(message.backend_item_id for message in messages)
+    assert len({message.backend_item_id for message in messages}) == len(messages)
 
     # The turn ran a command that failed on purpose, and the CLI still called the turn a success —
     # which is why `TurnCompleted` is read off `subtype` and a failing call is not a failing turn.
@@ -95,16 +98,20 @@ def test_a_message_outlives_the_tool_results_inside_it(projection: Projection):
     """The census's split-message hazard, occurring on its own: the model asked for two Bash calls
     in one message, and both answers arrived before the message was done."""
     started = [event for event in projection.events if isinstance(event, ToolCallStarted)]
-    messages = {event.message: event for event in projection.events if isinstance(event, MessageCompleted)}
+    messages = [event for event in projection.events if isinstance(event, MessageCompleted)]
 
-    assert {started_event.message for started_event in started} <= set(messages)
-    for started_event in started:
-        # The call is inside its message's range, results and all, rather than the message having
-        # been closed by the first non-`assistant` frame between the two calls.
-        span, call = messages[started_event.message].provenance, started_event.provenance
-        assert isinstance(span, FrameRange)
-        assert isinstance(call, FrameRange)
-        assert span.first_frame_seq <= call.first_frame_seq <= span.last_frame_seq
+    # A message's span covers the frames its prose came from, and the calls asked inside it fall
+    # between the message opening and the *next* one — rather than the message having been closed
+    # by the first non-`assistant` frame between the two calls, which would leave a call outside
+    # every message's reach.
+    spans = [event.provenance for event in messages]
+    assert all(isinstance(span, FrameRange) for span in spans)
+    opened = [span.first_frame_seq for span in spans if isinstance(span, FrameRange)]
+    ends = [*opened[1:], _FRAMES[-1].frame_seq]
+    for call in started:
+        assert isinstance(call.provenance, FrameRange)
+        asked = call.provenance.first_frame_seq
+        assert any(start <= asked <= end for start, end in zip(opened, ends, strict=True))
 
 
 def test_parallel_calls_pair_by_id_and_not_by_order(projection: Projection):
@@ -114,11 +121,11 @@ def test_parallel_calls_pair_by_id_and_not_by_order(projection: Projection):
     started = [event for event in projection.events if isinstance(event, ToolCallStarted)]
     completed = [event for event in projection.events if isinstance(event, ToolCallCompleted)]
 
-    assert {event.call_id for event in started} == {event.call_id for event in completed}
-    assert [event.call_id for event in started] != [event.call_id for event in completed]
+    assert {event.call_id for event in started} == {event.item.call_id for event in completed}
+    assert [event.call_id for event in started] != [event.item.call_id for event in completed]
     # The command that could not succeed is the one marked failed, and it is the only one.
-    failed = one(event for event in completed if event.outcome is Outcome.FAILED)
-    assert one(event.tool_name for event in started if event.call_id == failed.call_id) == "Bash"
+    failed = one(event for event in completed if event.outcome is ToolOutcome.FAILED)
+    assert one(event.tool_name for event in started if event.call_id == failed.item.call_id) == "Bash"
 
 
 def test_unprojected_is_exactly_todays_unknown_frame_classes(projection: Projection):
