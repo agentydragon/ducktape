@@ -19,9 +19,9 @@ from typing import Protocol
 
 from haku.console.x.conversation_events import (
     ConversationEvent,
+    ItemSegment,
     MessageCompleted,
-    Reasoning,
-    TextDelta,
+    ReasoningStarted,
     ToolCallStarted,
 )
 
@@ -58,9 +58,10 @@ def coarse_status(events: Sequence[ConversationEvent]) -> str | None:
     if names := [event.tool_name for event in events if isinstance(event, ToolCallStarted)]:
         return f"running {', '.join(names)}"
     # Prose, thinking, or a message that ended: all of it is the agent writing rather than acting,
-    # and the room is told no more than that. `MessageCompleted` is in here because a session that
-    # streams no deltas produces no `TextDelta` at all, and its answers would otherwise say nothing.
-    if any(isinstance(event, TextDelta | Reasoning | MessageCompleted) for event in events):
+    # and the room is told no more than that. A segment covers prose and a reasoning summary alike,
+    # since both are an item's text now; `MessageCompleted` stays because a backend that streams
+    # nothing still emits one, and its answers would otherwise say nothing.
+    if any(isinstance(event, ItemSegment | ReasoningStarted | MessageCompleted) for event in events):
         return "writing"
     return None
 
