@@ -2,8 +2,8 @@
 
 The service that drives a turn is next door in `session_runtime.py`; the line between the two is
 the transaction. A method whose job is "these writes commit together or not at all" is here —
-`update_assistant` writing the message, the room's outbox row and the turn's `queued_reply` in one
-transaction is what stops a turn losing its answer (<../debug/message_drops.md>).
+`apply_frame` writing a frame's events, the items they materialise and the session's cursor in one
+transaction is what makes adoption a read (<../debug/message_drops.md>).
 
 Neutral runtime: no channel and no harness, so a second channel inherits every row in it.
 
