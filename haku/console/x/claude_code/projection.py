@@ -245,6 +245,17 @@ class _Projector:
 
     def _assistant(self, frame: RecordedFrame) -> None:
         where = FrameRange(frame.frame_seq, frame.frame_seq)
+        # **A different `message.id` ends the message before it, whatever this frame carries.** The
+        # run is defined by the id and not by which block types happen to be in the frame that
+        # breaks it — so a frame of pure thinking closes the previous answer here rather than
+        # leaving it open until the next frame with prose in it, which would order a transcript by
+        # something other than what happened.
+        if (
+            (open_message := self.open_message) is not None
+            and (breaking := frames.agent_message_id(frame.payload)) is not None
+            and open_message.backend_item_id not in (None, breaking)
+        ):
+            self.close_message()
         for block in frames.content_blocks(frame.payload):
             match block.get("type"):
                 case "text" if isinstance(text := block.get("text"), str):

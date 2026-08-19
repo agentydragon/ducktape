@@ -8,7 +8,7 @@ import pytest_bazel
 from more_itertools import one
 
 from haku.console.x import conversation_records, transcript_entries
-from haku.console.x.claude_code.projection import RecordedFrame, project_log
+from haku.console.x.claude_code.projection import RecordedFrame, project, project_log
 from haku.console.x.claude_code.testing.wire import (
     assistant,
     recorded,
@@ -18,15 +18,16 @@ from haku.console.x.claude_code.testing.wire import (
     tool_result,
     tool_use_block,
 )
+from haku.console.x.conversation_events import ProjectionState
 
 
 def _result(frame_seq: int) -> RecordedFrame:
     return recorded(frame_seq, result())
 
 
-def test_deltas_do_not_reach_the_read_surface() -> None:
-    """A message's deltas concatenate to exactly the text its `message` entry carries, so
-    streaming them to a reader of a finished conversation is the same prose twice."""
+def test_segments_are_folded_into_the_item_they_belong_to() -> None:
+    """The vocabulary emits prose as increments so a live channel can print them as they arrive; a
+    transcript is read after the fact and wants the item, whose text is exactly those increments."""
     projection = project_log(
         [
             recorded(1, assistant(text_block("half "), message_id="msg_1")),
@@ -40,13 +41,16 @@ def test_deltas_do_not_reach_the_read_surface() -> None:
     assert entry.text == "half an answer"
 
 
-def test_an_entry_is_numbered_by_its_position_after_the_deltas_are_gone() -> None:
-    """The index is the cursor's key, so it has to count what a reader will actually receive."""
+def test_an_entry_is_numbered_by_its_position_among_the_entries() -> None:
+    """The index is the cursor's key, so it has to count what a reader will actually receive —
+    which is one entry per finished item, not one per event the fold emitted. In the order the items
+    finished, which is why `msg_1` lands before the thinking that came after it."""
     projection = project_log(
         [
             recorded(1, assistant(text_block("hello"), message_id="msg_1")),
             recorded(2, assistant(thinking_block("hmm"), message_id="msg_2")),
-            _result(3),
+            recorded(3, assistant(text_block("and here"), message_id="msg_2")),
+            _result(4),
         ]
     )
 
@@ -72,7 +76,6 @@ def test_a_multi_frame_message_reports_the_span_it_was_read_off() -> None:
 
     assert isinstance(entry, conversation_records.MessageEntry)
     assert entry.provenance == conversation_records.FromFrames(first_frame_seq=4, last_frame_seq=6)
-    assert entry.message.opened_at_frame_seq == 4
 
 
 def test_a_tool_call_and_its_answer_are_joined_by_call_id_and_nothing_else() -> None:
@@ -85,8 +88,7 @@ def test_a_tool_call_and_its_answer_are_joined_by_call_id_and_nothing_else() -> 
         ]
     )
 
-    # The third entry is the message `project_log` closes when the log ends.
-    call, answer, _ = transcript_entries.entries(projection)
+    call, answer = transcript_entries.entries(projection)
 
     assert isinstance(call, conversation_records.ToolCallEntry)
     assert isinstance(answer, conversation_records.ToolResultEntry)
@@ -94,6 +96,15 @@ def test_a_tool_call_and_its_answer_are_joined_by_call_id_and_nothing_else() -> 
     assert answer.call_id == "toolu_1"
     assert answer.content == "file contents"
     assert answer.structured == {"filePath": "/x"}
+
+
+def test_an_item_the_turn_never_finished_is_not_an_entry() -> None:
+    """A turn that died mid-message left prose nothing finished saying, and a transcript printing it
+    would report a half-sentence as what was said."""
+    state, projection = project(ProjectionState(), [recorded(1, assistant(text_block("half a "), message_id="msg_1"))])
+
+    assert state.open_message is not None
+    assert transcript_entries.entries(projection) == []
 
 
 def test_an_absent_is_error_stays_unknown_rather_than_reading_as_fine() -> None:

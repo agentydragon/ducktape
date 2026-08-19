@@ -152,7 +152,7 @@ class RoomOutbox:
                 return False
             if not (body := item.item_text.strip()):
                 return False
-            queued = await db.execute(
+            queued = await db.scalar(
                 insert(MatrixOutbox)
                 .values(
                     outbox_id=uuid4(),
@@ -164,8 +164,11 @@ class RoomOutbox:
                     next_attempt_at=now,
                 )
                 .on_conflict_do_nothing(index_elements=["attachment_id", "subject"])
+                # What says whether the row is ours or one a previous pass already queued. A
+                # conflict returns nothing, which is the answer rather than an error.
+                .returning(MatrixOutbox.outbox_id)
             )
-            return queued.rowcount == 1
+            return queued is not None
 
     async def claim_next(self, room_id: str) -> PendingReply | None:
         """Take this room's oldest live reply if it is due, counting the attempt as spent.
