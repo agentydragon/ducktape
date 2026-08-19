@@ -3,6 +3,156 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import NamedTuple
+
+import jax
+
+type _Array = jax.Array
+
+
+class _StateOutput(NamedTuple):
+    cash: _Array
+    ordinary: _Array
+    lots: _Array
+    capital_gain_active: _Array
+    capital_gain_ytd: _Array
+    property_active: _Array
+    property_basis: _Array
+    property_contribution: _Array
+    property_equity: _Array
+    property_cumulative_depreciation: _Array
+    property_owner_occupied_months: _Array
+    liability_active: _Array
+    liability_principal: _Array
+    liability_monthly_payment: _Array
+    liability_interest_ytd: _Array
+    liability_principal_ytd: _Array
+    failed: _Array
+    failed_month: _Array
+
+
+class _TransferOutput(NamedTuple):
+    active: _Array
+    amount: _Array
+
+
+class _ObligationOutput(NamedTuple):
+    active: _Array
+    due: _Array
+    paid: _Array
+    shortfall: _Array
+    failure_active: _Array
+
+
+class _PropertyPurchaseOutput(NamedTuple):
+    active: _Array
+    transfer_active: _Array
+
+
+class _MortgageOutput(NamedTuple):
+    origination_active: _Array
+    payment_active: _Array
+    payment_interest: _Array
+    payment_principal: _Array
+    payment_total: _Array
+
+
+class _TaxOutput(NamedTuple):
+    accrual_active: _Array
+    accrual_amount: _Array
+    ordinary_income: _Array
+    long_term_capital_gain: _Array
+    short_term_capital_gain: _Array
+    standard_deduction: _Array
+    mortgage_interest_deduction: _Array
+    salt_deduction: _Array
+    itemized_deduction: _Array
+    ordinary_taxable: _Array
+    capital_gain_taxable: _Array
+    ordinary_tax: _Array
+    capital_gain_tax: _Array
+    liability_amount: _Array
+    liability_active: _Array
+    settlement_active: _Array
+    settlement_amount: _Array
+    settlement_year_end: _Array
+
+
+class _DispositionOutput(NamedTuple):
+    active: _Array
+    units: _Array
+    basis: _Array
+    proceeds: _Array
+
+
+class _TargetAllocationOutput(NamedTuple):
+    dispositions: _DispositionOutput
+    obligation_attempt_policy: _Array
+
+
+class _PrivateEquityOpportunityOutput(NamedTuple):
+    active: _Array
+    outcome: _Array
+    floor: _Array
+    liquid_net_worth: _Array
+    shortfall: _Array
+    units_held: _Array
+    sellable_units: _Array
+    target_units: _Array
+    proceeds: _Array
+
+
+class _PrivateEquityOutput(NamedTuple):
+    dispositions: _DispositionOutput
+    opportunities: _PrivateEquityOpportunityOutput
+
+
+class _PropertySaleTraceOutput(NamedTuple):
+    gross_proceeds: _Array
+    mortgage_payoff: _Array
+    net_cash: _Array
+    realized_gain: _Array
+    depreciation_recapture: _Array
+    section_121_exclusion: _Array
+    long_term_capital_gain: _Array
+
+
+class _LifecycleOutput(NamedTuple):
+    fired: _Array
+    property_sales: _PropertySaleTraceOutput
+
+
+class _DenseScanOutput(NamedTuple):
+    state: _StateOutput
+    transfers: _TransferOutput
+    property_cashflows: _TransferOutput
+    obligations: _ObligationOutput
+    property_purchases: _PropertyPurchaseOutput
+    mortgages: _MortgageOutput
+    taxes: _TaxOutput
+    target_allocation: _TargetAllocationOutput
+    private_equity: _PrivateEquityOutput
+    lifecycle: _LifecycleOutput
+    primary_residence_fired: _Array
+
+
+class _DenseFinalOutput(NamedTuple):
+    lot_cost_basis: _Array
+    lot_purchase_month: _Array
+    scheduled_dispositions: _DispositionOutput
+    sale_oversell: _Array
+    target_allocation_buy_count: _Array
+
+
+class _ProductTailOutput(NamedTuple):
+    sale_oversell: _Array
+    failed_month: _Array
+    target_allocation_buy_count: _Array
+
+
+class _DenseProductTailOutput(NamedTuple):
+    dense: _DenseFinalOutput
+    failed_month: _Array
 
 
 @dataclass(frozen=True)

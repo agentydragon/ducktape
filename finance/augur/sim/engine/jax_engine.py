@@ -50,7 +50,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from functools import partial
-from typing import NamedTuple, overload
+from typing import Any, NamedTuple, overload
 
 import jax
 
@@ -71,17 +71,33 @@ from finance.augur.sim.compiler.plan import SlotPlan, lot_order_for_pool
 from finance.augur.sim.engine.jax_scatter import check_purchase_slot_exhaustion, scatter_ys_to_buffers
 from finance.augur.sim.engine.jax_types import (
     _CapitalGainTarget,
+    _DenseFinalOutput,
+    _DenseProductTailOutput,
+    _DenseScanOutput,
+    _DispositionOutput,
     _FoldedHarvest,
     _FoldedLifecycleEvent,
-    _FoldedSleeve,
-    _FoldedTargetAllocation,
     _FoldedPE,
     _FoldedPurchase,
     _FoldedSale,
+    _FoldedSleeve,
+    _FoldedTargetAllocation,
+    _LifecycleOutput,
     _LinkTaxStatic,
+    _MortgageOutput,
+    _ObligationOutput,
+    _PrivateEquityOpportunityOutput,
+    _PrivateEquityOutput,
+    _ProductTailOutput,
+    _PropertyPurchaseOutput,
+    _PropertySaleTraceOutput,
     _SalePool,
     _ScanMeta,
+    _StateOutput,
     _Static,
+    _TargetAllocationOutput,
+    _TaxOutput,
+    _TransferOutput,
 )
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.engine.jax_validation import validate_seed_dependent_inputs
@@ -463,10 +479,9 @@ def run_jax_scan_with_product_metrics(
         emit_dense=True,
     )
     dense_ys, product_ys = outputs
-    *dense_final_state, final_failed_month = final_state
-    scatter_ys_to_buffers(plan, buffers, meta, dense_ys, tuple(dense_final_state))
+    scatter_ys_to_buffers(plan, buffers, meta, dense_ys, final_state.dense)
     initial_ys, monthly_ys = product_ys
-    return _product_metric_arrays_from_device(plan, initial_ys, monthly_ys, final_failed_month)
+    return _product_metric_arrays_from_device(plan, initial_ys, monthly_ys, final_state.failed_month)
 
 
 @dataclass(frozen=True)
@@ -576,11 +591,12 @@ def run_jax_product_metric_arrays(plan: CompiledSimulation, *, primary_agent_id:
         product_inputs=product_inputs,
         emit_dense=False,
     )
-    oversell, final_failed_month, ta_buy_count = product_tail
-    oversell_host, buy_count_host = jax.device_get((oversell, ta_buy_count))
+    oversell_host, buy_count_host = jax.device_get(
+        (product_tail.sale_oversell, product_tail.target_allocation_buy_count)
+    )
     _validate_product_tail(plan, oversell_host, buy_count_host)
     initial_ys, monthly_ys = product_ys
-    return _product_metric_arrays_from_device(plan, initial_ys, monthly_ys, final_failed_month)
+    return _product_metric_arrays_from_device(plan, initial_ys, monthly_ys, product_tail.failed_month)
 
 
 @overload
@@ -622,14 +638,13 @@ def run_jax_product_summary(
         product_inputs=product_inputs,
         emit_dense=False,
     )
-    oversell, final_failed_month, ta_buy_count = product_tail
     initial_ys, monthly_ys = product_ys
     series = _product_metric_series(metric, initial_ys, monthly_ys)  # (H+1, R), on device
     # Terminal sample: cumulative over the horizon for shortfall, end-of-horizon snapshot otherwise.
     terminal = series.sum(axis=0) if metric == "shortfall_quanta" else series[-1]
     if percentiles is None:
         oversell_host, failed_host, buy_count_host, terminal_host = jax.device_get(
-            (oversell, final_failed_month, ta_buy_count, terminal)
+            (product_tail.sale_oversell, product_tail.failed_month, product_tail.target_allocation_buy_count, terminal)
         )
         _validate_product_tail(plan, oversell_host, buy_count_host)
         return ProductTerminalSummary(
@@ -662,9 +677,9 @@ def run_jax_product_summary(
         terminal_upper_host,
     ) = jax.device_get(
         (
-            oversell,
-            (final_failed_month >= 0).sum(),
-            ta_buy_count,
+            product_tail.sale_oversell,
+            (product_tail.failed_month >= 0).sum(),
+            product_tail.target_allocation_buy_count,
             monthly_lower,
             monthly_upper,
             terminal_lower,
@@ -1534,7 +1549,6 @@ def _program_impl(
     folded_pr = structure.folded_pr
     folded_pe = structure.folded_pe
     folded_harvest = structure.folded_harvest
-    folded_sale_events = [ev for ev in folded_lifecycle if ev.kind == LifecycleKind.SALE]
     salt_link_active = structure.salt_link_active
     link_tax_static = structure.link_tax_static
     link_profile = structure.link_profile
@@ -1809,7 +1823,7 @@ def _program_impl(
             tuple(breakdown),
         )
 
-    def step(s: _ScanState, month: jnp.ndarray) -> tuple[_ScanState, tuple[jnp.ndarray, ...]]:
+    def step(s: _ScanState, month: jnp.ndarray) -> tuple[_ScanState, Any]:
         cash, ordinary, property_tax_ytd, lot_remaining = s.cash, s.ordinary_ytd, s.property_tax_ytd, s.lot_remaining
         cost_basis_per_unit = s.cost_basis_per_unit
         lot_purchase_month = s.lot_purchase_month
@@ -1840,7 +1854,7 @@ def _program_impl(
         # per-month host-side; the SALE path uses the §121 owner-occupancy window for the exclusion.
         pr_fired = [jnp.where(month == pr_m, active, jnp.zeros_like(active)) for _, pr_m in folded_pr]
         le_fired: list[jnp.ndarray] = []
-        sale_traces: list[tuple] = []
+        sale_traces: list[_PropertySaleTraceOutput] = []
         for evi, ev in enumerate(folded_lifecycle):
             ev_month, ev_kind, ev_prop = ev.month, ev.kind, ev.property_slot
             fires = month == ev_month
@@ -1971,7 +1985,8 @@ def _program_impl(
         # (shared/absent cash slots fall out, duplicates accumulate); financed purchases originate the
         # mortgage liability (principal + monthly payment set, YTD interest/principal reset).
         mort_orig_rows = jnp.zeros((liab_active.shape[0], r), dtype=bool)
-        purchase_active_rows = transfer_active_rows = None
+        purchase_active_rows = jnp.zeros((0, r), dtype=bool)
+        transfer_active_rows = jnp.zeros((0, r), dtype=bool)
         if folded_purchases:
             fires = (month == pur_month)[:, None] & active[None, :]  # (P, R)
             stake_pos = (pur_stake > 0)[:, None]  # (P, 1) static
@@ -2765,100 +2780,115 @@ def _program_impl(
             )
             if not emit_dense:
                 return carry, product_output
-        base_ys = (
-            cash,
-            ordinary,
-            lot_remaining,
-            cg_active,
-            cg_ytd,
-            property_active,
-            property_basis,
-            property_contribution,
-            property_equity,
-            property_cum_dep,
-            property_owner_occupied,
-            liab_active,
-            liab_principal,
-            liab_monthly,
-            liab_interest_ytd,
-            liab_principal_ytd,
-            failed,
-            failed_month,
-            transfer_active,
-            transfer_amount,
-            property_cashflow_active,
-            property_cashflow_amount,
-            slot_active,
-            accrual_due,
-            paid_buffer,
-            shortfall,
-            failure_active,
+        empty_events_bool = jnp.zeros((0, r), dtype=bool)
+        empty_events_i64 = _zeros_i64((0, r))
+        lifecycle_fired = jnp.stack(le_fired) if le_fired else empty_events_bool
+        primary_residence_fired = jnp.stack(pr_fired) if pr_fired else empty_events_bool
+        sale_trace_columns = _PropertySaleTraceOutput(
+            gross_proceeds=(
+                jnp.stack([trace.gross_proceeds for trace in sale_traces]) if sale_traces else empty_events_i64
+            ),
+            mortgage_payoff=(
+                jnp.stack([trace.mortgage_payoff for trace in sale_traces]) if sale_traces else empty_events_i64
+            ),
+            net_cash=jnp.stack([trace.net_cash for trace in sale_traces]) if sale_traces else empty_events_i64,
+            realized_gain=(
+                jnp.stack([trace.realized_gain for trace in sale_traces]) if sale_traces else empty_events_i64
+            ),
+            depreciation_recapture=(
+                jnp.stack([trace.depreciation_recapture for trace in sale_traces]) if sale_traces else empty_events_i64
+            ),
+            section_121_exclusion=(
+                jnp.stack([trace.section_121_exclusion for trace in sale_traces]) if sale_traces else empty_events_i64
+            ),
+            long_term_capital_gain=(
+                jnp.stack([trace.long_term_capital_gain for trace in sale_traces]) if sale_traces else empty_events_i64
+            ),
         )
-        # Per-month property-event slabs (stacked over real purchases); empty when no purchases.
-        purchase_ys = (purchase_active_rows, transfer_active_rows) if folded_purchases else ()
-        # Mortgage event slabs (per-liability), only when the plan has liabilities (event buffers are
-        # padded to max(1, liability_count), so a 0-row emit can't be scattered into them).
-        mortgage_ys = (
-            (mort_orig, mort_pay_active, mort_pay_interest, mort_pay_principal, mort_pay_total)
-            if liab_count > 0
-            else ()
-        )
-        # Per-(sale, lot, rollout) disposition slabs (stacked over real sales) + a per-month oversell
-        # Scheduled-sale dispositions are carried (accumulated at each sale's firing month), not emitted
-        # per-month — see `_ScanState.sale_disp_*`; the post-scan scatter reads them from the final carry.
-        sale_ys: tuple = ()
-        # Tax slabs: 13 per-(link, rollout) breakdown buffers + the post-month tax-liability snapshot
-        # (amount, active) for change-log reconstruction + the 3 per-(profile, rollout) settlement
-        # event buffers. Only when the plan has tax links.
-        tax_ys = (
-            (*tax_breakdown, taxliab_amount, taxliab_active, settle_active, settle_amount, settle_year_end)
-            if link_count > 0
-            else ()
-        )
-        # Target-allocation slabs: per-(policy, sleeve) disposition (active/units/basis/proceeds)
-        # + the per-obligation attempt-policy assignment, which records WHICH policy tried to fund
-        # a slot so a failure row can name the assets it tried to sell.
-        target_allocation_ys = (
-            (ta_disp_active, ta_disp_units, ta_disp_basis, ta_disp_proceeds, attempt_policy)
-            if folded_target_allocation
-            else ()
-        )
-        # PE slabs: 4 per-(issuer, kind) disposition arrays + 9 per-issuer opportunity-trace fields.
-        pe_ys = (
-            (
-                pe_disp_active,
-                pe_disp_units,
-                pe_disp_basis,
-                pe_disp_proceeds,
-                pe_opp["active"],
-                pe_opp["outcome"],
-                pe_opp["floor"],
-                pe_opp["lnw"],
-                pe_opp["shortfall"],
-                pe_opp["units"],
-                pe_opp["sellable"],
-                pe_opp["target"],
-                pe_opp["proceeds"],
-            )
-            if folded_pe
-            else ()
-        )
-        # Lifecycle/PR event slabs: per-event `fired` flags (lifecycle, then PR) + the 7 sale-trace
-        # fields stacked over SALE events. Each group present iff that event class exists in the plan.
-        lifecycle_ys = (
-            *([jnp.stack(le_fired)] if folded_lifecycle else []),
-            *([jnp.stack(pr_fired)] if folded_pr else []),
-            *([jnp.stack([st[f] for st in sale_traces]) for f in range(7)] if folded_sale_events else []),
-        )
-        dense_output = (
-            *base_ys,
-            *sale_ys,
-            *purchase_ys,
-            *mortgage_ys,
-            *tax_ys,
-            *target_allocation_ys,
-            *pe_ys,
-            *lifecycle_ys,
+        dense_output = _DenseScanOutput(
+            state=_StateOutput(
+                cash=cash,
+                ordinary=ordinary,
+                lots=lot_remaining,
+                capital_gain_active=cg_active,
+                capital_gain_ytd=cg_ytd,
+                property_active=property_active,
+                property_basis=property_basis,
+                property_contribution=property_contribution,
+                property_equity=property_equity,
+                property_cumulative_depreciation=property_cum_dep,
+                property_owner_occupied_months=property_owner_occupied,
+                liability_active=liab_active,
+                liability_principal=liab_principal,
+                liability_monthly_payment=liab_monthly,
+                liability_interest_ytd=liab_interest_ytd,
+                liability_principal_ytd=liab_principal_ytd,
+                failed=failed,
+                failed_month=failed_month,
+            ),
+            transfers=_TransferOutput(active=transfer_active, amount=transfer_amount),
+            property_cashflows=_TransferOutput(active=property_cashflow_active, amount=property_cashflow_amount),
+            obligations=_ObligationOutput(
+                active=slot_active,
+                due=accrual_due,
+                paid=paid_buffer,
+                shortfall=shortfall,
+                failure_active=failure_active,
+            ),
+            property_purchases=_PropertyPurchaseOutput(
+                active=purchase_active_rows, transfer_active=transfer_active_rows
+            ),
+            mortgages=_MortgageOutput(
+                origination_active=mort_orig,
+                payment_active=mort_pay_active,
+                payment_interest=mort_pay_interest,
+                payment_principal=mort_pay_principal,
+                payment_total=mort_pay_total,
+            ),
+            taxes=_TaxOutput(
+                accrual_active=tax_breakdown[0],
+                accrual_amount=tax_breakdown[1],
+                ordinary_income=tax_breakdown[2],
+                long_term_capital_gain=tax_breakdown[3],
+                short_term_capital_gain=tax_breakdown[4],
+                standard_deduction=tax_breakdown[5],
+                mortgage_interest_deduction=tax_breakdown[6],
+                salt_deduction=tax_breakdown[7],
+                itemized_deduction=tax_breakdown[8],
+                ordinary_taxable=tax_breakdown[9],
+                capital_gain_taxable=tax_breakdown[10],
+                ordinary_tax=tax_breakdown[11],
+                capital_gain_tax=tax_breakdown[12],
+                liability_amount=taxliab_amount,
+                liability_active=taxliab_active,
+                settlement_active=settle_active,
+                settlement_amount=settle_amount,
+                settlement_year_end=settle_year_end,
+            ),
+            target_allocation=_TargetAllocationOutput(
+                dispositions=_DispositionOutput(
+                    active=ta_disp_active, units=ta_disp_units, basis=ta_disp_basis, proceeds=ta_disp_proceeds
+                ),
+                obligation_attempt_policy=attempt_policy,
+            ),
+            private_equity=_PrivateEquityOutput(
+                dispositions=_DispositionOutput(
+                    active=pe_disp_active, units=pe_disp_units, basis=pe_disp_basis, proceeds=pe_disp_proceeds
+                ),
+                opportunities=_PrivateEquityOpportunityOutput(
+                    active=pe_opp["active"],
+                    outcome=pe_opp["outcome"],
+                    floor=pe_opp["floor"],
+                    liquid_net_worth=pe_opp["lnw"],
+                    shortfall=pe_opp["shortfall"],
+                    units_held=pe_opp["units"],
+                    sellable_units=pe_opp["sellable"],
+                    target_units=pe_opp["target"],
+                    proceeds=pe_opp["proceeds"],
+                ),
+            ),
+            lifecycle=_LifecycleOutput(fired=lifecycle_fired, property_sales=sale_trace_columns),
+            primary_residence_fired=primary_residence_fired,
         )
         return carry, (dense_output, product_output) if product_output is not None else dense_output
 
@@ -2919,30 +2949,35 @@ def _program_impl(
         )
         final_carry, ys = jax.lax.scan(step, init, months)
         if not emit_dense:
-            return (initial_ys, ys), (final_carry.sale_oversell, final_carry.failed_month, final_carry.ta_buy_count)
+            return (initial_ys, ys), _ProductTailOutput(
+                sale_oversell=final_carry.sale_oversell,
+                failed_month=final_carry.failed_month,
+                target_allocation_buy_count=final_carry.ta_buy_count,
+            )
         dense_ys, product_ys = ys
-        return (dense_ys, (initial_ys, product_ys)), (
-            final_carry.cost_basis_per_unit,
-            final_carry.lot_purchase_month,
-            final_carry.sale_disp_units,
-            final_carry.sale_disp_basis,
-            final_carry.sale_disp_proceeds,
-            final_carry.sale_oversell,
-            final_carry.ta_buy_count,
-            final_carry.failed_month,
+        dense_tail = _dense_final_output(final_carry)
+        return (dense_ys, (initial_ys, product_ys)), _DenseProductTailOutput(
+            dense=dense_tail, failed_month=final_carry.failed_month
         )
     final_carry, ys = jax.lax.scan(step, init, months)
     # Horizon-collapsed outputs, read off the final carry rather than emitted per month: the
     # scheduled-sale dispositions (accumulated at each sale's firing month) and the per-lot cost
     # basis (written once at purchase and never revised — a lot slot is never reused).
-    return ys, (
-        final_carry.cost_basis_per_unit,
-        final_carry.lot_purchase_month,
-        final_carry.sale_disp_units,
-        final_carry.sale_disp_basis,
-        final_carry.sale_disp_proceeds,
-        final_carry.sale_oversell,
-        final_carry.ta_buy_count,
+    return ys, _dense_final_output(final_carry)
+
+
+def _dense_final_output(final_carry: _ScanState) -> _DenseFinalOutput:
+    return _DenseFinalOutput(
+        lot_cost_basis=final_carry.cost_basis_per_unit,
+        lot_purchase_month=final_carry.lot_purchase_month,
+        scheduled_dispositions=_DispositionOutput(
+            active=final_carry.sale_disp_units > 0,
+            units=final_carry.sale_disp_units,
+            basis=final_carry.sale_disp_basis,
+            proceeds=final_carry.sale_disp_proceeds,
+        ),
+        sale_oversell=final_carry.sale_oversell,
+        target_allocation_buy_count=final_carry.ta_buy_count,
     )
 
 
@@ -3833,7 +3868,7 @@ def _scan_property_sale(
     jnp.ndarray,
     jnp.ndarray,
     jnp.ndarray,
-    tuple[jnp.ndarray, ...],
+    _PropertySaleTraceOutput,
 ]:
     """Branch-free `lax.scan` port of `_apply_property_sale`: §1250 recapture + §121 exclusion (via the
     owner-occupancy window) + mortgage payoff, returning the updated state and the 7-field sale trace.
@@ -3888,14 +3923,14 @@ def _scan_property_sale(
     property_building_basis = property_building_basis.at[prop].set(
         jnp.where(active_property, 0, property_building_basis[prop])
     )
-    sale_trace = (
-        jnp.where(active_property, gross_proceeds, 0),
-        jnp.where(active_property, mortgage_payoff, 0),
-        jnp.where(active_property, net_cash, 0),
-        jnp.where(active_property, realized_gain, 0),
-        jnp.where(active_property, recapture, 0),
-        jnp.where(active_property, section_121_exclusion, 0),
-        jnp.where(active_property, ltcg, 0),
+    sale_trace = _PropertySaleTraceOutput(
+        gross_proceeds=jnp.where(active_property, gross_proceeds, 0),
+        mortgage_payoff=jnp.where(active_property, mortgage_payoff, 0),
+        net_cash=jnp.where(active_property, net_cash, 0),
+        realized_gain=jnp.where(active_property, realized_gain, 0),
+        depreciation_recapture=jnp.where(active_property, recapture, 0),
+        section_121_exclusion=jnp.where(active_property, section_121_exclusion, 0),
+        long_term_capital_gain=jnp.where(active_property, ltcg, 0),
     )
     return (
         cash,
