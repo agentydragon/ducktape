@@ -44,6 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from haku.console.chat_models import ConversationEventKind, EventProvenance, StoredEventKind
 from haku.console.database_schema import ConversationEvent, ConversationItem, ConversationTurn, Session, SessionFrame
 from haku.console.x import frame_projection, session_events
+from haku.console.x.conversation_events import ProjectionState
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 from util.sqlalchemy_types import UnknownValue
 
@@ -245,7 +246,7 @@ async def _check_turn(
             .order_by(ConversationEvent.event_seq)
         )
     ).all()
-    projected = {frame.frame_seq: _expected(frame) for frame in frames}
+    projected = _expected(frames)
     within = [seq for seq in projected if cursor is not None and seq <= cursor]
     return TurnReport(
         turn_id=turn.turn_id,
@@ -320,14 +321,21 @@ def _differences(frame_seq: int, projected: ProjectedRow, stored: ConversationEv
     ]
 
 
-def _expected(frame: SessionFrame) -> tuple[ProjectedRow, ...]:
-    """What one recorded frame would be written as, through the writer's own two functions."""
-    return tuple(
-        ProjectedRow(kind=kind, body=body.model_dump(mode="json"))
-        for event in frame_projection.projected(frame_seq=frame.frame_seq, payload=frame.payload)
-        if (row := session_events.stored(event)) is not None
-        for kind, body in (row,)
-    )
+def _expected(frames: Sequence[SessionFrame]) -> dict[int, tuple[ProjectedRow, ...]]:
+    """What each of a turn's recorded frames would be written as, through the writer's own two
+    functions — folded with one state across the turn, because that is how the writer folds it.
+    """
+    state = ProjectionState()
+    said: dict[int, tuple[ProjectedRow, ...]] = {}
+    for frame in frames:
+        state, events = frame_projection.projected(state, frame_seq=frame.frame_seq, payload=frame.payload)
+        said[frame.frame_seq] = tuple(
+            ProjectedRow(kind=kind, body=body.model_dump(mode="json"))
+            for event in events
+            if (row := session_events.stored(event)) is not None
+            for kind, body in (row,)
+        )
+    return said
 
 
 def foldable_frames(session_id: UUID) -> Select[tuple[SessionFrame]]:

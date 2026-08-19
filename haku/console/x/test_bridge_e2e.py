@@ -26,7 +26,7 @@ from fastapi import FastAPI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from haku.console.chat_models import OPEN_SESSION_STATUSES, SPA_ORIGIN, ChatMessageRole, SessionStatus, TurnOutcome
+from haku.console.chat_models import OPEN_SESSION_STATUSES, SPA_ORIGIN, ItemType, SessionStatus, TurnOutcome
 from haku.console.database_schema import SessionFrame
 from haku.console.x.conftest import MCP_TOKEN, runtime_config
 from haku.console.x.session_notifications import SessionNotifications
@@ -186,13 +186,13 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     turns = sorted(await chat_store.list_turns(session_id, cursor=None, limit=10), key=lambda turn: turn.started_at)
     assert turns[1].turn_id == in_flight.turn_id, "the second console finished that turn rather than opening its own"
     conversation = await chat_store.get(operator_id, session_id)
-    assert [(message.role, message.content) for message in conversation.messages] == [
-        (ChatMessageRole.USER, "first question"),
-        (ChatMessageRole.ASSISTANT, "re: first question"),
-        (ChatMessageRole.USER, "second question [hold]"),
+    assert [(item.item_type, item.text) for item in conversation.items] == [
+        (ItemType.PROMPT, "first question"),
+        (ItemType.MESSAGE, "re: first question"),
+        (ItemType.PROMPT, "second question [hold]"),
         # Once, whether the departed console recorded the frame or the adopting one took it from
         # the runner's replay window.
-        (ChatMessageRole.ASSISTANT, "re: second question"),
+        (ItemType.MESSAGE, "re: second question"),
     ]
     # The sandbox's own account of itself, durable only because it is in the rollout: the pod's log
     # is reaped with the sandbox. Whole path — the CLI's stderr, the runner's forwarding, the

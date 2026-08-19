@@ -18,7 +18,7 @@ from haku.console.chat_models import SPA_ORIGIN, FrameDirection
 from haku.console.x import frame_export
 from haku.console.x.claude_code import frames
 from haku.console.x.claude_code.projection import RecordedFrame, project_log
-from haku.console.x.conversation_events import ToolCallCompleted, ToolCallStarted
+from haku.console.x.conversation_events import ProjectionState, ToolCallCompleted, ToolCallStarted
 from haku.console.x.frame_projection import projected
 from haku.console.x.session_store import BridgeAuthentication
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
@@ -82,11 +82,11 @@ async def exported(chat_store, migrated_sessions, operator_id) -> frame_export.E
     await chat_store.enqueue_prompt(operator_id, session_id, "start the build", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
+    state = ProjectionState()
     for payload in SESSION_FRAMES:
         recorded = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, payload["type"], payload)
-        await chat_store.apply_frame(
-            session_id, started.turn_id, recorded.frame_seq, projected(frame_seq=recorded.frame_seq, payload=payload)
-        )
+        state, events = projected(state, frame_seq=recorded.frame_seq, payload=payload)
+        await chat_store.apply_frame(session_id, started.turn_id, recorded.frame_seq, events)
     async with migrated_sessions() as db:
         return await frame_export.export_session(db, session_id)
 
@@ -144,7 +144,7 @@ def test_a_call_and_its_answer_still_pair_after_pseudonymisation(exported) -> No
 
     started = one(event for event in events if isinstance(event, ToolCallStarted))
     completed = one(event for event in events if isinstance(event, ToolCallCompleted))
-    assert started.call_id == completed.call_id
+    assert started.call_id == completed.item.call_id
     assert started.call_id != "toolu_1"
 
 

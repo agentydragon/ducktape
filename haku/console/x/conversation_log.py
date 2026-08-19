@@ -117,6 +117,13 @@ class LogWriter:
         """The item this event is about, opening one where the event is what opens it."""
         match event:
             case MessageStarted():
+                # **Continues the turn's open message where there is one.** A fold resuming from a
+                # cursor mid-message was seeded empty, so it says "the agent began saying
+                # something" about a message its predecessor had already opened; taking that
+                # literally would leave two open items and split one answer in two. What decides is
+                # the row, because the row is what survived the replica that wrote it.
+                if (resumed := await self._resume(ItemType.MESSAGE)) is not None:
+                    return resumed
                 return await self._open(ItemType.MESSAGE)
             case ReasoningStarted():
                 return await self._open(ItemType.REASONING)
@@ -182,6 +189,21 @@ class LogWriter:
         self._open_of_type[item_type] = item_id
         return item_id
 
+    async def _resume(self, item_type: ItemType) -> UUID | None:
+        """The item of this type this writer or the turn already has open, if either does."""
+        if (opened := self._open_of_type.get(item_type)) is not None:
+            return opened
+        found: UUID | None = await self.db.scalar(
+            select(ConversationItem.item_id).where(
+                ConversationItem.turn_id == self.turn_id,
+                ConversationItem.item_type == item_type,
+                ConversationItem.status == ItemStatus.OPEN,
+            )
+        )
+        if found is not None:
+            self._open_of_type[item_type] = found
+        return found
+
     async def _resolve(self, ref: ItemRef) -> UUID:
         match ref:
             case CallRef():
@@ -195,28 +217,14 @@ class LogWriter:
                     raise UnknownItemError(f"no call was asked under this id: {ref.call_id=}")
                 return found
             case OpenRef():
-                if (opened := self._open_of_type.get(ref.item_type)) is not None:
-                    return opened
-                return await self._open_of_turn(ref.item_type)
-
-    async def _open_of_turn(self, item_type: ItemType) -> UUID:
-        """The item of this type the turn is still writing into.
-
-        What replaces the pointer the turn used to carry: the state is the item's, so there is one
-        place it can be wrong rather than two that can disagree. One answer, because a backend
-        writes one message at a time — and a fold that resumed mid-item finds its predecessor's
-        here rather than opening a second.
-        """
-        found = await self.db.scalar(
-            select(ConversationItem.item_id).where(
-                ConversationItem.turn_id == self.turn_id,
-                ConversationItem.item_type == item_type,
-                ConversationItem.status == ItemStatus.OPEN,
-            )
-        )
-        if found is None:
-            raise UnknownItemError(f"no item of this type is open on the turn: {item_type=} {self.turn_id=}")
-        return found
+                # What replaces the pointer the turn used to carry: the state is the item's, so
+                # there is one place it can be wrong rather than two that can disagree. One answer,
+                # because a backend writes one item of a type at a time.
+                if (open_item := await self._resume(ref.item_type)) is None:
+                    raise UnknownItemError(
+                        f"no item of this type is open on the turn: {ref.item_type=} {self.turn_id=}"
+                    )
+                return open_item
 
     async def _item(self, item_id: UUID) -> ConversationItem:
         """The row an event names.

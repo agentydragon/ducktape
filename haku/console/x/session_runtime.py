@@ -27,7 +27,7 @@ from haku.console.config import ClaudeRuntimeConfig
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.x import frame_projection
 from haku.console.x.claude_code.frames import frame_kind
-from haku.console.x.conversation_events import TurnCompleted
+from haku.console.x.conversation_events import ProjectionState, TurnCompleted
 from haku.console.x.room_status import StatusFrontend, TurnStatus
 from haku.console.x.sandbox_claims import (
     ClaudeSandboxProvisioningView,
@@ -610,6 +610,10 @@ class SessionService:
             # A resumed turn's question was asked by a process that is gone; only its answer is
             # still coming.
             await client.query(turn.prompt)
+        # Threaded across the turn's frames rather than seeded per frame: a delta carries no
+        # `message.id`, so an empty seed would make an item of every one of them
+        # (`frame_projection`). A turn's own state, because a turn is what a message belongs to.
+        folding = ProjectionState()
         completed: _CompletedTurn | None = None
         status = TurnStatus(frontend)
         status.start()
@@ -639,7 +643,7 @@ class SessionService:
                 # ends a turn rather than the conversation.
                 received = await next_frame
                 frame_seq = received.frame_seq
-                events = frame_projection.projected(frame_seq=frame_seq, payload=received.payload)
+                folding, events = frame_projection.projected(folding, frame_seq=frame_seq, payload=received.payload)
                 # One frame's worth at a time, which is the granularity `coarse_status` reads a run
                 # of events at: a tool call starting and its message completing arrive together.
                 status.note(events)

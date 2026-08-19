@@ -17,6 +17,7 @@ from sqlalchemy import delete, update
 from haku.console.chat_models import SPA_ORIGIN, ConversationEventKind, FrameDirection, ItemType, TurnOutcome
 from haku.console.database_schema import ConversationEvent, ConversationItem, Session
 from haku.console.x import reprojection
+from haku.console.x.conversation_events import ProjectionState
 from haku.console.x.frame_projection import projected
 from haku.console.x.session_store import BridgeAuthentication
 
@@ -43,11 +44,11 @@ async def _turn_through_the_write_path(chat_store, operator_id, frames: list[dic
     await chat_store.enqueue_prompt(operator_id, session_id, "what is in here?", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
+    state = ProjectionState()
     for payload in frames:
         recorded = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, payload["type"], payload)
-        await chat_store.apply_frame(
-            session_id, started.turn_id, recorded.frame_seq, projected(frame_seq=recorded.frame_seq, payload=payload)
-        )
+        state, events = projected(state, frame_seq=recorded.frame_seq, payload=payload)
+        await chat_store.apply_frame(session_id, started.turn_id, recorded.frame_seq, events)
     return session_id, started.turn_id
 
 
@@ -72,9 +73,9 @@ async def test_a_session_the_write_path_projected_agrees_with_itself(
 
     turn = one(report.turns)
     assert (turn.turn_id, turn.outcome) == (turn_id, reprojection.Agrees())
-    # Three rows for each item that carried prose — opened, said, closed — plus the tool call's ask
-    # on its own frame and the two its answer wrote.
-    assert turn.stored_rows == 9
+    # Three rows for the reasoning item, the call's ask, the two its answer wrote, and the message
+    # the turn ended still writing into — opened and said, with its close belonging to `end_turn`.
+    assert turn.stored_rows == 8
     assert turn.unprojected_frames == 0
     # And the invariant the whole shape exists for: every item's text is exactly its segments.
     assert report.items == ()
@@ -159,13 +160,8 @@ async def test_a_row_that_is_gone_is_a_count_mismatch_rather_than_a_silent_pass(
         ConversationEventKind.ITEM_STARTED,
         ConversationEventKind.ITEM_STARTED,
         ConversationEventKind.ITEM_SEGMENT,
-        ConversationEventKind.ITEM_COMPLETED,
     )
-    assert finding.stored == (
-        ConversationEventKind.ITEM_STARTED,
-        ConversationEventKind.ITEM_SEGMENT,
-        ConversationEventKind.ITEM_COMPLETED,
-    )
+    assert finding.stored == (ConversationEventKind.ITEM_STARTED, ConversationEventKind.ITEM_SEGMENT)
 
 
 async def test_a_turn_with_frames_and_no_rows_is_drift(chat_store, migrated_sessions, operator_id) -> None:
@@ -184,7 +180,7 @@ async def test_a_turn_with_frames_and_no_rows_is_drift(chat_store, migrated_sess
     finding = one(outcome.findings)
     assert isinstance(finding, reprojection.RowCountMismatch)
     assert (finding.projected, finding.stored) == (
-        (ConversationEventKind.ITEM_STARTED, ConversationEventKind.ITEM_SEGMENT, ConversationEventKind.ITEM_COMPLETED),
+        (ConversationEventKind.ITEM_STARTED, ConversationEventKind.ITEM_SEGMENT),
         (),
     )
 

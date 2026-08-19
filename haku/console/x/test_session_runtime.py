@@ -26,14 +26,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.chat_models import (
     OPEN_SESSION_STATUSES,
     SPA_ORIGIN,
-    ChatMessageRole,
-    ChatMessageStatus,
     FrameDirection,
+    ItemStatus,
+    ItemType,
     SessionStatus,
     TurnOutcome,
 )
 from haku.console.config import ClaudeRuntimeConfig
-from haku.console.database_schema import Session, SessionFrame
+from haku.console.database_schema import ConversationEvent, ConversationItem, Session, SessionFrame
 from haku.console.x.claude_code.frames import DELTA_FRAME_KIND
 from haku.console.x.claude_code.testing.wire import (
     assistant,
@@ -44,7 +44,8 @@ from haku.console.x.claude_code.testing.wire import (
     tool_result,
     tool_use_block,
 )
-from haku.console.x.conftest import MCP_TOKEN, age_lease, attach_channel, lease_of, answers, runtime_config
+from haku.console.x.conftest import MCP_TOKEN, age_lease, answers, attach_channel, lease_of, runtime_config
+from haku.console.x.conversation_events import ProjectionState
 from haku.console.x.frame_projection import projected
 from haku.console.x.sandbox_claims import ProvisioningStep, provisioning_view
 from haku.console.x.session_notifications import SessionNotifications
@@ -175,31 +176,50 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
         client, client.frames().__aiter__(), view.session_id, turn, frontend=None, abort_event=asyncio.Event()
     )
 
-    messages = [
-        m for m in (await chat_store.get(operator_id, view.session_id)).messages if m.role == ChatMessageRole.ASSISTANT
+    items = [
+        item
+        for item in (await chat_store.get(operator_id, view.session_id)).items
+        if item.item_type is not ItemType.PROMPT
     ]
-    assert [(m.content, [u.model_dump() for u in m.tool_calls], m.status) for m in messages] == [
-        (
-            "",
-            [
-                {
-                    "call_id": "toolu_01",
-                    "tool_name": "mcp__haku-console__haku-console__list_mcp_servers",
-                    "arguments": {},
-                    # No `user` frame answered it in this test, and the view says so rather than
-                    # showing an empty result.
-                    "result": None,
-                }
-            ],
-            ChatMessageStatus.COMPLETE,
-        ),
-        ("The Haku Console catalog is available.", [], ChatMessageStatus.COMPLETE),
+    # A call is a sibling of the message rather than a field on it, and it is `open` because no
+    # `user` frame answered it in this test — which the row says, rather than showing an empty
+    # result.
+    assert [(item.item_type, item.text, item.tool_name, item.status) for item in items] == [
+        (ItemType.TOOL_CALL, "", "mcp__haku-console__haku-console__list_mcp_servers", ItemStatus.OPEN),
+        (ItemType.MESSAGE, "The Haku Console catalog is available.", None, ItemStatus.COMPLETE),
     ]
     assert await chat_store.status(view.session_id) == SessionStatus.READY, "the turn was not completed"
 
 
+async def _open_items(sessions, session_id) -> list[UUID]:
+    """The items this session has open, oldest first — what an adopting replica continues."""
+    async with sessions() as db:
+        return list(
+            await db.scalars(
+                select(ConversationItem.item_id)
+                .where(ConversationItem.session_id == session_id, ConversationItem.status == ItemStatus.OPEN)
+                .order_by(ConversationItem.opened_seq)
+            )
+        )
+
+
+async def _frames_behind(sessions, item_id) -> tuple[int | None, int | None]:
+    """The span of frames an item's own log rows were read from."""
+    async with sessions() as db:
+        rows = (
+            await db.scalars(
+                select(ConversationEvent)
+                .where(ConversationEvent.item_id == item_id)
+                .order_by(ConversationEvent.event_seq)
+            )
+        ).all()
+    firsts = [row.source_first_frame_seq for row in rows if row.source_first_frame_seq is not None]
+    lasts = [row.source_last_frame_seq for row in rows if row.source_last_frame_seq is not None]
+    return (min(firsts) if firsts else None, max(lasts) if lasts else None)
+
+
 async def test_projected_assistant_message_points_to_the_frames_that_built_it(
-    chat_store, chat_service, operator_id
+    chat_store, chat_service, operator_id, migrated_sessions
 ) -> None:
     """A message row keeps a navigable range into the lossless rollout rather than only a copy."""
     view, token = await chat_store.create(operator_id)
@@ -219,16 +239,17 @@ async def test_projected_assistant_message_points_to_the_frames_that_built_it(
         client, client.frames().__aiter__(), view.session_id, turn, frontend=None, abort_event=asyncio.Event()
     )
 
-    messages = (await chat_store.get(operator_id, view.session_id)).messages
-    user_message = one(message for message in messages if message.role == ChatMessageRole.USER)
-    assert (user_message.source_first_frame_seq, user_message.source_last_frame_seq) == (
-        prompt_frame_seq,
-        prompt_frame_seq,
-    )
-    # The delta opened the message and the `assistant` frame closed it; the `result` frame after
-    # them ends the turn rather than the message, so it is deliberately outside the range.
-    message = one(message for message in messages if message.role == ChatMessageRole.ASSISTANT)
-    assert (message.source_first_frame_seq, message.source_last_frame_seq) == (frame_seqs[0], frame_seqs[1])
+    items = (await chat_store.get(operator_id, view.session_id)).items
+    said = one(item for item in items if item.item_type is ItemType.MESSAGE)
+    # **The item carries no frame numbers.** They are one session's coordinates, so what an operator
+    # appeals to is the log rows the item's prose was written from — the delta that opened it and
+    # the `assistant` frame that closed it. The `result` frame after them ends the turn rather than
+    # the message, so it is deliberately outside the span.
+    assert await _frames_behind(migrated_sessions, said.item_id) == (frame_seqs[0], frame_seqs[1])
+    # A prompt is authored: it was accepted before anything crossed a wire, so it names no frames
+    # at all rather than naming the one it went out as.
+    asked = one(item for item in items if item.item_type is ItemType.PROMPT)
+    assert await _frames_behind(migrated_sessions, asked.item_id) == (None, None)
 
 
 class _LifecycleWebSocket:
@@ -807,10 +828,9 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     delta = text_delta("because the ")
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
     opened_at = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "stream_event", delta)
-    state = await chat_store.apply_frame(
-        session_id, started.turn_id, opened_at.frame_seq, projected(frame_seq=opened_at.frame_seq, payload=delta)
-    )
-    assistant_id = state.assistant_message_id
+    _, events = projected(ProjectionState(), frame_seq=opened_at.frame_seq, payload=delta)
+    await chat_store.apply_frame(session_id, started.turn_id, opened_at.frame_seq, events)
+    half_answered = one(await _open_items(migrated_sessions, session_id))
 
     resumed = await chat_store.adopt_open_turn(session_id)
     assert resumed is not None
@@ -829,10 +849,11 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
             abort_event=asyncio.Event(),
         )
 
-    queued = await answers(migrated_sessions, session_id)
-    assert queued == ["because the disk was full"], "one row, not the answer twice"
-    assistants = [m for m in (await chat_store.get(operator_id, session_id)).messages if m.role == "assistant"]
-    assert [m.message_id for m in assistants] == [assistant_id], "continued, rather than forked into a second"
+    assert await answers(migrated_sessions, session_id) == ["because the disk was full"], "not the answer twice"
+    said = [
+        item for item in (await chat_store.get(operator_id, session_id)).items if item.item_type is ItemType.MESSAGE
+    ]
+    assert [item.item_id for item in said] == [half_answered], "continued, rather than forked into a second"
     [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
     assert (turn.turn_id, turn.outcome) == (started.turn_id, TurnOutcome.ANSWERED)
 
@@ -862,9 +883,8 @@ async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
     answer = assistant(text_block("because the disk was full"))
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
     recorded = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "stream_event", delta)
-    await chat_store.apply_frame(
-        session_id, started.turn_id, recorded.frame_seq, projected(frame_seq=recorded.frame_seq, payload=delta)
-    )
+    _, events = projected(ProjectionState(), frame_seq=recorded.frame_seq, payload=delta)
+    await chat_store.apply_frame(session_id, started.turn_id, recorded.frame_seq, events)
     # Recorded and then nothing: the pod went between the sink writing the row and the loop acting
     # on what it meant.
     unprojected = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "assistant", answer)
@@ -984,10 +1004,7 @@ async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
                 abort_event=asyncio.Event(),
             )
 
-    assert await answers(migrated_sessions, view.session_id) == [
-        "Looking at the logs now.",
-        "Found it: a bad config.",
-    ]
+    assert await answers(migrated_sessions, view.session_id) == ["Looking at the logs now.", "Found it: a bad config."]
 
 
 async def test_a_turn_the_cli_ended_badly_fails_even_though_is_error_says_it_did_not(
@@ -1303,9 +1320,11 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, 
                 await runner
 
     [answer] = [
-        m for m in (await chat_store.get(operator_id, view.session_id)).messages if m.role == ChatMessageRole.ASSISTANT
+        item
+        for item in (await chat_store.get(operator_id, view.session_id)).items
+        if item.item_type is ItemType.MESSAGE
     ]
-    assert answer.content == "pong"
+    assert answer.text == "pong"
 
 
 class _ScriptedChannel:

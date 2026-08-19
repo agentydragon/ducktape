@@ -13,9 +13,9 @@ hypothesis — the forwarded subagent frame above all — the test says so, and
 <claude_code/testdata/> is where the capture that settles it will land
 (<README.md> § Recording a session as a fixture).
 
-**Both folds are asserted, because they answer different questions.** `project_log` is the read
-path's and merges the frames sharing one `message.id`; `frame_projection.projected` is the write
-path's own, seeded fresh per frame, and what it emits is what the log gets a row for.
+**Both folds are asserted, because they answer different questions.** `project_log` reads a whole
+session and declares it over; `frame_projection.projected` is the write path's own, threading one
+state across a turn's frames as they arrive, and what it emits is what the log gets a row for.
 """
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ from haku.console.x.conversation_events import (
     FrameRange,
     ItemSegment,
     MessageCompleted,
+    ProjectionState,
     ToolCallCompleted,
     ToolCallStarted,
 )
@@ -53,9 +54,14 @@ BACKGROUND_SHELL = {"shellId": "bash_1", "command": "sleep 60 && echo done", "st
 
 
 def _write_path(frames: Sequence[RecordedFrame]) -> tuple[ConversationEvent, ...]:
-    """Every event the turn loop acts on, folded exactly as `_run_turn` folds — one frame at a
-    time, seeded empty."""
-    return tuple(event for frame in frames for event in projected(frame_seq=frame.frame_seq, payload=frame.payload))
+    """Every event the turn loop acts on, folded exactly as `_run_turn` folds — one frame at a time,
+    with one state threaded across them."""
+    state = ProjectionState()
+    said: list[ConversationEvent] = []
+    for frame in frames:
+        state, events = projected(state, frame_seq=frame.frame_seq, payload=frame.payload)
+        said.extend(events)
+    return tuple(said)
 
 
 def _rows(events: Sequence[ConversationEvent]) -> list[ConversationEventKind]:
@@ -257,42 +263,39 @@ def _interleaved_frames() -> list[RecordedFrame]:
     ]
 
 
-def test_the_two_folds_produce_one_messages_events_in_different_orders():
-    """Same frames, different sequence — the read path holds the message open across the result and
-    the write path closes it at every frame.
+def test_the_write_path_no_longer_splits_a_message_across_its_frames():
+    """What threading one state across a turn's frames bought.
 
-    `project_log` closes a message only when the next one opens, so one message spans frames 1 to 3;
-    the per-frame fold, seeded fresh, closes it twice. A check comparing the two by position would
-    report drift on every interleaved turn, which is why `reprojection` aligns by frame.
+    Seeded per frame, `msg_A` completed twice — one item per frame of prose, so the room read one
+    answer as two. Now the frames of one message are one item: the write path emits its segments as
+    they arrive and leaves it open, which is what lets the store append to the row its predecessor
+    opened.
+    """
+    events = _write_path(_interleaved_frames())
+
+    assert _rows(events) == [
+        ConversationEventKind.ITEM_STARTED,
+        ConversationEventKind.ITEM_SEGMENT,
+        ConversationEventKind.ITEM_SEGMENT,
+        ConversationEventKind.ITEM_COMPLETED,
+        ConversationEventKind.ITEM_SEGMENT,
+    ]
+
+
+def test_the_read_path_closes_the_message_the_write_path_leaves_open():
+    """The one difference left between the two folds, and it is the honest one.
+
+    `project_log` reads a whole session and declares it over, so it closes the message at the end;
+    the write path is still mid-turn and has nothing to say about an item still being written into.
+    What closes it there is `session_store.close_answer`, in the transaction that ends the turn.
     """
     frames = _interleaved_frames()
     read, write = project_log(frames).events, _write_path(frames)
 
-    assert Counter(type(event) for event in read) != Counter(type(event) for event in write)
     assert [event.provenance for event in read if isinstance(event, MessageCompleted)] == [FrameRange(1, 3)]
-    assert [event.provenance for event in write if isinstance(event, MessageCompleted)] == [
-        FrameRange(1, 1),
-        FrameRange(3, 3),
-    ]
-
-
-def test_the_write_path_splits_that_message_in_two_and_keeps_one_id_on_both():
-    """Seeded per frame, `msg_A` completes twice, so the log holds two items carrying one
-    `backend_item_id`. A reader keying on that id gets two answers, which is why nothing does — the
-    identity of an item is the `item_id` the store mints."""
-    events = _write_path(_interleaved_frames())
-
-    assert {event.backend_item_id for event in events if isinstance(event, MessageCompleted)} == {"msg_A"}
-    assert _rows(events) == [
-        ConversationEventKind.ITEM_STARTED,
-        ConversationEventKind.ITEM_SEGMENT,
-        ConversationEventKind.ITEM_COMPLETED,
-        ConversationEventKind.ITEM_SEGMENT,
-        ConversationEventKind.ITEM_COMPLETED,
-        ConversationEventKind.ITEM_STARTED,
-        ConversationEventKind.ITEM_SEGMENT,
-        ConversationEventKind.ITEM_COMPLETED,
-    ]
+    assert [event for event in write if isinstance(event, MessageCompleted)] == []
+    # And up to that point they are the same fold: same events, same order.
+    assert Counter(type(event) for event in write) == Counter(type(event) for event in read[:-1])
 
 
 def test_a_foreground_message_spans_the_background_frames_the_fold_ignores():

@@ -23,7 +23,6 @@ from haku.console.x.conversation_records import (
     FrameCursor,
     FromFrames,
     MessageEntry,
-    MessageRef,
     Outcome,
     RolloutFrame,
     SessionCursor,
@@ -90,9 +89,8 @@ def _message(index: int, *, first_frame_seq: int, last_frame_seq: int | None = N
     return MessageEntry(
         index=index,
         provenance=FromFrames(first_frame_seq=first_frame_seq, last_frame_seq=last_frame_seq or first_frame_seq),
-        message=MessageRef(opened_at_frame_seq=first_frame_seq),
         text=f"answer {index}",
-        agent_message_id=f"msg_{index}",
+        backend_item_id=f"msg_{index}",
     )
 
 
@@ -343,7 +341,7 @@ async def test_a_transcript_entry_reads_as_the_conversation_rather_than_the_prot
     entry = one(_transcript(result).items)
     assert isinstance(entry, MessageEntry)
     assert entry.text == "answer 0"
-    assert entry.message.opened_at_frame_seq == 3
+    assert entry.provenance == FromFrames(first_frame_seq=3, last_frame_seq=5)
 
 
 async def test_an_entrys_provenance_is_a_frame_cursor_with_no_arithmetic() -> None:
