@@ -14,154 +14,197 @@ from haku.console.chat_models import (
     AuthoredEventKind,
     ConversationEventKind,
     EventProvenance,
+    ItemType,
     LeaseExpiryReason,
     MatrixOrigin,
+    ReasoningDisclosure,
     StoredEventKind,
+    ToolOutcome,
     TurnOutcome,
 )
-from haku.console.database_schema import SessionEvent
+from haku.console.database_schema import ConversationEvent as ConversationEventRow
 from haku.console.x import session_events
 from haku.console.x.conversation_events import (
-    Authored,
+    CallRef,
     ConversationEvent,
     FrameRange,
+    ItemSegment,
     MessageCompleted,
-    MessageKey,
-    Outcome,
-    Reasoning,
-    TextDelta,
+    OpenRef,
+    ReasoningStarted,
     ToolCallCompleted,
     ToolCallStarted,
     TurnCompleted,
 )
 from util.sqlalchemy_types import UnknownValue
 
+CONVERSATION_ID = uuid4()
 SESSION_ID = uuid4()
 TURN_ID = uuid4()
+ITEM_ID = uuid4()
 NOW = datetime(2026, 8, 16, 12, 0, tzinfo=UTC)
 WHERE = FrameRange(11, 14)
-MESSAGE = MessageKey(opened_at_frame_seq=11)
 
 
-def stored(event: ConversationEvent) -> SessionEvent:
-    row = session_events.row(event, session_id=SESSION_ID, turn_id=TURN_ID, now=NOW)
-    assert row is not None
-    return row
+def stored(event: ConversationEvent) -> ConversationEventRow:
+    """One event through both halves of the write path: what kind it is, and the row that carries it.
+
+    Split in production because the two answer to different owners — the fold says what an event
+    means and the log writer says where it goes — so a test of the mapping has to put them back
+    together.
+    """
+    said = session_events.stored(event)
+    assert said is not None
+    kind, body = said
+    provenance = event.provenance
+    assert isinstance(provenance, FrameRange)
+    return session_events.item_row(
+        kind,
+        body,
+        conversation_id=CONVERSATION_ID,
+        event_seq=7,
+        item_id=ITEM_ID,
+        session_id=SESSION_ID,
+        turn_id=TURN_ID,
+        provenance=provenance,
+        now=NOW,
+    )
 
 
 def test_a_frame_derived_event_carries_the_range_it_was_projected_from() -> None:
-    row = stored(MessageCompleted(message=MESSAGE, text="done", agent_message_id="msg_1", provenance=WHERE))
+    row = stored(MessageCompleted(backend_item_id="msg_1", provenance=WHERE))
 
-    assert (row.kind, row.provenance) == (ConversationEventKind.MESSAGE_COMPLETED, EventProvenance.FRAME_RANGE)
+    assert (row.kind, row.provenance) == (ConversationEventKind.ITEM_COMPLETED, EventProvenance.FRAME_RANGE)
     assert (row.source_first_frame_seq, row.source_last_frame_seq) == (11, 14)
-    assert row.body == {"text": "done", "agent_message_id": "msg_1"}
+    assert row.body == {"item_type": "message", "backend_item_id": "msg_1"}
 
 
-def test_a_frame_derived_kind_that_names_no_frames_is_refused_rather_than_downgraded() -> None:
-    """Every kind this writes is one a fold produced, so the other arm is an adapter bug.
+def test_the_three_kinds_say_where_in_a_lifecycle_a_row_sits_and_the_body_says_of_what() -> None:
+    """Which shape a body has follows from the item's type, not from which of the three events it is
+    — so the kind is a position and `item_type` is what a reader dispatches on."""
+    rows = [
+        stored(ReasoningStarted(provenance=WHERE)),
+        stored(ItemSegment(item=OpenRef(item_type=ItemType.REASONING), text="thinking", provenance=WHERE)),
+        stored(
+            ToolCallCompleted(
+                item=CallRef(call_id="toolu_1"), structured=None, outcome=ToolOutcome.UNKNOWN, provenance=WHERE
+            )
+        ),
+    ]
 
-    Writing it as `authored` instead would land the failure on the read, where one such row makes a
-    whole session's transcript unreadable.
+    assert [row.kind for row in rows] == [
+        ConversationEventKind.ITEM_STARTED,
+        ConversationEventKind.ITEM_SEGMENT,
+        ConversationEventKind.ITEM_COMPLETED,
+    ]
+    assert [row.body.get("item_type") for row in rows] == ["reasoning", None, "tool_call"]
+
+
+def test_the_provenance_arm_follows_from_whether_frames_were_named() -> None:
+    """The two arms of an item row, which is what separates an item kind from an authored one: both
+    are legal here, and which one a row takes follows from the item rather than from the kind.
+
+    That a *frame-derived* event carrying `Authored` is refused rather than written on the second
+    arm is the log writer's guard, tested where it lives — a row written that way would fail on the
+    read, taking a whole conversation's transcript with it.
     """
-    with pytest.raises(ValueError, match="projected from frames"):
-        session_events.row(
-            Reasoning(message=MESSAGE, summary=None, provenance=Authored()),
-            session_id=SESSION_ID,
-            turn_id=TURN_ID,
-            now=NOW,
-        )
-
-
-def test_a_tool_call_and_its_answer_are_two_rows_sharing_the_correlation_column() -> None:
-    started = stored(
-        ToolCallStarted(
-            message=MESSAGE, call_id="toolu_1", tool_name="Bash", arguments={"command": "ls"}, provenance=WHERE
-        )
+    folded = stored(ReasoningStarted(provenance=WHERE))
+    authored = session_events.item_row(
+        ConversationEventKind.ITEM_STARTED,
+        session_events.PromptStartedBody(origin=SPA_ORIGIN),
+        conversation_id=CONVERSATION_ID,
+        event_seq=1,
+        item_id=ITEM_ID,
+        session_id=SESSION_ID,
+        turn_id=None,
+        provenance=None,
+        now=NOW,
     )
+
+    assert (folded.provenance, authored.provenance) == (EventProvenance.FRAME_RANGE, EventProvenance.AUTHORED)
+
+
+def test_a_tool_call_and_its_answer_are_two_rows_and_neither_carries_the_output() -> None:
+    """The prose a call printed is a segment like any other item's, so the completion holds only
+    what no string carries."""
+    started = stored(
+        ToolCallStarted(call_id="toolu_1", tool_name="Bash", arguments={"command": "ls"}, provenance=WHERE)
+    )
+    said = stored(ItemSegment(item=CallRef(call_id="toolu_1"), text="a.py\nb.py", provenance=FrameRange(15, 15)))
     completed = stored(
         ToolCallCompleted(
-            call_id="toolu_1",
-            content="a.py\nb.py",
+            item=CallRef(call_id="toolu_1"),
             structured={"exit_code": 0},
-            outcome=Outcome.SUCCEEDED,
+            outcome=ToolOutcome.SUCCEEDED,
             provenance=FrameRange(15, 15),
         )
     )
 
-    assert started.call_id == completed.call_id == "toolu_1"
-    assert started.body == {"tool_name": "Bash", "arguments": {"command": "ls"}}
-    assert completed.body == {
-        "content": {"shape": "text", "text": "a.py\nb.py"},
-        "structured": {"exit_code": 0},
-        "outcome": "succeeded",
+    assert started.body == {
+        "item_type": "tool_call",
+        "call_id": "toolu_1",
+        "tool_name": "Bash",
+        "arguments": {"command": "ls"},
     }
-
-
-def test_every_result_is_now_stored_as_text() -> None:
-    """The variant has one arm, and every row is written into it."""
-    rendered = stored(
-        ToolCallCompleted(
-            call_id="toolu_2",
-            content='[{"tool_name": "Read", "type": "tool_reference"}]',
-            structured=None,
-            outcome=Outcome.UNKNOWN,
-            provenance=WHERE,
-        )
-    )
-
-    assert rendered.body["content"] == {"shape": "text", "text": '[{"tool_name": "Read", "type": "tool_reference"}]'}
+    assert said.body == {"text": "a.py\nb.py"}
+    assert completed.body == {"item_type": "tool_call", "structured": {"exit_code": 0}, "outcome": "succeeded"}
 
 
 def test_a_prompt_is_conversation_on_the_authored_arm() -> None:
-    """The operator's half of the transcript, which no fold produces: a prompt is accepted before
-    it crosses the wire, so it has frames nowhere and a turn not yet."""
-    message_id = uuid4()
-    asked = session_events.prompt_enqueued(
-        session_id=SESSION_ID, message_id=message_id, text="list the files", origin=SPA_ORIGIN, now=NOW
+    """The operator's half of the transcript, which no fold produces: a prompt is accepted before it
+    crosses the wire, so it has frames nowhere and a turn not yet."""
+    asked = session_events.item_row(
+        ConversationEventKind.ITEM_STARTED,
+        session_events.PromptStartedBody(origin=SPA_ORIGIN),
+        conversation_id=CONVERSATION_ID,
+        event_seq=1,
+        item_id=ITEM_ID,
+        session_id=SESSION_ID,
+        turn_id=None,
+        provenance=None,
+        now=NOW,
     )
 
-    assert (asked.kind, asked.provenance) == (AuthoredEventKind.PROMPT_ENQUEUED, EventProvenance.AUTHORED)
-    assert (asked.turn_id, asked.source_first_frame_seq, asked.source_last_frame_seq, asked.call_id) == (None,) * 4
-    assert asked.body == {"message_id": str(message_id), "text": "list the files", "origin": {"kind": "spa"}}
+    assert (asked.kind, asked.provenance) == (ConversationEventKind.ITEM_STARTED, EventProvenance.AUTHORED)
+    assert (asked.turn_id, asked.source_first_frame_seq, asked.source_last_frame_seq) == (None,) * 3
+    assert asked.body == {"item_type": "prompt", "origin": {"kind": "spa"}}
 
 
 def test_a_room_prompt_names_the_room_as_well_as_the_events() -> None:
     """A bare event id cannot tell a sibling room's copy of a prompt from this room's, which is
     exactly the question the surface reading this asks. Both strings stay the channel's own."""
-    asked = session_events.prompt_enqueued(
-        session_id=SESSION_ID,
-        message_id=uuid4(),
-        text="hi",
-        origin=MatrixOrigin(address="!room:example.org", refs=("$a", "$b")),
-        now=NOW,
-    )
+    origin = MatrixOrigin(address="!room:example.org", refs=("$a", "$b"))
 
-    assert asked.body["origin"] == {"kind": "matrix", "address": "!room:example.org", "refs": ["$a", "$b"]}
+    assert session_events.PromptStartedBody(origin=origin).model_dump(mode="json")["origin"] == {
+        "kind": "matrix",
+        "address": "!room:example.org",
+        "refs": ["$a", "$b"],
+    }
 
 
 def test_a_prompt_body_without_an_origin_is_rejected() -> None:
     """The reason the SPA is a named arm rather than the absent one: there is no default to fall
     back to, because reading a missing key as "typed into a browser" would tell every attached room
-    it owes a copy of a prompt the room may already be showing. `ck_session_events_prompt_origin`
-    keeps such a row out of the table, so this shape is a bug, not an era."""
-    stored = {"message_id": str(uuid4()), "text": "no surface named"}
-
+    it owes a copy of a prompt the room may already be showing."""
     with pytest.raises(ValidationError):
-        session_events.PromptBody.model_validate(stored)
+        session_events.PromptStartedBody.model_validate({"item_type": "prompt"})
 
 
-def test_a_fact_the_console_authored_names_no_turn_and_no_frames() -> None:
+def test_a_fact_the_console_authored_names_no_item_and_no_frames() -> None:
     """The second category: what happened *to* the session. It crossed no wire, and it is the
-    session's fact rather than an exchange's — which is what lets a session that never reached a
+    conversation's fact rather than an item's — which is what lets a session that never reached a
     turn have a stream at all."""
     taken = session_events.authored(
         session_events.SessionAdoptedBody(previous_holder="haku-console-a", holder="haku-console-b"),
+        conversation_id=CONVERSATION_ID,
+        event_seq=3,
         session_id=SESSION_ID,
+        turn_id=None,
         now=NOW,
     )
 
     assert (taken.kind, taken.provenance) == (AuthoredEventKind.SESSION_ADOPTED, EventProvenance.AUTHORED)
-    assert (taken.turn_id, taken.source_first_frame_seq, taken.source_last_frame_seq, taken.call_id) == (None,) * 4
+    assert (taken.turn_id, taken.item_id, taken.source_first_frame_seq, taken.source_last_frame_seq) == (None,) * 4
     assert taken.body == {"previous_holder": "haku-console-a", "holder": "haku-console-b"}
 
 
@@ -169,7 +212,10 @@ def test_the_kind_of_an_authored_row_follows_from_its_body() -> None:
     """One row per fact and no way to label it as another: the body is the discriminator."""
     lapsed = session_events.authored(
         session_events.LeaseExpiredBody(reason=LeaseExpiryReason.UNADOPTED, last_holder=None),
+        conversation_id=CONVERSATION_ID,
+        event_seq=4,
         session_id=SESSION_ID,
+        turn_id=None,
         now=NOW,
     )
 
@@ -179,27 +225,31 @@ def test_the_kind_of_an_authored_row_follows_from_its_body() -> None:
 
 # One stored body per kind the column may hold. A kind added without an entry fails
 # `test_every_kind_the_column_may_hold_can_be_read_back` rather than reaching a replica that
-# cannot parse it.
-_BODIES: dict[StoredEventKind, dict[str, object]] = {
-    ConversationEventKind.MESSAGE_COMPLETED: {"text": "done", "agent_message_id": "msg_1"},
-    ConversationEventKind.REASONING: {"summary": "thinking about it"},
-    ConversationEventKind.TOOL_CALL_STARTED: {"tool_name": "Bash", "arguments": {"command": "ls"}},
-    ConversationEventKind.TOOL_CALL_COMPLETED: {
-        "content": {"shape": "text", "text": "a.py"},
-        "structured": {"exit_code": 0},
-        "outcome": "succeeded",
-    },
-    AuthoredEventKind.PROMPT_ENQUEUED: {"message_id": str(uuid4()), "text": "hello", "origin": {"kind": "spa"}},
-    AuthoredEventKind.PROMPT_REJECTED: {"reason": "turn_in_flight", "text": "wait"},
-    AuthoredEventKind.UNREADABLE_INPUT: {"media_type": "m.image"},
-    AuthoredEventKind.SESSION_ADOPTED: {"previous_holder": None, "holder": "haku-console-a"},
-    AuthoredEventKind.LEASE_EXPIRED: {"reason": "unadopted", "last_holder": None},
-    AuthoredEventKind.TURN_ABORTED: {},
-    AuthoredEventKind.TURN_STARTED: {},
-    AuthoredEventKind.TURN_ENDED: {"outcome": "answered"},
-    AuthoredEventKind.SESSION_PROVISIONING: {},
-    AuthoredEventKind.SESSION_ENDED: {"status": "failed", "error": "the claim was never satisfied"},
-    AuthoredEventKind.SETUP_NARRATION: {"text": "cloning haku-state"},
+# cannot parse it. The three item kinds hold one body per item type, since that is where a body's
+# shape actually comes from.
+_BODIES: dict[StoredEventKind, list[dict[str, object]]] = {
+    ConversationEventKind.ITEM_STARTED: [
+        {"item_type": "message"},
+        {"item_type": "reasoning"},
+        {"item_type": "tool_call", "call_id": "toolu_1", "tool_name": "Bash", "arguments": {"command": "ls"}},
+        {"item_type": "prompt", "origin": {"kind": "spa"}},
+    ],
+    ConversationEventKind.ITEM_SEGMENT: [{"text": "a run of prose"}],
+    ConversationEventKind.ITEM_COMPLETED: [
+        {"item_type": "message", "backend_item_id": "msg_1"},
+        {"item_type": "reasoning", "disclosure": ReasoningDisclosure.WITHHELD},
+        {"item_type": "tool_call", "structured": {"exit_code": 0}, "outcome": "succeeded"},
+        {"item_type": "prompt"},
+    ],
+    AuthoredEventKind.PROMPT_REJECTED: [{"reason": "turn_in_flight", "text": "wait"}],
+    AuthoredEventKind.UNREADABLE_INPUT: [{"media_type": "m.image"}],
+    AuthoredEventKind.SESSION_ADOPTED: [{"previous_holder": None, "holder": "haku-console-a"}],
+    AuthoredEventKind.LEASE_EXPIRED: [{"reason": "unadopted", "last_holder": None}],
+    AuthoredEventKind.TURN_STARTED: [{}],
+    AuthoredEventKind.TURN_ENDED: [{"outcome": "answered"}],
+    AuthoredEventKind.SESSION_PROVISIONING: [{}],
+    AuthoredEventKind.SESSION_ENDED: [{"status": "failed", "error": "the claim was never satisfied"}],
+    AuthoredEventKind.SETUP_NARRATION: [{"text": "cloning haku-state"}],
 }
 
 
@@ -212,10 +262,11 @@ def test_every_kind_the_column_may_hold_can_be_read_back() -> None:
     writer for these ship without a second release.
     """
     unreadable = [
-        kind
+        (kind, body)
         for kind in (*ConversationEventKind, *AuthoredEventKind)
+        for body in _BODIES[kind]
         if session_events.body_of(
-            SessionEvent(kind=kind, body=_BODIES[kind], created_at=NOW, provenance=EventProvenance.AUTHORED)
+            ConversationEventRow(kind=kind, body=body, created_at=NOW, provenance=EventProvenance.AUTHORED)
         )
         is None
     ]
@@ -229,14 +280,15 @@ def test_a_row_of_a_kind_this_release_has_no_words_for_reads_as_one() -> None:
     The point is that it is a value: the read that produced it carries every other row of that
     conversation, and a subscriber can position and skip this one instead of losing all of them.
     """
-    row = SessionEvent(
+    row = ConversationEventRow(
+        conversation_id=CONVERSATION_ID,
         session_id=SESSION_ID,
         turn_id=None,
+        item_id=None,
         kind=UnknownValue("provisioning_started"),
         provenance=EventProvenance.AUTHORED,
         source_first_frame_seq=None,
         source_last_frame_seq=None,
-        call_id=None,
         body={"reason": "a field this release has never heard of"},
         created_at=NOW,
     )
@@ -250,14 +302,15 @@ def test_a_body_carrying_a_field_this_release_does_not_know_still_reads() -> Non
     """The other half of the same roll, and the one that bites without a new kind at all: the
     release that adds a field to a body writes rows the previous image is still reading, so a body
     that forbade extras would raise on every one of them."""
-    row = SessionEvent(
+    row = ConversationEventRow(
+        conversation_id=CONVERSATION_ID,
         session_id=SESSION_ID,
         turn_id=None,
+        item_id=None,
         kind=AuthoredEventKind.LEASE_EXPIRED,
         provenance=EventProvenance.AUTHORED,
         source_first_frame_seq=None,
         source_last_frame_seq=None,
-        call_id=None,
         body={"reason": "unadopted", "last_holder": None, "swept_by": "a field added later"},
         created_at=NOW,
     )
@@ -267,17 +320,10 @@ def test_a_body_carrying_a_field_this_release_does_not_know_still_reads() -> Non
     )
 
 
-def test_the_two_events_with_a_durable_home_elsewhere_get_no_row() -> None:
-    """A delta's prose is the message's own row; a turn's ending is the `session_turns` row."""
-    unstored = [
-        session_events.row(event, session_id=SESSION_ID, turn_id=TURN_ID, now=NOW)
-        for event in (
-            TextDelta(message=MESSAGE, text="par", provenance=WHERE),
-            TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=WHERE),
-        )
-    ]
-
-    assert unstored == [None, None]
+def test_the_one_event_with_a_durable_home_elsewhere_gets_no_row() -> None:
+    """A turn's ending is the `conversation_turn` row, plus the two authored rows `end_turn` writes
+    to state it in the stream."""
+    assert session_events.stored(TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=WHERE)) is None
 
 
 if __name__ == "__main__":
