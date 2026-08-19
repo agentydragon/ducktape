@@ -8,9 +8,7 @@ routes hand back.
 
 from __future__ import annotations
 
-from bisect import bisect_left, bisect_right
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
@@ -20,60 +18,49 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.chat_models import (
-    TOOL_CALL_EVENT_KINDS,
-    ChatMessageRole,
-    ChatMessageStatus,
-    ConversationEventKind,
     FrameDirection,
-    RecordedToolCall,
+    ItemStatus,
+    ItemType,
+    ReasoningDisclosure,
     SessionStatus,
+    ToolOutcome,
     TurnOutcome,
 )
-from haku.console.database_schema import Session, SessionEvent, SessionFrame, SessionMessage
-from haku.console.x import session_events
+from haku.console.database_schema import ConversationItem, Session, SessionFrame
 from haku.console.x.claude_code import projection
-from haku.console.x.conversation_events import Outcome
 from haku.console.x.conversation_records import ChannelAttachment
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 
 
-class SessionToolResultView(BaseModel):
-    """What a tool answered — the renderable half, out of the event that recorded it.
+class ConversationItemView(BaseModel):
+    """One item of a transcript, as the store hands it to whoever asked.
 
-    Always text: what the provider sent where it sent prose, and its JSON otherwise.
+    **A tool call is one of these, not a field on a message.** What this replaces stapled calls onto
+    the message whose frames made them, and joined the answer back by `call_id` at read time — two
+    indexes and a bisect over frame spans. A call is a sibling item now, with its ask and its answer
+    on its own row, so the join is gone and the transcript is the flat stream the design says it is.
+
+    The per-type fields are the ones `conversation_item`'s constraints tie to `item_type`; a reader
+    branches on the type rather than testing them for absence.
+
+    **No frame numbers.** They are one session's and incomparable outside it, so a surface that
+    wants to appeal an item to the wire asks for its events rather than being handed a coordinate
+    it cannot interpret.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    content: str
-    # `Outcome.UNKNOWN` reads here as "not an error": a provider routinely reports nothing, and the
-    # SPA has one boolean with no third state to render.
-    is_error: bool = False
-
-
-class SessionToolCallView(RecordedToolCall):
-    """A recorded call, plus the answer stored beside it.
-
-    `call_id`, `tool_name` and `arguments` are what the transcript row records; `result` is the
-    `tool_call_completed` event that answered the same `call_id`, absent while the call is still
-    running and on a turn that died before answering.
-    """
-
-    result: SessionToolResultView | None = None
-
-
-class SessionMessageView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    message_id: UUID
-    role: ChatMessageRole
-    status: ChatMessageStatus
-    content: str
-    tool_calls: list[SessionToolCallView]
-    error: str | None
-    source_first_frame_seq: int | None
-    source_last_frame_seq: int | None
+    item_id: UUID
+    item_type: ItemType
+    status: ItemStatus
+    text: str = Field(description="The concatenation of this item's segments — its whole prose.")
+    call_id: str | None = None
+    tool_name: str | None = None
+    arguments: dict[str, Any] | None = None
+    outcome: ToolOutcome | None = None
+    structured: Any | None = None
+    disclosure: ReasoningDisclosure | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -91,7 +78,7 @@ class SessionView(BaseModel):
     error: str | None
     created_at: datetime
     updated_at: datetime
-    messages: list[SessionMessageView]
+    items: list[ConversationItemView]
 
 
 class LiveSession(BaseModel):
@@ -187,7 +174,7 @@ class ConversationSessionView(BaseModel):
     updated_at: datetime
     provisioning: ClaudeSandboxProvisioningView | None = None
     narration: list[SetupNarrationView]
-    messages: list[SessionMessageView]
+    items: list[ConversationItemView]
     turns: list[ConversationTurnView]
 
 
@@ -244,7 +231,7 @@ class ConversationUpdate(BaseModel):
     duplicate costs nothing and re-reading from an older position is always correct. `event_seq` is
     the address — where the follower is — and these rows are what that position resolves to.
 
-    **The transcript arrives incrementally and everything else arrives whole.** Only the messages
+    **The transcript arrives incrementally and everything else arrives whole.** Only the items
     and turns grow without bound, so only they are worth addressing by position; the rest of what a
     conversation shows is a handful of rows, and sending them every time is what keeps a follower
     from holding a copy nothing can correct. A field carried only in the snapshot would be a value
@@ -277,8 +264,8 @@ class ConversationUpdate(BaseModel):
     earlier_sessions: list[EarlierSession] = Field(
         description="The sessions this conversation ran before `session_id`, newest first — replaces what is held."
     )
-    messages: list[SessionMessageView] = Field(
-        description="The messages that moved — merge them by `message_id` over the ones already held, never render them as a transcript."
+    items: list[ConversationItemView] = Field(
+        description="The items that moved — merge them by `item_id` over the ones already held, never render them as a transcript."
     )
     turns: list[ConversationTurnView] = Field(description="The turns that moved, newest first.")
 
@@ -292,8 +279,8 @@ type ConversationFollowMessage = Annotated[
 ]
 
 
-# Rows of one update, in either collection. A message carries its prose plus every tool call it
-# made and the result each got, so what bounds a message is payload rather than row count — the
+# Rows of one update, in either collection. An item carries its whole prose, and a tool call its
+# arguments and structured result, so what bounds a row is payload rather than row count — the
 # lesson `/api/tool-calls` learned at `le=500` (`frontend/tool_calls_page.tsx`). One update is
 # normally one coalescing window's worth of rows; past this the follower is sent the conversation
 # whole instead, which is cheaper than an update carrying most of one twice over.
@@ -337,7 +324,7 @@ class SessionFrameView(BaseModel):
     **This is one backend's wire and must be presented as such**, never as the conversation: it is
     the only shape the console serves that names a backend.
 
-    The payload is the wire, whole. This surface exists because `session_messages` is a lossy
+    The payload is the wire, whole. This surface exists because `conversation_item` is a lossy
     projection of the frame log, so clipping here would reintroduce that one level down; bounding a
     response is the page's job.
     """
@@ -412,76 +399,6 @@ def frame_page(rows: Sequence[SessionFrame], *, limit: int, conversation_id: UUI
     )
 
 
-@dataclass(frozen=True, slots=True)
-class SessionToolCalls:
-    """What one session's stored events say about its tool calls.
-
-    Two indexes over the same rows, because the transcript joins to them by different keys: a
-    message finds the calls it made through the frames it was built from, and a call finds its
-    answer by its own id — unique within a session, so that half needs no per-message association
-    at all.
-    """
-
-    asked: Sequence[tuple[int, RecordedToolCall]]
-    results: Mapping[str, SessionToolResultView]
-
-    def within(self, first: int | None, last: int | None) -> list[RecordedToolCall]:
-        """The calls a message's own frames made, in the order it made them.
-
-        `asked` is ordered by frame and message spans do not overlap, so this is a slice.
-        """
-        if first is None:
-            return []
-        lo = bisect_left(self.asked, first, key=_frame_of)
-        hi = bisect_right(self.asked, first if last is None else last, key=_frame_of)
-        return [call for _, call in self.asked[lo:hi]]
-
-
-def _frame_of(asked: tuple[int, RecordedToolCall]) -> int:
-    return asked[0]
-
-
-async def tool_calls(db: AsyncSession, session_id: UUID, *, since_frame_seq: int | None) -> SessionToolCalls:
-    """Read the calls and their answers out of the session's stored events.
-
-    *since_frame_seq* bounds the read to a window of the log; None is the whole session, which is
-    what a view of the whole transcript needs. An update passes the first frame of the oldest turn
-    it carries: a message's calls fall inside that message's own span, so a call belonging to any
-    message the update carries is at or after that frame.
-    """
-    query = select(SessionEvent).where(
-        SessionEvent.session_id == session_id, SessionEvent.kind.in_(TOOL_CALL_EVENT_KINDS)
-    )
-    if since_frame_seq is not None:
-        query = query.where(SessionEvent.source_first_frame_seq >= since_frame_seq)
-    rows = (await db.scalars(query.order_by(SessionEvent.source_first_frame_seq, SessionEvent.event_seq))).all()
-    return SessionToolCalls(
-        asked=[_asked(row) for row in rows if row.kind is ConversationEventKind.TOOL_CALL_STARTED],
-        results=dict(_answered(row) for row in rows if row.kind is ConversationEventKind.TOOL_CALL_COMPLETED),
-    )
-
-
-def _asked(row: SessionEvent) -> tuple[int, RecordedToolCall]:
-    """One call, at the frame that made it.
-
-    Both columns are guaranteed by the table, so a row missing either is a bug in the writer rather
-    than a state to render around.
-    """
-    if row.call_id is None or row.source_first_frame_seq is None:
-        raise ValueError(f"a tool call carries no call id or no frame: {row.event_seq=}")
-    body = session_events.ToolCallBody.model_validate(row.body)
-    return row.source_first_frame_seq, RecordedToolCall(
-        call_id=row.call_id, tool_name=body.tool_name, arguments=dict(body.arguments)
-    )
-
-
-def _answered(row: SessionEvent) -> tuple[str, SessionToolResultView]:
-    if row.call_id is None:
-        raise ValueError(f"a tool result carries no call id: {row.event_seq=}")
-    body = session_events.ToolResultBody.model_validate(row.body)
-    return row.call_id, SessionToolResultView(content=body.content.text, is_error=body.outcome is Outcome.FAILED)
-
-
 async def setup_narration(db: AsyncSession, session_id: UUID) -> list[SetupNarrationView]:
     """What the sandbox printed while bootstrapping, in the order it produced it.
 
@@ -499,43 +416,21 @@ async def setup_narration(db: AsyncSession, session_id: UUID) -> list[SetupNarra
     ]
 
 
-def message_view(message: SessionMessage, calls: SessionToolCalls) -> SessionMessageView:
-    return _view(
-        message,
-        tool_calls=[
-            SessionToolCallView(
-                call_id=call.call_id,
-                tool_name=call.tool_name,
-                arguments=call.arguments,
-                result=calls.results.get(call.call_id),
-            )
-            for call in calls.within(message.source_first_frame_seq, message.source_last_frame_seq)
-        ],
-    )
-
-
-def user_message_view(message: SessionMessage) -> SessionMessageView:
-    """The prompt row `enqueue_prompt` has just written, as its caller reads it back.
-
-    Its own constructor rather than `message_view` with an empty `SessionToolCalls`: a prompt that
-    has only just been accepted is a user turn nothing has answered, so there are no tool calls to
-    join and no events to join them out of.
-    """
-    return _view(message, tool_calls=[])
-
-
-def _view(message: SessionMessage, *, tool_calls: list[SessionToolCallView]) -> SessionMessageView:
-    return SessionMessageView(
-        message_id=message.message_id,
-        role=message.role,
-        status=message.status,
-        content=message.content,
-        tool_calls=tool_calls,
-        error=message.error,
-        source_first_frame_seq=message.source_first_frame_seq,
-        source_last_frame_seq=message.source_last_frame_seq,
-        created_at=message.created_at,
-        updated_at=message.updated_at,
+def item_view(item: ConversationItem) -> ConversationItemView:
+    """One stored item, as a reader sees it. A projection of the row and nothing more."""
+    return ConversationItemView(
+        item_id=item.item_id,
+        item_type=item.item_type,
+        status=item.status,
+        text=item.item_text,
+        call_id=item.call_id,
+        tool_name=item.tool_name,
+        arguments=item.arguments,
+        outcome=item.outcome,
+        structured=item.structured,
+        disclosure=item.disclosure,
+        created_at=item.created_at,
+        updated_at=item.updated_at,
     )
 
 
@@ -550,14 +445,12 @@ def live_status(record: Session, *, responding: bool) -> SessionStatus:
     return SessionStatus.RESPONDING if responding and record.status == SessionStatus.READY else record.status
 
 
-def session_view(
-    record: Session, messages: list[SessionMessage], *, responding: bool, calls: SessionToolCalls
-) -> SessionView:
+def session_view(record: Session, items: list[ConversationItem], *, responding: bool) -> SessionView:
     return SessionView(
         session_id=record.session_id,
         status=live_status(record, responding=responding),
         error=record.error,
         created_at=record.created_at,
         updated_at=record.updated_at,
-        messages=[message_view(message, calls) for message in messages],
+        items=[item_view(item) for item in items],
     )

@@ -23,7 +23,7 @@ from enum import StrEnum
 from typing import Any, Protocol, cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import ColumnElement, CursorResult, Select, delete, func, literal, or_, select, text, tuple_, update
+from sqlalchemy import CursorResult, Select, func, literal, or_, select, text, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -32,29 +32,32 @@ from haku.console.chat_models import (
     ENDED_SESSION_STATUSES,
     LEASED_SESSION_STATUSES,
     OPEN_SESSION_STATUSES,
-    AuthoredEventKind,
-    ChatSurface,
     FrameDirection,
+    ItemStatus,
+    ItemType,
     LeaseExpiryReason,
     PromptOrigin,
     PromptRejection,
     SessionStatus,
     TurnOutcome,
 )
+
+# The ORM row and the neutral vocabulary's union share a name; the row is aliased so both can
+# be named here, as `session_events` does.
 from haku.console.database_schema import (
     ChatAttachment,
     Conversation,
-    Session,
-    SessionEvent,
-    SessionFrame,
+    ConversationEvent as ConversationEventRow,
     ConversationItem,
     ConversationPrompt,
     ConversationTurn,
+    Session,
+    SessionFrame,
 )
 from haku.console.x import conversation_log, session_events, transcript_entries
 from haku.console.x.claude_code import projection
 from haku.console.x.claude_code.frames import DELTA_FRAME_KIND, PROMPT_FRAME_KIND
-from haku.console.x.conversation_events import ConversationEvent, MessageCompleted, TextDelta
+from haku.console.x.conversation_events import ConversationEvent
 from haku.console.x.conversation_records import (
     ChannelAttachment,
     FrameCursor,
@@ -69,6 +72,7 @@ from haku.console.x.conversation_records import (
 from haku.console.x.session_notifications import SessionEventKind, notify
 from haku.console.x.session_views import (
     ConversationCursor,
+    ConversationItemView,
     ConversationPage,
     ConversationSessionView,
     ConversationSummary,
@@ -78,15 +82,12 @@ from haku.console.x.session_views import (
     EarlierSession,
     LiveSession,
     SessionFramePage,
-    SessionMessageView,
     SessionView,
     frame_page,
+    item_view,
     live_status,
-    message_view,
     session_view,
     setup_narration,
-    tool_calls,
-    user_message_view,
 )
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 from haku.console.x.subscription import stream_head
@@ -171,13 +172,17 @@ async def _live_attachments(db: AsyncSession, conversations: set[UUID]) -> dict[
     return attachments
 
 
-async def _message_counts(db: AsyncSession, conversations: set[UUID]) -> dict[UUID, int]:
-    """How many transcript rows each of *conversations* holds, across every session it has run."""
+async def _item_counts(db: AsyncSession, conversations: set[UUID]) -> dict[UUID, int]:
+    """How many transcript rows each of *conversations* holds.
+
+    Asked of the items directly rather than joined through `sessions`: items are the conversation's,
+    so a thread that has run several sessions needs no join, and one holding a prompt no session has
+    claimed is counted rather than missed.
+    """
     rows = await db.execute(
-        select(Session.conversation_id, func.count(SessionMessage.message_id))
-        .outerjoin(SessionMessage, SessionMessage.session_id == Session.session_id)
-        .where(Session.conversation_id.in_(conversations))
-        .group_by(Session.conversation_id)
+        select(ConversationItem.conversation_id, func.count(ConversationItem.item_id))
+        .where(ConversationItem.conversation_id.in_(conversations))
+        .group_by(ConversationItem.conversation_id)
     )
     counted = {conversation: count for conversation, count in rows.all() if conversation is not None}
     return {conversation: counted.get(conversation, 0) for conversation in conversations}
@@ -309,7 +314,7 @@ class PositionUnusableError(Exception):
 class _MovedRows:
     """One session's contribution to an update."""
 
-    messages: list[SessionMessageView]
+    items: list[ConversationItemView]
     turns: list[ConversationTurnView]
 
 
@@ -373,18 +378,17 @@ class SessionStore:
             )
             if record is None:
                 raise KeyError(session_id)
-            messages = list(
+            items = list(
                 (
                     await db.scalars(
-                        select(SessionMessage)
-                        .where(SessionMessage.session_id == session_id)
-                        .order_by(SessionMessage.created_at, SessionMessage.message_id)
+                        select(ConversationItem)
+                        .where(ConversationItem.session_id == session_id)
+                        .order_by(ConversationItem.opened_seq)
                     )
                 ).all()
             )
-            responding = await _open_turn(db, session_id) is not None
-            calls = await tool_calls(db, session_id, since_frame_seq=None)
-            return session_view(record, messages, responding=responding, calls=calls)
+            responding = await _open_turn(db, record.conversation_id) is not None
+            return session_view(record, items, responding=responding)
 
     async def conversation_of(self, session_id: UUID) -> UUID:
         """The thread this session runs, for a caller that has just created it."""
@@ -438,7 +442,7 @@ class SessionStore:
             rows = (await db.execute(page)).all()
             threads = {row.conversation_id for row in rows[:limit]}
             attachments = await _live_attachments(db, threads)
-            messages = await _message_counts(db, threads)
+            messages = await _item_counts(db, threads)
             live = await _live_sessions(db, threads)
         return ConversationPage(
             conversations=[
@@ -507,7 +511,7 @@ class SessionStore:
                 created_at=view.created_at,
                 updated_at=view.updated_at,
                 narration=narration,
-                messages=view.messages,
+                items=view.items,
                 turns=[
                     ConversationTurnView(
                         turn_id=turn.turn_id, started_at=turn.started_at, ended_at=turn.ended_at, outcome=turn.outcome
@@ -565,9 +569,9 @@ class SessionStore:
             moved = set(
                 (
                     await db.scalars(
-                        select(SessionEvent.session_id)
-                        .join(Session, Session.session_id == SessionEvent.session_id)
-                        .where(Session.conversation_id == conversation_id, SessionEvent.event_seq > after)
+                        select(ConversationEventRow.session_id)
+                        .join(Session, Session.session_id == ConversationEventRow.session_id)
+                        .where(Session.conversation_id == conversation_id, ConversationEventRow.event_seq > after)
                         .distinct()
                     )
                 ).all()
@@ -575,16 +579,15 @@ class SessionStore:
             # The live session always, because its open rows move with no event to name them; every
             # other one only when an event of its own has landed since the follower's position.
             rows = [
-                await _moved_rows(db, record, after=after, live=record.session_id == current.session_id, limit=limit)
+                await _moved_rows(db, record, after=after, limit=limit)
                 for record in sessions
                 if record.session_id == current.session_id or record.session_id in moved
             ]
-            messages = sorted(
-                (message for row in rows for message in row.messages),
-                key=lambda view: (view.created_at, view.message_id),
+            items = sorted(
+                (item for row in rows for item in row.items), key=lambda view: (view.created_at, view.item_id)
             )
             turns = sorted((turn for row in rows for turn in row.turns), key=lambda view: view.started_at, reverse=True)
-            if len(messages) > limit or len(turns) > limit:
+            if len(items) > limit or len(turns) > limit:
                 raise PositionUnusableError(f"more than {limit} rows have moved since {after=}")
             narration = await setup_narration(db, current.session_id)
             attachments = (await _live_attachments(db, {conversation_id}))[conversation_id]
@@ -602,7 +605,7 @@ class SessionStore:
                 EarlierSession(session_id=row.session_id, status=row.status, created_at=row.created_at)
                 for row in earlier
             ],
-            messages=messages,
+            items=items,
             turns=turns,
         )
 
@@ -639,13 +642,10 @@ class SessionStore:
             # The first attach is the session being served rather than taken over, and a runner
             # redialling the replica that already holds it is neither.
             if not first_attach and previous_holder != REPLICA:
-                db.add(
-                    session_events.authored(
-                        session_events.SessionAdoptedBody(previous_holder=previous_holder, holder=REPLICA),
-                        session_id=session_id,
-                        now=now,
-                    )
+                writer = await conversation_log.writer_for(
+                    db, record.conversation_id, session_id=session_id, turn_id=None, now=now
                 )
+                writer.authored(session_events.SessionAdoptedBody(previous_holder=previous_holder, holder=REPLICA))
             return BridgeAuthentication.ACCEPTED
 
     async def release_lease(self, session_id: UUID) -> None:
@@ -711,7 +711,7 @@ class SessionStore:
             if turn is None:
                 return None
             turn_id, first_frame_seq = turn.turn_id, turn.first_frame_seq
-            if not await _prompt_left(db, session_id, first_frame_seq):
+            if not await _prompt_left(db, session_id, first_frame_seq or 0):
                 await _requeue(db, turn_id)
                 await notify(db, SessionEventKind.PROMPT, session_id)
             else:
@@ -722,7 +722,7 @@ class SessionStore:
                 # redo effects that did commit, which is a duplicated message and a duplicated
                 # room reply rather than a lost one. `next_prompt` anchors it at the frame before
                 # the turn, so the normal case satisfies this by construction.
-                if cursor is not None and cursor >= first_frame_seq - 1:
+                if cursor is not None and cursor >= (first_frame_seq or 1) - 1:
                     return ResumedTurn(turn_id=turn_id, replay=await _unprojected_frames(db, session_id, cursor))
         # Two ways to arrive here, one outcome. A turn that never asked its prompt has nothing to
         # finish, and a turn whose cursor sits before it has no position to resume from — so
@@ -867,22 +867,9 @@ class SessionStore:
         moment ago and one a departed replica left half answered are the same question.
         """
         async with self._sessions() as db:
-            row = (
-                await db.execute(
-                    select(ConversationTurn, SessionMessage.content)
-                    .outerjoin(SessionMessage, SessionMessage.message_id == ConversationTurn.assistant_message_id)
-                    .where(ConversationTurn.turn_id == turn_id)
-                )
-            ).first()
-            if row is None:
+            if await db.get(ConversationTurn, turn_id) is None:
                 raise KeyError(turn_id)
-            turn, streamed = row
-            return TurnState(
-                assistant_message_id=turn.assistant_message_id,
-                streamed=streamed or "",
-                said_anything=turn.said_anything,
-                queued_reply=turn.queued_reply,
-            )
+            return await _turn_state(db, turn_id)
 
     async def end_turn(
         self,
@@ -1248,12 +1235,17 @@ class SessionStore:
                 chat.error = error
                 chat.updated_at = now
                 await notify(db, SessionEventKind.UPDATE, session_id)
-            if message_id is not None:
-                message = await db.get(SessionMessage, message_id)
-                if message is not None:
-                    message.status = ChatMessageStatus.FAILED
-                    message.error = error
-                    message.updated_at = now
+            # An item still open when the session died says so on its own row: `failed` is one of
+            # the three lifecycle states, so a half-written answer is neither lost nor shown as if
+            # it had finished.
+            for item in await db.scalars(
+                select(ConversationItem).where(
+                    ConversationItem.session_id == session_id, ConversationItem.status == ItemStatus.OPEN
+                )
+            ):
+                item.status = ItemStatus.FAILED
+                item.closed_seq = item.opened_seq
+                item.updated_at = now
 
     async def request_close(self, operator_id: UUID, session_id: UUID) -> None:
         """Ask this session to end, and wake whoever is running it.
@@ -1384,13 +1376,10 @@ class SessionStore:
                 detail = _expiry_detail(reason, chat.lease_holder)
                 logger.error("session %s lease expired: %s", session_id, detail)
                 now = datetime.now(UTC)
-                db.add(
-                    session_events.authored(
-                        session_events.LeaseExpiredBody(reason=reason, last_holder=chat.lease_holder),
-                        session_id=session_id,
-                        now=now,
-                    )
+                writer = await conversation_log.writer_for(
+                    db, chat.conversation_id, session_id=session_id, turn_id=None, now=now
                 )
+                writer.authored(session_events.LeaseExpiredBody(reason=reason, last_holder=chat.lease_holder))
                 chat.status = SessionStatus.FAILED
                 chat.error = f"console session ended: {detail}"
                 chat.updated_at = now
@@ -1522,84 +1511,51 @@ async def _addressable(db: AsyncSession, conversation_id: UUID, after: int) -> b
     if after == 0:
         return True
     found = await db.scalar(
-        select(SessionEvent.event_seq)
-        .join(Session, Session.session_id == SessionEvent.session_id)
-        .where(Session.conversation_id == conversation_id, SessionEvent.event_seq == after)
+        select(ConversationEventRow.event_seq)
+        .join(Session, Session.session_id == ConversationEventRow.session_id)
+        .where(Session.conversation_id == conversation_id, ConversationEventRow.event_seq == after)
     )
     return found is not None
 
 
-async def _moved_rows(db: AsyncSession, record: Session, *, after: int, live: bool, limit: int) -> _MovedRows:
+async def _moved_rows(db: AsyncSession, record: Session, *, after: int, limit: int) -> _MovedRows:
     """What one session of a conversation contributes to an update.
 
-    **Everything from the earliest turn that moved.** A message's frame span places it in a turn,
-    so the turns naming an event after *after* set a frame floor and every message at or after it
-    is sent whole. Reading a suffix of a turn the follower is halfway through is an
-    over-approximation, and over-approximating is free where the merge is idempotent.
+    **Exactly the items the log says changed**, which is what a dense per-conversation position
+    buys. What this replaces could not ask that question: a message's prose was mutated in place
+    per delta with no row to show for it, so the read had to over-approximate from frame windows —
+    every message at or after the earliest turn that moved — and then add, for the live session,
+    the rows that change without any event naming them. Both are gone, because every change to an
+    item is now an event at a position.
 
-    **Plus, for the live session, the rows that change without an event naming them** — which is
-    why an update is never empty when it should not be: the open message is mutated in place per
-    delta (`TextDelta` is deliberately not a row), a prompt leaves `pending` when a turn claims it,
-    and a turn's outcome is written by `end_turn`. All three are the newest turn's, so its own
-    message, its prompts and its row ride along on every read. A session that no longer holds the
-    conversation writes nothing more, so it contributes only what its events name.
-
-    Frame numbers are per session, which is why this is per session at all: `first_frame_seq` from
-    one session's turn says nothing about another's rows.
+    `live` went with them. It existed to decide whether to include those quiet changes; a session
+    that no longer holds the conversation simply has no events after the follower's position.
     """
-    moved_from: int | None = await db.scalar(
-        select(func.min(ConversationTurn.first_frame_seq))
-        .select_from(SessionEvent)
-        .join(ConversationTurn, ConversationTurn.turn_id == SessionEvent.turn_id)
-        .where(SessionEvent.session_id == record.session_id, SessionEvent.event_seq > after)
-    )
-    named = await _messages_named_after(db, record.session_id, after)
-    newest = None
-    if live:
-        # Tie-broken on the start, because `first_frame_seq` is a bound rather than a pointer: a
-        # turn that wrote no frames leaves the next one opening on the same number.
-        newest = await db.scalar(
-            select(ConversationTurn)
-            .where(ConversationTurn.session_id == record.session_id)
-            .order_by(
-                ConversationTurn.first_frame_seq.desc(),
-                ConversationTurn.started_at.desc(),
-                ConversationTurn.turn_id.desc(),
-            )
-            .limit(1)
-        )
-        if newest is not None:
-            named |= await _open_to_change(db, newest)
-    # The oldest frame anything returned here reaches back to: the turn floor above, or the newest
-    # turn where no event has moved and only its own rows have.
-    floors = [seq for seq in (moved_from, None if newest is None else newest.first_frame_seq) if seq is not None]
-    window = min(floors) if floors else None
-    addressed: list[ColumnElement[bool]] = [SessionMessage.message_id.in_(named)] if named else []
-    if moved_from is not None:
-        addressed.append(SessionMessage.source_first_frame_seq >= moved_from)
-    if not addressed:
-        return _MovedRows(messages=[], turns=[])
-    messages = (
-        await db.scalars(
-            select(SessionMessage)
-            .where(SessionMessage.session_id == record.session_id, or_(*addressed))
-            .order_by(SessionMessage.created_at, SessionMessage.message_id)
-            .limit(limit + 1)
-        )
-    ).all()
-    turns: Sequence[ConversationTurn] = []
-    if window is not None:
-        turns = (
+    touched = await _items_touched_after(db, record.conversation_id, after)
+    items: Sequence[ConversationItem] = []
+    if touched:
+        items = (
             await db.scalars(
-                select(ConversationTurn)
-                .where(ConversationTurn.session_id == record.session_id, ConversationTurn.first_frame_seq >= window)
-                .order_by(ConversationTurn.started_at.desc(), ConversationTurn.turn_id.desc())
+                select(ConversationItem)
+                .where(ConversationItem.session_id == record.session_id, ConversationItem.item_id.in_(touched))
+                .order_by(ConversationItem.opened_seq)
                 .limit(limit + 1)
             )
         ).all()
-    calls = await tool_calls(db, record.session_id, since_frame_seq=window)
+    # A turn moved if either of its ends landed after the position — it opened, or it closed.
+    turns = (
+        await db.scalars(
+            select(ConversationTurn)
+            .where(
+                ConversationTurn.session_id == record.session_id,
+                or_(ConversationTurn.first_seq > after, ConversationTurn.last_seq > after),
+            )
+            .order_by(ConversationTurn.started_at.desc(), ConversationTurn.turn_id.desc())
+            .limit(limit + 1)
+        )
+    ).all()
     return _MovedRows(
-        messages=[message_view(message, calls) for message in messages],
+        items=[item_view(item) for item in items],
         turns=[
             ConversationTurnView(
                 turn_id=turn.turn_id, started_at=turn.started_at, ended_at=turn.ended_at, outcome=turn.outcome
@@ -1609,38 +1565,23 @@ async def _moved_rows(db: AsyncSession, record: Session, *, after: int, live: bo
     )
 
 
-async def _open_to_change(db: AsyncSession, turn: ConversationTurn) -> set[UUID]:
-    """The transcript rows *turn* can still rewrite without writing an event for it.
+async def _items_touched_after(db: AsyncSession, conversation_id: UUID, after: int) -> set[UUID]:
+    """The items any event after *after* is about.
 
-    Its open message, whose prose is mutated in place per delta, and its prompts, which leave
-    `pending` when it claims them and go back to it if it never asks them (`_requeue`). Only the
-    newest turn has any: an earlier turn's rows are settled, which is what bounds an update by one
-    exchange rather than by the transcript.
+    What replaces two helpers the old shape needed. One found the rows a turn could still rewrite
+    *without writing an event* — an open message whose prose was mutated in place per delta — and
+    the other found prompts written before the frame they went out as, joinable only through a
+    body field. Neither case exists now: every change to an item is an event, so "what moved since
+    this position" is one query against the log rather than a list of ways a row can change quietly.
     """
-    prompts = (
-        await db.scalars(
-            select(ConversationTurnPrompt.message_id).where(ConversationTurnPrompt.turn_id == turn.turn_id)
+    touched = await db.scalars(
+        select(ConversationEventRow.item_id).where(
+            ConversationEventRow.conversation_id == conversation_id,
+            ConversationEventRow.event_seq > after,
+            ConversationEventRow.item_id.isnot(None),
         )
-    ).all()
-    return set(prompts) | ({turn.assistant_message_id} if turn.assistant_message_id is not None else set())
-
-
-async def _messages_named_after(db: AsyncSession, session_id: UUID, after: int) -> set[UUID]:
-    """The transcript rows that events after *after* name by id rather than by frame.
-
-    Only the operator's own prompt: it is written before the frame it goes out as exists, and is
-    never pointed at one at all if no turn claims it, so `PromptBody.message_id` is its only join.
-    """
-    bodies = (
-        await db.scalars(
-            select(SessionEvent.body).where(
-                SessionEvent.session_id == session_id,
-                SessionEvent.kind == AuthoredEventKind.PROMPT_ENQUEUED,
-                SessionEvent.event_seq > after,
-            )
-        )
-    ).all()
-    return {session_events.PromptBody.model_validate(body).message_id for body in bodies}
+    )
+    return {item_id for item_id in touched.all() if item_id is not None}
 
 
 async def _open_turn(db: AsyncSession, conversation_id: UUID) -> UUID | None:
@@ -1692,18 +1633,13 @@ async def _requeue(db: AsyncSession, turn_id: UUID) -> None:
     the link saying this turn answered it — which has to go, or the turn that finally does answer
     cannot record that it did (`(turn_id, message_id)` is the primary key).
     """
-    message_ids = list(
-        (
-            await db.scalars(select(ConversationTurnPrompt.message_id).where(ConversationTurnPrompt.turn_id == turn_id))
-        ).all()
-    )
-    if not message_ids:
-        return
-    now = datetime.now(UTC)
-    for message in await db.scalars(select(SessionMessage).where(SessionMessage.message_id.in_(message_ids))):
-        message.status = ChatMessageStatus.PENDING
-        message.updated_at = now
-    for prompt in await db.scalars(select(SessionPrompt).where(SessionPrompt.message_id.in_(message_ids))):
-        prompt.claimed_at = None
-    await db.execute(delete(ConversationTurnPrompt).where(ConversationTurnPrompt.turn_id == turn_id))
-    logger.warning("turn %s never asked its prompt; re-queued %d", turn_id, len(message_ids))
+    returned = cast(
+        "CursorResult[Any]",
+        await db.execute(
+            update(ConversationPrompt)
+            .where(ConversationPrompt.turn_id == turn_id)
+            .values(turn_id=None, claimed_at=None, claimed_by_session_id=None)
+        ),
+    ).rowcount
+    if returned:
+        logger.warning("turn %s never asked its prompt; re-queued %d", turn_id, returned)
