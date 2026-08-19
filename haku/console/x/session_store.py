@@ -33,8 +33,6 @@ from haku.console.chat_models import (
     LEASED_SESSION_STATUSES,
     OPEN_SESSION_STATUSES,
     AuthoredEventKind,
-    ChatMessageRole,
-    ChatMessageStatus,
     ChatSurface,
     FrameDirection,
     LeaseExpiryReason,
@@ -49,13 +47,11 @@ from haku.console.database_schema import (
     Session,
     SessionEvent,
     SessionFrame,
-    SessionMessage,
-    SessionOutbox,
-    SessionPrompt,
-    SessionTurn,
-    SessionTurnPrompt,
+    ConversationItem,
+    ConversationPrompt,
+    ConversationTurn,
 )
-from haku.console.x import session_events, transcript_entries
+from haku.console.x import conversation_log, session_events, transcript_entries
 from haku.console.x.claude_code import projection
 from haku.console.x.claude_code.frames import DELTA_FRAME_KIND, PROMPT_FRAME_KIND
 from haku.console.x.conversation_events import ConversationEvent, MessageCompleted, TextDelta
@@ -207,8 +203,9 @@ async def _live_sessions(db: AsyncSession, conversations: set[UUID]) -> dict[UUI
     responding = set(
         (
             await db.scalars(
-                select(SessionTurn.session_id).where(
-                    SessionTurn.session_id.in_([row.session_id for row in rows]), SessionTurn.ended_at.is_(None)
+                select(ConversationTurn.session_id).where(
+                    ConversationTurn.session_id.in_([row.session_id for row in rows]),
+                    ConversationTurn.ended_at.is_(None),
                 )
             )
         ).all()
@@ -707,8 +704,8 @@ class SessionStore:
         """
         async with self._sessions.begin() as db:
             turn = await db.scalar(
-                select(SessionTurn)
-                .where(SessionTurn.session_id == session_id, SessionTurn.ended_at.is_(None))
+                select(ConversationTurn)
+                .where(ConversationTurn.session_id == session_id, ConversationTurn.ended_at.is_(None))
                 .with_for_update()
             )
             if turn is None:
@@ -872,9 +869,9 @@ class SessionStore:
         async with self._sessions() as db:
             row = (
                 await db.execute(
-                    select(SessionTurn, SessionMessage.content)
-                    .outerjoin(SessionMessage, SessionMessage.message_id == SessionTurn.assistant_message_id)
-                    .where(SessionTurn.turn_id == turn_id)
+                    select(ConversationTurn, SessionMessage.content)
+                    .outerjoin(SessionMessage, SessionMessage.message_id == ConversationTurn.assistant_message_id)
+                    .where(ConversationTurn.turn_id == turn_id)
                 )
             ).first()
             if row is None:
@@ -911,19 +908,23 @@ class SessionStore:
         ending any other way passes none and leaves the cursor where it is; the next `next_prompt`
         re-anchors it.
 
-        An `ABORTED` outcome also writes the `turn_aborted` event, so the operator stopping an
-        exchange is in the ordered stream a channel reads and not only in this row's `outcome`
-        column. The same lock and early return make it exactly once.
+        **Every close writes `turn_ended`**, not only an abort: the exchange's end is a fact a
+        channel folding the stream needs whatever the outcome was, and an abort is one of the three
+        outcomes rather than an event of its own — which is where every backend protocol puts it.
+        The lock and the early return make it exactly once.
 
         Idempotent on an already-closed turn: the first outcome is the one that happened.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
-            turn = await db.get(SessionTurn, turn_id, with_for_update=True)
+            turn = await db.get(ConversationTurn, turn_id, with_for_update=True)
             if turn is None or turn.ended_at is not None:
                 return
-            if outcome is TurnOutcome.ABORTED:
-                db.add(session_events.turn_aborted(session_id=turn.session_id, turn_id=turn_id, now=now))
+            writer = await conversation_log.writer_for(
+                db, turn.conversation_id, session_id=turn.session_id, turn_id=turn_id, now=now
+            )
+            turn.last_seq = writer.conversation.next_event_seq
+            writer.authored(session_events.TurnEndedBody(outcome=outcome), turn_id=turn_id)
             turn.last_frame_seq = (
                 last_frame_seq
                 if last_frame_seq is not None
@@ -951,15 +952,17 @@ class SessionStore:
         Inclusive of the row the cursor names, which is the first row the previous page did not
         return.
         """
-        query = select(SessionTurn).where(SessionTurn.session_id == session_id)
+        query = select(ConversationTurn).where(ConversationTurn.session_id == session_id)
         if cursor is not None:
             query = query.where(
-                tuple_(SessionTurn.started_at, SessionTurn.turn_id)
+                tuple_(ConversationTurn.started_at, ConversationTurn.turn_id)
                 <= tuple_(literal(cursor.started_at), literal(cursor.turn_id))
             )
         async with self._sessions() as db:
             rows = (
-                await db.scalars(query.order_by(SessionTurn.started_at.desc(), SessionTurn.turn_id.desc()).limit(limit))
+                await db.scalars(
+                    query.order_by(ConversationTurn.started_at.desc(), ConversationTurn.turn_id.desc()).limit(limit)
+                )
             ).all()
         return [
             TurnRecord(
@@ -1468,34 +1471,6 @@ async def _unprojected_frames(db: AsyncSession, session_id: UUID, cursor: int) -
     return tuple(ReceivedFrame(payload=row.payload, frame_seq=row.frame_seq) for row in rows)
 
 
-async def _open_assistant(
-    db: AsyncSession, session_id: UUID, turn: SessionTurn, source_first_frame_seq: int, now: datetime
-) -> SessionMessage:
-    """Open an assistant message and point *turn* at it, inside the caller's transaction.
-
-    The pointer is what makes the message the turn's: a replica dying with a message row nothing
-    names would leave its replacement to guess which of the session's messages it was in the
-    middle of.
-    """
-    message = SessionMessage(
-        message_id=uuid4(),
-        session_id=session_id,
-        role=ChatMessageRole.ASSISTANT,
-        status=ChatMessageStatus.STREAMING,
-        content="",
-        error=None,
-        source_first_frame_seq=source_first_frame_seq,
-        created_at=now,
-        updated_at=now,
-    )
-    db.add(message)
-    # Flushed before the turn names it: the pointer is a foreign key, so the message has to exist
-    # by the time the update lands.
-    await db.flush()
-    turn.assistant_message_id = message.message_id
-    return message
-
-
 async def _queued_prompt(db: AsyncSession, conversation_id: UUID, *, lock: bool = False) -> ConversationPrompt | None:
     """The prompt this conversation is waiting to run, if it has one.
 
@@ -1533,64 +1508,6 @@ async def _turn_state(db: AsyncSession, turn_id: UUID) -> TurnState:
         )
     )
     return TurnState(streaming=streaming, said_anything=bool(spoke))
-
-
-async def _enqueue_reply(
-    db: AsyncSession,
-    chat: Session,
-    body: str,
-    *,
-    message_id: UUID | None,
-    agent_message_id: str | None,
-    turn_id: UUID | None,
-    now: datetime,
-) -> bool:
-    """Put *body* in the room's outbox, inside the caller's transaction.
-
-    Where the room is addressed comes from the live Matrix attachment on this session's
-    conversation, so a session replaced under a thread queues into the same room its predecessor
-    did without either of them recording one.
-
-    False means there is nothing for the room to be owed, which covers two ordinary states and no
-    failures: a thread no channel holds a copy of — the SPA reads the message rows directly — and a
-    message whose text is empty.
-
-    **Every row carries exactly one identity, and the insert is idempotent on it**, because both
-    ways a reply can be produced twice are ways a *replacement* replica produces it: a completed
-    `assistant` frame replayed out of the runner's rollout is identified by its transcript row, and
-    a turn's last word re-derived by whoever adopts an open turn is identified by the turn.
-    Postgres infers one index per statement, so the conflict target follows whichever identity this
-    row has.
-    """
-    if not (queued := body.strip()):
-        return False
-    room_id: str | None = await db.scalar(
-        select(ChatAttachment.address).where(
-            ChatAttachment.conversation_id == chat.conversation_id,
-            ChatAttachment.surface == ChatSurface.MATRIX,
-            ChatAttachment.detached_at.is_(None),
-        )
-    )
-    if room_id is None:
-        return False
-    inserted = pg_insert(SessionOutbox).values(
-        outbox_id=uuid4(),
-        session_id=chat.session_id,
-        room_id=room_id,
-        body=queued,
-        message_id=message_id,
-        agent_message_id=agent_message_id,
-        turn_id=turn_id,
-        created_at=now,
-        attempts=0,
-        next_attempt_at=now,
-    )
-    await db.execute(
-        inserted.on_conflict_do_nothing(index_elements=["message_id"], index_where=SessionOutbox.message_id.isnot(None))
-        if message_id is not None
-        else inserted.on_conflict_do_nothing(index_elements=["turn_id"], index_where=SessionOutbox.turn_id.isnot(None))
-    )
-    return True
 
 
 async def _addressable(db: AsyncSession, conversation_id: UUID, after: int) -> bool:
@@ -1631,9 +1548,9 @@ async def _moved_rows(db: AsyncSession, record: Session, *, after: int, live: bo
     one session's turn says nothing about another's rows.
     """
     moved_from: int | None = await db.scalar(
-        select(func.min(SessionTurn.first_frame_seq))
+        select(func.min(ConversationTurn.first_frame_seq))
         .select_from(SessionEvent)
-        .join(SessionTurn, SessionTurn.turn_id == SessionEvent.turn_id)
+        .join(ConversationTurn, ConversationTurn.turn_id == SessionEvent.turn_id)
         .where(SessionEvent.session_id == record.session_id, SessionEvent.event_seq > after)
     )
     named = await _messages_named_after(db, record.session_id, after)
@@ -1642,9 +1559,13 @@ async def _moved_rows(db: AsyncSession, record: Session, *, after: int, live: bo
         # Tie-broken on the start, because `first_frame_seq` is a bound rather than a pointer: a
         # turn that wrote no frames leaves the next one opening on the same number.
         newest = await db.scalar(
-            select(SessionTurn)
-            .where(SessionTurn.session_id == record.session_id)
-            .order_by(SessionTurn.first_frame_seq.desc(), SessionTurn.started_at.desc(), SessionTurn.turn_id.desc())
+            select(ConversationTurn)
+            .where(ConversationTurn.session_id == record.session_id)
+            .order_by(
+                ConversationTurn.first_frame_seq.desc(),
+                ConversationTurn.started_at.desc(),
+                ConversationTurn.turn_id.desc(),
+            )
             .limit(1)
         )
         if newest is not None:
@@ -1666,13 +1587,13 @@ async def _moved_rows(db: AsyncSession, record: Session, *, after: int, live: bo
             .limit(limit + 1)
         )
     ).all()
-    turns: Sequence[SessionTurn] = []
+    turns: Sequence[ConversationTurn] = []
     if window is not None:
         turns = (
             await db.scalars(
-                select(SessionTurn)
-                .where(SessionTurn.session_id == record.session_id, SessionTurn.first_frame_seq >= window)
-                .order_by(SessionTurn.started_at.desc(), SessionTurn.turn_id.desc())
+                select(ConversationTurn)
+                .where(ConversationTurn.session_id == record.session_id, ConversationTurn.first_frame_seq >= window)
+                .order_by(ConversationTurn.started_at.desc(), ConversationTurn.turn_id.desc())
                 .limit(limit + 1)
             )
         ).all()
@@ -1688,7 +1609,7 @@ async def _moved_rows(db: AsyncSession, record: Session, *, after: int, live: bo
     )
 
 
-async def _open_to_change(db: AsyncSession, turn: SessionTurn) -> set[UUID]:
+async def _open_to_change(db: AsyncSession, turn: ConversationTurn) -> set[UUID]:
     """The transcript rows *turn* can still rewrite without writing an event for it.
 
     Its open message, whose prose is mutated in place per delta, and its prompts, which leave
@@ -1697,7 +1618,9 @@ async def _open_to_change(db: AsyncSession, turn: SessionTurn) -> set[UUID]:
     exchange rather than by the transcript.
     """
     prompts = (
-        await db.scalars(select(SessionTurnPrompt.message_id).where(SessionTurnPrompt.turn_id == turn.turn_id))
+        await db.scalars(
+            select(ConversationTurnPrompt.message_id).where(ConversationTurnPrompt.turn_id == turn.turn_id)
+        )
     ).all()
     return set(prompts) | ({turn.assistant_message_id} if turn.assistant_message_id is not None else set())
 
@@ -1720,7 +1643,7 @@ async def _messages_named_after(db: AsyncSession, session_id: UUID, after: int) 
     return {session_events.PromptBody.model_validate(body).message_id for body in bodies}
 
 
-async def _open_turn(db: AsyncSession, session_id: UUID) -> UUID | None:
+async def _open_turn(db: AsyncSession, conversation_id: UUID) -> UUID | None:
     """The turn *session_id* is in the middle of, if it is in the middle of one.
 
     The one question behind three: whether a prompt may be accepted, whether there is anything to
@@ -1728,7 +1651,9 @@ async def _open_turn(db: AsyncSession, session_id: UUID) -> UUID | None:
     property.
     """
     turn_id: UUID | None = await db.scalar(
-        select(SessionTurn.turn_id).where(SessionTurn.session_id == session_id, SessionTurn.ended_at.is_(None))
+        select(ConversationTurn.turn_id).where(
+            ConversationTurn.conversation_id == conversation_id, ConversationTurn.ended_at.is_(None)
+        )
     )
     return turn_id
 
@@ -1768,7 +1693,9 @@ async def _requeue(db: AsyncSession, turn_id: UUID) -> None:
     cannot record that it did (`(turn_id, message_id)` is the primary key).
     """
     message_ids = list(
-        (await db.scalars(select(SessionTurnPrompt.message_id).where(SessionTurnPrompt.turn_id == turn_id))).all()
+        (
+            await db.scalars(select(ConversationTurnPrompt.message_id).where(ConversationTurnPrompt.turn_id == turn_id))
+        ).all()
     )
     if not message_ids:
         return
@@ -1778,5 +1705,5 @@ async def _requeue(db: AsyncSession, turn_id: UUID) -> None:
         message.updated_at = now
     for prompt in await db.scalars(select(SessionPrompt).where(SessionPrompt.message_id.in_(message_ids))):
         prompt.claimed_at = None
-    await db.execute(delete(SessionTurnPrompt).where(SessionTurnPrompt.turn_id == turn_id))
+    await db.execute(delete(ConversationTurnPrompt).where(ConversationTurnPrompt.turn_id == turn_id))
     logger.warning("turn %s never asked its prompt; re-queued %d", turn_id, len(message_ids))
