@@ -16,7 +16,10 @@ _START = datetime.datetime(2026, 8, 11, tzinfo=datetime.UTC)
 
 def message(content: str, *, speaker: Speaker = Speaker.USER, minute: int = 0) -> IndexedMessage:
     return IndexedMessage(
-        message_id=uuid.uuid4(), speaker=speaker, content=content, created_at=_START + datetime.timedelta(minutes=minute)
+        message_id=uuid.uuid4(),
+        speaker=speaker,
+        content=content,
+        created_at=_START + datetime.timedelta(minutes=minute),
     )
 
 

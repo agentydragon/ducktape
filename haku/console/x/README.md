@@ -267,7 +267,7 @@ What the table holds that nothing else does is a **tool call's answer**.
 - **The two kind enums split the stream by whether a row is about an item.** The three
   `ConversationEventKind`s are one item's lifecycle — started, any number of segments, completed —
   and `AuthoredEventKind` is what the console witnessed about the session or the turn instead. Which
-  *provenance* arm a row takes does not follow from its kind: an item may be folded from frames or
+  _provenance_ arm a row takes does not follow from its kind: an item may be folded from frames or
   authored, because a prompt is an item the console accepted before anything crossed a wire.
 - **Prose exists only as segments, and a completion carries none.** That is what makes
   `conversation_item.text` a fold of these rows rather than a second authority for the same words —
