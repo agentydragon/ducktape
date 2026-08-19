@@ -4,8 +4,8 @@ No channel is imported here. A durable cursor lives beneath a channel boundary a
 (<channels/matrix/test_room_subscription.py>); this file holds the stream itself and the
 client-held position, which every consumer shares.
 
-The events are the operator's own prompts, because `prompt_enqueued` is the one kind a test can
-write without a runner.
+The events are the operator's own prompts, because a prompt item is the one thing a test can write
+without a runner.
 """
 
 from __future__ import annotations
@@ -15,10 +15,11 @@ from uuid import UUID
 
 import pytest
 import pytest_bazel
+from more_itertools import one
 from sqlalchemy import text
 
 from haku.console.chat_models import SPA_ORIGIN, TurnOutcome
-from haku.console.x.session_events import PromptBody, UnknownEventBody
+from haku.console.x.session_events import PromptStartedBody, SegmentBody, UnknownEventBody
 from haku.console.x.session_store import SessionStore
 from haku.console.x.subscription import (
     START,
@@ -45,7 +46,7 @@ def stream(migrated_sessions) -> ConversationStream:
 
 
 async def a_thread(chat_store: SessionStore, operator_id: UUID, *said: str) -> Thread:
-    """A ready session whose conversation holds one `prompt_enqueued` event per prompt."""
+    """A ready session whose conversation holds one prompt item per prompt."""
     view, token = await chat_store.create(operator_id)
     await chat_store.authenticate_bridge(view.session_id, token)
     thread = Thread(conversation_id=await chat_store.conversation_of(view.session_id), session_id=view.session_id)
@@ -67,9 +68,11 @@ async def say(chat_store: SessionStore, operator_id: UUID, thread: Thread, promp
 
 
 def prompts(read: Read) -> list[str]:
+    """What was said, in order. Segments are the only prose in the stream, and in these threads the
+    only items with any are the prompts — no turn here produces an answer."""
     # Never `Unstarted`: a client-held position is always a position, even when it is `START`.
     assert isinstance(read, Backlog)
-    return [event.body.text for event in read.events if isinstance(event.body, PromptBody)]
+    return [event.body.text for event in read.events if isinstance(event.body, SegmentBody)]
 
 
 async def test_two_subscribers_at_different_positions_read_only_what_each_has_not_seen(
@@ -79,9 +82,10 @@ async def test_two_subscribers_at_different_positions_read_only_what_each_has_no
     either."""
     thread = await a_thread(chat_store, operator_id, "one", "two", "three")
     whole = await stream.read(thread.conversation_id, after=START)
+    said_one = one(event.position for event in whole.events if getattr(event.body, "text", None) == "one")
 
     behind = Subscription(stream, ClientHeldCursor(START), thread.conversation_id)
-    ahead = Subscription(stream, ClientHeldCursor(whole.events[0].position), thread.conversation_id)
+    ahead = Subscription(stream, ClientHeldCursor(said_one), thread.conversation_id)
 
     assert prompts(await behind.read()) == ["one", "two", "three"]
     assert prompts(await ahead.read()) == ["two", "three"]
@@ -114,9 +118,14 @@ async def test_keeping_a_client_held_position_stores_nothing(chat_store, operato
     assert prompts(await subscription.read()) == ["one"]
 
 
-async def test_a_gap_in_event_seq_is_not_a_loss(chat_store, operator_id, stream) -> None:
-    """`event_seq` is global, so another conversation writing between two of ours leaves our rows
-    non-contiguous. Every read is "everything after N", so the hole is not even visible."""
+async def test_a_conversations_positions_are_its_own_and_contiguous(chat_store, operator_id, stream) -> None:
+    """`event_seq` counts within the conversation, so another thread writing between two of ours
+    takes none of our numbers.
+
+    Density is what makes a position an answer rather than a hint: a subscriber reading "everything
+    after N" can tell a gap from an end, so a lost row is a fact it can act on instead of one
+    nothing could distinguish from silence.
+    """
     ours = await a_thread(chat_store, operator_id, "first")
     theirs = await a_thread(chat_store, operator_id, "not ours")
     await say(chat_store, operator_id, ours, "second")
@@ -125,7 +134,7 @@ async def test_a_gap_in_event_seq_is_not_a_loss(chat_store, operator_id, stream)
 
     assert prompts(read) == ["first", "second"]
     seqs = [event.position.event_seq for event in read.events]
-    assert seqs[1] > seqs[0] + 1, f"expected the other conversation to have taken a sequence value: {seqs=}"
+    assert seqs == list(range(1, len(seqs) + 1)), f"expected a dense run starting at one: {seqs=}"
     assert prompts(await stream.read(theirs.conversation_id, after=START)) == ["not ours"]
 
 
@@ -144,10 +153,10 @@ async def test_a_read_that_stops_at_its_limit_says_there_is_more(chat_store, ope
     thread = await a_thread(chat_store, operator_id, "one", "two", "three")
 
     first = await stream.read(thread.conversation_id, after=START, limit=1)
-    assert (prompts(first), first.more) == (["one"], True)
+    assert (len(first.events), first.more) == (1, True)
 
-    rest = await stream.read(thread.conversation_id, after=first.position, limit=10)
-    assert (prompts(rest), rest.more) == (["two", "three"], False)
+    rest = await stream.read(thread.conversation_id, after=first.position, limit=100)
+    assert (prompts(rest), rest.more) == (["one", "two", "three"], False)
 
 
 async def test_a_replacement_session_continues_the_same_stream(chat_store, operator_id, stream) -> None:
@@ -166,29 +175,35 @@ async def test_a_kind_this_release_has_no_words_for_is_read_past_rather_than_rai
 ) -> None:
     """The roll this stream is exposed to, staged: the console rolls with `maxUnavailable: 0`, so
     the replica on the previous image reads rows the new one wrote, and this read filters no kind in
-    SQL. The CHECK is widened and a kind inserted exactly as the new image's migration and writer
-    would leave it; what runs against it is the vocabulary this release has.
+    SQL. The kind column carries **no** CHECK, precisely so a newer writer's value lands rather than
+    being refused; a kind is inserted exactly as that writer would leave it, and what runs against
+    it is the vocabulary this release has.
 
-    The row is read, not skipped: it keeps its position, so the two prompts around it are still
+    The row is read, not skipped: it keeps its position, so the prompts around it are still
     delivered and a subscriber's kept position advances over what it was handed.
     """
     thread = await a_thread(chat_store, operator_id, "before")
     async with migrated_sessions() as db, db.begin():
-        await db.execute(text("ALTER TABLE session_events DROP CONSTRAINT ck_session_events_kind"))
         await db.execute(
             text(
-                "INSERT INTO session_events (session_id, kind, provenance, body, created_at) "
-                "VALUES (:session_id, 'provisioning_started', 'authored', '{}'::jsonb, now())"
+                "INSERT INTO conversation_event "
+                "(conversation_id, event_seq, session_id, kind, provenance, body, created_at) "
+                "SELECT :conversation_id, next_event_seq, :session_id, 'provisioning_started', 'authored', "
+                "'{}'::jsonb, now() FROM conversation WHERE conversation_id = :conversation_id"
             ),
-            {"session_id": thread.session_id},
+            {"conversation_id": thread.conversation_id, "session_id": thread.session_id},
+        )
+        await db.execute(
+            text("UPDATE conversation SET next_event_seq = next_event_seq + 1 WHERE conversation_id = :id"),
+            {"id": thread.conversation_id},
         )
     await say(chat_store, operator_id, thread, "after")
 
     read = await stream.read(thread.conversation_id, after=START)
 
     assert prompts(read) == ["before", "after"]
-    assert [type(event.body) for event in read.events] == [PromptBody, UnknownEventBody, PromptBody]
-    assert read.events[1].body == UnknownEventBody(kind="provisioning_started", body={})
+    assert UnknownEventBody(kind="provisioning_started", body={}) in [event.body for event in read.events]
+    assert [type(event.body) for event in read.events].count(PromptStartedBody) == 2
 
 
 async def test_the_head_of_a_conversation_nothing_has_been_said_in_is_the_start(

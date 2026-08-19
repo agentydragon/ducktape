@@ -421,6 +421,7 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "@pypi//more_itertools",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
