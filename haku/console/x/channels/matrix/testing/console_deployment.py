@@ -22,8 +22,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ChatMessageRole, SessionStatus
-from haku.console.database_schema import MatrixSyncWatermark, SessionMessage
+from haku.console.chat_models import ItemType, SessionStatus
+from haku.console.database_schema import ConversationItem, MatrixSyncWatermark
 from haku.console.x.claude_code.frames import ASSISTANT_FRAME_KIND
 from haku.console.x.session_store import SessionStore
 from haku.console.x.testing.waiting import BUDGET_SECONDS, WedgedError, wait_until
@@ -184,7 +184,7 @@ class Deployment:
         return [json.loads(line) for line in recorded.read_text().splitlines()] if recorded.exists() else []
 
     async def wait_until_queued(self, session_id: UUID, body: str) -> None:
-        """Wait until *body* is a prompt row on *session_id*.
+        """Wait until *body* is a prompt item on *session_id*.
 
         The premise of the test that kills a sandbox: a message merely refused and held by the
         homeserver would be answered by the replacement whatever the watermark did, and the test
@@ -194,8 +194,8 @@ class Deployment:
         async def queued() -> bool:
             async with self._db() as db:
                 prompts = await db.scalars(
-                    select(SessionMessage.content).where(
-                        SessionMessage.session_id == session_id, SessionMessage.role == ChatMessageRole.USER
+                    select(ConversationItem.item_text).where(
+                        ConversationItem.session_id == session_id, ConversationItem.item_type == ItemType.PROMPT
                     )
                 )
             return any(body in prompt for prompt in prompts)

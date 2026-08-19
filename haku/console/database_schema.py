@@ -1109,6 +1109,13 @@ class ConversationEvent(Base):
     )
 
 
+# A nullable JSONB column where `None` means the field is **absent**, not that its value is JSON
+# `null`. SQLAlchemy's default is the other reading — it writes the two-byte document `null` — which
+# every `IS NULL` check on `conversation_item` then fails, and which no reader could tell from a
+# provider that genuinely sent `null`.
+_ABSENT_JSONB = JSONB(none_as_null=True)
+
+
 class ConversationItem(Base):
     """One thing in the transcript — a prompt, a message, a reasoning block, a tool call.
 
@@ -1151,15 +1158,15 @@ class ConversationItem(Base):
     # rows and on every delta, which is why the console mints its own.
     backend_item_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Prompt only: which attachment or surface sent it.
-    origin: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    origin: Mapped[dict[str, Any] | None] = mapped_column(_ABSENT_JSONB, nullable=True)
     call_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     tool_name: Mapped[str | None] = mapped_column(Text, nullable=True)
-    arguments: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    arguments: Mapped[dict[str, Any] | None] = mapped_column(_ABSENT_JSONB, nullable=True)
     outcome: Mapped[ToolOutcome | None] = mapped_column(TextBackedStrEnumColumn(ToolOutcome), nullable=True)
     # The per-tool result payload, behind `Json` on purpose: a channel rendering a shell result's
     # `exitCode` knows shell commands, not one backend. Typed as any JSON value rather than an
     # object, because it is one — production sends lists of blocks and bare strings here too.
-    structured: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
+    structured: Mapped[Any | None] = mapped_column(_ABSENT_JSONB, nullable=True)
     disclosure: Mapped[ReasoningDisclosure | None] = mapped_column(
         TextBackedStrEnumColumn(ReasoningDisclosure), nullable=True
     )

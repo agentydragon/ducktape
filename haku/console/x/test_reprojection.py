@@ -14,8 +14,8 @@ import pytest_bazel
 from more_itertools import one
 from sqlalchemy import delete, update
 
-from haku.console.chat_models import SPA_ORIGIN, ConversationEventKind, FrameDirection, TurnOutcome
-from haku.console.database_schema import Session, SessionEvent
+from haku.console.chat_models import SPA_ORIGIN, ConversationEventKind, FrameDirection, ItemType, TurnOutcome
+from haku.console.database_schema import ConversationEvent, ConversationItem, Session
 from haku.console.x import reprojection
 from haku.console.x.frame_projection import projected
 from haku.console.x.session_store import BridgeAuthentication
@@ -72,16 +72,18 @@ async def test_a_session_the_write_path_projected_agrees_with_itself(
 
     turn = one(report.turns)
     assert (turn.turn_id, turn.outcome) == (turn_id, reprojection.Agrees())
-    # Two rows per `assistant` frame: what the block said, and the message the frame closed —
-    # per-frame seeding means a message always ends at its own frame.
-    assert turn.stored_rows == 6
+    # Three rows for each item that carried prose — opened, said, closed — plus the tool call's ask
+    # on its own frame and the two its answer wrote.
+    assert turn.stored_rows == 9
     assert turn.unprojected_frames == 0
+    # And the invariant the whole shape exists for: every item's text is exactly its segments.
+    assert report.items == ()
 
 
 async def test_an_aborted_turn_still_agrees_with_its_frames(chat_store, migrated_sessions, operator_id) -> None:
-    """The authored arm is out of scope and `turn_aborted` is the member of it that names a turn, so
-    the per-turn read excludes it: no frame projects to a row nothing sent, and comparing it against
-    a re-fold would report drift on every turn the operator stopped.
+    """The authored arm is out of scope, and `turn_started`/`turn_ended` are the members of it that
+    name a turn, so the per-turn read excludes it: no frame projects to a row nothing sent, and
+    comparing it against a re-fold would report drift on every turn.
     """
     session_id, turn_id = await _turn_through_the_write_path(
         chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
@@ -105,9 +107,13 @@ async def test_a_row_whose_body_was_edited_is_reported_against_its_frame(
     )
     async with migrated_sessions() as db:
         await db.execute(
-            update(SessionEvent)
-            .where(SessionEvent.session_id == session_id, SessionEvent.kind == ConversationEventKind.TOOL_CALL_STARTED)
-            .values(body={"tool_name": "Write", "arguments": {"command": "ls"}})
+            update(ConversationEvent)
+            .where(
+                ConversationEvent.session_id == session_id,
+                ConversationEvent.kind == ConversationEventKind.ITEM_STARTED,
+                ConversationEvent.body["item_type"].astext == "tool_call",
+            )
+            .values(body={"item_type": "tool_call", "call_id": "toolu_1", "tool_name": "Write", "arguments": {}})
         )
         await db.commit()
         report = await reprojection.check_session(db, session_id)
@@ -136,8 +142,10 @@ async def test_a_row_that_is_gone_is_a_count_mismatch_rather_than_a_silent_pass(
     )
     async with migrated_sessions() as db:
         await db.execute(
-            delete(SessionEvent).where(
-                SessionEvent.session_id == session_id, SessionEvent.kind == ConversationEventKind.TOOL_CALL_STARTED
+            delete(ConversationEvent).where(
+                ConversationEvent.session_id == session_id,
+                ConversationEvent.kind == ConversationEventKind.ITEM_STARTED,
+                ConversationEvent.body["item_type"].astext == "tool_call",
             )
         )
         await db.commit()
@@ -147,8 +155,17 @@ async def test_a_row_that_is_gone_is_a_count_mismatch_rather_than_a_silent_pass(
     assert isinstance(outcome, reprojection.Drifted)
     finding = one(outcome.findings)
     assert isinstance(finding, reprojection.RowCountMismatch)
-    assert finding.projected == (ConversationEventKind.TOOL_CALL_STARTED, ConversationEventKind.MESSAGE_COMPLETED)
-    assert finding.stored == (ConversationEventKind.MESSAGE_COMPLETED,)
+    assert finding.projected == (
+        ConversationEventKind.ITEM_STARTED,
+        ConversationEventKind.ITEM_STARTED,
+        ConversationEventKind.ITEM_SEGMENT,
+        ConversationEventKind.ITEM_COMPLETED,
+    )
+    assert finding.stored == (
+        ConversationEventKind.ITEM_STARTED,
+        ConversationEventKind.ITEM_SEGMENT,
+        ConversationEventKind.ITEM_COMPLETED,
+    )
 
 
 async def test_a_turn_with_frames_and_no_rows_is_drift(chat_store, migrated_sessions, operator_id) -> None:
@@ -158,7 +175,7 @@ async def test_a_turn_with_frames_and_no_rows_is_drift(chat_store, migrated_sess
         chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
     )
     async with migrated_sessions() as db:
-        await db.execute(delete(SessionEvent).where(SessionEvent.session_id == session_id))
+        await db.execute(delete(ConversationEvent).where(ConversationEvent.session_id == session_id))
         await db.commit()
         report = await reprojection.check_session(db, session_id)
 
@@ -166,7 +183,10 @@ async def test_a_turn_with_frames_and_no_rows_is_drift(chat_store, migrated_sess
     assert isinstance(outcome, reprojection.Drifted)
     finding = one(outcome.findings)
     assert isinstance(finding, reprojection.RowCountMismatch)
-    assert (finding.projected, finding.stored) == ((ConversationEventKind.MESSAGE_COMPLETED,), ())
+    assert (finding.projected, finding.stored) == (
+        (ConversationEventKind.ITEM_STARTED, ConversationEventKind.ITEM_SEGMENT, ConversationEventKind.ITEM_COMPLETED),
+        (),
+    )
 
 
 async def test_a_turn_the_cursor_never_reached_is_skipped_rather_than_re_projected(
@@ -210,6 +230,28 @@ async def test_a_frame_recorded_past_the_cursor_is_counted_and_not_reported(
     turn = one(report.turns)
     assert turn.outcome == reprojection.Agrees()
     assert (turn.checked_frames, turn.unprojected_frames) == (1, 1)
+
+
+async def test_an_items_text_edited_out_from_under_its_segments_is_a_finding(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """The check the old shape could not be given. `conversation_item.text` is a fold of the item's
+    segments and never a second authority for them, so a row that stopped agreeing with the log that
+    produced it is drift rather than a disagreement nobody can adjudicate."""
+    session_id, _ = await _turn_through_the_write_path(
+        chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
+    )
+    async with migrated_sessions() as db:
+        await db.execute(
+            update(ConversationItem)
+            .where(ConversationItem.session_id == session_id, ConversationItem.item_type == ItemType.MESSAGE)
+            .values(item_text="two files")
+        )
+        await db.commit()
+        report = await reprojection.check_session(db, session_id)
+
+    drifted = one(report.items)
+    assert (drifted.folded, drifted.stored) == ("one file", "two files")
 
 
 if __name__ == "__main__":

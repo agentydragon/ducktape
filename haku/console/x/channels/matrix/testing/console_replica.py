@@ -51,9 +51,9 @@ from haku.console.x.channels.matrix.conversation import (
 )
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox
+from haku.console.x.channels.matrix.revisions import RevisionLog
 from haku.console.x.channels.matrix.room_subscription import RoomNotices
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
-from haku.console.x.channels.matrix.revisions import RevisionLog
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService, internal_router
@@ -162,6 +162,7 @@ async def _serve() -> None:
     store = SessionStore(sessions)
     conversations = MatrixConversationStore(sessions)
     ledger = IngressLedger(sessions)
+    outbox = RoomOutbox(sessions)
     identities = PostgresOperatorIdentityStore(
         sessions, OperatorIdentityTrust(trust_domain=TRUST_DOMAIN, trusted_issuers=frozenset({TRUSTED_ISSUER}))
     )
@@ -174,7 +175,7 @@ async def _serve() -> None:
         identities,
         MatrixTurns(matrix, conversations, store, identities, ledger),
         RoomTranscript(sessions),
-        RoomOutbox(sessions),
+        outbox,
         RevisionLog(sessions),
         ledger,
         armed=Path(_environment("HAKU_E2E_REFUSE_NEXT_REPLY")),
@@ -192,7 +193,14 @@ async def _serve() -> None:
         matrix, conversations, service, store, notifications, identities, sync.announce, engine
     )
     notices = RoomNotices(
-        engine, sessions, ConversationStream(sessions), conversations, notifications, sync.announce, sync.bound_room
+        engine,
+        sessions,
+        ConversationStream(sessions),
+        conversations,
+        notifications,
+        sync.announce,
+        sync.bound_room,
+        outbox,
     )
 
     @asynccontextmanager

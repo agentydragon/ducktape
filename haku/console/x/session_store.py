@@ -917,9 +917,9 @@ class SessionStore:
             writer = await conversation_log.writer_for(
                 db, turn.conversation_id, session_id=turn.session_id, turn_id=turn_id, now=now
             )
-            turn.last_seq = writer.conversation.next_event_seq
-            writer.authored(session_events.TurnEndedBody(outcome=outcome), turn_id=turn_id)
-            turn.last_frame_seq = (
+            # Read before the turn is touched. `ck_conversation_turn_last_seq` ties `last_seq` to
+            # `ended_at`, and a query issued between the two autoflushes the half-written row.
+            bound = (
                 last_frame_seq
                 if last_frame_seq is not None
                 else await db.scalar(
@@ -928,8 +928,11 @@ class SessionStore:
                     )
                 )
             )
+            turn.last_seq = writer.conversation.next_event_seq
+            turn.last_frame_seq = bound
             turn.ended_at = now
             turn.outcome = outcome
+            writer.authored(session_events.TurnEndedBody(outcome=outcome), turn_id=turn_id)
             chat = await db.get(Session, turn.session_id)
             if chat is not None:
                 # `responding` is derived from this turn being open, so closing it retires the
