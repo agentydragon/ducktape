@@ -20,18 +20,20 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import (
     SPA_ORIGIN,
-    AuthoredEventKind,
-    ChatMessageRole,
+    ConversationEventKind,
+    ItemType,
     MatrixOrigin,
     PromptRejection,
     SessionStatus,
     TurnOutcome,
 )
-from haku.console.database_schema import ChatAttachment, Conversation, Session, SessionEvent, SessionMessage
+from haku.console.database_schema import ChatAttachment, Conversation, ConversationEvent, ConversationItem, Session
+from haku.console.x import session_events
 from haku.console.x.channels.matrix.client import InboundMessage, RoomEventKind, UnmappableEvent
 from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
 from haku.console.x.channels.matrix.conversation import (
     NOTHING_SAID,
+    ConversationFacts,
     MatrixConversationStore,
     MatrixSessionSupervisor,
     MatrixSurface,
@@ -42,7 +44,15 @@ from haku.console.x.channels.matrix.conversation import (
 )
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.conftest import runtime_config
-from haku.console.x.session_events import PromptBody
+from haku.console.x.conversation_events import (
+    ConversationEvent as FoldedEvent,
+    FrameRange,
+    ItemSegment,
+    MessageCompleted,
+    MessageStarted,
+    OpenRef,
+)
+from haku.console.x.session_events import PromptStartedBody
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, SessionStore
@@ -412,24 +422,36 @@ async def serving_session(chat_store: SessionStore, operator_id: UUID, conversat
 async def exchange(chat_store: SessionStore, operator_id: UUID, session_id: UUID, asked: str, answered: str) -> None:
     """One question and its answer, written by the paths that write them in production.
 
-    Not hand-inserted rows: this read depends on the status and content the real writers leave
-    behind — a prompt row `pending` until a turn claims it, an assistant row `complete` in the same
-    transaction that queues the room's copy.
+    Not hand-inserted rows: this read depends on what the real writers leave behind — a prompt item
+    the store opens and closes at admission, and a message item whose text is the segments the fold
+    appended to it.
     """
     await chat_store.enqueue_prompt(operator_id, session_id, asked, SPA_ORIGIN)
     start = await chat_store.next_prompt(session_id)
     assert start is not None
-    message_id = await chat_store.begin_assistant(session_id, start.turn_id, source_first_frame_seq=1)
-    await chat_store.update_assistant(session_id, message_id, answered, complete=True)
+    await say(chat_store, session_id, start.turn_id, answered)
     # Ended, because admission asks about the turn: a session left mid-turn refuses the next
     # prompt, and these tests are conversations rather than one exchange each.
     await chat_store.end_turn(start.turn_id, TurnOutcome.ANSWERED)
 
 
-async def read(transcript: RoomTranscript, conversation_id: UUID) -> list[tuple[ChatMessageRole, str]]:
+async def say(
+    chat_store: SessionStore, session_id: UUID, turn_id: UUID, answered: str, *, complete: bool = True
+) -> None:
+    """One agent message, through the fold's own vocabulary."""
+    where = FrameRange(1, 1)
+    events: list[FoldedEvent] = [MessageStarted(provenance=where)]
+    if answered:
+        events.append(ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text=answered, provenance=where))
+    if complete:
+        events.append(MessageCompleted(backend_item_id=None, provenance=where))
+    await chat_store.apply_frame(session_id, turn_id, 1, events)
+
+
+async def read(transcript: RoomTranscript, conversation_id: UUID) -> list[tuple[ItemType, str]]:
     """A thread's recent conversation as a replacement session that owns none of it would read it."""
     return [
-        (message.role, message.body)
+        (message.item_type, message.body)
         for message in await transcript.recent(conversation_id, before_session=uuid4(), limit=20)
     ]
 
@@ -443,10 +465,10 @@ async def test_the_transcript_is_both_sides_of_the_conversation_in_order(
     await exchange(chat_store, operator_id, session_id, "still there?", "yes")
 
     assert await read(transcript, thread) == [
-        (ChatMessageRole.USER, "hi"),
-        (ChatMessageRole.ASSISTANT, "hello"),
-        (ChatMessageRole.USER, "still there?"),
-        (ChatMessageRole.ASSISTANT, "yes"),
+        (ItemType.PROMPT, "hi"),
+        (ItemType.MESSAGE, "hello"),
+        (ItemType.PROMPT, "still there?"),
+        (ItemType.MESSAGE, "yes"),
     ]
 
 
@@ -465,10 +487,10 @@ async def test_the_transcript_spans_every_session_of_the_thread(
     await exchange(chat_store, operator_id, second, "again", "still here")
 
     assert await read(transcript, thread) == [
-        (ChatMessageRole.USER, "hi"),
-        (ChatMessageRole.ASSISTANT, "hello"),
-        (ChatMessageRole.USER, "again"),
-        (ChatMessageRole.ASSISTANT, "still here"),
+        (ItemType.PROMPT, "hi"),
+        (ItemType.MESSAGE, "hello"),
+        (ItemType.PROMPT, "again"),
+        (ItemType.MESSAGE, "still here"),
     ]
 
 
@@ -486,7 +508,7 @@ async def test_a_batch_the_dying_session_never_answered_is_still_the_history(
     await chat_store.enqueue_prompt(operator_id, doomed, "the one that killed it", SPA_ORIGIN)
     await chat_store.fail(doomed, "the sandbox went away")
 
-    assert (ChatMessageRole.USER, "the one that killed it") in await read(transcript, thread)
+    assert (ItemType.PROMPT, "the one that killed it") in await read(transcript, thread)
 
 
 async def test_a_session_s_own_rows_are_not_its_history(
@@ -504,31 +526,28 @@ async def test_a_session_s_own_rows_are_not_its_history(
 
     said = await transcript.recent(thread, before_session=replacement, limit=20)
 
-    assert [(message.role, message.body) for message in said] == [
-        (ChatMessageRole.USER, "hi"),
-        (ChatMessageRole.ASSISTANT, "hello"),
+    assert [(message.item_type, message.body) for message in said] == [
+        (ItemType.PROMPT, "hi"),
+        (ItemType.MESSAGE, "hello"),
     ]
 
 
 async def test_what_the_room_was_never_told_is_not_in_the_history(
     transcript: RoomTranscript, chat_store: SessionStore, operator_id: UUID, thread: UUID
 ) -> None:
-    """Haku's side is here on exactly the condition the room's copy was queued on.
+    """Haku's side is here on exactly the condition the room heard it on.
 
-    Two rows exist that no outbox row was ever written for, and neither is context: a message
-    still streaming when its session died, and the empty one a message carrying only tool calls
-    leaves behind.
+    Two items exist that were never an answer, and neither is context: one still being written into
+    when its session died, and the empty one a turn that only ran tools leaves behind.
     """
     session_id = await serving_session(chat_store, operator_id, thread)
     await chat_store.enqueue_prompt(operator_id, session_id, "do something", SPA_ORIGIN)
     start = await chat_store.next_prompt(session_id)
     assert start is not None
-    tool_only = await chat_store.begin_assistant(session_id, start.turn_id, source_first_frame_seq=1)
-    await chat_store.update_assistant(session_id, tool_only, "", complete=True)
-    streaming = await chat_store.begin_assistant(session_id, start.turn_id, source_first_frame_seq=2)
-    await chat_store.update_assistant(session_id, streaming, "half an ans", complete=False)
+    await say(chat_store, session_id, start.turn_id, "")
+    await say(chat_store, session_id, start.turn_id, "half an ans", complete=False)
 
-    assert await read(transcript, thread) == [(ChatMessageRole.USER, "do something")]
+    assert await read(transcript, thread) == [(ItemType.PROMPT, "do something")]
 
 
 async def test_another_thread_is_not_this_thread(
@@ -626,22 +645,34 @@ async def test_a_batch_offered_mid_turn_is_rejected_with_the_reason_and_the_text
 
     assert isinstance(admitted, PromptRejected)
     assert admitted.reason is PromptRejection.TURN_IN_FLIGHT
-    assert admitted.event is not None
-    assert admitted.event.session_id == session_id
-    assert admitted.event.kind is AuthoredEventKind.PROMPT_REJECTED
-    assert admitted.event.body == {"reason": PromptRejection.TURN_IN_FLIGHT, "text": "and another thing"}
+    assert admitted.facts is not None
+    assert (admitted.facts.conversation_id, admitted.facts.session_id) == (thread, session_id)
+    assert admitted.facts.bodies == (
+        session_events.PromptRejectedBody(reason=PromptRejection.TURN_IN_FLIGHT, text="and another thing"),
+    )
 
 
-async def test_a_batch_offered_before_a_session_exists_is_rejected_with_nothing_to_record(
+async def test_a_batch_offered_before_a_session_exists_is_still_recorded(
     turns: MatrixTurns, conversations: MatrixConversationStore, chat_store: SessionStore, operator_id: UUID
 ) -> None:
-    """A room bound before the supervisor has provisioned anything. There is no session to key an
-    event to, so the operator's only account of it is the notice."""
-    assert (await conversations.bind_room(MATRIX_ROOM, operator_id)).room_id == MATRIX_ROOM
+    """A room bound before the supervisor has provisioned anything.
+
+    What a refusal is about is the conversation, which exists as soon as the room is bound — so this
+    is a row like any other refusal's, with no session named because there was none. What it used to
+    be was the one case the record could not carry, said into the room by ingress and nowhere else.
+    """
+    bound = await conversations.bind_room(MATRIX_ROOM, operator_id)
 
     admitted = await turns.offer([operator_message("hi", event_id="$1", at=1)])
 
-    assert admitted == PromptRejected(reason=PromptRejection.NO_SESSION, event=None)
+    assert admitted == PromptRejected(
+        reason=PromptRejection.NO_SESSION,
+        facts=ConversationFacts(
+            conversation_id=bound.conversation_id,
+            session_id=None,
+            bodies=(session_events.PromptRejectedBody(reason=PromptRejection.NO_SESSION, text="hi"),),
+        ),
+    )
 
 
 async def test_a_batch_offered_to_a_session_that_is_gone_is_rejected_rather_than_raised(
@@ -655,8 +686,8 @@ async def test_a_batch_offered_to_a_session_that_is_gone_is_rejected_rather_than
     """The supervisor is between sessions, which the room must survive.
 
     `enqueue_prompt` answers a vanished session with `KeyError`; raising that into the sync loop
-    would cost the operator an answer, and it reads as the case above — the row that would carry
-    it is the one that has gone.
+    would cost the operator an answer. It reads as the case above — recorded against the
+    conversation with no session named, because there is none.
     """
     session_id = await serving_session(chat_store, operator_id, thread)
     await serving_room(conversations, operator_id)
@@ -665,7 +696,10 @@ async def test_a_batch_offered_to_a_session_that_is_gone_is_rejected_rather_than
 
     admitted = await turns.offer([operator_message("hi", event_id="$1", at=1)])
 
-    assert admitted == PromptRejected(reason=PromptRejection.NO_SESSION, event=None)
+    assert isinstance(admitted, PromptRejected)
+    assert admitted.reason is PromptRejection.NO_SESSION
+    assert admitted.facts is not None
+    assert (admitted.facts.conversation_id, admitted.facts.session_id) == (thread, None)
 
 
 async def test_an_accepted_batch_records_its_events_against_the_prompt_it_became(
@@ -707,7 +741,7 @@ async def test_a_rejected_batch_records_nothing_for_the_homeserver_to_be_deduped
     assert await ledger.carried(["$1"]) == frozenset()
 
 
-async def test_an_unanswered_message_is_asked_again_and_its_events_follow_the_new_prompt(
+async def test_a_prompt_its_session_never_answered_is_taken_by_the_replacement(
     turns: MatrixTurns,
     conversations: MatrixConversationStore,
     chat_store: SessionStore,
@@ -718,8 +752,9 @@ async def test_an_unanswered_message_is_asked_again_and_its_events_follow_the_ne
     """Suppression is not acknowledgement: the batch was acknowledged to the homeserver, so this
     prompt is the only copy left of what the operator asked, and the session holding it died.
 
-    The events move to the replacement's prompt, which is what stops the next pass finding the
-    same message outstanding and asking a third time.
+    Nothing re-offers it. The queue belongs to the conversation, so the replacement's own
+    `next_prompt` finds the same row — what this replaces was a ledger query for stranded prompts
+    and a channel that asked the live session the dead one's question.
     """
     doomed = await serving_session(chat_store, operator_id, thread)
     await serving_room(conversations, operator_id)
@@ -727,65 +762,52 @@ async def test_an_unanswered_message_is_asked_again_and_its_events_follow_the_ne
     await chat_store.closed(doomed)
     replacement = await serving_session(chat_store, operator_id, thread)
 
-    unanswered = await ledger.unanswered()
-    assert unanswered is not None
-    assert await turns.re_offer(unanswered) is True
-
     start = await chat_store.next_prompt(replacement)
+
     assert start is not None
     assert start.prompt == "did you see this"
-    assert await ledger.unanswered() is None, "the re-offered prompt is the one answering for it now"
+    assert await ledger.carried(["$1"]) == frozenset({"$1"}), "and the homeserver's re-delivery is still dropped"
 
 
-async def test_an_unanswered_message_the_live_session_will_not_take_is_left_for_the_next_pass(
-    turns: MatrixTurns,
-    conversations: MatrixConversationStore,
-    chat_store: SessionStore,
-    ledger: IngressLedger,
-    operator_id: UUID,
-    thread: UUID,
-) -> None:
-    """Refusal is not the end of it. Nothing is recorded and nothing is said — the operator did not
-    send this message again and has nothing to do about it — so the only correct answer is to ask
-    once there is somewhere to ask."""
-    doomed = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations, operator_id)
-    await turns.offer([operator_message("did you see this", event_id="$1", at=1)])
-    await chat_store.closed(doomed)
-
-    unanswered = await ledger.unanswered()
-    assert unanswered is not None
-    assert await turns.re_offer(unanswered) is False
-
-    assert await ledger.unanswered() == unanswered
-
-
-async def test_an_unreadable_event_is_a_row_per_event_on_the_live_session(
+async def test_an_unreadable_event_is_a_fact_per_event_on_the_live_conversation(
     turns: MatrixTurns,
     conversations: MatrixConversationStore,
     chat_store: SessionStore,
     operator_id: UUID,
     thread: UUID,
 ) -> None:
-    """What the notice says is a count and a set of types; what is kept is the events themselves
+    """One fact per event, for the caller to append in the transaction that acknowledges the batch
     (<../../../debug/channel_write_audit.md> row 12)."""
     session_id = await serving_session(chat_store, operator_id, thread)
     await serving_room(conversations, operator_id)
 
-    rows = await turns.unreadable([_unmappable("m.image"), _unmappable("m.audio")])
+    facts = await turns.unreadable([_unmappable("m.image"), _unmappable("m.audio")])
 
-    assert [(row.session_id, row.kind, row.body) for row in rows] == [
-        (session_id, AuthoredEventKind.UNREADABLE_INPUT, {"media_type": "m.image"}),
-        (session_id, AuthoredEventKind.UNREADABLE_INPUT, {"media_type": "m.audio"}),
-    ]
+    assert facts == ConversationFacts(
+        conversation_id=thread,
+        session_id=session_id,
+        bodies=(
+            session_events.UnreadableInputBody(media_type="m.image"),
+            session_events.UnreadableInputBody(media_type="m.audio"),
+        ),
+    )
 
 
-async def test_an_unreadable_event_with_no_session_behind_the_room_records_nothing(
+async def test_an_unreadable_event_with_no_session_behind_the_room_is_still_recorded(
     turns: MatrixTurns, conversations: MatrixConversationStore, operator_id: UUID
 ) -> None:
-    assert (await conversations.bind_room(MATRIX_ROOM, operator_id)).room_id == MATRIX_ROOM
+    """Same terms as a refusal: the conversation is what it is about, and it exists from the moment
+    the room is bound. Only a room bound to nothing has nowhere to record it — and nowhere to say
+    it either, which makes the two absences the same one."""
+    bound = await conversations.bind_room(MATRIX_ROOM, operator_id)
 
-    assert await turns.unreadable([_unmappable("m.image")]) == ()
+    facts = await turns.unreadable([_unmappable("m.image")])
+
+    assert facts == ConversationFacts(
+        conversation_id=bound.conversation_id,
+        session_id=None,
+        bodies=(session_events.UnreadableInputBody(media_type="m.image"),),
+    )
 
 
 async def test_a_batch_records_the_room_events_it_was_folded_from(
@@ -801,7 +823,7 @@ async def test_a_batch_records_the_room_events_it_was_folded_from(
     only copy — and it names the room as well as the event, which is what a reader comparing
     origins needs once one bot serves more than one.
     """
-    session_id = await serving_session(chat_store, operator_id, thread)
+    await serving_session(chat_store, operator_id, thread)
     await serving_room(conversations, operator_id)
 
     offered = await turns.offer(
@@ -810,16 +832,17 @@ async def test_a_batch_records_the_room_events_it_was_folded_from(
 
     assert isinstance(offered, PromptAccepted)
     async with migrated_sessions() as db:
-        prompt = await db.get(SessionMessage, offered.message_id)
+        prompt = await db.get(ConversationItem, offered.item_id)
         assert prompt is not None
-        assert prompt.content == "first\nsecond"
+        assert (prompt.item_type, prompt.item_text) == (ItemType.PROMPT, "first\nsecond")
         asked = await db.scalar(
-            select(SessionEvent).where(
-                SessionEvent.session_id == session_id, SessionEvent.kind == AuthoredEventKind.PROMPT_ENQUEUED
+            select(ConversationEvent).where(
+                ConversationEvent.item_id == offered.item_id,
+                ConversationEvent.kind == ConversationEventKind.ITEM_STARTED,
             )
         )
     assert asked is not None
-    assert PromptBody.model_validate(asked.body).origin == MatrixOrigin(address=MATRIX_ROOM, refs=("$a", "$b"))
+    assert PromptStartedBody.model_validate(asked.body).origin == MatrixOrigin(address=MATRIX_ROOM, refs=("$a", "$b"))
 
 
 if __name__ == "__main__":
