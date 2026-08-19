@@ -85,6 +85,7 @@ py_library(
     srcs = ["room_subscription.py"],
     deps = [
         ":client",
+        ":outbox",
         ":conversation",
         ":outbox",
         "//haku/console:chat_models",

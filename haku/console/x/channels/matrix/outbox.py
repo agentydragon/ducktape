@@ -1,10 +1,9 @@
 """The room's outbox: replies as rows, and the one task that says them.
 
-A turn writes the row in the same transaction as the assistant message it copies — which also
-covers a turn raising between producing text and speaking it — and this drains it. `sent_at` is
-written only once `room_send` has returned, so every other outcome, the replica disappearing
-mid-send included, leaves the row claimable by whoever comes next
-(<../../../debug/message_drops.md> E1, E4, E6, E7).
+**The channel writes the row, reading the log forward from its own cursor**
+(`room_subscription.RoomNotices`), and this drains it. `sent_at` is written only once `room_send`
+has returned, so every other outcome, the replica disappearing mid-send included, leaves the row
+claimable by whoever comes next (<../../../debug/message_drops.md> E1, E4, E6, E7).
 
 **`pacer` owns when.** The drain does not send; it queues one reply into the pacer and waits for
 that closure to settle before claiming the next. So replies keep the room's rate budget, their
@@ -26,12 +25,14 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select, text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.database_schema import MatrixOutbox
+from haku.console.chat_models import ItemStatus, ItemType
+from haku.console.database_schema import ConversationItem, MatrixOutbox
 from haku.console.x.channels.matrix.client import EventTag, RoomEventKind
 from haku.console.x.channels.matrix.conversation import live_attachment
 from haku.console.x.channels.matrix.pacer import MAX_QUEUED_SENDS, SENDS_PER_SECOND, RoomPacer
@@ -81,36 +82,29 @@ class PendingReply:
     room_id: str
     subject: str
     body: str
-    item_id: UUID | None
     attempts: int
 
     def tag(self) -> EventTag:
-        """What the room event states about itself.
-
-        Rebuilt from the row rather than stored beside it: a reply's tag is exactly these columns,
-        so a JSON copy would be the same facts twice with two ways to disagree.
-        """
-        return EventTag(kind=RoomEventKind.REPLY, item_id=self.item_id)
+        """What the room event states about itself."""
+        return EventTag(kind=RoomEventKind.REPLY)
 
     def transaction_id(self) -> str:
         """What this reply is sent under, on every attempt.
 
-        **The row's own id, not `EventTag.transaction_id`'s.** That mints a fresh uuid4 where the
-        event names no transcript row, so a redrive of the one reply naming none (`result.result`
-        on a turn whose completed messages were all empty) would post a second message instead of
-        being refused. The row id is stable for exactly as long as redelivery can happen.
+        **The row's own id, not `EventTag.transaction_id`'s**, which mints a fresh uuid4 every call
+        — under which a redrive would post a second message instead of being refused. The row id is
+        stable for exactly as long as redelivery can happen.
         """
         return self.outbox_id.hex
 
 
-def _pending(row: MatrixOutbox, *, room_id: str, item_id: UUID | None) -> PendingReply:
+def _pending(row: MatrixOutbox, *, room_id: str) -> PendingReply:
     return PendingReply(
         outbox_id=row.outbox_id,
         attachment_id=row.attachment_id,
         room_id=room_id,
         subject=row.subject,
         body=row.body,
-        item_id=item_id,
         attempts=row.attempts,
     )
 
@@ -130,11 +124,48 @@ class RoomOutbox:
     **`subject` is the row's own column now**, not derived from which of two identities it carried.
     Its predecessor needed that fork because a turn could produce a reply no transcript row held;
     prose is only ever segments of an item, so that case is gone and the idempotence key is stored
-    once where the unique index can see it.
+    once where the unique index can see it. For a reply that subject is the item's id.
     """
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]):
         self._sessions = sessions
+
+    async def enqueue(self, attachment_id: UUID, item_id: UUID) -> bool:
+        """Owe the room this item's prose. False where there was nothing to owe it.
+
+        **The text is read here, not passed in.** A subscriber queues an item because it saw the
+        item complete, and a complete item's `text` is final — so taking it from the caller would be
+        the same prose in two places with two ways to disagree.
+
+        **Queued once per subject.** A subscriber that crashed between sending and keeping its
+        position sees the same completion again, and so does a runner replaying its rollout into a
+        replacement replica; the room must not hear the answer twice, and the unique index is what
+        says so rather than the caller remembering.
+
+        An item that finished with nothing in it is not a reply: a turn that only ran tools said
+        nothing, and an empty room event would be the console reporting that as an answer.
+        """
+        now = datetime.datetime.now(datetime.UTC)
+        async with self._sessions() as db, db.begin():
+            item = await db.get(ConversationItem, item_id)
+            if item is None or item.item_type is not ItemType.MESSAGE or item.status is not ItemStatus.COMPLETE:
+                return False
+            if not (body := item.item_text.strip()):
+                return False
+            queued = await db.execute(
+                insert(MatrixOutbox)
+                .values(
+                    outbox_id=uuid4(),
+                    attachment_id=attachment_id,
+                    subject=item_id.hex,
+                    body=body,
+                    created_at=now,
+                    attempts=0,
+                    next_attempt_at=now,
+                )
+                .on_conflict_do_nothing(index_elements=["attachment_id", "subject"])
+            )
+            return queued.rowcount == 1
 
     async def claim_next(self, room_id: str) -> PendingReply | None:
         """Take this room's oldest live reply if it is due, counting the attempt as spent.
@@ -171,7 +202,7 @@ class RoomOutbox:
                 return None
             row.attempts += 1
             row.next_attempt_at = now + _backoff(row.attempts)
-            return _pending(row, room_id=room_id, item_id=None)
+            return _pending(row, room_id=room_id)
 
     async def mark_sent(self, outbox_id: UUID) -> None:
         """Record that the room has this reply.

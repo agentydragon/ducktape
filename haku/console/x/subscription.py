@@ -77,6 +77,10 @@ class StreamedEvent:
     # below it owns.
     session_id: UUID | None
     turn_id: UUID | None
+    # Which item this row is about, absent on the console's own facts. A subscriber that *sends*
+    # rather than renders needs it: what the Matrix channel owes its room is an item's whole prose,
+    # which is the item's to answer and not this event's.
+    item_id: UUID | None
     created_at: datetime
     body: session_events.StoredBody
 
@@ -164,6 +168,7 @@ def _streamed(row: ConversationEvent) -> StreamedEvent:
         position=StreamPosition(event_seq=row.event_seq),
         session_id=row.session_id,
         turn_id=row.turn_id,
+        item_id=row.item_id,
         created_at=row.created_at,
         body=session_events.body_of(row),
     )

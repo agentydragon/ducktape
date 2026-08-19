@@ -297,6 +297,9 @@ def create_app(
     if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
         matrix_conversation_store = matrix_conversation.MatrixConversationStore(db_sessions)
         matrix_ledger = matrix_ingress_ledger.IngressLedger(db_sessions)
+        # One object, because the two halves of the queue are two ends of it: the notice reader
+        # writes rows off the conversation's log and the sync service's drain says them.
+        matrix_room_outbox = matrix_outbox.RoomOutbox(db_sessions)
         matrix_sync_service = matrix_sync.MatrixSyncService(
             matrix_config,
             matrix_config.password,
@@ -308,7 +311,7 @@ def create_app(
                 matrix_config, matrix_conversation_store, session_store, operator_identity_store, matrix_ledger
             ),
             matrix_conversation.RoomTranscript(db_sessions),
-            matrix_outbox.RoomOutbox(db_sessions),
+            matrix_room_outbox,
             matrix_revisions.RevisionLog(db_sessions),
             matrix_ledger,
         )
@@ -323,6 +326,7 @@ def create_app(
             session_notifications,
             matrix_sync_service.announce,
             matrix_sync_service.bound_room,
+            matrix_room_outbox,
         )
         if claude_runtime is not None:
             # The template is parsed here, at construction, so a broken one is a pod that never

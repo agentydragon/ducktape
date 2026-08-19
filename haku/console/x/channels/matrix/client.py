@@ -107,34 +107,29 @@ class EventTag(BaseModel):
 
     **Ids and kinds only.** The room is public and federated, so a tag carrying text would publish
     the same thing twice, in a field nobody renders.
-
-    `message_id` is the transcript row and `agent_message_id` the agent's own `msg_…`; both are
-    absent on everything that is not a reply, because nothing else corresponds to a row.
     """
 
     model_config = ConfigDict(frozen=True, extra="ignore")
 
     kind: RoomEventKind
     session_id: UUID | None = None
-    message_id: UUID | None = None
-    agent_message_id: str | None = None
 
     def content(self) -> dict[str, Any]:
         """The tag as it goes on the wire, with an absent field absent rather than null."""
         return self.model_dump(mode="json", exclude_none=True)
 
     def transaction_id(self) -> str:
-        """What to send this event under, so a re-send of the same thing is not a second event.
+        """What to send this event under. **Impure**: every call mints a new one.
 
-        Derived where the event names a transcript row — re-posting a row is always a mistake, so
-        its id is the transaction and the homeserver refuses the duplicate — and fresh where it
-        does not: a status edit and a lifecycle notice name no row, and deriving one would lose the
-        event rather than deduplicate it. **Impure**: each call for a row-less event mints a new id.
+        Nothing tagged this way names a durable row — a status edit, a lifecycle notice, a room
+        binding — so there is nothing to derive a stable id from and deriving one would lose the
+        event rather than deduplicate it. The one send that must be stable across a redrive is a
+        reply, whose transaction is its outbox row's id (`outbox.PendingReply.transaction_id`).
 
         Rests on how Synapse keys and expires its transaction cache
         (<../../../docs/chat_runtime_facts.md>).
         """
-        return self.message_id.hex if self.message_id is not None else uuid4().hex
+        return uuid4().hex
 
 
 class MatrixError(Exception):

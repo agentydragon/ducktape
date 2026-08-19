@@ -10,16 +10,15 @@ instead of being handed events by whoever happens to be running the turn.
 - **`RoomNotices`** is the subscriber. It wakes on `session_changed`, reads what the room has not
   been told, says it, and keeps the position it reached.
 
-**Notices only, and not replies.** An answer is a `session_outbox` row the drain says into the room
-with a transaction id, a retry budget and an ordering guarantee against other answers; a notice is
-a rendering of a recorded fact and needs none of that. Moving the outbox is the reconciler's work
-(<../../../plans/conversation_layers.md> § 5) and is deliberately not this.
+**Replies and notices, from one position.** A completed message becomes a `matrix_outbox` row the
+drain says into the room — with a transaction id, a retry budget and an ordering guarantee against
+other answers, none of which a notice needs — and everything else is said straight from here. Both
+come off the same cursor, so a notice can no longer overtake the answer it was about; what the turn
+loop used to write inside its own transaction is now something the channel decides for itself.
 
 **Every kind the stream carries — which is not every kind the room shows.** What `notice` reads is
-what `session_events` records, and several things the room says have no row at all: a session's
-lifecycle transitions, the supervisor's setup narration, a room being bound or adopted. Those still
-reach the room by being pushed at it, and giving each a row is a CHECK-constraint migration plus a
-vocabulary decision rather than an arm here.
+what `conversation_event` records, and several things the room says have no row at all: a room being
+bound or adopted, an invite refused. Those still reach the room by being pushed at it.
 
 **The position is kept after the notice, never before.** A crash in that window says the notice
 again on the next pass — the same trade `revisions.retire` takes, and the right way round: a
@@ -53,7 +52,7 @@ from haku.console.chat_models import (
 from haku.console.database_schema import ChannelCursor
 from haku.console.x.channels.matrix.client import RoomEventKind
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore
-from haku.console.x.channels.matrix.outbox import BoundRoom
+from haku.console.x.channels.matrix.outbox import BoundRoom, RoomOutbox
 from haku.console.x.session_events import (
     LeaseExpiredBody,
     MessageCompletedBody,
@@ -160,14 +159,11 @@ class Notice:
     kind: RoomEventKind
 
 
-def why_not(reason: PromptRejection) -> str:
+def _why_not(reason: PromptRejection) -> str:
     """What a rejection says the operator is waiting for.
 
     The channel's own rendering of `PromptRejection`, hence here rather than beside the enum. A
     match rather than a lookup, so a member added later fails the type check instead of the send.
-
-    Shared with `sync.py`, which still says this itself for the one rejection that reaches no row
-    (`conversation.PromptRejected.event`): one fact spoken two ways would read as two facts.
     """
     match reason:
         case PromptRejection.NO_SESSION:
@@ -215,10 +211,10 @@ def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
     left to a wildcard, so a shape added to the stream lands here as a type error instead of being
     silently ignored.
 
-    The shapes with a `None` arm are the ones the room shows some other way: an assistant message
-    is an answer the outbox says with a transaction id and a retry budget, reasoning and tool calls
-    are what the work notice will summarise (<../../../plans/conversation_layers.md> § 4) rather
-    than a line each, and the lifecycle shapes have no writer yet.
+    The shapes with a `None` arm are the ones the room shows some other way: an assistant message is
+    an answer `reconcile_once` queues on the outbox rather than announces, and reasoning and tool
+    calls are what the work notice will summarise (<../../../plans/conversation_layers.md> § 4)
+    rather than a line each.
 
     `UnknownEventBody` is on that arm too, and it is a different statement: a kind a **newer**
     release wrote, which this one has no words for. The room says nothing about it and the cursor
@@ -228,7 +224,7 @@ def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
     """
     match event.body:
         case PromptRejectedBody(reason=reason):
-            return Notice(f"not delivered — {why_not(reason)}; send it again", RoomEventKind.REJECTED)
+            return Notice(f"not delivered — {_why_not(reason)}; send it again", RoomEventKind.REJECTED)
         case UnreadableInputBody(media_type=media_type):
             return Notice(
                 f"received a message Haku cannot read ({media_type}) — it reads text only; "
@@ -272,7 +268,12 @@ def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
 
 
 class RoomNotices:
-    """Says what the record has recorded and the room has not been told, from the room's position."""
+    """Says what the record has recorded and the room has not been told, from the room's position.
+
+    Answers included: a completed message is queued on the outbox rather than said from here, so it
+    goes out under a transaction id with a retry budget, but the decision that the room is owed it
+    is made here, in this order, off this cursor.
+    """
 
     def __init__(
         self,
@@ -283,6 +284,7 @@ class RoomNotices:
         notifications: SessionNotifications,
         announce: Notify,
         room: BoundRoom,
+        outbox: RoomOutbox,
     ) -> None:
         self._engine = engine
         self._sessions = sessions
@@ -291,10 +293,16 @@ class RoomNotices:
         self._notifications = notifications
         self._announce = announce
         self._room = room
+        self._outbox = outbox
         self._changed = asyncio.Event()
 
     async def reconcile_once(self) -> bool:
-        """Say what the room is owed. True when the read stopped at its limit and there is more."""
+        """Say or queue what the room is owed. True when the read stopped at its limit.
+
+        **The position is kept after the whole batch, never during it.** A crash part-way replays
+        the batch: a notice is said again, and a reply is refused by the outbox's unique subject —
+        which is the trade this reader is built around.
+        """
         if (room_id := await self._room()) is None:
             return False
         if (bound := await self._conversations.attachment_of_room(room_id)) is None:
@@ -310,7 +318,12 @@ class RoomNotices:
             await subscription.keep(read.head)
             return False
         for event in read.events:
-            if (said := notice(event, room_id=room_id)) is not None:
+            if isinstance(event.body, MessageCompletedBody):
+                # The item's own text, read by the outbox: what the room is owed is the whole
+                # message, and this event deliberately carries none of it.
+                assert event.item_id is not None, "an item lifecycle row names its item"
+                await self._outbox.enqueue(attachment_id, event.item_id)
+            elif (said := notice(event, room_id=room_id)) is not None:
                 await self._announce(said.body, said.kind)
         await subscription.keep(read.position)
         return read.more
