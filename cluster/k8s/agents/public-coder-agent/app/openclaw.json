@@ -151,28 +151,5 @@
         "enabled": true
       }
     }
-  },
-  "tools": {
-    "allow": [
-      "exec",
-      "process",
-      "read",
-      "write",
-      "edit",
-      "apply_patch",
-      "memory_get",
-      "memory_search",
-      "session_status",
-      "bundle-mcp"
-    ],
-    "elevated": {
-      "enabled": false
-    },
-    "fs": {
-      "workspaceOnly": true
-    },
-    "sessions": {
-      "visibility": "agent"
-    }
   }
 }
