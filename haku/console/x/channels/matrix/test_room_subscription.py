@@ -7,7 +7,7 @@ reading it, which is why the restart is asserted here rather than beside the abs
 from __future__ import annotations
 
 import datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
@@ -15,11 +15,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import LeaseExpiryReason, MatrixOrigin, PromptRejection, SpaOrigin, TurnOutcome
-from haku.console.database_schema import MatrixRoomCursor
-from haku.console.x import session_events
+from haku.console.database_schema import ChannelCursor
+from haku.console.x import conversation_log, session_events
 from haku.console.x.channels.matrix.client import RoomEventKind
 from haku.console.x.channels.matrix.conftest import MATRIX_ROOM
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore
+from haku.console.x.channels.matrix.outbox import RoomOutbox
 from haku.console.x.channels.matrix.room_subscription import (
     ABORTED_BY_OPERATOR,
     RELAYED_PROMPT,
@@ -56,6 +57,11 @@ def stream(migrated_sessions: async_sessionmaker[AsyncSession]) -> ConversationS
 
 
 @pytest.fixture
+def outbox(migrated_sessions: async_sessionmaker[AsyncSession]) -> RoomOutbox:
+    return RoomOutbox(migrated_sessions)
+
+
+@pytest.fixture
 def notices(
     migrated_engine,
     migrated_sessions: async_sessionmaker[AsyncSession],
@@ -63,9 +69,10 @@ def notices(
     conversations: MatrixConversationStore,
     notifications,
     room: Room,
+    outbox: RoomOutbox,
 ) -> RoomNotices:
     return RoomNotices(
-        migrated_engine, migrated_sessions, stream, conversations, notifications, room.announce, room.bound
+        migrated_engine, migrated_sessions, stream, conversations, notifications, room.announce, room.bound, outbox
     )
 
 
@@ -88,8 +95,9 @@ async def abort_a_turn(chat_store: SessionStore, operator_id: UUID, session_id: 
 
 
 async def stored_position(sessions: async_sessionmaker[AsyncSession]) -> StreamPosition | None:
+    """Where the room has been brought up to, whichever attachment holds it — there is one."""
     async with sessions() as db:
-        reached = await db.scalar(select(MatrixRoomCursor.event_seq).where(MatrixRoomCursor.room_id == MATRIX_ROOM))
+        reached = await db.scalar(select(ChannelCursor.event_seq))
         return None if reached is None else StreamPosition(event_seq=reached)
 
 
@@ -138,6 +146,7 @@ async def test_a_restarted_reader_resumes_from_the_position_it_kept(
     stream,
     conversations,
     notifications,
+    outbox,
 ) -> None:
     """The whole reason this position is durable: the room's copy outlives the process that wrote
     into it, so a replica that goes away mid-conversation must not re-say what its predecessor did
@@ -155,6 +164,7 @@ async def test_a_restarted_reader_resumes_from_the_position_it_kept(
         notifications,
         successor_room.announce,
         successor_room.bound,
+        outbox,
     )
     await successor.reconcile_once()
     assert successor_room.said == []
@@ -175,11 +185,18 @@ async def test_a_room_with_no_conversation_behind_it_is_not_behind_on_anything(
 
 
 async def author(
-    sessions: async_sessionmaker[AsyncSession], session_id: UUID, body: session_events.AuthoredBody
+    sessions: async_sessionmaker[AsyncSession],
+    chat_store: SessionStore,
+    session_id: UUID,
+    body: session_events.AuthoredBody,
 ) -> None:
     """Write one of the console's own facts about *session_id*, as its own writer would."""
+    conversation_id = await chat_store.conversation_of(session_id)
     async with sessions() as db, db.begin():
-        db.add(session_events.authored(body, session_id=session_id, now=datetime.datetime.now(datetime.UTC)))
+        writer = await conversation_log.writer_for(
+            db, conversation_id, session_id=session_id, turn_id=None, now=datetime.datetime.now(datetime.UTC)
+        )
+        writer.authored(body)
 
 
 async def test_a_refused_prompt_is_said_from_its_row_rather_than_by_ingress(
@@ -190,6 +207,7 @@ async def test_a_refused_prompt_is_said_from_its_row_rather_than_by_ingress(
     await notices.reconcile_once()
     await author(
         migrated_sessions,
+        chat_store,
         served,
         session_events.PromptRejectedBody(reason=PromptRejection.TURN_IN_FLIGHT, text="and this"),
     )
@@ -204,7 +222,7 @@ async def test_something_haku_cannot_read_is_said_from_its_row(
     chat_store, operator_id, served, notices, room, migrated_sessions
 ) -> None:
     await notices.reconcile_once()
-    await author(migrated_sessions, served, session_events.UnreadableInputBody(media_type="m.image"))
+    await author(migrated_sessions, chat_store, served, session_events.UnreadableInputBody(media_type="m.image"))
 
     await notices.reconcile_once()
 
@@ -218,9 +236,15 @@ async def test_the_room_is_told_when_its_session_changes_hands_or_ends(
     """Both are caused by a session and are conversation facts: what the operator needs is to know
     why the room went quiet, which is the same question either way."""
     await notices.reconcile_once()
-    await author(migrated_sessions, served, session_events.SessionAdoptedBody(previous_holder="pod-a", holder="pod-b"))
     await author(
         migrated_sessions,
+        chat_store,
+        served,
+        session_events.SessionAdoptedBody(previous_holder="pod-a", holder="pod-b"),
+    )
+    await author(
+        migrated_sessions,
+        chat_store,
         served,
         session_events.LeaseExpiredBody(reason=LeaseExpiryReason.HOLDER_GONE, last_holder="pod-b"),
     )
@@ -250,8 +274,8 @@ async def test_a_prompt_sent_from_another_surface_is_posted_into_the_room(
 async def test_a_prompt_typed_into_this_room_is_not_posted_back_into_it(
     chat_store, operator_id, served, notices, room
 ) -> None:
-    """`PromptBody.origin`'s reader: the message is already in the timeline above, so posting it
-    again would show the operator their own sentence twice."""
+    """The prompt item's origin is what decides: the message is already in the timeline above, so
+    posting it again would show the operator their own sentence twice."""
     await notices.reconcile_once()
     await chat_store.enqueue_prompt(
         operator_id, served, "typed here", MatrixOrigin(address=MATRIX_ROOM, refs=("$here",))
@@ -279,12 +303,17 @@ async def test_a_prompt_from_a_sibling_room_is_posted_because_the_address_differ
 
 async def test_an_unread_room_has_no_position_at_all(migrated_sessions) -> None:
     """Absent is "never read", not "at the start" — the distinction the seeding above turns on."""
-    assert await RoomCursor(migrated_sessions, MATRIX_ROOM).position() is None
+    assert await RoomCursor(migrated_sessions, uuid4()).position() is None
 
 
-async def test_keeping_a_position_twice_moves_it_rather_than_failing(migrated_sessions) -> None:
+async def test_keeping_a_position_twice_moves_it_rather_than_failing(
+    migrated_sessions, operator_id, conversations
+) -> None:
     """Whichever replica holds the notices lock writes this row, and leadership changes hands."""
-    cursor = RoomCursor(migrated_sessions, MATRIX_ROOM)
+    await conversations.bind_room(MATRIX_ROOM, operator_id)
+    attachment_id = await conversations.attachment(MATRIX_ROOM)
+    assert attachment_id is not None
+    cursor = RoomCursor(migrated_sessions, attachment_id)
 
     await cursor.keep(START)
     await cursor.keep(StreamPosition(event_seq=17))

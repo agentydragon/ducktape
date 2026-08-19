@@ -42,6 +42,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import (
+    ItemType,
     LeaseExpiryReason,
     MatrixOrigin,
     PromptOrigin,
@@ -49,7 +50,7 @@ from haku.console.chat_models import (
     SpaOrigin,
     TurnOutcome,
 )
-from haku.console.database_schema import ChannelCursor
+from haku.console.database_schema import ChannelCursor, ConversationItem
 from haku.console.x.channels.matrix.client import RoomEventKind
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore
 from haku.console.x.channels.matrix.outbox import BoundRoom, RoomOutbox
@@ -235,15 +236,11 @@ def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
             return Notice(f"another console replica ({holder}) took this session over", RoomEventKind.LIFECYCLE)
         case LeaseExpiredBody(reason=reason):
             return Notice(f"the session ended — {_why_it_lapsed(reason)}", RoomEventKind.LIFECYCLE)
-        case PromptStartedBody(origin=origin):
-            # The reader `origin` shipped without (#4289). A prompt the operator sent from the SPA
-            # or from a sibling room is a conversation fact this room is not showing yet; one sent
-            # here is already in the timeline above, and posting it again would duplicate it.
-            #
-            # **The text is not on this row any more.** A prompt is an item, and its prose is the
-            # segment that follows — so the relay is said when that segment arrives, which is where
-            # the words are.
-            return None if _arrived_here(origin, room_id) else Notice(RELAYED_PROMPT, RoomEventKind.NARRATION)
+        case PromptStartedBody():
+            # **The text is not on this row.** A prompt is an item and its prose is the segments
+            # that follow, so the relay is said at the item's completion, where the whole of it is
+            # readable — `reconcile_once`, beside the answer it is the mirror image of.
+            return None
         case TurnEndedBody(outcome=TurnOutcome.ABORTED):
             # An abort is a turn outcome now rather than an event of its own, so the room's line for
             # it is said here — on the one outcome of three that the operator caused.
@@ -318,15 +315,35 @@ class RoomNotices:
             await subscription.keep(read.head)
             return False
         for event in read.events:
-            if isinstance(event.body, MessageCompletedBody):
-                # The item's own text, read by the outbox: what the room is owed is the whole
-                # message, and this event deliberately carries none of it.
-                assert event.item_id is not None, "an item lifecycle row names its item"
-                await self._outbox.enqueue(attachment_id, event.item_id)
-            elif (said := notice(event, room_id=room_id)) is not None:
-                await self._announce(said.body, said.kind)
+            match event.body:
+                case MessageCompletedBody():
+                    # The item's own text, read by the outbox: what the room is owed is the whole
+                    # message, and this event deliberately carries none of it.
+                    assert event.item_id is not None, "an item lifecycle row names its item"
+                    await self._outbox.enqueue(attachment_id, event.item_id)
+                case PromptCompletedBody():
+                    assert event.item_id is not None, "an item lifecycle row names its item"
+                    if (relayed := await self._relayed(event.item_id, room_id)) is not None:
+                        await self._announce(relayed, RoomEventKind.NARRATION)
+                case _:
+                    if (said := notice(event, room_id=room_id)) is not None:
+                        await self._announce(said.body, said.kind)
         await subscription.keep(read.position)
         return read.more
+
+    async def _relayed(self, item_id: UUID, room_id: str) -> str | None:
+        """A prompt the operator sent somewhere else, as this room should show it.
+
+        The reader `origin` shipped without (#4289). A prompt is a conversation fact, so every
+        attached surface shows it — but one typed here is already in the timeline above, and posting
+        it again would show the operator their own sentence twice.
+        """
+        async with self._sessions() as db:
+            item = await db.get(ConversationItem, item_id)
+            if item is None or item.origin is None:
+                return None
+            origin = PromptStartedBody.model_validate({"item_type": ItemType.PROMPT, "origin": item.origin}).origin
+            return None if _arrived_here(origin, room_id) else RELAYED_PROMPT + item.item_text
 
     def _wake(self, _session_id: UUID) -> None:
         """Note that some session's rows moved. Runs on the listener's reader task: no awaiting."""
