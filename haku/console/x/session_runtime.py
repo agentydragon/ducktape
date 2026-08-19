@@ -51,7 +51,6 @@ from haku.console.x.session_views import (
     ConversationPage,
     ConversationView,
     SessionFramePage,
-    SessionMessageView,
     SessionProvisioningView,
     SessionView,
 )
@@ -81,9 +80,20 @@ def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
 
 
 class SessionPromptRequest(BaseModel):
-    """What the SPA posts to send a prompt; the prompt itself is a row (`SessionPrompt`)."""
+    """What the SPA posts to send a prompt; the prompt itself becomes an item and a queued row."""
 
     text: str = Field(min_length=1, max_length=100_000)
+
+
+class PromptAccepted(BaseModel):
+    """The prompt is an item on the conversation, and a turn will take it.
+
+    The id alone: the item's own rows reach the composer over the conversation's follow socket,
+    which is where every other surface's prompts arrive too, so answering with a copy of it here
+    would be the same prose by two routes.
+    """
+
+    item_id: UUID
 
 
 class TurnClient(Protocol):
@@ -588,27 +598,18 @@ class SessionService:
         close it, which is what a replica losing its pod mid-exchange looks like from outside and
         what `ResumedTurn` picks back up.
 
-        **No turn state is held here.** `state` is the row's, re-read from every write of it, and
-        each frame's effects are written with the projection cursor in one transaction
-        (`SessionStore.apply_frame`) — so a process dying anywhere in this loop leaves
-        `session_turns` saying what had happened and the session saying which frame it had got
-        through, which is what makes adoption a read and its effects exactly-once
-        (<README.md> § The cursor).
+        **No turn state is held here at all.** How far the turn has got is derived from the items
+        it opened, so the loop never carries a copy that could disagree; each frame's effects are
+        written with the projection cursor in one transaction (`SessionStore.apply_frame`), so a
+        process dying anywhere in this loop leaves the items saying what had happened and the
+        session saying which frame it had got through — which is what makes adoption a read and its
+        effects exactly-once (<README.md> § The cursor).
         """
         turn_id = turn.turn_id
         if isinstance(turn, TurnStart):
             # A resumed turn's question was asked by a process that is gone; only its answer is
             # still coming.
-            prompt = await client.query(turn.prompt)
-            # The prompt's row was written when the operator typed it, before any frame existed to
-            # point at; this is where the question acquires the frame it went out as.
-            await self._store.set_message_source_frames(session_id, turn.message_id, prompt.frame_seq)
-        # How far the turn has got. `queued_reply` is the outbox row's existence, recorded on the
-        # turn by the transaction that inserts it — never a report from the delivery layer and
-        # never `sent_at`, which is the drain's business. It is a separate fact from
-        # `said_anything` because a session with no room queues nothing.
-        state = await self._store.turn_state(turn_id)
-        assistant_id = state.assistant_message_id
+            await client.query(turn.prompt)
         completed: _CompletedTurn | None = None
         status = TurnStatus(frontend)
         status.start()
@@ -650,8 +651,7 @@ class SessionService:
                 if finished is not None:
                     completed = _CompletedTurn(finished, received)
                 else:
-                    state = await self._store.apply_frame(session_id, turn_id, frame_seq, events)
-                    assistant_id = state.assistant_message_id
+                    await self._store.apply_frame(session_id, turn_id, frame_seq, events)
             result = completed.frame.payload
             if completed.event.outcome is TurnOutcome.FAILED and not abort_event.is_set():
                 # Quoted from the frame rather than the event: *why* a turn failed is
@@ -661,39 +661,23 @@ class SessionService:
                     f"the agent's turn failed: {result.get('subtype')}: {result.get('stop_reason') or 'unknown error'}"
                 )
             # `result.result` is deliberately not projected — it repeats the turn's last message on
-            # every result frame, so minting prose from it would double every answer. It is still
-            # the fallback for the one case that is not a repeat: a turn whose text arrived nowhere
-            # else.
-            final_text = state.streamed.strip() or str(result.get("result") or "").strip()
-            if assistant_id is not None:
-                # A stream no completed frame closed. No frame range is passed: the deltas that
-                # produced this text already recorded theirs, and the `result` frame closing the
-                # turn is not where the words came from.
-                carried_final = await self._store.update_assistant(session_id, assistant_id, final_text, complete=True)
-                assistant_id = None
-            elif not state.said_anything:
-                # This row's only source is the `result` frame — the turn said nothing else.
-                assistant_id = await self._store.begin_assistant(
-                    session_id, turn_id, source_first_frame_seq=completed.frame.frame_seq
-                )
-                carried_final = await self._store.update_assistant(
-                    session_id, assistant_id, final_text, source_last_frame_seq=completed.frame.frame_seq, complete=True
-                )
-                assistant_id = None
-            else:
-                # Every completed message queued its own row and one of them closed the answer, so
-                # `final_text` — which is `result.result` repeating the last of them — belongs to
-                # no row of its own.
-                carried_final = False
-            # Only what the room is not already owed: each assistant message queued its own row as
-            # it finished and `result.result` normally repeats the last of them.
+            # every result frame, so minting prose from it would double every answer. It is handed
+            # over as the fallback for the one case that is not a repeat: a turn whose text arrived
+            # nowhere else. Which of the three cases this is, is `close_answer`'s to decide.
             #
             # **Before the turn is closed, not after.** Closing it makes it unadoptable, so a
-            # replica dying between the two would strand this reply with nothing left to re-derive
-            # it. This way the window leaves the turn open, and what the replacement re-derives
-            # collides with the row already there (`session_outbox.turn_id`).
-            if not (carried_final or state.queued_reply):
-                await self._speak(session_id, frontend, turn_id, final_text)
+            # replica dying between the two would strand the answer with nothing left to re-derive
+            # it.
+            said = await self._store.close_answer(
+                session_id,
+                turn_id,
+                final_text=str(result.get("result") or "").strip(),
+                frame_seq=completed.frame.frame_seq,
+            )
+            if not said and frontend is not None:
+                # Every turn speaks, and there is deliberately no silence token: a turn that only
+                # ran tools is legitimate, but it must not look like the console lost the answer.
+                await frontend.report_silent_turn()
             await self._store.end_turn(
                 turn_id,
                 TurnOutcome.ABORTED if abort_event.is_set() else completed.event.outcome,
@@ -708,8 +692,7 @@ class SessionService:
             await self._store.end_turn(
                 turn_id, TurnOutcome.FAILED, last_frame_seq=completed.frame.frame_seq if completed is not None else None
             )
-            if assistant_id is not None:
-                await self._store.fail(session_id, str(error), assistant_id)
+            await self._store.fail(session_id, str(error))
             raise
         finally:
             # The event outlives the turn (it is the session's), so only this turn's waiter goes.
@@ -717,24 +700,6 @@ class SessionService:
             # Every terminal path, failure included: a line still saying "running Bash" after the
             # turn died is the stuck-indicator bug in another form.
             await status.finish()
-
-    async def _speak(self, session_id: UUID, frontend: ChatFrontend | None, turn_id: UUID, text: str) -> None:
-        """Queue the turn's last word for the room, or report that it had none.
-
-        Only ever the end of a turn: a completed assistant message queues its own copy in the same
-        transaction, and a turn that completed none at all has one minted for it above. What is
-        left over belongs to no message row — `result.result` on a turn whose completed messages
-        were all empty.
-
-        A session attached to no frontend needs nothing here; the SPA reads the message rows the
-        turn already wrote. An empty body is not a silence token: the room is told the turn said
-        nothing, as a notice rather than a reply, because it is the console reporting and not the
-        agent talking.
-        """
-        if frontend is None:
-            return
-        if not await self._store.enqueue_turn_reply(session_id, turn_id, text):
-            await frontend.report_silent_turn()
 
     async def aclose(self) -> None:
         # Called from the lifespan on the way down. Handing every held lease back in one statement
@@ -895,11 +860,11 @@ async def abort_session(session_id: UUID, actor: OperatorActorDep, service: Sess
 @router.post("/api/sessions/{session_id}/messages")
 async def send_message(
     session_id: UUID, body: SessionPromptRequest, actor: OperatorActorDep, store: SessionStoreDep
-) -> SessionMessageView:
+) -> PromptAccepted:
     try:
         # Named rather than left to the default: the console's own surface is a channel like any
         # other, and a prompt typed here is one every attached room is owed a copy of.
-        return await store.enqueue_prompt(actor.operator_id, session_id, body.text, SPA_ORIGIN)
+        return PromptAccepted(item_id=await store.enqueue_prompt(actor.operator_id, session_id, body.text, SPA_ORIGIN))
     except KeyError as error:
         raise HTTPException(status_code=404, detail="session not found") from error
     except PromptRefusedError as error:

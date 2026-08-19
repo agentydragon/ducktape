@@ -22,8 +22,8 @@ image serving against the new schema, and it selects tables that no longer exist
 rather than overlooked: the approval queue, agent authority, operator login, OAuth, Web Push and the
 node daemons share no column with any table here and serve throughout.
 
-Revision ID: 0083
-Revises: 0082
+Revision ID: 0084
+Revises: 0083
 """
 
 from __future__ import annotations
@@ -32,8 +32,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
-revision = "0083"
-down_revision = "0082"
+revision = "0084"
+down_revision = "0083"
 branch_labels = None
 depends_on = None
 
@@ -366,4 +366,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    raise RuntimeError("0083 discards the transcript it replaces; there is nothing to restore")
+    raise RuntimeError("0084 discards the transcript it replaces; there is nothing to restore")

@@ -179,16 +179,6 @@ class Outcome(StrEnum):
     UNKNOWN = "unknown"
 
 
-class MessageRef(BaseModel):
-    """Which agent message an entry belongs to, within one session's transcript.
-
-    The `frame_seq` the message opened at — ours, deterministic, and a pointer back into the log.
-    Deliberately not the agent's own message id, which a great many production rows do not have.
-    """
-
-    opened_at_frame_seq: int
-
-
 class _EntryBase(BaseModel):
     """What every transcript entry carries: where it sits, and where it came from."""
 
@@ -199,27 +189,29 @@ class _EntryBase(BaseModel):
 
 
 class MessageEntry(_EntryBase):
-    """One agent message, finished. `text` is absent for a message that was all thinking and tools.
+    """One agent message, finished: the concatenation of the prose that arrived for it.
 
-    `agent_message_id` is provenance, not identity: it is what the frames called this message, and
-    it is absent whenever the wire did not supply one.
+    `backend_item_id` is provenance, not identity: it is what the frames called this message, and it
+    is absent whenever the wire did not supply one.
     """
 
     kind: Literal["message"] = "message"
-    message: MessageRef
-    text: str | None
-    agent_message_id: str | None
+    text: str
+    backend_item_id: str | None
 
 
 class ReasoningEntry(_EntryBase):
-    """The agent thought, with a summary where it gave one.
+    """The agent thought, with a summary where the backend disclosed one.
 
-    A state rather than empty prose: real messages are routinely thinking with nothing else in
-    them, and a transcript that models only text renders them blank.
+    Its own entry rather than part of a message: only Claude nests thinking inside an assistant
+    message, and a shape that nested it would be one backend's promoted upward.
+
+    `summary` is absent where the backend disclosed nothing at all — Claude's `redacted_thinking`,
+    `ReasoningDisclosure.WITHHELD`. One field rather than a summary beside a disclosure enum, so
+    the two cannot come to disagree.
     """
 
     kind: Literal["reasoning"] = "reasoning"
-    message: MessageRef
     summary: str | None
 
 
@@ -227,7 +219,6 @@ class ToolCallEntry(_EntryBase):
     """A tool was called. Its answer is a separate `tool_result` entry, joined by `call_id`."""
 
     kind: Literal["tool_call"] = "tool_call"
-    message: MessageRef
     call_id: str
     tool_name: str
     arguments: dict[str, Any]

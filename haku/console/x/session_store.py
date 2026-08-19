@@ -57,7 +57,14 @@ from haku.console.database_schema import (
 from haku.console.x import conversation_log, session_events, transcript_entries
 from haku.console.x.claude_code import projection
 from haku.console.x.claude_code.frames import DELTA_FRAME_KIND, PROMPT_FRAME_KIND
-from haku.console.x.conversation_events import ConversationEvent
+from haku.console.x.conversation_events import (
+    ConversationEvent,
+    FrameRange,
+    ItemSegment,
+    MessageCompleted,
+    MessageStarted,
+    OpenRef,
+)
 from haku.console.x.conversation_records import (
     ChannelAttachment,
     FrameCursor,
@@ -1186,7 +1193,7 @@ class SessionStore:
 
     async def apply_frame(
         self, session_id: UUID, turn_id: UUID, frame_seq: int, events: Sequence[ConversationEvent]
-    ) -> TurnState:
+    ) -> None:
         """Append what one frame's events say, and move the cursor past that frame, together.
 
         **One transaction, and the cursor is inside it.** The log rows, the items they materialise
@@ -1220,9 +1227,53 @@ class SessionStore:
             _advance_cursor(chat, frame_seq)
             chat.updated_at = now
             await notify(db, SessionEventKind.UPDATE, session_id)
-            return await _turn_state(db, turn_id)
 
-    async def fail(self, session_id: UUID, error: str, message_id: UUID | None = None) -> None:
+    async def close_answer(self, session_id: UUID, turn_id: UUID, *, final_text: str, frame_seq: int) -> bool:
+        """Bring the turn's answer to a close, and say whether the turn said anything at all.
+
+        Three cases and one rule between them, which is why they are one method rather than three
+        calls the loop chooses between:
+
+        - **A message the stream left open** closes on its own segments. Nothing is appended,
+          because `final_text` is `result.result` repeating what the stream already carried, and
+          minting it again would say the answer twice.
+        - **A turn that already completed a message** needs nothing: its prose is on its items and
+          `result.result` repeats the last of them.
+        - **A turn whose prose arrived only on the `result` frame** — no stream, no completed
+          block — gets that text as one whole message, opened and closed on that frame. It is the
+          one case where the result frame genuinely is where the words came from.
+
+        Empty prose mints nothing: a turn that only ran tools said nothing, and an empty message
+        item would be an answer the room owes a copy of.
+        """
+        now = datetime.now(UTC)
+        provenance = FrameRange(first_frame_seq=frame_seq, last_frame_seq=frame_seq)
+        async with self._sessions.begin() as db:
+            turn = await db.get(ConversationTurn, turn_id, with_for_update=True)
+            if turn is None:
+                raise KeyError(turn_id)
+            state = await _turn_state(db, turn_id)
+            if state.streaming is None and state.said_anything:
+                return True
+            writer = await conversation_log.writer_for(
+                db, turn.conversation_id, session_id=session_id, turn_id=turn_id, now=now
+            )
+            if state.streaming is not None:
+                await writer.append(MessageCompleted(backend_item_id=None, provenance=provenance))
+                said = bool(state.streaming.strip())
+            elif final_text:
+                await writer.append(MessageStarted(provenance=provenance))
+                await writer.append(
+                    ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text=final_text, provenance=provenance)
+                )
+                await writer.append(MessageCompleted(backend_item_id=None, provenance=provenance))
+                said = True
+            else:
+                said = False
+            await notify(db, SessionEventKind.UPDATE, session_id)
+            return said
+
+    async def fail(self, session_id: UUID, error: str) -> None:
         # Logged as well as persisted. The column is the operator-facing record, but it is not
         # reachable from `kubectl logs`, and a Matrix session that dies leaves no other trace —
         # the room just stops answering.

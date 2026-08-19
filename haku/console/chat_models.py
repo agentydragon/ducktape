@@ -123,24 +123,12 @@ class PromptRejection(StrEnum):
     """
 
     # No session behind the surface at all: none has ever been provisioned, or the row has gone
-    # while the supervisor mints its replacement. The one member that cannot be recorded — a
-    # `session_events` row names a session, and here there is none to name.
+    # while the supervisor mints its replacement. Recorded like every other refusal — what a
+    # rejection is about is the conversation, which exists whether or not a session does.
     NO_SESSION = "no_session"
     SESSION_NOT_READY = "session_not_ready"
     TURN_IN_FLIGHT = "turn_in_flight"
     PROMPT_QUEUED = "prompt_queued"
-
-
-class ChatMessageRole(StrEnum):
-    USER = "user"
-    ASSISTANT = "assistant"
-
-
-class ChatMessageStatus(StrEnum):
-    PENDING = "pending"
-    STREAMING = "streaming"
-    COMPLETE = "complete"
-    FAILED = "failed"
 
 
 class RecordedToolCall(BaseModel):

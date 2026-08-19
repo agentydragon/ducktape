@@ -1,13 +1,23 @@
-"""Re-project a recorded session's frames and say where `session_events` disagrees.
+"""Re-project a recorded session's frames and say where the conversation log disagrees.
 
 `check_session` returns findings; it prints nothing and decides nothing, so a caller chooses what a
 per-turn disagreement is worth.
 
-**The fold is the write path's own** (`frame_projection.projected`) and the row is built by the
-write path's own mapping (`session_events.row`), so the only thing added here is the alignment.
-That alignment is **by frame**: a frame's rows are written in one transaction and every event the
-write path produces carries `(frame_seq, frame_seq)` as its range, so which rows a frame owns is a
-lookup rather than a guess.
+**The fold is the write path's own** (`frame_projection.projected`) and each event is spelled by
+the write path's own mapping (`session_events.stored`), so the only thing added here is the
+alignment. That alignment is **by frame**: a frame's rows are written in one transaction and every
+event the write path produces carries `(frame_seq, frame_seq)` as its range, so which rows a frame
+owns is a lookup rather than a guess.
+
+**What is compared is the kind and the body, not the whole row.** `item_id` is minted and
+`event_seq` allocated as rows are written, so a re-projection cannot reproduce either and does not
+claim to. What it can say is that the same frames still mean the same things.
+
+**And separately, that the items agree with the log.** `conversation_item.text` is a
+materialisation of the segments and never a second authority for them
+(<../docs/conversation_schema.md> § 2), so folding the segments back and comparing is the check the
+whole shape exists to make possible — the one the old transcript table could not be given, because
+its rows and the log were written from different places.
 
 **One bound keeps an honest report from being a false one: the cursor.**
 `sessions.projected_frame_seq` is how far the fold committed, so a frame past it is one whose
@@ -23,22 +33,27 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, literal_column, select
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import EventProvenance, StoredEventKind
-from haku.console.database_schema import Session, SessionEvent, SessionFrame, SessionTurn
+from haku.console.chat_models import ConversationEventKind, EventProvenance, StoredEventKind
+from haku.console.database_schema import ConversationEvent, ConversationItem, ConversationTurn, Session, SessionFrame
 from haku.console.x import frame_projection, session_events
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 from util.sqlalchemy_types import UnknownValue
 
-# Only ever the `created_at` of a row that is compared against a stored one on every column but
-# that, so the value is arbitrary and being a constant keeps two runs of the check identical.
-_UNCOMPARED_CLOCK = datetime.fromtimestamp(0, UTC)
+
+@dataclass(frozen=True, slots=True)
+class ProjectedRow:
+    """What one event of one frame would be stored as, less what only a writer can assign."""
+
+    kind: StoredEventKind
+    body: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +98,20 @@ class RowsBeyondCursor:
     stored: tuple[StoredEventKind | UnknownValue, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class ItemTextMismatch:
+    """An item's `text` is not the concatenation of its segments.
+
+    The invariant the whole shape exists for: prose lives in segments and the column is their fold,
+    so a disagreement means the materialisation drifted from the only thing that is supposed to
+    produce it.
+    """
+
+    item_id: UUID
+    folded: str
+    stored: str
+
+
 type Finding = RowMismatch | RowCountMismatch | RowsBeyondCursor
 
 
@@ -121,7 +150,8 @@ class TurnReport:
     """
 
     turn_id: UUID
-    first_frame_seq: int
+    # Absent on a turn that opened and recorded no frame: the CLI died before answering.
+    first_frame_seq: int | None
     last_frame_seq: int | None
     outcome: Outcome
     # Recorded frames of this turn at or below the cursor: what the check actually compared.
@@ -136,6 +166,9 @@ class SessionReport:
     session_id: UUID
     projected_frame_seq: int | None
     turns: tuple[TurnReport, ...]
+    # Items of this session whose text disagrees with their own segments. Session-wide rather than
+    # per turn, because a prompt item belongs to the conversation before any turn claims it.
+    items: tuple[ItemTextMismatch, ...]
 
 
 async def check_session(db: AsyncSession, session_id: UUID) -> SessionReport:
@@ -145,7 +178,9 @@ async def check_session(db: AsyncSession, session_id: UUID) -> SessionReport:
         raise KeyError(session_id)
     turns = (
         await db.scalars(
-            select(SessionTurn).where(SessionTurn.session_id == session_id).order_by(SessionTurn.first_frame_seq)
+            select(ConversationTurn)
+            .where(ConversationTurn.session_id == session_id)
+            .order_by(ConversationTurn.first_seq)
         )
     ).all()
     # An open turn has no upper bound of its own, so the next turn's lower bound stands in for one.
@@ -159,24 +194,58 @@ async def check_session(db: AsyncSession, session_id: UUID) -> SessionReport:
                 for turn, upper in zip(turns, ends_before, strict=True)
             ]
         ),
+        items=await check_item_text(db, session_id),
+    )
+
+
+async def check_item_text(db: AsyncSession, session_id: UUID) -> tuple[ItemTextMismatch, ...]:
+    """One session's items whose `text` is not what their segments concatenate to.
+
+    Folded in Postgres rather than read back row by row: a long session's segments run to thousands
+    of rows and the check is meant to be cheap enough to run over a whole session.
+    """
+    folded = (
+        select(
+            ConversationEvent.item_id.label("item_id"),
+            func.string_agg(
+                ConversationEvent.body["text"].astext,
+                aggregate_order_by(literal_column("''"), ConversationEvent.event_seq),
+            ).label("text"),
+        )
+        .where(ConversationEvent.kind == ConversationEventKind.ITEM_SEGMENT)
+        .group_by(ConversationEvent.item_id)
+        .subquery()
+    )
+    rows = await db.execute(
+        select(ConversationItem.item_id, ConversationItem.item_text, func.coalesce(folded.c.text, ""))
+        .outerjoin(folded, folded.c.item_id == ConversationItem.item_id)
+        .where(
+            ConversationItem.session_id == session_id, ConversationItem.item_text != func.coalesce(folded.c.text, "")
+        )
+        .order_by(ConversationItem.opened_seq)
+    )
+    return tuple(
+        ItemTextMismatch(item_id=item_id, folded=folded_text, stored=stored) for item_id, stored, folded_text in rows
     )
 
 
 async def _check_turn(
-    db: AsyncSession, turn: SessionTurn, *, cursor: int | None, ends_before: int | None
+    db: AsyncSession, turn: ConversationTurn, *, cursor: int | None, ends_before: int | None
 ) -> TurnReport:
     frames = await _turn_frames(db, turn, ends_before=ends_before)
-    # The fold's own output and nothing else. An authored row may name a turn (`turn_aborted`
-    # does) and re-projecting frames can never re-derive one, so comparing it against the fold
-    # would report drift on every aborted turn.
+    # The fold's own output and nothing else. An authored row may name a turn (`turn_started` and
+    # `turn_ended` both do) and re-projecting frames can never re-derive one, so comparing it
+    # against the fold would report drift on every turn.
     rows = (
         await db.scalars(
-            select(SessionEvent)
-            .where(SessionEvent.turn_id == turn.turn_id, SessionEvent.provenance == EventProvenance.FRAME_RANGE)
-            .order_by(SessionEvent.event_seq)
+            select(ConversationEvent)
+            .where(
+                ConversationEvent.turn_id == turn.turn_id, ConversationEvent.provenance == EventProvenance.FRAME_RANGE
+            )
+            .order_by(ConversationEvent.event_seq)
         )
     ).all()
-    projected = {frame.frame_seq: _expected(turn.turn_id, frame) for frame in frames}
+    projected = {frame.frame_seq: _expected(frame) for frame in frames}
     within = [seq for seq in projected if cursor is not None and seq <= cursor]
     return TurnReport(
         turn_id=turn.turn_id,
@@ -190,19 +259,19 @@ async def _check_turn(
 
 
 def _outcome(
-    projected: dict[int, tuple[SessionEvent, ...]],
+    projected: dict[int, tuple[ProjectedRow, ...]],
     *,
     within: Sequence[int],
-    rows: Sequence[SessionEvent],
+    rows: Sequence[ConversationEvent],
     cursor: int | None,
 ) -> Outcome:
     """One turn's outcome: the skip first, because an era is not a disagreement."""
     if not within:
         return Skipped(reason=SkipReason.CURSOR_NEVER_REACHED)
     findings: list[Finding] = []
-    stored: defaultdict[int, list[SessionEvent]] = defaultdict(list)
+    stored: defaultdict[int, list[ConversationEvent]] = defaultdict(list)
     for row in rows:
-        # `ck_session_events_provenance_frames` puts a range on exactly the arm this query selects.
+        # `ck_conversation_event_provenance_frames` puts a range on exactly the arm this selects.
         assert row.source_first_frame_seq is not None
         stored[row.source_first_frame_seq].append(row)
     for frame_seq in sorted(set(projected) | set(stored)):
@@ -215,7 +284,7 @@ def _outcome(
     return Drifted(findings=tuple(findings)) if findings else Agrees()
 
 
-def _aligned(frame_seq: int, projected: Sequence[SessionEvent], stored: Sequence[SessionEvent]) -> list[Finding]:
+def _aligned(frame_seq: int, projected: Sequence[ProjectedRow], stored: Sequence[ConversationEvent]) -> list[Finding]:
     """One frame's rows against one frame's projection, in order.
 
     Position is the alignment, because both sequences come out of the same fold over the same
@@ -226,25 +295,38 @@ def _aligned(frame_seq: int, projected: Sequence[SessionEvent], stored: Sequence
     return [
         RowMismatch(frame_seq=frame_seq, position=position, event_seq=theirs.event_seq, differences=tuple(differences))
         for position, (mine, theirs) in enumerate(zip(projected, stored, strict=True))
-        if (differences := _differences(mine, theirs))
+        if (differences := _differences(frame_seq, mine, theirs))
     ]
 
 
-def _differences(projected: SessionEvent, stored: SessionEvent) -> list[FieldDifference]:
+def _differences(frame_seq: int, projected: ProjectedRow, stored: ConversationEvent) -> list[FieldDifference]:
+    """The columns a re-projection can speak for, compared.
+
+    The frame range is checked against the frame this row was grouped under rather than against a
+    projected value: the write path stamps every event of one frame `(frame_seq, frame_seq)`, so a
+    row that disagrees is one the grouping already put in the wrong place.
+    """
+    expected = {
+        "kind": projected.kind,
+        "provenance": EventProvenance.FRAME_RANGE,
+        "source_first_frame_seq": frame_seq,
+        "source_last_frame_seq": frame_seq,
+        "body": projected.body,
+    }
     return [
         FieldDifference(field=field, projected=str(mine), stored=str(theirs))
-        for field in ("kind", "provenance", "source_first_frame_seq", "source_last_frame_seq", "call_id", "body")
-        if (mine := getattr(projected, field)) != (theirs := getattr(stored, field))
+        for field, mine in expected.items()
+        if mine != (theirs := getattr(stored, field))
     ]
 
 
-def _expected(turn_id: UUID, frame: SessionFrame) -> tuple[SessionEvent, ...]:
-    """The rows one recorded frame would be written as, through the writer's own two functions."""
+def _expected(frame: SessionFrame) -> tuple[ProjectedRow, ...]:
+    """What one recorded frame would be written as, through the writer's own two functions."""
     return tuple(
-        row
+        ProjectedRow(kind=kind, body=body.model_dump(mode="json"))
         for event in frame_projection.projected(frame_seq=frame.frame_seq, payload=frame.payload)
-        if (row := session_events.row(event, session_id=frame.session_id, turn_id=turn_id, now=_UNCOMPARED_CLOCK))
-        is not None
+        if (row := session_events.stored(event)) is not None
+        for kind, body in (row,)
     )
 
 
@@ -262,7 +344,11 @@ def foldable_frames(session_id: UUID) -> Select[tuple[SessionFrame]]:
     )
 
 
-async def _turn_frames(db: AsyncSession, turn: SessionTurn, *, ends_before: int | None) -> Sequence[SessionFrame]:
+async def _turn_frames(db: AsyncSession, turn: ConversationTurn, *, ends_before: int | None) -> Sequence[SessionFrame]:
+    if turn.first_frame_seq is None:
+        # A turn that opened and recorded no frame — the CLI died before answering. There is
+        # nothing to re-project and nothing that claims to have been.
+        return ()
     query = foldable_frames(turn.session_id).where(SessionFrame.frame_seq >= turn.first_frame_seq)
     if (upper := turn.last_frame_seq) is not None:
         query = query.where(SessionFrame.frame_seq <= upper)
@@ -271,7 +357,7 @@ async def _turn_frames(db: AsyncSession, turn: SessionTurn, *, ends_before: int 
     return (await db.scalars(query)).all()
 
 
-def _kinds(rows: Sequence[SessionEvent]) -> tuple[StoredEventKind | UnknownValue, ...]:
+def _kinds(rows: Sequence[ProjectedRow] | Sequence[ConversationEvent]) -> tuple[StoredEventKind | UnknownValue, ...]:
     """A row of a kind this release has no words for is reported like any other difference.
 
     It is genuine drift from where this check stands: the fold here cannot have produced it, so

@@ -1,8 +1,9 @@
 """The chat corpus: the console's own record of what was said, made searchable.
 
-The corpus is the console's `session_messages` — every session it has served, Matrix and SPA
-alike. This module is the shape of a chunk; `chat_source.py` is where the rows come from, so the
-store can depend on the former without dragging the console's whole schema behind it.
+The corpus is the console's own transcript — the prompts and messages of every session it has
+served, Matrix and SPA alike. This module is the shape of a chunk; `chat_source.py` is where the
+rows come from, so the store can depend on the former without dragging the console's whole schema
+behind it.
 
 **Message boundaries are preferred, not required.** Packing selects a message boundary whenever
 one fits the configured budget, then carries Unicode-code-point overlap into the following
@@ -18,9 +19,9 @@ from __future__ import annotations
 import datetime
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 from uuid import UUID
 
-from haku.console.chat_models import ChatMessageRole
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, chunk_windows, regime_key
 from haku.recall_index.content import content_sha
 
@@ -34,10 +35,22 @@ def chat_chunker_key(budget: ChunkBudget = DEFAULT_CHUNK_BUDGET) -> str:
     return regime_key(CHAT_CHUNKER_VERSION, budget)
 
 
+class Speaker(StrEnum):
+    """Who said an indexed message, in the words the embedded text uses.
+
+    The corpus's own vocabulary rather than the console's storage one, because these two strings are
+    literally part of the index's content address: `MessageChunk.content_sha` hashes the rendered
+    text, so spelling either differently re-embeds the whole corpus.
+    """
+
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
 @dataclass(frozen=True, slots=True)
 class IndexedMessage:
     message_id: UUID
-    role: ChatMessageRole
+    speaker: Speaker
     content: str
     created_at: datetime.datetime
 
@@ -76,7 +89,7 @@ def render_message(message: IndexedMessage) -> str:
     The speaker is part of it: "what did I ask about X" and "what did it answer about X" are
     different queries, and a bare content string cannot tell them apart.
     """
-    return f"{message.role}: {message.content.strip()}\n"
+    return f"{message.speaker}: {message.content.strip()}\n"
 
 
 def chunk_messages(

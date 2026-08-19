@@ -1,7 +1,11 @@
 """Reading the chat corpus out of the console's own tables.
 
-Only `complete` messages are indexed: a `pending` or `streaming` row is still being written
-into, and a `failed` one records that nothing was said.
+**Prompts and messages, and only completed ones.** Reasoning and tool calls are the session's own
+working rather than what was said; an item still open is being written into, and a failed one
+records that nothing was said.
+
+A prompt no session has claimed yet has no session to be indexed under, so it is left for the sweep
+that runs after it is claimed.
 """
 
 from __future__ import annotations
@@ -13,9 +17,11 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import ChatMessageStatus
-from haku.console.database_schema import SessionMessage
-from haku.recall_index.chat_corpus import IndexedMessage
+from haku.console.chat_models import ItemStatus, ItemType
+from haku.console.database_schema import ConversationItem
+from haku.recall_index.chat_corpus import IndexedMessage, Speaker
+
+_SAID = (ItemType.PROMPT, ItemType.MESSAGE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,24 +41,44 @@ async def session_shapes(source: AsyncSession) -> list[SessionShape]:
     """
     result = await source.execute(
         select(
-            SessionMessage.session_id,
+            ConversationItem.session_id,
             func.count().label("message_count"),
-            func.max(SessionMessage.created_at).label("last_message_at"),
+            func.max(ConversationItem.created_at).label("last_message_at"),
         )
-        .where(SessionMessage.status == ChatMessageStatus.COMPLETE)
-        .group_by(SessionMessage.session_id)
+        .where(
+            ConversationItem.session_id.isnot(None),
+            ConversationItem.item_type.in_(_SAID),
+            ConversationItem.status == ItemStatus.COMPLETE,
+        )
+        .group_by(ConversationItem.session_id)
     )
     return [SessionShape(**row) for row in result.mappings()]
 
 
 async def load_messages(source: AsyncSession, session_id: UUID) -> list[IndexedMessage]:
-    """One session's complete messages, in conversation order."""
+    """One session's completed prompts and messages, in conversation order."""
     result = await source.execute(
-        select(SessionMessage.message_id, SessionMessage.role, SessionMessage.content, SessionMessage.created_at)
-        .where(SessionMessage.session_id == session_id)
-        .where(SessionMessage.status == ChatMessageStatus.COMPLETE)
-        # `message_id` breaks ties: two rows can share a timestamp, and a window whose contents
+        select(
+            ConversationItem.item_id,
+            ConversationItem.item_type,
+            ConversationItem.item_text,
+            ConversationItem.created_at,
+        )
+        .where(
+            ConversationItem.session_id == session_id,
+            ConversationItem.item_type.in_(_SAID),
+            ConversationItem.status == ItemStatus.COMPLETE,
+        )
+        # `item_id` breaks ties: two rows can share a timestamp, and a window whose contents
         # reshuffle between syncs would re-embed for no reason.
-        .order_by(SessionMessage.created_at, SessionMessage.message_id)
+        .order_by(ConversationItem.created_at, ConversationItem.item_id)
     )
-    return [IndexedMessage(**row) for row in result.mappings()]
+    return [
+        IndexedMessage(
+            message_id=item_id,
+            speaker=Speaker.USER if item_type is ItemType.PROMPT else Speaker.ASSISTANT,
+            content=text,
+            created_at=created_at,
+        )
+        for item_id, item_type, text, created_at in result
+    ]
