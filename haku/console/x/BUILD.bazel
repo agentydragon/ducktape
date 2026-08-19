@@ -164,7 +164,10 @@ py_library(
 py_library(
     name = "room_status",
     srcs = ["room_status.py"],
-    deps = [":conversation_events"],
+    deps = [
+        ":conversation_events",
+        "//haku/console:chat_models",
+    ],
 )
 
 py_library(

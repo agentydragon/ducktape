@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest_bazel
 
-from haku.console.chat_models import TurnOutcome
+from haku.console.chat_models import ItemType, TurnOutcome
 from haku.console.x.claude_code.projection import DeltaSource, RecordedFrame, project_log
 from haku.console.x.claude_code.testing.wire import (
     assistant,
@@ -22,10 +22,10 @@ from haku.console.x.claude_code.testing.wire import (
 from haku.console.x.conversation_events import (
     ConversationEvent,
     FrameRange,
+    ItemSegment,
     MessageCompleted,
-    MessageKey,
-    Reasoning,
-    TextDelta,
+    OpenRef,
+    ReasoningStarted,
     ToolCallStarted,
     TurnCompleted,
 )
@@ -57,15 +57,15 @@ class _RecordingFrontend:
 
 
 _WHERE = FrameRange(1, 1)
-_MESSAGE = MessageKey(opened_at_frame_seq=1)
+_MESSAGE = OpenRef(item_type=ItemType.MESSAGE)
 
 
 def _tool_call(name: str) -> ToolCallStarted:
-    return ToolCallStarted(message=_MESSAGE, call_id=f"call-{name}", tool_name=name, arguments={}, provenance=_WHERE)
+    return ToolCallStarted(call_id=f"call-{name}", tool_name=name, arguments={}, provenance=_WHERE)
 
 
 def _message_completed() -> MessageCompleted:
-    return MessageCompleted(message=_MESSAGE, text="hello", agent_message_id="msg-1", provenance=_WHERE)
+    return MessageCompleted(backend_item_id="msg-1", provenance=_WHERE)
 
 
 def test_a_tool_call_becomes_a_status_naming_the_tool_verbatim() -> None:
@@ -82,8 +82,8 @@ def test_a_message_completing_beside_its_tool_call_does_not_bury_the_tool() -> N
 def test_prose_and_thinking_are_both_just_writing() -> None:
     """A session that streams no deltas produces only the completed message, and one that streams
     produces the deltas — the room is told the same thing either way."""
-    assert coarse_status([TextDelta(message=_MESSAGE, text="hel", provenance=_WHERE)]) == "writing"
-    assert coarse_status([Reasoning(message=_MESSAGE, summary=None, provenance=_WHERE)]) == "writing"
+    assert coarse_status([ItemSegment(item=_MESSAGE, text="hel", provenance=_WHERE)]) == "writing"
+    assert coarse_status([ReasoningStarted(provenance=_WHERE)]) == "writing"
     assert coarse_status([_message_completed()]) == "writing"
 
 
@@ -109,6 +109,8 @@ def test_a_claude_turn_still_reads_the_way_it_did_off_the_frames() -> None:
         (assistant(text_block("Looking."), message_id="msg_A"), "writing"),
         (assistant(tool_use_block("toolu_1", "Bash", {"command": "ls"}), message_id="msg_A"), "running Bash"),
         (system("task_started", task_id="task_9", tool_use_id="toolu_1", description="npm run build"), None),
+        # The result's rendered output is a segment like any other prose, and saying "writing"
+        # while a command's output comes back would describe the wrong party.
         (tool_result("toolu_1", "ok"), None),
         (text_delta("A"), "writing"),
         (result(), None),

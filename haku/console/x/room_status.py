@@ -17,10 +17,12 @@ import time
 from collections.abc import Sequence
 from typing import Protocol
 
+from haku.console.chat_models import ItemType
 from haku.console.x.conversation_events import (
     ConversationEvent,
     ItemSegment,
     MessageCompleted,
+    OpenRef,
     ReasoningStarted,
     ToolCallStarted,
 )
@@ -58,12 +60,27 @@ def coarse_status(events: Sequence[ConversationEvent]) -> str | None:
     if names := [event.tool_name for event in events if isinstance(event, ToolCallStarted)]:
         return f"running {', '.join(names)}"
     # Prose, thinking, or a message that ended: all of it is the agent writing rather than acting,
-    # and the room is told no more than that. A segment covers prose and a reasoning summary alike,
-    # since both are an item's text now; `MessageCompleted` stays because a backend that streams
-    # nothing still emits one, and its answers would otherwise say nothing.
-    if any(isinstance(event, ItemSegment | ReasoningStarted | MessageCompleted) for event in events):
+    # and the room is told no more than that.
+    if any(_the_agent_writing(event) for event in events):
         return "writing"
     return None
+
+
+def _the_agent_writing(event: ConversationEvent) -> bool:
+    """Whether this event is the agent producing prose, as opposed to a tool answering.
+
+    A segment covers a message's prose and a reasoning summary alike, since both are an item's text
+    — but **a tool result's rendered output is a segment too**, and saying "writing" while a
+    command's output comes back describes the wrong party. `MessageCompleted` counts because a
+    backend that streams nothing still emits one, and its answers would otherwise say nothing.
+    """
+    match event:
+        case ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE | ItemType.REASONING)):
+            return True
+        case ReasoningStarted() | MessageCompleted():
+            return True
+        case _:
+            return False
 
 
 class StatusFrontend(Protocol):
