@@ -34,7 +34,7 @@ export type OAuthConnectionResult =
   | components["schemas"]["OAuthConnectionSucceeded"]
   | components["schemas"]["OAuthConnectionFailed"];
 export type AgentView = components["schemas"]["AgentView"];
-export type ClaudeChatMessage = components["schemas"]["SessionMessageView"];
+export type ConversationItem = components["schemas"]["ConversationItemView"];
 export type ConversationSummary = components["schemas"]["ConversationSummary"];
 export type ConversationPage = components["schemas"]["ConversationPage"];
 export type ConversationCursor = components["schemas"]["ConversationCursor"];
@@ -147,14 +147,15 @@ export async function fetchSessionFrames(
  */
 export class PromptRefused extends Error {}
 
-export async function sendChatPrompt(sessionId: string, text: string): Promise<ClaudeChatMessage> {
+export async function sendChatPrompt(sessionId: string, text: string): Promise<void> {
   const { data, error, response } = await api.POST("/api/sessions/{session_id}/messages", {
     params: { path: { session_id: sessionId } },
     body: { text },
   });
   if (response.status === 409) throw new PromptRefused(errorDetail(error, "The session would not take that prompt"));
   if (error || !data) throw new Error(errorDetail(error, "Failed to send the prompt"));
-  return data;
+  // The prompt's own rows arrive over the conversation's follow socket, where every other surface's
+  // prompts arrive too, so there is nothing to hand back that is not already on its way.
 }
 
 /** Interrupt the running turn; false when the console found none open.

@@ -1,36 +1,32 @@
 import { describe, expect, it } from "vitest";
 
-import type { ClaudeChatMessage, ConversationSession } from "../client";
+import type { ConversationItem, ConversationSession } from "../client";
 import { bootstrapNarration, type NarrationLine } from "./bootstrap_narration";
 
 function line(frameSeq: number, text: string): NarrationLine {
   return { frame_seq: frameSeq, text, created_at: "2026-08-01T03:00:00Z" };
 }
 
-function message(id: string): ClaudeChatMessage {
+function message(id: string): ConversationItem {
   return {
-    message_id: id,
-    role: "user",
+    item_id: id,
+    item_type: "prompt",
     status: "complete",
-    content: id,
-    tool_calls: [],
-    error: null,
-    source_first_frame_seq: null,
-    source_last_frame_seq: null,
+    text: id,
     created_at: "2026-08-01T03:00:00Z",
     updated_at: "2026-08-01T03:00:00Z",
   };
 }
 
 function session(
-  overrides: Partial<Pick<ConversationSession, "status" | "narration" | "messages">>
-): Pick<ConversationSession, "status" | "narration" | "messages"> {
-  return { status: "ready", narration: [], messages: [], ...overrides };
+  overrides: Partial<Pick<ConversationSession, "status" | "narration" | "items">>
+): Pick<ConversationSession, "status" | "narration" | "items"> {
+  return { status: "ready", narration: [], items: [], ...overrides };
 }
 
 describe("bootstrapNarration", () => {
   it("shows nothing for a session that narrated nothing", () => {
-    expect(bootstrapNarration(session({ messages: [message("m1")] }))).toBeNull();
+    expect(bootstrapNarration(session({ items: [message("m1")] }))).toBeNull();
   });
 
   it("orders lines by frame_seq rather than by the order they arrived in", () => {
@@ -45,7 +41,7 @@ describe("bootstrapNarration", () => {
 
   it("opens expanded while the session is still provisioning, even once messages exist", () => {
     const narration = bootstrapNarration(
-      session({ status: "provisioning", narration: [line(1, "Cloning…")], messages: [message("m1")] })
+      session({ status: "provisioning", narration: [line(1, "Cloning…")], items: [message("m1")] })
     );
     expect(narration?.startsExpanded).toBe(true);
   });
@@ -56,7 +52,7 @@ describe("bootstrapNarration", () => {
   });
 
   it("collapses once the transcript is what the operator came for", () => {
-    const narration = bootstrapNarration(session({ narration: [line(1, "Cloning…")], messages: [message("m1")] }));
+    const narration = bootstrapNarration(session({ narration: [line(1, "Cloning…")], items: [message("m1")] }));
     expect(narration?.startsExpanded).toBe(false);
   });
 });

@@ -3,24 +3,20 @@ import { describe, expect, it } from "vitest";
 import type { Conversation, ConversationSession, ConversationUpdate } from "../client";
 import { followed } from "./conversation_follow";
 
-type Message = ConversationSession["messages"][number];
+type Item = ConversationSession["items"][number];
 
-function message(id: string, content: string, createdAt: string, status: Message["status"] = "complete"): Message {
+function message(id: string, text: string, createdAt: string, status: Item["status"] = "complete"): Item {
   return {
-    message_id: id,
-    role: "assistant",
+    item_id: id,
+    item_type: "message",
     status,
-    content,
-    tool_calls: [],
-    error: null,
-    source_first_frame_seq: null,
-    source_last_frame_seq: null,
+    text,
     created_at: createdAt,
     updated_at: createdAt,
   };
 }
 
-function conversation(messages: Message[]): Conversation {
+function conversation(items: Item[]): Conversation {
   return {
     conversation_id: "c1",
     created_at: "2026-08-18T00:00:00Z",
@@ -33,7 +29,7 @@ function conversation(messages: Message[]): Conversation {
       updated_at: "2026-08-18T00:00:00Z",
       provisioning: null,
       narration: [],
-      messages,
+      items,
       turns: [],
     },
     earlier_sessions: [],
@@ -53,7 +49,7 @@ function update(fields: Partial<ConversationUpdate>): ConversationUpdate {
     narration: [],
     attachments: [],
     earlier_sessions: [],
-    messages: [],
+    items: [],
     turns: [],
     ...fields,
   };
@@ -72,31 +68,31 @@ describe("followed", () => {
     ).toEqual(fresh);
   });
 
-  it("replaces a message it already holds rather than repeating it", () => {
-    // The open message arrives once per coalescing window carrying the prose so far, so the same
-    // `message_id` lands again and again while a turn is being written.
-    const held = conversation([message("m1", "half an ans", "2026-08-18T00:00:01Z", "streaming")]);
+  it("replaces an item it already holds rather than repeating it", () => {
+    // The open item arrives once per coalescing window carrying the prose so far, so the same
+    // `item_id` lands again and again while a turn is being written.
+    const held = conversation([message("m1", "half an ans", "2026-08-18T00:00:01Z", "open")]);
 
-    const next = followed(held, update({ messages: [message("m1", "half an answer", "2026-08-18T00:00:01Z")] }));
+    const next = followed(held, update({ items: [message("m1", "half an answer", "2026-08-18T00:00:01Z")] }));
 
-    expect(next.session.messages.map((row) => [row.message_id, row.content, row.status])).toEqual([
+    expect(next.session.items.map((row) => [row.item_id, row.text, row.status])).toEqual([
       ["m1", "half an answer", "complete"],
     ]);
   });
 
-  it("puts an arriving message in transcript order, not arrival order", () => {
+  it("puts an arriving item in transcript order, not arrival order", () => {
     const held = conversation([message("m2", "answer", "2026-08-18T00:00:02Z")]);
 
-    const next = followed(held, update({ messages: [message("m1", "prompt", "2026-08-18T00:00:01Z")] }));
+    const next = followed(held, update({ items: [message("m1", "prompt", "2026-08-18T00:00:01Z")] }));
 
-    expect(next.session.messages.map((row) => row.message_id)).toEqual(["m1", "m2"]);
+    expect(next.session.items.map((row) => row.item_id)).toEqual(["m1", "m2"]);
   });
 
   it("applying one update twice is applying it once", () => {
     // Delivery is not exactly-once by design: re-reading from an older position is always correct,
     // which is only true if the merge is.
     const held = conversation([message("m1", "first", "2026-08-18T00:00:01Z")]);
-    const arriving = update({ messages: [message("m2", "second", "2026-08-18T00:00:02Z")] });
+    const arriving = update({ items: [message("m2", "second", "2026-08-18T00:00:02Z")] });
 
     expect(followed(followed(held, arriving), arriving)).toEqual(followed(held, arriving));
   });

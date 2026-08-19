@@ -60,10 +60,10 @@ export function followed(held: Conversation | null, message: ConversationFollowM
       updated_at: message.updated_at,
       provisioning: message.provisioning,
       narration: message.narration,
-      messages: merged(
-        held.session.messages,
-        message.messages,
-        (row) => row.message_id,
+      items: merged(
+        held.session.items,
+        message.items,
+        (row) => row.item_id,
         (row) => Date.parse(row.created_at)
       ),
       turns: merged(

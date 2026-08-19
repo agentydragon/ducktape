@@ -1,18 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import type { ClaudeChatMessage } from "../client";
+import type { ConversationItem } from "../client";
 import { conversationTimeline, type ConversationTurn } from "./conversation_timeline";
 
-function message(id: string, createdAt: string): ClaudeChatMessage {
+function message(id: string, createdAt: string): ConversationItem {
   return {
-    message_id: id,
-    role: "user",
+    item_id: id,
+    item_type: "prompt",
     status: "complete",
-    content: id,
-    tool_calls: [],
-    error: null,
-    source_first_frame_seq: null,
-    source_last_frame_seq: null,
+    text: id,
     created_at: createdAt,
     updated_at: createdAt,
   };
@@ -29,7 +25,7 @@ function turn(id: string, startedAt: string): ConversationTurn {
 
 function shape(entries: ReturnType<typeof conversationTimeline>): string[] {
   return entries.map((entry) =>
-    entry.kind === "message" ? entry.message.message_id : `turn ${entry.number} (${entry.turn.turn_id})`
+    entry.kind === "item" ? entry.item.item_id : `turn ${entry.number} (${entry.turn.turn_id})`
   );
 }
 

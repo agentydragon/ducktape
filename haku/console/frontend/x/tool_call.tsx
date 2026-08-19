@@ -1,9 +1,7 @@
 import { Badge, Code, Group, Paper, Stack, Text } from "@mantine/core";
-import type { ClaudeChatMessage } from "../client";
+import type { ConversationItem } from "../client";
 
 import { CodeBlock } from "../code_block";
-
-type ToolCall = ClaudeChatMessage["tool_calls"][number];
 
 const COLLAPSE_AFTER_CHARACTERS = 600;
 const COLLAPSE_AFTER_LINES = 10;
@@ -125,28 +123,36 @@ function ToolPayload({
   );
 }
 
-export function ToolCallView({ toolCall }: { toolCall: ToolCall }) {
+/** One call, whole: what was asked, what it printed, and what it produced that no string carries.
+ *
+ * A call is an item, so its ask and its answer are the same row — `status` is what says whether the
+ * answer has arrived, rather than a nested result being present or absent.
+ */
+export function ToolCallView({ item }: { item: ConversationItem }) {
   return (
     <Paper withBorder p="sm" radius="sm" className="haku-claude-tool-use">
       <Group gap="xs" mb="xs">
         <Badge variant="light" color="gray">
           Tool
         </Badge>
-        <Code style={{ overflowWrap: "anywhere" }}>{toolCall.tool_name}</Code>
-        {toolCall.result?.is_error && (
+        <Code style={{ overflowWrap: "anywhere" }}>{item.tool_name}</Code>
+        {item.outcome === "failed" && (
           <Badge variant="light" color="red">
             failed
           </Badge>
         )}
       </Group>
       <Stack gap="xs">
-        <ToolPayload label="Arguments" value={toolCall.arguments} emptyLabel="No arguments." emptyWhenNoKeys />
-        {toolCall.result ? (
-          <ToolPayload
-            label="Result"
-            value={toolCall.result.content}
-            emptyLabel={toolCall.result.is_error ? "No error details captured." : "Empty result."}
-          />
+        <ToolPayload label="Arguments" value={item.arguments} emptyLabel="No arguments." emptyWhenNoKeys />
+        {item.status === "complete" ? (
+          <>
+            <ToolPayload
+              label="Output"
+              value={item.text}
+              emptyLabel={item.outcome === "failed" ? "No error details captured." : "Empty result."}
+            />
+            {item.structured != null && <ToolPayload label="Structured" value={item.structured} emptyLabel="" />}
+          </>
         ) : (
           <Text c="dimmed" size="xs">
             No result yet.

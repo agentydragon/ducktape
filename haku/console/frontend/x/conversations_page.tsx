@@ -6,7 +6,7 @@ import {
   createConversation,
   displayableError,
   fetchConversations,
-  type ClaudeChatMessage,
+  type ConversationItem,
   type Conversation,
   type ConversationCursor,
   type ConversationSession,
@@ -132,38 +132,36 @@ function BootstrapNarrationPanel({ narration, starting }: { narration: Bootstrap
   );
 }
 
-function MessageView({ message }: { message: ClaudeChatMessage }) {
+/** Who produced an item, in the words the transcript shows. */
+const SPOKE_BY: Record<ConversationItem["item_type"], string> = {
+  prompt: "You",
+  message: "Claude",
+  reasoning: "Claude thought",
+  tool_call: "Claude",
+};
+
+/** One item of the transcript. A tool call is a sibling of the message rather than a field on it,
+ * which is why it renders here rather than inside one. */
+function ItemView({ item }: { item: ConversationItem }) {
+  if (item.item_type === "tool_call") return <ToolCallView item={item} />;
   return (
-    <Paper withBorder p="sm" className={`haku-chat-message haku-chat-message-${message.role}`}>
+    <Paper withBorder p="sm" className={`haku-chat-message haku-chat-message-${item.item_type}`}>
       <Group justify="space-between" align="center" mb={4}>
         <Text fw={600} size="xs">
-          {message.role === "user" ? "You" : "Claude"}
+          {SPOKE_BY[item.item_type]}
         </Text>
-        {message.status !== "complete" && (
-          <Badge size="xs" variant="light" color={message.status === "failed" ? "red" : "blue"}>
-            {message.status}
+        {item.status !== "complete" && (
+          <Badge size="xs" variant="light" color={item.status === "failed" ? "red" : "blue"}>
+            {item.status}
           </Badge>
         )}
       </Group>
-      {message.tool_calls.length > 0 && (
-        <Stack gap="xs" mb="sm">
-          {message.tool_calls.map((toolCall) => (
-            <ToolCallView key={toolCall.call_id} toolCall={toolCall} />
-          ))}
-        </Stack>
-      )}
-      <Markdown
-        source={message.content.trim() || (message.status === "streaming" ? "…" : "")}
-        className="haku-chat-markdown"
-      />
-      {!message.content.trim() && message.tool_calls.length === 0 && message.status === "complete" && (
+      <Markdown source={item.text.trim() || (item.status === "open" ? "…" : "")} className="haku-chat-markdown" />
+      {!item.text.trim() && item.status === "complete" && (
         <Text c="dimmed" size="xs">
-          No assistant text was captured.
-        </Text>
-      )}
-      {message.error && (
-        <Text c="red" size="xs" mt="xs">
-          {message.error}
+          {item.item_type === "reasoning" && item.disclosure === "withheld"
+            ? "The model thought, and none of it was disclosed."
+            : "Nothing was captured for this."}
         </Text>
       )}
     </Paper>
@@ -415,7 +413,7 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
 
   const { session } = conversation;
   const narration = bootstrapNarration(session);
-  const timeline = conversationTimeline(session.messages, session.turns);
+  const timeline = conversationTimeline(session.items, session.turns);
 
   const close = async (sessionId: string) => {
     setClosing(true);
@@ -493,12 +491,12 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
             )}
             {timeline.length === 0 && !narration && !session.provisioning && (
               <Text c="dimmed" size="sm">
-                No transcript messages were recorded.
+                Nothing was recorded for this session.
               </Text>
             )}
             {timeline.map((entry) =>
-              entry.kind === "message" ? (
-                <MessageView key={entry.message.message_id} message={entry.message} />
+              entry.kind === "item" ? (
+                <ItemView key={entry.item.item_id} item={entry.item} />
               ) : (
                 <TurnBoundary key={entry.turn.turn_id} turn={entry.turn} number={entry.number} />
               )

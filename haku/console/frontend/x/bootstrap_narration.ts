@@ -28,6 +28,6 @@ export function bootstrapNarration(
   if (session.narration.length === 0) return null;
   return {
     lines: [...session.narration].sort((left, right) => left.frame_seq - right.frame_seq),
-    startsExpanded: session.status === "provisioning" || session.messages.length === 0,
+    startsExpanded: session.status === "provisioning" || session.items.length === 0,
   };
 }
