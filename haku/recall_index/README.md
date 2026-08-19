@@ -7,10 +7,10 @@ Two corpora, named explicitly everywhere. They answer different questions and ar
 different sources, and a query that silently searched the wrong one would look like a retrieval
 quality problem:
 
-| corpus | source                                                          | a hit points at               |
-| ------ | --------------------------------------------------------------- | ----------------------------- |
-| `git`  | the files at a branch tip of a git repository (haku-state)      | a path and a byte range       |
-| `chat` | the console's `session_messages` — Matrix and SPA conversations | a session and its message ids |
+| corpus | source                                                           | a hit points at            |
+| ------ | ---------------------------------------------------------------- | -------------------------- |
+| `git`  | the files at a branch tip of a git repository (haku-state)       | a path and a byte range    |
+| `chat` | the console's `conversation_item` — Matrix and SPA conversations | a session and its item ids |
 
 The index is derived state: it can be thrown away and rebuilt from git and Postgres at any time.
 
@@ -386,9 +386,9 @@ rather than argued:
   `tool_result` can be an entire file (`haku/console/tools/conversations.py`). Embedding those
   verbatim means vectors over file dumps, a corpus that grows with tool volume rather than with
   conversation, and retrieval that returns the file rather than the reasoning about it.
-- **The messages are the high-signal half.** `session_messages` is what was actually said,
-  already deduplicated against the delivery mirror by the console. If recall over that is not
-  useful, recall over the frames underneath it will not rescue it.
+- **The prompts and answers are the high-signal half.** `conversation_item` is what was actually
+  said, folded out of the frames by the console. If recall over that is not useful, recall over the
+  frames underneath it will not rescue it.
 
 When they are added, they are a **third corpus** (`Corpus.FRAMES`), not a widening of this one:
 different unit, different chunker version line, and a `corpus=` filter is what lets a caller ask

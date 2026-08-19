@@ -322,20 +322,19 @@ know about an attachment — it is the resume contract, and the same integer ans
 channel. Everything else a channel keeps is its own rendering state, held in its own tables, so a
 second channel is a new table rather than a widened shared one.
 
-`matrix_revision` is what `chat_delivery` is once narrowed to what it is read for, and it is
-Matrix's: it holds the subjects that channel can **revise** — a status line it edits and retires —
-against the homeserver event ids it edits them at. Nothing outside Matrix reads it, and a channel
-that cannot edit what it sent has no use for the shape. A row per delivered message is a
-flushed-up-to position materialised one row at a time, and the cursor holds that properly.
+`matrix_revision` is narrowed to what a revision index is read for, and it is Matrix's: it holds the
+subjects that channel can **revise** — a status line it edits and retires — against the homeserver
+event ids it edits them at. Nothing outside Matrix reads it, and a channel that cannot edit what it
+sent has no use for the shape. It deliberately takes no row per delivered message: that is a
+flushed-up-to position materialised one row at a time, and the cursor holds it properly.
 
 Keying it by `attachment_id` rather than by a room id is still worth doing, so a channel does not
 join its own state through its public address. That the cursor is keyed the same way does not make a
 browser tab durable: an attachment row exists only for a channel that holds a copy, so keying by
 attachment already excludes tabs.
 
-`matrix_outbox` is `session_outbox` with the session removed. It is keyed by `attachment_id`, holds
-`subject` as its idempotence key, and **is written by the channel and never by a turn**: the turn
-writes the log and stops. It stays a durable queue because retry state against a flaky homeserver is
+`matrix_outbox` names no session. It is keyed by `attachment_id`, holds `subject` as its idempotence
+key, and **is written by the channel and never by a turn**: the turn writes the log and stops. It stays a durable queue because retry state against a flaky homeserver is
 real state and a position cannot express "this one failed three times and is backing off".
 
 ### Session state, and what this does not touch
@@ -483,8 +482,8 @@ nothing else, so it survives a re-keying of everything it wakes — `x/setup_out
 console are not involved.
 
 **One consumer lives outside the chat runtime and a scoped sweep misses it.**
-<../../recall_index/chat_source.py> selects `session_messages` directly. It moves onto
-`conversation_item`, and it is the reason that table keeps a stable per-item id, its type, its text
+<../../recall_index/chat_source.py> selects the console's transcript directly, so it reads
+`conversation_item` — and it is the reason that table keeps a stable per-item id, its type, its text
 and its timestamps in queryable columns rather than folding them into the log alone.
 
 ## 6. What this makes of the work in flight

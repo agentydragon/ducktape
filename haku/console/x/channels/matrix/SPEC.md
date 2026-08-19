@@ -141,8 +141,8 @@ over Matrix, and any write surface for the agent beyond its own replies.
   assistant text, so it is delivered only when nothing was said along the way.
 - **Every turn speaks.** There is no silence token: a turn that finishes with no text says so, as a
   notice rather than a reply — the console reporting an outcome, not the agent talking.
-- **A produced reply is never lost silently.** `session_outbox` holds it from the moment it is
-  produced and the drain retries until the homeserver takes it. Each row is sent under its own
+- **A produced reply is never lost silently.** `matrix_outbox` holds it from the moment the room's
+  subscriber reads the message complete, and the drain retries until the homeserver takes it. Each row is sent under its own
   stable transaction id, so a late redelivery inside Synapse's dedup window is refused rather than
   duplicated (<../../../docs/chat_runtime_facts.md>).
 - **A reply arrives formatted.** The event carries both forms — `body` stays the Markdown, which is
