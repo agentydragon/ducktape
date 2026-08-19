@@ -196,10 +196,13 @@ py_test(
         ":outbox",
         ":pacer",
         "//:conftest",
+        "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console/x:conftest",
+        "//haku/console/x:conversation_events",
         "//haku/console/x:session_store",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",

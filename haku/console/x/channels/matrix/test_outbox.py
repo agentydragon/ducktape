@@ -12,16 +12,18 @@ from uuid import UUID
 
 import pytest
 import pytest_bazel
+from more_itertools import one
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import SPA_ORIGIN
-from haku.console.database_schema import ChatDelivery, SessionOutbox
-from haku.console.x.channels.matrix.client import MatrixError, RoomEventKind
+from haku.console.chat_models import SPA_ORIGIN, ItemStatus, ItemType
+from haku.console.database_schema import ConversationItem, MatrixOutbox
+from haku.console.x.channels.matrix.client import MatrixError
 from haku.console.x.channels.matrix.conftest import MATRIX_ROOM
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore
 from haku.console.x.channels.matrix.outbox import MAX_SEND_ATTEMPTS, PendingReply, RoomOutbox, RoomOutboxDrain
 from haku.console.x.channels.matrix.pacer import RoomPacer
+from haku.console.x.conversation_events import FrameRange, ItemSegment, MessageCompleted, MessageStarted, OpenRef
 from haku.console.x.session_store import BridgeAuthentication, SessionStore
 
 
@@ -54,8 +56,7 @@ async def session_id(chat_store: SessionStore, conversations: MatrixConversation
 
 @pytest.fixture
 async def turn_id(chat_store: SessionStore, operator_id: UUID, session_id: UUID) -> UUID:
-    """The exchange these replies are produced in: a message is opened inside a turn, which is
-    what records that the turn has queued one (`session_turns.queued_reply`)."""
+    """The exchange these replies are produced in."""
     await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?", SPA_ORIGIN)
     turn = await chat_store.next_prompt(session_id)
     assert turn is not None
@@ -90,36 +91,62 @@ def _unpaced(engine: AsyncEngine, outbox: RoomOutbox, homeserver: _Homeserver) -
     return pacer, RoomOutboxDrain(engine, outbox, pacer, homeserver.post, _room)
 
 
-async def _rows(sessions: async_sessionmaker[AsyncSession]) -> list[SessionOutbox]:
+async def _rows(sessions: async_sessionmaker[AsyncSession]) -> list[MatrixOutbox]:
     async with sessions() as db:
-        return list(await db.scalars(select(SessionOutbox).order_by(SessionOutbox.created_at)))
+        return list(await db.scalars(select(MatrixOutbox).order_by(MatrixOutbox.created_at)))
 
 
-async def _deliveries(sessions: async_sessionmaker[AsyncSession]) -> list[tuple[str, str]]:
+async def _said(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> list[UUID]:
+    """The completed message items of a session, oldest first — what a subscriber sees complete."""
     async with sessions() as db:
-        rows = await db.scalars(select(ChatDelivery).order_by(ChatDelivery.sent_at, ChatDelivery.sent_ref))
-    return [(row.subject, row.sent_ref) for row in rows]
-
-
-async def _enqueue(chat_store: SessionStore, session_id: UUID, turn_id: UUID, *bodies: str) -> None:
-    """Produce *bodies* the way a turn does: one completed assistant message each."""
-    for frame_seq, body in enumerate(bodies, start=1):
-        assert await chat_store.update_assistant(
-            session_id,
-            await chat_store.begin_assistant(session_id, turn_id, source_first_frame_seq=frame_seq),
-            body,
-            complete=True,
+        return list(
+            await db.scalars(
+                select(ConversationItem.item_id)
+                .where(
+                    ConversationItem.session_id == session_id,
+                    ConversationItem.item_type == ItemType.MESSAGE,
+                    ConversationItem.status == ItemStatus.COMPLETE,
+                )
+                .order_by(ConversationItem.opened_seq)
+            )
         )
 
 
+async def _enqueue(
+    chat_store: SessionStore,
+    sessions: async_sessionmaker[AsyncSession],
+    outbox: RoomOutbox,
+    attachment_id: UUID,
+    session_id: UUID,
+    turn_id: UUID,
+    *bodies: str,
+) -> None:
+    """Produce *bodies* the way a turn does — one completed message item each — and queue them the
+    way the room's subscriber does when it reads those completions off the log."""
+    for frame_seq, body in enumerate(bodies, start=1):
+        where = FrameRange(frame_seq, frame_seq)
+        await chat_store.apply_frame(
+            session_id,
+            turn_id,
+            frame_seq,
+            [
+                MessageStarted(provenance=where),
+                ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text=body, provenance=where),
+                MessageCompleted(backend_item_id=None, provenance=where),
+            ],
+        )
+    for item_id in await _said(sessions, session_id):
+        await outbox.enqueue(attachment_id, item_id)
+
+
 async def test_a_reply_is_said_once_and_then_never_again(
-    chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id
+    chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id, attachment_id
 ) -> None:
     """The half of `exactly once` a redrive could break: a row the homeserver accepted is `sent_at`
     and never claimed again."""
     homeserver = _Homeserver()
     pacer, drain = _unpaced(migrated_engine, outbox, homeserver)
-    await _enqueue(chat_store, session_id, turn_id, "the answer")
+    await _enqueue(chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
 
     async with pacer.run():
         assert await drain.drain_once()
@@ -131,64 +158,16 @@ async def test_a_reply_is_said_once_and_then_never_again(
     assert (row.sent_at is not None, row.attempts, row.last_error) == (True, 1, None)
 
 
-async def test_a_sent_reply_records_which_room_event_it_became(
-    chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id, attachment_id
-) -> None:
-    """Correspondence, kept rather than re-read: without it, which event shows this answer is
-    recoverable only by reading the room back and parsing the tag off every event."""
-    homeserver = _Homeserver()
-    pacer, drain = _unpaced(migrated_engine, outbox, homeserver)
-    await _enqueue(chat_store, session_id, turn_id, "the answer")
-
-    async with pacer.run():
-        assert await drain.drain_once()
-        await pacer.flush()
-
-    [row] = await _rows(migrated_sessions)
-    assert row.message_id is not None
-    assert await _deliveries(migrated_sessions) == [(f"message:{row.message_id.hex}", "$event-1")]
-
-
-async def test_a_refused_reply_records_nothing(
-    chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id, attachment_id
-) -> None:
-    """The row and the correspondence commit together, so a send the homeserver refused leaves
-    neither — and the redrive that follows is not a second thing the room is shown."""
-    homeserver = _Homeserver(refuses={"the answer"})
-    pacer, drain = _unpaced(migrated_engine, outbox, homeserver)
-    await _enqueue(chat_store, session_id, turn_id, "the answer")
-
-    async with pacer.run():
-        assert await drain.drain_once()
-        await pacer.flush()
-
-    assert await _deliveries(migrated_sessions) == []
-
-
-async def test_a_turn_last_word_is_recorded_against_its_turn(
-    chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id, attachment_id
-) -> None:
-    """The one reply no transcript row holds. Its subject is the turn, not the outbox row, so a
-    reconciler re-deriving it from the record after the queue is gone reaches the same subject."""
-    homeserver = _Homeserver()
-    pacer, drain = _unpaced(migrated_engine, outbox, homeserver)
-    assert await chat_store.enqueue_turn_reply(session_id, turn_id, "that is all")
-
-    async with pacer.run():
-        assert await drain.drain_once()
-        await pacer.flush()
-
-    assert await _deliveries(migrated_sessions) == [(f"turn:{turn_id.hex}", "$event-1")]
-
-
 async def test_replies_are_said_in_the_order_they_were_produced(
-    chat_store, migrated_engine, outbox, session_id, turn_id
+    chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id, attachment_id
 ) -> None:
     """A turn that narrates, works and reports back is three rows, and the room reads top to
     bottom: out of order they describe a different turn."""
     homeserver = _Homeserver()
     pacer, drain = _unpaced(migrated_engine, outbox, homeserver)
-    await _enqueue(chat_store, session_id, turn_id, "looking now", "found it", "fixed")
+    await _enqueue(
+        chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "looking now", "found it", "fixed"
+    )
 
     async with pacer.run():
         while await drain.drain_once():
@@ -198,7 +177,7 @@ async def test_replies_are_said_in_the_order_they_were_produced(
 
 
 async def test_a_refused_send_leaves_the_row_for_the_next_attempt(
-    chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id
+    chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id, attachment_id
 ) -> None:
     """The drop this table exists for (<../../../debug/message_drops.md> E1): the failure is the
     row's — unsent, one attempt spent, the homeserver's own words kept, and claimable again once
@@ -206,7 +185,7 @@ async def test_a_refused_send_leaves_the_row_for_the_next_attempt(
     """
     homeserver = _Homeserver(refuses={"the answer"})
     pacer, drain = _unpaced(migrated_engine, outbox, homeserver)
-    await _enqueue(chat_store, session_id, turn_id, "the answer")
+    await _enqueue(chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
 
     async with pacer.run():
         assert await drain.drain_once()
@@ -219,13 +198,13 @@ async def test_a_refused_send_leaves_the_row_for_the_next_attempt(
 
 
 async def test_a_reply_the_room_refused_is_said_once_the_homeserver_relents(
-    chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id
+    chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id, attachment_id
 ) -> None:
     """A produced reply is retried rather than lost. The wait is skipped by hand: what is under
     test is that the row comes back at all, not how long it waits first."""
     homeserver = _Homeserver(refuses={"the answer"})
     pacer, drain = _unpaced(migrated_engine, outbox, homeserver)
-    await _enqueue(chat_store, session_id, turn_id, "the answer")
+    await _enqueue(chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
 
     async with pacer.run():
         assert await drain.drain_once()
@@ -240,7 +219,7 @@ async def test_a_reply_the_room_refused_is_said_once_the_homeserver_relents(
 
 
 async def test_a_refused_reply_holds_up_the_one_behind_it(
-    chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id
+    chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id, attachment_id
 ) -> None:
     """Order survives a retry, which is the half of this that a due-rows-only query would lose.
 
@@ -249,7 +228,9 @@ async def test_a_refused_reply_holds_up_the_one_behind_it(
     """
     homeserver = _Homeserver(refuses={"found it"})
     pacer, drain = _unpaced(migrated_engine, outbox, homeserver)
-    await _enqueue(chat_store, session_id, turn_id, "found it", "and fixed it")
+    await _enqueue(
+        chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "found it", "and fixed it"
+    )
 
     async with pacer.run():
         assert await drain.drain_once()
@@ -264,7 +245,7 @@ async def test_a_refused_reply_holds_up_the_one_behind_it(
 
 
 async def test_a_reply_out_of_attempts_is_left_alone_rather_than_retried_forever(
-    chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id, caplog
+    chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id, attachment_id, caplog
 ) -> None:
     """A room that has refused the same message eight times is not going to take the ninth.
 
@@ -273,7 +254,9 @@ async def test_a_reply_out_of_attempts_is_left_alone_rather_than_retried_forever
     """
     homeserver = _Homeserver(refuses={"the answer"})
     pacer, drain = _unpaced(migrated_engine, outbox, homeserver)
-    await _enqueue(chat_store, session_id, turn_id, "the answer", "and the next one")
+    await _enqueue(
+        chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer", "and the next one"
+    )
 
     async with pacer.run():
         for _ in range(MAX_SEND_ATTEMPTS):
@@ -291,81 +274,38 @@ async def test_a_reply_out_of_attempts_is_left_alone_rather_than_retried_forever
     assert "giving up on outbox row" in caplog.text
 
 
-async def test_one_message_is_queued_once_however_often_its_frame_arrives(
-    chat_store, migrated_sessions, session_id, turn_id
+async def test_one_item_is_queued_once_however_often_a_subscriber_sees_it_complete(
+    chat_store, migrated_sessions, outbox, session_id, turn_id, attachment_id
 ) -> None:
-    """A runner replaying its rollout into a replacement replica offers the same completed
-    `assistant` frame again. Without the partial unique index that would be a second row for one
-    transcript message, and the room would read the answer twice."""
-    message_id = await chat_store.begin_assistant(session_id, turn_id, source_first_frame_seq=1)
+    """A subscriber that crashed between sending and keeping its position sees the same completion
+    again, and so does a runner replaying its rollout into a replacement replica. Without the
+    partial unique index that would be a second row for one item, and the room would read the answer
+    twice."""
+    await _enqueue(chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
+    item_id = one(await _said(migrated_sessions, session_id))
 
     for _ in range(3):
-        assert await chat_store.update_assistant(session_id, message_id, "the answer", complete=True)
+        await outbox.enqueue(attachment_id, item_id)
 
     [row] = await _rows(migrated_sessions)
-    assert (row.message_id, row.body) == (message_id, "the answer")
+    assert (row.subject, row.body) == (item_id.hex, "the answer")
 
 
-async def test_a_turns_last_word_is_queued_once_however_often_the_turn_is_adopted(
-    chat_store, migrated_sessions, session_id, turn_id
+async def test_an_item_that_said_nothing_is_not_a_reply(
+    chat_store, migrated_sessions, outbox, session_id, turn_id, attachment_id
 ) -> None:
-    """The duplicate the `message_id` index cannot catch, because these rows have none.
-
-    A turn's last word — `result.result` on a turn whose completed messages were all empty — is
-    written *before* the turn is closed, so a replica dying in that window leaves the turn open and
-    its replacement re-derives the same reply. `turn_id` is what makes the second derivation a
-    no-op.
-    """
-    for _ in range(3):
-        assert await chat_store.enqueue_turn_reply(session_id, turn_id, "[stopped by the operator]")
-
-    [row] = await _rows(migrated_sessions)
-    assert (row.turn_id, row.message_id, row.body) == (turn_id, None, "[stopped by the operator]")
-    assert (await chat_store.turn_state(turn_id)).queued_reply, "the turn records the row it queued"
-
-
-async def test_a_session_serving_no_room_queues_nothing(chat_store, migrated_sessions, operator_id) -> None:
-    """The SPA follows the conversation, so a finished turn is delivered by being written
-    down. A row for it would be a reply nothing will ever say."""
-    view, token = await chat_store.create(operator_id)
-    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
-    turn = await chat_store.next_prompt(view.session_id)
-    assert turn is not None
-    message_id = await chat_store.begin_assistant(view.session_id, turn.turn_id, source_first_frame_seq=1)
-
-    assert not await chat_store.update_assistant(view.session_id, message_id, "the answer", complete=True)
-
-    assert await _rows(migrated_sessions) == []
-    state = await chat_store.turn_state(turn.turn_id)
-    assert (state.said_anything, state.queued_reply) == (True, False), "it spoke; the room is owed nothing"
-
-
-async def test_the_tag_says_which_transcript_row_the_room_is_showing(
-    chat_store, migrated_sessions, session_id, turn_id
-) -> None:
-    """Rebuilt from the row rather than stored beside it, so the two cannot disagree."""
-    message_id = await chat_store.begin_assistant(session_id, turn_id, source_first_frame_seq=1)
-    await chat_store.update_assistant(session_id, message_id, "the answer", agent_message_id="msg_01abc", complete=True)
-    [row] = await _rows(migrated_sessions)
-
-    tag = PendingReply(
-        outbox_id=row.outbox_id,
-        session_id=row.session_id,
-        room_id=row.room_id,
-        body=row.body,
-        message_id=row.message_id,
-        agent_message_id=row.agent_message_id,
-        turn_id=row.turn_id,
-        attempts=row.attempts,
-    ).tag()
-
-    assert (tag.kind, tag.session_id, tag.message_id, tag.agent_message_id) == (
-        RoomEventKind.REPLY,
+    """A turn that only ran tools said nothing, and an empty room event would be the console
+    reporting that as an answer."""
+    where = FrameRange(1, 1)
+    await chat_store.apply_frame(
         session_id,
-        message_id,
-        "msg_01abc",
+        turn_id,
+        1,
+        [MessageStarted(provenance=where), MessageCompleted(backend_item_id=None, provenance=where)],
     )
+
+    assert not await outbox.enqueue(attachment_id, one(await _said(migrated_sessions, session_id)))
+    assert await _rows(migrated_sessions) == []
 
 
 async def test_nothing_is_claimed_before_a_room_is_bound(migrated_engine, outbox) -> None:
@@ -392,7 +332,7 @@ async def _never_posted(reply: PendingReply) -> str:
 async def _due_now(sessions: async_sessionmaker[AsyncSession]) -> None:
     """Bring every unsent row's retry forward, so a test waits on outcomes rather than on clocks."""
     async with sessions() as db, db.begin():
-        for row in await db.scalars(select(SessionOutbox).where(SessionOutbox.sent_at.is_(None))):
+        for row in await db.scalars(select(MatrixOutbox).where(MatrixOutbox.sent_at.is_(None))):
             row.next_attempt_at = datetime.now(UTC) - timedelta(seconds=1)
 
 
