@@ -3,15 +3,6 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "delivery_log",
-    srcs = ["delivery_log.py"],
-    deps = [
-        "//haku/console:database_schema",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "frame_projection",
     srcs = ["frame_projection.py"],
     deps = [
@@ -391,24 +382,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_delivery_log",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_delivery_log.py"],
-    deps = [
-        ":conftest",
-        ":delivery_log",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "//haku/console:conftest",
-        "//haku/console:database_schema",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )
 

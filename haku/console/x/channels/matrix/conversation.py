@@ -18,24 +18,24 @@ from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import (
     OPEN_SESSION_STATUSES,
-    ChatMessageRole,
-    ChatMessageStatus,
     ChatSurface,
+    ItemStatus,
+    ItemType,
     MatrixOrigin,
     PromptRejection,
     SessionStatus,
 )
 from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
-from haku.console.database_schema import ChatAttachment, Conversation, Session, SessionEvent, SessionMessage
+from haku.console.database_schema import ChatAttachment, Conversation, ConversationItem, Session
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x import session_events
 from haku.console.x.channels.matrix.client import InboundMessage, RoomEventKind, UnmappableEvent
-from haku.console.x.channels.matrix.ingress_ledger import IngressLedger, Unanswered
+from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.session_runtime import SessionService
@@ -223,28 +223,36 @@ class MatrixConversationStore:
             )
             return session_id
 
-    async def conversation_of_room(self, room_id: str) -> UUID | None:
-        """The conversation *room_id* holds a copy of, or None where it holds none.
+    async def attachment_of_room(self, room_id: str) -> tuple[UUID, UUID] | None:
+        """The conversation *room_id* holds a copy of and the attachment holding it, or None.
 
-        Addressed by room rather than answered from the binding, because a subscriber is told which
-        room it is reading for and a room that is not the bound one holds nothing.
+        Both, because a subscriber needs one of each: the conversation to read the log, and the
+        attachment to key the position it reads from. Addressed by room rather than answered from
+        the binding, because a subscriber is told which room it is reading for and a room that is
+        not the bound one holds nothing.
         """
         async with self._sessions() as db:
-            conversation_id: UUID | None = await db.scalar(
-                select(ChatAttachment.conversation_id).where(
-                    ChatAttachment.surface == ChatSurface.MATRIX,
-                    ChatAttachment.address == room_id,
-                    ChatAttachment.detached_at.is_(None),
+            found = (
+                await db.execute(
+                    select(ChatAttachment.conversation_id, ChatAttachment.attachment_id).where(
+                        ChatAttachment.surface == ChatSurface.MATRIX,
+                        ChatAttachment.address == room_id,
+                        ChatAttachment.detached_at.is_(None),
+                    )
                 )
-            )
-            return conversation_id
+            ).first()
+            return None if found is None else (found.conversation_id, found.attachment_id)
 
 
 @dataclass(frozen=True)
 class RecordedMessage:
-    """One thing that was said in a room, as the console wrote it down."""
+    """One thing that was said in a room, as the console wrote it down.
 
-    role: ChatMessageRole
+    `item_type` is the neutral vocabulary's, not a chat role: who said it follows from what kind of
+    item it is, and the channel is what turns that into an address.
+    """
+
+    item_type: ItemType
     body: str
     sent_at: datetime.datetime
 
@@ -258,11 +266,9 @@ class RoomTranscript:
     `sessions.conversation_id` is what makes that chain readable: sessions of one thread share it,
     and it outlives each of them.
 
-    **A row is here once it was said, and the two sides say that differently.** An operator row
-    exists from the moment ingress accepted the batch; a Haku row is said when it completes, which
-    is the condition under which `_enqueue_reply` wrote the room's copy in the same transaction. So
-    a message still streaming, a turn that failed mid-answer, and the empty row a tool-only message
-    leaves are all excluded — the room was never told any of them either.
+    **Prompts and messages only, and only finished ones.** Reasoning and tool calls are the session's
+    own working, not what was said; an item still streaming and the empty item a tool-only turn
+    leaves are excluded because the room was never told either of them.
     """
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]):
@@ -271,52 +277,73 @@ class RoomTranscript:
     async def recent(self, conversation_id: UUID, *, before_session: UUID, limit: int) -> tuple[RecordedMessage, ...]:
         """The last *limit* things said in *conversation_id*, oldest first, minus *before_session*'s.
 
-        The only way the session being started has a row before its first turn is the batch it is
+        The only way the session being started has an item before its first turn is the batch it is
         about to be handed, and a message in both the history and the prompt reads as having been
-        said twice.
+        said twice. `is_distinct_from` rather than `!=` so an item no session has claimed still
+        counts — a comparison against NULL is neither true nor false, and would silently drop it.
         """
         said = (
-            select(SessionMessage.role, SessionMessage.content, SessionMessage.created_at)
-            .join(Session, Session.session_id == SessionMessage.session_id)
+            select(ConversationItem.item_type, ConversationItem.item_text, ConversationItem.created_at)
             .where(
-                Session.conversation_id == conversation_id,
-                SessionMessage.session_id != before_session,
-                or_(
-                    SessionMessage.role == ChatMessageRole.USER,
-                    and_(SessionMessage.status == ChatMessageStatus.COMPLETE, func.trim(SessionMessage.content) != ""),
-                ),
+                ConversationItem.conversation_id == conversation_id,
+                ConversationItem.session_id.is_distinct_from(before_session),
+                ConversationItem.item_type.in_((ItemType.PROMPT, ItemType.MESSAGE)),
+                ConversationItem.status == ItemStatus.COMPLETE,
+                func.trim(ConversationItem.item_text) != "",
             )
             # Descending with a limit, then reversed: the tail is what is wanted, and paging from
             # the front of a long-lived room to reach it would read the whole conversation.
-            .order_by(SessionMessage.created_at.desc(), SessionMessage.message_id.desc())
+            .order_by(ConversationItem.created_at.desc(), ConversationItem.item_id.desc())
             .limit(limit)
         )
         async with self._sessions() as db:
             rows = (await db.execute(said)).all()
         return tuple(
-            RecordedMessage(role=role, body=content, sent_at=created_at) for role, content, created_at in reversed(rows)
+            RecordedMessage(item_type=item_type, body=text, sent_at=created_at)
+            for item_type, text, created_at in reversed(rows)
+        )
+
+
+@dataclass(frozen=True)
+class ConversationFacts:
+    """Console-authored events belonging to one conversation, for the caller to append.
+
+    **Bodies rather than rows.** An authored event's position is allocated under the conversation's
+    lock, so only the transaction that writes it can say where it goes — and that is the transaction
+    that acknowledges the batch (`sync.MatrixSyncStore.advance`), which is what keeps the record of
+    what a pass decided from being lost by a crash after the watermark moved.
+
+    `session_id` is absent where no session was up to refuse the batch: what a refusal is about is
+    the conversation, which exists as soon as the room is bound.
+    """
+
+    conversation_id: UUID
+    session_id: UUID | None
+    bodies: tuple[session_events.AuthoredBody, ...]
+
+    def then(self, *more: session_events.AuthoredBody) -> ConversationFacts:
+        return ConversationFacts(
+            conversation_id=self.conversation_id, session_id=self.session_id, bodies=self.bodies + more
         )
 
 
 @dataclass(frozen=True)
 class PromptAccepted:
-    """The batch is a prompt row on the live session, and a turn will answer it."""
+    """The batch is a prompt item on the live session, and a turn will answer it."""
 
-    message_id: UUID
+    item_id: UUID
 
 
 @dataclass(frozen=True)
 class PromptRejected:
-    """The batch was refused, and is not coming back: what to say, and the row that records it.
+    """The batch was refused, and is not coming back: what to say, and the fact that records it.
 
-    `event` is None only where there is no session row to key the fact to — nothing provisioned
-    yet, or the supervisor between sessions — so there the room notice is the only account of it.
-    Giving that case a home needs an entity above the session, which does not exist: a
-    `session_events` row names a session, and there is none to name.
+    `facts` is None only where no room is bound, so there is no conversation to record against —
+    and nowhere to say it either, which makes the two absences the same one.
     """
 
     reason: PromptRejection
-    event: SessionEvent | None
+    facts: ConversationFacts | None
 
 
 type Admission = PromptAccepted | PromptRejected
@@ -331,10 +358,10 @@ class MatrixTurns:
     so and sends it again. What the caller does with a rejection is acknowledge it, recording the
     row this hands back in the same transaction (`sync.MatrixSyncStore.advance`).
 
-    Nothing here is delivery either. A prompt this accepts can still be stranded by a session that
-    ends before claiming it — and that is what `re_offer` exists for: the prompt is recorded
-    against the events it carries (`ingress_ledger`), so a later pass can find it and ask the live
-    session the same question rather than leaving it as history nobody answers.
+    A prompt this accepts is the conversation's, not the accepting session's, so a session that dies
+    before claiming it strands nothing: its replacement finds the same queued row. What the record
+    keeps against the events themselves (`ingress_ledger`) is only what makes a re-delivery
+    recognisable.
     """
 
     def __init__(
@@ -359,31 +386,20 @@ class MatrixTurns:
         """
         return await self._enqueue(_as_prompt(messages), tuple(message.event_id for message in messages))
 
-    async def re_offer(self, unanswered: Unanswered) -> bool:
-        """Ask the live session what a dead one was asked and never answered.
-
-        True where it took it. False is an ordinary state rather than a failure — there may be no
-        session yet, or one mid-turn — and the caller asks again on its next pass, so nothing here
-        records a refusal or says anything in the room: the operator did not send this message
-        again and has nothing to do about it.
-        """
-        admission = await self._enqueue(unanswered.text, unanswered.event_ids)
-        if isinstance(admission, PromptRejected):
-            logger.info("Matrix: the live session will not take the unanswered message yet (%s)", admission.reason)
-            return False
-        return True
-
     async def _enqueue(self, prompt_text: str, event_ids: tuple[str, ...]) -> Admission:
         # The binding is read for the room alone — which session is serving comes through the
         # conversation — because the room is the address this prompt's origin names.
         binding = await self._conversations.bound_room()
+        if binding is None:
+            logger.info("Matrix: no room bound, rejecting %d event(s)", len(event_ids))
+            return PromptRejected(reason=PromptRejection.NO_SESSION, facts=None)
         session_id = await self._conversations.session_serving()
-        if binding is None or session_id is None:
+        if session_id is None:
             logger.info("Matrix: no session behind the room, rejecting %d event(s)", len(event_ids))
-            return PromptRejected(reason=PromptRejection.NO_SESSION, event=None)
+            return self._refused(binding, None, PromptRejection.NO_SESSION, prompt_text)
         operator_id = await self._identities.resolve_configured_external_user_key(self._config.operator_subject)
         try:
-            prompt = await self._chat_store.enqueue_prompt(
+            item_id = await self._chat_store.enqueue_prompt(
                 operator_id,
                 session_id,
                 prompt_text,
@@ -391,37 +407,42 @@ class MatrixTurns:
                 self._ledger.carrying(event_ids),
             )
         except KeyError:
-            # The session row has gone under us — the supervisor is between sessions. Nothing to
-            # key an event to, so this reads to the operator like never having had one.
+            # The session row has gone under us — the supervisor is between sessions. Recorded
+            # against the conversation with no session named, which is what happened.
             logger.info("Matrix: session %s is gone, rejecting the batch", session_id)
-            return PromptRejected(reason=PromptRejection.NO_SESSION, event=None)
+            return self._refused(binding, None, PromptRejection.NO_SESSION, prompt_text)
         except PromptRefusedError as refusal:
             # Admission is `enqueue_prompt`'s alone, decided under `SELECT … FOR UPDATE`: a status
             # read here could only agree with a decision that had not been made yet.
             logger.info("Matrix: session %s rejected the batch: %s", session_id, refusal.reason)
-            return PromptRejected(
-                reason=refusal.reason,
-                event=session_events.authored(
-                    PromptRejectedBody(reason=refusal.reason, text=prompt_text),
-                    session_id=session_id,
-                    now=datetime.datetime.now(datetime.UTC),
-                ),
-            )
-        return PromptAccepted(message_id=prompt.message_id)
+            return self._refused(binding, session_id, refusal.reason, prompt_text)
+        return PromptAccepted(item_id=item_id)
 
-    async def unreadable(self, events: Sequence[UnmappableEvent]) -> tuple[SessionEvent, ...]:
-        """The rows for events Haku has no way to read, one each, for the caller to write.
+    def _refused(
+        self, binding: BoundRoom, session_id: UUID | None, reason: PromptRejection, prompt_text: str
+    ) -> PromptRejected:
+        return PromptRejected(
+            reason=reason,
+            facts=ConversationFacts(
+                conversation_id=binding.conversation_id,
+                session_id=session_id,
+                bodies=(PromptRejectedBody(reason=reason, text=prompt_text),),
+            ),
+        )
 
-        Empty where no session is bound, on the same terms as `PromptRejected.event`: what
-        arrived is still announced in the room, and the record keeps nothing.
+    async def unreadable(self, events: Sequence[UnmappableEvent]) -> ConversationFacts | None:
+        """The facts for events Haku has no way to read, one each, for the caller to append.
+
+        None where no room is bound, on the same terms as `PromptRejected.facts`: there is no
+        conversation to record against, and no room to say it in either.
         """
-        session_id = await self._conversations.session_serving()
-        if session_id is None:
-            return ()
-        now = datetime.datetime.now(datetime.UTC)
-        return tuple(
-            session_events.authored(UnreadableInputBody(media_type=event.msgtype), session_id=session_id, now=now)
-            for event in events
+        binding = await self._conversations.bound_room()
+        if binding is None:
+            return None
+        return ConversationFacts(
+            conversation_id=binding.conversation_id,
+            session_id=await self._conversations.session_serving(),
+            bodies=tuple(UnreadableInputBody(media_type=event.msgtype) for event in events),
         )
 
 
@@ -441,10 +462,9 @@ def _origin(room_id: str, event_ids: tuple[str, ...]) -> MatrixOrigin:
 def _as_prompt(messages: Sequence[InboundMessage]) -> str:
     """Render a batch as one prompt: what the operator said, in the order they said it.
 
-    The event ids used to be rendered in front of each line. They ride on the prompt's own
-    `PROMPT_ENQUEUED` event now — a field instead of a prefix — which is what the room read tools
-    will resolve a citation through, and what a reply that answers a specific message will
-    address itself with.
+    The event ids are not rendered into it: they ride on the prompt item's origin, which is what
+    the room read tools resolve a citation through and what a reply answering a specific message
+    addresses itself with.
     """
     return "\n".join(message.body for message in messages)
 

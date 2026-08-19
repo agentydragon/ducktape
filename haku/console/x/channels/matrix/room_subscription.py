@@ -22,7 +22,7 @@ reach the room by being pushed at it, and giving each a row is a CHECK-constrain
 vocabulary decision rather than an arm here.
 
 **The position is kept after the notice, never before.** A crash in that window says the notice
-again on the next pass — the same trade `delivery_log.retire` takes, and the right way round: a
+again on the next pass — the same trade `revisions.retire` takes, and the right way round: a
 room told twice is odd, a room never told is a message silently dropped. What is left unguarded is
 the pacer's in-process queue, exactly as every other notice already is.
 """
@@ -42,24 +42,34 @@ from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import LeaseExpiryReason, MatrixOrigin, PromptOrigin, PromptRejection, SpaOrigin
-from haku.console.database_schema import MatrixRoomCursor
+from haku.console.chat_models import (
+    LeaseExpiryReason,
+    MatrixOrigin,
+    PromptOrigin,
+    PromptRejection,
+    SpaOrigin,
+    TurnOutcome,
+)
+from haku.console.database_schema import ChannelCursor
 from haku.console.x.channels.matrix.client import RoomEventKind
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore
 from haku.console.x.channels.matrix.outbox import BoundRoom
 from haku.console.x.session_events import (
     LeaseExpiredBody,
-    MessageBody,
-    PromptBody,
+    MessageCompletedBody,
+    MessageStartedBody,
+    PromptCompletedBody,
     PromptRejectedBody,
-    ReasoningBody,
+    PromptStartedBody,
+    ReasoningCompletedBody,
+    ReasoningStartedBody,
+    SegmentBody,
     SessionAdoptedBody,
     SessionEndedBody,
     SessionProvisioningBody,
     SetupNarrationBody,
-    ToolCallBody,
-    ToolResultBody,
-    TurnAbortedBody,
+    ToolCallCompletedBody,
+    ToolCallStartedBody,
     TurnEndedBody,
     TurnStartedBody,
     UnknownEventBody,
@@ -105,20 +115,25 @@ ERROR_BACKOFF = datetime.timedelta(seconds=10)
 class RoomCursor:
     """Where this room's copy has been brought up to — `subscription.Cursor`, made durable.
 
+    **Keyed by the attachment**, which is the one piece of channel state the conversation layer
+    keeps generic: a position in the log is the resume contract every attached channel owes it, and
+    the same integer answers it for every channel. Keying by room id instead made a channel join its
+    position to its deliveries through its own public address.
+
     Absent means *never read*, not *at the start*, which is the distinction the reader needs: a
     room the console has been servicing since before this table existed already shows everything
     said in it, so replaying from zero would repeat the whole conversation into it.
     """
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession], room_id: str) -> None:
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], attachment_id: UUID) -> None:
         self._sessions = sessions
-        self._room_id = room_id
+        self._attachment_id = attachment_id
 
     async def position(self) -> StreamPosition | None:
         async with self._sessions() as db:
             # Annotated because `AsyncSession.scalar` is typed `Any`, which `warn_return_any` refuses.
             reached: int | None = await db.scalar(
-                select(MatrixRoomCursor.event_seq).where(MatrixRoomCursor.room_id == self._room_id)
+                select(ChannelCursor.event_seq).where(ChannelCursor.attachment_id == self._attachment_id)
             )
             return None if reached is None else StreamPosition(event_seq=reached)
 
@@ -131,9 +146,9 @@ class RoomCursor:
         """
         async with self._sessions() as db, db.begin():
             await db.execute(
-                insert(MatrixRoomCursor)
-                .values(room_id=self._room_id, event_seq=position.event_seq)
-                .on_conflict_do_update(index_elements=["room_id"], set_={"event_seq": position.event_seq})
+                insert(ChannelCursor)
+                .values(attachment_id=self._attachment_id, event_seq=position.event_seq)
+                .on_conflict_do_update(index_elements=["attachment_id"], set_={"event_seq": position.event_seq})
             )
 
 
@@ -212,8 +227,6 @@ def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
     silent for the whole roll, since this replica holds the notices election while it waits.
     """
     match event.body:
-        case TurnAbortedBody():
-            return Notice(ABORTED_BY_OPERATOR, RoomEventKind.LIFECYCLE)
         case PromptRejectedBody(reason=reason):
             return Notice(f"not delivered — {why_not(reason)}; send it again", RoomEventKind.REJECTED)
         case UnreadableInputBody(media_type=media_type):
@@ -226,16 +239,28 @@ def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
             return Notice(f"another console replica ({holder}) took this session over", RoomEventKind.LIFECYCLE)
         case LeaseExpiredBody(reason=reason):
             return Notice(f"the session ended — {_why_it_lapsed(reason)}", RoomEventKind.LIFECYCLE)
-        case PromptBody(text=text, origin=origin):
+        case PromptStartedBody(origin=origin):
             # The reader `origin` shipped without (#4289). A prompt the operator sent from the SPA
             # or from a sibling room is a conversation fact this room is not showing yet; one sent
             # here is already in the timeline above, and posting it again would duplicate it.
-            return None if _arrived_here(origin, room_id) else Notice(RELAYED_PROMPT + text, RoomEventKind.NARRATION)
+            #
+            # **The text is not on this row any more.** A prompt is an item, and its prose is the
+            # segment that follows — so the relay is said when that segment arrives, which is where
+            # the words are.
+            return None if _arrived_here(origin, room_id) else Notice(RELAYED_PROMPT, RoomEventKind.NARRATION)
+        case TurnEndedBody(outcome=TurnOutcome.ABORTED):
+            # An abort is a turn outcome now rather than an event of its own, so the room's line for
+            # it is said here — on the one outcome of three that the operator caused.
+            return Notice(ABORTED_BY_OPERATOR, RoomEventKind.LIFECYCLE)
         case (
-            MessageBody()
-            | ReasoningBody()
-            | ToolCallBody()
-            | ToolResultBody()
+            MessageStartedBody()
+            | ReasoningStartedBody()
+            | ToolCallStartedBody()
+            | SegmentBody()
+            | MessageCompletedBody()
+            | ReasoningCompletedBody()
+            | ToolCallCompletedBody()
+            | PromptCompletedBody()
             | TurnStartedBody()
             | TurnEndedBody()
             | SessionProvisioningBody()
@@ -272,11 +297,12 @@ class RoomNotices:
         """Say what the room is owed. True when the read stopped at its limit and there is more."""
         if (room_id := await self._room()) is None:
             return False
-        if (conversation_id := await self._conversations.conversation_of_room(room_id)) is None:
+        if (bound := await self._conversations.attachment_of_room(room_id)) is None:
             # A room this console holds no conversation for — never bound, or detached since — so
             # there is nothing recorded to be behind on.
             return False
-        subscription = Subscription(self._stream, RoomCursor(self._sessions, room_id), conversation_id)
+        conversation_id, attachment_id = bound
+        subscription = Subscription(self._stream, RoomCursor(self._sessions, attachment_id), conversation_id)
         read = await subscription.read(limit=NOTICE_BATCH)
         if isinstance(read, Unstarted):
             # Taken silently: the room already shows what was said in it for as long as it has been

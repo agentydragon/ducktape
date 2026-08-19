@@ -5,6 +5,15 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
+    name = "revisions",
+    srcs = ["revisions.py"],
+    deps = [
+        "//haku/console:database_schema",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "client",
     srcs = ["client.py"],
     deps = [
@@ -27,7 +36,6 @@ py_library(
     name = "ingress_ledger",
     srcs = ["ingress_ledger.py"],
     deps = [
-        "//haku/console:chat_models",
         "//haku/console:database_schema",
         "//haku/console/x:session_store",
         "@pypi//sqlalchemy",
@@ -47,8 +55,8 @@ py_library(
         ":client",
         ":conversation",
         ":pacer",
+        ":revisions",
         "//haku/console:database_schema",
-        "//haku/console/x:delivery_log",
         "@pypi//sqlalchemy",
     ],
 )
@@ -97,12 +105,12 @@ py_library(
         ":ingress_ledger",
         ":outbox",
         ":pacer",
-        ":room_subscription",
+        ":revisions",
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:database_schema",
         "//haku/console:operator_identity_store",
-        "//haku/console/x:delivery_log",
+        "//haku/console/x:conversation_log",
         "//haku/console/x:system_prompt",
         "@pypi//sqlalchemy",
     ],
@@ -261,6 +269,7 @@ py_test(
         ":ingress_ledger",
         ":outbox",
         ":pacer",
+        ":revisions",
         ":sync",
         "//:conftest",
         "//haku/console:chat_models",
@@ -268,7 +277,6 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console/x:conftest",
-        "//haku/console/x:delivery_log",
         "//haku/console/x:session_events",
         "//haku/console/x:session_store",
         "@pypi//pydantic",
@@ -319,6 +327,24 @@ py_test(
         "//haku/console/x/channels/matrix/testing:operator_room",
         "//haku/console/x/channels/matrix/testing:synapse_container",
         "@pypi//matrix_nio",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_revisions",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_revisions.py"],
+    deps = [
+        ":revisions",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "//haku/console/x:conftest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",

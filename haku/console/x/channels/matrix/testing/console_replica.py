@@ -53,7 +53,7 @@ from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox
 from haku.console.x.channels.matrix.room_subscription import RoomNotices
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
-from haku.console.x.delivery_log import DeliveryLog
+from haku.console.x.channels.matrix.revisions import RevisionLog
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService, internal_router
@@ -175,7 +175,7 @@ async def _serve() -> None:
         MatrixTurns(matrix, conversations, store, identities, ledger),
         RoomTranscript(sessions),
         RoomOutbox(sessions),
-        DeliveryLog(sessions),
+        RevisionLog(sessions),
         ledger,
         armed=Path(_environment("HAKU_E2E_REFUSE_NEXT_REPLY")),
     )

@@ -1587,10 +1587,9 @@ class MatrixIngressEvent(Base):
     written beside the watermark instead would be missing in exactly that case.
 
     **Presence therefore means the record carries the event, not that the loop saw it.** That is
-    what makes suppressing a re-delivered event safe: the prompt is in the transcript, and if the
-    session holding it dies unclaimed, `matrix.ingress` finds it through this table and offers it
-    again. `item_id` moves to the newer prompt when that happens, so the row always names the
-    prompt currently answering for the event.
+    what makes suppressing a re-delivered event safe: the prompt is in the transcript, queued on the
+    conversation rather than on the session that accepted it, so whichever session runs next claims
+    it.
 
     Rejected and unreadable events are deliberately absent: both are recorded in the transaction
     that advances the watermark, so a crash before it leaves neither the acknowledgement nor the

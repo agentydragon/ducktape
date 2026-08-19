@@ -8,14 +8,13 @@ held: the operator is told so and sends it again, so nothing queues behind a run
 loop keeps one position instead of two. An event Haku has no way to read — a screenshot, a voice
 memo — is the same shape, because re-offering one could never converge.
 
-Both are **recorded in the transaction that advances the watermark**, as `session_events` rows the
-room notice is a rendering of. Advancing first and announcing afterwards would let one crash lose
-the message and the notice together.
+Both are **recorded in the transaction that advances the watermark**, as `conversation_event` rows
+the room notice is a rendering of. Advancing first and announcing afterwards would let one crash
+lose the message and the notice together.
 
 An accepted batch is the one thing that commits *before* the watermark, so a crash in between
 re-delivers it. That is what `ingress_ledger` is for: the loop asks the record which events a
-prompt already carries rather than trusting its own position, and re-offers the prompt whose
-session died before answering it.
+prompt already carries rather than trusting its own position.
 
 It is also the only holder of a Matrix credential, so the supervisor's lifecycle notices go out
 through `announce` rather than a second login, and an answer — a row until it has been said — is
@@ -32,7 +31,7 @@ import asyncio
 import contextlib
 import datetime
 import logging
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from uuid import UUID
 
@@ -41,9 +40,9 @@ from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ChatMessageRole, PromptRejection
+from haku.console.chat_models import ItemType
 from haku.console.config import MatrixConfig
-from haku.console.database_schema import MatrixAccessToken, MatrixSyncWatermark, SessionEvent
+from haku.console.database_schema import MatrixAccessToken, MatrixSyncWatermark
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.channels.matrix.client import (
     EventTag,
@@ -55,6 +54,7 @@ from haku.console.x.channels.matrix.client import (
     UnmappableEvent,
 )
 from haku.console.x.channels.matrix.conversation import (
+    ConversationFacts,
     MatrixConversationStore,
     MatrixTurns,
     PromptAccepted,
@@ -64,8 +64,8 @@ from haku.console.x.channels.matrix.conversation import (
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox, RoomOutboxDrain
 from haku.console.x.channels.matrix.pacer import RoomPacer
-from haku.console.x.channels.matrix.room_subscription import why_not
-from haku.console.x.delivery_log import DeliveryLog
+from haku.console.x.channels.matrix.revisions import RevisionLog
+from haku.console.x.conversation_log import writer_for
 from haku.console.x.system_prompt import HistoryMessage
 
 logger = logging.getLogger(__name__)
@@ -73,7 +73,7 @@ logger = logging.getLogger(__name__)
 # Distinct from the OAuth refresh lock in oauth_association_maintenance.
 _SYNC_ADVISORY_LOCK = 0x4D58_5359  # "MXSY"
 
-# What the room's one status line is called in `chat_delivery`. Unparameterised because the room
+# What the room's one status line is called in `matrix_revision`. Unparameterised because the room
 # shows one at a time: retiring the line frees the subject, and the next turn's creates it again.
 STATUS_SUBJECT = "status"
 
@@ -123,20 +123,29 @@ class MatrixSyncStore:
             )
             return reached
 
-    async def advance(self, user_id: str, next_batch: str, events: Sequence[SessionEvent] = ()) -> None:
+    async def advance(self, user_id: str, next_batch: str, facts: ConversationFacts | None = None) -> None:
         """Acknowledge everything up to *next_batch*, recording what the pass decided about it.
 
-        **One transaction.** `events` are the facts about the batch that exist nowhere else — a
-        prompt this pass rejected, an attachment it could not read — and each is the durable half
-        of a notice the room is about to be told. Committing the watermark first would let a crash
-        acknowledge a message to the homeserver while losing both the record of it and the
-        operator's only account of what happened to it.
+        **One transaction.** `facts` are what this pass decided that exists nowhere else — a prompt
+        it rejected, an attachment it could not read — and each is the durable half of a notice the
+        room is about to be told. Committing the watermark first would let a crash acknowledge a
+        message to the homeserver while losing both the record of it and the operator's only account
+        of what happened to it.
 
         The watermark is what makes an outage replay rather than skip, so what is written here must
         be a position genuinely finished with.
         """
         async with self._sessions() as db, db.begin():
-            db.add_all(events)
+            if facts is not None and facts.bodies:
+                writer = await writer_for(
+                    db,
+                    facts.conversation_id,
+                    session_id=facts.session_id,
+                    turn_id=None,
+                    now=datetime.datetime.now(datetime.UTC),
+                )
+                for body in facts.bodies:
+                    writer.authored(body)
             await db.execute(
                 insert(MatrixSyncWatermark)
                 .values(user_id=user_id, next_batch=next_batch)
@@ -158,7 +167,7 @@ class MatrixSyncService:
         turns: MatrixTurns,
         transcript: RoomTranscript,
         outbox: RoomOutbox,
-        deliveries: DeliveryLog,
+        revisions: RevisionLog,
         ledger: IngressLedger,
     ):
         # Taken separately from `config`, which carries it as optional: the service is only ever
@@ -171,7 +180,7 @@ class MatrixSyncService:
         self._identities = identities
         self._turns = turns
         self._transcript = transcript
-        self._deliveries = deliveries
+        self._revisions = revisions
         self._ledger = ledger
         self._client = MatrixClient(config.homeserver, config.user_id, config.device_id)
         # Public because its lifecycle is the owner's to drive: everything the console says into
@@ -262,7 +271,7 @@ class MatrixSyncService:
         event id the edit needs and may not have happened at queue time. The pacer is serial, so by
         the time an edit runs its create has.
 
-        **Which event to edit comes from `chat_delivery`, not from this process.** The line
+        **Which event to edit comes from `matrix_revision`, not from this process.** The line
         outlives the replica that posted it: whichever replica holds the session's lease drives the
         status, and an adopting one would otherwise post a second line beside its predecessor's.
         """
@@ -280,11 +289,11 @@ class MatrixSyncService:
 
         async def post() -> None:
             token = await self._token()
-            if (showing := await self._deliveries.live(attachment_id, STATUS_SUBJECT)) is None:
+            if (showing := await self._revisions.live(attachment_id, STATUS_SUBJECT)) is None:
                 event_id = await self._client.send_notice(token, room_id, body, txn_id=tag.transaction_id(), tag=tag)
-                await self._deliveries.record(attachment_id, STATUS_SUBJECT, event_id)
+                await self._revisions.record(attachment_id, STATUS_SUBJECT, event_id)
                 return
-            await self._client.edit_notice(token, room_id, showing.sent_ref, body, txn_id=tag.transaction_id(), tag=tag)
+            await self._client.edit_notice(token, room_id, showing.event_id, body, txn_id=tag.transaction_id(), tag=tag)
 
         self.pacer.set_status(post)
 
@@ -321,10 +330,10 @@ class MatrixSyncService:
             return
 
         async def retire() -> None:
-            if (showing := await self._deliveries.live(attachment_id, STATUS_SUBJECT)) is None:
+            if (showing := await self._revisions.live(attachment_id, STATUS_SUBJECT)) is None:
                 return
-            await self._client.redact(await self._token(), room_id, showing.sent_ref, reason="turn finished")
-            await self._deliveries.retire(showing.delivery_id)
+            await self._client.redact(await self._token(), room_id, showing.event_id, reason="turn finished")
+            await self._revisions.retire(showing.revision_id)
 
         self.pacer.send(retire)
 
@@ -337,11 +346,9 @@ class MatrixSyncService:
         history could not have reproduced a memory read back out of `/messages`
         (<../../../debug/channel_write_audit.md> § "What a second channel would need", #4130).
 
-        **A message the previous session never answered is still in here**: ingress writes the
-        prompt row when it accepts a batch, and a session that ended before claiming that row
-        leaves it recorded. It is also offered to the replacement as a prompt
-        (`_re_offer_unanswered`), so it appears here as well as there — which is what happened, the
-        operator having been left waiting on it.
+        **A message the previous session never answered is still in here**, and it is also still
+        queued on the conversation, so the replacement both reads it as history and is handed it as
+        a prompt. That double is deliberate: the operator was left waiting on it.
 
         Empty until something has been recorded for this room: a first-ever session and a session
         whose room only just bound read the same, and both are correct.
@@ -350,9 +357,9 @@ class MatrixSyncService:
             return ()
         return tuple(
             HistoryMessage(
-                # The one per-channel step in this path: a recorded role becomes an address, and
-                # which addresses those are is the channel's own business.
-                sender=self._config.operator_user_id if said.role is ChatMessageRole.USER else self._config.user_id,
+                # The one per-channel step in this path: an item type becomes an address, and which
+                # addresses those are is the channel's own business.
+                sender=(self._config.operator_user_id if said.item_type is ItemType.PROMPT else self._config.user_id),
                 body=said.body,
                 sent_at=said.sent_at,
             )
@@ -404,40 +411,32 @@ class MatrixSyncService:
         with the watermark rather than after it.
 
         **What was recorded, the room is not told here.** The row is the notice: `RoomNotices`
-        renders it from the record at its own position, so this pass writes and stops. What is
-        still said from here is the refusal that reached no row — no session to key one to — which
-        would otherwise be a message the operator watches disappear.
+        renders it from the record at its own position, so this pass writes and stops. Every
+        refusal reaches a row now — what a rejection is about is the conversation, which exists as
+        soon as the room is bound — so a room with nowhere to record one is a room with nowhere to
+        say it either.
 
         **A re-delivered message is dropped from the batch rather than offered again**, and what
         makes that safe is that the ledger only knows an event because a prompt in the record
-        carries it. The outstanding one that prompt may still be is settled first, so the operator
-        is answered in the order they spoke.
+        carries it.
         """
         result = await self._client.sync(token, await self._store.watermark(self._config.user_id))
         for invite in result.invites:
             await self._handle_invite(token, invite)
         # Read after the invites, so a room bound by this very batch serves it too.
         live_room = await self._live_room(token, result.messages)
-        await self._re_offer_unanswered(live_room)
         messages = await self._undelivered(self._serviced(result.messages, live_room))
         unreadable = self._serviced(result.unmappable, live_room)
-        recorded = list(await self._turns.unreadable(unreadable)) if unreadable else []
-        # `MatrixTurns.unreadable` gives one row per event or none at all, so an empty list beside
-        # a non-empty batch is the case with no session to key rows to.
-        unrecorded = unreadable if unreadable and not recorded else []
-        unrecorded_rejection: PromptRejection | None = None
+        recorded = await self._turns.unreadable(unreadable) if unreadable else None
         if messages:
             match await self._turns.offer(messages):
                 case PromptAccepted():
                     logger.info("Matrix: handed %d message(s) to the session", len(messages))
-                case PromptRejected(event=SessionEvent() as event):
-                    recorded.append(event)
-                case PromptRejected(reason=reason):
-                    unrecorded_rejection = reason
+                case PromptRejected(facts=ConversationFacts() as refusal):
+                    recorded = refusal if recorded is None else recorded.then(*refusal.bodies)
+                case PromptRejected():
+                    logger.warning("Matrix: %d message(s) refused with no room to record it", len(messages))
         await self._store.advance(self._config.user_id, result.next_batch, recorded)
-        if unrecorded_rejection is not None:
-            self._report_rejected(live_room, len(messages), unrecorded_rejection)
-        self._report_unreadable(live_room, unrecorded)
 
     async def _undelivered(self, messages: list[InboundMessage]) -> list[InboundMessage]:
         """The messages of a batch no prompt in the record carries yet.
@@ -453,27 +452,6 @@ class MatrixSyncService:
         if carried:
             logger.info("Matrix: %d re-delivered event(s) the record already carries", len(carried))
         return [message for message in messages if message.event_id not in carried]
-
-    async def _re_offer_unanswered(self, live_room: str | None) -> None:
-        """Ask again about a message accepted by a session that died before answering it.
-
-        Acceptance acknowledges the batch to the homeserver, so nothing re-delivers it and the
-        prompt row is the only copy left. Level-triggered rather than driven by the death itself:
-        a pass reads what the record still owes, which is what makes this the recovery a restarted
-        console performs as well as the one a live console performs when a sandbox is lost.
-
-        The room is told, because a question reappearing minutes later with no operator gesture
-        behind it otherwise reads as Haku answering something twice.
-        """
-        if (unanswered := await self._ledger.unanswered()) is None:
-            return
-        if not await self._turns.re_offer(unanswered):
-            return
-        logger.info("Matrix: re-offered a message the previous session never answered")
-        if live_room is not None:
-            self._queue_notice(
-                live_room, "asking again about a message the previous session never answered", RoomEventKind.NARRATION
-            )
 
     async def _live_room(self, token: str, messages: tuple[InboundMessage, ...]) -> str | None:
         """The room being serviced, adopting one from traffic when nothing is bound.
@@ -492,37 +470,6 @@ class MatrixSyncService:
         logger.info("Matrix: adopted %s from traffic — no room was bound", room)
         self._queue_notice(room, "adopted this room — Haku had no room bound", RoomEventKind.ROOM)
         return room
-
-    def _report_rejected(self, live_room: str | None, count: int, reason: PromptRejection) -> None:
-        """Tell the room about the one refusal the record cannot carry.
-
-        There is no session row to key an event to — nothing provisioned, or the supervisor between
-        sessions — so this notice is the only account of it and stays on
-        <../../../debug/channel_write_audit.md>'s inventory until a conversation-keyed log exists.
-        Every other refusal is a `prompt_rejected` row `RoomNotices` renders instead.
-        """
-        if live_room is None:
-            return
-        self._queue_notice(
-            live_room, f"{count} message(s) not delivered — {why_not(reason)}; send them again", RoomEventKind.REJECTED
-        )
-
-    def _report_unreadable(self, live_room: str | None, events: list[UnmappableEvent]) -> None:
-        """Say what arrived that Haku cannot read, where no session existed to record it against.
-
-        Said in the room and not only logged, because the room is where the operator is: a
-        screenshot that disappears with a line in a pod's stdout is a message silently dropped.
-        Where a session did exist, each of these is an `unreadable_input` row instead.
-        """
-        if not events or live_room is None:
-            return
-        msgtypes = ", ".join(sorted({event.msgtype for event in events}))
-        self._queue_notice(
-            live_room,
-            f"received {len(events)} message(s) Haku cannot read ({msgtypes}) — it reads text only; "
-            "describe them in words and they will reach the session",
-            RoomEventKind.UNREADABLE,
-        )
 
     async def _run_as_leader(self) -> None:
         """Sync until cancelled. Only ever entered holding the advisory lock."""

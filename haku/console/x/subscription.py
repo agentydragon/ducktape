@@ -1,9 +1,10 @@
 """Reading a conversation from a position, for a consumer that keeps its own.
 
-A conversation is an ordered stream of `session_events` rows addressed by `event_seq` — a global
-`Identity`, so one conversation's rows are not contiguous: every read is "everything after N",
-never "the next one after N", and a gap is undetectable by construction rather than being a loss to
-notice. A **subscription** is one consumer reading that stream from a position.
+A conversation is an ordered stream of `conversation_event` rows addressed by `event_seq`, dense
+within the conversation and allocated under its own row lock. Density is what makes a position an
+answer rather than a hint: a subscriber reading "everything after N" can tell a gap from an end, so
+a lost row is a fact it can act on instead of one nothing can distinguish from silence. A
+**subscription** is one consumer reading that stream from a position.
 
 **Where the position lives is the subscriber's business, not this layer's.** A browser tab holds no
 copy that outlives it — several tabs can watch one conversation at different points — so a tab's
@@ -17,8 +18,8 @@ What is shared is this interface and the read behind it. There is deliberately *
 of subscribing.
 
 **Read, then keep.** `Subscription.read` never advances the position. A subscriber keeps its new
-one once it has done whatever the events oblige it to do — the discipline `delivery_log.retire`
-already follows — so a crash in that window replays rather than skips. That is what makes a durable
+one once it has done whatever the events oblige it to do — the discipline
+<channels/matrix/revisions.py>'s `retire` already follows — so a crash in that window replays rather than skips. That is what makes a durable
 subscriber at-least-once; a client-held one cannot skip at all, since it never asks for a position
 it did not receive.
 """
@@ -33,7 +34,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.database_schema import Session, SessionEvent
+from haku.console.database_schema import ConversationEvent
 from haku.console.x import session_events
 
 # How many rows one read takes. A ceiling on the work a woken subscriber does in one pass rather
@@ -47,8 +48,8 @@ class StreamPosition:
     """How far into a conversation's stream a subscriber has read.
 
     `event_seq` and nothing else, because that is the whole address. `START` is zero, which no row
-    can carry — the sequence is an `Identity` and begins at one — so "before everything" needs no
-    variant of its own.
+    can carry — a conversation's counter begins at one — so "before everything" needs no variant of
+    its own.
     """
 
     event_seq: int
@@ -113,7 +114,8 @@ class ConversationStream:
 
     Keyed by the thread rather than by the session running it, so a position survives a session
     being replaced: reading only the live session's rows would skip whatever its predecessor wrote
-    after the subscriber's position.
+    after the subscriber's position — which is why the address is the conversation's own counter
+    rather than a join through whichever session happened to write the row.
     """
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
@@ -123,10 +125,12 @@ class ConversationStream:
         async with self._sessions() as db:
             rows = (
                 await db.scalars(
-                    select(SessionEvent)
-                    .join(Session, Session.session_id == SessionEvent.session_id)
-                    .where(Session.conversation_id == conversation_id, SessionEvent.event_seq > after.event_seq)
-                    .order_by(SessionEvent.event_seq)
+                    select(ConversationEvent)
+                    .where(
+                        ConversationEvent.conversation_id == conversation_id,
+                        ConversationEvent.event_seq > after.event_seq,
+                    )
+                    .order_by(ConversationEvent.event_seq)
                     # One past the limit, so "there is more" is read rather than guessed from a
                     # full page — which would be wrong exactly when the stream ends on one.
                     .limit(limit + 1)
@@ -150,15 +154,12 @@ async def stream_head(db: AsyncSession, conversation_id: UUID) -> StreamPosition
     the subscriber rather than reaching neither.
     """
     highest: int | None = await db.scalar(
-        select(func.max(SessionEvent.event_seq))
-        .select_from(SessionEvent)
-        .join(Session, Session.session_id == SessionEvent.session_id)
-        .where(Session.conversation_id == conversation_id)
+        select(func.max(ConversationEvent.event_seq)).where(ConversationEvent.conversation_id == conversation_id)
     )
     return StreamPosition(event_seq=highest or START.event_seq)
 
 
-def _streamed(row: SessionEvent) -> StreamedEvent:
+def _streamed(row: ConversationEvent) -> StreamedEvent:
     return StreamedEvent(
         position=StreamPosition(event_seq=row.event_seq),
         session_id=row.session_id,

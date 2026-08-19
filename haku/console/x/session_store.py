@@ -126,7 +126,7 @@ def _frames_of_kinds(query: Select[tuple[SessionFrame]], kinds: Sequence[str] | 
 
 
 class PromptRecords(Protocol):
-    """What a caller needs written in the prompt's own transaction, given the message it minted.
+    """What a caller needs written in the prompt's own transaction, given the item it minted.
 
     A channel's record of which of its own inbound events a prompt carries. It has to commit with
     the prompt or not at all: written afterwards it is lost by a crash in between, and the channel
@@ -135,7 +135,7 @@ class PromptRecords(Protocol):
     The store adds it and never reads it — what these rows mean is the caller's business.
     """
 
-    async def __call__(self, db: AsyncSession, message_id: UUID) -> None: ...
+    async def __call__(self, db: AsyncSession, item_id: UUID) -> None: ...
 
 
 class PromptRefusedError(RuntimeError):
