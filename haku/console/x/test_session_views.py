@@ -8,10 +8,11 @@ from uuid import uuid4
 
 import pytest_bazel
 
-from haku.console.chat_models import SPA_ORIGIN, ConversationEventKind, EventProvenance, FrameDirection
-from haku.console.database_schema import SessionEvent, SessionFrame
+from haku.console.chat_models import SPA_ORIGIN, FrameDirection, ItemType
+from haku.console.database_schema import SessionFrame
 from haku.console.x import session_views
 from haku.console.x.claude_code import projection
+from haku.console.x.claude_code.testing.wire import assistant, tool_result, tool_use_block
 from haku.console.x.session_store import BridgeAuthentication
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 
@@ -81,40 +82,35 @@ async def test_a_session_that_narrated_nothing_reports_no_narration(chat_store, 
     assert detail.session.narration == []
 
 
-_STORED_CONTENT = {"toolu_text": {"shape": "text", "text": "a.py\nb.py"}, "toolu_empty": {"shape": "text", "text": ""}}
-
-
-async def test_a_stored_result_reads_back_as_its_text(chat_store, migrated_sessions, operator_id) -> None:
-    """`text` is the only stored shape, and an empty result is a result rather than an absent one."""
+async def test_a_calls_output_reads_back_as_the_items_text(chat_store, operator_id) -> None:
+    """A call's showable output is its segments like any other item's prose, and a call that printed
+    nothing is an empty item rather than an absent one — which is what a reader needs to tell "it
+    said nothing" from "it has not answered yet"."""
     view, token = await chat_store.create(operator_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "list the files", SPA_ORIGIN)
     started = await chat_store.next_prompt(view.session_id)
     assert started is not None
 
-    async with migrated_sessions() as db:
-        for frame_seq, (call_id, content) in enumerate(_STORED_CONTENT.items(), start=7):
-            db.add(
-                SessionEvent(
-                    session_id=view.session_id,
-                    turn_id=started.turn_id,
-                    kind=ConversationEventKind.TOOL_CALL_COMPLETED,
-                    provenance=EventProvenance.FRAME_RANGE,
-                    source_first_frame_seq=frame_seq,
-                    source_last_frame_seq=frame_seq,
-                    call_id=call_id,
-                    body={"content": content, "structured": None, "outcome": "succeeded"},
-                    created_at=datetime.now(UTC),
-                )
-            )
-        await db.commit()
+    for frame_seq, (call_id, output) in enumerate([("toolu_text", "a.py\nb.py"), ("toolu_empty", "")], start=7):
+        await chat_store.apply_frame(
+            view.session_id,
+            started.turn_id,
+            frame_seq,
+            projection.project_log(
+                [
+                    projection.RecordedFrame(
+                        frame_seq=frame_seq, payload=assistant(tool_use_block(call_id, "Bash", {}))
+                    ),
+                    projection.RecordedFrame(frame_seq=frame_seq, payload=tool_result(call_id, output)),
+                ]
+            ).events,
+        )
 
-        calls = await session_views.tool_calls(db, view.session_id, since_frame_seq=None)
+    detail = await _detail(chat_store, operator_id, view.session_id)
+    calls = [item for item in detail.session.items if item.item_type is ItemType.TOOL_CALL]
 
-    assert {call_id: result.content for call_id, result in calls.results.items()} == {
-        "toolu_text": "a.py\nb.py",
-        "toolu_empty": "",
-    }
+    assert {item.call_id: item.text for item in calls} == {"toolu_text": "a.py\nb.py", "toolu_empty": ""}
 
 
 def _frame(frame_seq: int, kind: str, payload: dict[str, Any]) -> SessionFrame:
