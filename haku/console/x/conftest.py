@@ -21,9 +21,9 @@ from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ChatSurface
+from haku.console.chat_models import ChatSurface, ItemStatus, ItemType
 from haku.console.config import ClaudeRuntimeConfig
-from haku.console.database_schema import ChatAttachment, Session, SessionOutbox
+from haku.console.database_schema import ChatAttachment, ConversationItem, Session
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
@@ -108,18 +108,24 @@ async def attach_channel(sessions: async_sessionmaker[AsyncSession], session_id:
         )
 
 
-async def queued_for_the_room(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> list[str]:
-    """What this session put in the room's outbox, oldest first.
+async def answers(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> list[str]:
+    """What this session said, oldest first — its completed message items and nothing else.
 
-    A turn hands its answer to nothing: it writes a row with the message, and
-    `channels/matrix/outbox.py` says it. So what the room is owed is asked of the rows.
+    A turn hands its answer to nothing and addresses no channel: it writes the log, the items follow
+    from it, and each attached channel reads forward from its own cursor and decides what it owes.
+    So what was said is asked of the items, and what a *room* was owed is a question for that
+    channel's own tests.
     """
     async with sessions() as db:
         return list(
             await db.scalars(
-                select(SessionOutbox.body)
-                .where(SessionOutbox.session_id == session_id)
-                .order_by(SessionOutbox.created_at, SessionOutbox.outbox_id)
+                select(ConversationItem.item_text)
+                .where(
+                    ConversationItem.session_id == session_id,
+                    ConversationItem.item_type == ItemType.MESSAGE,
+                    ConversationItem.status == ItemStatus.COMPLETE,
+                )
+                .order_by(ConversationItem.opened_seq)
             )
         )
 

@@ -19,9 +19,9 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console import recall_index_sync
-from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSurface, SessionStatus
+from haku.console.chat_models import ChatSurface, ItemStatus, ItemType, SessionStatus
 from haku.console.config import HakuStateGitConfig, RecallIndexConfig
-from haku.console.database_schema import ChatAttachment, Conversation, Operator, Session, SessionMessage
+from haku.console.database_schema import ChatAttachment, Conversation, ConversationItem, Operator, Session
 from haku.console.operator_identity import OperatorStatus
 from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import CHAT_ADVISORY_LOCK, RecallIndexMaintenance
@@ -66,7 +66,7 @@ async def operator_id(migrated_sessions: async_sessionmaker[AsyncSession]) -> UU
 
 
 async def say(sessions: async_sessionmaker[AsyncSession], operator_id: UUID, content: str) -> UUID:
-    """One chat session holding one message, as the console would have written it."""
+    """One chat session holding one prompt, as the console would have written it."""
     session_id = uuid.uuid4()
     conversation_id = uuid.uuid4()
     async with sessions.begin() as session:
@@ -84,16 +84,19 @@ async def say(sessions: async_sessionmaker[AsyncSession], operator_id: UUID, con
                 updated_at=_NOW,
             )
         )
-        # Before the message, which points at it: one unit of work orders inserts by mapper, not
-        # by the order they were added.
+        # Before the item, which points at it: one unit of work orders inserts by mapper, not by
+        # the order they were added.
         await session.flush()
         session.add(
-            SessionMessage(
-                message_id=uuid.uuid4(),
+            ConversationItem(
+                item_id=uuid.uuid4(),
+                conversation_id=conversation_id,
                 session_id=session_id,
-                role=ChatMessageRole.USER,
-                status=ChatMessageStatus.COMPLETE,
-                content=content,
+                item_type=ItemType.PROMPT,
+                status=ItemStatus.COMPLETE,
+                opened_seq=1,
+                closed_seq=3,
+                item_text=content,
                 created_at=_NOW,
                 updated_at=_NOW,
             )

@@ -11,8 +11,8 @@ import pytest_bazel
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, SessionStatus
-from haku.console.database_schema import Base as ConsoleBase, Conversation, Operator, Session, SessionMessage
+from haku.console.chat_models import ItemStatus, ItemType, SessionStatus
+from haku.console.database_schema import Base as ConsoleBase, Conversation, ConversationItem, Operator, Session
 from haku.console.operator_identity import OperatorStatus
 from haku.recall_index.chat_sync import ChatSyncReport, sync_chat
 from haku.recall_index.fake_embedder import FakeEmbedder
@@ -22,10 +22,10 @@ from haku.recall_index.store import ChatSearchHit
 
 _NOW = datetime.datetime(2026, 8, 11, tzinfo=datetime.UTC)
 
-# `session_messages` is the corpus; the others are the foreign keys it hangs off. `conversation`
+# `conversation_item` is the corpus; the others are the foreign keys it hangs off. `conversation`
 # is one of them without holding anything the corpus reads: `sessions.conversation_id` points at
 # it, so `sessions` is not creatable without it.
-_CHAT_SOURCE_TABLES = ("operators", "conversation", "sessions", "session_messages")
+_CHAT_SOURCE_TABLES = ("operators", "conversation", "sessions", "conversation_item")
 
 
 @pytest.fixture
@@ -78,28 +78,29 @@ async def say(
     session_id: UUID,
     content: str,
     *,
-    role: ChatMessageRole = ChatMessageRole.USER,
+    item_type: ItemType = ItemType.PROMPT,
     minute: int = 0,
-    status: ChatMessageStatus = ChatMessageStatus.COMPLETE,
+    status: ItemStatus = ItemStatus.COMPLETE,
 ) -> UUID:
-    message_id = uuid.uuid4()
+    item_id = uuid.uuid4()
     at = _NOW + datetime.timedelta(minutes=minute)
+    conversation_id = await source.scalar(select(Session.conversation_id).where(Session.session_id == session_id))
     source.add(
-        SessionMessage(
-            message_id=message_id,
+        ConversationItem(
+            item_id=item_id,
+            conversation_id=conversation_id,
             session_id=session_id,
-            role=role,
+            item_type=item_type,
             status=status,
-            content=content,
-            # An answer names the frame it was projected from; a prompt is written before the
-            # frame it goes out as exists (`ck_session_messages_assistant_pointed`).
-            source_first_frame_seq=minute + 1 if role is ChatMessageRole.ASSISTANT else None,
+            opened_seq=minute * 2 + 1,
+            closed_seq=minute * 2 + 2 if status is ItemStatus.COMPLETE else None,
+            item_text=content,
             created_at=at,
             updated_at=at,
         )
     )
     await source.flush()
-    return message_id
+    return item_id
 
 
 @pytest.fixture
@@ -131,7 +132,7 @@ async def test_a_hit_names_the_session_and_the_messages_it_holds(
 ) -> None:
     session_id = await new_session(chat_source, operator_id)
     asked = await say(chat_source, session_id, "what happened with alpha", minute=0)
-    answered = await say(chat_source, session_id, "alpha was filed", role=ChatMessageRole.ASSISTANT, minute=1)
+    answered = await say(chat_source, session_id, "alpha was filed", item_type=ItemType.MESSAGE, minute=1)
     await run_sync(chat_source, embedder)
 
     (hit,) = await find(chat_source, embedder, "alpha")
@@ -139,12 +140,12 @@ async def test_a_hit_names_the_session_and_the_messages_it_holds(
     assert hit.message_ids == [asked, answered]
 
 
-async def test_only_complete_messages_are_indexed(
+async def test_only_complete_items_are_indexed(
     chat_source: AsyncSession, operator_id: UUID, embedder: FakeEmbedder
 ) -> None:
     session_id = await new_session(chat_source, operator_id)
     await say(chat_source, session_id, "beta is done", minute=0)
-    await say(chat_source, session_id, "beta streaming", minute=1, status=ChatMessageStatus.STREAMING)
+    await say(chat_source, session_id, "beta streaming", minute=1, status=ItemStatus.OPEN)
     await run_sync(chat_source, embedder)
 
     (hit,) = await find(chat_source, embedder, "beta")
@@ -203,7 +204,7 @@ async def test_a_session_the_console_dropped_stops_matching(
     await say(chat_source, session_id, "eta", minute=0)
     await run_sync(chat_source, embedder)
 
-    await chat_source.execute(delete(SessionMessage).where(SessionMessage.session_id == session_id))
+    await chat_source.execute(delete(ConversationItem).where(ConversationItem.session_id == session_id))
     report = await run_sync(chat_source, embedder)
 
     assert report.sessions_forgotten == 1

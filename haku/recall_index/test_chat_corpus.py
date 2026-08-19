@@ -8,23 +8,22 @@ import uuid
 
 import pytest_bazel
 
-from haku.console.chat_models import ChatMessageRole
-from haku.recall_index.chat_corpus import IndexedMessage, chunk_messages, render_message
+from haku.recall_index.chat_corpus import IndexedMessage, Speaker, chunk_messages, render_message
 from haku.recall_index.chunking import ChunkBudget
 
 _START = datetime.datetime(2026, 8, 11, tzinfo=datetime.UTC)
 
 
-def message(content: str, *, role: ChatMessageRole = ChatMessageRole.USER, minute: int = 0) -> IndexedMessage:
+def message(content: str, *, speaker: Speaker = Speaker.USER, minute: int = 0) -> IndexedMessage:
     return IndexedMessage(
-        message_id=uuid.uuid4(), role=role, content=content, created_at=_START + datetime.timedelta(minutes=minute)
+        message_id=uuid.uuid4(), speaker=speaker, content=content, created_at=_START + datetime.timedelta(minutes=minute)
     )
 
 
 def test_a_short_exchange_is_one_chunk_holding_every_message() -> None:
     messages = [
         message("how do I file an intake item", minute=0),
-        message("put it in inbox.md", role=ChatMessageRole.ASSISTANT, minute=1),
+        message("put it in inbox.md", speaker=Speaker.ASSISTANT, minute=1),
     ]
     (chunk,) = chunk_messages(messages)
     assert chunk.message_ids == tuple(item.message_id for item in messages)
@@ -33,7 +32,7 @@ def test_a_short_exchange_is_one_chunk_holding_every_message() -> None:
 
 
 def test_the_speaker_is_part_of_what_gets_embedded() -> None:
-    (chunk,) = chunk_messages([message("intake", role=ChatMessageRole.ASSISTANT)])
+    (chunk,) = chunk_messages([message("intake", speaker=Speaker.ASSISTANT)])
     assert chunk.text == "assistant: intake\n"
 
 

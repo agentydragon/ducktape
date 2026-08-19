@@ -44,7 +44,7 @@ from haku.console.x.claude_code.testing.wire import (
     tool_result,
     tool_use_block,
 )
-from haku.console.x.conftest import MCP_TOKEN, age_lease, attach_channel, lease_of, queued_for_the_room, runtime_config
+from haku.console.x.conftest import MCP_TOKEN, age_lease, attach_channel, lease_of, answers, runtime_config
 from haku.console.x.frame_projection import projected
 from haku.console.x.sandbox_claims import ProvisioningStep, provisioning_view
 from haku.console.x.session_notifications import SessionNotifications
@@ -662,7 +662,7 @@ class _RecordingFrontend:
     """A `ChatFrontend` that keeps what it was told instead of talking to a homeserver.
 
     Answers are not among it: they are `session_outbox` rows, so what the room is owed is read out
-    of the database (`queued_for_the_room`) rather than out of a sink the turn calls.
+    of the database (`answers`) rather than out of a sink the turn calls.
     """
 
     def __init__(self) -> None:
@@ -762,7 +762,7 @@ async def _turn_into_a_room(
             frontend=frontend,
             abort_event=abort_event or asyncio.Event(),
         )
-    return await queued_for_the_room(migrated_sessions, view.session_id)
+    return await answers(migrated_sessions, view.session_id)
 
 
 async def test_only_the_sessions_that_serve_a_room_are_attached_to_the_frontend(
@@ -829,7 +829,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
             abort_event=asyncio.Event(),
         )
 
-    queued = await queued_for_the_room(migrated_sessions, session_id)
+    queued = await answers(migrated_sessions, session_id)
     assert queued == ["because the disk was full"], "one row, not the answer twice"
     assistants = [m for m in (await chat_store.get(operator_id, session_id)).messages if m.role == "assistant"]
     assert [m.message_id for m in assistants] == [assistant_id], "continued, rather than forked into a second"
@@ -884,7 +884,7 @@ async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
             abort_event=asyncio.Event(),
         )
 
-    assert await queued_for_the_room(migrated_sessions, session_id) == ["because the disk was full"]
+    assert await answers(migrated_sessions, session_id) == ["because the disk was full"]
     assistants = [m for m in (await chat_store.get(operator_id, session_id)).messages if m.role == "assistant"]
     assert [m.content for m in assistants] == ["because the disk was full"]
 
@@ -926,7 +926,7 @@ async def test_a_resumed_turn_does_not_say_again_what_it_had_already_queued(
             abort_event=asyncio.Event(),
         )
 
-    assert await queued_for_the_room(migrated_sessions, session_id) == ["a bad config"], "the answer, once"
+    assert await answers(migrated_sessions, session_id) == ["a bad config"], "the answer, once"
 
 
 async def test_the_room_is_owed_each_assistant_message_as_it_finishes(
@@ -984,7 +984,7 @@ async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
                 abort_event=asyncio.Event(),
             )
 
-    assert await queued_for_the_room(migrated_sessions, view.session_id) == [
+    assert await answers(migrated_sessions, view.session_id) == [
         "Looking at the logs now.",
         "Found it: a bad config.",
     ]

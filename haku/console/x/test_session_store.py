@@ -38,7 +38,7 @@ from haku.console.chat_models import (
 from haku.console.database_schema import Conversation, Session, SessionEvent, SessionMessage, SessionPrompt
 from haku.console.x.claude_code.frames import PROMPT_FRAME_KIND
 from haku.console.x.claude_code.testing.wire import assistant, result, text_block, text_delta
-from haku.console.x.conftest import age_lease, attach_channel, lease_of, queued_for_the_room
+from haku.console.x.conftest import age_lease, attach_channel, lease_of, answers
 from haku.console.x.conversation_events import (
     FrameRange,
     MessageCompleted,
@@ -157,7 +157,7 @@ async def test_a_turn_records_the_message_it_finished_rather_than_the_frames_it_
     state = await chat_store.turn_state(started.turn_id)
     assert state.assistant_message_id is None, "a completed message leaves no half-written answer behind"
     assert (state.streamed, state.said_anything, state.queued_reply) == ("", True, True)
-    assert await queued_for_the_room(migrated_sessions, session_id) == ["a bad config"]
+    assert await answers(migrated_sessions, session_id) == ["a bad config"]
 
 
 async def test_the_rollout_reads_back_in_wire_order_with_a_keyset_cursor(chat_store, operator_id) -> None:
