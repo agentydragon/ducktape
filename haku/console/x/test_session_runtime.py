@@ -414,7 +414,7 @@ async def _folded(chat_store: SessionStore, session_id: UUID, turn_id: UUID, *pa
 
 
 async def test_adoption_picks_the_answer_up_where_it_stopped(
-    chat_store, chat_service, migrated_sessions, recording_claims, operator_id
+    chat_store, chat_service, recording_claims, operator_id
 ) -> None:
     """The runner replays what a console may not have recorded but never the deltas, so a resumed
     turn starting from an empty string would write the tail of the answer over the head of it.
@@ -428,13 +428,12 @@ async def test_adoption_picks_the_answer_up_where_it_stopped(
     assert started is not None
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
     await _folded(chat_store, session_id, started.turn_id, text_delta("we were half way through"))
-    half_answered = one(await _open_items(migrated_sessions, session_id))
 
     resumed = await chat_store.adopt_open_turn(session_id)
 
     assert resumed is not None
     assert resumed.streaming is not None
-    assert (resumed.streaming.item_id, resumed.streaming.text) == (half_answered, "we were half way through")
+    assert resumed.streaming.text == "we were half way through"
     state = await chat_store.turn_state(resumed.turn_id)
     assert not state.said_anything, "the message is still open, so nothing has completed"
 

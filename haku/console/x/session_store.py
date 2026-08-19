@@ -262,11 +262,12 @@ class TurnStart:
 class OpenMessage:
     """The message a departed holder was streaming into, as the adopting fold needs it back.
 
-    The frame numbers are the span its rows were read from, so the completion this fold eventually
-    writes reports where the message began rather than where the adoption did.
+    Its prose rather than its id: the store finds the row again through the turn, so what the fold
+    cannot re-derive is how much of it has already been said. The frame numbers are the span its rows
+    were read from, so the completion this fold eventually writes reports where the message began
+    rather than where the adoption did.
     """
 
-    item_id: UUID
     text: str
     first_frame_seq: int
     last_frame_seq: int
@@ -1580,7 +1581,7 @@ async def _open_message(db: AsyncSession, turn_id: UUID) -> OpenMessage | None:
     # with no rows at all — a shape nothing writes, and one that would leave a completion pointing
     # at frames rather than fabricating a span.
     first, last = span if span[0] is not None else (0, 0)
-    return OpenMessage(item_id=item.item_id, text=item.item_text, first_frame_seq=first, last_frame_seq=last)
+    return OpenMessage(text=item.item_text, first_frame_seq=first, last_frame_seq=last)
 
 
 async def _turn_state(db: AsyncSession, turn_id: UUID) -> TurnState:
