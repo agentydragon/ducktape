@@ -16,7 +16,7 @@ from itertools import product
 
 import pytest_bazel
 
-from haku.console.chat_models import TurnOutcome
+from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
 from haku.console.x.claude_code.projection import DeltaSource, RecordedFrame, finish, project, project_log
 from haku.console.x.claude_code.testing.wire import (
     assistant,
@@ -34,15 +34,17 @@ from haku.console.x.claude_code.testing.wire import (
     tool_use_block,
 )
 from haku.console.x.conversation_events import (
+    CallRef,
     FrameRange,
+    ItemSegment,
     MessageCompleted,
-    MessageKey,
-    OpenMessage,
-    Outcome,
+    MessageStarted,
+    OpenItem,
+    OpenRef,
     Projection,
     ProjectionState,
-    Reasoning,
-    TextDelta,
+    ReasoningCompleted,
+    ReasoningStarted,
     ToolCallCompleted,
     ToolCallStarted,
     TurnCompleted,
@@ -50,9 +52,17 @@ from haku.console.x.conversation_events import (
 
 BASH_RESULT = {"interrupted": False, "isImage": False, "noOutputExpected": False, "stderr": "", "stdout": "3\n"}
 
+_MESSAGE = OpenRef(item_type=ItemType.MESSAGE)
+_REASONING = OpenRef(item_type=ItemType.REASONING)
 
-def test_a_message_is_a_run_of_frames_not_a_frame():
-    """Two frames, one `message.id`, no `stop_reason` — 47% of real messages look like this."""
+
+def test_a_message_with_no_prose_in_it_is_not_a_message():
+    """Two frames, one `message.id`, no `stop_reason` — 47% of real messages look like this.
+
+    And 80% carry no text at all, which under a vocabulary where prose is the only thing an item
+    holds means they open no message: what happened was a thought and a call, which are their own
+    items and say so.
+    """
     events = project_log(
         [
             recorded(1, assistant(thinking_block("The census says the fold is wrong here."), message_id="msg_A")),
@@ -62,23 +72,23 @@ def test_a_message_is_a_run_of_frames_not_a_frame():
     ).events
 
     assert events == (
-        Reasoning(
-            message=MessageKey(opened_at_frame_seq=1),
-            summary="The census says the fold is wrong here.",
-            provenance=FrameRange(1, 1),
-        ),
-        ToolCallStarted(
-            message=MessageKey(opened_at_frame_seq=1),
-            call_id="toolu_1",
-            tool_name="Bash",
-            arguments={"command": "ls"},
-            provenance=FrameRange(2, 2),
-        ),
-        # One message, spanning both frames, and no text at all — 80% of real messages have none.
-        MessageCompleted(
-            message=MessageKey(opened_at_frame_seq=1), text=None, agent_message_id="msg_A", provenance=FrameRange(1, 2)
-        ),
+        ReasoningStarted(provenance=FrameRange(1, 1)),
+        ItemSegment(item=_REASONING, text="The census says the fold is wrong here.", provenance=FrameRange(1, 1)),
+        ReasoningCompleted(disclosure=ReasoningDisclosure.SUMMARY, provenance=FrameRange(1, 1)),
+        ToolCallStarted(call_id="toolu_1", tool_name="Bash", arguments={"command": "ls"}, provenance=FrameRange(2, 2)),
         TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=FrameRange(3, 3)),
+    )
+
+
+def test_thinking_the_backend_will_not_show_you_is_an_item_with_no_prose():
+    """`redacted_thinking`, which an empty summary string could not tell apart from silence."""
+    events = project_log(
+        [recorded(1, assistant({"type": "redacted_thinking", "data": "…"}, message_id="msg_A"))]
+    ).events
+
+    assert events == (
+        ReasoningStarted(provenance=FrameRange(1, 1)),
+        ReasoningCompleted(disclosure=ReasoningDisclosure.WITHHELD, provenance=FrameRange(1, 1)),
     )
 
 
@@ -87,29 +97,39 @@ def test_the_frames_of_one_message_are_not_always_contiguous():
 
     Closing the message on the first non-`assistant` frame would make two messages out of one and
     attribute `toolu_2` to a message that does not exist.
+
+    What the message's span reports is the frames its **prose** was read from, which is what an
+    operator appealing the folded text to the raw JSON needs. The calls are sibling items with spans
+    of their own, so a frame that contributed no words to the message does not widen it.
     """
     events = project_log(
         [
-            recorded(1, assistant(tool_use_block("toolu_1", "Read", {"file_path": "/a"}), message_id="msg_A")),
+            recorded(1, assistant(text_block("reading both"), message_id="msg_A")),
+            recorded(2, assistant(tool_use_block("toolu_1", "Read", {"file_path": "/a"}), message_id="msg_A")),
             recorded(
-                2, tool_result("toolu_1", "1\tcontents\n", structured={"file": {"filePath": "/a"}, "type": "text"})
+                3, tool_result("toolu_1", "1\tcontents\n", structured={"file": {"filePath": "/a"}, "type": "text"})
             ),
-            recorded(3, assistant(tool_use_block("toolu_2", "Read", {"file_path": "/b"}), message_id="msg_A")),
+            recorded(4, assistant(tool_use_block("toolu_2", "Read", {"file_path": "/b"}), message_id="msg_A")),
         ]
     ).events
 
-    one_message = MessageKey(opened_at_frame_seq=1)
-    assert [type(event) for event in events] == [ToolCallStarted, ToolCallCompleted, ToolCallStarted, MessageCompleted]
-    assert [event.message for event in events if isinstance(event, ToolCallStarted)] == [one_message, one_message]
-    completed = events[3]
+    assert [type(event) for event in events] == [
+        MessageStarted,
+        ItemSegment,
+        ToolCallStarted,
+        ItemSegment,
+        ToolCallCompleted,
+        ToolCallStarted,
+        MessageCompleted,
+    ]
+    completed = events[-1]
     assert isinstance(completed, MessageCompleted)
-    # Inclusive of the tool result sitting inside it, which is what a range over the log means.
-    assert completed.provenance == FrameRange(1, 3)
-    assert completed.message == one_message
+    assert completed.provenance == FrameRange(1, 1)
+    assert completed.backend_item_id == "msg_A"
 
 
 def test_the_tool_result_you_can_render_is_not_the_tool_result():
-    """`content` is text; the exit code, the patch and the MCP payload are elsewhere."""
+    """The showable half is segments like any other prose; the exit code and the MCP payload are not."""
     deferred_search = {"matches": [{"name": "Bash"}], "query": "shell", "total_deferred_tools": 112}
     events = project_log(
         [
@@ -130,15 +150,20 @@ def test_the_tool_result_you_can_render_is_not_the_tool_result():
         ]
     ).events
 
+    said = [event for event in events if isinstance(event, ItemSegment)]
+    assert [(event.item, event.text) for event in said] == [
+        (CallRef(call_id="toolu_1"), "3\n"),
+        # The 5.6% that carry no prose at all: one harness's own block shape, rendered rather than
+        # given a variant of its own, with everything the call produced in `structured`.
+        (
+            CallRef(call_id="toolu_2"),
+            json.dumps(
+                [{"tool_name": "Bash", "type": "tool_reference"}, {"tool_name": "BashOutput", "type": "tool_reference"}]
+            ),
+        ),
+    ]
     completions = [event for event in events if isinstance(event, ToolCallCompleted)]
-    assert completions[0].content == "3\n"
-    assert completions[0].structured == BASH_RESULT
-    # The 5.6% that carry no prose at all: one harness's own block shape, rendered rather than
-    # given a variant of its own, with everything the call produced in `structured`.
-    assert completions[1].content == json.dumps(
-        [{"tool_name": "Bash", "type": "tool_reference"}, {"tool_name": "BashOutput", "type": "tool_reference"}]
-    )
-    assert completions[1].structured == deferred_search
+    assert [event.structured for event in completions] == [BASH_RESULT, deferred_search]
 
 
 def test_a_result_that_is_a_list_of_text_blocks_is_still_prose():
@@ -147,7 +172,14 @@ def test_a_result_that_is_a_list_of_text_blocks_is_still_prose():
         [recorded(1, tool_result("toolu_1", [{"type": "text", "text": "one "}, {"type": "text", "text": "two"}]))]
     ).events
 
-    assert [event.content for event in events if isinstance(event, ToolCallCompleted)] == ["one two"]
+    assert [event.text for event in events if isinstance(event, ItemSegment)] == ["one two"]
+
+
+def test_a_result_with_nothing_to_show_produces_no_segment():
+    """An item's text is its segments, so a call that printed nothing must not carry an empty one."""
+    events = project_log([recorded(1, tool_result("toolu_1", "", structured=BASH_RESULT))]).events
+
+    assert [type(event) for event in events] == [ToolCallCompleted]
 
 
 def test_every_did_this_go_wrong_field_is_uninformative():
@@ -165,9 +197,9 @@ def test_every_did_this_go_wrong_field_is_uninformative():
     ).events
 
     assert [event.outcome for event in events if isinstance(event, ToolCallCompleted)] == [
-        Outcome.UNKNOWN,
-        Outcome.SUCCEEDED,
-        Outcome.FAILED,
+        ToolOutcome.UNKNOWN,
+        ToolOutcome.SUCCEEDED,
+        ToolOutcome.FAILED,
     ]
     assert [event.outcome for event in events if isinstance(event, TurnCompleted)] == [TurnOutcome.FAILED]
 
@@ -180,7 +212,12 @@ def test_most_of_the_wire_is_system_and_projects_to_nothing():
         + [recorded(80, assistant(text_block("done"), message_id="msg_A")), recorded(81, result())]
     )
 
-    assert [type(event) for event in projection.events] == [TextDelta, MessageCompleted, TurnCompleted]
+    assert [type(event) for event in projection.events] == [
+        MessageStarted,
+        ItemSegment,
+        MessageCompleted,
+        TurnCompleted,
+    ]
     # Deliberately ignored, so they are not noise in the signal that says the CLI grew a frame.
     assert projection.unprojected == {}
 
@@ -270,7 +307,8 @@ def test_a_background_task_says_nothing_to_the_neutral_vocabulary():
     assert projection.unprojected == {"system/task_started": 1, "system/task_notification": 1}
 
 
-def test_text_arrives_as_increments_and_as_a_finished_message():
+def test_text_arrives_as_segments_and_the_completion_carries_none():
+    """The invariant the whole vocabulary rests on: an item's text is exactly its segments."""
     events = project_log(
         [
             recorded(1, assistant(text_block("Looking at "), message_id="msg_A")),
@@ -279,15 +317,12 @@ def test_text_arrives_as_increments_and_as_a_finished_message():
         ]
     ).events
 
-    assert events[:2] == (
-        TextDelta(message=MessageKey(opened_at_frame_seq=1), text="Looking at ", provenance=FrameRange(1, 1)),
-        TextDelta(message=MessageKey(opened_at_frame_seq=1), text="the migration.", provenance=FrameRange(2, 2)),
-    )
-    assert events[2] == MessageCompleted(
-        message=MessageKey(opened_at_frame_seq=1),
-        text="Looking at the migration.",
-        agent_message_id="msg_A",
-        provenance=FrameRange(1, 2),
+    assert events == (
+        MessageStarted(provenance=FrameRange(1, 1)),
+        ItemSegment(item=_MESSAGE, text="Looking at ", provenance=FrameRange(1, 1)),
+        ItemSegment(item=_MESSAGE, text="the migration.", provenance=FrameRange(2, 2)),
+        MessageCompleted(backend_item_id="msg_A", provenance=FrameRange(1, 2)),
+        TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=FrameRange(3, 3)),
     )
 
 
@@ -301,11 +336,12 @@ def test_deltas_are_not_what_text_is_projected_from():
         ]
     )
 
-    assert [type(event) for event in projection.events] == [TextDelta, MessageCompleted]
+    assert [type(event) for event in projection.events] == [MessageStarted, ItemSegment, MessageCompleted]
     assert projection.unprojected == {}
-    # The one `TextDelta` is the completed block's, not the delta's.
-    assert projection.events[0] == TextDelta(
-        message=MessageKey(opened_at_frame_seq=2), text="Looking at the migration.", provenance=FrameRange(2, 2)
+    # The one segment is the completed block's, not the delta's — the delta's frame projects to
+    # nothing under this `DeltaSource`.
+    assert projection.events[1] == ItemSegment(
+        item=_MESSAGE, text="Looking at the migration.", provenance=FrameRange(2, 2)
     )
 
 
@@ -321,19 +357,18 @@ def test_a_live_consumer_cuts_the_same_prose_where_the_wire_cut_it():
     live = project_log(frames, delta_source=DeltaSource.STREAM_EVENTS).events
 
     assert live == (
-        TextDelta(message=MessageKey(opened_at_frame_seq=1), text="Looking at ", provenance=FrameRange(1, 1)),
-        TextDelta(message=MessageKey(opened_at_frame_seq=2), text="the migration.", provenance=FrameRange(2, 2)),
-        MessageCompleted(
-            message=MessageKey(opened_at_frame_seq=3),
-            text="Looking at the migration.",
-            agent_message_id="msg_A",
-            provenance=FrameRange(3, 3),
-        ),
+        MessageStarted(provenance=FrameRange(1, 1)),
+        ItemSegment(item=_MESSAGE, text="Looking at ", provenance=FrameRange(1, 1)),
+        ItemSegment(item=_MESSAGE, text="the migration.", provenance=FrameRange(2, 2)),
+        # The completed block joins the message the deltas opened rather than starting a second —
+        # which under this `DeltaSource` would be an empty one, since the deltas already delivered
+        # every word — and gives it the id the wire had not supplied yet.
+        MessageCompleted(backend_item_id="msg_A", provenance=FrameRange(1, 3)),
     )
-    # Granularity is the only difference: the message a transcript keeps is the same either way.
-    assert [event for event in live if isinstance(event, MessageCompleted)] == [
-        event for event in project_log(frames).events if isinstance(event, MessageCompleted)
-    ]
+    # Granularity is the only difference: the prose a transcript keeps is the same either way.
+    assert "".join(event.text for event in live if isinstance(event, ItemSegment)) == "".join(
+        event.text for event in project_log(frames).events if isinstance(event, ItemSegment)
+    )
 
 
 def test_a_live_consumer_is_not_shown_tool_arguments_as_prose():
@@ -384,27 +419,17 @@ def test_a_batch_running_out_is_not_a_message_ending():
     the message, so only a caller saying the stream is over may close it."""
     state, first = project(ProjectionState(), [recorded(1, assistant(text_block("Looking at "), message_id="msg_A"))])
 
-    assert [type(event) for event in first.events] == [TextDelta]
-    # The message is in the state rather than in the events, and it is stated in the neutral
-    # vocabulary — no `assistant`, no `msg_…` as identity, nothing a second backend could not
-    # produce.
+    assert [type(event) for event in first.events] == [MessageStarted, ItemSegment]
+    # The message is in the state rather than in the events, and it holds no prose: the segments
+    # were emitted as they arrived, so nothing is carried across a batch boundary to be joined.
     assert state == ProjectionState(
-        open_message=OpenMessage(
-            key=MessageKey(opened_at_frame_seq=1), agent_message_id="msg_A", last_frame_seq=1, texts=("Looking at ",)
-        )
+        open_message=OpenItem(opened_at_frame_seq=1, last_frame_seq=1, backend_item_id="msg_A")
     )
 
     state, second = project(state, [recorded(2, assistant(text_block("the migration."), message_id="msg_A"))])
 
-    assert [type(event) for event in second.events] == [TextDelta]
-    assert finish(state).events == (
-        MessageCompleted(
-            message=MessageKey(opened_at_frame_seq=1),
-            text="Looking at the migration.",
-            agent_message_id="msg_A",
-            provenance=FrameRange(1, 2),
-        ),
-    )
+    assert [type(event) for event in second.events] == [ItemSegment]
+    assert finish(state).events == (MessageCompleted(backend_item_id="msg_A", provenance=FrameRange(1, 2)),)
 
 
 def _in_batches(batches: Iterable[Sequence[RecordedFrame]]) -> Projection:

@@ -288,14 +288,19 @@ class _Projector:
         attribute its second call to a message that does not exist. A frame with no id cannot be
         grouped, so it is its own message; the wire supplies one essentially always, the exceptions
         being the console's own reconstructions.
+
+        **A message the deltas opened has no id yet, and the completed block gives it one.** Deltas
+        carry no `message.id` to group by, so treating "no id" as "a different id" would close the
+        message the operator has been watching arrive and open a second one for the same prose —
+        empty, under `STREAM_EVENTS`, since the deltas already delivered every word of it.
         """
         backend_item_id = frames.agent_message_id(frame.payload)
         if (
             (open_message := self.open_message) is not None
             and backend_item_id is not None
-            and open_message.backend_item_id == backend_item_id
+            and open_message.backend_item_id in (None, backend_item_id)
         ):
-            continued = replace(open_message, last_frame_seq=frame.frame_seq)
+            continued = replace(open_message, last_frame_seq=frame.frame_seq, backend_item_id=backend_item_id)
             self.open_message = continued
             return continued
         self.close_message()
