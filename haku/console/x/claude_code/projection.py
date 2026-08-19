@@ -232,8 +232,9 @@ class _Projector:
                 opened_at_frame_seq=frame.frame_seq, last_frame_seq=frame.frame_seq, backend_item_id=None
             )
             self.events.append(MessageStarted(provenance=FrameRange(frame.frame_seq, frame.frame_seq)))
-        else:
-            self.open_message = replace(self.open_message, last_frame_seq=frame.frame_seq)
+        self.open_message = replace(
+            self.open_message, last_frame_seq=frame.frame_seq, streamed=self.open_message.streamed + len(text)
+        )
         self.events.append(
             ItemSegment(
                 item=OpenRef(item_type=ItemType.MESSAGE),
@@ -247,13 +248,18 @@ class _Projector:
         for block in frames.content_blocks(frame.payload):
             match block.get("type"):
                 case "text" if isinstance(text := block.get("text"), str):
-                    self._message_for(frame)
-                    # Under `STREAM_EVENTS` the deltas already delivered this prose; emitting it
-                    # again as a whole would have a consumer render the answer twice.
-                    if self.delta_source is DeltaSource.COMPLETED_BLOCKS:
+                    message = self._message_for(frame)
+                    # **Only the part nobody has seen.** The deltas of this block already delivered
+                    # its first `streamed` code points, and repeating them would have a consumer
+                    # render the answer twice — but a session that streamed nothing has a watermark
+                    # of zero, so the whole block is emitted and prose is never lost. Which of those
+                    # two a run is, is not something this branch has to know.
+                    if remainder := text[message.streamed :] if len(text) >= message.streamed else text:
                         self.events.append(
-                            ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text=text, provenance=where)
+                            ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text=remainder, provenance=where)
                         )
+                    # The block is finished, so the next one starts undelivered.
+                    self.open_message = replace(message, streamed=0)
                 case "thinking":
                     # Opened, spoken and closed by this one frame, so nothing has to name it: it is
                     # the open reasoning item for exactly as long as these three events take.
