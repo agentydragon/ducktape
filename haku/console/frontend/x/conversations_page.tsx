@@ -204,7 +204,7 @@ function ConversationListPage() {
   });
 
   // The initial read, a re-read when any session changes, and one more on every reconnect. A row
-  // carries `message_count` and `last_activity_at`, so it goes stale for the same reason a
+  // carries `item_count` and `last_activity_at`, so it goes stale for the same reason a
   // transcript does, and the event does not say which row moved.
   useConsoleEvents((event) => {
     if (event.event_type === "sync" || changedSessionId(event) !== null) refresh();
@@ -299,7 +299,7 @@ function ConversationListPage() {
                       )}
                     </Group>
                     <Text size="xs" c="dimmed" mt={4}>
-                      {conversation.message_count} messages · active {timestamp(conversation.last_activity_at)}
+                      {conversation.item_count} items · active {timestamp(conversation.last_activity_at)}
                     </Text>
                   </Box>
                   <Text size="sm" c="dimmed" className="haku-conversation-open">

@@ -259,6 +259,20 @@ class TurnStart:
 
 
 @dataclass(frozen=True, slots=True)
+class OpenMessage:
+    """The message a departed holder was streaming into, as the adopting fold needs it back.
+
+    The frame numbers are the span its rows were read from, so the completion this fold eventually
+    writes reports where the message began rather than where the adoption did.
+    """
+
+    item_id: UUID
+    text: str
+    first_frame_seq: int
+    last_frame_seq: int
+
+
+@dataclass(frozen=True, slots=True)
 class ResumedTurn:
     """A turn a departed holder opened and asked, handed to whoever adopted the session.
 
@@ -270,10 +284,16 @@ class ResumedTurn:
     stream is what makes adoption the same call as steady state with a cursor that happens to be
     behind (<README.md> § The cursor). Empty for a session with no cursor, where adoption falls
     back to reading the frames itself.
+
+    `streaming` is the message the departed holder left open, which the adopting fold has to be
+    given: the store resumes the *item*, so the prose lands on the right row either way, but only
+    what has already been said tells the completed block arriving next how much of itself is a
+    repeat (`claude_code.projection.undelivered`).
     """
 
     turn_id: UUID
     replay: tuple[ReceivedFrame, ...]
+    streaming: OpenMessage | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -449,7 +469,7 @@ class SessionStore:
             rows = (await db.execute(page)).all()
             threads = {row.conversation_id for row in rows[:limit]}
             attachments = await _live_attachments(db, threads)
-            messages = await _item_counts(db, threads)
+            counts = await _item_counts(db, threads)
             live = await _live_sessions(db, threads)
         return ConversationPage(
             conversations=[
@@ -459,7 +479,7 @@ class SessionStore:
                     last_activity_at=row.last_activity_at,
                     attachments=attachments[row.conversation_id],
                     live_session=live.get(row.conversation_id),
-                    message_count=messages[row.conversation_id],
+                    item_count=counts[row.conversation_id],
                 )
                 for row in rows[:limit]
             ],
@@ -730,7 +750,11 @@ class SessionStore:
                 # room reply rather than a lost one. `next_prompt` anchors it at the frame before
                 # the turn, so the normal case satisfies this by construction.
                 if cursor is not None and cursor >= (first_frame_seq or 1) - 1:
-                    return ResumedTurn(turn_id=turn_id, replay=await _unprojected_frames(db, session_id, cursor))
+                    return ResumedTurn(
+                        turn_id=turn_id,
+                        replay=await _unprojected_frames(db, session_id, cursor),
+                        streaming=await _open_message(db, turn_id),
+                    )
         # Two ways to arrive here, one outcome. A turn that never asked its prompt has nothing to
         # finish, and a turn whose cursor sits before it has no position to resume from — so
         # neither has an outcome but failure.
@@ -1531,6 +1555,32 @@ async def _queued_prompt(db: AsyncSession, conversation_id: UUID, *, lock: bool 
     )
     prompt: ConversationPrompt | None = await db.scalar(query.with_for_update(skip_locked=True) if lock else query)
     return prompt
+
+
+async def _open_message(db: AsyncSession, turn_id: UUID) -> OpenMessage | None:
+    """The message this turn is streaming into, with the frames its rows were read from."""
+    item = await db.scalar(
+        select(ConversationItem).where(
+            ConversationItem.turn_id == turn_id,
+            ConversationItem.item_type == ItemType.MESSAGE,
+            ConversationItem.status == ItemStatus.OPEN,
+        )
+    )
+    if item is None:
+        return None
+    span = (
+        await db.execute(
+            select(
+                func.min(ConversationEventRow.source_first_frame_seq),
+                func.max(ConversationEventRow.source_last_frame_seq),
+            ).where(ConversationEventRow.item_id == item.item_id)
+        )
+    ).one()
+    # Every row that opens a message names its frame, so the aggregate is null only for a message
+    # with no rows at all — a shape nothing writes, and one that would leave a completion pointing
+    # at frames rather than fabricating a span.
+    first, last = span if span[0] is not None else (0, 0)
+    return OpenMessage(item_id=item.item_id, text=item.item_text, first_frame_seq=first, last_frame_seq=last)
 
 
 async def _turn_state(db: AsyncSession, turn_id: UUID) -> TurnState:

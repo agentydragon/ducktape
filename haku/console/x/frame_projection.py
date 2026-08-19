@@ -14,8 +14,10 @@ the prose its deltas already delivered, which only the watermark on the open ite
 no state there is no watermark, and the answer is stored twice.
 
 What the cursor rests on instead is the store: an item's identity is its `item_id` and the turn's
-open item is a row, so a fold resuming from a cursor mid-message finds what its predecessor left
-open rather than needing to have been told (`conversation_log.LogWriter._open_of_turn`).
+open item is a row, so a fold resuming from a cursor mid-message writes onto what its predecessor
+left open rather than needing to have been told which row that is
+(`conversation_log.LogWriter._resume`). What it does have to be told is how much of that item has
+already been said, which `session_runtime._inherited` seeds from the row.
 
 `Projection.unprojected` is dropped here rather than logged: per frame in the hot path it would be a
 log line for every heartbeat. It is read on the two paths that re-fold stored frames instead —

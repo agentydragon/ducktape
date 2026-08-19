@@ -1425,21 +1425,24 @@ def test_a_chat_session_cannot_be_written_without_a_lease(db_url: str) -> None:
 
 _EVENT = text(
     """
-    INSERT INTO session_events (session_id, turn_id, kind, provenance, source_first_frame_seq,
-                                source_last_frame_seq, call_id, body, created_at)
-    VALUES (:session_id, NULL, :kind, 'authored', NULL, NULL, NULL, '{}'::jsonb, :now)
+    INSERT INTO conversation_event (conversation_id, event_seq, session_id, turn_id, item_id, kind,
+                                    provenance, source_first_frame_seq, source_last_frame_seq,
+                                    body, created_at)
+    VALUES (:conversation_id, :event_seq, NULL, NULL, :item_id, :kind,
+            'authored', NULL, NULL, '{}'::jsonb, :now)
     """
 )
 
 
-def test_a_projected_event_kind_cannot_claim_the_console_authored_it(db_url: str) -> None:
-    """`ConversationEventKind` is by definition what folding a recorded frame produced, so a
-    row of one on the `authored` arm names no frames to appeal its normalization to — and the write
-    succeeding is what makes `session_views._asked` meet it as an unreadable transcript instead.
+def test_an_event_names_an_item_exactly_when_its_kind_is_about_one(db_url: str) -> None:
+    """The three item kinds are the rows an item's text is folded from, so one naming no item is
+    prose belonging to nothing — and a turn's end naming an item claims a subject it has none of.
+    Either way the fold would be wrong rather than incomplete, which is why the rule is the
+    database's and not a writer's.
     """
     apply_migrations(db_url)
     engine = create_engine(db_url)
-    operator_id, conversation_id, session_id = uuid4(), uuid4(), uuid4()
+    operator_id, conversation_id, item_id = uuid4(), uuid4(), uuid4()
     now = _now()
     try:
         with engine.begin() as conn:
@@ -1464,28 +1467,42 @@ def test_a_projected_event_kind_cannot_claim_the_console_authored_it(db_url: str
             conn.execute(
                 text(
                     """
-                    INSERT INTO sessions (
-                        session_id, operator_id, conversation_id, status, bridge_token_fingerprint,
-                        bridge_connected_at, error, lease_expires_at, created_at, updated_at
+                    INSERT INTO conversation_item (
+                        item_id, conversation_id, session_id, turn_id, item_type, status,
+                        opened_seq, closed_seq, text, created_at, updated_at
                     ) VALUES (
-                        :session_id, :operator_id, :conversation_id, 'ready', :fingerprint,
-                        NULL, NULL, :now, :now, :now
+                        :item_id, :conversation_id, NULL, NULL, 'prompt', 'complete',
+                        1, 1, 'hi', :now, :now
                     )
                     """
                 ),
+                {"item_id": item_id, "conversation_id": conversation_id, "now": now},
+            )
+            conn.execute(
+                _EVENT,
                 {
-                    "session_id": session_id,
-                    "operator_id": operator_id,
                     "conversation_id": conversation_id,
-                    "fingerprint": b"fp",
+                    "event_seq": 1,
+                    "item_id": item_id,
+                    "kind": "item_started",
                     "now": now,
                 },
             )
-            # The other category is what the arm is for, so the rule must leave it writable.
-            # `lease_expired` rather than `prompt_enqueued`, whose own CHECK wants an origin in a
-            # body this statement leaves empty.
-            conn.execute(_EVENT, {"session_id": session_id, "kind": "lease_expired", "now": now})
-        with pytest.raises(IntegrityError, match="ck_session_events_frame_derived_kinds"), engine.begin() as conn:
-            conn.execute(_EVENT, {"session_id": session_id, "kind": "reasoning", "now": now})
+            conn.execute(
+                _EVENT,
+                {"conversation_id": conversation_id, "event_seq": 2, "item_id": None, "kind": "turn_ended", "now": now},
+            )
+        for event_seq, item, kind in ((3, None, "item_segment"), (4, item_id, "turn_started")):
+            with pytest.raises(IntegrityError, match="ck_conversation_event_item_kinds"), engine.begin() as conn:
+                conn.execute(
+                    _EVENT,
+                    {
+                        "conversation_id": conversation_id,
+                        "event_seq": event_seq,
+                        "item_id": item,
+                        "kind": kind,
+                        "now": now,
+                    },
+                )
     finally:
         engine.dispose()

@@ -36,6 +36,7 @@ from haku.console.x.channels.matrix.client import (
     MatrixClient,
     RoomEventKind,
 )
+from haku.console.x.channels.matrix.outbox import PendingReply
 from haku.console.x.channels.matrix.testing.operator_room import Message, MessageKind, OperatorRoom, Redacted, sign_in
 from haku.console.x.channels.matrix.testing.synapse_container import Synapse, run_synapse
 
@@ -97,7 +98,7 @@ async def test_login_lands_on_the_pinned_device_and_whoami_rejects_a_stale_token
     `whoami` is what decides between the two, so it has to answer no for a token the homeserver has
     never heard of rather than raising, and yes for one it issued. The device is pinned because
     Synapse keys its transaction dedup on the device rather than on the token: a login per restart
-    would quietly cost the guarantee `EventTag.transaction_id` rests on.
+    would quietly cost the guarantee `PendingReply.transaction_id` rests on.
     """
     again = await bot.client.login(PASSWORD)
 
@@ -220,18 +221,25 @@ async def test_a_tag_and_its_rendering_survive_the_homeserver(bot: Bot, joined_r
     assert (await joined_room.content_of(event_id))[HAKU_CONTENT_KEY] == tag.content()
 
 
-async def test_the_same_transcript_row_cannot_post_twice(bot: Bot, joined_room: OperatorRoom) -> None:
+async def test_the_same_outbox_row_cannot_post_twice(bot: Bot, joined_room: OperatorRoom) -> None:
     """<../../../docs/chat_runtime_facts.md> — Synapse deduplicates a transaction per device.
 
-    `EventTag.transaction_id` derives a reply's transaction from the transcript row it is, so a
-    replacement replica re-sending the same answer is refused rather than posting it twice. The
-    device is what the cache is keyed on, and `MatrixClient` pins one.
+    A reply is sent under its outbox row's id (`PendingReply.transaction_id`), so a replacement
+    replica redriving the same row is refused rather than posting it twice. The device is what the
+    cache is keyed on, and `MatrixClient` pins one.
     """
-    tag = EventTag(kind=RoomEventKind.REPLY, message_id=uuid4())
+    reply = PendingReply(
+        outbox_id=uuid4(),
+        attachment_id=uuid4(),
+        room_id=joined_room.room_id,
+        subject=uuid4().hex,
+        body="the answer",
+        attempts=0,
+    )
 
     room = joined_room.room_id
-    first = await bot.client.send_text(bot.token, room, "the answer", txn_id=tag.transaction_id(), tag=tag)
-    again = await bot.client.send_text(bot.token, room, "the answer", txn_id=tag.transaction_id(), tag=tag)
+    first = await bot.client.send_text(bot.token, room, reply.body, txn_id=reply.transaction_id(), tag=reply.tag())
+    again = await bot.client.send_text(bot.token, room, reply.body, txn_id=reply.transaction_id(), tag=reply.tag())
 
     assert first == again
     assert [event.event_id for event in await joined_room.timeline() if isinstance(event, Message)] == [first]

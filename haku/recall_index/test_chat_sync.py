@@ -25,14 +25,14 @@ _NOW = datetime.datetime(2026, 8, 11, tzinfo=datetime.UTC)
 # `conversation_item` is the corpus; the others are the foreign keys it hangs off. `conversation`
 # is one of them without holding anything the corpus reads: `sessions.conversation_id` points at
 # it, so `sessions` is not creatable without it.
-_CHAT_SOURCE_TABLES = ("operators", "conversation", "sessions", "conversation_item")
+_CHAT_SOURCE_TABLES = ("operators", "conversation", "sessions", "conversation_turn", "conversation_item")
 
 
 @pytest.fixture
 async def chat_source(session: AsyncSession) -> AsyncSession:
     """The console tables the chat corpus reads, created in the same database it indexes into.
 
-    Only the three the corpus needs, rather than the console's whole schema, which would drag
+    Only what the corpus needs, rather than the console's whole schema, which would drag
     every unrelated table into a test about chunking. Lives here rather than in `conftest.py` so
     the git corpus's tests do not take a dependency on the console to get a database — what they
     share is the `session` fixture, which resets `public` for exactly this to be creatable.

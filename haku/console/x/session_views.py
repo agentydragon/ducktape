@@ -110,7 +110,9 @@ class ConversationSummary(BaseModel):
     )
     attachments: list[ChannelAttachment]
     live_session: LiveSession | None
-    message_count: int
+    item_count: int = Field(
+        description="How many transcript rows this conversation holds — prompts, answers and calls alike."
+    )
 
 
 class ConversationCursor(BaseModel):
@@ -227,7 +229,7 @@ class ConversationSnapshot(BaseModel):
 class ConversationUpdate(BaseModel):
     """What moved in a conversation since a position, for a follower that already holds the rest.
 
-    Whole rows rather than events to apply: a merge keyed on `message_id` is idempotent, so a
+    Whole rows rather than events to apply: a merge keyed on `item_id` is idempotent, so a
     duplicate costs nothing and re-reading from an older position is always correct. `event_seq` is
     the address — where the follower is — and these rows are what that position resolves to.
 

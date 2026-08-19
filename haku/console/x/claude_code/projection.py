@@ -155,6 +155,24 @@ def finish(state: ProjectionState) -> Projection:
     return Projection(events=(_completed(open_message),), unprojected=MappingProxyType({}))
 
 
+def undelivered(text: str, delivered: str) -> str:
+    """The part of a completed block nobody has been shown yet.
+
+    A block's deltas deliver its prose as it is written and the completed block repeats all of it,
+    so emitting the block whole would have every consumer render the answer twice. What has been
+    delivered is a **prefix of this block** only while one process folds the whole message: a fold
+    resuming an item another process left open inherits that item's prose entire, which may hold
+    blocks finished before the one now arriving. So the overlap is what is subtracted — the longest
+    prefix of the block that the delivered prose ends with — which is the full watermark in the
+    first case, nothing in the second, and the whole block wherever a backend streams no deltas at
+    all.
+    """
+    overlap = min(len(text), len(delivered))
+    while overlap and not delivered.endswith(text[:overlap]):
+        overlap -= 1
+    return text[overlap:]
+
+
 def _completed(open_message: OpenItem) -> MessageCompleted:
     """The message's close. It carries no prose: the segments already delivered every word.
 
@@ -233,7 +251,7 @@ class _Projector:
             )
             self.events.append(MessageStarted(provenance=FrameRange(frame.frame_seq, frame.frame_seq)))
         self.open_message = replace(
-            self.open_message, last_frame_seq=frame.frame_seq, streamed=self.open_message.streamed + len(text)
+            self.open_message, last_frame_seq=frame.frame_seq, delivered=self.open_message.delivered + text
         )
         self.events.append(
             ItemSegment(
@@ -260,17 +278,12 @@ class _Projector:
             match block.get("type"):
                 case "text" if isinstance(text := block.get("text"), str):
                     message = self._message_for(frame)
-                    # **Only the part nobody has seen.** The deltas of this block already delivered
-                    # its first `streamed` code points, and repeating them would have a consumer
-                    # render the answer twice — but a session that streamed nothing has a watermark
-                    # of zero, so the whole block is emitted and prose is never lost. Which of those
-                    # two a run is, is not something this branch has to know.
-                    if remainder := text[message.streamed :] if len(text) >= message.streamed else text:
+                    if remainder := undelivered(text, message.delivered):
                         self.events.append(
                             ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text=remainder, provenance=where)
                         )
                     # The block is finished, so the next one starts undelivered.
-                    self.open_message = replace(message, streamed=0)
+                    self.open_message = replace(message, delivered="")
                 case "thinking":
                     # Opened, spoken and closed by this one frame, so nothing has to name it: it is
                     # the open reasoning item for exactly as long as these three events take.
@@ -306,16 +319,19 @@ class _Projector:
         grouped, so it is its own message; the wire supplies one essentially always, the exceptions
         being the console's own reconstructions.
 
-        **A message the deltas opened has no id yet, and the completed block gives it one.** Deltas
-        carry no `message.id` to group by, so treating "no id" as "a different id" would close the
-        message the operator has been watching arrive and open a second one for the same prose —
-        empty, under `STREAM_EVENTS`, since the deltas already delivered every word of it.
+        **A message being streamed into absorbs the frame that completes it, id or no id.** Deltas
+        carry no `message.id` to group by, so a message they opened has none until a completed block
+        gives it one — and treating that as "a different id" would close the message the operator has
+        been watching arrive and open a second one for the same prose, empty under `STREAM_EVENTS`
+        since the deltas already delivered every word of it. Mid-stream is the whole of that
+        exception: once the block has been completed the item's prose is delivered again from zero,
+        so the next unkeyable frame is its own message as ever.
         """
         backend_item_id = frames.agent_message_id(frame.payload)
-        if (
-            (open_message := self.open_message) is not None
-            and backend_item_id is not None
-            and open_message.backend_item_id in (None, backend_item_id)
+        if (open_message := self.open_message) is not None and (
+            open_message.backend_item_id == backend_item_id
+            if open_message.backend_item_id is not None
+            else bool(open_message.delivered)
         ):
             continued = replace(open_message, last_frame_seq=frame.frame_seq, backend_item_id=backend_item_id)
             self.open_message = continued

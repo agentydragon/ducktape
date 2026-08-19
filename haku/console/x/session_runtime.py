@@ -27,7 +27,7 @@ from haku.console.config import ClaudeRuntimeConfig
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.x import frame_projection
 from haku.console.x.claude_code.frames import frame_kind
-from haku.console.x.conversation_events import ProjectionState, TurnCompleted
+from haku.console.x.conversation_events import OpenItem, ProjectionState, TurnCompleted
 from haku.console.x.room_status import StatusFrontend, TurnStatus
 from haku.console.x.sandbox_claims import (
     ClaudeSandboxProvisioningView,
@@ -187,6 +187,26 @@ class _CompletedTurn:
     # Read for the two things the neutral event does not carry: the failure's reason (an outcome is
     # not a message) and the prose of a turn that said nothing anywhere else.
     frame: ReceivedFrame
+
+
+def _inherited(turn: TurnStart | ResumedTurn) -> ProjectionState:
+    """Where an adopting replica's fold picks the turn up.
+
+    Empty for a turn this process opened, and for one whose predecessor had no message open. What
+    the store hands back is the item, so the prose lands on the same row either way; what this
+    carries is how much of it has been said, without which the completed block arriving next is
+    stored on top of the half already there.
+    """
+    if isinstance(turn, TurnStart) or turn.streaming is None:
+        return ProjectionState()
+    return ProjectionState(
+        open_message=OpenItem(
+            opened_at_frame_seq=turn.streaming.first_frame_seq,
+            last_frame_seq=turn.streaming.last_frame_seq,
+            backend_item_id=None,
+            delivered=turn.streaming.text,
+        )
+    )
 
 
 class SessionService:
@@ -612,8 +632,10 @@ class SessionService:
             await client.query(turn.prompt)
         # Threaded across the turn's frames rather than seeded per frame: a delta carries no
         # `message.id`, so an empty seed would make an item of every one of them
-        # (`frame_projection`). A turn's own state, because a turn is what a message belongs to.
-        folding = ProjectionState()
+        # (`frame_projection`). A turn's own state, because a turn is what a message belongs to —
+        # and an inherited turn starts from what its predecessor had already said, so the block
+        # that finishes the answer is not stored on top of the half of it already there.
+        folding = _inherited(turn)
         completed: _CompletedTurn | None = None
         status = TurnStatus(frontend)
         status.start()
@@ -657,13 +679,7 @@ class SessionService:
                 else:
                     await self._store.apply_frame(session_id, turn_id, frame_seq, events)
             result = completed.frame.payload
-            if completed.event.outcome is TurnOutcome.FAILED and not abort_event.is_set():
-                # Quoted from the frame rather than the event: *why* a turn failed is
-                # provider-specific by nature, and the neutral vocabulary carries an outcome
-                # rather than a message on purpose.
-                raise RuntimeError(
-                    f"the agent's turn failed: {result.get('subtype')}: {result.get('stop_reason') or 'unknown error'}"
-                )
+            failed = completed.event.outcome is TurnOutcome.FAILED and not abort_event.is_set()
             # `result.result` is deliberately not projected — it repeats the turn's last message on
             # every result frame, so minting prose from it would double every answer. It is handed
             # over as the fallback for the one case that is not a repeat: a turn whose text arrived
@@ -671,13 +687,25 @@ class SessionService:
             #
             # **Before the turn is closed, not after.** Closing it makes it unadoptable, so a
             # replica dying between the two would strand the answer with nothing left to re-derive
-            # it.
+            # it. **And before the failure is raised**, for the same reason at a shorter range: a
+            # turn that produced text and then failed still produced the text, and the message it
+            # is on is closed nowhere else — the ending frame's own events are not applied
+            # (<../debug/message_drops.md> E4).
             said = await self._store.close_answer(
                 session_id,
                 turn_id,
-                final_text=str(result.get("result") or "").strip(),
+                # A failing result's `result` is the failure rather than an answer, so nothing is
+                # minted from it; what the turn already said stands on its own items.
+                final_text="" if failed else str(result.get("result") or "").strip(),
                 frame_seq=completed.frame.frame_seq,
             )
+            if failed:
+                # Quoted from the frame rather than the event: *why* a turn failed is
+                # provider-specific by nature, and the neutral vocabulary carries an outcome
+                # rather than a message on purpose.
+                raise RuntimeError(
+                    f"the agent's turn failed: {result.get('subtype')}: {result.get('stop_reason') or 'unknown error'}"
+                )
             if not said and frontend is not None:
                 # Every turn speaks, and there is deliberately no silence token: a turn that only
                 # ran tools is legitimate, but it must not look like the console lost the answer.

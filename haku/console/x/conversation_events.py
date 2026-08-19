@@ -252,11 +252,13 @@ class OpenItem:
     opened_at_frame_seq: int
     last_frame_seq: int
     backend_item_id: str | None
-    # How many code points of the block currently in flight the stream has already emitted as
-    # segments. A watermark and not the prose: what it exists for is that the completed block
-    # repeats what the deltas delivered, so the fold emits only the part nobody has seen. Zero
-    # wherever a backend does not stream, which is what makes the two `DeltaSource`s one rule.
-    streamed: int = 0
+    # The prose of this item already emitted as segments. What it exists for is that a completed
+    # block repeats what its deltas delivered, so the fold emits only the part nobody has seen —
+    # empty wherever a backend does not stream, which is what makes the two `DeltaSource`s one rule.
+    # Text rather than a count because a fold resuming an item another process opened inherits the
+    # item's whole prose, of which only a suffix belongs to the block now in flight
+    # (`claude_code.projection.undelivered`).
+    delivered: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -267,11 +269,10 @@ class ProjectionState:
     both a live consumer between frames and a cursor-driven one reloading. The default is a stream
     nothing has been read from yet.
 
-    **Only the streaming item is in flight**, and it carries no accumulated prose — the segments
-    were emitted as they arrived, so nothing has to be held to be joined later, only a count of how
-    far the block in flight has been delivered. A tool call opened in one batch and answered in
-    another needs no state either: its completion names its `call_id`, which is what the store looks
-    the item up by.
+    **Only the streaming item is in flight.** The segments were emitted as they arrived, so what it
+    holds is what has been said rather than a transcript to be joined later. A tool call opened in
+    one batch and answered in another needs no state either: its completion names its `call_id`,
+    which is what the store looks the item up by.
     """
 
     open_message: OpenItem | None = None

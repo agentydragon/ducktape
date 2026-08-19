@@ -30,17 +30,19 @@ from haku.console.chat_models import (
     ItemStatus,
     ItemType,
     SessionStatus,
+    ToolOutcome,
     TurnOutcome,
 )
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ConversationEvent, ConversationItem, Session, SessionFrame
-from haku.console.x.claude_code.frames import DELTA_FRAME_KIND
+from haku.console.x.claude_code.frames import DELTA_FRAME_KIND, frame_kind
 from haku.console.x.claude_code.testing.wire import (
     assistant,
     prompt,
     result,
     text_block,
     text_delta,
+    thinking_block,
     tool_result,
     tool_use_block,
 )
@@ -242,10 +244,10 @@ async def test_projected_assistant_message_points_to_the_frames_that_built_it(
     items = (await chat_store.get(operator_id, view.session_id)).items
     said = one(item for item in items if item.item_type is ItemType.MESSAGE)
     # **The item carries no frame numbers.** They are one session's coordinates, so what an operator
-    # appeals to is the log rows the item's prose was written from — the delta that opened it and
-    # the `assistant` frame that closed it. The `result` frame after them ends the turn rather than
-    # the message, so it is deliberately outside the span.
-    assert await _frames_behind(migrated_sessions, said.item_id) == (frame_seqs[0], frame_seqs[1])
+    # appeals to is the log rows the item's prose was written from: the delta that opened it, the
+    # `assistant` frame that repeated it, and the `result` frame — nothing in an `assistant` frame
+    # says the message is finished, so the frame ending the turn is also what ends the message.
+    assert await _frames_behind(migrated_sessions, said.item_id) == (frame_seqs[0], frame_seqs[2])
     # A prompt is authored: it was accepted before anything crossed a wire, so it names no frames
     # at all rather than naming the one it went out as.
     asked = one(item for item in items if item.item_type is ItemType.PROMPT)
@@ -398,12 +400,25 @@ async def test_a_returning_runner_is_admitted_and_takes_the_lease(
         )
 
 
+async def _folded(chat_store: SessionStore, session_id: UUID, turn_id: UUID, *payloads: dict[str, Any]) -> None:
+    """Record these frames and apply what they mean, the way the turn loop does — what a departed
+    holder leaves behind, written through the same path rather than into the rows directly. The fold
+    is threaded across them for the same reason the loop threads it: a message spans frames."""
+    folding = ProjectionState()
+    for payload in payloads:
+        recorded = await chat_store.record_frame(
+            session_id, FrameDirection.FROM_AGENT, frame_kind(payload) or "assistant", payload
+        )
+        folding, events = projected(folding, frame_seq=recorded.frame_seq, payload=payload)
+        await chat_store.apply_frame(session_id, turn_id, recorded.frame_seq, events)
+
+
 async def test_adoption_picks_the_answer_up_where_it_stopped(
-    chat_store, chat_service, recording_claims, operator_id
+    chat_store, chat_service, migrated_sessions, recording_claims, operator_id
 ) -> None:
     """The runner replays what a console may not have recorded but never the deltas, so a resumed
-    turn starting from an empty string would write the tail of the answer as a second message.
-    Adoption says which turn; the turn's own row says how far it got.
+    turn starting from an empty string would write the tail of the answer over the head of it.
+    Adoption says which turn, and hands back the message it was being written into.
     """
     session = await chat_service.create(operator_id)
     session_id = session.session_id
@@ -412,24 +427,23 @@ async def test_adoption_picks_the_answer_up_where_it_stopped(
     started = await chat_store.next_prompt(session_id)
     assert started is not None
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
-    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id, source_first_frame_seq=1)
-    await chat_store.update_assistant(session_id, assistant_id, "we were half way through")
+    await _folded(chat_store, session_id, started.turn_id, text_delta("we were half way through"))
+    half_answered = one(await _open_items(migrated_sessions, session_id))
 
     resumed = await chat_store.adopt_open_turn(session_id)
 
     assert resumed is not None
+    assert resumed.streaming is not None
+    assert (resumed.streaming.item_id, resumed.streaming.text) == (half_answered, "we were half way through")
     state = await chat_store.turn_state(resumed.turn_id)
-    assert (state.assistant_message_id, state.streamed) == (assistant_id, "we were half way through")
     assert not state.said_anything, "the message is still open, so nothing has completed"
-    assert not state.queued_reply, "nothing completed, so the room has heard nothing to repeat"
 
 
 async def test_a_turn_that_said_something_the_room_could_not_hear_still_knows_it_spoke(
     chat_store, chat_service, operator_id
 ) -> None:
-    """A session with no room queues nothing, so `queued_reply` is false while `said_anything` is
-    true. The resumed turn must read the second, or `result.result` — which repeats the message
-    that already completed — becomes a message of its own.
+    """The resumed turn has to read that a message already completed, or `result.result` — which
+    repeats it — becomes a message of its own.
     """
     view, token = await chat_store.create(operator_id)
     session_id = view.session_id
@@ -437,9 +451,21 @@ async def test_a_turn_that_said_something_the_room_could_not_hear_still_knows_it
     await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
-    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id, source_first_frame_seq=1)
-    assert not await chat_store.update_assistant(session_id, assistant_id, "a bad config", complete=True)
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+    await _folded(
+        chat_store,
+        session_id,
+        started.turn_id,
+        assistant(text_block("a bad config"), message_id="msg_1"),
+        # A frame of another message with no prose in it: what closes the one above, the way the
+        # wire closes a message, without opening a second one to compare against.
+        assistant(thinking_block("checking"), message_id="msg_2"),
+    )
+    said = one(
+        item
+        for item in (await chat_store.get(operator_id, session_id)).items
+        if item.item_type is ItemType.MESSAGE and item.status is ItemStatus.COMPLETE
+    )
 
     resumed = await chat_store.adopt_open_turn(session_id)
     assert resumed is not None
@@ -457,8 +483,12 @@ async def test_a_turn_that_said_something_the_room_could_not_hear_still_knows_it
             abort_event=asyncio.Event(),
         )
 
-    assistants = [m for m in (await chat_store.get(operator_id, session_id)).messages if m.role == "assistant"]
-    assert [m.message_id for m in assistants] == [assistant_id], "the result frame repeated a message, not made one"
+    spoken = [
+        item
+        for item in (await chat_store.get(operator_id, session_id)).items
+        if item.item_type is ItemType.MESSAGE and item.text
+    ]
+    assert [item.item_id for item in spoken] == [said.item_id], "the result frame repeated a message, not made one"
 
 
 async def test_adoption_closes_a_turn_whose_result_nobody_projected(
@@ -579,7 +609,7 @@ async def test_a_turn_that_never_asked_its_prompt_gives_it_back(
 
     reoffered = await chat_store.next_prompt(session_id)
     assert reoffered is not None, "a prompt that never left is still waiting to be asked"
-    assert reoffered.message_id == claimed.message_id
+    assert reoffered.item_id == claimed.item_id
     assert reoffered.prompt == "what were we doing"
     assert reoffered.turn_id != claimed.turn_id
 
@@ -905,48 +935,6 @@ async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
         )
 
     assert await answers(migrated_sessions, session_id) == ["because the disk was full"]
-    assistants = [m for m in (await chat_store.get(operator_id, session_id)).messages if m.role == "assistant"]
-    assert [m.content for m in assistants] == ["because the disk was full"]
-
-
-async def test_a_resumed_turn_does_not_say_again_what_it_had_already_queued(
-    chat_store, migrated_sessions, recording_claims, notifications, operator_id
-) -> None:
-    """The departed holder finished a message and the room's outbox holds it. All the replacement
-    sees is the `result` frame — which repeats that same text — so it has to know the room is
-    already owed it. `queued_reply` is that, written by the transaction that inserted the row
-    rather than inferred from an `assistant` frame having been recorded.
-    """
-    frontend = _RecordingFrontend()
-    service = SessionService(
-        runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, chat_frontend=frontend
-    )
-    view, token = await chat_store.create(operator_id)
-    session_id = view.session_id
-    await attach_channel(migrated_sessions, session_id, ROOM)
-    assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?", SPA_ORIGIN)
-    started = await chat_store.next_prompt(session_id)
-    assert started is not None
-    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
-    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id, source_first_frame_seq=1)
-    assert await chat_store.update_assistant(session_id, assistant_id, "a bad config", complete=True)
-
-    resumed = await chat_store.adopt_open_turn(session_id)
-    assert resumed is not None
-    client = _FakeCli([result(text="a bad config")])
-    client.replay()
-    async with asyncio.timeout(30):
-        await service._run_turn(
-            cast(Any, client),
-            client.frames().__aiter__(),
-            session_id,
-            resumed,
-            frontend=frontend,
-            abort_event=asyncio.Event(),
-        )
-
-    assert await answers(migrated_sessions, session_id) == ["a bad config"], "the answer, once"
 
 
 async def test_the_room_is_owed_each_assistant_message_as_it_finishes(
@@ -977,9 +965,9 @@ async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
     chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
     """The drop that needs neither a reconnection nor a roll: a turn that raised after producing
-    text (<../debug/message_drops.md> E4). The failing `result` raises before any delivery ran, so
-    the outbox row has to be written with the message, in one transaction, for the answer to
-    outlive the turn that produced it.
+    text (<../debug/message_drops.md> E4). The ending frame's own events are never applied, so the
+    message the turn was mid-way through is closed by `close_answer` or by nothing at all — and a
+    message left open is prose no channel is owed.
     """
     frontend = _RecordingFrontend()
     service = SessionService(
@@ -1206,8 +1194,9 @@ async def test_a_turn_ends_at_its_own_result_rather_than_at_what_the_cli_logs_af
 
 
 async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_service, operator_id) -> None:
-    """The call and its answer are both `session_events` rows, paired by `call_id` — exact, where
-    matching the Nth message to the Nth frame would be a guess."""
+    """The call and its answer are the same item, found by `call_id` — exact, where matching the Nth
+    answer to the Nth call would be a guess, and needing no id from the agent: neither frame here
+    carries a `message.id`, as 1,417 production assistant rows do not."""
     view, token = await chat_store.create(operator_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "count the files", SPA_ORIGIN)
@@ -1227,46 +1216,19 @@ async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_s
     )
 
     calls = {
-        call.call_id: call
-        for message in (await chat_store.get(operator_id, view.session_id)).messages
-        for call in message.tool_calls
+        item.call_id: item
+        for item in (await chat_store.get(operator_id, view.session_id)).items
+        if item.item_type is ItemType.TOOL_CALL
     }
 
-    assert calls["toolu_ok"].result is not None
-    assert (calls["toolu_ok"].result.content, calls["toolu_ok"].result.is_error) == ("42", False)
-    assert calls["toolu_running"].result is None, "a call still running must not read as an empty answer"
-
-
-async def test_the_calls_come_from_the_events_and_need_no_id_from_the_agent(
-    chat_store, chat_service, operator_id
-) -> None:
-    """A message finds its calls through the frames it was built from, and nothing else.
-
-    1,417 production assistant rows carry no `agent_message_id`, and this frame carries none
-    either, so the frame range is the whole of what pairs them.
-    """
-    view, token = await chat_store.create(operator_id)
-    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "count the files", SPA_ORIGIN)
-    turn = await chat_store.next_prompt(view.session_id)
-    assert turn is not None
-    client = _FakeCli(
-        [
-            assistant(tool_use_block("toolu_ok", "Bash", {"command": "true"})),
-            tool_result("toolu_ok", "7"),
-            result(text="done"),
-        ]
+    answered = calls["toolu_ok"]
+    # `UNKNOWN` because the frame carries no `is_error`, which is how the CLI sends a plain success
+    # — an outcome the fold reports rather than guesses at.
+    assert (answered.tool_name, answered.text, answered.outcome) == ("Bash", "42", ToolOutcome.UNKNOWN)
+    running = calls["toolu_running"]
+    assert (running.status, running.outcome) == (ItemStatus.OPEN, None), (
+        "a call still running must not read as an empty answer"
     )
-    await chat_service._run_turn(
-        client, client.frames().__aiter__(), view.session_id, turn, frontend=None, abort_event=asyncio.Event()
-    )
-    [call] = [
-        call for message in (await chat_store.get(operator_id, view.session_id)).messages for call in message.tool_calls
-    ]
-
-    assert (call.call_id, call.tool_name) == ("toolu_ok", "Bash")
-    assert call.result is not None
-    assert call.result.content == "7"
 
 
 class _RealDbClaudeClient(_LifecycleClaudeClient):

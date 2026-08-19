@@ -27,182 +27,203 @@ function jsonResponse(body: unknown): Response {
 
 const realFetch = globalThis.fetch;
 const scene = (window as unknown as { __SCENE__?: string }).__SCENE__;
-const claudeBoundaryMessages = [
-  {
-    message_id: "61000000-0000-4000-8000-000000000010",
-    role: "user",
+type MockItem = {
+  item_id: string;
+  item_type: "prompt" | "message" | "reasoning" | "tool_call";
+  status: "open" | "complete" | "failed";
+  text: string;
+  call_id: string | null;
+  tool_name: string | null;
+  arguments: Record<string, unknown> | null;
+  outcome: "succeeded" | "failed" | "unknown" | null;
+  structured: unknown;
+  disclosure: "summary" | "withheld" | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function spoke(
+  item_id: string,
+  item_type: "prompt" | "message",
+  text: string,
+  at: string,
+  until: string = at
+): MockItem {
+  return {
+    item_id,
+    item_type,
     status: "complete",
-    content: "Try the Haku Console MCP tools.",
-    tool_calls: [],
-    error: null,
-    created_at: "2026-08-01T03:00:10Z",
-    updated_at: "2026-08-01T03:00:10Z",
-  },
-  {
-    message_id: "62000000-0000-4000-8000-000000000010",
-    role: "assistant",
-    status: "complete",
-    content: "I'll start with the catalog, then try a read-only query.",
-    tool_calls: [],
-    error: null,
-    created_at: "2026-08-01T03:00:11Z",
-    updated_at: "2026-08-01T03:00:11Z",
-  },
-  {
-    message_id: "62000000-0000-4000-8000-000000000011",
-    role: "assistant",
-    status: "complete",
-    content: "",
-    tool_calls: [
-      {
-        call_id: "toolu_01HakuConsoleRead",
-        tool_name: "mcp__haku-console__haku-console__list_mcp_servers",
-        arguments: {},
-        result: {
-          content:
-            '{"servers": [{"server_id": "gmail", "status": "alive"}, {"server_id": "tana", "status": "degraded"}]}',
-          is_error: false,
-        },
-      },
-      {
-        call_id: "toolu_01EditTranscript",
-        tool_name: "Edit",
-        arguments: {
-          file_path: "/workspace/src/renderer.ts",
-          old_string: "const transcript = messages.map(renderMessage);\n".repeat(16),
-          new_string: "const transcript = messages.map(renderClaudeMessage);\n".repeat(16),
-        },
-        result: { content: "Updated /workspace/src/renderer.ts", is_error: false },
-      },
-      {
-        call_id: "toolu_02BashTranscript",
-        tool_name: "Bash",
-        arguments: { command: "git diff --check" },
-        result: {
-          content: Array.from(
-            { length: 14 },
-            (_unused, line) => `checked generated file ${line + 1}: no whitespace errors`
-          ).join("\n"),
-          is_error: false,
-        },
-      },
-    ],
-    error: null,
-    created_at: "2026-08-01T03:00:12Z",
-    updated_at: "2026-08-01T03:00:12Z",
-  },
-  {
-    message_id: "62000000-0000-4000-8000-000000000012",
-    role: "assistant",
-    status: "complete",
-    content: "The Haku Console catalog is available. Next I'll try the read-only query.",
-    tool_calls: [],
-    error: null,
-    created_at: "2026-08-01T03:00:13Z",
-    updated_at: "2026-08-01T03:00:13Z",
-  },
-] as const;
-const standardClaudeMessages = [
-  {
-    message_id: "61000000-0000-4000-8000-000000000006",
-    role: "user",
-    status: "complete",
-    content: "Create a **short note** in the sandbox and tell me what you wrote.",
-    tool_calls: [],
-    error: null,
-    created_at: "2026-08-01T03:00:10Z",
-    updated_at: "2026-08-01T03:00:10Z",
-  },
-  {
-    message_id: "62000000-0000-4000-8000-000000000006",
-    role: "assistant",
-    status: "complete",
-    content:
-      "I created `/workspace/note.txt` with:\n\n> Hello from the disposable Haku sandbox.\n\n- Saved locally\n- Ready to inspect",
-    tool_calls: [],
-    error: null,
-    created_at: "2026-08-01T03:00:11Z",
-    updated_at: "2026-08-01T03:00:15Z",
-  },
-] as const;
-const overflowingClaudeMessages = Array.from({ length: 8 }, (_, index) => {
+    text,
+    call_id: null,
+    tool_name: null,
+    arguments: null,
+    outcome: null,
+    structured: null,
+    disclosure: null,
+    created_at: at,
+    updated_at: until,
+  };
+}
+
+/** A tool call as one item: its ask and its answer on the same row, still open while it runs. */
+function called(
+  item_id: string,
+  call_id: string,
+  tool_name: string,
+  args: Record<string, unknown>,
+  at: string,
+  answer?: { text: string; outcome: "succeeded" | "failed" }
+): MockItem {
+  return {
+    item_id,
+    item_type: "tool_call",
+    status: answer ? "complete" : "open",
+    text: answer?.text ?? "",
+    call_id,
+    tool_name,
+    arguments: args,
+    outcome: answer?.outcome ?? null,
+    structured: null,
+    disclosure: null,
+    created_at: at,
+    updated_at: at,
+  };
+}
+
+const EDIT_ARGUMENTS = {
+  file_path: "/workspace/src/renderer.ts",
+  old_string: "const transcript = items.map(renderItem);\n".repeat(16),
+  new_string: "const transcript = items.map(renderConversationItem);\n".repeat(16),
+};
+const DIFF_CHECK_OUTPUT = Array.from(
+  { length: 14 },
+  (_unused, line) => `checked generated file ${line + 1}: no whitespace errors`
+).join("\n");
+
+const boundaryItems: readonly MockItem[] = [
+  spoke("61000000-0000-4000-8000-000000000010", "prompt", "Try the Haku Console MCP tools.", "2026-08-01T03:00:10Z"),
+  spoke(
+    "62000000-0000-4000-8000-000000000010",
+    "message",
+    "I'll start with the catalog, then try a read-only query.",
+    "2026-08-01T03:00:11Z"
+  ),
+  called(
+    "63000000-0000-4000-8000-000000000010",
+    "toolu_01HakuConsoleRead",
+    "mcp__haku-console__haku-console__list_mcp_servers",
+    {},
+    "2026-08-01T03:00:12Z",
+    {
+      text: '{"servers": [{"server_id": "gmail", "status": "alive"}, {"server_id": "tana", "status": "degraded"}]}',
+      outcome: "succeeded",
+    }
+  ),
+  called(
+    "63000000-0000-4000-8000-000000000011",
+    "toolu_01EditTranscript",
+    "Edit",
+    EDIT_ARGUMENTS,
+    "2026-08-01T03:00:12Z",
+    {
+      text: "Updated /workspace/src/renderer.ts",
+      outcome: "succeeded",
+    }
+  ),
+  called(
+    "63000000-0000-4000-8000-000000000012",
+    "toolu_02BashTranscript",
+    "Bash",
+    { command: "git diff --check" },
+    "2026-08-01T03:00:12Z",
+    { text: DIFF_CHECK_OUTPUT, outcome: "succeeded" }
+  ),
+  spoke(
+    "62000000-0000-4000-8000-000000000012",
+    "message",
+    "The Haku Console catalog is available. Next I'll try the read-only query.",
+    "2026-08-01T03:00:13Z"
+  ),
+];
+const standardItems: readonly MockItem[] = [
+  spoke(
+    "61000000-0000-4000-8000-000000000006",
+    "prompt",
+    "Create a **short note** in the sandbox and tell me what you wrote.",
+    "2026-08-01T03:00:10Z"
+  ),
+  spoke(
+    "62000000-0000-4000-8000-000000000006",
+    "message",
+    "I created `/workspace/note.txt` with:\n\n> Hello from the disposable Haku sandbox.\n\n- Saved locally\n- Ready to inspect",
+    "2026-08-01T03:00:11Z",
+    "2026-08-01T03:00:15Z"
+  ),
+];
+const overflowingItems: readonly MockItem[] = Array.from({ length: 8 }, (_unused, index) => {
   const sequence = String(index + 1).padStart(12, "0");
+  const asked = `2026-08-01T03:00:${String(index * 2).padStart(2, "0")}Z`;
+  const answered = `2026-08-01T03:00:${String(index * 2 + 1).padStart(2, "0")}Z`;
   return [
-    {
-      message_id: `61000000-0000-4000-8000-${sequence}`,
-      role: "user" as const,
-      status: "complete" as const,
-      content: `Question **${index + 1}**: inspect the current sandbox state.`,
-      tool_calls: [],
-      error: null,
-      created_at: `2026-08-01T03:00:${String(index * 2).padStart(2, "0")}Z`,
-      updated_at: `2026-08-01T03:00:${String(index * 2).padStart(2, "0")}Z`,
-    },
-    {
-      message_id: `62000000-0000-4000-8000-${sequence}`,
-      role: "assistant" as const,
-      status: "complete" as const,
-      content:
-        index === 7
-          ? "### Latest answer\n\nThe transcript stayed pinned to the newest message."
-          : `Answer ${index + 1}: the sandbox is **ready**.`,
-      tool_calls: [],
-      error: null,
-      created_at: `2026-08-01T03:00:${String(index * 2 + 1).padStart(2, "0")}Z`,
-      updated_at: `2026-08-01T03:00:${String(index * 2 + 1).padStart(2, "0")}Z`,
-    },
+    spoke(
+      `61000000-0000-4000-8000-${sequence}`,
+      "prompt",
+      `Question **${index + 1}**: inspect the current sandbox state.`,
+      asked
+    ),
+    spoke(
+      `62000000-0000-4000-8000-${sequence}`,
+      "message",
+      index === 7
+        ? "### Latest answer\n\nThe transcript stayed pinned to the newest item."
+        : `Answer ${index + 1}: the sandbox is **ready**.`,
+      answered
+    ),
   ];
 }).flat();
-// The same transcript with every state a tool call's result can be in: answered, failed, still
-// running, and one long enough to need its own scroll.
-const toolUsingClaudeMessages = standardClaudeMessages.map((message) =>
-  message.role === "assistant"
-    ? {
-        ...message,
-        tool_calls: [
-          {
-            call_id: "toolu_01HakuConsoleRead",
-            tool_name: "mcp__haku-console__haku-console__list_mcp_servers",
-            arguments: {},
-            result: {
-              content:
-                '{"servers": [{"server_id": "gmail", "status": "alive"}, {"server_id": "tana", "status": "degraded"}]}',
-              is_error: false,
-            },
-          },
-          {
-            call_id: "toolu_02WriteNote",
-            tool_name: "Write",
-            arguments: { file_path: "/workspace/note.txt", content: "Hello from the disposable Haku sandbox." },
-            result: { content: "EACCES: permission denied, open '/workspace/note.txt'", is_error: true },
-          },
-          { call_id: "toolu_03StillRunning", tool_name: "Bash", arguments: { command: "rg --files | wc -l" } },
-          {
-            call_id: "toolu_04Edit",
-            tool_name: "Edit",
-            arguments: {
-              file_path: "/workspace/src/renderer.ts",
-              old_string: "const transcript = messages.map(renderMessage);\n".repeat(16),
-              new_string: "const transcript = messages.map(renderClaudeMessage);\n".repeat(16),
-            },
-            result: { content: "Updated /workspace/src/renderer.ts", is_error: false },
-          },
-          {
-            call_id: "toolu_05BashOutput",
-            tool_name: "Bash",
-            arguments: { command: "git diff --check" },
-            result: {
-              content: Array.from(
-                { length: 14 },
-                (_unused, line) => `checked generated file ${line + 1}: no whitespace errors`
-              ).join("\n"),
-              is_error: false,
-            },
-          },
-        ],
-      }
-    : message
-);
+// The same transcript with every state a tool call can be in: answered, failed, still running, and
+// one long enough to need its own scroll.
+const toolUsingItems: readonly MockItem[] = [
+  ...standardItems,
+  called(
+    "63000000-0000-4000-8000-000000000006",
+    "toolu_01HakuConsoleRead",
+    "mcp__haku-console__haku-console__list_mcp_servers",
+    {},
+    "2026-08-01T03:00:12Z",
+    {
+      text: '{"servers": [{"server_id": "gmail", "status": "alive"}, {"server_id": "tana", "status": "degraded"}]}',
+      outcome: "succeeded",
+    }
+  ),
+  called(
+    "63000000-0000-4000-8000-000000000007",
+    "toolu_02WriteNote",
+    "Write",
+    { file_path: "/workspace/note.txt", content: "Hello from the disposable Haku sandbox." },
+    "2026-08-01T03:00:12Z",
+    { text: "EACCES: permission denied, open '/workspace/note.txt'", outcome: "failed" }
+  ),
+  called(
+    "63000000-0000-4000-8000-000000000008",
+    "toolu_03StillRunning",
+    "Bash",
+    { command: "rg --files | wc -l" },
+    "2026-08-01T03:00:13Z"
+  ),
+  called("63000000-0000-4000-8000-000000000009", "toolu_04Edit", "Edit", EDIT_ARGUMENTS, "2026-08-01T03:00:13Z", {
+    text: "Updated /workspace/src/renderer.ts",
+    outcome: "succeeded",
+  }),
+  called(
+    "63000000-0000-4000-8000-00000000000a",
+    "toolu_05BashOutput",
+    "Bash",
+    { command: "git diff --check" },
+    "2026-08-01T03:00:14Z",
+    { text: DIFF_CHECK_OUTPUT, outcome: "succeeded" }
+  ),
+];
 const conversationId = "70000000-0000-4000-8000-000000000001";
 const conversationSessionId = "70000000-0000-4000-8000-000000000011";
 // What the shared sandbox bootstrap script writes, forwarded verbatim by the runner — long,
@@ -239,7 +260,7 @@ const conversationPage = {
       last_activity_at: "2026-08-01T03:01:00Z",
       attachments: [{ surface: "matrix", address: "!ops:example.org", attached_at: "2026-08-01T03:00:00Z" }],
       live_session: { session_id: conversationSessionId, status: "ready" },
-      message_count: 6,
+      item_count: 6,
     },
     {
       conversation_id: "70000000-0000-4000-8000-0000000000a2",
@@ -247,7 +268,7 @@ const conversationPage = {
       last_activity_at: "2026-07-31T18:42:00Z",
       attachments: [{ surface: "matrix", address: "!archive:example.org", attached_at: "2026-07-31T18:20:00Z" }],
       live_session: null,
-      message_count: 8,
+      item_count: 8,
     },
     {
       conversation_id: "70000000-0000-4000-8000-0000000000a3",
@@ -255,7 +276,7 @@ const conversationPage = {
       last_activity_at: "2026-07-30T09:12:00Z",
       attachments: [],
       live_session: { session_id: "70000000-0000-4000-8000-000000000003", status: "failed" },
-      message_count: 2,
+      item_count: 2,
     },
   ],
   // Not the last page, so the keyset's "Load older conversations" control renders.
@@ -263,29 +284,21 @@ const conversationPage = {
 } as const;
 // Two exchanges, so the detail scene shows a turn boundary landing between them rather than a
 // single marker that could sit anywhere and still look right.
-const conversationMessages = [
-  ...claudeBoundaryMessages,
-  {
-    message_id: "61000000-0000-4000-8000-000000000011",
-    role: "user",
-    status: "complete",
-    content: "Now check whether the degraded server recovered.",
-    tool_calls: [],
-    error: null,
-    created_at: "2026-08-01T03:00:20Z",
-    updated_at: "2026-08-01T03:00:20Z",
-  },
-  {
-    message_id: "62000000-0000-4000-8000-000000000013",
-    role: "assistant",
-    status: "complete",
-    content: "The reflection call timed out before I could answer.",
-    tool_calls: [],
-    error: null,
-    created_at: "2026-08-01T03:00:24Z",
-    updated_at: "2026-08-01T03:00:24Z",
-  },
-] as const;
+const conversationItems: readonly MockItem[] = [
+  ...boundaryItems,
+  spoke(
+    "61000000-0000-4000-8000-000000000011",
+    "prompt",
+    "Now check whether the degraded server recovered.",
+    "2026-08-01T03:00:20Z"
+  ),
+  spoke(
+    "62000000-0000-4000-8000-000000000013",
+    "message",
+    "The reflection call timed out before I could answer.",
+    "2026-08-01T03:00:24Z"
+  ),
+];
 const conversationSession = {
   session_id: conversationSessionId,
   status: "ready",
@@ -294,7 +307,7 @@ const conversationSession = {
   updated_at: "2026-08-01T03:01:00Z",
   provisioning: null,
   narration: setupNarration,
-  messages: conversationMessages,
+  items: conversationItems,
   // Newest first, as the endpoint returns them — the transcript numbers them the other way.
   turns: [
     {
@@ -331,7 +344,7 @@ const conversationBootstrap = {
     status: "provisioning",
     updated_at: "2026-08-01T02:59:51Z",
     narration: setupNarration.slice(0, 4),
-    messages: [],
+    items: [],
     turns: [],
   },
 } as const;
@@ -360,7 +373,7 @@ const conversationProvisioning = {
       observation_error: null,
     },
     narration: [],
-    messages: [],
+    items: [],
     turns: [],
   },
 } as const;
@@ -368,18 +381,18 @@ const conversationProvisioning = {
 // transcript opens scrolled to its newest message, which puts the collapsed panel above the fold.
 const conversationNarrationCollapsed = {
   ...conversationDetail,
-  session: { ...conversationSession, messages: standardClaudeMessages, turns: [] },
+  session: { ...conversationSession, items: standardItems, turns: [] },
 } as const;
 // A transcript long enough to overflow its viewport, so the scroll stays pinned to the newest
 // message rather than opening at the top.
 const conversationOverflow = {
   ...conversationDetail,
-  session: { ...conversationSession, narration: [], messages: overflowingClaudeMessages, turns: [] },
+  session: { ...conversationSession, narration: [], items: overflowingItems, turns: [] },
 } as const;
 // Tool calls with their results, which is what the transcript's card rendering exists for.
 const conversationToolUse = {
   ...conversationDetail,
-  session: { ...conversationSession, narration: [], messages: toolUsingClaudeMessages, turns: [] },
+  session: { ...conversationSession, narration: [], items: toolUsingItems, turns: [] },
 } as const;
 const conversationDetailForScene = scene?.startsWith("conversation-bootstrap")
   ? conversationBootstrap
@@ -393,7 +406,7 @@ const conversationDetailForScene = scene?.startsWith("conversation-bootstrap")
           ? conversationToolUse
           : conversationDetail;
 // The rollout behind that conversation, as the frame inspector reads it: one exchange in wire
-// order, with a tool call and the result it got — the pair `session_messages` cannot show.
+// order, with a tool call and the result it got, as the frames themselves carried them.
 const conversationFrames = {
   conversation_id: conversationId,
   frames: [

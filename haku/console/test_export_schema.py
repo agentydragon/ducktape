@@ -29,8 +29,8 @@ def test_a_message_carries_the_components_a_read_returns() -> None:
     assert published["ConversationSnapshot"]["properties"]["conversation"] == {
         "$ref": "#/components/schemas/ConversationView"
     }
-    assert published["ConversationUpdate"]["properties"]["messages"]["items"] == {
-        "$ref": "#/components/schemas/SessionMessageView"
+    assert published["ConversationUpdate"]["properties"]["items"]["items"] == {
+        "$ref": "#/components/schemas/ConversationItemView"
     }
 
 

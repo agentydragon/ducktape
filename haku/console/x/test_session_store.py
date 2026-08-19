@@ -590,7 +590,7 @@ async def test_operator_conversation_read_surface_keeps_inventory_and_transcript
     assert [attachment.address for attachment in page.conversations[0].attachments] == [ROOM]
     assert page.conversations[0].live_session is not None
     assert page.conversations[0].live_session.session_id == matrix.session_id
-    assert page.conversations[0].message_count == 1
+    assert page.conversations[0].item_count == 1
     assert [attachment.address for attachment in detail.attachments] == [ROOM]
     assert detail.session.session_id == matrix.session_id
     assert detail.session.items[0].text == "What is happening?"

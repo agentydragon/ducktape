@@ -303,6 +303,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":client",
+        ":outbox",
         "//:conftest",
         "//haku/console/x/channels/matrix/testing:operator_room",
         "//haku/console/x/channels/matrix/testing:synapse_container",
