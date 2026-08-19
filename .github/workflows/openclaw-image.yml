@@ -9,16 +9,24 @@ name: OpenClaw Image
 on:
   pull_request:
     paths:
+      - ".bazelversion"
       - "openclaw/**"
       - "flake.nix"
       - "flake.lock"
+      - "nix/artifact-pins.json"
+      - "nix/packages/**"
+      - ".github/scripts/smoke-openclaw-image.sh"
       - ".github/workflows/openclaw-image.yml"
   push:
     branches: [devel]
     paths:
+      - ".bazelversion"
       - "openclaw/**"
       - "flake.nix"
       - "flake.lock"
+      - "nix/artifact-pins.json"
+      - "nix/packages/**"
+      - ".github/scripts/smoke-openclaw-image.sh"
       - ".github/workflows/openclaw-image.yml"
   workflow_dispatch:
 

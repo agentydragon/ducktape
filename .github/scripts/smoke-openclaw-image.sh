@@ -3,10 +3,26 @@ set -eu
 
 /usr/bin/env bash -c "true"
 pre-commit --version
-for command in bazelisk bb bbapi bbr buildifier ducktape-precommit kubeconform prettier ruff shfmt; do
+for command in bazel bazelisk bb bbapi bbr buildifier ducktape-precommit kubeconform prettier ruff shfmt; do
   command -v "$command"
 done
+bazel --version
+bazelisk --version
+test "$(bazel --version)" = "$(bazelisk --version)"
+test "$(readlink -f "$(command -v bazel)")" = "$BB_USE_BAZEL_VERSION"
 bbr --help >/dev/null
+
+# Execute a real Ducktape hook, rather than only checking that its wrapper is
+# on PATH. This proves the Nix package carries its Python dependencies and
+# generated modules without a workspace-local virtualenv.
+hook_repo="$(mktemp -d)"
+trap 'rm -rf "$hook_repo"' EXIT
+git init -q "$hook_repo"
+git -C "$hook_repo" config user.name smoke
+git -C "$hook_repo" config user.email smoke@example.com
+printf 'openclaw image hook smoke\n' >"$hook_repo/README.md"
+git -C "$hook_repo" add README.md
+(cd "$hook_repo" && ducktape-precommit)
 
 config="${TMPDIR:-/tmp}/openclaw-plugin-smoke.json"
 plugins="${TMPDIR:-/tmp}/openclaw-plugins.json"

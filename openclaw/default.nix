@@ -9,6 +9,24 @@ let
   system = pkgs.stdenv.hostPlatform.system;
   gateway = nix-openclaw.packages.${system}.openclaw-gateway;
   matrixPlugin = nix-openclaw.packages.${system}.openclaw-runtime-plugin-matrix;
+  repoBazelVersion = pkgs.lib.removeSuffix "\n" (builtins.readFile ../.bazelversion);
+  # The primary nixpkgs pin still has Bazel 8.4.2. Override it with the
+  # repository's 8.6.0 pin and the corresponding upstream dist hash rather
+  # than weakening the version invariant or moving the whole package set.
+  bazelPkg = (pkgs.bazel_8.override { version = repoBazelVersion; }).overrideAttrs {
+    src = pkgs.fetchzip {
+      url = "https://github.com/bazelbuild/bazel/releases/download/${repoBazelVersion}/bazel-${repoBazelVersion}-dist.zip";
+      hash = "sha256-W22eB0IzHNZe3xaF8AZOkUTDCic3NXkypdqSDY61Su0=";
+      stripRoot = false;
+    };
+  };
+
+  # Bazelisk's own Go binary works in the minimal Nix image, but the upstream
+  # Bazel ELF it downloads does not: it requests the absent FHS loader at
+  # /lib64/ld-linux-x86-64.so.2. Install nixpkgs' patched Bazel as `bazel`.
+  # BuildBuddy's CLI embeds Bazelisk for local argument canonicalization; the
+  # BB_USE_BAZEL_VERSION environment variable below makes that embedded
+  # Bazelisk use this absolute binary rather than downloading another one.
 
   # Matrix uses the plugin-state store for sync and encryption state. OpenClaw
   # grants that capability only to trusted plugins, and an arbitrary
@@ -54,7 +72,7 @@ let
     [
       bashInteractive
       busybox
-      bazelisk
+      bazelPkg
       buildifier
       cacert
       coreutils
@@ -106,6 +124,7 @@ let
 
   path = pkgs.lib.makeBinPath ([ gatewayWithMatrix ] ++ tools);
 in
+assert bazelPkg.version == repoBazelVersion;
 pkgs.dockerTools.buildLayeredImage {
   name = "ghcr.io/agentydragon/openclaw";
   # CI supplies the sortable devel-* tag selected by Flux.
@@ -157,6 +176,8 @@ pkgs.dockerTools.buildLayeredImage {
       "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs"
       "NPM_CONFIG_PREFIX=/home/openclaw/.local"
       "NPM_CONFIG_CACHE=/home/openclaw/.cache/npm"
+      "BB_USE_BAZEL_VERSION=${bazelPkg}/bin/bazel"
+      "USE_BAZEL_VERSION=${bazelPkg}/bin/bazel"
       "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
     ];
     Labels."org.opencontainers.image.source" = "https://github.com/agentydragon/ducktape";
