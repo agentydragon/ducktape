@@ -89,6 +89,7 @@ let
       git
       ghWithProxyToken
       jq
+      jdk_headless
       kubeconform
       kubectl
       kubernetes-helm
@@ -180,6 +181,10 @@ pkgs.dockerTools.buildLayeredImage {
       "PATH=${path}"
       "HOME=/home/openclaw"
       "USER=openclaw"
+      # BuildBuddy invokes Bazel with --ignore_all_rc_files while loading flag
+      # metadata, bypassing nixpkgs' system bazelrc and its --server_javabase.
+      # Keep the matching Nix JDK explicit so the wrapped Bazel ELF can start.
+      "JAVA_HOME=${pkgs.jdk_headless}"
       "NODE_ENV=production"
       "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs"
       "NPM_CONFIG_PREFIX=/home/openclaw/.local"

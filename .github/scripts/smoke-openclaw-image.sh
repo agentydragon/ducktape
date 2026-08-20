@@ -7,6 +7,8 @@ for command in bazel bb bbapi bbr buildifier ducktape-precommit kubeconform pret
   command -v "$command"
 done
 bazel --version
+test -x "$JAVA_HOME/bin/java"
+java -version
 test -x "$BB_USE_BAZEL_VERSION"
 file "$BB_USE_BAZEL_VERSION" | grep -q 'ELF .* executable'
 test "$(bazel --version)" = "$("$BB_USE_BAZEL_VERSION" --version)"
