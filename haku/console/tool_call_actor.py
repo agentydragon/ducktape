@@ -18,6 +18,9 @@ class AgentActor:
     binding_id: UUID
     # Persisted config-profile reference. ``None`` is the migration-safe, fail-closed default.
     access_profile_id: str | None = None
+    # Present for a Console-launched sandbox. The session bearer then scopes reads/withdrawals to
+    # this session and leaves an audit link on every tool call; external Agent credentials omit it.
+    session_id: UUID | None = None
 
 
 type ToolCallActor = OperatorActor | AgentActor

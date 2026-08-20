@@ -12,6 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
+from haku.console.chat_models import RuntimeKind
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import PostgresPersistence
@@ -354,11 +355,29 @@ class ClaudeRuntimeConfig(BaseModel):
     ca_bundle: str
     no_proxy: str
     mcp_url: str
+    # Kept as a required compatibility field while old Console replicas still parse this shared
+    # ConfigMap. New replicas use it only as the default launch Agent id; they never load or pass
+    # that Agent's static credential to the runtime. Remove/rename only in a coordinated config
+    # schema cutover after the old image can no longer be rolled back.
     mcp_static_agent_id: UUID
     # Absolute, like every other path here: mounted beside this config file in the console's
     # ConfigMap. Rendered by `haku.console.x.system_prompt`, which says why it is deploy
     # config rather than code or haku-state.
     system_prompt_template: Path
+
+    @field_validator("mcp_url")
+    @classmethod
+    def _uncredentialed_mcp_url(cls, value: str) -> str:
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.fragment
+        ):
+            raise ValueError("mcp_url must be an HTTP(S) URL without credentials or a fragment")
+        return value
 
     def claude_environment(self) -> dict[str, str]:
         return {
@@ -385,6 +404,11 @@ class ChatRuntimesConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     claude_code: ClaudeRuntimeConfig
+
+    @property
+    def kinds(self) -> frozenset[RuntimeKind]:
+        """Implementation kinds represented by this closed deploy catalog."""
+        return frozenset(RuntimeKind(name) for name in type(self).model_fields)
 
 
 class WebPushConfig(BaseModel):

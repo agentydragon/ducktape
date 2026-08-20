@@ -58,7 +58,7 @@ class ConversationRuntime:
 
         for demand in await self._store.conversations_awaiting_session():
             try:
-                created = await self._store.ensure_session_for_demand(demand.operator_id, demand.conversation_id)
+                created = await self._service.ensure_session_for_demand(demand.operator_id, demand.conversation_id)
             except Exception:
                 logger.exception("creating a session for conversation %s failed", demand.conversation_id)
                 continue

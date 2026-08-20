@@ -75,6 +75,7 @@ from haku.console.x.conversation_records import (
     TurnCursor,
     TurnRecord,
 )
+from haku.console.x.launch_identity import LaunchAgentRejectedError, LaunchAuthorizer
 from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
 from haku.console.x.session_notifications import SessionEventKind, notify
 from haku.console.x.session_views import (
@@ -343,12 +344,14 @@ class OperatorSessionIdentity:
     """The conversation identity needed by a session-addressed operator inspection."""
 
     status: SessionStatus
+    agent_id: UUID | None
+    access_profile_id: str | None
     runtime_kind: RuntimeKind
 
 
 @dataclass(frozen=True, slots=True)
 class SessionAllocation:
-    """The one-use credential minted by the transaction that starts provisioning."""
+    """The sandbox session credential minted by the transaction that starts provisioning."""
 
     session_id: UUID
     bridge_token: str
@@ -414,35 +417,69 @@ class SessionStore:
         chat.error = error
         chat.updated_at = now
 
-    async def create(self, operator_id: UUID, *, conversation_id: UUID | None = None) -> tuple[SessionView, str]:
+    async def create(
+        self,
+        operator_id: UUID,
+        *,
+        conversation_id: UUID | None = None,
+        agent_id: UUID | None = None,
+        access_profile_id: str | None = None,
+        runtime_kind: RuntimeKind | None = None,
+        launch_authorizer: LaunchAuthorizer | None = None,
+    ) -> tuple[SessionView, str]:
         """Open the idle session used by every production caller."""
-        return await self.create_idle(operator_id, conversation_id=conversation_id)
+        return await self.create_idle(
+            operator_id,
+            conversation_id=conversation_id,
+            agent_id=agent_id,
+            access_profile_id=access_profile_id,
+            runtime_kind=runtime_kind,
+            launch_authorizer=launch_authorizer,
+        )
 
-    async def create_idle(self, operator_id: UUID, *, conversation_id: UUID | None = None) -> tuple[SessionView, str]:
-        """Open an idle session without buying a sandbox or minting its credential.
+    async def create_idle(
+        self,
+        operator_id: UUID,
+        *,
+        conversation_id: UUID | None = None,
+        agent_id: UUID | None = None,
+        access_profile_id: str | None = None,
+        runtime_kind: RuntimeKind | None = None,
+        launch_authorizer: LaunchAuthorizer | None = None,
+    ) -> tuple[SessionView, str]:
+        """Open an authorized idle session without allocating its sandbox.
 
         The first accepted prompt is durable demand. `allocate` later locks this row, mints the
-        one-use bridge credential and moves the session to provisioning before anybody writes to
+        sandbox session credential and moves the session to provisioning before anybody writes to
         Kubernetes. An empty conversation therefore owns no lease and no SandboxClaim.
 
-        Absent is not "unknown": it is a caller with no thread to continue, which is every session
-        the browser starts. A channel that holds a copy passes the conversation its attachment
-        names, which is what makes replacing a dead session invisible to that channel.
-
-        **Nothing here says which channel the session is for.** A channel attaches to the
-        conversation, so which ones hold a copy is `chat_attachment` — however many — and a
-        session is the same object whoever asked for it.
+        Conversation identity is selected once, in the same transaction that inserts the thread.
+        A replacement locks that row and re-authorizes the pinned identity without consulting the
+        Agent's current profile as a new selector.
         """
         now = datetime.now(UTC)
         session_id = uuid4()
+        agent_binding_id: UUID | None = None
         async with self._sessions.begin() as db:
             if conversation_id is None:
+                if launch_authorizer is not None:
+                    if agent_id is None:
+                        raise LaunchAgentRejectedError
+                    identity = await launch_authorizer(
+                        operator_id, agent_id, runtime_kind or RuntimeKind.CLAUDE_CODE, db=db
+                    )
+                    agent_id = identity.agent_id
+                    agent_binding_id = identity.binding_id
+                    access_profile_id = identity.access_profile_id
+                    runtime_kind = identity.runtime_kind
                 conversation_id = uuid4()
                 db.add(
                     Conversation(
                         conversation_id=conversation_id,
                         operator_id=operator_id,
-                        runtime_kind=RuntimeKind.CLAUDE_CODE,
+                        agent_id=agent_id,
+                        access_profile_id=access_profile_id,
+                        runtime_kind=runtime_kind or RuntimeKind.CLAUDE_CODE,
                         created_at=now,
                     )
                 )
@@ -457,6 +494,35 @@ class SessionStore:
                 )
                 if conversation is None:
                     raise KeyError(conversation_id)
+                if launch_authorizer is not None:
+                    if conversation.agent_id is None or conversation.access_profile_id is None:
+                        raise LaunchAgentRejectedError
+                    identity = await launch_authorizer(
+                        operator_id,
+                        conversation.agent_id,
+                        conversation.runtime_kind,
+                        expected_profile_id=conversation.access_profile_id,
+                        db=db,
+                    )
+                    if (
+                        identity.agent_id != conversation.agent_id
+                        or identity.access_profile_id != conversation.access_profile_id
+                        or identity.runtime_kind != conversation.runtime_kind
+                    ):
+                        raise LaunchAgentRejectedError
+                    agent_binding_id = identity.binding_id
+                elif any(
+                    value is not None and value != expected
+                    for value, expected in (
+                        (agent_id, conversation.agent_id),
+                        (access_profile_id, conversation.access_profile_id),
+                        (runtime_kind, conversation.runtime_kind),
+                    )
+                ):
+                    raise ValueError("replacement session does not match pinned conversation identity")
+                agent_id = conversation.agent_id
+                access_profile_id = conversation.access_profile_id
+                runtime_kind = conversation.runtime_kind
                 # Rolling coexistence: an older Matrix supervisor and the neutral reconciler use
                 # different advisory locks. The durable conversation lock is therefore the shared
                 # mutex, and an old writer reaching this method after the new one reuses its winner
@@ -475,6 +541,7 @@ class SessionStore:
                         session_id=session_id,
                         operator_id=operator_id,
                         conversation_id=conversation_id,
+                        agent_binding_id=agent_binding_id,
                         status=SessionStatus.IDLE,
                         bridge_token_fingerprint=None,
                         bridge_connected_at=None,
@@ -518,15 +585,19 @@ class SessionStore:
                 ConversationDemand(operator_id=row.operator_id, conversation_id=row.conversation_id) for row in rows
             )
 
-    async def ensure_session_for_demand(self, operator_id: UUID, conversation_id: UUID) -> SandboxDemand | None:
-        """Create the one idle session queued conversation work needs, or observe its winner.
+    async def ensure_session_for_demand(
+        self, operator_id: UUID, conversation_id: UUID, *, launch_authorizer: LaunchAuthorizer | None = None
+    ) -> SandboxDemand | None:
+        """Create the one authorized idle session queued conversation work needs.
 
         The conversation row lock serializes every prompt writer and every competing reconciler.
-        The queued prompt's item is attached to the new session in this transaction so readers do
-        not briefly lose the operator's text between admission and the runner claiming it.
+        A replacement re-authorizes the conversation's pinned identity in this same transaction;
+        then the queued prompt is attached to the new session so readers do not briefly lose the
+        operator's text between admission and the runner claiming it.
         """
         now = datetime.now(UTC)
         session_id = uuid4()
+        agent_binding_id: UUID | None = None
         async with self._sessions.begin() as db:
             conversation = await db.scalar(
                 select(Conversation)
@@ -546,11 +617,29 @@ class SessionStore:
                 is not None
             ):
                 return None
+            if launch_authorizer is not None:
+                if conversation.agent_id is None or conversation.access_profile_id is None:
+                    raise LaunchAgentRejectedError
+                identity = await launch_authorizer(
+                    operator_id,
+                    conversation.agent_id,
+                    conversation.runtime_kind,
+                    expected_profile_id=conversation.access_profile_id,
+                    db=db,
+                )
+                if (
+                    identity.agent_id != conversation.agent_id
+                    or identity.access_profile_id != conversation.access_profile_id
+                    or identity.runtime_kind != conversation.runtime_kind
+                ):
+                    raise LaunchAgentRejectedError
+                agent_binding_id = identity.binding_id
             db.add(
                 session := Session(
                     session_id=session_id,
                     operator_id=operator_id,
                     conversation_id=conversation_id,
+                    agent_binding_id=agent_binding_id,
                     status=SessionStatus.IDLE,
                     bridge_token_fingerprint=None,
                     bridge_connected_at=None,
@@ -578,18 +667,15 @@ class SessionStore:
         return SandboxDemand(operator_id=operator_id, session_id=session_id)
 
     async def _create_provisioning_for_test(
-        self, operator_id: UUID, *, conversation_id: UUID | None = None
+        self,
+        operator_id: UUID,
+        *,
+        conversation_id: UUID | None = None,
+        agent_id: UUID | None = None,
+        access_profile_id: str | None = None,
+        runtime_kind: RuntimeKind | None = None,
     ) -> tuple[SessionView, str]:
-        """Seed the pre-lazy allocated state for focused tests of an already-running session.
-
-        Absent is not "unknown": it is a caller with no thread to continue, which is every session
-        the browser starts. A channel that holds a copy passes the conversation its attachment
-        names, which is what makes replacing a dead session invisible to that channel.
-
-        **Nothing here says which channel the session is for.** A channel attaches to the
-        conversation, so which ones hold a copy is `chat_attachment` — however many — and a
-        session is the same object whoever asked for it.
-        """
+        """Seed the pre-lazy allocated state for focused tests of an already-running session."""
         now = datetime.now(UTC)
         session_id = uuid4()
         bridge_token = secrets.token_urlsafe(32)
@@ -600,13 +686,30 @@ class SessionStore:
                     Conversation(
                         conversation_id=conversation_id,
                         operator_id=operator_id,
-                        runtime_kind=RuntimeKind.CLAUDE_CODE,
+                        agent_id=agent_id,
+                        access_profile_id=access_profile_id,
+                        runtime_kind=runtime_kind or RuntimeKind.CLAUDE_CODE,
                         created_at=now,
                     )
                 )
-                # Flushed before the session that points at it: a `ForeignKey` carrying no
-                # `relationship()` does not order the unit of work.
                 await db.flush()
+            else:
+                conversation = await db.scalar(
+                    select(Conversation)
+                    .where(Conversation.conversation_id == conversation_id, Conversation.operator_id == operator_id)
+                    .with_for_update()
+                )
+                if conversation is None:
+                    raise KeyError(conversation_id)
+                if any(
+                    value is not None and value != expected
+                    for value, expected in (
+                        (agent_id, conversation.agent_id),
+                        (access_profile_id, conversation.access_profile_id),
+                        (runtime_kind, conversation.runtime_kind),
+                    )
+                ):
+                    raise ValueError("test session does not match pinned conversation identity")
             db.add(
                 session := Session(
                     session_id=session_id,
@@ -616,26 +719,17 @@ class SessionStore:
                     bridge_token_fingerprint=self._fingerprint(bridge_token),
                     bridge_connected_at=None,
                     error=None,
-                    # Granted by the creator, not by an owner: until a runner attaches no replica
-                    # holds this session, and a sandbox that never comes up would otherwise sit in
-                    # `provisioning` — a live status — with no lease to expire and so nothing to
-                    # reclaim it. The owning replica takes over renewing it once the bridge
-                    # connects.
                     lease_expires_at=now + PROVISION_LEASE,
                     created_at=now,
                     updated_at=now,
                 )
             )
-            # The event names the session, and the ORM rows have no relationship that would order
-            # their INSERTs for the foreign key. More importantly, the row and the fact commit in
-            # one transaction: a session can never exist without saying that it started coming up.
             await db.flush([session])
             writer = await conversation_log.writer_for(
                 db, conversation_id, session_id=session_id, turn_id=None, now=now
             )
             writer.authored(session_events.SessionProvisioningBody())
-        view = await self.get(operator_id, session_id)
-        return view, bridge_token
+        return await self.get(operator_id, session_id), bridge_token
 
     async def allocate(self, operator_id: UUID, session_id: UUID) -> SessionAllocation | None:
         """Start provisioning an idle session once its conversation has work queued.
@@ -745,10 +839,23 @@ class SessionStore:
         """
         activity = func.max(Session.updated_at).label("last_activity_at")
         page = (
-            select(Conversation.conversation_id, Conversation.runtime_kind, Conversation.created_at, activity)
+            select(
+                Conversation.conversation_id,
+                Conversation.agent_id,
+                Conversation.access_profile_id,
+                Conversation.runtime_kind,
+                Conversation.created_at,
+                activity,
+            )
             .join(Session, Session.conversation_id == Conversation.conversation_id)
             .where(Conversation.operator_id == operator_id)
-            .group_by(Conversation.conversation_id, Conversation.runtime_kind, Conversation.created_at)
+            .group_by(
+                Conversation.conversation_id,
+                Conversation.agent_id,
+                Conversation.access_profile_id,
+                Conversation.runtime_kind,
+                Conversation.created_at,
+            )
             .order_by(activity.desc(), Conversation.conversation_id.desc())
             .limit(limit + 1)
         )
@@ -767,6 +874,8 @@ class SessionStore:
             conversations=[
                 ConversationSummary(
                     conversation_id=row.conversation_id,
+                    agent_id=row.agent_id,
+                    access_profile_id=row.access_profile_id,
                     runtime_kind=row.runtime_kind,
                     created_at=row.created_at,
                     last_activity_at=row.last_activity_at,
@@ -822,6 +931,8 @@ class SessionStore:
         turns = await self.list_turns(current.session_id, cursor=None, limit=100)
         return ConversationView(
             conversation_id=conversation_id,
+            agent_id=conversation.agent_id,
+            access_profile_id=conversation.access_profile_id,
             runtime_kind=conversation.runtime_kind,
             created_at=conversation.created_at,
             attachments=attachments,
@@ -1492,7 +1603,7 @@ class SessionStore:
         cursor names, which is the first row the previous page did not return.
         """
         query = (
-            select(Session, Conversation.runtime_kind)
+            select(Session, Conversation.agent_id, Conversation.access_profile_id, Conversation.runtime_kind)
             .join(Conversation, Conversation.conversation_id == Session.conversation_id)
             .order_by(Session.created_at.desc(), Session.session_id.desc())
         )
@@ -1503,18 +1614,20 @@ class SessionStore:
             )
         async with self._sessions() as db:
             sessions = (await db.execute(query.limit(limit))).all()
-            attachments = await _live_attachments(db, {row.conversation_id for row, _ in sessions})
+            attachments = await _live_attachments(db, {row.conversation_id for row, *_ in sessions})
         return [
             SessionRecord(
                 session_id=row.session_id,
                 conversation_id=row.conversation_id,
+                agent_id=agent_id,
+                access_profile_id=access_profile_id,
                 runtime_kind=runtime_kind,
                 attachments=attachments[row.conversation_id],
                 status=row.status,
                 created_at=row.created_at,
                 error=row.error,
             )
-            for row, runtime_kind in sessions
+            for row, agent_id, access_profile_id, runtime_kind in sessions
         ]
 
     async def read_frames(
@@ -1885,19 +1998,45 @@ class SessionStore:
                 raise KeyError(session_id)
             return kind
 
+    async def conversation_identity(self, conversation_id: UUID, operator_id: UUID) -> OperatorSessionIdentity:
+        """Read a conversation's pinned identity for replacement-session authorization."""
+        async with self._sessions() as db:
+            row = (
+                await db.execute(
+                    select(Conversation.agent_id, Conversation.access_profile_id, Conversation.runtime_kind).where(
+                        Conversation.conversation_id == conversation_id, Conversation.operator_id == operator_id
+                    )
+                )
+            ).one_or_none()
+            if row is None or row.agent_id is None or row.access_profile_id is None:
+                raise KeyError(conversation_id)
+            return OperatorSessionIdentity(
+                status=SessionStatus.READY,
+                agent_id=row.agent_id,
+                access_profile_id=row.access_profile_id,
+                runtime_kind=row.runtime_kind,
+            )
+
     async def operator_session_identity(self, operator_id: UUID, session_id: UUID) -> OperatorSessionIdentity:
         """The immutable conversation identity behind one Operator-owned session."""
         async with self._sessions() as db:
             row = (
                 await db.execute(
-                    select(Session.status, Conversation.runtime_kind)
+                    select(
+                        Session.status, Conversation.agent_id, Conversation.access_profile_id, Conversation.runtime_kind
+                    )
                     .join(Conversation, Conversation.conversation_id == Session.conversation_id)
                     .where(Session.session_id == session_id, Session.operator_id == operator_id)
                 )
             ).one_or_none()
             if row is None:
                 raise KeyError(session_id)
-            return OperatorSessionIdentity(status=row.status, runtime_kind=row.runtime_kind)
+            return OperatorSessionIdentity(
+                status=row.status,
+                agent_id=row.agent_id,
+                access_profile_id=row.access_profile_id,
+                runtime_kind=row.runtime_kind,
+            )
 
     async def renew_lease(self, session_id: UUID) -> None:
         """Assert that this replica still holds *session_id* and is still working on it.

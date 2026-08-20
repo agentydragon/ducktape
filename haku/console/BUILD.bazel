@@ -18,6 +18,7 @@ py_library(
     name = "config",
     srcs = ["config.py"],
     deps = [
+        ":chat_models",
         "//haku/recall_index:chunking",
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:config",
@@ -52,10 +53,22 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_chat_identity_config",
+    srcs = ["test_chat_identity_config.py"],
+    deps = [
+        ":chat_models",
+        ":mcp_config",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "mcp_config",
     srcs = ["mcp_config.py"],
     deps = [
+        ":chat_models",
         ":config",
         ":provider_connection_registry",
         ":tool_call_actor",
@@ -669,15 +682,19 @@ py_library(
     name = "mcp_agent_auth",
     srcs = ["mcp_agent_auth.py"],
     deps = [
+        ":chat_models",
         ":config",
+        ":database_schema",
         ":operator_auth",
         ":operator_identity_store",
         ":tool_call_actor",
         "//haku/console/agents:authorization",
         "//haku/console/mcp_auth:fastmcp_adapter",
+        "//haku/console/x:launch_identity",
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:provider",
         "@pypi//fastmcp_slim",
+        "@pypi//sqlalchemy",
         "@pypi//starlette",
     ],
 )
@@ -1027,9 +1044,13 @@ py_test(
 
 py_test(
     name = "test_mcp_agent_auth",
+    size = "medium",
     srcs = ["test_mcp_agent_auth.py"],
     deps = [
+        ":chat_models",
         ":config",
+        ":conftest",
+        ":database_schema",
         ":mcp_agent_auth",
         ":tool_call_actor",
         "//:conftest",
@@ -1042,6 +1063,7 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -1128,6 +1150,7 @@ py_library(
         "//haku/console/x:conversation_follow",
         "//haku/console/x:conversation_history",
         "//haku/console/x:conversation_runtime",
+        "//haku/console/x:launch_identity",
         "//haku/console/x:sandbox_allocation",
         "//haku/console/x:session_live_updates",
         "//haku/console/x:session_runtime",
@@ -1712,6 +1735,26 @@ py_test(
     name = "test_harness_frame_log_migration",
     size = "medium",
     srcs = ["test_harness_frame_log_migration.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":database_migrate",
+        "//:conftest",
+        "@pypi//psycopg",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_conversation_agent_identity_migration",
+    size = "medium",
+    srcs = ["test_conversation_agent_identity_migration.py"],
     data = [
         "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",

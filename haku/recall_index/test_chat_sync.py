@@ -8,7 +8,7 @@ from uuid import UUID
 
 import pytest
 import pytest_bazel
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.chat_models import ItemStatus, ItemType, RuntimeKind, SessionStatus
@@ -25,7 +25,10 @@ _NOW = datetime.datetime(2026, 8, 11, tzinfo=datetime.UTC)
 
 # `conversation_item` is the corpus; the others are the foreign keys it hangs off. `conversation`
 # is one of them without holding anything the corpus reads: `sessions.conversation_id` points at
-# it, so `sessions` is not creatable without it.
+# it, so `sessions` is not creatable without it. The tiny `agents` anchor below satisfies the
+# conversation's nullable provenance FK without pulling the complete enrollment schema into this
+# focused corpus test. `sessions.agent_binding_id` is likewise nullable here, but PostgreSQL still
+# requires its referenced table to exist when the focused sessions table is created.
 _CHAT_SOURCE_TABLES = ("operators", "conversation", "sessions", "conversation_turn", "conversation_item")
 
 
@@ -39,6 +42,8 @@ async def chat_source(session: AsyncSession) -> AsyncSession:
     share is the `session` fixture, which resets `public` for exactly this to be creatable.
     """
     connection = await session.connection()
+    await connection.execute(text("CREATE TABLE agents (agent_id UUID PRIMARY KEY)"))
+    await connection.execute(text("CREATE TABLE credential_bindings (binding_id UUID PRIMARY KEY)"))
     await connection.run_sync(
         ConsoleBase.metadata.create_all, tables=[ConsoleBase.metadata.tables[name] for name in _CHAT_SOURCE_TABLES]
     )
@@ -71,7 +76,7 @@ async def new_session(source: AsyncSession, operator_id: UUID) -> UUID:
             operator_id=operator_id,
             conversation_id=conversation_id,
             status=SessionStatus.CLOSED,
-            bridge_token_fingerprint=b"fingerprint",
+            bridge_token_fingerprint=session_id.bytes,
             lease_expires_at=_NOW,
             created_at=_NOW,
             updated_at=_NOW,

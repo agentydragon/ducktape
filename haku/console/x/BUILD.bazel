@@ -3,6 +3,15 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
+    name = "launch_identity",
+    srcs = ["launch_identity.py"],
+    deps = [
+        "//haku/console:chat_models",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "runtime",
     srcs = ["runtime.py"],
     deps = [
@@ -51,6 +60,7 @@ py_library(
     deps = [
         ":conversation_events",
         ":conversation_history",
+        ":launch_identity",
         ":runtime",
         ":sandbox_claims",
         ":session_notifications",
@@ -61,7 +71,9 @@ py_library(
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:operator_auth",
+        "//haku/console/agents:authorization",
         "//haku/console/x/claude_code:frames",
+        "//haku/runtime/x/bridge:backend",
         "//haku/runtime/x/bridge:protocol",
         "@pypi//fastapi",
         "@pypi//pydantic",
@@ -135,6 +147,7 @@ py_library(
         ":conversation_events",
         ":conversation_log",
         ":conversation_records",
+        ":launch_identity",
         ":runtime",
         ":runtime_catalog",
         ":session_events",
@@ -215,6 +228,7 @@ py_library(
     name = "sandbox_claims",
     srcs = ["sandbox_claims.py"],
     deps = [
+        "//haku/runtime/x/bridge:backend",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
@@ -278,11 +292,14 @@ py_test(
     deps = [
         ":conftest",
         ":conversation_runtime",
+        ":launch_identity",
+        ":session_runtime",
         ":session_store",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "//haku/console/agents:authorization",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -333,6 +350,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":launch_identity",
         ":sandbox_allocation",
         ":session_notifications",
         ":session_runtime",
@@ -416,6 +434,7 @@ py_test(
         ":conftest",
         ":conversation_events",
         ":conversation_history",
+        ":launch_identity",
         ":reprojection",
         ":runtime",
         ":sandbox_claims",
@@ -429,6 +448,7 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console:mcp_config",
+        "//haku/console/agents:authorization",
         "//haku/console/x/claude_code:client",
         "//haku/console/x/claude_code:frames",
         "//haku/console/x/claude_code:runtime",
@@ -436,6 +456,7 @@ py_test(
         "//haku/console/x/testing:recording_claims",
         "//haku/runtime/x/bridge:client",
         "//haku/runtime/x/bridge:protocol",
+        "@pypi//fastapi",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import

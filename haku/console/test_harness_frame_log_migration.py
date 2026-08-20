@@ -92,7 +92,8 @@ def test_cutover_preserves_thread_identity_and_replaces_the_frame_contract(db_ur
             )
             _frame(conn, session_id, "assistant", runner_seq=7)
 
-        apply_migrations(db_url)
+        # Keep this PR1 cutover test independent of the later conversation-identity migration.
+        apply_migrations(db_url, "0090")
 
         with engine.begin() as conn:
             assert (

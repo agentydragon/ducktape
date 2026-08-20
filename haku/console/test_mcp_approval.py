@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, call
 from urllib.parse import parse_qs, urlparse
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
@@ -39,14 +39,17 @@ from haku.console.agents.models import (
     CredentialKind,
     EnrollmentPhase,
 )
+from haku.console.chat_models import RuntimeKind, SessionStatus
 from haku.console.conftest import operator_id, write_config
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
     Agent,
+    Conversation,
     CredentialBinding,
     McpOperatorOAuthAssociation,
     McpToolCall,
     McpToolCallPrincipal,
+    Session,
     StaticCredential,
 )
 from haku.console.mcp_approval import (
@@ -628,6 +631,77 @@ def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
 
     assert client.portal is not None
     return client.portal.call(resolve)
+
+
+async def test_session_agent_tool_call_retains_exact_session_attribution(
+    *, make_client, console_config: Path, migrated_sessions: async_sessionmaker[AsyncSession]
+) -> None:
+    with make_client(config_file=console_config) as client:
+        static_actor = _static_agent_actor(client, "tool-token")
+        assert static_actor.access_profile_id is not None
+        conversation_id, session_id = uuid4(), uuid4()
+        now = datetime.datetime.now(datetime.UTC)
+        async with migrated_sessions.begin() as db:
+            db.add(
+                Conversation(
+                    conversation_id=conversation_id,
+                    operator_id=static_actor.operator_id,
+                    agent_id=static_actor.agent_id,
+                    access_profile_id=static_actor.access_profile_id,
+                    runtime_kind=RuntimeKind.CLAUDE_CODE,
+                    created_at=now,
+                )
+            )
+            db.add(
+                Session(
+                    session_id=session_id,
+                    operator_id=static_actor.operator_id,
+                    conversation_id=conversation_id,
+                    agent_binding_id=static_actor.binding_id,
+                    status=SessionStatus.READY,
+                    bridge_token_fingerprint=session_id.bytes,
+                    bridge_connected_at=now,
+                    lease_expires_at=now + datetime.timedelta(minutes=1),
+                    lease_holder="test-replica",
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+
+        session_actor = AgentActor(
+            agent_id=static_actor.agent_id,
+            operator_id=static_actor.operator_id,
+            binding_id=static_actor.binding_id,
+            access_profile_id=static_actor.access_profile_id,
+            session_id=session_id,
+        )
+        submitted = _submit_request(
+            client,
+            SubmitToolCallRequest(server_id="smoke", tool_name="echo", arguments={"text": "session"}, wait_for_ms=0),
+            actor=session_actor,
+        )
+        call_id = cast(str, submitted["tool_call_id"])
+
+    ledger = PostgresToolCallLedger(migrated_sessions)
+    async with migrated_sessions() as db:
+        principal = await db.get(McpToolCallPrincipal, call_id)
+        assert principal is not None
+        assert principal.binding_id == static_actor.binding_id
+        assert principal.session_id == session_id
+    operator_actor = OperatorActor(operator_id=static_actor.operator_id)
+    record = await ledger.get(call_id, actor=operator_actor)
+    assert record.caller == AgentToolCallCaller(
+        agent_id=static_actor.agent_id, display_name="Haku", session_id=session_id
+    )
+    await ledger.mark_running(call_id, actor=operator_actor)
+    execution = await ledger.authorize_execution(call_id, actor=session_actor)
+    assert execution.caller == AgentActor(
+        agent_id=static_actor.agent_id,
+        operator_id=static_actor.operator_id,
+        binding_id=static_actor.binding_id,
+        access_profile_id=static_actor.access_profile_id,
+        session_id=session_id,
+    )
 
 
 def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID]:

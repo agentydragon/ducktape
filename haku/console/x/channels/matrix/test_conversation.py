@@ -17,6 +17,7 @@ import pytest_bazel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.chat_models import (
     SPA_ORIGIN,
     ConversationEventKind,
@@ -26,6 +27,7 @@ from haku.console.chat_models import (
     RuntimeKind,
     TurnOutcome,
 )
+from haku.console.conftest import console_sessions
 from haku.console.database_schema import Conversation, ConversationEvent, ConversationItem, Session
 from haku.console.x import session_events
 from haku.console.x.channels.matrix.client import InboundMessage, UnmappableEvent
@@ -47,8 +49,68 @@ from haku.console.x.conversation_events import (
     OpenRef,
 )
 from haku.console.x.conversation_history import ConversationHistory
+from haku.console.x.launch_identity import ChatLaunchAuthorizer, LaunchIdentity
 from haku.console.x.session_events import PromptStartedBody
 from haku.console.x.session_store import BridgeAuthentication, SessionStore
+
+
+async def test_first_matrix_bind_pins_complete_identity_with_production_authorizer(
+    migrated_db_url, migrated_sessions, migrated_identity_store, operator_id
+) -> None:
+    agent_id = uuid4()
+    authority = PostgresAgentAuthority(
+        console_sessions(migrated_db_url),
+        public_base_url="https://haku.test",
+        operator_identity_store=migrated_identity_store,
+        access_profiles=("chat",),
+        default_access_profile_id="chat",
+    )
+    await authority.reconcile_static_agents(
+        [
+            StaticAgentDefinition(
+                agent_id=agent_id,
+                display_name="Matrix Production Agent",
+                operator_id=operator_id,
+                secret_reference="env:MATRIX_PRODUCTION_AGENT",
+                token_fingerprint=fingerprint_static_token("matrix-production-token"),
+                access_profile_id="chat",
+            )
+        ]
+    )
+    production = ChatLaunchAuthorizer(
+        authority,
+        launchable_agent_ids={agent_id},
+        registered_runtime_kinds={RuntimeKind.CLAUDE_CODE},
+        profile_runtime_kinds={"chat": {RuntimeKind.CLAUDE_CODE}},
+    )
+    calls: list[bool] = []
+
+    async def authorize(
+        operator_id: UUID,
+        agent_id: UUID,
+        runtime_kind: RuntimeKind,
+        *,
+        expected_profile_id: str | None = None,
+        db: AsyncSession | None = None,
+    ) -> LaunchIdentity:
+        assert db is not None
+        assert db.in_transaction()
+        calls.append(db.in_transaction())
+        return await production(operator_id, agent_id, runtime_kind, expected_profile_id=expected_profile_id, db=db)
+
+    conversations = MatrixConversationStore(migrated_sessions, launch_authorizer=authorize, default_agent_id=agent_id)
+    bound = await conversations.bind_room(MATRIX_ROOM, operator_id)
+
+    async with migrated_sessions() as db:
+        conversation = await db.get(Conversation, bound.conversation_id)
+    assert conversation is not None
+    assert (conversation.operator_id, conversation.agent_id, conversation.access_profile_id) == (
+        operator_id,
+        agent_id,
+        "chat",
+    )
+    assert conversation.runtime_kind is RuntimeKind.CLAUDE_CODE
+    assert calls == [True]
 
 
 @pytest.fixture

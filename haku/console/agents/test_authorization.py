@@ -37,6 +37,7 @@ from haku.console.agents.enrollment import (
     ReconnectAgentDecision,
 )
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind, EnrollmentPhase
+from haku.console.chat_models import RuntimeKind
 from haku.console.conftest import console_sessions
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
@@ -66,6 +67,7 @@ from haku.console.operator_identity import (
     VerifiedExternalIdentity,
 )
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.x.launch_identity import ChatLaunchAuthorizer, LaunchAgentRejectedError
 from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
 from third_party.containers.rlocations import PGVECTOR_PG18
 from util.testing.postgres import create_database_sync, force_drop_database_sync
@@ -788,6 +790,162 @@ async def test_exchange_timeout_and_preissuance_revoke_abandon_new_agents(db_url
         assert revoked.interaction.browser_binding_digest is None
         assert revoked.binding.status is CredentialBindingStatus.FAILED
         assert revoked.agent.status is AgentStatus.ABANDONED
+
+
+async def _launch_definition(harness: Harness, *, access_profile_id: str = "no_auto_approval") -> StaticAgentDefinition:
+    definition = StaticAgentDefinition(
+        agent_id=uuid4(),
+        display_name="Launch Test Agent",
+        operator_id=harness.browser.operator_id,
+        secret_reference="env:LAUNCH_TEST_AGENT_TOKEN",
+        token_fingerprint=fingerprint_static_token(f"launch-token-{uuid4()}"),
+        access_profile_id=access_profile_id,
+    )
+    await harness.authority.reconcile_static_agents([definition])
+    return definition
+
+
+def _launch_authorizer(
+    harness: Harness,
+    agent_id: UUID,
+    *,
+    launchable: bool = True,
+    registered: tuple[RuntimeKind, ...] = (RuntimeKind.CLAUDE_CODE,),
+    profile_runtime_kinds: dict[str, tuple[RuntimeKind, ...]] | None = None,
+) -> ChatLaunchAuthorizer:
+    return ChatLaunchAuthorizer(
+        harness.authority,
+        launchable_agent_ids={agent_id} if launchable else set(),
+        registered_runtime_kinds=registered,
+        profile_runtime_kinds=profile_runtime_kinds
+        or {
+            "no_auto_approval": (RuntimeKind.CLAUDE_CODE,),
+            "chat": (RuntimeKind.CLAUDE_CODE,),
+            "review": (RuntimeKind.CLAUDE_CODE,),
+            "disallowed": (),
+        },
+    )
+
+
+async def test_chat_launch_authorizer_derives_current_profile_for_new_launch(
+    db_url: str, harness_factory: HarnessFactory
+) -> None:
+    harness = await harness_factory(access_profiles=("chat", "review"))
+    definition = await _launch_definition(harness, access_profile_id="chat")
+    authorizer = _launch_authorizer(harness, definition.agent_id)
+
+    first = await authorizer(harness.browser.operator_id, definition.agent_id, RuntimeKind.CLAUDE_CODE)
+    assert first.access_profile_id == "chat"
+
+    with _orm_session(db_url) as session:
+        agent = session.get(Agent, definition.agent_id)
+        assert agent is not None
+        agent.access_profile_id = "review"
+        session.commit()
+
+    second = await authorizer(harness.browser.operator_id, definition.agent_id, RuntimeKind.CLAUDE_CODE)
+    assert first.access_profile_id == "chat"
+    assert second.agent_id == definition.agent_id
+    assert second.access_profile_id == "review"
+    assert second.runtime_kind is RuntimeKind.CLAUDE_CODE
+
+
+async def test_chat_launch_authorizer_fails_closed_for_missing_agent(harness: Harness) -> None:
+    missing_agent_id = uuid4()
+    authorizer = _launch_authorizer(harness, missing_agent_id)
+    with pytest.raises(LaunchAgentRejectedError):
+        await authorizer(harness.browser.operator_id, missing_agent_id, RuntimeKind.CLAUDE_CODE)
+
+
+async def test_chat_launch_authorizer_fails_closed_for_inactive_operator(db_url: str, harness: Harness) -> None:
+    definition = await _launch_definition(harness)
+    with _orm_session(db_url) as session:
+        operator = session.get(Operator, harness.browser.operator_id)
+        assert operator is not None
+        operator.status = OperatorStatus.DISABLED
+        session.commit()
+
+    with pytest.raises(LaunchAgentRejectedError):
+        await _launch_authorizer(harness, definition.agent_id)(
+            harness.browser.operator_id, definition.agent_id, RuntimeKind.CLAUDE_CODE
+        )
+
+
+async def test_chat_launch_authorizer_fails_closed_for_inactive_agent(harness: Harness) -> None:
+    definition = await _launch_definition(harness)
+    await harness.authority.reconcile_static_agents([])
+
+    with pytest.raises(LaunchAgentRejectedError):
+        await _launch_authorizer(harness, definition.agent_id)(
+            harness.browser.operator_id, definition.agent_id, RuntimeKind.CLAUDE_CODE
+        )
+
+
+async def test_chat_launch_authorizer_fails_closed_for_unprofiled_agent(db_url: str, harness: Harness) -> None:
+    definition = await _launch_definition(harness)
+    with _orm_session(db_url) as session:
+        agent = session.get(Agent, definition.agent_id)
+        assert agent is not None
+        agent.access_profile_id = None
+        session.commit()
+
+    with pytest.raises(LaunchAgentRejectedError):
+        await _launch_authorizer(harness, definition.agent_id)(
+            harness.browser.operator_id, definition.agent_id, RuntimeKind.CLAUDE_CODE
+        )
+
+
+async def test_chat_launch_authorizer_fails_closed_for_unlaunchable_agent(harness: Harness) -> None:
+    definition = await _launch_definition(harness)
+    with pytest.raises(LaunchAgentRejectedError):
+        await _launch_authorizer(harness, definition.agent_id, launchable=False)(
+            harness.browser.operator_id, definition.agent_id, RuntimeKind.CLAUDE_CODE
+        )
+
+
+async def test_chat_launch_authorizer_fails_closed_for_disallowed_profile(
+    db_url: str, harness_factory: HarnessFactory
+) -> None:
+    harness = await harness_factory(access_profiles=("chat", "disallowed"))
+    definition = await _launch_definition(harness, access_profile_id="disallowed")
+    with pytest.raises(LaunchAgentRejectedError):
+        await _launch_authorizer(harness, definition.agent_id)(
+            harness.browser.operator_id, definition.agent_id, RuntimeKind.CLAUDE_CODE
+        )
+
+
+async def test_chat_launch_authorizer_fails_closed_for_unregistered_runtime(harness: Harness) -> None:
+    definition = await _launch_definition(harness)
+    with pytest.raises(LaunchAgentRejectedError):
+        await _launch_authorizer(harness, definition.agent_id, registered=())(
+            harness.browser.operator_id, definition.agent_id, RuntimeKind.CLAUDE_CODE
+        )
+
+
+async def test_chat_launch_authorizer_does_not_bind_a_runtime_to_one_agent(harness: Harness) -> None:
+    first = await _launch_definition(harness)
+    second = StaticAgentDefinition(
+        agent_id=uuid4(),
+        display_name="Second Launch Test Agent",
+        operator_id=harness.browser.operator_id,
+        secret_reference="env:SECOND_LAUNCH_TEST_AGENT_TOKEN",
+        token_fingerprint=fingerprint_static_token(f"launch-token-{uuid4()}"),
+        access_profile_id="no_auto_approval",
+    )
+    await harness.authority.reconcile_static_agents([first, second])
+    authorizer = ChatLaunchAuthorizer(
+        harness.authority,
+        launchable_agent_ids={first.agent_id, second.agent_id},
+        registered_runtime_kinds={RuntimeKind.CLAUDE_CODE},
+        profile_runtime_kinds={"no_auto_approval": {RuntimeKind.CLAUDE_CODE}},
+    )
+
+    assert (
+        await authorizer(harness.browser.operator_id, first.agent_id, RuntimeKind.CLAUDE_CODE)
+    ).agent_id == first.agent_id
+    assert (
+        await authorizer(harness.browser.operator_id, second.agent_id, RuntimeKind.CLAUDE_CODE)
+    ).agent_id == second.agent_id
 
 
 async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: str, harness: Harness) -> None:

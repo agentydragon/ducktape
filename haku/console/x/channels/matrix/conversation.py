@@ -14,20 +14,26 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ChatSurface, MatrixOrigin, PromptRejection, RuntimeKind
 from haku.console.config import MatrixConfig
-from haku.console.database_schema import ChatAttachment, Conversation
+from haku.console.database_schema import ChatAttachment, Conversation, Operator
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x import session_events
 from haku.console.x.channels.matrix.client import InboundMessage, UnmappableEvent
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
+from haku.console.x.launch_identity import LaunchAuthorizer, LaunchIdentity
 from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
 from haku.console.x.session_store import PromptRefusedError, SessionStore
 
 logger = logging.getLogger(__name__)
+
+# There is no row to lock before the first room bind. This transaction-scoped mutex keeps two
+# ingress leaders from opening different conversations before the live-attachment uniqueness
+# constraint can choose a winner.
+_BIND_ADVISORY_LOCK = 0x4D58_4244  # "MXBD"
 
 
 async def live_attachment(db: AsyncSession, room_id: str) -> UUID | None:
@@ -84,8 +90,21 @@ class MatrixConversationStore:
     replaces them under the conversation, so the channel has no pointer to tend or re-aim.
     """
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]):
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        *,
+        launch_authorizer: LaunchAuthorizer | None = None,
+        default_agent_id: UUID | None = None,
+    ):
         self._sessions = sessions
+        self._launch_authorizer = launch_authorizer
+        self._default_agent_id = default_agent_id
+
+    def configure_launch_identity(self, authorizer: LaunchAuthorizer, *, default_agent_id: UUID) -> None:
+        """Configure production first-bind identity selection after app composition."""
+        self._launch_authorizer = authorizer
+        self._default_agent_id = default_agent_id
 
     async def attachment(self, room_id: str) -> UUID | None:
         async with self._sessions() as db:
@@ -109,15 +128,29 @@ class MatrixConversationStore:
         replica's. `uq_chat_attachment_live_address` is the backstop if that ever stops holding.
         """
         async with self._sessions() as db, db.begin():
+            # There is no row to lock before the first bind, so serialize the empty-check with a
+            # transaction advisory lock. The Operator row is also locked by the authorizer below;
+            # both locks remain held through the conversation and attachment inserts.
+            await db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": _BIND_ADVISORY_LOCK})
+            await db.get(Operator, operator_id, with_for_update=True)
             if (live := await _live_binding(db)) is not None:
                 return live
             now = datetime.datetime.now(datetime.UTC)
+            identity: LaunchIdentity | None = None
+            if self._launch_authorizer is not None:
+                if self._default_agent_id is None:
+                    raise RuntimeError("Matrix launch identity is not configured")
+                identity = await self._launch_authorizer(
+                    operator_id, self._default_agent_id, RuntimeKind.CLAUDE_CODE, db=db
+                )
             conversation_id = uuid4()
             db.add(
                 Conversation(
                     conversation_id=conversation_id,
                     operator_id=operator_id,
-                    runtime_kind=RuntimeKind.CLAUDE_CODE,
+                    agent_id=None if identity is None else identity.agent_id,
+                    access_profile_id=None if identity is None else identity.access_profile_id,
+                    runtime_kind=RuntimeKind.CLAUDE_CODE if identity is None else identity.runtime_kind,
                     created_at=now,
                 )
             )

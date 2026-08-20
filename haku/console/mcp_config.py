@@ -24,6 +24,7 @@ from fastmcp.client.transports import StreamableHttpTransport
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from haku.console.agents.naming import normalize_agent_name
+from haku.console.chat_models import RuntimeKind
 from haku.console.config import (
     ChatRuntimesConfig,
     ConfiguredRecallIndex,
@@ -289,6 +290,20 @@ class AccessProfile(BaseModel):
     # This is independent from auto-approval (whether a call skips review) and Recall access
     # (whether a particular index can be searched).
     in_process_server_ids: set[InProcessServerId] = Field(default_factory=set)
+    # Chat runtime launch authority is configuration-owned.  The durable Agent row supplies the
+    # selected profile; callers never get to supply this field.
+    allowed_chat_runtimes: set[RuntimeKind] = Field(default_factory=set)
+    # Future read authorization is represented as a reviewed, acyclic graph here.  This release
+    # validates and stores the graph only; no Recall/conversation read path consults it yet.
+    can_read_profiles: set[str] = Field(default_factory=set)
+
+
+class LaunchableAgent(BaseModel):
+    """A deploy-allowlisted durable Agent that may start a chat conversation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    agent_id: UUID
 
 
 class StaticAgentEntry(BaseModel):
@@ -344,6 +359,12 @@ class ConsoleConfigFile(BaseModel):
     operator_connection_providers: dict[str, OperatorConnectionProviderDefinition] = Field(default_factory=dict)
     operator_connections: dict[str, OperatorConnectionDefinition] = Field(default_factory=dict)
     static_agents: list[StaticAgentEntry] = Field(default_factory=list)
+    # Only these durable identities may be selected by the chat API.  Keeping this separate from
+    # static_agents makes the launch boundary explicit and leaves room for OAuth Agents later.
+    launchable_agents: list[LaunchableAgent] = Field(default_factory=list)
+    # Surface fallback only. Runtime implementations are not Agent identities: an explicit launch
+    # may choose any allowlisted Agent whose profile permits the requested runtime.
+    default_chat_agent_id: UUID | None = None
     # The `hostexec` in-process server's in-scope machines + token-exchange scope. Non-secret deploy
     # topology, so it lives here beside the `hostexec` catalog entry rather than in an env var. Unset
     # → the server is not offered, no offline_access is requested at operator login, and no operator
@@ -360,6 +381,24 @@ class ConsoleConfigFile(BaseModel):
     # A deploy-reviewed fail-safe maximum for approval-created temporary grants. Tool schema bounds
     # remain useful client guidance, but this server-side setting is authoritative.
     kubernetes_grant_max_lifetime_seconds: int = Field(default=3600, ge=1, le=86_400)
+
+    @property
+    def effective_launchable_agent_ids(self) -> frozenset[UUID]:
+        """Launch allowlist across the old/new shared ConfigMap schema transition."""
+        if "launchable_agents" in self.model_fields_set:
+            return frozenset(entry.agent_id for entry in self.launchable_agents)
+        if self.chat_runtimes is not None:
+            return frozenset({self.chat_runtimes.claude_code.mcp_static_agent_id})
+        return frozenset()
+
+    @property
+    def effective_default_chat_agent_id(self) -> UUID | None:
+        """Launch default across the old/new shared ConfigMap schema transition."""
+        if self.default_chat_agent_id is not None:
+            return self.default_chat_agent_id
+        if self.chat_runtimes is not None:
+            return self.chat_runtimes.claude_code.mcp_static_agent_id
+        return None
 
     @model_validator(mode="before")
     @classmethod
@@ -516,6 +555,57 @@ class ConsoleConfigFile(BaseModel):
                 raise ValueError(
                     f"static Agent {agent.agent_id} references unknown access profile {agent.access_profile_id!r}"
                 )
+        configured_launchable_ids = {entry.agent_id for entry in self.launchable_agents}
+        if len(configured_launchable_ids) != len(self.launchable_agents):
+            raise ValueError("duplicate launchable Agent id")
+        launchable_ids = self.effective_launchable_agent_ids
+        static_ids = {agent.agent_id for agent in self.static_agents}
+        unknown_launchable = launchable_ids - static_ids
+        if unknown_launchable:
+            raise ValueError(f"launchable Agents are not configured static Agents: {sorted(unknown_launchable)!r}")
+        default_chat_agent_id = self.effective_default_chat_agent_id
+        if default_chat_agent_id is not None and default_chat_agent_id not in launchable_ids:
+            raise ValueError("default chat Agent must be launchable")
+        if self.chat_runtimes is not None:
+            if default_chat_agent_id is None:
+                raise ValueError("configured chat runtimes require a default chat Agent")
+            configured_runtime_kinds = self.chat_runtimes.kinds
+            static_by_id = {agent.agent_id: agent for agent in self.static_agents}
+            legacy_catalog = "launchable_agents" not in self.model_fields_set
+            for agent_id in launchable_ids:
+                profile = profiles[static_by_id[agent_id].access_profile_id]
+                allowed_runtime_kinds = profile.allowed_chat_runtimes
+                if legacy_catalog and "allowed_chat_runtimes" not in profile.model_fields_set:
+                    # Old config bound this one Agent to Claude through `mcp_static_agent_id`; keep
+                    # that exact meaning while old/new replicas share the file. Explicit new fields
+                    # never receive this fallback.
+                    allowed_runtime_kinds = set(configured_runtime_kinds)
+                if not configured_runtime_kinds.intersection(allowed_runtime_kinds):
+                    raise ValueError(f"launchable Agent {agent_id} profile allows no configured chat runtime")
+        for profile in profiles.values():
+            unknown_read_profiles = profile.can_read_profiles - profiles.keys()
+            if unknown_read_profiles:
+                raise ValueError(
+                    f"access profile {profile.id!r} references unknown readable profiles "
+                    f"{sorted(unknown_read_profiles)!r}"
+                )
+
+        reading: set[str] = set()
+        visited_reading: set[str] = set()
+
+        def visit_read_profile(profile_id: str) -> None:
+            if profile_id in reading:
+                raise ValueError(f"access-profile read graph contains a cycle at {profile_id!r}")
+            if profile_id in visited_reading:
+                return
+            reading.add(profile_id)
+            for readable in profiles[profile_id].can_read_profiles:
+                visit_read_profile(readable)
+            reading.remove(profile_id)
+            visited_reading.add(profile_id)
+
+        for profile_id in profiles:
+            visit_read_profile(profile_id)
         if self.hostexec is not None:
             if self.node_daemons is None:
                 raise ValueError("hostexec requires node_daemons configuration")

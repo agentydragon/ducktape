@@ -2,24 +2,30 @@
 
 from __future__ import annotations
 
+import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 from unittest.mock import AsyncMock, Mock, call, patch
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
 from fastmcp.server.auth.auth import AccessToken
 from pydantic import SecretStr
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.agents.authorization import (
     PostgresAgentAuthority,
     StaticAgentAuthorization,
+    StaticAgentDefinition,
     StaticAgentRejectedError,
     fingerprint_static_token,
 )
+from haku.console.chat_models import RuntimeKind, SessionStatus
 from haku.console.config import McpOAuthConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
+from haku.console.conftest import console_sessions, operator_id
+from haku.console.database_schema import Agent, Conversation, Operator, Session
 from haku.console.mcp_agent_auth import OAuthMcpAuth, StaticAgentCredentialRegistry, StaticMcpAuth, build_auth
 from haku.console.mcp_auth.fastmcp_adapter import (
     AgentGrantAuthorityUnavailableError,
@@ -27,6 +33,7 @@ from haku.console.mcp_auth.fastmcp_adapter import (
     HakuAgentOAuthProxy,
     HakuFailurePreservingMultiAuth,
 )
+from haku.console.operator_identity import OperatorStatus
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor
 from mcp_infra.authentik_auth.provider import DEFAULT_VALID_SCOPES
@@ -189,6 +196,223 @@ def test_build_auth_rejects_missing_credentials() -> None:
             static_credentials=_credentials(),
             operator_identity_store=_identity_store(),
         )
+
+
+async def test_session_bearer_resolves_the_pinned_agent_profile_and_session(
+    migrated_db_url: str,
+    migrated_sessions: async_sessionmaker[AsyncSession],
+    migrated_identity_store: PostgresOperatorIdentityStore,
+) -> None:
+    resolved_operator_id = await operator_id(migrated_sessions, "session-agent-operator")
+    agent_id = uuid4()
+    binding_token = "configured-agent-token"
+    session_token = "session-rendezvous-token"
+    authority = PostgresAgentAuthority(
+        console_sessions(migrated_db_url),
+        public_base_url="https://haku.test",
+        operator_identity_store=migrated_identity_store,
+        access_profiles=("pinned",),
+        default_access_profile_id="pinned",
+    )
+    authorization = (
+        await authority.reconcile_static_agents(
+            [
+                StaticAgentDefinition(
+                    agent_id=agent_id,
+                    display_name="Session Agent",
+                    operator_id=resolved_operator_id,
+                    secret_reference="env:SESSION_AGENT_TOKEN",
+                    token_fingerprint=fingerprint_static_token(binding_token),
+                    access_profile_id="pinned",
+                )
+            ]
+        )
+    )[0]
+    conversation_id, session_id = uuid4(), uuid4()
+    now = datetime.datetime.now(datetime.UTC)
+    async with migrated_sessions.begin() as db:
+        db.add(
+            Conversation(
+                conversation_id=conversation_id,
+                operator_id=resolved_operator_id,
+                agent_id=agent_id,
+                access_profile_id="pinned",
+                runtime_kind=RuntimeKind.CLAUDE_CODE,
+                created_at=now,
+            )
+        )
+        db.add(
+            Session(
+                session_id=session_id,
+                operator_id=resolved_operator_id,
+                conversation_id=conversation_id,
+                agent_binding_id=authorization.binding_id,
+                status=SessionStatus.READY,
+                bridge_token_fingerprint=fingerprint_static_token(session_token),
+                bridge_connected_at=now,
+                lease_expires_at=now + datetime.timedelta(minutes=1),
+                lease_holder="test-replica",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+    auth = build_auth(
+        _settings(),
+        agent_authority=authority,
+        static_credentials=_credentials(binding_token),
+        operator_identity_store=_identity_store(),
+        session_tokens=migrated_sessions,
+    )
+    assert isinstance(auth, StaticMcpAuth)
+    access = await auth.provider.verify_token(session_token)
+    assert access is not None
+    assert access.client_id == f"haku-chat-session:{session_id}"
+    assert await auth.static_actor_resolver.resolve_static_actor(access) == AgentActor(
+        agent_id=agent_id,
+        operator_id=resolved_operator_id,
+        binding_id=authorization.binding_id,
+        access_profile_id="pinned",
+        session_id=session_id,
+    )
+
+    # The bearer is a live-session credential, not merely a durable fingerprint lookup. It is
+    # unusable before runner attachment, while the runner lease is expired, or after durable Agent
+    # authority failure. The conversation's access profile is an immutable launch snapshot, so a
+    # later Agent profile edit does not retarget the running session; explicit credential rotation
+    # below does revoke that generation.
+    async with migrated_sessions.begin() as db:
+        row = await db.get(Session, session_id)
+        assert row is not None
+        row.status = SessionStatus.PROVISIONING
+    assert await auth.provider.verify_token(session_token) is None
+
+    async with migrated_sessions.begin() as db:
+        row = await db.get(Session, session_id)
+        assert row is not None
+        row.status = SessionStatus.READY
+        row.bridge_connected_at = None
+    assert await auth.provider.verify_token(session_token) is None
+
+    async with migrated_sessions.begin() as db:
+        row = await db.get(Session, session_id)
+        assert row is not None
+        row.bridge_connected_at = now
+        row.lease_expires_at = now - datetime.timedelta(seconds=1)
+    assert await auth.provider.verify_token(session_token) is None
+
+    async with migrated_sessions.begin() as db:
+        row = await db.get(Session, session_id)
+        assert row is not None
+        row.lease_expires_at = datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=1)
+        agent = await db.get(Agent, agent_id)
+        assert agent is not None
+        agent.access_profile_id = "drifted"
+    drifted_access = await auth.provider.verify_token(session_token)
+    assert drifted_access is not None
+    assert await auth.static_actor_resolver.resolve_static_actor(drifted_access) == AgentActor(
+        agent_id=agent_id,
+        operator_id=resolved_operator_id,
+        binding_id=authorization.binding_id,
+        access_profile_id="pinned",
+        session_id=session_id,
+    )
+
+    async with migrated_sessions.begin() as db:
+        operator = await db.get(Operator, resolved_operator_id)
+        assert operator is not None
+        operator.status = OperatorStatus.DISABLED
+    assert await auth.provider.verify_token(session_token) is None
+
+    async with migrated_sessions.begin() as db:
+        operator = await db.get(Operator, resolved_operator_id)
+        assert operator is not None
+        operator.status = OperatorStatus.ACTIVE
+    assert await auth.provider.verify_token(session_token) is not None
+
+    # The session is pinned to the credential generation that authorized its launch. Rotating that
+    # binding is an explicit revocation of the still-running sandbox, not silent re-attribution to
+    # the successor credential.
+    await authority.reconcile_static_agents(
+        [
+            StaticAgentDefinition(
+                agent_id=agent_id,
+                display_name="Session Agent",
+                operator_id=resolved_operator_id,
+                secret_reference="env:SESSION_AGENT_TOKEN",
+                token_fingerprint=fingerprint_static_token("rotated-configured-agent-token"),
+                access_profile_id="pinned",
+            )
+        ]
+    )
+    assert await auth.provider.verify_token(session_token) is None
+
+
+async def test_session_bearer_is_rejected_after_its_session_ends(
+    migrated_db_url: str,
+    migrated_sessions: async_sessionmaker[AsyncSession],
+    migrated_identity_store: PostgresOperatorIdentityStore,
+) -> None:
+    resolved_operator_id = await operator_id(migrated_sessions, "ended-session-agent-operator")
+    agent_id = uuid4()
+    session_token = "ended-session-token"
+    authority = PostgresAgentAuthority(
+        console_sessions(migrated_db_url),
+        public_base_url="https://haku.test",
+        operator_identity_store=migrated_identity_store,
+        access_profiles=("pinned",),
+        default_access_profile_id="pinned",
+    )
+    authorization = (
+        await authority.reconcile_static_agents(
+            [
+                StaticAgentDefinition(
+                    agent_id=agent_id,
+                    display_name="Ended Session Agent",
+                    operator_id=resolved_operator_id,
+                    secret_reference="env:ENDED_SESSION_AGENT_TOKEN",
+                    token_fingerprint=fingerprint_static_token("ended-agent-token"),
+                    access_profile_id="pinned",
+                )
+            ]
+        )
+    )[0]
+    now = datetime.datetime.now(datetime.UTC)
+    conversation_id, session_id = uuid4(), uuid4()
+    async with migrated_sessions.begin() as db:
+        db.add(
+            Conversation(
+                conversation_id=conversation_id,
+                operator_id=resolved_operator_id,
+                agent_id=agent_id,
+                access_profile_id="pinned",
+                runtime_kind=RuntimeKind.CLAUDE_CODE,
+                created_at=now,
+            )
+        )
+        db.add(
+            Session(
+                session_id=session_id,
+                operator_id=resolved_operator_id,
+                conversation_id=conversation_id,
+                agent_binding_id=authorization.binding_id,
+                status=SessionStatus.CLOSED,
+                bridge_token_fingerprint=fingerprint_static_token(session_token),
+                bridge_connected_at=now,
+                lease_expires_at=now + datetime.timedelta(minutes=1),
+                lease_holder="test-replica",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    auth = build_auth(
+        _settings(),
+        agent_authority=authority,
+        static_credentials=_credentials(),
+        operator_identity_store=_identity_store(),
+        session_tokens=migrated_sessions,
+    )
+    assert await auth.provider.verify_token(session_token) is None
 
 
 async def test_oauth_auth_composes_one_authority_storage_and_optional_static_verifier() -> None:

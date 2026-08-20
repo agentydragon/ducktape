@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 import pytest_bazel
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError
 
 from haku.console.database_migrate import apply_migrations, sync_database_url
 
@@ -75,7 +75,7 @@ def test_existing_conversations_are_backfilled_without_losing_chat_data(db_url: 
                 )
             ).one() == ("text", "NO")
 
-            with pytest.raises(IntegrityError):
+            with pytest.raises(DBAPIError):
                 conn.execute(
                     text("UPDATE conversation SET runtime_kind = 'codex_app_server' WHERE conversation_id = :id"),
                     {"id": conversation_id},

@@ -1,6 +1,7 @@
-# Claude Code runtime for the Console chat vertical slice. Session identity and a
-# one-use runner bearer arrive declaratively through SandboxClaim.spec.env; the
-# real Claude OAuth token never enters this namespace.
+# Claude Code runtime for the Console chat vertical slice. Session identity and its exact-session
+# Console bearer arrive declaratively through SandboxClaim.spec.env. The bearer is the Agent's own
+# delegated authority for both the runner bridge and MCP, so Claude and its child commands
+# intentionally inherit it. The real Claude OAuth token remains outside this namespace.
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
@@ -8,8 +9,9 @@ metadata:
   namespace: haku-claude-sandbox
 spec:
   networkPolicyManagement: Unmanaged
-  # Claims may inject the session id and one-use bridge token. Agent Sandbox v0.5.1
-  # cold-starts claims with env, which is accepted for this first slice.
+  # Claims inject the session id and exact-session bearer under the runner name plus an MCP alias
+  # carrying the same value. Agent Sandbox v0.5.1 cold-starts claims with env. The alias keeps
+  # old/new runner rolls compatible while Claude, curl, or another CLI use the same authority.
   envVarsInjectionPolicy: Allowed
   podTemplate:
     metadata:

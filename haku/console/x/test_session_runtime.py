@@ -19,11 +19,13 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
+from fastapi import HTTPException
 from more_itertools import one
 from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.chat_models import (
     OPEN_SESSION_STATUSES,
     SPA_ORIGIN,
@@ -37,7 +39,8 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.config import ChatRuntimesConfig, ClaudeRuntimeConfig
-from haku.console.database_schema import ConversationEvent, ConversationItem, Session, SessionFrame
+from haku.console.conftest import console_sessions
+from haku.console.database_schema import Agent, Conversation, ConversationEvent, ConversationItem, Session, SessionFrame
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.x import reprojection
 from haku.console.x.claude_code.client import ClaudeCli
@@ -68,6 +71,7 @@ from haku.console.x.conversation_events import (
     TurnCompleted,
 )
 from haku.console.x.conversation_history import ConversationHistory
+from haku.console.x.launch_identity import ChatLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity
 from haku.console.x.runtime import (
     EMPTY_TURN_PROJECTION_SEED,
     Checkpoint,
@@ -78,7 +82,14 @@ from haku.console.x.runtime import (
 )
 from haku.console.x.sandbox_claims import ProvisioningStep, provisioning_view
 from haku.console.x.session_notifications import SessionNotifications
-from haku.console.x.session_runtime import GOING_AWAY_CODE, RolloutRecorder, SessionService, _replaying
+from haku.console.x.session_runtime import (
+    GOING_AWAY_CODE,
+    ConversationCreateRequest,
+    RolloutRecorder,
+    SessionService,
+    _replaying,
+    create_conversation,
+)
 from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, SessionStore
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.console.x.testing.recording_claims import RecordingClaims
@@ -92,12 +103,130 @@ def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
     assert not ConsoleConfigFile.model_fields["chat_runtimes"].is_required()
 
 
+def test_new_conversation_request_rejects_client_supplied_access_profile() -> None:
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        ConversationCreateRequest.model_validate({"access_profile_id": "admin"})
+
+
+async def test_post_conversation_launch_rejection_is_generic_403() -> None:
+    class RejectingService:
+        async def create_conversation(self, *_args: Any, **_kwargs: Any) -> None:
+            raise LaunchAgentRejectedError("durable internal reason")
+
+    actor = type("Actor", (), {"operator_id": uuid4()})()
+    with pytest.raises(HTTPException) as error:
+        await create_conversation(actor, cast(SessionService, RejectingService()))
+
+    assert error.value.status_code == 403
+    assert error.value.detail == "chat launch is not authorized"
+    assert "durable internal reason" not in str(error.value)
+
+
+class _RecordingLaunchAuthorizer:
+    def __init__(self, delegate: ChatLaunchAuthorizer) -> None:
+        self._delegate = delegate
+        self.calls: list[tuple[UUID, str | None, AsyncSession, bool]] = []
+
+    async def __call__(
+        self,
+        operator_id: UUID,
+        agent_id: UUID,
+        runtime_kind: RuntimeKind,
+        *,
+        expected_profile_id: str | None = None,
+        db: AsyncSession | None = None,
+    ) -> LaunchIdentity:
+        assert db is not None
+        assert db.in_transaction()
+        self.calls.append((agent_id, expected_profile_id, db, db.in_transaction()))
+        return await self._delegate(operator_id, agent_id, runtime_kind, expected_profile_id=expected_profile_id, db=db)
+
+
+async def test_replacement_pins_identity_after_agent_profile_change_and_shares_store_transaction(
+    migrated_db_url: str,
+    migrated_sessions,
+    migrated_identity_store,
+    operator_id: UUID,
+    recording_claims: RecordingClaims,
+    notifications: SessionNotifications,
+) -> None:
+    agent_id = uuid4()
+    authority = PostgresAgentAuthority(
+        console_sessions(migrated_db_url),
+        public_base_url="https://haku.test",
+        operator_identity_store=migrated_identity_store,
+        access_profiles=("pinned", "current"),
+        default_access_profile_id="pinned",
+    )
+    await authority.reconcile_static_agents(
+        [
+            StaticAgentDefinition(
+                agent_id=agent_id,
+                display_name="Pinned Runtime Agent",
+                operator_id=operator_id,
+                secret_reference="env:PINNED_RUNTIME_AGENT",
+                token_fingerprint=fingerprint_static_token("pinned-runtime-token"),
+                access_profile_id="pinned",
+            )
+        ]
+    )
+    authorizer = _RecordingLaunchAuthorizer(
+        ChatLaunchAuthorizer(
+            authority,
+            launchable_agent_ids={agent_id},
+            registered_runtime_kinds={RuntimeKind.CLAUDE_CODE},
+            profile_runtime_kinds={"pinned": {RuntimeKind.CLAUDE_CODE}, "current": {RuntimeKind.CLAUDE_CODE}},
+        )
+    )
+    runtimes = configured_runtimes(recording_claims)
+    store = SessionStore(migrated_sessions, runtimes)
+    service = SessionService(runtimes, store, notifications, launch_authorizer=authorizer, default_agent_id=agent_id)
+
+    first = await service.create(operator_id)
+    conversation_id = await store.conversation_of(first.session_id)
+    async with migrated_sessions.begin() as db:
+        agent = await db.get(Agent, agent_id)
+        assert agent is not None
+        agent.access_profile_id = "current"
+    await store.fail(first.session_id, "replace this session")
+
+    second = await service.create(operator_id, conversation_id=conversation_id)
+
+    async with migrated_sessions() as db:
+        conversation = await db.get(Conversation, conversation_id)
+        replacement = await db.get(Session, second.session_id)
+    assert conversation is not None
+    assert replacement is not None
+    assert (conversation.agent_id, conversation.access_profile_id, conversation.runtime_kind) == (
+        agent_id,
+        "pinned",
+        RuntimeKind.CLAUDE_CODE,
+    )
+    assert replacement.conversation_id == conversation_id
+    assert (replacement.operator_id, replacement.session_id) == (operator_id, second.session_id)
+    assert [profile for _agent, profile, _db, _active in authorizer.calls] == [None, "pinned"]
+    assert [active for _agent, _profile, _db, active in authorizer.calls] == [True, True]
+
+
 def _console_config(**overrides: object) -> dict[str, object]:
     config: dict[str, object] = {
         "chat_runtimes": {"claude_code": runtime_config().model_dump(mode="json")},
         "auto_approval_policies": [{"id": "manual", "type": "never"}],
-        "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
+        "access_profiles": [
+            {"id": "manual", "auto_approval_policy": "manual", "allowed_chat_runtimes": ["claude_code"]}
+        ],
         "default_access_profile_id": "manual",
+        "static_agents": [
+            {
+                "agent_id": "00000000-0000-4000-8000-000000000001",
+                "display_name": "Console Agent",
+                "token_env_var": "TOKEN",
+                "operator_subject_env": "OPERATOR_SUBJECT",
+                "access_profile_id": "manual",
+            }
+        ],
+        "launchable_agents": [{"agent_id": "00000000-0000-4000-8000-000000000001"}],
+        "default_chat_agent_id": "00000000-0000-4000-8000-000000000001",
     }
     config.update(overrides)
     return config
@@ -107,6 +236,19 @@ def test_chat_runtime_config_is_closed_and_rejects_the_retired_shape() -> None:
     parsed = ConsoleConfigFile.model_validate(_console_config())
     assert parsed.chat_runtimes is not None
     assert parsed.chat_runtimes.claude_code == runtime_config()
+
+    old_shared_config = _console_config()
+    old_shared_config.pop("launchable_agents")
+    old_shared_config.pop("default_chat_agent_id")
+    profiles = old_shared_config["access_profiles"]
+    assert isinstance(profiles, list)
+    for profile in profiles:
+        assert isinstance(profile, dict)
+        profile.pop("allowed_chat_runtimes", None)
+    transitional = ConsoleConfigFile.model_validate(old_shared_config)
+    legacy_agent = UUID("00000000-0000-4000-8000-000000000001")
+    assert transitional.effective_launchable_agent_ids == {legacy_agent}
+    assert transitional.effective_default_chat_agent_id == legacy_agent
 
     with pytest.raises(ValidationError, match="extra_forbidden"):
         ConsoleConfigFile.model_validate(
@@ -129,6 +271,11 @@ def test_chat_runtime_config_fails_closed_when_malformed() -> None:
     del malformed["namespace"]
     with pytest.raises(ValidationError, match="namespace"):
         ConsoleConfigFile.model_validate(_console_config(chat_runtimes={"claude_code": malformed}))
+
+    credentialed = runtime_config().model_dump(mode="json")
+    credentialed["mcp_url"] = "https://session-secret@console.example/mcp"
+    with pytest.raises(ValidationError, match="mcp_url"):
+        ConsoleConfigFile.model_validate(_console_config(chat_runtimes={"claude_code": credentialed}))
 
 
 def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:
@@ -589,20 +736,41 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
     # Cleanup is recorded by stamping `claim_cleaned_at`, which is what takes the session back out
     # of the reconciler's candidate set.
     assert await chat_store.claim_cleanup_candidates() == []
-    # Asserted on the launch the runner is handed rather than on SDK options, since that is
-    # what now crosses the wire — and it is where a bearer would leak if one ever did.
+    # The session bearer arrives in the pod through the SandboxClaim environment and is the Agent's
+    # own authority, so Claude may use it through native MCP support or an ordinary HTTP client. The
+    # provider API credential remains the separate non-secret egress-proxy placeholder.
     launch = cast(Any, _ClosingClaudeClient.last_launch)
     assert json.loads(launch.arguments[launch.arguments.index("--mcp-config") + 1]) == {
         "mcpServers": {
             "haku-console": {
                 "type": "http",
                 "url": "http://haku-console.test:9090/mcp",
-                "headers": {"Authorization": "Bearer haku-static-bearer"},
+                "headers": {"Authorization": "Bearer ${HAKU_MCP_BEARER_TOKEN}"},
             }
         }
     }
     assert "--strict-mcp-config" in launch.arguments
-    assert "haku-static-bearer" not in launch.environment.values()
+    assert launch.environment["CLAUDE_CODE_OAUTH_TOKEN"] == "not-a-secret"
+    # The bearer is injected into the pod rather than copied into Console-selected environment
+    # overrides. `test_runner` pins that it is inherited by the Agent process.
+    assert recording_claims.tokens[session_id] not in launch.environment.values()
+
+
+async def test_a_launch_that_cannot_be_built_fails_before_accepting_and_releases_the_claim(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
+    websocket = _LifecycleWebSocket()
+
+    with patch.object(ClaudeRuntimeAdapter, "build_launch", side_effect=ValueError("invalid MCP endpoint")):
+        await chat_service.handle_runner(
+            cast(Any, websocket), session.session_id, recording_claims.tokens[session.session_id]
+        )
+
+    assert websocket.accepted is False
+    assert websocket.closed == (1011, "runtime launch preparation failed")
+    assert await chat_store.status(session.session_id) == SessionStatus.FAILED
+    assert recording_claims.deleted == [session.session_id]
 
 
 async def test_the_first_idle_prompt_creates_the_claim_once(

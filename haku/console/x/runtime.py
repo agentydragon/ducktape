@@ -12,8 +12,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol
 
-from pydantic import SecretStr
-
 from haku.console.chat_models import RuntimeKind, TurnOutcome
 from haku.console.x.conversation_events import ConversationEvent, Projection
 from haku.console.x.sandbox_claims import SandboxClaims
@@ -58,7 +56,7 @@ class RuntimeMcpServer:
     """One explicitly configured MCP capability available to a native harness."""
 
     url: str
-    bearer_token: SecretStr
+    bearer_environment_variable: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,7 +155,9 @@ class RuntimeResources:
     session_ttl_seconds: int
     cwd: str
     environment: Mapping[str, str]
-    mcp_servers: Mapping[str, RuntimeMcpServer]
+    # Endpoints are runtime resources; authentication is minted per session and added only when
+    # the authenticated runner connects. A configured runtime is therefore not bound to one Agent.
+    mcp_server_urls: Mapping[str, str]
     system_prompt: SystemPromptTemplate
 
 

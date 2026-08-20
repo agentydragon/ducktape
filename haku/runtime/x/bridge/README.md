@@ -45,5 +45,11 @@ involved. The Console deduplicates by `(session_id, runner_seq)` and stores the 
 direction, and timestamps.
 
 `--harness claude` is required by the deployed Claude SandboxTemplate. The selected harness is
-resolved once at runner startup and cannot change for the lifetime of the process. The bridge token
-is removed from the child harness environment.
+resolved once at runner startup and cannot change for the lifetime of the process. The claim gives
+the sandbox one exact-session bearer. The runner uses it for the bridge and the Agent intentionally
+inherits it for Console MCP, so native MCP support and ordinary HTTP clients such as `curl` exercise
+the same pinned Agent/profile/binding authority. It is not the Claude OAuth credential, which never
+enters the sandbox. Claims expose the same bearer as both `HAKU_AGENT_SDK_RUNNER_TOKEN` and the
+rolling-compatible `HAKU_MCP_BEARER_TOKEN` alias: the previous runner strips only the first name,
+while the new runner preserves both, so either rollout direction leaves Claude's MCP configuration
+usable without creating a second credential.

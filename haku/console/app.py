@@ -109,6 +109,7 @@ from haku.console.x.channels.matrix import (
     sync as matrix_sync,
 )
 from haku.console.x.conversation_history import ConversationHistory
+from haku.console.x.launch_identity import ChatLaunchAuthorizer
 from haku.console.x.session_live_updates import SessionLiveUpdates
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_store import SessionStore
@@ -298,15 +299,7 @@ def create_app(
         )
 
     runtime_registry: console_runtime.RuntimeRegistry
-    runtime_mcp_agent: LoadedStaticAgent | None = None
     if claude_runtime is not None:
-        if loaded_static_agents is None:
-            raise RuntimeError("Claude runtime requires loaded static Agent credentials")
-        runtime_mcp_agent = next(
-            (agent for agent in loaded_static_agents if agent.agent_id == claude_runtime.mcp_static_agent_id), None
-        )
-        if runtime_mcp_agent is None:
-            raise RuntimeError(f"Claude runtime references unknown static Agent {claude_runtime.mcp_static_agent_id}")
         runtime_registry = runtime_catalog.claude_registry(
             claude_runtime,
             sandbox_claims.KubernetesSandboxClaims(
@@ -318,7 +311,6 @@ def create_app(
                     runner_environment={},
                 )
             ),
-            mcp_token=runtime_mcp_agent.token,
             # Parsed at construction, so a broken deploy template prevents readiness rather than
             # failing the first attached chat session hours later.
             system_prompt=SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
@@ -393,13 +385,33 @@ def create_app(
     # Execution exists only when a launch-capable adapter was configured. Read-only replicas keep
     # the same registry in their store above but expose no session-creation runtime service.
     if claude_runtime is not None:
-        assert runtime_mcp_agent is not None
+        profiles = {profile.id: profile.allowed_chat_runtimes for profile in console_config.access_profiles}
+        authorize_chat_launch = ChatLaunchAuthorizer(
+            agent_authority,
+            launchable_agent_ids=console_config.effective_launchable_agent_ids,
+            registered_runtime_kinds=runtime_registry.configured_kinds,
+            profile_runtime_kinds=profiles,
+        )
+
+        # `mcp_static_agent_id` is the old ConfigMap's durable Haku Agent selector. During the
+        # schema roll it remains the default identity only; its static credential is no longer
+        # loaded into or passed to the runtime. A later coordinated config cutover can make the
+        # deployment-wide selector explicit without making old replicas reject the shared file.
+        default_chat_agent_id = console_config.effective_default_chat_agent_id
+        assert default_chat_agent_id is not None
+
         session_service = session_runtime.SessionService(
             runtime_registry,
             session_store,
             session_notifications,
             conversation_history=ConversationHistory(db_sessions),
+            launch_authorizer=authorize_chat_launch,
+            default_agent_id=default_chat_agent_id,
         )
+        if matrix_conversation_store is not None:
+            matrix_conversation_store.configure_launch_identity(
+                authorize_chat_launch, default_agent_id=default_chat_agent_id
+            )
     else:
         session_service = None
     sandbox_allocator = (
@@ -598,6 +610,7 @@ def create_app(
         agent_authority=agent_authority,
         static_credentials=static_credential_registry,
         operator_identity_store=operator_identity_store,
+        session_tokens=db_sessions if session_service is not None else None,
     )
     actor_resolver = HakuMcpActorResolver(agent_authority, static_actor_resolver=mcp_auth.static_actor_resolver)
     console_mcp = mcp_server.build_console_mcp(

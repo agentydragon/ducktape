@@ -602,8 +602,18 @@ class McpToolCallPrincipal(Base):
         CheckConstraint(
             "num_nonnulls(operator_id, binding_id) = 1", name="ck_mcp_tool_call_principals_exactly_one_variant"
         ),
+        CheckConstraint(
+            "session_id IS NULL OR binding_id IS NOT NULL", name="ck_mcp_tool_call_principals_session_agent"
+        ),
+        ForeignKeyConstraint(
+            ["session_id", "binding_id"],
+            ["sessions.session_id", "sessions.agent_binding_id"],
+            name="fk_mcp_tool_call_principals_session_binding",
+            ondelete="RESTRICT",
+        ),
         Index("idx_mcp_tool_call_principals_operator_id", "operator_id"),
         Index("idx_mcp_tool_call_principals_binding_id", "binding_id"),
+        Index("idx_mcp_tool_call_principals_session_id", "session_id"),
     )
 
     tool_call_id: Mapped[str] = mapped_column(
@@ -615,6 +625,7 @@ class McpToolCallPrincipal(Base):
     binding_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("credential_bindings.binding_id", ondelete="RESTRICT"), nullable=True
     )
+    session_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
 
 
 class NodeDaemonPresence(Base):
@@ -939,6 +950,13 @@ class Conversation(Base):
     operator_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
     )
+    # Immutable durable identity selected when the conversation is opened.  The access profile is
+    # denormalized intentionally: it is the profile the conversation was authorized under, not a
+    # live lookup that replacement sessions may silently change.
+    agent_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agents.agent_id", ondelete="RESTRICT"), nullable=True
+    )
+    access_profile_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Immutable conversation identity. It lives here rather than on a session so a replacement
     # runner necessarily inherits the implementation whose prompt, replay and projection semantics
     # created the thread. Text + CHECK is deliberate: the next runtime widens one transactional
@@ -952,6 +970,11 @@ class Conversation(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
+        CheckConstraint(
+            "access_profile_id IS NULL OR btrim(access_profile_id) <> ''",
+            name="ck_conversation_access_profile_id_nonempty",
+        ),
+        CheckConstraint("(agent_id IS NULL) = (access_profile_id IS NULL)", name="ck_conversation_agent_profile_pair"),
         CheckConstraint("runtime_kind IN ('claude_code')", name="ck_conversation_runtime_kind"),
         CheckConstraint("next_event_seq > 0", name="ck_conversation_next_event_seq"),
         Index("idx_conversation_operator", "operator_id", "created_at"),
@@ -1045,12 +1068,19 @@ class Session(Base):
     conversation_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("conversation.conversation_id", ondelete="CASCADE"), nullable=False
     )
+    # The exact credential generation that authorized this sandbox session. A replacement may use
+    # a successor binding while retaining the conversation's immutable Agent/profile identity.
+    agent_binding_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("credential_bindings.binding_id", ondelete="RESTRICT"), nullable=True
+    )
     status: Mapped[SessionStatus] = mapped_column(TextBackedStrEnumColumn(SessionStatus), nullable=False)
-    # The verifier for this session's rendezvous credential — SHA-256 of a bearer minted once at
-    # creation and never stored. It answers only "does this redialling runner hold this session's
-    # token"; admissibility is the status's business, and the sandbox claim is `claim_cleaned_at`'s.
+    # The verifier for this session's sandbox credential — SHA-256 of a bearer minted once at
+    # allocation and never stored. The runner presents it on every rendezvous and the sandbox Agent
+    # presents it to Console MCP; both resolve to this exact session. Admissibility is the status,
+    # live connection/lease and pinned Agent authority's business, while the SandboxClaim is
+    # `claim_cleaned_at`'s.
     # Absent when the session has never owned a sandbox: initially while idle, and still absent if
-    # that session closes or fails before allocation. Allocation mints the bridge credential and
+    # that session closes or fails before allocation. Allocation mints the session credential and
     # stores its fingerprint in the same transaction that starts provisioning.
     bridge_token_fingerprint: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     bridge_connected_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -1072,7 +1102,7 @@ class Session(Base):
     # Renewed by whichever replica currently holds this session's runner websocket: a replica that
     # dies mid-turn otherwise leaves the row claiming a turn is in flight forever. Absent only while
     # idle (or if that unallocated session ends); allocation installs the provisioning grant in the
-    # transaction that mints the runner credential.
+    # transaction that mints the sandbox session credential.
     lease_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Which replica is asserting the lease, and — by being NULL or not — which of the lease's two
     # meanings is running. NULL is the creator's provisioning grant: nobody holds this session
@@ -1084,6 +1114,8 @@ class Session(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
+        UniqueConstraint("bridge_token_fingerprint", name="uq_sessions_bridge_token_fingerprint"),
+        UniqueConstraint("session_id", "agent_binding_id", name="uq_sessions_session_agent_binding"),
         CheckConstraint(
             "status IN ('idle','provisioning','ready','responding','closing','closed','failed')",
             name="ck_sessions_status",

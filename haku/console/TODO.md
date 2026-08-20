@@ -325,17 +325,21 @@ beside the operator and the conversation it already names.
 or dynamic client registration exactly as now. This adds a way to _be_ an Agent — one the console
 launches — beside the way an Agent arrives from outside, and replaces neither.
 
-**The permission machinery is already built and cannot currently express a difference.** `agents/`
-holds the canonical Agent domain and enrollment picks that Agent's auto-approval policy from the
-roots `config.yaml` defines (`AutoApprovalPolicyRegistry` in <auto_approval.py>, fail-closed at
-`MANUAL_APPROVAL_REQUIRED`). But `ClaudeRuntimeConfig.mcp_static_agent_id` is one id and
-<x/session_runtime.py> hands every launch the same bearer, so every session is the **same** Agent and
-the policy is uniform across all of them by construction. Naming the Agent per session is what makes
-it bite: "permissions X here, permissions Y there" stops being new machinery and becomes the
-existing machinery finally having distinct subjects.
+**The permission machinery is now wired through the session.** `agents/` holds the canonical Agent
+domain and enrollment selects the Agent's access profile. A conversation pins Agent/profile/runtime;
+each session pins the credential binding that authorized that sandbox. Allocation mints one
+exact-session bearer for the runner websocket and direct `/mcp` calls. It arrives through the
+SandboxClaim environment and is intentionally available to the provider CLI and its child commands;
+Console resolves it back to that specific session and pinned identity. Runtime configuration
+therefore holds an MCP endpoint, not a static Agent credential, and several launchable Agents whose
+profiles allow `claude_code` can share the same Claude runtime.
 
-**So this is two pieces of work joined at the session row, and splittable.** The permission half is
-largely built and blocked on identity alone. The runner half is a new frame-speaking implementation,
-and it drags `ClaudeRuntimeConfig` with it: singular throughout — one namespace, one warm pool, one
-`oauth_placeholder`, one system-prompt template, one `mcp_url` — where several runners want a keyed
-set.
+The claim carries that same bearer under the runner variable and an MCP alias. This is rollout
+compatibility, not a second credential: the previous runner strips the runner-named variable from
+Claude but passes the unknown alias, while the new runner preserves both.
+
+**The remaining runner half is independently extensible.** A new frame-speaking implementation still
+needs its own adapter and deploy configuration. `ClaudeRuntimeConfig` remains singular in namespace,
+warm pool, OAuth placeholder, system-prompt template and MCP URL; a concrete need for multiple
+instances of one implementation kind would replace that with keyed runtime instances without
+changing session Agent identity.

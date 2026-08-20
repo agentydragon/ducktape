@@ -294,7 +294,11 @@ class Deployment:
                 self._runners[session_id] = await self._spawn(
                     f"runner-{len(self._session_ids)}",
                     get_required_path(RUNNER_BIN),
-                    {"HAKU_RUNNER_SESSION_ID": str(session_id), "HAKU_AGENT_SDK_RUNNER_TOKEN": claim["bridge_token"]},
+                    {
+                        "HAKU_RUNNER_SESSION_ID": str(session_id),
+                        "HAKU_AGENT_SDK_RUNNER_TOKEN": claim["bridge_token"],
+                        "HAKU_MCP_BEARER_TOKEN": claim["bridge_token"],
+                    },
                     "--harness",
                     "claude",
                 )

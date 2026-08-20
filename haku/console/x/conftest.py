@@ -17,15 +17,15 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from pydantic import SecretStr
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ChatSurface, ItemStatus, ItemType
+from haku.console.chat_models import ChatSurface, ItemStatus, ItemType, RuntimeKind
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ChatAttachment, ConversationItem, Session
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.claude_code.client import cli_over_websocket
+from haku.console.x.launch_identity import LaunchAuthorizer
 from haku.console.x.runtime import RuntimeClientFactory, RuntimeRegistry
 from haku.console.x.runtime_catalog import claude_registry, projection_registry
 from haku.console.x.sandbox_allocation import SandboxAllocator
@@ -57,9 +57,6 @@ def runtime_config(**overrides: object) -> ClaudeRuntimeConfig:
     return ClaudeRuntimeConfig.model_validate(values)
 
 
-MCP_TOKEN = SecretStr("haku-static-bearer")
-
-
 def configured_runtimes(
     claims: RecordingClaims,
     *,
@@ -70,7 +67,6 @@ def configured_runtimes(
     return claude_registry(
         config or runtime_config(),
         claims,
-        mcp_token=MCP_TOKEN,
         system_prompt=system_prompt or SystemPromptTemplate(""),
         client_factory=client_factory,
     )
@@ -84,8 +80,32 @@ def recording_claims() -> RecordingClaims:
 class _ProvisioningTestStore(SessionStore):
     """Keep older focused tests concise while the production writer now starts idle."""
 
-    async def create(self, operator_id: UUID, *, conversation_id: UUID | None = None) -> tuple[SessionView, str]:
-        return await self._create_provisioning_for_test(operator_id, conversation_id=conversation_id)
+    async def create(
+        self,
+        operator_id: UUID,
+        *,
+        conversation_id: UUID | None = None,
+        agent_id: UUID | None = None,
+        access_profile_id: str | None = None,
+        runtime_kind: RuntimeKind | None = None,
+        launch_authorizer: LaunchAuthorizer | None = None,
+    ) -> tuple[SessionView, str]:
+        if launch_authorizer is not None:
+            return await super().create(
+                operator_id,
+                conversation_id=conversation_id,
+                agent_id=agent_id,
+                access_profile_id=access_profile_id,
+                runtime_kind=runtime_kind,
+                launch_authorizer=launch_authorizer,
+            )
+        return await self._create_provisioning_for_test(
+            operator_id,
+            conversation_id=conversation_id,
+            agent_id=agent_id,
+            access_profile_id=access_profile_id,
+            runtime_kind=runtime_kind,
+        )
 
 
 @pytest.fixture

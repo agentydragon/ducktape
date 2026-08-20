@@ -17,7 +17,7 @@ from typing import Annotated, Any, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.chat_models import (
     ENDED_SESSION_STATUSES,
@@ -26,12 +26,14 @@ from haku.console.chat_models import (
     FrameDirection,
     ItemType,
     PromptOrigin,
+    RuntimeKind,
     SessionStatus,
     TurnOutcome,
 )
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.x.conversation_events import ConversationEvent
 from haku.console.x.conversation_history import ConversationHistory
+from haku.console.x.launch_identity import LaunchAgentRejectedError, LaunchAuthorizer
 from haku.console.x.runtime import (
     Checkpoint,
     ConfiguredRuntime,
@@ -39,6 +41,7 @@ from haku.console.x.runtime import (
     RuntimeAdapter,
     RuntimeClient,
     RuntimeLaunch,
+    RuntimeMcpServer,
     RuntimeRegistry,
     TurnCompletion,
     TurnProjectionSeed,
@@ -51,6 +54,7 @@ from haku.console.x.session_store import (
     PromptRecords,
     PromptRefusedError,
     ResumedTurn,
+    SandboxDemand,
     SessionStore,
     TurnStart,
 )
@@ -65,6 +69,7 @@ from haku.console.x.session_views import (
     SessionView,
 )
 from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction
+from haku.runtime.x.bridge.backend import MCP_CREDENTIAL_VARIABLE
 from haku.runtime.x.bridge.client import ReceivedFrame, RecordedFrame
 from haku.runtime.x.bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, HarnessFrame, TextWebSocket
 
@@ -97,6 +102,15 @@ class SessionPromptRequest(BaseModel):
     """What the SPA posts to send a prompt; the prompt itself becomes an item and a queued row."""
 
     text: str = Field(min_length=1, max_length=100_000)
+
+
+class ConversationCreateRequest(BaseModel):
+    """Optional launch selectors; access profile is always derived server-side."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: UUID | None = None
+    runtime: RuntimeKind | None = None
 
 
 class PromptAccepted(BaseModel):
@@ -195,11 +209,15 @@ class SessionService:
         notifications: SessionNotifications,
         *,
         conversation_history: ConversationHistory | None = None,
+        launch_authorizer: LaunchAuthorizer | None = None,
+        default_agent_id: UUID | None = None,
     ):
         self._runtimes = runtimes
         self._store = store
         self._notifications = notifications
         self._conversation_history = conversation_history
+        self._launch_authorizer = launch_authorizer
+        self._default_agent_id = default_agent_id
         # Per session, the last view read off the cluster; `_observed` drops entries older than
         # `OBSERVATION_TTL` as it goes.
         self._observations: dict[UUID, SandboxProvisioningView] = {}
@@ -219,11 +237,44 @@ class SessionService:
             raise KeyError(session_id)
         return await self._store.request_abort(session_id)
 
-    async def create(self, operator_id: UUID, *, conversation_id: UUID | None = None) -> SessionView:
-        """Open a session without allocating a sandbox until its first accepted prompt."""
-        view, token = await self._store.create_idle(operator_id, conversation_id=conversation_id)
+    async def create(
+        self,
+        operator_id: UUID,
+        *,
+        conversation_id: UUID | None = None,
+        agent_id: UUID | None = None,
+        runtime_kind: RuntimeKind | None = None,
+    ) -> SessionView:
+        if self._launch_authorizer is not None:
+            selected_agent = agent_id or self._default_agent_id
+            if conversation_id is None and selected_agent is None:
+                raise RuntimeError("chat launch requires a selected Agent")
+            # SessionStore owns the transaction.  It derives a replacement's pinned identity under
+            # the conversation row lock and passes the same AsyncSession to the authorizer, so the
+            # authorization decision and durable rows cannot be separated by a concurrent disable.
+            view, token = await self._store.create_idle(
+                operator_id,
+                conversation_id=conversation_id,
+                agent_id=selected_agent if conversation_id is None else None,
+                runtime_kind=runtime_kind,
+                launch_authorizer=self._launch_authorizer,
+            )
+        else:
+            # Compatibility for direct unit-test callers and pre-identity local integrations.
+            view, token = await self._store.create_idle(
+                operator_id,
+                conversation_id=conversation_id,
+                agent_id=agent_id,
+                runtime_kind=runtime_kind or RuntimeKind.CLAUDE_CODE,
+            )
         assert not token, "an idle session must not expose a runner credential"
         return view
+
+    async def ensure_session_for_demand(self, operator_id: UUID, conversation_id: UUID) -> SandboxDemand | None:
+        """Create a demanded replacement under the pinned launch identity."""
+        return await self._store.ensure_session_for_demand(
+            operator_id, conversation_id, launch_authorizer=self._launch_authorizer
+        )
 
     async def enqueue_prompt(
         self,
@@ -272,9 +323,11 @@ class SessionService:
             await self._cleanup_terminal_claim(session_id)
             raise
 
-    async def create_conversation(self, operator_id: UUID) -> ConversationView:
+    async def create_conversation(
+        self, operator_id: UUID, *, agent_id: UUID | None = None, runtime_kind: RuntimeKind | None = None
+    ) -> ConversationView:
         """Open a thread and the session that runs it, and read the thread back."""
-        view = await self.create(operator_id)
+        view = await self.create(operator_id, agent_id=agent_id, runtime_kind=runtime_kind)
         return await self.conversation(operator_id, await self._store.conversation_of(view.session_id))
 
     async def conversation(self, operator_id: UUID, conversation_id: UUID) -> ConversationView:
@@ -457,25 +510,39 @@ class SessionService:
             await self._cleanup_terminal_claim(session_id)
             await websocket.close(code=1011, reason="system prompt failed to render")
             return
-        await websocket.accept()
-        launch = runtime.build_launch(
-            RuntimeLaunch(
-                cwd=resources.cwd,
-                environment=resources.environment,
-                mcp_servers=resources.mcp_servers,
-                appended_system_prompt=appended,
-                resume_from=await self._store.highest_runner_seq(session_id),
+        # Launch assembly is deploy/config interpretation, so keep it on the admission side of
+        # `accept()` too. A malformed endpoint must fail and release the claim rather than accept
+        # the runner, escape the lifecycle handler below, and leave the session leased until its
+        # sweeper deadline.
+        try:
+            launch = runtime.build_launch(
+                RuntimeLaunch(
+                    cwd=resources.cwd,
+                    environment=resources.environment,
+                    mcp_servers={
+                        name: RuntimeMcpServer(url=url, bearer_environment_variable=MCP_CREDENTIAL_VARIABLE)
+                        for name, url in resources.mcp_server_urls.items()
+                    },
+                    appended_system_prompt=appended,
+                    resume_from=await self._store.highest_runner_seq(session_id),
+                )
             )
-        )
-        client = runtime.client(
-            StarletteTextWebSocket(websocket),
-            # The cursor is read here, per connection, off the session's own rows — so a replica
-            # adopting a session mid-turn asks for what it is missing rather than being handed the
-            # runner's whole replay window (<README.md> § `session_store.py` and `session_runtime.py`).
-            launch,
-            self._progress_reporter(session_id),
-            RolloutRecorder(self._store, session_id),
-        )
+            client = runtime.client(
+                StarletteTextWebSocket(websocket),
+                # The cursor is read here, per connection, off the session's own rows — so a replica
+                # adopting a session mid-turn asks for what it is missing rather than being handed the
+                # runner's whole replay window (<README.md> § `session_store.py` and `session_runtime.py`).
+                launch,
+                self._progress_reporter(session_id),
+                RolloutRecorder(self._store, session_id),
+            )
+        except Exception as error:
+            logger.exception("runtime launch preparation failed for session %s", session_id)
+            await self._store.fail(session_id, f"runtime launch preparation failed: {error}")
+            await self._cleanup_terminal_claim(session_id)
+            await websocket.close(code=1011, reason="runtime launch preparation failed")
+            return
+        await websocket.accept()
         abort_event = asyncio.Event()
         # Whether the sandbox should outlive this connection. False for an ending session — one
         # closed, or failed in a way the CLI cannot be asked to continue past — and true when it
@@ -808,15 +875,26 @@ async def list_conversations(
 
 
 @router.post("/api/conversations", status_code=201)
-async def create_conversation(actor: OperatorActorDep, service: SessionServiceDep) -> ConversationView:
+async def create_conversation(
+    actor: OperatorActorDep, service: SessionServiceDep, body: ConversationCreateRequest | None = None
+) -> ConversationView:
     """Open a new thread and the first session to run it.
 
     One call, because a conversation with no session is a thread nothing can be said to.
     """
     try:
-        return await service.create_conversation(actor.operator_id)
-    except Exception as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
+        return await service.create_conversation(
+            actor.operator_id,
+            agent_id=None if body is None else body.agent_id,
+            runtime_kind=None if body is None else body.runtime,
+        )
+    except LaunchAgentRejectedError:
+        raise HTTPException(status_code=403, detail="chat launch is not authorized")
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Conversation not found") from error
+    except Exception:
+        logger.exception("conversation creation failed")
+        raise HTTPException(status_code=503, detail="conversation service unavailable")
 
 
 @router.get("/api/conversations/{conversation_id}")

@@ -4,14 +4,21 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from uuid import UUID, uuid4
 
 import pytest_bazel
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import SPA_ORIGIN, SessionStatus
+from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
+from haku.console.chat_models import SPA_ORIGIN, RuntimeKind, SessionStatus
+from haku.console.conftest import console_sessions
 from haku.console.database_schema import ConversationItem, Session
+from haku.console.x.conftest import configured_runtimes
 from haku.console.x.conversation_runtime import ConversationRuntime
-from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication
+from haku.console.x.launch_identity import ChatLaunchAuthorizer, LaunchIdentity
+from haku.console.x.session_runtime import SessionService
+from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, SessionStore
 
 
 async def test_first_conversation_prompt_creates_one_session_then_one_sandbox(
@@ -49,6 +56,77 @@ async def test_first_conversation_prompt_creates_one_session_then_one_sandbox(
 
     assert recording_claims.created == [sessions[0].session_id]
     assert await chat_store.status(sessions[0].session_id) == SessionStatus.PROVISIONING
+
+
+async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_transaction(
+    migrated_db_url,
+    migrated_sessions,
+    migrated_identity_store,
+    notifications,
+    migrated_engine,
+    operator_id,
+    recording_claims,
+) -> None:
+    expected_agent_id = uuid4()
+    authority = PostgresAgentAuthority(
+        console_sessions(migrated_db_url),
+        public_base_url="https://haku.test",
+        operator_identity_store=migrated_identity_store,
+        access_profiles=("pinned",),
+        default_access_profile_id="pinned",
+    )
+    await authority.reconcile_static_agents(
+        [
+            StaticAgentDefinition(
+                agent_id=expected_agent_id,
+                display_name="Demanded Replacement Agent",
+                operator_id=operator_id,
+                secret_reference="env:DEMANDED_REPLACEMENT_AGENT",
+                token_fingerprint=fingerprint_static_token("demanded-replacement-token"),
+                access_profile_id="pinned",
+            )
+        ]
+    )
+    production = ChatLaunchAuthorizer(
+        authority,
+        launchable_agent_ids={expected_agent_id},
+        registered_runtime_kinds={RuntimeKind.CLAUDE_CODE},
+        profile_runtime_kinds={"pinned": {RuntimeKind.CLAUDE_CODE}},
+    )
+    calls: list[tuple[UUID, str | None, bool]] = []
+
+    async def authorize(
+        operator_id: UUID,
+        agent_id: UUID,
+        runtime_kind: RuntimeKind,
+        *,
+        expected_profile_id: str | None = None,
+        db: AsyncSession | None = None,
+    ) -> LaunchIdentity:
+        assert db is not None
+        assert db.in_transaction()
+        assert agent_id == expected_agent_id
+        calls.append((operator_id, expected_profile_id, db.in_transaction()))
+        return await production(operator_id, agent_id, runtime_kind, expected_profile_id=expected_profile_id, db=db)
+
+    runtimes = configured_runtimes(recording_claims)
+    store = SessionStore(migrated_sessions, runtimes)
+    service = SessionService(
+        runtimes, store, notifications, launch_authorizer=authorize, default_agent_id=expected_agent_id
+    )
+    first = await service.create(operator_id)
+    conversation_id = await store.conversation_of(first.session_id)
+    async with migrated_sessions.begin() as db:
+        await db.delete(await db.get(Session, first.session_id))
+    await store.enqueue_conversation_prompt(operator_id, conversation_id, "replace", SPA_ORIGIN)
+
+    await ConversationRuntime(service, store, notifications, migrated_engine).reconcile_once()
+
+    async with migrated_sessions() as db:
+        replacements = list(await db.scalars(select(Session).where(Session.conversation_id == conversation_id)))
+    assert len(replacements) == 1
+    assert replacements[0].status is SessionStatus.IDLE
+    assert calls == [(operator_id, None, True), (operator_id, "pinned", True)]
 
 
 async def test_new_runtime_and_rolling_old_creator_converge_on_one_session(

@@ -67,13 +67,11 @@ logger = logging.getLogger("haku.console.x.channels.matrix.testing.console_repli
 TRUST_DOMAIN = "auth.test/authentik-user-id/v1"
 TRUSTED_ISSUER = "https://auth.test/application/o/haku-console/"
 
-MCP_TOKEN = SecretStr("haku-static-bearer")
-
 
 class FileSandboxClaims:
     """The `SandboxClaims` surface, writing what Kubernetes would have been asked to run.
 
-    One file per live claim, named by session, holding the bridge credential the runner needs.
+    One file per live claim, named by session, holding the session credential the sandbox needs.
     Written by rename so a watcher never reads a half-written claim.
     """
 
@@ -162,10 +160,7 @@ async def _serve() -> None:
     await notifications.start()
     claims = FileSandboxClaims(Path(_environment("HAKU_E2E_CLAIMS_DIR")))
     runtimes = claude_registry(
-        runtime,
-        claims,
-        mcp_token=MCP_TOKEN,
-        system_prompt=SystemPromptTemplate.from_path(runtime.system_prompt_template),
+        runtime, claims, system_prompt=SystemPromptTemplate.from_path(runtime.system_prompt_template)
     )
     store = SessionStore(sessions, runtimes)
     conversations = MatrixConversationStore(sessions)

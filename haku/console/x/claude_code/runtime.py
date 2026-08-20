@@ -54,7 +54,7 @@ class ClaudeRuntimeAdapter:
             environment=launch.environment,
             mcp_servers={
                 name: HttpMcpServer(
-                    url=server.url, headers={"Authorization": f"Bearer {server.bearer_token.get_secret_value()}"}
+                    url=server.url, headers={"Authorization": f"Bearer ${{{server.bearer_environment_variable}}}"}
                 )
                 for name, server in launch.mcp_servers.items()
             },

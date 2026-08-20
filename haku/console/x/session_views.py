@@ -105,6 +105,8 @@ class ConversationSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     conversation_id: UUID
+    agent_id: UUID | None = None
+    access_profile_id: str | None = None
     runtime_kind: RuntimeKind
     created_at: datetime
     last_activity_at: datetime = Field(
@@ -206,6 +208,8 @@ class ConversationView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     conversation_id: UUID
+    agent_id: UUID | None = None
+    access_profile_id: str | None = None
     runtime_kind: RuntimeKind
     created_at: datetime
     attachments: list[ChannelAttachment]

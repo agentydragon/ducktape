@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from pydantic import SecretStr
-
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.x.claude_code.client import cli_over_websocket
 from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
-from haku.console.x.runtime import RuntimeClientFactory, RuntimeMcpServer, RuntimeRegistry, RuntimeResources
+from haku.console.x.runtime import RuntimeClientFactory, RuntimeRegistry, RuntimeResources
 from haku.console.x.sandbox_claims import SandboxClaims
 from haku.console.x.system_prompt import SystemPromptTemplate
 
@@ -22,7 +20,6 @@ def claude_registry(
     config: ClaudeRuntimeConfig,
     claims: SandboxClaims,
     *,
-    mcp_token: SecretStr,
     system_prompt: SystemPromptTemplate,
     client_factory: RuntimeClientFactory = cli_over_websocket,
 ) -> RuntimeRegistry:
@@ -36,7 +33,7 @@ def claude_registry(
                 session_ttl_seconds=config.session_ttl_seconds,
                 cwd=config.cwd,
                 environment=config.claude_environment(),
-                mcp_servers={"haku-console": RuntimeMcpServer(url=config.mcp_url, bearer_token=mcp_token)},
+                mcp_server_urls={"haku-console": config.mcp_url},
                 system_prompt=system_prompt,
             )
         },

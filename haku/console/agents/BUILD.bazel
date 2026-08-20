@@ -40,6 +40,7 @@ py_library(
         "//haku/console:operator_identity_store",
         "//haku/console:tool_call_actor",
         "//haku/console/mcp_auth:fastmcp_adapter",
+        "//haku/console/x:launch_identity",
         "//mcp_infra/authentik_auth:oidc_principal",
         "@pypi//psycopg",
         "@pypi//sqlalchemy",

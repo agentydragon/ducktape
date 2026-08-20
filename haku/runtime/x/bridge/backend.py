@@ -20,9 +20,12 @@ from typing import Protocol
 
 from haku.runtime.x.bridge.protocol import HarnessLaunch
 
-# The credential the runner dials the console with. A property of the bridge rather than of any
-# CLI, which is why stripping it is here and not in a backend: it is ours whichever child runs.
+# The exact-session credential used by the runner bridge and by the Agent at Console MCP.
 BRIDGE_CREDENTIAL_VARIABLE = "HAKU_AGENT_SDK_RUNNER_TOKEN"
+# A rolling-compatible alias for the same bearer. The previous runner image strips the bridge-named
+# variable from children, but does not know this name; injecting both lets a new Console launch
+# Claude through either runner version without minting a second authority.
+MCP_CREDENTIAL_VARIABLE = "HAKU_MCP_BEARER_TOKEN"
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,9 +48,14 @@ class ProcessLaunch:
 
 
 def child_environment(launch: HarnessLaunch) -> dict[str, str]:
-    """This process's environment with the launch overlaid and the bridge credential removed."""
+    """Overlay launch values while retaining the claim-owned exact-session credential."""
     return {
-        key: value for key, value in {**os.environ, **launch.environment}.items() if key != BRIDGE_CREDENTIAL_VARIABLE
+        **os.environ,
+        **{
+            key: value
+            for key, value in launch.environment.items()
+            if key not in {BRIDGE_CREDENTIAL_VARIABLE, MCP_CREDENTIAL_VARIABLE}
+        },
     }
 
 

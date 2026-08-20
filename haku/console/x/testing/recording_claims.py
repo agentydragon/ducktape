@@ -67,8 +67,8 @@ class RecordingClaims:
             raise RuntimeError("claim creation refused")
         self.created.append(session_id)
         self.created_event.set()
-        # The claim is where a test reaches the bridge credential: the store mints it and
-        # `SessionService.create` does not hand it back.
+        # The claim is where a test reaches the credential: the store mints it and
+        # `SessionService.create` does not hand them back.
         self.tokens[session_id] = bridge_token
 
     async def renew(self, *, session_id: UUID, expires_at: datetime) -> None:

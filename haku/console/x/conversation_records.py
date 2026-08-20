@@ -53,6 +53,8 @@ class SessionRecord(BaseModel):
     conversation_id: UUID = Field(
         description="The thread this session ran; successive sessions of one thread share it."
     )
+    agent_id: UUID | None = None
+    access_profile_id: str | None = None
     runtime_kind: RuntimeKind = Field(description="The immutable runner implementation pinned by that conversation.")
     attachments: list[ChannelAttachment] = Field(description="The channels currently holding a copy of that thread.")
     status: str

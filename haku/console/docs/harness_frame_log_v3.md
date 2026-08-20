@@ -12,9 +12,11 @@ harness vocabulary.
   notifications are retained/replayed exactly like every other harness frame. There is no
   backend-specific `replayable()` classifier in the runner.
 
-This release is intentionally incompatible. The protocol negotiates version 3 only. A runner that
-advertises no common version is refused and its session is allowed to terminate/clean up; it must
-not be guessed into the v2 envelope. Migration `0090_harness_frame_log_cutover` clears session and
+This release was intentionally incompatible and negotiated version 3 only. The later v4 MCP
+credential-boundary cutover retains v3 for old Consoles while requiring v4 for session-bearer MCP
+launches. A runner that advertises no acceptable version is refused and its session is allowed to
+terminate/clean up; it must not be guessed into the v2 envelope. Migration
+`0090_harness_frame_log_cutover` clears session and
 chat-derived rows while preserving Operators, credentials, approvals, provider connections,
 conversations, and Matrix room attachments. The Matrix supervisor creates replacement sessions
 against the preserved conversation/room association.

@@ -97,15 +97,17 @@ def test_the_runner_runs_the_launch_the_console_sent(tmp_path: Path) -> None:
     assert "Bearer test-static-agent-token" in mcp_config
 
 
-def test_environment_does_not_expose_the_bridge_credential(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_environment_exposes_the_claim_owned_session_credential(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CLAUDECODE", "parent")
-    monkeypatch.setenv("HAKU_AGENT_SDK_RUNNER_TOKEN", "bridge-secret")
+    monkeypatch.setenv("HAKU_AGENT_SDK_RUNNER_TOKEN", "session-secret")
+    monkeypatch.setenv("HAKU_MCP_BEARER_TOKEN", "session-secret")
     launch = HarnessLaunch(
         arguments=(),
         cwd="/workspace",
         environment={
             "CLAUDECODE": "injected-parent",
             "HAKU_AGENT_SDK_RUNNER_TOKEN": "injected-secret",
+            "HAKU_MCP_BEARER_TOKEN": "injected-secret",
             "SAFE": "value",
         },
     )
@@ -113,7 +115,8 @@ def test_environment_does_not_expose_the_bridge_credential(monkeypatch: pytest.M
     environment = claude_backend(Path("/usr/local/bin/claude")).resolve(launch).environment
 
     assert environment["CLAUDECODE"] == "injected-parent"
-    assert "HAKU_AGENT_SDK_RUNNER_TOKEN" not in environment
+    assert environment["HAKU_AGENT_SDK_RUNNER_TOKEN"] == "session-secret"
+    assert environment["HAKU_MCP_BEARER_TOKEN"] == "session-secret"
     assert environment["SAFE"] == "value"
 
 

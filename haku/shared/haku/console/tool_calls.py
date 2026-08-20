@@ -68,6 +68,7 @@ class AgentToolCallCaller(BaseModel):
     kind: Literal["agent"] = "agent"
     agent_id: UUID
     display_name: str
+    session_id: UUID | None = None
 
 
 type ToolCallCaller = Annotated[OperatorToolCallCaller | AgentToolCallCaller, Field(discriminator="kind")]
