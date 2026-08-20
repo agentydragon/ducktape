@@ -20,13 +20,16 @@ let
       stripRoot = false;
     };
   };
+  bazelExecutable = "${bazelPkg}/bin/bazel-${repoBazelVersion}-linux-x86_64";
 
   # Bazelisk's own Go binary works in the minimal Nix image, but the upstream
   # Bazel ELF it downloads does not: it requests the absent FHS loader at
   # /lib64/ld-linux-x86-64.so.2. Install nixpkgs' patched Bazel as `bazel`.
   # BuildBuddy's CLI embeds Bazelisk for local argument canonicalization; the
   # BB_USE_BAZEL_VERSION environment variable below makes that embedded
-  # Bazelisk use this absolute binary rather than downloading another one.
+  # Bazelisk use the actual versioned executable rather than downloading
+  # another one. Do not point it at nixpkgs' `bin/bazel`: that is Bazel's own
+  # version-selecting wrapper and recursively interprets USE_BAZEL_VERSION.
 
   # Matrix uses the plugin-state store for sync and encryption state. OpenClaw
   # grants that capability only to trusted plugins, and an arbitrary
@@ -176,8 +179,7 @@ pkgs.dockerTools.buildLayeredImage {
       "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs"
       "NPM_CONFIG_PREFIX=/home/openclaw/.local"
       "NPM_CONFIG_CACHE=/home/openclaw/.cache/npm"
-      "BB_USE_BAZEL_VERSION=${bazelPkg}/bin/bazel"
-      "USE_BAZEL_VERSION=${bazelPkg}/bin/bazel"
+      "BB_USE_BAZEL_VERSION=${bazelExecutable}"
       "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
     ];
     Labels."org.opencontainers.image.source" = "https://github.com/agentydragon/ducktape";

@@ -3,13 +3,15 @@ set -eu
 
 /usr/bin/env bash -c "true"
 pre-commit --version
-for command in bazel bazelisk bb bbapi bbr buildifier ducktape-precommit kubeconform prettier ruff shfmt; do
+for command in bazel bb bbapi bbr buildifier ducktape-precommit kubeconform prettier ruff shfmt; do
   command -v "$command"
 done
 bazel --version
-bazelisk --version
-test "$(bazel --version)" = "$(bazelisk --version)"
-test "$(readlink -f "$(command -v bazel)")" = "$BB_USE_BAZEL_VERSION"
+test -x "$BB_USE_BAZEL_VERSION"
+test "$(bazel --version)" = "$("$BB_USE_BAZEL_VERSION" --version)"
+# `bb remote` embeds Bazelisk and invokes Bazel locally to canonicalize flags.
+# Its help path exercises that lookup without scheduling a remote action.
+bb help remote >/dev/null
 bbr --help >/dev/null
 
 # Execute a real Ducktape hook, rather than only checking that its wrapper is
