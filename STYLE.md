@@ -246,12 +246,29 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
 - **Concise test bodies**: assertions in tests, setup in fixtures.
 - **Update tests with production code**: signature/behavior changes propagate to the
   tests that use them, in the same change.
-- **No pure change-detector tests**: don't assert a checked-in literal equals itself
-  copied into the test. Test semantics — invalid values rejected, invariants hold,
-  behavior differs by mode. Example: asserting the Alembic head revision
-  (`version_num == "0011"`) breaks on every migration for no behavioral reason; assert
-  instead that migrating a fresh DB matches the ORM metadata and that re-applying at
-  head is idempotent.
+- **No pure change-detector tests**: every expectation must encode a durable rule, not
+  duplicate the artifact's current state. Reading a checked-in YAML/JSON/XML file and copying
+  its current values, shape, roster, or whole contents into assertions is not coverage — an
+  intentional edit must change the test in exactly the same way, so the test can distinguish
+  no correct state from an incorrect one. Moving the duplicate into a fixture or test constant
+  does not help.
+  - Independence is **semantic, not physical**. The source of truth may be another artifact,
+    an external contract, or an invariant authored in the test about relationships within the
+    same file. A test that says two LiteLLM routes must name the same downstream model and key
+    enforces a real rule even though both routes live in one YAML file; a test that copies the
+    current route roster into Python does not.
+  - Prefer relations (a configured path names a mounted file; paired fields stay equal; a
+    Service targets a declared container port), schemas or invariants that admit many valid
+    inputs, and logic/runtime behavior. Ask whether a plausible wrong edit would fail without
+    updating expected values in lockstep.
+  - Generated-output snapshots are valid when the test runs the generator. Exact wire-format
+    or compatibility pins are valid only when an external specification or still-live consumer
+    independently requires that value; name that contract in the test.
+  - Delete or rewrite assertions such as `config["session_ttl_seconds"] == 7200`, a copied
+    manifest dict, a copied enum/roster, or `version_num == "0011"`. Prefer, respectively, a
+    timeout behavior test, semantic correspondence within or across manifests, behavior for
+    each mode, or migrating a fresh database to ORM parity and proving head re-application
+    idempotent.
 - **No lint silencing without approval**: no ignore rules or per-line silencing unless
   explicitly approved.
 - **Use pre-commit**: `pre-commit run --all-files` over invoking individual tools.
