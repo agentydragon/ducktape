@@ -20,16 +20,21 @@ let
       stripRoot = false;
     };
   };
-  bazelExecutable = "${bazelPkg}/bin/bazel-${repoBazelVersion}-linux-x86_64";
+  # wrapProgram keeps the patched executable behind this shell wrapper. Bazelisk
+  # symlinks local binaries into its cache and preserves that symlink as argv[0];
+  # the shell wrapper's exec -a then makes Bazel resolve itself from the cache
+  # path and fail with LOCAL_ENVIRONMENTAL_ERROR. Point Bazelisk at the wrapped
+  # ELF itself instead.
+  bazelExecutable = "${bazelPkg}/bin/.bazel-${repoBazelVersion}-linux-x86_64-wrapped";
 
   # Bazelisk's own Go binary works in the minimal Nix image, but the upstream
   # Bazel ELF it downloads does not: it requests the absent FHS loader at
   # /lib64/ld-linux-x86-64.so.2. Install nixpkgs' patched Bazel as `bazel`.
   # BuildBuddy's CLI embeds Bazelisk for local argument canonicalization; the
   # BB_USE_BAZEL_VERSION environment variable below makes that embedded
-  # Bazelisk use the actual versioned executable rather than downloading
-  # another one. Do not point it at nixpkgs' `bin/bazel`: that is Bazel's own
-  # version-selecting wrapper and recursively interprets USE_BAZEL_VERSION.
+  # Bazelisk use the actual wrapped ELF rather than downloading another one.
+  # Neither nixpkgs' `bin/bazel` version selector nor the versioned makeWrapper
+  # script is safe to invoke through Bazelisk's local-binary cache symlink.
 
   # Matrix uses the plugin-state store for sync and encryption state. OpenClaw
   # grants that capability only to trusted plugins, and an arbitrary
