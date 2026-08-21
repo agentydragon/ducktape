@@ -81,6 +81,12 @@ spec:
             source: https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_flux
           - name: headlamp_cert-manager
             source: https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_cert-manager
+          - name: headlamp_kyverno
+            source: https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_kyverno
+            version: "0.1.0"
+          - name: headlamp_keda
+            source: https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_keda
+            version: "0.1.2"
         installOptions:
           parallel: true
           maxConcurrent: 2
