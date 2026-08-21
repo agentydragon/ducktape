@@ -319,7 +319,6 @@ rec {
   foxflss = pkgs.callPackage ./foxflss.nix { };
   litert-lm = pkgs.callPackage ./litert-lm.nix { };
   prettier = pkgs.callPackage ./prettier/prettier.nix { };
-  kubernetes-mcp-server = pkgs.callPackage ./kubernetes-mcp-server.nix { };
   bazel-diff = pkgs.callPackage ./bazel-diff.nix { };
   # Anthropic CLI (`ant`): Claude API / Managed Agents control plane. Not in
   # nixpkgs; vendored static release binary. Used by haku/runtime/managed_agent/self_hosted.

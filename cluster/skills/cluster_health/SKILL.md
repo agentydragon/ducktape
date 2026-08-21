@@ -8,12 +8,10 @@ description: Scan cluster health — Flux kustomizations, pod status, recurring 
 Comprehensive cluster health scan. Collect results from all checks, then produce a
 single structured report with an actionable fix plan.
 
-Use the `kubectl-local` MCP server tools for all read queries — the SA has a
-`cluster-diagnostics-reader` ClusterRole with cluster-wide read access to nodes, pods,
-deployments, Flux kustomizations, HelmReleases, cert-manager, CNPG, metrics,
-Gateway API, Kyverno, and more (see
-<cluster/k8s/agents/agent-rbac-base/clusterrole-cluster-diagnostics-reader.yaml>).
-It can also patch Flux Kustomizations (for manual reconciliation triggers).
+Use the `haku-console` MCP server's connected Kubernetes passthrough tools for
+read queries. Haku routes these through the operator-linked Kubernetes MCP
+server and its approval policy; do not assume client-side MCP auto-approval
+bypasses that boundary.
 
 Fall back to `Bash(kubectl ...)` with `dangerouslyDisableSandbox: true` only for
 operations the SA cannot do (e.g., writing resources outside `claude-sandbox`,
@@ -43,7 +41,7 @@ Run checks in parallel where possible.
   condition is not paging. Do not treat silenced maintenance alerts as healthy
   without checking the silence reason, creator, matcher, and expiry.
 
-Prefer `kubectl-local` for Kubernetes object reads. For the live Alertmanager API,
+Prefer the connected Haku Kubernetes tools for Kubernetes object reads. For the live Alertmanager API,
 use the least-invasive available path: Kubernetes service proxy if exposed by the
 MCP server, otherwise the `Bash(kubectl ...)` escape hatch outside the sandbox for
 a short `kubectl port-forward` or an ephemeral curl pod in `claude-sandbox`.

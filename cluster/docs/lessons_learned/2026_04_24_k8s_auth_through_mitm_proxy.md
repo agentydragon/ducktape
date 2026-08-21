@@ -68,12 +68,11 @@ reads that file, parses it as YAML (gets `None`), compares to the new
 kubeconfig dict, and raises `refusing to overwrite …: existing kubeconfig
 differs from the one we'd write`. Every session startup. Fixed at the time
 by switching to `mktemp -u` (reserves a name without creating the file);
-subsequently eliminated entirely: the MCP launcher was rewritten as
-`devinfra/claude/kubectl_local_mcp.py`, which uses `memfd_create` to hold
-the kubeconfig in an anonymous in-memory file with no filesystem path. No
-temp file, no clobber check, no EXIT trap — the fd is passed directly to
-`kubernetes-mcp-server` as `--kubeconfig /proc/self/fd/<N>` and disappears
-when the server exits.
+subsequently eliminated entirely: the replacement local MCP launcher used
+`memfd_create` to hold the kubeconfig in an anonymous in-memory file with no
+filesystem path. No temp file, no clobber check, no EXIT trap — the fd was
+passed directly to the Kubernetes MCP server as `--kubeconfig /proc/self/fd/<N>`
+and disappeared when the server exited.
 
 ## Why client cert worked before
 

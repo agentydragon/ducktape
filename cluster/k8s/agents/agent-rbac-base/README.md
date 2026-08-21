@@ -158,15 +158,10 @@ SOPS-encrypted to `secrets/claude-web-k8s-jwt.yaml`. At session start,
 with `user.token` auth pointing at `https://kubeapi.allegedly.works`
 (the `HTTPRoute` in <../../kube-api-proxy/httproute.yaml>).
 
-Two callers, different kubeconfig materialization strategies:
-
-- **Session start hook** (background command in the web profile): writes
-  `~/.kube/config` to a real file for interactive `kubectl` use.
-- **`kubectl-local` MCP server** (<devinfra/claude/kubectl_local_mcp.py>):
-  writes the kubeconfig into an anonymous `memfd_create` file with no
-  filesystem path. The fd is passed as `--kubeconfig /proc/self/fd/<N>`
-  and is inherited across `execvp` into `kubernetes-mcp-server`; it
-  disappears when the server exits.
+The session start hook (background command in the web profile) writes
+`~/.kube/config` to a real file for interactive `kubectl` use. MCP clients use
+the operator-linked Kubernetes passthrough exposed by `haku-console` instead
+of launching a local Kubernetes MCP process.
 
 ## Security Considerations
 

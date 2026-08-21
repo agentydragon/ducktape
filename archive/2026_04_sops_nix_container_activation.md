@@ -47,8 +47,8 @@ There are **two distinct kubeconfigs**:
 
 | Consumer                | Environment | Invocation                                          | Key source                                                       |
 | ----------------------- | ----------- | --------------------------------------------------- | ---------------------------------------------------------------- |
-| `kubectl_local_mcp.py`  | CLI (local) | `decrypt_jwt()` + `build_kubeconfig()` + memfd exec | `SOPS_AGE_KEY` derived from `~/.ssh/id_ed25519` via `ssh-to-age` |
-| `kubectl_local_mcp.py`  | Web         | Same script                                         | `SOPS_AGE_KEY` env var from Claude Code UI                       |
+| retired local MCP launcher | CLI (local) | `decrypt_jwt()` + `build_kubeconfig()` + memfd exec | `SOPS_AGE_KEY` derived from `~/.ssh/id_ed25519` via `ssh-to-age` |
+| retired local MCP launcher | Web         | Same launcher                                       | `SOPS_AGE_KEY` env var from Claude Code UI                     |
 | `web_env.sh` bg command | Web         | `kubeconfig.py --write ~/.kube/config`              | `SOPS_AGE_KEY` env var                                           |
 
 All three go through `kubeconfig.py` → `build_kubeconfig()`, so the

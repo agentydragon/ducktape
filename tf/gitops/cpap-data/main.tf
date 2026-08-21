@@ -14,7 +14,7 @@
 # The Secrets land directly in the ducktape-owned `cpap-sync` namespace (no
 # cross-repo reflection dance like budget -> augur); the read Secret is
 # additionally reflected (emberstack) into `claude-sandbox` so Claude Code web
-# sessions can read it via the kubectl-local MCP.
+# sessions can read it through the connected Kubernetes MCP path.
 
 data "kubernetes_secret" "forgejo_admin" {
   metadata {

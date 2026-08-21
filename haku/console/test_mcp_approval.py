@@ -196,7 +196,7 @@ async def _serve_remote_oauth(
 ) -> AsyncGenerator[str]:
     """A fake OAuth server. With `preregistered_client_id` set, the metadata omits
     `registration_endpoint` and no `/auth/register` route is mounted at all — mirroring
-    Authentik (fronted by kubernetes-mcp-server), which has no DCR endpoint — so the test
+    Authentik (fronted by the Kubernetes MCP server), which has no DCR endpoint — so the test
     fails loudly if the client under test attempts dynamic registration anyway.
     """
     port = pick_free_port()

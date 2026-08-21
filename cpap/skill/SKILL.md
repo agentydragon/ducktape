@@ -20,8 +20,8 @@ Clone `https://git.allegedly.works/cpap-data/cpap-data.git` (the secret's
 `cpap-data-git-read` Kubernetes secret (keys: `username`, `password`,
 `repo_url`):
 
-- **Claude Code web**: read the reflected copy in `claude-sandbox` (via
-  kubectl-local MCP): `kubectl -n claude-sandbox get secret cpap-data-git-read`.
+- **Claude Code web**: read the reflected copy in `claude-sandbox` through the
+  connected Kubernetes MCP path: `kubectl -n claude-sandbox get secret cpap-data-git-read`.
 - **Laptops** (admin kubeconfig): `kubectl -n cpap-sync get secret cpap-data-git-read`.
 
 ```bash

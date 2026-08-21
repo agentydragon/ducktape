@@ -224,7 +224,6 @@ Three kubectl MCP servers:
 
 | Name                      | Transport             | Auth                                       | Permissions                                          |
 | ------------------------- | --------------------- | ------------------------------------------ | ---------------------------------------------------- |
-| `kubectl-local`           | stdio (local process) | client cert in kubeconfig                  | `kubectl-sandbox-users` group (via cert `O=` field)  |
 | `kubectl-passthrough-mcp` | HTTP                  | OAuth passthrough (public client, PKCE)    | caller's own OIDC group permissions                  |
 | `kubectl-sandbox-mcp`     | HTTP                  | OAuth passthrough + scope mapping override | always `kubectl-sandbox-users`, regardless of caller |
 

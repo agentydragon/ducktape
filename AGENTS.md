@@ -29,11 +29,11 @@ doing any other work.** Follow <devinfra/claude/claude_hook/docs/session_start_r
 Do not bypass proxy/certificate errors with `--noverify`, `SSL_VERIFY=false`, or similar.
 The root cause is always a broken session start hook — notify the user if recovery fails.
 
-## Kubernetes MCP Server (`kubectl-local`)
+## Kubernetes MCP Server (`haku-console`)
 
-Prefer the `kubectl-local` MCP server tools over `Bash(kubectl ...)` for any
-operation that the `oidc-ksbx-groups:kubectl-sandbox-users` RBAC group allows.
-It uses an in-memory kubeconfig and never triggers permission prompts.
+Prefer the `haku-console` MCP server's connected Kubernetes passthrough tools
+for Kubernetes operations. Haku keeps the operator-linked authorization and
+approval boundary for those calls.
 
 **RBAC source of truth**: keep permission details in
 <cluster/k8s/agents/agent-rbac-base/README.md> and the RoleBinding files it points to,
