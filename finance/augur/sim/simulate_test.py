@@ -60,8 +60,11 @@ from finance.augur.sim.scenario import (
     SetPrimaryResidenceEvent,
     SetRentedFractionEvent,
     SleeveTarget,
+    SpendingBoundary,
+    SpendingTier,
     TargetAllocationPolicy,
     TaxProfile,
+    TieredAmount,
 )
 from finance.augur.sim.simulate import simulate, simulate_with_external_series
 
@@ -227,6 +230,54 @@ def test_series_indexed_amount_rejects_zero_base_level() -> None:
     external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[0.0, 100.0]])
 
     with pytest.raises(ValueError, match="zero base level"):
+        simulate_with_external_series(scenario, rollout_count=1, external_series=external_series, locations={})
+
+
+def test_series_indexed_spending_threshold_requires_terminal_snapshot_coverage() -> None:
+    rent_series_id = RentKey(location_id=LocationId("san_francisco_ca"))
+
+    def indexed_threshold(amount: int) -> SeriesIndexedAmount:
+        return SeriesIndexedAmount(
+            base_amount=amount, series=rent_series_id, base_month_index=0, adjustment_period_months=1
+        )
+
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="world")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=1000),
+            InitialAccountBalance(agent_id="world", account_id="checking", balance=0),
+        ],
+        recurring_obligations=[
+            RecurringObligation(
+                start_month=0,
+                end_month=0,
+                obligation_id="lifestyle",
+                obligation_type="cash_spend",
+                agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="world",
+                to_account_id="checking",
+                amount_due=TieredAmount(
+                    initial_tier_id="full",
+                    tiers=(
+                        SpendingTier(tier_id="full", monthly_spend=200),
+                        SpendingTier(tier_id="trimmed", monthly_spend=100),
+                    ),
+                    boundaries=(
+                        SpendingBoundary(
+                            drop_below_liquid_net_worth=indexed_threshold(500),
+                            recover_above_liquid_net_worth=indexed_threshold(700),
+                        ),
+                    ),
+                ),
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=1,
+    )
+    external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[100.0]])
+
+    with pytest.raises(KeyError, match=r"month 1.*missing rollout"):
         simulate_with_external_series(scenario, rollout_count=1, external_series=external_series, locations={})
 
 

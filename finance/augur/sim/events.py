@@ -160,6 +160,17 @@ OBLIGATION_SETTLEMENT_EVENT_SCHEMA = pl.Schema(
     }
 )
 
+SPENDING_TIER_TRANSITION_EVENT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "policy_id": pl.Utf8(),
+        "agent_id": pl.Utf8(),
+        "previous_tier_id": pl.Utf8(),
+        "next_tier_id": pl.Utf8(),
+    }
+)
+
 PROPERTY_PURCHASE_EVENT_SCHEMA = pl.Schema(
     {
         "rollout_index": pl.Int64(),
@@ -348,6 +359,7 @@ class EventFrameCatalog:
     tax_settlements: FrameSpec
     obligation_accruals: FrameSpec
     obligation_settlements: FrameSpec
+    spending_tier_transitions: FrameSpec
     property_purchases: FrameSpec
     mortgage_originations: FrameSpec
     mortgage_payments: FrameSpec
@@ -369,6 +381,7 @@ class EventFrameCatalog:
             self.tax_settlements,
             self.obligation_accruals,
             self.obligation_settlements,
+            self.spending_tier_transitions,
             self.property_purchases,
             self.mortgage_originations,
             self.mortgage_payments,
@@ -391,6 +404,7 @@ EVENT_FRAMES = EventFrameCatalog(
     tax_settlements=FrameSpec("tax_settlements", TAX_SETTLEMENT_EVENT_SCHEMA),
     obligation_accruals=FrameSpec("obligation_accruals", OBLIGATION_ACCRUAL_EVENT_SCHEMA),
     obligation_settlements=FrameSpec("obligation_settlements", OBLIGATION_SETTLEMENT_EVENT_SCHEMA),
+    spending_tier_transitions=FrameSpec("spending_tier_transitions", SPENDING_TIER_TRANSITION_EVENT_SCHEMA),
     property_purchases=FrameSpec("property_purchases", PROPERTY_PURCHASE_EVENT_SCHEMA),
     mortgage_originations=FrameSpec("mortgage_originations", MORTGAGE_ORIGINATION_EVENT_SCHEMA),
     mortgage_payments=FrameSpec("mortgage_payments", MORTGAGE_PAYMENT_EVENT_SCHEMA),
@@ -476,6 +490,10 @@ class EventLog:
     @property
     def obligation_settlements(self) -> pl.DataFrame:
         return self.frame(EVENT_FRAMES.obligation_settlements)
+
+    @property
+    def spending_tier_transitions(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.spending_tier_transitions)
 
     @property
     def property_purchases(self) -> pl.DataFrame:

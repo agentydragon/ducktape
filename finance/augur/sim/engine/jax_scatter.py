@@ -74,6 +74,10 @@ def scatter_ys_to_buffers(
     buffers.state.liability_principal_ytd_state[1:] = np.asarray(state.liability_principal_ytd)
     buffers.state.rollout_failed_state[1:] = np.asarray(state.failed)
     buffers.state.rollout_failed_month_state[1:] = np.asarray(state.failed_month)
+    buffers.state.spending_tier_state[0] = np.broadcast_to(
+        plan.obligations.tiered_spending.initial_tier[:, None], (p.spending_policy_count, r)
+    )
+    buffers.state.spending_tier_state[1:] = np.asarray(state.spending_tier)
 
     buffers.transfers.active[:] = np.asarray(ys.transfers.active)
     buffers.transfers.amount[:] = np.asarray(ys.transfers.amount)

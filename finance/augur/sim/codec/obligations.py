@@ -112,6 +112,28 @@ def decode_obligations(
     return accruals, settlements, transfers, failures
 
 
+def decode_spending_tier_transitions(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
+    """Decode changes between adjacent snapshots of the recurrent tier state."""
+
+    tiers = buffers.state.spending_tier_state
+    changed = tiers[1:] != tiers[:-1]
+    if not changed.any():
+        return EVENT_FRAMES.spending_tier_transitions.empty()
+    months, policies, rollouts = np.argwhere(changed).T
+    previous_tier = tiers[:-1][months, policies, rollouts]
+    next_tier = tiers[1:][months, policies, rollouts]
+    spending = plan.obligations.tiered_spending
+    return frame_from_columns(
+        EVENT_FRAMES.spending_tier_transitions,
+        rollout_index=rollouts,
+        month_index=months,
+        policy_id=code_column(plan, spending.id[policies]),
+        agent_id=code_column(plan, spending.agent[policies]),
+        previous_tier_id=code_column(plan, spending.tier_id[policies, previous_tier]),
+        next_tier_id=code_column(plan, spending.tier_id[policies, next_tier]),
+    )
+
+
 def attempted_sources_for_policy_indices(plan: CompiledSimulation, attempt_policy: np.ndarray) -> np.ndarray:
     """Map a per-event `attempt_policy` int array to the matching joined-asset-names strings.
 

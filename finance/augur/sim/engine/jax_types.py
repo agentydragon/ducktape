@@ -30,6 +30,7 @@ class _StateOutput(NamedTuple):
     liability_principal_ytd: jax.Array
     failed: jax.Array
     failed_month: jax.Array
+    spending_tier: jax.Array
 
 
 class _TransferOutput(NamedTuple):
@@ -182,6 +183,26 @@ class _ConfiguredObligationInputs(NamedTuple):
     amount_series: jax.Array
     amount_base_month: jax.Array
     amount_period: jax.Array
+    tier_policy: jax.Array
+
+
+class _TierAmountScheduleInputs(NamedTuple):
+    value: jax.Array
+    kind: jax.Array
+    series: jax.Array
+    base_month: jax.Array
+    period: jax.Array
+
+
+class _TieredSpendingObligationInputs(NamedTuple):
+    initial_tier: jax.Array
+    tier_count: jax.Array
+    spend: _TierAmountScheduleInputs
+    drop: _TierAmountScheduleInputs
+    recover: _TierAmountScheduleInputs
+    cash_mask: jax.Array
+    lot_mask: jax.Array
+    liability_mask: jax.Array
 
 
 class _PropertyTaxObligationInputs(NamedTuple):
@@ -216,6 +237,7 @@ class _PriorYearTaxObligationInputs(NamedTuple):
 class _ObligationInputs(NamedTuple):
     metadata: _ObligationMetadataInputs
     configured: _ConfiguredObligationInputs
+    tiered_spending: _TieredSpendingObligationInputs
     property_tax: _PropertyTaxObligationInputs
     mortgage: _MortgageObligationInputs
     estimated_tax: _EstimatedTaxObligationInputs

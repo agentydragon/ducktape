@@ -108,6 +108,8 @@ from finance.augur.sim.engine.jax_types import (
     _Static,
     _TargetAllocationOutput,
     _TaxOutput,
+    _TierAmountScheduleInputs,
+    _TieredSpendingObligationInputs,
     _TransferInputs,
     _TransferOutput,
     _ConfiguredObligationInputs,
@@ -274,6 +276,9 @@ class _ScanState(NamedTuple):
     tax_liability_amount: jnp.ndarray
     failed: jnp.ndarray
     failed_month: jnp.ndarray
+    # `(tiered_spending_policy, R)`: recurrent actor-policy state.  The tier carried into a
+    # month chooses that month's Pay amount; a post-month transition writes the next carry.
+    spending_tier: jnp.ndarray
     # Scheduled-sale dispositions accumulated in-carry (`(scheduled_sale, lot, R)`): each sale fires
     # once, so accumulating at the firing month collapses the per-month horizon axis the old ys emitted.
     sale_disp_units: jnp.ndarray
@@ -545,6 +550,16 @@ def run_jax_scan_with_product_metrics(
     scatter_ys_to_buffers(plan, buffers, program.static.structure, dense_ys, final_state.dense)
     initial_ys, monthly_ys = product_ys
     return _product_metric_arrays_from_device(plan, initial_ys, monthly_ys, final_state.failed_month)
+
+
+def _tier_schedule_inputs(schedule: Any) -> _TierAmountScheduleInputs:
+    return _TierAmountScheduleInputs(
+        value=jnp.asarray(schedule.value),
+        kind=jnp.asarray(schedule.kind),
+        series=jnp.asarray(schedule.series),
+        base_month=jnp.asarray(schedule.base_month),
+        period=jnp.asarray(schedule.period),
+    )
 
 
 @dataclass(frozen=True)
@@ -1167,6 +1182,20 @@ def _build_program(
             amount_series=jnp.asarray(ob.configured.amount_series),
             amount_base_month=jnp.asarray(ob.configured.amount_base_month),
             amount_period=jnp.asarray(ob.configured.amount_period),
+            tier_policy=jnp.asarray(ob.configured.tier_policy),
+        ),
+        tiered_spending=_TieredSpendingObligationInputs(
+            initial_tier=jnp.asarray(ob.tiered_spending.initial_tier),
+            tier_count=jnp.asarray(ob.tiered_spending.tier_count),
+            spend=_tier_schedule_inputs(ob.tiered_spending.spend),
+            drop=_tier_schedule_inputs(ob.tiered_spending.drop),
+            recover=_tier_schedule_inputs(ob.tiered_spending.recover),
+            cash_mask=jnp.asarray(ob.tiered_spending.agent[:, None] == plan.cash_agent_codes[None, :]),
+            lot_mask=jnp.asarray(
+                (ob.tiered_spending.agent[:, None] == plan.lot_agent_codes[None, :])
+                & (plan.lot_asset_series_index[None, :] >= 0)
+            ),
+            liability_mask=jnp.asarray(ob.tiered_spending.agent[:, None] == plan.liabilities.agent[None, :]),
         ),
         property_tax=_PropertyTaxObligationInputs(
             active=jnp.asarray(property_tax.active),
@@ -1844,6 +1873,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         capital_loss_carryforward, recapture_ytd = s.capital_loss_carryforward, s.recapture_section_1250_ytd
         taxliab_active, taxliab_amount = s.tax_liability_active, s.tax_liability_amount
         failed, failed_month = s.failed, s.failed_month
+        spending_tier = s.spending_tier
         sale_disp_units, sale_disp_basis = s.sale_disp_units, s.sale_disp_basis
         sale_disp_proceeds, sale_oversell = s.sale_disp_proceeds, s.sale_oversell
         ta_buy_count = s.ta_buy_count
@@ -2153,9 +2183,20 @@ def _program_impl(program: _SimulationProgram) -> tuple:
             sale_disp_proceeds = sale_disp_proceeds.at[disp_sale, disp_lot].add(proceeds)
             sale_oversell = sale_oversell | oversell.any()
 
-        month_obligations = jax.tree.map(lambda value: value[month], obligation_inputs)
+        # Obligation slots are month-indexed; tier schedules are static recurrent state inputs.
+        month_obligations = _ObligationInputs(
+            metadata=jax.tree.map(lambda value: value[month], obligation_inputs.metadata),
+            configured=jax.tree.map(lambda value: value[month], obligation_inputs.configured),
+            tiered_spending=obligation_inputs.tiered_spending,
+            property_tax=jax.tree.map(lambda value: value[month], obligation_inputs.property_tax),
+            mortgage=jax.tree.map(lambda value: value[month], obligation_inputs.mortgage),
+            estimated_tax=jax.tree.map(lambda value: value[month], obligation_inputs.estimated_tax),
+            q4_estimated_tax=jax.tree.map(lambda value: value[month], obligation_inputs.q4_estimated_tax),
+            tax_true_up=jax.tree.map(lambda value: value[month], obligation_inputs.tax_true_up),
+        )
         payment_batch = _obligation_accruals_jit(
             month_obligations,
+            spending_tier,
             property_active,
             liab_principal,
             liab_monthly,
@@ -2726,6 +2767,41 @@ def _program_impl(program: _SimulationProgram) -> tuple:
             month,
         )
 
+        # Stateful lifestyle decision for the NEXT month.  The amount paid above came from the
+        # tier carried into this month; only after every current-month action and tax pass do we
+        # observe the resulting liquid net worth and update the recurrent policy state.  That
+        # ordering keeps spending cuts and funding sales from racing within one month.
+        tiered = obligation_inputs.tiered_spending
+        snapshot_month = month + 1
+        spending_cash = tiered.cash_mask.astype(jnp.int64) @ cash
+        spending_lot_value = _zeros_i64((tiered.tier_count.shape[0], r))
+        if p.lot_count > 0 and external_money_values.shape[0] > 0:
+            safe_series = jnp.maximum(lot_asset_series_index, 0)
+            lot_price = external_money_values[safe_series, :, snapshot_month]
+            lot_value = _value_quanta_from_quantity(lot_remaining, lot_price, lot_quantity_scale[:, None])
+            spending_lot_value = tiered.lot_mask.astype(jnp.int64) @ lot_value
+        spending_liability = tiered.liability_mask.astype(jnp.int64) @ liab_principal
+        spending_liquid_net_worth = spending_cash + spending_lot_value - spending_liability
+
+        drop_by_tier = _tier_amount_values(tiered.drop, external_values, snapshot_month, r)
+        recover_by_tier = _tier_amount_values(tiered.recover, external_values, snapshot_month, r)
+        active_policy = (
+            month_obligations.configured.tier_policy[None, :] == jnp.arange(tiered.tier_count.shape[0])[:, None]
+        ).any(axis=1)
+        policy_active = active_policy[:, None] & (~failed)[None, :]
+        drop = (
+            policy_active
+            & (spending_tier < tiered.tier_count[:, None] - 1)
+            & (spending_liquid_net_worth < _current_tier_values(spending_tier, drop_by_tier))
+        )
+        recover = (
+            policy_active
+            & ~drop
+            & (spending_tier > 0)
+            & (spending_liquid_net_worth > _current_tier_values(spending_tier, recover_by_tier))
+        )
+        spending_tier = jnp.where(drop, spending_tier + 1, jnp.where(recover, spending_tier - 1, spending_tier))
+
         keep = ~failed
         # `_zero_failed_state`: drain dollar-valued state for newly-failed rollouts. `cg_active`, the
         # property activity flag, depreciation accumulators, and owner-occupied months are left intact
@@ -2773,6 +2849,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
             tax_liability_amount=taxliab_amount,
             failed=failed,
             failed_month=failed_month,
+            spending_tier=spending_tier,
             sale_disp_units=sale_disp_units,
             sale_disp_basis=sale_disp_basis,
             sale_disp_proceeds=sale_disp_proceeds,
@@ -2836,6 +2913,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
                 liability_principal_ytd=liab_principal_ytd,
                 failed=failed,
                 failed_month=failed_month,
+                spending_tier=spending_tier,
             ),
             transfers=_TransferOutput(active=transfer_active, amount=transfer_amount),
             property_cashflows=_TransferOutput(active=property_cashflow_active, amount=property_cashflow_amount),
@@ -2935,6 +3013,9 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         tax_liability_amount=_zeros_i64((p.tax_liability_count, r)),
         failed=jnp.zeros(r, dtype=bool),
         failed_month=jnp.full(r, -1, dtype=jnp.int32),
+        spending_tier=jnp.broadcast_to(
+            obligation_inputs.tiered_spending.initial_tier[:, None], (p.spending_policy_count, r)
+        ),
         sale_disp_units=_zeros_i64((p.scheduled_sale_count, lot_axis, r)),
         sale_disp_basis=_zeros_i64((p.scheduled_sale_count, lot_axis, r)),
         sale_disp_proceeds=_zeros_i64((p.scheduled_sale_count, lot_axis, r)),
@@ -3124,6 +3205,28 @@ def _amount_values_vec(
     reset_level = external_values[safe_series[:, None], rows[None, :], reset_month[:, None]]
     series_amount = _scale_money_by_float_ratio(amount_base[:, None], reset_level, base_level)
     return jnp.where((amount_kind == AMOUNT_FIXED)[:, None], amount_fixed[:, None], series_amount)
+
+
+def _tier_amount_values(
+    schedule: _TierAmountScheduleInputs, external_values: jnp.ndarray, month: jnp.ndarray, rollout_count: int
+) -> jnp.ndarray:
+    """Resolve policy-level index schedules over per-tier base values."""
+
+    fixed = jnp.broadcast_to(schedule.value[:, :, None], (*schedule.value.shape, rollout_count))
+    if external_values.shape[0] == 0:
+        return fixed
+    safe_period = jnp.maximum(schedule.period, 1)
+    reset_month = schedule.base_month + ((month - schedule.base_month) // safe_period) * safe_period
+    series = jnp.maximum(schedule.series, 0)
+    rollouts = jnp.arange(rollout_count)
+    base_level = external_values[series[:, None], rollouts[None, :], schedule.base_month[:, None]]
+    reset_level = external_values[series[:, None], rollouts[None, :], reset_month[:, None]]
+    indexed = _scale_money_by_float_ratio(schedule.value[:, :, None], reset_level[:, None, :], base_level[:, None, :])
+    return jnp.where((schedule.kind == AMOUNT_FIXED)[:, None, None], fixed, indexed)
+
+
+def _current_tier_values(current_tier: jnp.ndarray, values_by_tier: jnp.ndarray) -> jnp.ndarray:
+    return jnp.take_along_axis(values_by_tier, current_tier[:, None, :], axis=1)[:, 0, :]
 
 
 @partial(jax.jit, static_argnames=("row_of_world",))
@@ -3455,6 +3558,7 @@ def _record_capital_gains(
 @jax.jit
 def _obligation_accruals_jit(
     inputs: _ObligationInputs,
+    spending_tier: jnp.ndarray,
     property_active: jnp.ndarray,
     liab_principal: jnp.ndarray,
     liab_monthly: jnp.ndarray,
@@ -3490,6 +3594,14 @@ def _obligation_accruals_jit(
         configured_property_slot[:, None] >= 0,
         _gather_rows(property_active, jnp.maximum(configured_property_slot, 0)),
         True,
+    )
+    tiered = inputs.tiered_spending
+
+    spending_amount_by_tier = _tier_amount_values(tiered.spend, external_values, month, rollout_count)
+    spending_due_by_policy = _current_tier_values(spending_tier, spending_amount_by_tier)
+    tier_policy = configured.tier_policy
+    configured_due = jnp.where(
+        tier_policy[:, None] >= 0, _gather_rows(spending_due_by_policy, jnp.maximum(tier_policy, 0)), configured_due
     )
     configured_batch = batch(configured.active, configured_due, configured_property_mask)
 

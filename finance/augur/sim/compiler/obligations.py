@@ -8,6 +8,7 @@ funding/settlement operation without a source discriminator union.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -24,7 +25,7 @@ from finance.augur.sim.compiler.helpers import (
 )
 from finance.augur.sim.compiler.properties import LiabilityCompileOutput, PropertyCompileOutput
 from finance.augur.sim.compiler.tax import TaxCompileOutput
-from finance.augur.sim.scenario import RecurringObligation, Scenario, ScheduledObligation
+from finance.augur.sim.scenario import RecurringObligation, Scenario, ScheduledObligation, TieredAmount
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,30 @@ class ConfiguredObligationPlan:
     amount_series: NDArray[np.int64]
     amount_base_month: NDArray[np.int64]
     amount_period: NDArray[np.int64]
+    tier_policy: NDArray[np.int64]
+
+
+@dataclass(frozen=True)
+class TierAmountSchedulePlan:
+    value: NDArray[np.int64]
+    kind: NDArray[np.int64]
+    series: NDArray[np.int64]
+    base_month: NDArray[np.int64]
+    period: NDArray[np.int64]
+
+
+@dataclass(frozen=True)
+class TieredSpendingObligationPlan:
+    """Static recurrent state and amount tables for tiered recurring obligations."""
+
+    id: NDArray[np.int64]
+    agent: NDArray[np.int64]
+    initial_tier: NDArray[np.int64]
+    tier_count: NDArray[np.int64]
+    tier_id: NDArray[np.int64]
+    spend: TierAmountSchedulePlan
+    drop: TierAmountSchedulePlan
+    recover: TierAmountSchedulePlan
 
 
 @dataclass(frozen=True)
@@ -91,6 +116,7 @@ class ObligationCompileOutput:
 
     metadata: ObligationPaymentMetadata
     configured: ConfiguredObligationPlan
+    tiered_spending: TieredSpendingObligationPlan
     property_tax: PropertyTaxObligationPlan
     mortgage: MortgageObligationPlan
     estimated_tax: EstimatedTaxObligationPlan
@@ -123,6 +149,14 @@ def compile_obligation_slots(
 ) -> ObligationCompileOutput:
     horizon = int(scenario.horizon_months)
     profile_count = len(tax.profile_prior_year_tax)
+    spending_obligations = [
+        (obligation, cast(TieredAmount, obligation.amount_due))
+        for obligation in scenario.recurring_obligations
+        if isinstance(obligation.amount_due, TieredAmount)
+    ]
+    spending_policy_count = max(1, len(spending_obligations))
+    max_spending_tiers = max(1, max((len(amount.tiers) for _, amount in spending_obligations), default=0))
+    spending_policy_by_object = {id(obligation): index for index, (obligation, _) in enumerate(spending_obligations)}
 
     configured_by_month: list[list[ScheduledObligation | RecurringObligation]] = [[] for _ in range(horizon)]
     for scheduled in scenario.scheduled_obligations:
@@ -174,6 +208,53 @@ def compile_obligation_slots(
     amount_series = ints()
     amount_base_month = ints(0)
     amount_period = ints(1)
+    configured_tier_policy = ints()
+
+    spending_id = np.full(spending_policy_count, NO_CODE, dtype=np.int64)
+    spending_agent = np.full(spending_policy_count, NO_CODE, dtype=np.int64)
+    spending_initial_tier = np.zeros(spending_policy_count, dtype=np.int64)
+    spending_tier_count = np.zeros(spending_policy_count, dtype=np.int64)
+    spending_tier_id = np.full((spending_policy_count, max_spending_tiers), NO_CODE, dtype=np.int64)
+
+    def tier_ints(fill: int = 0) -> NDArray[np.int64]:
+        return np.full((spending_policy_count, max_spending_tiers), fill, dtype=np.int64)
+
+    def tier_schedule() -> TierAmountSchedulePlan:
+        return TierAmountSchedulePlan(
+            value=tier_ints(),
+            kind=np.full(spending_policy_count, AMOUNT_FIXED, dtype=np.int64),
+            series=np.full(spending_policy_count, NO_CODE, dtype=np.int64),
+            base_month=np.zeros(spending_policy_count, dtype=np.int64),
+            period=np.ones(spending_policy_count, dtype=np.int64),
+        )
+
+    spending_amount, spending_drop, spending_recover = tier_schedule(), tier_schedule(), tier_schedule()
+
+    def set_tier_amount(table: TierAmountSchedulePlan, policy_index: int, tier_index: int, amount: object) -> None:
+        kind, fixed, base, series, base_month, period = amount_arrays_quanta(
+            amount, series_index_by_id, currency_quantum=scenario.currency.quantum
+        )
+        table.value[policy_index, tier_index] = fixed if kind == AMOUNT_FIXED else base
+        table.kind[policy_index] = kind
+        table.series[policy_index] = series
+        table.base_month[policy_index] = base_month
+        table.period[policy_index] = period
+
+    for policy_index, (obligation, tiered_amount) in enumerate(spending_obligations):
+        spending_id[policy_index] = strings.require(obligation.obligation_id)
+        spending_agent[policy_index] = strings.require(obligation.agent_id)
+        spending_tier_count[policy_index] = len(tiered_amount.tiers)
+        spending_initial_tier[policy_index] = next(
+            tier_index
+            for tier_index, tier in enumerate(tiered_amount.tiers)
+            if tier.tier_id == tiered_amount.initial_tier_id
+        )
+        for tier_index, tier in enumerate(tiered_amount.tiers):
+            spending_tier_id[policy_index, tier_index] = strings.require(tier.tier_id)
+            set_tier_amount(spending_amount, policy_index, tier_index, tier.monthly_spend)
+        for boundary_index, boundary in enumerate(tiered_amount.boundaries):
+            set_tier_amount(spending_drop, policy_index, boundary_index, boundary.drop_below_liquid_net_worth)
+            set_tier_amount(spending_recover, policy_index, boundary_index + 1, boundary.recover_above_liquid_net_worth)
 
     property_tax_active = bools()
     property_tax_slot = ints(0)
@@ -237,15 +318,18 @@ def compile_obligation_slots(
                 payee_account_id=config.to_account_id,
             )
             configured_active[month, slot] = True
-            kind, fixed, base, series, base_month, period = amount_arrays_quanta(
-                config.amount_due, series_index_by_id, currency_quantum=scenario.currency.quantum
-            )
-            amount_kind[month, slot] = kind
-            amount_fixed[month, slot] = fixed
-            amount_base[month, slot] = base
-            amount_series[month, slot] = series
-            amount_base_month[month, slot] = base_month
-            amount_period[month, slot] = period
+            if isinstance(config.amount_due, TieredAmount):
+                configured_tier_policy[month, slot] = spending_policy_by_object[id(config)]
+            else:
+                kind, fixed, base, series, base_month, period = amount_arrays_quanta(
+                    config.amount_due, series_index_by_id, currency_quantum=scenario.currency.quantum
+                )
+                amount_kind[month, slot] = kind
+                amount_fixed[month, slot] = fixed
+                amount_base[month, slot] = base
+                amount_series[month, slot] = series
+                amount_base_month[month, slot] = base_month
+                amount_period[month, slot] = period
             if config.deduction_category == ORDINARY_DEDUCTION_CATEGORY:
                 deduction_profile[month, slot] = agent_to_profile_index.get(strings.require(config.agent_id), NO_CODE)
                 deductible_fraction[month, slot] = float(config.deductible_fraction)
@@ -393,6 +477,17 @@ def compile_obligation_slots(
             amount_series=amount_series,
             amount_base_month=amount_base_month,
             amount_period=amount_period,
+            tier_policy=configured_tier_policy,
+        ),
+        tiered_spending=TieredSpendingObligationPlan(
+            id=spending_id,
+            agent=spending_agent,
+            initial_tier=spending_initial_tier,
+            tier_count=spending_tier_count,
+            tier_id=spending_tier_id,
+            spend=spending_amount,
+            drop=spending_drop,
+            recover=spending_recover,
         ),
         property_tax=PropertyTaxObligationPlan(
             active=property_tax_active, property_slot=property_tax_slot, annual_rate=property_tax_annual_rate

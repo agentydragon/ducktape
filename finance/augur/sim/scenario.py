@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from enum import StrEnum
+from itertools import pairwise
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -131,6 +132,83 @@ class SeriesIndexedAmount(BaseModel):
 
 type AmountSchedule = Annotated[FixedAmount | SeriesIndexedAmount, Field(discriminator="kind")]
 type AmountSpec = CurrencyAmount | AmountSchedule
+
+
+def _base_amount(spec: AmountSpec) -> Decimal:
+    match spec:
+        case Decimal():
+            return spec
+        case FixedAmount():
+            return spec.amount
+        case SeriesIndexedAmount():
+            return spec.base_amount
+
+
+def _amount_schedule_key(spec: AmountSpec) -> tuple[object, ...]:
+    match spec:
+        case Decimal() | FixedAmount():
+            return ("fixed",)
+        case SeriesIndexedAmount():
+            return ("series_indexed", spec.series, int(spec.base_month_index), int(spec.adjustment_period_months))
+
+
+class SpendingTier(BaseModel):
+    """One named spending level, ordered from most to least expensive."""
+
+    tier_id: str = Field(min_length=1)
+    monthly_spend: AmountSpec
+
+
+class SpendingBoundary(BaseModel):
+    """Hysteresis thresholds between two adjacent spending tiers."""
+
+    drop_below_liquid_net_worth: AmountSpec
+    recover_above_liquid_net_worth: AmountSpec
+
+
+class TieredAmount(BaseModel):
+    """A recurring amount selected by carried tier state after each settled month."""
+
+    kind: Literal["stateful_tiers"] = "stateful_tiers"
+    tiers: tuple[SpendingTier, ...] = Field(min_length=2)
+    boundaries: tuple[SpendingBoundary, ...]
+    initial_tier_id: str
+
+    @model_validator(mode="after")
+    def _validate_tiers(self) -> TieredAmount:
+        tier_ids = [tier.tier_id for tier in self.tiers]
+        if len(set(tier_ids)) != len(tier_ids):
+            raise ValueError("tier_id values must be unique")
+        if self.initial_tier_id not in tier_ids:
+            raise ValueError(f"initial_tier_id {self.initial_tier_id!r} is not one of {tier_ids}")
+        if len(self.boundaries) != len(self.tiers) - 1:
+            raise ValueError("tiered amount needs exactly one boundary between each adjacent tier")
+
+        spends = [tier.monthly_spend for tier in self.tiers]
+        if len({_amount_schedule_key(amount) for amount in spends}) != 1:
+            raise ValueError("all tier spends must share one index schedule")
+        spend_bases = [_base_amount(amount) for amount in spends]
+        if any(amount < 0 for amount in spend_bases):
+            raise ValueError("tier spends must be non-negative")
+        if any(upper <= lower for upper, lower in pairwise(spend_bases)):
+            raise ValueError("tiers must be strictly cheaper in order")
+
+        thresholds = [
+            amount
+            for boundary in self.boundaries
+            for amount in (boundary.drop_below_liquid_net_worth, boundary.recover_above_liquid_net_worth)
+        ]
+        if len({_amount_schedule_key(amount) for amount in thresholds}) != 1:
+            raise ValueError("all tier thresholds must share one index schedule")
+        for boundary in self.boundaries:
+            if _base_amount(boundary.drop_below_liquid_net_worth) >= _base_amount(
+                boundary.recover_above_liquid_net_worth
+            ):
+                raise ValueError("each drop threshold must be below its recovery threshold")
+        return self
+
+
+type RecurringObligationAmount = AmountSpec | TieredAmount
 
 
 class OrdinaryIncome(BaseModel):
@@ -336,7 +414,7 @@ class RecurringObligation(BaseModel):
     from_account_id: str
     to_agent_id: str
     to_account_id: str
-    amount_due: AmountSpec
+    amount_due: RecurringObligationAmount
     deduction_category: TransferDeductionCategory | None = None
     deductible_fraction: float = Field(default=1.0, ge=0.0, le=1.0)
     # When set, ties the obligation to a property; the engine uses
@@ -688,18 +766,6 @@ class TargetAllocationPolicy(BaseModel):
                 "draining the portfolio into cash a little more on every trigger"
             )
         return self
-
-
-def _base_amount(spec: AmountSpec) -> Decimal:
-    """The configured base of an amount spec, for compile-time checks that compare two specs."""
-
-    match spec:
-        case Decimal():
-            return spec
-        case FixedAmount():
-            return spec.amount
-        case SeriesIndexedAmount():
-            return spec.base_amount
 
 
 class TaxProfile(BaseModel):

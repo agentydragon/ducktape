@@ -70,6 +70,7 @@ class StateHistoryBuffers:
     property_owner_occupied_months_state: NDArray[np.int64]
     rollout_failed_state: NDArray[np.bool_]
     rollout_failed_month_state: NDArray[np.int64]
+    spending_tier_state: NDArray[np.int64]
 
     def validate(self, plan: SlotPlan) -> None:
         s = plan.snapshot_months
@@ -149,6 +150,9 @@ class StateHistoryBuffers:
         )
         _expect_array("rollout_failed_state", self.rollout_failed_state, shape=(s, r), dtype=np.bool_)
         _expect_array("rollout_failed_month_state", self.rollout_failed_month_state, shape=(s, r), dtype=np.int64)
+        _expect_array(
+            "spending_tier_state", self.spending_tier_state, shape=(s, plan.spending_policy_count, r), dtype=np.int64
+        )
 
 
 @dataclass

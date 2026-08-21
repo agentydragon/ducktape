@@ -28,7 +28,7 @@ from finance.augur.sim.codec.liabilities import (
     decode_mortgage_payments,
 )
 from finance.augur.sim.codec.lifecycle import decode_lifecycle_events
-from finance.augur.sim.codec.obligations import decode_obligations
+from finance.augur.sim.codec.obligations import decode_obligations, decode_spending_tier_transitions
 from finance.augur.sim.codec.primary_residence import decode_primary_residence_events
 from finance.augur.sim.codec.properties import decode_property_purchases, decode_property_stakes, decode_property_state
 from finance.augur.sim.codec.series import decode_money_series_values, decode_series_values
@@ -138,6 +138,7 @@ def decode_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> Event
             "tax_settlements": decode_tax_settlements(plan, buffers),
             "obligation_accruals": obligation_accruals_frame,
             "obligation_settlements": obligation_settlements_frame,
+            "spending_tier_transitions": decode_spending_tier_transitions(plan, buffers),
             "property_purchases": property_purchases_frame,
             "mortgage_originations": decode_mortgage_originations(plan, buffers),
             "mortgage_payments": decode_mortgage_payments(plan, buffers),

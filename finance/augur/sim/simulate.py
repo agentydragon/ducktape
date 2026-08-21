@@ -20,7 +20,7 @@ from finance.augur.sim.engine import (
 )
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_external_series
 from finance.augur.sim.locations import Location
-from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount
+from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount, TieredAmount
 
 
 def simulate(scenario: Scenario, *, rollout_count: int, locations: dict[str, Location]) -> SimulationRun:
@@ -185,13 +185,25 @@ def _series_indexed_amount_uses(scenario: Scenario) -> list[tuple[str, object, t
         recurring_obligation_months = tuple(
             month for month in range(horizon) if recurring_obligation.is_active_at(month)
         )
-        uses.append(
-            (
-                f"recurring obligation {recurring_obligation.obligation_id!r}",
-                recurring_obligation.amount_due,
-                recurring_obligation_months,
+        amount = recurring_obligation.amount_due
+        if isinstance(amount, TieredAmount):
+            uses.extend(
+                (f"tier {tier.tier_id!r} monthly spend", tier.monthly_spend, recurring_obligation_months)
+                for tier in amount.tiers
             )
-        )
+            transition_months = tuple(month + 1 for month in recurring_obligation_months)
+            uses.extend(
+                (label, threshold, transition_months)
+                for boundary in amount.boundaries
+                for label, threshold in (
+                    ("tier drop threshold", boundary.drop_below_liquid_net_worth),
+                    ("tier recovery threshold", boundary.recover_above_liquid_net_worth),
+                )
+            )
+        else:
+            uses.append(
+                (f"recurring obligation {recurring_obligation.obligation_id!r}", amount, recurring_obligation_months)
+            )
     return uses
 
 

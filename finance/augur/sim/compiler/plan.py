@@ -100,6 +100,7 @@ class SlotPlan:
     max_transfer_slots: int
     max_property_cashflow_slots: int
     max_obligation_slots: int
+    spending_policy_count: int
     scheduled_sale_count: int
     target_allocation_policy_count: int
     max_target_allocation_sleeves: int
@@ -608,6 +609,7 @@ def compile_simulation(
         max_transfer_slots=transfers.cause.shape[1],
         max_property_cashflow_slots=property_cashflows.cause.shape[1],
         max_obligation_slots=obligations.metadata.cause.shape[1],
+        spending_policy_count=obligations.tiered_spending.tier_id.shape[0],
         scheduled_sale_count=sales.month.shape[0],
         target_allocation_policy_count=target_allocation_policies.sleeve_assets.shape[0],
         max_target_allocation_sleeves=target_allocation_policies.sleeve_assets.shape[1],

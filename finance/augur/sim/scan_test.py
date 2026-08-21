@@ -10,13 +10,15 @@ from __future__ import annotations
 from decimal import Decimal
 
 import polars as pl
+import pytest
 import pytest_bazel
 
-from finance.augur.model.series import SP500_SYMBOL, SecurityKey
+from finance.augur.model.series import SP500_SYMBOL, InflationKey, SecurityKey
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
     Agent,
+    AmountSpec,
     FilingStatus,
     InitialAccountBalance,
     InitialLot,
@@ -28,7 +30,11 @@ from finance.augur.sim.scenario import (
     ScheduledAssetSale,
     ScheduledPropertyPurchase,
     ScheduledTransfer,
+    SeriesIndexedAmount,
+    SpendingBoundary,
+    SpendingTier,
     TaxProfile,
+    TieredAmount,
 )
 from finance.augur.sim.simulate import simulate
 
@@ -41,6 +47,37 @@ def _cash(run, agent_id: str, month_index: int) -> int:
         )
         .get_column("balance_quanta")
         .item()
+    )
+
+
+def _tiered_spending(amount: TieredAmount, *, end_month: int | None = None) -> RecurringObligation:
+    return RecurringObligation(
+        start_month=0,
+        end_month=end_month,
+        obligation_id="lifestyle",
+        obligation_type="cash_spend",
+        agent_id="alice",
+        from_account_id="checking",
+        to_agent_id="world",
+        to_account_id="checking",
+        amount_due=amount,
+    )
+
+
+def _two_tier_amount(
+    *,
+    full: AmountSpec = Decimal(400),
+    trimmed: AmountSpec = Decimal(100),
+    drop: AmountSpec = Decimal(700),
+    recover: AmountSpec = Decimal(900),
+) -> TieredAmount:
+    return TieredAmount(
+        initial_tier_id="full",
+        tiers=(
+            SpendingTier(tier_id="full", monthly_spend=full),
+            SpendingTier(tier_id="trimmed", monthly_spend=trimmed),
+        ),
+        boundaries=(SpendingBoundary(drop_below_liquid_net_worth=drop, recover_above_liquid_net_worth=recover),),
     )
 
 
@@ -133,6 +170,108 @@ def test_configured_obligation_scan() -> None:
     assert _cash(run, "alice", 12) == 3_700_000
     assert _cash(run, "landlord", 12) == 2_400_000
     assert _cash(run, "payroll", 12) == -6_000_000
+
+
+def test_tiered_spending_uses_carried_state_and_emits_drop_and_recovery_events() -> None:
+    scenario = Scenario(
+        agents=[Agent(agent_id="payroll"), Agent(agent_id="alice"), Agent(agent_id="world")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=1000),
+            InitialAccountBalance(agent_id="world", account_id="checking", balance=0),
+        ],
+        scheduled_transfers=[
+            ScheduledTransfer(
+                month=1,
+                cause_id="recovery_income",
+                from_agent_id="payroll",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount=500,
+            )
+        ],
+        recurring_obligations=[_tiered_spending(_two_tier_amount(), end_month=2)],
+        tax_profiles=[],
+        horizon_months=3,
+    )
+
+    run = simulate(scenario, rollout_count=2, locations={})
+
+    spending = run.events_log.obligation_accruals.filter(pl.col("obligation_type") == "cash_spend").sort(
+        ["rollout_index", "month_index"]
+    )
+    assert spending.filter(pl.col("rollout_index") == 0).get_column("amount_due_quanta").to_list() == [
+        40_000,
+        10_000,
+        40_000,
+    ]
+
+    transitions = run.events_log.spending_tier_transitions.sort(["rollout_index", "month_index"])
+    first_rollout = transitions.filter(pl.col("rollout_index") == 0)
+    assert first_rollout.get_column("month_index").to_list() == [0, 1, 2]
+    assert first_rollout.get_column("previous_tier_id").to_list() == ["full", "trimmed", "full"]
+    assert first_rollout.get_column("next_tier_id").to_list() == ["trimmed", "full", "trimmed"]
+    assert _cash(run, "alice", 3) == 60_000
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"full": Decimal(100), "trimmed": Decimal(-100)}, "non-negative"),
+        ({"full": Decimal(100), "trimmed": Decimal(100)}, "strictly cheaper"),
+        (
+            {"full": Decimal(200), "trimmed": Decimal(100), "drop": Decimal(600), "recover": Decimal(600)},
+            "drop threshold must be below",
+        ),
+    ],
+)
+def test_tiered_spending_requires_ordered_spends_and_hysteresis(kwargs: dict[str, AmountSpec], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        _two_tier_amount(**kwargs)
+
+
+def test_tiered_spending_requires_one_threshold_schedule() -> None:
+
+    def indexed_threshold(amount: int) -> SeriesIndexedAmount:
+        return SeriesIndexedAmount(
+            base_amount=amount, series=InflationKey(), base_month_index=0, adjustment_period_months=1
+        )
+
+    with pytest.raises(ValueError, match="thresholds must share"):
+        TieredAmount(
+            initial_tier_id="full",
+            tiers=(
+                SpendingTier(tier_id="full", monthly_spend=300),
+                SpendingTier(tier_id="trimmed", monthly_spend=200),
+                SpendingTier(tier_id="minimum", monthly_spend=100),
+            ),
+            boundaries=(
+                SpendingBoundary(drop_below_liquid_net_worth=100, recover_above_liquid_net_worth=200),
+                SpendingBoundary(
+                    drop_below_liquid_net_worth=indexed_threshold(50),
+                    recover_above_liquid_net_worth=indexed_threshold(100),
+                ),
+            ),
+        )
+
+
+def test_failed_rollout_does_not_transition_spending_tier() -> None:
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="world")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=50),
+            InitialAccountBalance(agent_id="world", account_id="checking", balance=0),
+        ],
+        recurring_obligations=[_tiered_spending(_two_tier_amount(full=Decimal(100), trimmed=Decimal(25)), end_month=0)],
+        tax_profiles=[],
+        horizon_months=1,
+    )
+
+    run = simulate(scenario, rollout_count=1, locations={})
+
+    assert run.events_log.rollout_failures.height == 1
+    assert run.events_log.spending_tier_transitions.is_empty()
 
 
 def test_obligation_failure_scan() -> None:

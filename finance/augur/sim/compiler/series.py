@@ -23,7 +23,7 @@ from finance.augur.model.series import (
 from finance.augur.product.asset_key import asset_price_key, asset_price_key_or_none
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import sampled_array_to_quanta
-from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount
+from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount, TieredAmount
 
 
 def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]:
@@ -86,13 +86,13 @@ def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]
     # when it needs one to price the sale itself.
     for asset_purchase in scenario.scheduled_asset_purchases:
         add(asset_price_key(asset_purchase.asset))
-    for policy in scenario.target_allocation_policies:
-        for sleeve in policy.sleeves:
+    for allocation_policy in scenario.target_allocation_policies:
+        for sleeve in allocation_policy.sleeves:
             add(asset_price_key_or_none(sleeve.asset))
         # Both band bounds, not just the floor: the ceiling is the refill TARGET, so a raise
         # cannot be sized without it, and an indexed ceiling needs its series sampled.
-        _add_amount_series_key(policy.cash_floor, add)
-        _add_amount_series_key(policy.cash_ceiling, add)
+        _add_amount_series_key(allocation_policy.cash_floor, add)
+        _add_amount_series_key(allocation_policy.cash_ceiling, add)
     for pe_policy in scenario.private_equity_tender_policies:
         _add_amount_series_key(pe_policy.liquid_net_worth_floor, add)
     # A property is valued at sale off its location's home-value series.
@@ -150,8 +150,8 @@ def collect_level_series_keys(scenario: Scenario, external_series: ExternalSerie
     for asset_purchase in scenario.scheduled_asset_purchases:
         if asset_purchase.price_per_unit is None:
             add(asset_price_key(asset_purchase.asset))
-    for policy in scenario.target_allocation_policies:
-        for sleeve in policy.sleeves:
+    for allocation_policy in scenario.target_allocation_policies:
+        for sleeve in allocation_policy.sleeves:
             add(asset_price_key_or_none(sleeve.asset))
     return tuple(keys)
 
@@ -159,6 +159,12 @@ def collect_level_series_keys(scenario: Scenario, external_series: ExternalSerie
 def _add_amount_series_key(amount: Any, add: Any) -> None:
     if isinstance(amount, SeriesIndexedAmount):
         add(amount.series)
+    elif isinstance(amount, TieredAmount):
+        for tier in amount.tiers:
+            _add_amount_series_key(tier.monthly_spend, add)
+        for boundary in amount.boundaries:
+            _add_amount_series_key(boundary.drop_below_liquid_net_worth, add)
+            _add_amount_series_key(boundary.recover_above_liquid_net_worth, add)
 
 
 def _frame_values(frame: Any, rollout_count: int, horizon_months: int) -> tuple[np.ndarray, ...]:

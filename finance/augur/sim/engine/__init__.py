@@ -118,6 +118,7 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
             # rollout failure state[S, R] (1D R retained on trailing axis)
             rollout_failed_state=np.zeros((s, r), dtype=np.bool_),
             rollout_failed_month_state=np.full((s, r), NO_CODE, dtype=np.int64),
+            spending_tier_state=np.zeros((s, p.spending_policy_count, r), dtype=np.int64),
         ),
         transfers=TransferEventBuffers(
             # transfer_*[H, T, R]
