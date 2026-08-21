@@ -514,9 +514,7 @@
           # runtime tooling is packaged declaratively with Nix.
           # Build: nix build .#haku-openclaw-spike-image
           # Load:  docker load < result
-          haku-openclaw-spike-image = import ./haku/openclaw_spike {
-            inherit pkgs nix-openclaw;
-          };
+          haku-openclaw-spike-image = import ./haku/openclaw_spike { inherit pkgs; };
           # NixOS-based RBE worker (systemd, envfs, nix-ld).
           # Build: nix build .#nix-rbe-nixos
           # Load:  docker import result/tarball/*.tar.xz nix-rbe-nixos

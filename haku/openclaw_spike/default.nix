@@ -1,45 +1,35 @@
 # Nix-built OCI image for Haku's isolated OpenClaw + Claude Code spike.
 #
-# Haku needs the beta gateway package for its Claude Opus 5 context-window
-# metadata. Keep the repository's nix-openclaw machinery, but override its
-# source pin locally instead of importing a prebuilt OpenClaw image.
-{ pkgs, nix-openclaw }:
+# The beta npm artifact already contains OpenClaw's built dist and declares its
+# runtime dependencies. Use the standard Nix npm flow here; the source build
+# is intentionally left to OpenClaw's release pipeline.
+{ pkgs }:
 
 let
-  sourceInfo = {
-    owner = "openclaw";
-    repo = "openclaw";
-    rev = "3ddd783e3f2465f5221ab27e8849eb165c61b498";
-    hash = "sha256-Bw6PC1uMHWkv1HTlgAcdz+RFqXq8h/K8A5PekxY82mc=";
-    releaseTag = "v2026.7.2-beta.7";
-    releaseVersion = "2026.7.2-beta.7";
-    pnpmMajor = "11";
-    pnpmDepsHash = "sha256-5c7MrnYyxbiaG6MJTVg/aCIXsrEMhYq9eMV0JuvOn44=";
-    # These patches target the stable source layout. The beta already carries
-    # the corresponding runtime behavior, so make the override explicit and
-    # prevent stale patch hunks from being applied to unrelated files.
-    publicSurfaceHardlinksPatch = pkgs.writeText "openclaw-beta-no-public-surface-patch" "";
+  openclawNpmTarball = pkgs.fetchurl {
+    url = "https://registry.npmjs.org/openclaw/-/openclaw-2026.7.2-beta.7.tgz";
+    hash = "sha256-LMIGyJigYsugWM9pwtOuVqC9BSm0Hp06qQ9Cywnr/OQ=";
   };
 
-  # The beta declares pnpm 11.15.1. nixpkgs currently exposes pnpm 11.20.0,
-  # whose package-manager selection and store layout differ enough to produce
-  # an incomplete offline closure for this lockfile. Build the exact declared
-  # pnpm release and use it for both fetching and the gateway derivation.
-  pnpm_11_15 = pkgs.callPackage "${pkgs.path}/pkgs/development/tools/pnpm/generic.nix" {
-    version = "11.15.1";
-    hash = "sha256-J0YGKbEBEWBOf5iIJ1O1M5iYaCDCDgoGXzpKXp59tx8=";
-    nodejs = null;
-  };
+  # npm publishes no lockfile in the package tarball. Keep the generated lock
+  # next to this derivation so buildNpmPackage still gets a fully pinned graph.
+  openclawNpmSource = pkgs.runCommand "openclaw-2026.7.2-beta.7-npm-source" { } ''
+    mkdir -p "$out"
+    tar -xzf ${openclawNpmTarball} --strip-components=1 -C "$out"
+    cp ${./openclaw-package-lock.json} "$out/package-lock.json"
+  '';
 
+  # OpenClaw's WAL-reset safety check requires SQLite 3.51.3+ (or one of its
+  # explicitly supported older patch lines). nixpkgs' Node 22 currently embeds
+  # 3.51.2, so keep this small runtime-specific Node override.
   sqliteForOpenClaw = pkgs.sqlite.overrideAttrs (_: {
     version = "3.51.3";
     src = pkgs.fetchurl {
       url = "https://sqlite.org/2026/sqlite-src-3510300.zip";
       hash = "sha256-+KZ6H1tcrnxtQvCZTKe/GkpYWIaMgq3J/BNAvtXrjNI=";
     };
-    # SQLite 3.51.3's fault-injection test is currently incompatible with
-    # this nixpkgs test harness; the normal build checks and the Node ABI
-    # smoke test still run below.
+    # SQLite 3.51.3's fault-injection test is incompatible with this nixpkgs
+    # test harness; the Node ABI smoke test still runs in CI below.
     doCheck = false;
   });
 
@@ -56,95 +46,32 @@ let
     ) old.configureFlags;
   });
 
-  # fetcherVersion 4 stores pnpm's SQLite index as SQL for reproducibility.
-  # nixpkgs' pnpm hook reconstructs it, but the nix-openclaw gateway prebuild
-  # script only extracts the archive, so offline installs see arbitrary
-  # packages as missing. Keep the upstream script and add that reconstruction.
-  gatewayPrebuild = pkgs.runCommand "openclaw-gateway-prebuild" { } ''
-    cp ${nix-openclaw}/nix/scripts/gateway-prebuild.sh "$out"
-    substituteInPlace "$out" \
-      --replace-fail \
-        'log_step "chmod pnpm store writable" chmod -R +w "$store_path"' \
-        'log_step "chmod pnpm store writable" chmod -R +w "$store_path"
-    if [ -f "$store_path/v11/index.db.sql" ]; then
-      ${sqliteForOpenClaw}/bin/sqlite3 "$store_path/v11/index.db" < "$store_path/v11/index.db.sql"
-      rm "$store_path/v11/index.db.sql"
-    fi'
-    chmod +x "$out"
-  '';
+  gateway = pkgs.buildNpmPackage {
+    pname = "openclaw-gateway";
+    version = "2026.7.2-beta.7";
+    src = openclawNpmSource;
+    npmDepsHash = "sha256-hKlux/NDxo458CNQvALdi0jVnnG347zIX0S2x0kYF7U=";
+    dontNpmBuild = true;
+    npmInstallFlags = [
+      "--omit=dev"
+      "--ignore-scripts"
+      "--legacy-peer-deps"
+    ];
+    nativeBuildInputs = [ pkgs.makeWrapper ];
 
-  # The pinned nix-openclaw build script also assumes a stable-only beta
-  # helper. The beta source has no write-cli-compat.ts; all preceding build
-  # stages are shared and remain under the upstream script.
-  gatewayBuild = pkgs.runCommand "openclaw-gateway-build" { } ''
-    cp ${nix-openclaw}/nix/scripts/gateway-build.sh "$out"
-    substituteInPlace "$out" \
-      --replace-fail \
-        'log_step "build: write-cli-compat" node --import tsx scripts/write-cli-compat.ts' \
-        ':' \
-      --replace-fail \
-        '# Reduce output size (pnpm implementation detail; safe to remove)' \
-        'if [ -L node_modules/@openclaw/ai ]; then
-      ai_runtime_target="$(readlink -f node_modules/@openclaw/ai || true)"
-      if [ ! -d "$ai_runtime_target" ]; then
-        printf "cannot materialize workspace package @openclaw/ai: %s\\n" "$ai_runtime_target" >&2
-        exit 1
-      fi
-      ai_runtime_tmp="$(mktemp -d)"
-      cp -a "$ai_runtime_target" "$ai_runtime_tmp/ai"
-      rm node_modules/@openclaw/ai
-      mv "$ai_runtime_tmp/ai" node_modules/@openclaw/ai
-      rmdir "$ai_runtime_tmp"
-    fi
+    installPhase = ''
+      mkdir -p "$out/lib/openclaw" "$out/bin"
+      cp -R . "$out/lib/openclaw/"
+      makeWrapper ${nodeForOpenClaw}/bin/node "$out/bin/openclaw" \
+        --add-flags "$out/lib/openclaw/openclaw.mjs" \
+        --set-default OPENCLAW_NIX_MODE "1" \
+        --set-default OPENCLAW_DISABLE_PERSISTED_PLUGIN_REGISTRY "1"
+    '';
 
-    # Reduce output size (pnpm implementation detail; safe to remove)'
-    chmod +x "$out"
-  '';
-
-  fetchPnpmDepsForOpenClaw =
-    args:
-    pkgs.fetchPnpmDeps (
-      args
-      // {
-        pnpm = pnpm_11_15;
-        pnpmInstallFlags = (args.pnpmInstallFlags or [ ]) ++ [ "--prod=false" ];
-        postInstall = (args.postInstall or "") + ''
-          rm -rf node_modules
-          pnpm store prune
-          pnpm store add @anthropic-ai/sdk@0.115.0
-          pnpm store add @agentclientprotocol/sdk@1.3.0
-          CI=true pnpm fetch --workspace-root --prod=false
-          CI=true pnpm install --force --ignore-scripts --prod=false --registry="$NIX_NPM_REGISTRY" --frozen-lockfile
-          rm -rf node_modules
-        '';
-      }
-    );
-
-  gatewaySource =
-    pkgs.lib.callPackageWith
-      (
-        pkgs
-        // {
-          nodejs_22 = nodeForOpenClaw;
-          pnpm_11 = pnpm_11_15;
-          fetchPnpmDeps = fetchPnpmDepsForOpenClaw;
-        }
-      )
-      "${nix-openclaw}/nix/packages/openclaw-gateway-source.nix"
-      {
-        inherit sourceInfo;
-      };
-
-  gateway = gatewaySource.overrideAttrs (old: {
-    # This stable-only patch is selected unconditionally by the current
-    # nix-openclaw helper. The beta source has already moved past its hunk;
-    # clear only that patch input on the derived gateway.
-    buildPhase = gatewayBuild;
-    env = old.env // {
-      GATEWAY_PREBUILD_SH = gatewayPrebuild;
-      PATCH_SKIP_PLUGIN_AUTO_ENABLE_NIX_MODE = "";
-    };
-  });
+    dontFixup = true;
+    dontStrip = true;
+    dontPatchShebangs = true;
+  };
 
   proxySetup = pkgs.runCommand "haku-openclaw-proxy-setup" { } ''
     mkdir -p "$out/lib/openclaw"
@@ -201,8 +128,7 @@ pkgs.dockerTools.buildLayeredImage {
   maxLayers = 100;
 
   # Keep the old Dockerfile's /app preload path for the deployment contract,
-  # while the actual imported module lives beside the Nix gateway's
-  # node_modules so Node resolves `undici` from the packaged dependency tree.
+  # while the actual imported module lives beside the packaged node_modules.
   fakeRootCommands = ''
     mkdir -p app home/openclaw tmp usr/bin
     chmod 1777 tmp
@@ -214,9 +140,6 @@ pkgs.dockerTools.buildLayeredImage {
     User = "1000:1000";
     WorkingDir = "/app";
     Env = [
-      # Both the gateway and Node are supplied by the overridden nix-openclaw
-      # closure, so the executable and SQLite ABI are part of this image's
-      # tested closure.
       "PATH=${toolPath}:/home/node/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
       "HOME=/home/openclaw"
       "USER=openclaw"

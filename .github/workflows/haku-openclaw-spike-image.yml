@@ -1,6 +1,6 @@
-# Build and push Haku's Claude-backed OpenClaw spike with Nix. The image builds
-# the exact beta gateway from an overridden nix-openclaw source pin and layers
-# the repository's CLI surface declaratively.
+# Build and push Haku's Claude-backed OpenClaw spike with Nix. The image
+# packages the published beta gateway artifact and layers the repository's CLI
+# surface declaratively.
 name: Haku OpenClaw Spike Image
 
 on:
