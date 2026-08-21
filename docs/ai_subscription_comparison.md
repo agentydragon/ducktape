@@ -1,201 +1,192 @@
-# AI Subscription Comparison — Apples-to-Apples (2026-05-24)
+# AI Subscription Comparison — Apples-to-Apples (2026-08-21)
 
 ## Goal
 
-Find AI subscriptions that complement an existing **Claude Max + ChatGPT Pro** loadout for heavy agentic coding work. Metric the user actually cares about:
+Find AI capacity that complements an existing **Claude Max + ChatGPT Pro** loadout for heavy agentic coding. Two metrics decide it, and they are independent:
 
-> How much useful complex work of the sort I have AI doing can I get per dollar?
+1. **Cost per unit of intelligence** — how much useful complex work per dollar.
+2. **Burst tolerance** — whether the plan's quota shape survives spiky usage. A plan metered in 5-hour windows is unusable for a workload that does nothing for two days and then wants six hours of saturated agent work.
 
-Constraint: don't violate TOS. Note (corrected 2026-06-27): a _personal, single-user_ agent on your own ChatGPT/Claude sub via the vendor's own client (Codex CLI/`codex exec`/SDK; Claude Code) is documented functionality. The TOS bite is on resale, multi-user apps, and powering third-party services — see [TOS notes](#tos-notes).
+Ignoring (2) is how the GLM Coding Plan looked good on paper and disappointed in practice. It is now a first-class axis here.
 
-## The unit problem
+## The cost-per-intelligence source
 
-Every provider meters differently, so direct comparison is hard:
+[**Artificial Analysis**](https://artificialanalysis.ai/) publishes the _Intelligence Index vs. Cost per Intelligence Index Task_ scatter with a Pareto frontier line — the chart that circulates on Twitter. The [Intelligence Index v4.1.1](https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index) aggregates nine evals: GDPval-AA v2, τ³-Banking, Terminal-Bench v2.1, SciCode, Humanity's Last Exam, GPQA Diamond, CritPt, AA-Omniscience, AA-LCR.
 
-| Provider        | Quota unit                                        |
-| --------------- | ------------------------------------------------- |
-| Claude Max      | Token budget per 5h window                        |
-| ChatGPT Pro     | Per-model message caps + agent task quota         |
-| GitHub Copilot  | "Premium requests" with per-model multipliers     |
-| Cursor          | Dollar-denominated credit bucket at near-API cost |
-| Z.ai GLM        | Prompts per 5h window + weekly cap                |
-| Gemini AI Ultra | Opaque; backend tweaks frequent                   |
-| SuperGrok Heavy | Opaque, marketed as "highest"                     |
-| Kimi / Qwen     | Requests/month + parallel agent counts            |
-| DeepSeek        | API pay-per-token only (no subscription tier)     |
+Cost per task is derived from input, cache-hit, cache-write, reasoning, and answer token prices, divided by task count and weighted by each eval's index weight. **It is API pricing** — it says nothing about subscription economics, which is the gap the rest of this document fills.
 
-To normalize, I use **frontier-task equivalent (FTE)** ≈ one substantive Claude-Code-style agent task: ~30–60 min wallclock, ~50–150 tool calls, ~500k–2M context tokens including reads. This is fuzzy. Treat all numbers as ±2× ranges, not precise estimates.
+Models are scored per reasoning-effort setting, so one model appears several times.
 
-## Head-to-head benchmarks
+### Intelligence Index vs. cost per task (2026-08)
 
-The cleanest signal is third-party leaderboards that score competing models on **the same harness**. Vendor self-reports use different scaffolding and aren't comparable. The table below only includes pairings where both numbers come from the same source.
+`Index/$` is index points per dollar of task cost — the "cost per intelligence" ratio read the useful way round.
 
-| Benchmark                                           | Sonnet 4.5       | Sonnet 4.6           | GLM-4.6   | GLM-4.7      | GLM-5.1                           | Source                                                                                                                                          |
-| --------------------------------------------------- | ---------------- | -------------------- | --------- | ------------ | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| **SWE-rebench** (independent agentic, same harness) | 60.0% / P@5 69.6 | **60.7% / P@5 70.2** | n/a       | 58.7% / 70.2 | **62.7% / 71.9**                  | [swe-rebench.com](https://swe-rebench.com/), Jan–Mar 2026 window                                                                                |
-| **SWE-bench Verified** (vendor harness)             | 77.2%            | 79.6%                | ~68%      | 73.8%        | 77.8% (GLM-5); **DSv4-Pro 80.6%** | [marc0.dev](https://www.marc0.dev/en/leaderboard), [llm-stats.com](https://llm-stats.com/benchmarks/swe-bench-verified), May 2026               |
-| **SWE-bench Pro** (Scale public)                    | **43.6% ±3.6**   | —                    | 9.7% ±2.1 | —            | 58.4% (vendor self-report only)   | [Scale Labs](https://labs.scale.com/leaderboard/swe_bench_pro_public)                                                                           |
-| **Terminal-Bench v1**                               | **0.500**        | —                    | 0.405     | 0.333        | —                                 | [llm-stats.com](https://llm-stats.com/benchmarks/terminal-bench)                                                                                |
-| **Terminal-Bench 2.0**                              | —                | 59.1%                | —         | 41.0%        | **69.0%**; **DSv4-Pro 67.9**      | llm-stats.com / [Z.ai docs](https://docs.z.ai/guides/llm/glm-4.7) / [Artificial Analysis](https://artificialanalysis.ai/models/deepseek-v4-pro) |
-| **LiveCodeBench v6**                                | 64.0             | —                    | —         | **84.9**     | —                                 | [llm-stats Sonnet 4.5 vs GLM-4.7](https://llm-stats.com/models/compare/claude-sonnet-4-5-20250929-vs-glm-4.7)                                   |
-| **AIME 2025**                                       | 87.0             | —                    | —         | **95.7**     | —                                 | llm-stats compare page                                                                                                                          |
-| **GPQA Diamond**                                    | 83.4             | **89.9**             | —         | 85.7         | 86.2                              | [llm-stats Sonnet 4.6 vs GLM-5.1](https://llm-stats.com/models/compare/claude-sonnet-4-6-vs-glm-5.1)                                            |
-| **MMLU-Pro**                                        | —                | **89.3**             | —         | 84.3         | —                                 | [llm-stats Sonnet 4.6 vs GLM-4.7](https://llm-stats.com/models/compare/claude-sonnet-4-6-vs-glm-4.7)                                            |
+| Model (effort)                 | Publisher | Index | Cost/task | Index/$ |
+| ------------------------------ | --------- | ----: | --------: | ------: |
+| Claude Opus 5 (max)            | Anthropic |    63 |     $2.34 |      27 |
+| Claude Opus 5 (xhigh)          | Anthropic |    63 |     $1.80 |      35 |
+| Claude Fable 5                 | Anthropic |    62 |     $3.14 |      20 |
+| Claude Opus 5 (high)           | Anthropic |    61 |     $1.23 |      50 |
+| GPT-5.6 Sol (max)              | OpenAI    |    61 |     $1.23 |      50 |
+| Grok 4.6 (high)                | xAI       |    61 |     $0.84 |      73 |
+| Grok 4.6 (xhigh)               | xAI       |    60 |     $1.04 |      58 |
+| Kimi K3 (max)                  | Moonshot  |    60 |     $0.84 |      71 |
+| **GLM-5.3 (max)**              | Z.ai      |    60 | **$0.68** |  **88** |
+| GPT-5.6 Sol (xhigh)            | OpenAI    |    59 |     $0.81 |      73 |
+| Claude Opus 5 (medium)         | Anthropic |    59 |     $0.72 |      82 |
+| Qwen3.8 Max                    | Alibaba   |    58 |     $1.13 |      51 |
+| GPT-5.6 Sol (high)             | OpenAI    |    57 |     $0.55 |     104 |
+| GPT-5.6 Terra (max)            | OpenAI    |    57 |     $0.51 |     112 |
+| Gemini 3.7 Flash (high)        | Google    |    56 |     $0.40 |     140 |
+| GPT-5.6 Sol (medium)           | OpenAI    |    56 |     $0.37 |     151 |
+| Claude Sonnet 5 (max)          | Anthropic |    55 |     $1.72 |      32 |
+| GLM-5.2 (max)                  | Z.ai      |    53 |     $0.44 |     121 |
+| **DeepSeek V4-Pro 0813 (max)** | DeepSeek  |    53 | **$0.25** | **212** |
+| Gemini 3.7 Flash (medium)      | Google    |    53 |     $0.26 |     204 |
 
-**Aider Polyglot** and **BFCL v3**: no head-to-head exists on public leaderboards for current Sonnet vs current GLM. Anyone citing those is mixing runs from different harnesses.
+**Read Index/$ with care.** Index points are not linear in usefulness: a model that scores 53 and fails your task costs a full retry, so the ratio systematically flatters cheap models. The frontier view is the honest one — the question is not "best ratio" but "cheapest model that clears my quality bar". Two entries matter for that:
 
-### What the head-to-head data actually says
+- **GLM-5.3 at index 60 for $0.68/task** sits three points off Opus 5 at under a third of the cost. It is the current value point on the frontier at near-frontier quality.
+- **DeepSeek V4-Pro 0813 at index 53 for $0.25/task** is the cheapest thing on the frontier at all, roughly 9× cheaper per task than Opus 5 (max).
 
-- On the only **independent agentic-coding eval** (SWE-rebench, identical harness): **GLM-5.1 edges Sonnet 4.6 by ~2 pts** (62.7 vs 60.7). Pass@5 is tied. This is the cleanest signal.
-- Sonnet 4.6 wins vendor SWE-bench Verified by ~2 pts.
-- Terminal-Bench flipped between versions: Sonnet won v1, **GLM-5.1 wins v2.0 by 10 pts** (69.0 vs 59.1).
-- Math/contest coding: GLM is clearly ahead.
-- Knowledge (GPQA, MMLU-Pro): Sonnet leads by ~3–5 pts.
+### Effort setting is a bigger lever than model choice
 
-Net: **GLM-5.1 is within noise of Sonnet 4.6 on agentic coding**, modestly behind on knowledge benchmarks, ahead on contest coding and Terminal-Bench 2.0. Earlier "GLM trails by 15–20 pts" framings were based on GLM-4.6 (Sept 2025) numbers, not the current flagship.
+Opus 5 spans $0.72 → $2.34 per task (medium → max) for 59 → 63 index points. Dropping `max` to `medium` costs 4 index points and saves 69% of spend — a larger swing than switching vendors. Same for GPT-5.6 Sol: $0.37 at medium vs $1.23 at max.
 
-**DeepSeek V4-Pro** (released 2026-04-24, open weights MIT, 1.6T total / 49B active, 1M context) lands in the same neighborhood: SWE-bench Verified 80.6% (vendor harness, ~1pt over Sonnet 4.6, ~7pt behind Opus 4.7), Terminal-Bench 2.0 67.9 (beats Sonnet 4.6 by ~9pt, ~1pt behind GLM-5.1). Artificial Analysis Intelligence Index is 52 — competitive with frontier but lags GPT-5.5/Opus 4.7. CAISI's independent eval pegs V4 ~8 months behind US frontier on capability, but cost-efficient on 5/7 benchmarks vs GPT-5.4 mini. V4-Flash (284B) is open-model SOTA in Math/STEM/Coding.
+## Burst tolerance — the axis that actually bit
 
-## Quality factor
+Quota shape, worst to best for spiky use:
 
-Per-FTE quality multiplier vs Sonnet 4.6 baseline (1.00). Squared from coding-eval ratio to penalize failed-task overhead:
+| Shape                        | Plans                                          | Spiky-usage behavior                                          |
+| ---------------------------- | ---------------------------------------------- | ------------------------------------------------------------- |
+| **5h rolling + weekly**      | Z.ai GLM, Claude, ChatGPT, MiniMax, Kimi, Qwen | Worst. A burst hits the 5h wall in under an hour, then idles. |
+| **Daily reset**              | Cerebras Code                                  | A big day is capped, but tomorrow is whole again.             |
+| **Monthly pool**             | Cursor, GitHub Copilot, Warp, Windsurf         | Bursts freely until the month's pool is gone.                 |
+| **Pay-per-token, no window** | All raw APIs; Claude extra-usage credits       | Best. No window exists to run out of.                         |
 
-| Model               | Source benchmark         | Q (squared) |
-| ------------------- | ------------------------ | ----------- |
-| Claude Opus 4.7     | SWE-bench Verified 87.6% | 1.21        |
-| GPT-5.5             | SWE-bench Verified 88.7% | 1.24        |
-| **DeepSeek V4-Pro** | SWE-bench Verified 80.6% | **1.03**    |
-| Gemini 3 Pro        | SWE-bench Verified 80.6% | 1.03        |
-| Claude Sonnet 4.6   | baseline                 | 1.00        |
-| **GLM-5 / GLM-5.1** | SWE-rebench head-to-head | **~1.00**   |
-| Claude Sonnet 4.5   | SWE-bench Verified 77.2% | 0.94        |
-| **GLM-4.7**         | SWE-rebench head-to-head | **~0.94**   |
-| GPT-5               | SWE-bench Verified ~75%  | 0.89        |
-| Grok Code Fast 1    | SWE-bench Verified 70.8% | 0.79        |
-| Kimi K2.6           | SWE-bench Verified ~70%  | 0.77        |
-| GLM-4.6             | SWE-bench Verified 68.0% | 0.73        |
-| Mistral Medium 3    | SWE-bench Verified ~60%  | 0.57        |
+**Z.ai moved the wrong way.** The [2026-07-30 plan revision](https://docs.z.ai/devpack/notice/usage-revision) switched GLM Coding Plans from prompt counts to credits, but kept the 5-hour rolling window _and_ added a peak-hour multiplier: GLM-5.3 and GLM-5-Turbo bill at **3× during 14:00–18:00 SGT weekdays**, 1× off-peak. The specific thing that made GLM frustrating is now more punishing, not less.
 
-GLM Q values come from the SWE-rebench head-to-head (cleanest signal); SWE-bench Verified would give GLM-5.1 a similar ~0.96 anyway. Use these as priors, not verdicts — your actual workflow may weight long-context handling, tool-call reliability, or multimodal differently.
+**Claude has an escape valve the others don't.** [Extra usage credits](https://support.claude.com/en/articles/11049741-what-is-the-max-plan) let Pro/Max keep working past the cap at standard API rates, drawn down automatically, capped at $2,000/day redemption. Enabling it costs nothing until a burst actually overruns the plan — it converts a windowed subscription into a windowless one exactly when needed. Note the separate pools: interactive sessions draw subscription → extra usage, while unattended Agent SDK work draws its own monthly pool that does not roll over.
 
-## Comparison — effective FTE per dollar per month
+## API pricing (per 1M tokens, 2026-08)
 
-| Plan                        | $/mo          | Raw FTE/mo                                      | Model                                       | Q²         | **Effective FTE / $**                | TOS / agent fit                                               |
-| --------------------------- | ------------- | ----------------------------------------------- | ------------------------------------------- | ---------- | ------------------------------------ | ------------------------------------------------------------- |
-| **Z.ai GLM Max**            | 80            | 500–1000                                        | GLM-4.6 / 4.7 / 5 / 5.1                     | 0.73–1.00  | **5–13**                             | Anthropic-compatible endpoint; drop-in Claude Code            |
-| **Z.ai GLM Pro**            | 30            | 150–250                                         | GLM-4.6 / 4.7 / 5 / 5.1                     | 0.73–1.00  | **4–8**                              | Same                                                          |
-| **Z.ai GLM Lite**           | 10            | 40–80                                           | GLM-4.6 / 4.7 / 5 / 5.1                     | 0.73–1.00  | **3–8**                              | Same                                                          |
-| **DeepSeek V4-Pro** (API)   | pay-per-token | ~$0.2–$0.8/FTE (1 FTE ≈ 1M tokens, input-heavy) | DeepSeek V4-Pro                             | 1.03       | **~1–5** (3–10 w/ heavy cache hits)  | Open weights (MIT); Anthropic-compatible endpoint; PRC-hosted |
-| **DeepSeek V4-Flash** (API) | pay-per-token | ~$0.05–$0.20/FTE                                | DeepSeek V4-Flash                           | ~0.85      | **~5–20** (cheaper but quality drop) | Same                                                          |
-| **Qwen Coding Pro**         | ~50           | 200–400                                         | Qwen3.5+ / GLM-5 / Kimi K2.5 / MiniMax-M2.5 | 0.77–1.00  | **3–8**                              | CLI-friendly, programmatic OK                                 |
-| **Claude Max 20x** (ref)    | 200           | 600–1200                                        | Sonnet 4.6 / Opus 4.7                       | 1.00–1.21  | **3–7**                              | First-party                                                   |
-| **Mistral Le Chat Pro**     | 15            | 30–90                                           | Mistral Medium 3                            | 0.57       | **1–3**                              | Quality gap; chat-focused                                     |
-| **Claude Max 5x** (ref)     | 100           | 150–300                                         | Sonnet 4.6 / Opus 4.7                       | 1.00–1.21  | **1.5–4**                            | First-party                                                   |
-| **GitHub Copilot Pro+**     | 39            | 30–150                                          | Routes Sonnet 4.6 / Opus / GPT-5 / Gemini 3 | ~0.95–1.20 | **0.7–4**                            | IDE-bound; June 2026 billing change                           |
-| **Kimi Vivace**             | 199           | 300–600                                         | Kimi K2.6                                   | 0.77       | **1–2**                              | Anthropic-compatible; long-horizon strong                     |
-| **Cursor Ultra**            | 200           | 150–400 (drains by day 25)                      | Multi (Sonnet / GPT-5 / Gemini 3)           | ~0.95–1.20 | **0.7–2.5**                          | Cursor-bound                                                  |
-| **ChatGPT Pro** (ref)       | 200           | 150–400                                         | GPT-5 / GPT-5.5 / o-series                  | 0.89–1.24  | **0.7–2.5**                          | First-party                                                   |
-| **Google AI Pro**           | 20            | 10–30                                           | Gemini 3 Pro                                | 1.03       | **0.5–1.5**                          | Casual-use tier                                               |
-| **SuperGrok Heavy**         | 300           | 100–300 (unknown)                               | Grok 4 / Grok Code Fast                     | 0.79       | **<1**                               | Coding trails frontier; math-strong                           |
-| **Google AI Ultra**         | 250           | 50–150 (CLI quota-bound)                        | Gemini 3 Pro                                | 1.03       | **0.2–0.6**                          | Frontier model, throttled CLI                                 |
-| **Perplexity Max**          | 200           | search-optimized; 10k agent credits             | Routes Sonnet / GPT-5                       | ~0.95      | **<0.5**                             | Wrong tool for agent work                                     |
+| Model                | Input                | Output                 | Notes                                        |
+| -------------------- | -------------------- | ---------------------- | -------------------------------------------- |
+| Claude Fable 5       | $10.00               | $50.00                 | 1M context                                   |
+| Claude Opus 5        | $5.00                | $25.00                 | 1M context                                   |
+| Claude Sonnet 5      | $3.00 ($2.00 intro¹) | $15.00 ($10.00 intro¹) | 1M context                                   |
+| Claude Haiku 4.5     | $1.00                | $5.00                  | 200K context                                 |
+| GPT-5.6 Sol          | $5.00                | $30.00                 | after 2026-07-30 repricing                   |
+| Kimi K3              | $3.00                | $15.00                 | cache hit $0.30; flat across 1M context      |
+| Grok 4.6             | $2.00                | $6.00                  | $4.00/$12.00 once prompt ≥200K; cached $0.50 |
+| Qwen3.8-Max          | $2.00                | $6.00                  | flat, since 2026-08-03                       |
+| GLM-5.3              | $1.40                | $4.40                  | same rate as GLM-5.2                         |
+| Gemini 3.7 Flash     | $0.75                | $3.75                  | promo; doubles 2027-01-01                    |
+| DeepSeek V4-Pro 0813 | $0.66                | $1.98                  | off-peak; $1.32/$3.96 peak²                  |
+| MiniMax M2.7         | $0.30                | $1.20                  | 205K context                                 |
 
-## Headline reading
+¹ Sonnet 5 introductory rate runs through 2026-08-31.
+² DeepSeek peak hours are 01:00–04:00 and 06:00–10:00 UTC.
 
-- **Z.ai GLM** dominates effective-work-per-dollar by ~3–5× over Claude Max and ChatGPT Pro. With GLM-5.1 in the model menu, the quality gap to Sonnet 4.6 closes to ~within-noise on agentic coding (SWE-rebench head-to-head). Earlier framings of "GLM trails by 15-20 pts" were based on the older GLM-4.6 (Sept 2025) numbers — the current flagship is much closer. Frontier hard tasks (deep refactor, novel design) still favor Opus 4.7 / GPT-5.5.
-- **DeepSeek V4-Pro** is now the strongest API-only contender after the 2026-05-22 permanent price cut (75% off original; $0.435 in / $0.87 out per 1M tokens; cache-hit input ~$0.004/1M). At those rates V4-Pro is ~34× cheaper input / ~86× cheaper output than Opus 4.7 for roughly Sonnet-4.6-level coding quality. The catch is no subscription tier — usage scales linearly with tokens — so Z.ai GLM Pro/Max still wins on raw FTE/$ for saturated workloads, but DeepSeek is the right choice when usage is spiky or you want zero commitment. Same data-handling caveats as Z.ai apply (PRC-hosted; don't send proprietary code).
-- **Claude Max 20x** ($200) is ~2× Claude Max 5x ($100) per dollar, not just 2× total — the 20x tier is the better deal if you're saturating the 5x tier.
-- **Gemini AI Ultra** has a frontier model but the CLI quota is the bottleneck (open issue google-gemini/gemini-cli#12859). Worth it only if you specifically need Gemini 3 Pro's strengths (1M context, multimodal).
-- **Cursor Ultra** and **Copilot Pro+** are sensitive to your client preferences. If you live in their UIs, the multi-model routing has real value; if you're driving everything from Claude Code / Codex CLI, the per-dollar math doesn't favor them.
-- **SuperGrok Heavy**'s $300 buys math/reasoning wins that don't transfer cleanly to coding.
+## Subscription comparison
+
+Throughput figures are order-of-magnitude. Treat them as ±2× ranges.
+
+| Plan                    |   $/mo | Quota shape                       | Burst | Models                            | Notes                                       |
+| ----------------------- | -----: | --------------------------------- | ----- | --------------------------------- | ------------------------------------------- |
+| **Cerebras Code Pro**   |     50 | 24M tok/**day**, 300k TPM         | ●●○   | GLM-4.7                           | Daily reset; ~1000 tok/s                    |
+| **Cerebras Code Max**   |    200 | 120M tok/**day**, 400k TPM        | ●●○   | GLM-4.7                           | Older model, very high throughput           |
+| **Z.ai GLM Lite**       |     18 | 10k credits/wk + 5h window        | ○○○   | GLM-5.3 / 5.2 / 5.1 / 4.7         | 3× peak multiplier on 5.3                   |
+| **Z.ai GLM Pro**        |     80 | 60k credits/wk + 5h window        | ○○○   | same                              | Best raw throughput/$; worst burst shape    |
+| **Z.ai GLM Max**        |    168 | 140k credits/wk + 5h window       | ○○○   | same                              | same                                        |
+| **Claude Max 20x**      |    200 | 5h + weekly (all-models + Sonnet) | ●●● ³ | Opus 5, Sonnet 5                  | Opus 5 default on Max since 2026-07-25      |
+| **Claude Max 5x**       |    100 | same, 5×                          | ●●● ³ | Opus 5, Sonnet 5                  | Half the capacity of 20x for half the price |
+| **ChatGPT Pro ($200)**  |    200 | 5h windows, 20× Plus              | ○○○   | GPT-5.6, o-series, Codex          | 250 deep research runs/mo, Sora, Operator   |
+| **ChatGPT Pro ($100)**  |    100 | 5h windows, 5× Plus               | ○○○   | GPT-5.6, GPT-5.4, o3-pro, Codex   | Added 2026-04-09                            |
+| **Cursor Ultra**        |    200 | 10k requests/**month**            | ●●●   | Multi-frontier routing            | Cursor-bound                                |
+| **GitHub Copilot Pro+** |     39 | 1.5k premium requests/**month**   | ●●●   | Multi-frontier routing            | IDE/CLI-bound                               |
+| **MiniMax Max**         |     50 | 1000 prompts/5h                   | ○○○   | M3, M2.7                          | Cheap, index ~50 tier                       |
+| **Kimi Allegretto**     |   ¥199 | 5h + weekly                       | ○○○   | K3, K2.7                          | K3 is index 60; ¥699 tier adds 1M context   |
+| **Qwen Standard**       |   ¥139 | 3k credits/5h, 10k/wk             | ○○○   | Qwen3.8-Max, DeepSeek-V4-Pro, GLM | Multi-vendor routing                        |
+| **DeepSeek API**        | pay-go | none                              | ●●●   | V4-Pro 0813, V4-Flash             | Cheapest frontier-adjacent tokens anywhere  |
+
+³ Claude's own windows are 5h + weekly, but extra-usage credits remove the ceiling on demand — the only windowed plan here with a first-party overflow path.
 
 ## Recommendation
 
-For a heavy agent user already maxed on Claude Max + ChatGPT Pro:
+The GLM disappointment had two causes. Only one of them has been fixed.
 
-1. **Z.ai GLM Pro ($30)** — biggest marginal capacity per dollar by a wide margin. Set `ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic` + `ANTHROPIC_AUTH_TOKEN=<glm-key>` and your existing Claude Code / harness configs work unchanged. With GLM-5.1, the quality is close enough to Sonnet 4.6 to handle most everyday work, not just routine. Reserve Claude Opus / Sonnet 4.6 for the hardest tasks where the quality factor pulls ahead.
-2. **Step up to GLM Max ($80)** only after you've sustained Pro saturation for ~2 weeks. Numbers above suggest Max scales linearly with price, but heavy-tier quotas can have hidden ceilings.
-3. **GitHub Copilot Pro+ ($39)** if you spend serious time in VS Code/JetBrains and want IDE-integrated multi-model routing. Reassess after the 2026-06-01 shift to usage-based billing.
-4. **Google AI Ultra ($250)** only if Gemini 3 Pro's specific strengths matter to your work. Don't buy it as a workhorse.
+**Quality: fixed.** GLM-5.3 (2026-08-14) scores 59.5–60 on the AA Intelligence Index against Opus 5's 63. Whatever was tried during the quarterly plan predates it by two model generations. On Z.ai's own Code Bench at high effort, GLM-5.3 beats Opus 4.8 (31.4% vs 29.5%) while spending ~50k output tokens per task against ~120k. It still loses badly on long-horizon agentic work — Terminal-Bench 3.0 has Opus 5 at 42.7% vs GLM-5.3 at 28.3% — so it is a good everyday model, not an Opus replacement.
+
+**Quota shape: worse.** The credits migration kept the 5h rolling window and added the 3× peak multiplier. Renewing Z.ai would re-buy the exact problem.
+
+In priority order:
+
+1. **Enable Claude extra usage credits.** Free until a burst overruns the plan, then bills at standard API rates with no window at all. This is the single highest-value change available: it directly targets the spiky-overflow failure mode, on a subscription already owned, with no TOS question and no new vendor. Set a monthly cap ($50–100) to bound the downside. If it consistently exceeds $100/mo, that is the signal to move up a Max tier rather than keep paying overage.
+
+2. **Add a DeepSeek V4-Pro API key as unmetered overflow.** $0.66/$1.98 off-peak, index 53 at $0.25/task — the cheapest point on the AA frontier, roughly 9× under Opus 5 (max) per task. Zero commitment, no window, Anthropic-compatible endpoint so existing Claude Code configs work unchanged. This is the right shape for spiky use precisely because there is nothing to run out of. Data caveat below.
+
+3. **Cerebras Code Pro ($50) only if load turns out to be sustained rather than spiky.** Daily reset, 24M tokens/day, ~1000 tok/s. Better burst shape than Z.ai and the speed is genuinely different in an agent loop, but it serves GLM-4.7 — two generations behind, and the quality complaint applies with more force, not less.
+
+4. **Re-test GLM-5.3 before renewing anything at Z.ai**, and test it via pay-per-token API rather than a plan. $1.40/$4.40 with no window answers the quality question without re-buying the quota problem. Only convert to a Coding Plan if the answer is yes _and_ usage has flattened out.
+
+5. **Drop effort settings before buying capacity.** Running Opus 5 at `medium` instead of `max` is a 69% cost cut for 4 index points. On the existing Max plan that is a direct throughput increase for free — likely worth more than any tier of anything below.
 
 ## Skip
 
-- SuperGrok Heavy ($300): coding trails Sonnet/Opus
-- Perplexity Max ($200): search-optimized
-- Mistral / Poe / Kagi: quality or quota insufficient
-  (DeepSeek was previously in this list — V4-Pro plus the 2026-05-22 permanent price cut moved it into the "consider" tier; see Headline)
-- Cursor Ultra: redundant given Claude Max + GLM overflow
+- **Another 5h-windowed subscription of any brand** — MiniMax, Kimi, Qwen tiers all repeat the GLM failure mode regardless of their per-token economics.
+- **SuperGrok Heavy ($300)** — Grok 4.6 is a strong model (index 61) but at $2/$6 the API is the sane way to buy it.
+- **Cursor Ultra / Copilot Pro+** — good burst shape, but the value is in their IDE surfaces; from Claude Code the routing is redundant.
+- **Perplexity Max** — search-optimized, wrong tool.
+- **Discounted-credit resale marketplaces** — both Anthropic and OpenAI prohibit reselling API access, so credits bought at "40–60% off" carry termination risk on an account that matters.
 
 ## TOS notes
 
-- **Z.ai GLM Coding Plan**: explicitly markets Claude Code/Cursor/Cline integration via Anthropic-compatible endpoint. Programmatic use is the intended use case.
-- **Kimi (Moonshot)**: same pattern — `api.moonshot.ai/anthropic` endpoint is documented for agent harnesses.
-- **Qwen Coding Plan**: documented CLI/agent integration.
-- **ChatGPT Pro (Codex)**: a single-user personal agent on your own sub is **within documented functionality**, not a TOS violation. OpenAI ships "Sign in with ChatGPT" OAuth and lists `codex exec` (non-interactive), the Codex SDK, scriptable workflows, and Codex cloud tasks as Plus/Pro features ([pricing](https://developers.openai.com/codex/pricing)). Third-party harnesses (opencode etc.) authenticate via that same official OAuth; an OpenAI maintainer confirmed forking Codex CLI is permitted ([discussion #8338](https://github.com/openai/codex/discussions/8338)). What the [Terms of Use](https://openai.com/policies/row-terms-of-use/) actually prohibit: reselling access / using ChatGPT to power third-party **services**, **multi-user** apps, and programmatic data **extraction** — none of which a personal agent trips. Genuine gray area: "Codex access tokens for trusted automation" are gated to Business/Enterprise, so OpenAI nudges _unattended_ automation toward enterprise tokens and reserves the final call. (Earlier versions of this doc claimed flatly "can't pipe ChatGPT into agent harnesses" — that was an oversimplification.)
-- **Claude Max**: use it through Claude Code (first-party, allowed). Piping the Max consumer endpoint into _other_ third-party harnesses is against Anthropic's TOS — use the API (separate billing) for that.
-- **GitHub Copilot**: bound to Copilot clients (IDE plugins, Copilot CLI, Copilot agent). No raw API key for harness reuse.
+- **Z.ai / Kimi / Qwen coding plans**: Anthropic-compatible endpoints and agent-harness integration are the documented, marketed use case.
+- **DeepSeek**: standard pay-per-token API, no agent restrictions.
+- **ChatGPT Pro (Codex)**: a single-user personal agent on your own subscription is documented functionality — OpenAI ships "Sign in with ChatGPT" OAuth and lists `codex exec`, the Codex SDK, and scriptable workflows as Plus/Pro features. The [Terms of Use](https://openai.com/policies/row-terms-of-use/) prohibit resale, powering third-party **services**, **multi-user** apps, and programmatic **extraction**. Gray area: "Codex access tokens for trusted automation" are gated to Business/Enterprise, so unattended automation is nudged toward enterprise tokens.
+- **Claude Max**: use through Claude Code (first-party). Piping the Max consumer endpoint into _other_ third-party harnesses violates Anthropic's TOS — use the API for that. Extra-usage credits and the Agent SDK pool are the sanctioned paths for overflow and unattended work respectively.
+- **GitHub Copilot**: bound to Copilot clients. No raw API key for harness reuse.
 
-## Caveats — why this is fuzzy
+## Caveats
 
-- FTE is a made-up unit. Your actual task profile may compress or expand by 3×.
-- Quotas drift. Z.ai re-tiered in early 2026; Copilot is mid-billing-model change; Gemini CLI quotas change without notice.
-- Quality factor uses SWE-bench Verified / SWE-rebench as proxy. Models can be strong on these but weak in your actual loop (tool calling, long context coherence, structured output reliability).
-- Multi-model plans (Copilot, Cursor) self-penalize via routing caps — headline numbers overstate real throughput.
-- Z.ai Coding Plan model selection: assumes you can route to GLM-5.1 most of the time. If the plan defaults to GLM-4.6 for cost reasons, the effective Q drops to the lower bound (~0.73).
-- Geopolitical / data-handling risk for Z.ai and DeepSeek: both Beijing-based, both subject to PRC jurisdiction. Z.ai is US Entity-Listed (Jan 2025); CAISI's 2026-05 eval of DeepSeek V4 flagged similar risk posture. APIs have no-train/no-store clauses but no anti-government-request carveout. Don't send proprietary code through either.
-- DeepSeek FTE/$ numbers assume input-heavy workloads (~80/20 in/out by tokens) and rely on prompt caching for the high end. Without caching, V4-Pro is ~2× more expensive per FTE than the headline range suggests.
+- **Index/$ flatters cheap models.** A failed task costs a retry plus the operator attention to notice. Weight the frontier position, not the ratio.
+- **AA cost-per-task is API pricing.** It does not model subscription quotas, and a plan's effective rate can beat or trail it by several times depending on saturation.
+- **Benchmarks proxy for the loop, badly.** Index scores say little about tool-call reliability, long-context coherence, or structured-output discipline — the properties that actually decide whether an agent run completes.
+- **Quotas drift fast.** Z.ai re-tiered twice in 2026; OpenAI added a $100 Pro tier in April; Gemini CLI quotas change without notice. Re-check before committing.
+- **Geopolitical / data-handling risk for Z.ai, DeepSeek, Moonshot, Alibaba, MiniMax.** All PRC-jurisdiction. Z.ai has been US Entity-Listed since Jan 2025. APIs carry no-train/no-store clauses but no anti-government-request carveout. Don't route proprietary code through any of them.
+- **Peak-hour multipliers are easy to miss** in both directions: Z.ai's 3× peak on GLM-5.3 (14:00–18:00 SGT) and DeepSeek's 2× peak (01:00–04:00, 06:00–10:00 UTC) can double or triple an expected bill.
 
 ## Sources
 
-### Z.ai / GLM
+### Cost-per-intelligence analysis
 
-- [Z.AI GLM Coding Plan](https://z.ai/subscribe), [pricing](https://docs.z.ai/guides/overview/pricing), [Claude Code integration](https://docs.z.ai/devpack/tool/claude)
-- [Anthropic API format for GLM](https://aiengineerguide.com/til/anthropic-api-format-glm-coding-plan/)
-- [Z.ai GLM-4.7 docs](https://docs.z.ai/guides/llm/glm-4.7)
-- [GLM-4.6 vs Sonnet 4.5 review](https://medium.com/data-science-in-your-pocket/glm-4-6-the-best-coding-llm-beats-claude-4-5-sonnet-kimi-88e8e3f96863)
-- [GLM-4.6 SWE-bench writeup](https://intuitionlabs.ai/articles/glm-4-6-open-source-coding-model)
-- [GLM-5.1 review (Serenities)](https://serenitiesai.com/articles/glm-5-1-zhipu-coding-benchmark-claude-opus-comparison-2026)
-- [apiyi GLM-5.1 vs Sonnet 4.6 6-dim test](https://help.apiyi.com/en/glm-5-1-vs-claude-sonnet-4-6-coding-comparison-en.html)
+- [Artificial Analysis](https://artificialanalysis.ai/) — Intelligence Index vs. Cost per Task chart with Pareto frontier
+- [AA Intelligence Index v4.1.1](https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index) — index composition
+- [AA model leaderboard](https://artificialanalysis.ai/leaderboards/models) — per-effort scores and cost per task
+- [AA Intelligence Index v4.1 — shift toward agentic workloads](https://artificialanalysis.ai/articles/artificial-analysis-intelligence-index-v4-1)
+- [BenchLM AA leaderboard mirror](https://benchlm.ai/benchmarks/artificialanalysis)
 
-### Independent leaderboards (head-to-head data)
+### Quota structures
 
-- [SWE-rebench](https://swe-rebench.com/) — same-harness agentic coding eval, primary head-to-head signal
-- [marc0.dev SWE-bench Verified leaderboard](https://www.marc0.dev/en/leaderboard)
-- [llm-stats.com SWE-Bench Verified](https://llm-stats.com/benchmarks/swe-bench-verified), [Terminal-Bench](https://llm-stats.com/benchmarks/terminal-bench)
-- [llm-stats Sonnet 4.5 vs GLM-4.7](https://llm-stats.com/models/compare/claude-sonnet-4-5-20250929-vs-glm-4.7)
-- [llm-stats Sonnet 4.6 vs GLM-4.7](https://llm-stats.com/models/compare/claude-sonnet-4-6-vs-glm-4.7)
-- [llm-stats Sonnet 4.6 vs GLM-5.1](https://llm-stats.com/models/compare/claude-sonnet-4-6-vs-glm-5.1)
-- [llm-stats Sonnet 4.6 vs GLM-5](https://llm-stats.com/models/compare/glm-5-vs-claude-sonnet-4-6)
-- [Scale Labs SWE-bench Pro public](https://labs.scale.com/leaderboard/swe_bench_pro_public)
-- [vals.ai SWE-bench](https://www.vals.ai/benchmarks/swebench), [Terminal-Bench 2.0](https://www.vals.ai/benchmarks/terminal-bench-2)
-- [Aider chat leaderboard](https://aider.chat/docs/leaderboards/) (no current Sonnet 4.5+ / GLM-4.7+ entries)
+- [Z.ai plan update announcement](https://docs.z.ai/devpack/notice/usage-revision) — 2026-07-30 credits migration, peak multipliers
+- [Anthropic: what is the Max plan](https://support.claude.com/en/articles/11049741-what-is-the-max-plan)
+- [Claude extra usage: three billing pools](https://agentshortlist.com/articles/claude-extra-usage)
+- [Claude usage limits timeline](https://explainx.ai/blog/claude-usage-limits-2026-timeline-explained)
+- [Cerebras Code](https://www.cerebras.ai/blog/introducing-cerebras-code), [Code FAQ](https://support.cerebras.net/articles/9996007307-cerebras-code-faq)
+- [Coding plan comparison](https://codingplan.org/en), [AI deals roundup](https://tokenmonopoly.com/ai-deals)
+- [ChatGPT subscription tiers](https://www.aipricing.guru/chatgpt-subscription-pricing/)
 
-### Other models
+### Model pricing and benchmarks
 
-- [Claude Opus 4.7 benchmarks (Vellum)](https://www.vellum.ai/blog/claude-opus-4-7-benchmarks-explained)
-- [GPT-5.5 benchmarks (BenchLM)](https://benchlm.ai/models/gpt-5-5)
-- [Gemini 3.1 Pro benchmarks](https://benchlm.ai/models/gemini-3-1-pro)
-- [Grok Code Fast 1 SWE-bench](https://x.ai/news/grok-code-fast-1)
+- [GLM-5.3 API pricing](https://venturebeat.com/technology/glm-5-3-hits-the-api-at-1-4-4-4-per-million-tokens), [GLM-5.3 vs Claude Opus 5](https://codingfleet.com/blog/glm-5-3-vs-claude-opus-5/), [GLM-5.3 benchmarks](https://atoms.dev/blog/glm-5-3-benchmarks-api-coding-open-weights)
+- [DeepSeek pricing](https://deepseek.ai/pricing), [V4-Pro-0813 rates](https://benchlm.ai/deepseek/api-pricing)
+- [Kimi K3 pricing](https://benchlm.ai/moonshot/api-pricing)
+- [OpenAI API pricing](https://benchlm.ai/openai/api-pricing), [GPT-5.6 price-performance](https://openai.com/index/advancing-the-price-performance-frontier-with-gpt-5-6/)
+- [xAI API pricing](https://benchlm.ai/xai/api-pricing)
+- [Gemini pricing](https://felloai.com/gemini-pricing/)
 
 ### Z.ai company / risk
 
-- [Z.ai Wikipedia](https://en.wikipedia.org/wiki/Z.ai)
-- [Zhipu Entity List addition (SCMP)](https://www.scmp.com/tech/tech-war/article/3295002/tech-war-us-adds-chinese-ai-unicorn-zhipu-trade-blacklist-bidens-exit)
-- [Z.ai Terms of Use](https://docs.z.ai/legal-agreement/terms-of-use), [Privacy Policy](https://chat.z.ai/legal-agreement/privacy-policy)
-- [ChinaTalk: The Z.ai Playbook](https://www.chinatalk.media/p/the-zai-playbook)
-
-### Other subscriptions
-
-- [Google AI subscriptions](https://gemini.google/subscriptions/), [Gemini Apps limits](https://support.google.com/gemini/answer/16275805?hl=en)
-- [Gemini CLI quota issue #12859](https://github.com/google-gemini/gemini-cli/issues/12859)
-- [SuperGrok pricing](https://felloai.com/grok-pricing/), [SuperGrok Heavy launch](https://www.tesery.com/blogs/news/xai-launches-grok-4-with-new-300-month-supergrok-heavy-subscription)
-- [GitHub Copilot plans](https://github.com/features/copilot/plans), [requests model](https://docs.github.com/en/copilot/concepts/billing/copilot-requests), [usage-based billing shift](https://github.blog/news-insights/company-news/github-copilot-is-moving-to-usage-based-billing/)
-- [Cursor pricing](https://cursor.com/pricing), [tier discussion](https://forum.cursor.com/t/cursor-200-vs-claude-max-cursor-usage-limits-and-trade-offs/148298)
-- [Mistral pricing](https://mistral.ai/pricing), [Le Chat tiers](https://help.mistral.ai/en/articles/347532-what-is-the-difference-between-le-chat-free-pro-team-and-enterprise)
-- [Kimi K2.6 pricing](https://kimik2ai.com/pricing/), [Anthropic-compatible endpoint](https://www.atlascloud.ai/blog/guides/one-api-key-four-tools-how-to-use-kimi-k2-6-in-hermes-agent-opencode-claude-code-openclaw-full-2026-setup)
-- [Alibaba Qwen Coding Plan](https://www.alibabacloud.com/help/en/model-studio/coding-plan)
-- [Perplexity Max](https://www.glbgpt.com/hub/how-much-is-perplexity-max-subscription/)
-- [DeepSeek pricing](https://api-docs.deepseek.com/quick_start/pricing), [V4-Pro release notes (2026-04-24)](https://api-docs.deepseek.com/news/news260424), [API changelog](https://api-docs.deepseek.com/updates)
-- [Artificial Analysis: DeepSeek V4-Pro](https://artificialanalysis.ai/models/deepseek-v4-pro)
-- [CAISI/NIST evaluation of DeepSeek V4-Pro](https://www.nist.gov/news-events/news/2026/05/caisi-evaluation-deepseek-v4-pro)
-- [DeepSeek permanent 75% V4-Pro price cut (2026-05-22)](https://thetechportal.com/2026/05/23/chinas-deepseek-permanently-cuts-prices-of-flagship-v4-pro-ai-model-by-75/), [KuCoin flash](https://www.kucoin.com/news/flash/deepseek-announces-permanent-api-price-cut-for-v4-pro-model)
+- [Z.ai Wikipedia](https://en.wikipedia.org/wiki/Z.ai), [Entity List addition (SCMP)](https://www.scmp.com/tech/tech-war/article/3295002/tech-war-us-adds-chinese-ai-unicorn-zhipu-trade-blacklist-bidens-exit)
+- [Z.ai Terms of Use](https://docs.z.ai/legal-agreement/terms-of-use)
