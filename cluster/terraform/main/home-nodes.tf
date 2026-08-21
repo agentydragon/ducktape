@@ -24,16 +24,15 @@ locals {
           disk  = node.install_disk
           image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${var.talos_version}"
         }
-        # haku-ci's rootless dind needs user namespaces. The workload label keeps
-        # this privileged build compute on the explicitly approved worker pool.
+        # haku-ci's rootless dind needs user namespaces. Scoped to OptiPlex rather
+        # than all Talos workers because it is the only home worker approved for CI.
         sysctls = {
           "user.max_user_namespaces" = "1048576"
         }
         nodeLabels = {
-          "topology.kubernetes.io/region"     = node.region
-          "topology.kubernetes.io/zone"       = node.zone
-          "storage.allegedly.works/tier"      = "ssd"
-          "workload.allegedly.works/haku-ci" = "true"
+          "topology.kubernetes.io/region" = node.region
+          "topology.kubernetes.io/zone"   = node.zone
+          "storage.allegedly.works/tier"  = "ssd"
         }
       })
       cluster = local.worker_cluster_config

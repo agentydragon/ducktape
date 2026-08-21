@@ -77,18 +77,24 @@ spec:
         # any more. Slightly above config.yaml's `shutdown_timeout: 30m` so a drained
         # node lets a build of up to that length finish instead of dropping it.
         terminationGracePeriodSeconds: 1830
-        # This privileged, agent-controlled build compute runs only on workers explicitly
-        # configured for rootless dind's user-namespace requirement. The capability label
-        # includes the two OVH workers and the home OptiPlex, while excluding schedulable
-        # control planes and unrelated or intermittently connected workers.
+        # This privileged, agent-controlled build compute runs only on approved always-on
+        # workers: non-control-plane HIL nodes and the home OptiPlex. Their Talos configs
+        # enable the user namespaces rootless dind needs; roaming and unrelated workers
+        # remain ineligible without introducing a separately reconciled capability label.
         affinity:
           nodeAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
               nodeSelectorTerms:
                 - matchExpressions:
-                    - key: workload.allegedly.works/haku-ci
+                    - key: topology.kubernetes.io/region
                       operator: In
-                      values: ["true"]
+                      values: ["hil"]
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist
+                - matchExpressions:
+                    - key: kubernetes.io/hostname
+                      operator: In
+                      values: ["optiplex"]
                     - key: node-role.kubernetes.io/control-plane
                       operator: DoesNotExist
         # Requests describe only the runner's idle footprint, so the default scheduler's
