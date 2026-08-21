@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 import time
 from collections.abc import AsyncGenerator, Callable, Generator
 from contextlib import asynccontextmanager, contextmanager
@@ -26,7 +27,7 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from starlette.websockets import WebSocketDisconnect
 
 from haku.console import console_events, operator_auth
@@ -345,13 +346,13 @@ async def _static_agent_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class _BearerRecorder:
-    """ASGI wrapper recording the bearer each request actually arrives with.
+    """ASGI wrapper recording the bearer each tool call actually arrives with.
 
     Deliberately at the transport, not at an executor seam: this asserts the credential reached the
     wire, so it still catches a console that resolves the right token and then sends another — and
-    it proves one Operator's token never rides another Operator's call. Consecutive duplicates are
-    collapsed because one execution is several HTTP requests (initialize, then the call), and it is
-    the sequence of *distinct* credentials that carries the meaning.
+    it proves one Operator's token never rides another Operator's call. Catalog reconciliation also
+    initializes this transport and lists tools, so only JSON-RPC ``tools/call`` requests belong in
+    the execution-auth assertion.
     """
 
     def __init__(self, app: ASGIApp, bearers: list[str | None]) -> None:
@@ -360,10 +361,24 @@ class _BearerRecorder:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "http":
-            raw = dict(scope["headers"]).get(b"authorization")
-            bearer = raw.decode().removeprefix("Bearer ") if raw else None
-            if not self._bearers or self._bearers[-1] != bearer:
-                self._bearers.append(bearer)
+            request = Request(scope, receive)
+            body = await request.body()
+            message = json.loads(body) if body else None
+            if isinstance(message, dict) and message.get("method") == "tools/call":
+                raw = dict(scope["headers"]).get(b"authorization")
+                self._bearers.append(raw.decode().removeprefix("Bearer ") if raw else None)
+
+            delivered = False
+
+            async def replay_receive() -> Message:
+                nonlocal delivered
+                if not delivered:
+                    delivered = True
+                    return {"type": "http.request", "body": body, "more_body": False}
+                return await receive()
+
+            await self._app(scope, replay_receive, send)
+            return
         await self._app(scope, receive, send)
 
 
@@ -1151,9 +1166,9 @@ async def test_operator_oauth_association_drives_approved_tool_execution(
     assert approved.status_code == 200, approved.text
     assert approved.json()["tool_call"]["status"] == "running"
     assert execution_operator_ids == [await operator_id(migrated_sessions, "operator-oauth-sub")]
-    # The upstream saw exactly two requests: the unauthenticated probe that starts the DCR
-    # challenge, then the approved execution carrying this Operator's own linked token.
-    assert upstream_bearers == [None, "operator-access-token"]
+    # The upstream saw the unauthenticated probe that starts the DCR challenge, then both the
+    # connection-change catalog refresh and approved execution carrying this Operator's token.
+    assert upstream_bearers == [None, "operator-access-token", "operator-access-token"]
 
 
 async def test_operator_oauth_approval_requires_existing_association(
