@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict
 
 from aiquota.models import FetchError, FetchSuccess, ProviderFetch, QuotaWindow
 from aiquota.providers.base import Provider
-from aiquota.providers.cli_proxy_api import MANAGEMENT_API_CALL_PATH, fetch_usage_via_management
+from aiquota.providers.cli_proxy_api import CLIProxyAPIManagementClient
 from aiquota.providers.client import ProviderClientFactory
 
 logger = logging.getLogger(__name__)
@@ -240,16 +240,9 @@ async def _fetch_usage(auth: _AuthState, client: httpx.AsyncClient) -> _UsageRes
     return _UsageResponse.model_validate(resp.json())
 
 
-async def _fetch_usage_via_management(
-    cli_proxy_api_url: str, cli_proxy_api_key: str, client: httpx.AsyncClient
-) -> _UsageResponse:
-    body = await fetch_usage_via_management(
-        cli_proxy_api_url,
-        cli_proxy_api_key,
-        "codex",
-        USAGE_URL,
-        {"Authorization": "Bearer $TOKEN$", "User-Agent": "codex_cli_rs/0.125.0 (Linux; x86_64)"},
-        client,
+async def _fetch_usage_via_management(management: CLIProxyAPIManagementClient) -> _UsageResponse:
+    body = await management.fetch_usage(
+        USAGE_URL, {"Authorization": "Bearer $TOKEN$", "User-Agent": "codex_cli_rs/0.125.0 (Linux; x86_64)"}
     )
     return _UsageResponse.model_validate_json(body)
 
@@ -302,10 +295,11 @@ class CodexProvider(Provider):
         if self.cli_proxy_api_url:
             if not self.cli_proxy_api_key:
                 return ProviderFetch(fetched_at=now, result=FetchError(error="CLIProxyAPI key is not configured"))
-            api_call_url = f"{self.cli_proxy_api_url.rstrip('/')}{MANAGEMENT_API_CALL_PATH}"
             try:
-                async with self.client_factory(self.name, {api_call_url}, API_TIMEOUT_SECS) as client:
-                    usage = await _fetch_usage_via_management(self.cli_proxy_api_url, self.cli_proxy_api_key, client)
+                management = CLIProxyAPIManagementClient(
+                    self.cli_proxy_api_url, self.cli_proxy_api_key, self.name, self.client_factory, API_TIMEOUT_SECS
+                )
+                usage = await _fetch_usage_via_management(management)
             except Exception as e:
                 return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "CLIProxyAPI integration"))
             return ProviderFetch(fetched_at=now, result=_to_success(usage))

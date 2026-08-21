@@ -9,16 +9,9 @@ import pytest_bazel
 import respx
 
 from aiquota.models import FetchError, FetchSuccess
-from aiquota.providers.cli_proxy_api import MANAGEMENT_AUTH_FILES_PATH
+from aiquota.providers.cli_proxy_api import MANAGEMENT_API_CALL_PATH, MANAGEMENT_AUTH_FILES_PATH
 from aiquota.providers.client import provider_client
-from aiquota.providers.codex import (
-    MANAGEMENT_API_CALL_PATH,
-    OAUTH_CLIENT_ID,
-    TOKEN_URL,
-    USAGE_URL,
-    CodexProvider,
-    CodexSettings,
-)
+from aiquota.providers.codex import OAUTH_CLIENT_ID, TOKEN_URL, USAGE_URL, CodexProvider, CodexSettings
 
 if __name__ == "__main__":
     pytest_bazel.main()

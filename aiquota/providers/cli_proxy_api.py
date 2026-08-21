@@ -1,6 +1,10 @@
 """Small client for CLIProxyAPI's authenticated management surface."""
 
+from dataclasses import dataclass
+
 import httpx
+
+from aiquota.providers.client import ProviderClientFactory
 
 MANAGEMENT_AUTH_FILES_PATH = "/auth-files"
 MANAGEMENT_API_CALL_PATH = "/api-call"
@@ -27,7 +31,7 @@ def _select_auth_index(payload: object, provider: str) -> str | None:
     return str(candidates[0]["auth_index"])
 
 
-async def fetch_usage_via_management(
+async def _fetch_usage_via_management(
     cli_proxy_api_url: str,
     cli_proxy_api_key: str,
     provider: str,
@@ -67,3 +71,21 @@ async def fetch_usage_via_management(
         upstream_response = httpx.Response(status_code, content=body, request=api_call_response.request)
         upstream_response.raise_for_status()
     return body
+
+
+@dataclass(frozen=True)
+class CLIProxyAPIManagementClient:
+    """Client for provider usage calls through CLIProxyAPI management."""
+
+    url: str
+    key: str
+    provider: str
+    client_factory: ProviderClientFactory
+    timeout: float
+
+    async def fetch_usage(self, usage_url: str, usage_headers: dict[str, str]) -> str:
+        api_call_url = f"{self.url.rstrip('/')}{MANAGEMENT_API_CALL_PATH}"
+        async with self.client_factory(self.provider, {api_call_url}, self.timeout) as client:
+            return await _fetch_usage_via_management(
+                self.url, self.key, self.provider, usage_url, usage_headers, client
+            )

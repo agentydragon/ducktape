@@ -17,7 +17,7 @@ from pydantic.alias_generators import to_camel
 
 from aiquota.models import ExtraSpend, FetchError, FetchSuccess, ProviderFetch, QuotaWindow
 from aiquota.providers.base import Provider
-from aiquota.providers.cli_proxy_api import fetch_usage_via_management
+from aiquota.providers.cli_proxy_api import CLIProxyAPIManagementClient
 from aiquota.providers.client import ProviderClientFactory
 from devinfra.claude.claude_api.usage import Spend, UsageBucket, UsageResponse
 
@@ -175,17 +175,13 @@ class ClaudeProvider(Provider):
         if self.cli_proxy_api_url:
             if not self.cli_proxy_api_key:
                 return ProviderFetch(fetched_at=now, result=FetchError(error="CLIProxyAPI key is not configured"))
-            api_call_url = f"{self.cli_proxy_api_url.rstrip('/')}/api-call"
             try:
-                async with self.client_factory(self.name, {api_call_url}, API_TIMEOUT_SECS) as client:
-                    body = await fetch_usage_via_management(
-                        self.cli_proxy_api_url,
-                        self.cli_proxy_api_key,
-                        "claude",
-                        USAGE_URL,
-                        {"Authorization": "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20"},
-                        client,
-                    )
+                management = CLIProxyAPIManagementClient(
+                    self.cli_proxy_api_url, self.cli_proxy_api_key, self.name, self.client_factory, API_TIMEOUT_SECS
+                )
+                body = await management.fetch_usage(
+                    USAGE_URL, {"Authorization": "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20"}
+                )
                 usage = UsageResponse.model_validate_json(body)
             except Exception as e:
                 return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "CLIProxyAPI integration"))
