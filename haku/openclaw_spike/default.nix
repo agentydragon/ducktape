@@ -19,32 +19,9 @@ let
     cp ${./openclaw-package-lock.json} "$out/package-lock.json"
   '';
 
-  # OpenClaw's WAL-reset safety check requires SQLite 3.51.3+ (or one of its
-  # explicitly supported older patch lines). nixpkgs' Node 22 currently embeds
-  # 3.51.2, so keep this small runtime-specific Node override.
-  sqliteForOpenClaw = pkgs.sqlite.overrideAttrs (_: {
-    version = "3.51.3";
-    src = pkgs.fetchurl {
-      url = "https://sqlite.org/2026/sqlite-src-3510300.zip";
-      hash = "sha256-+KZ6H1tcrnxtQvCZTKe/GkpYWIaMgq3J/BNAvtXrjNI=";
-    };
-    # SQLite 3.51.3's fault-injection test is incompatible with this nixpkgs
-    # test harness; the Node ABI smoke test still runs in CI below.
-    doCheck = false;
-  });
-
-  nodeForOpenClaw = pkgs.nodejs-slim_22.overrideAttrs (old: {
-    buildInputs =
-      pkgs.lib.filter (dependency: (dependency.pname or null) != "sqlite") old.buildInputs
-      ++ [ sqliteForOpenClaw ];
-    configureFlags = map (
-      flag:
-      if pkgs.lib.hasPrefix "--shared-sqlite-libpath=" flag then
-        "--shared-sqlite-libpath=${sqliteForOpenClaw}/lib"
-      else
-        flag
-    ) old.configureFlags;
-  });
+  # nixpkgs-unstable's Node 26 satisfies the beta's engine range and embeds a
+  # new enough SQLite for OpenClaw's WAL-reset safety check.
+  nodeForOpenClaw = pkgs.nodejs-slim_26;
 
   gateway = pkgs.buildNpmPackage {
     pname = "openclaw-gateway";
