@@ -12,6 +12,12 @@ how to inspect and use them; it does not grant access by itself.
 Use the narrowest identity that already has the required authority. Do not submit an approval-gated
 Haku call merely because a generated Haku tool exists for the operation.
 
+Operations on the public-coder Pod's own state are local operations. Files, checkouts, worktrees,
+Git metadata, processes, caches, command output, installed tools, and tests inside the Pod must use
+OpenClaw's local file, shell, and process tools. Do not send these operations through any Haku
+Console MCP server, including `hostexec` or the sandbox server. Haku is an escalation and external
+service boundary, not an alternate shell for the Pod in which the Agent is already running.
+
 Use this order:
 
 1. local workspace files, processes, tests, and desired-state Git;
@@ -37,7 +43,8 @@ Inspect the checkout and environment directly:
 - install the workspace-managed hooks in every new Ducktape worktree.
 
 A missing local binary is not, by itself, a reason to use `hostexec/bash`. Check the image-provided
-closure and workspace-local tools first.
+closure and workspace-local tools first. If the operation targets Pod-local state, keep it local
+even when a Haku tool exposes a superficially similar file, shell, Git, or sandbox operation.
 
 ### GitHub identity
 
