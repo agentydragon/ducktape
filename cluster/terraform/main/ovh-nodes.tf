@@ -370,8 +370,8 @@ locals {
         }
         # Talos hardens user.max_user_namespaces to 0; the haku-ci runner's rootless
         # dind (docker:dind-rootless) needs user namespaces to start. Scoped to the
-        # OVH/hil workers (where the runner schedules via nodeSelector region=hil), not
-        # cluster-wide. Applies live — no reboot. See cluster/k8s/haku-ci.
+        # workers explicitly labeled for that workload, not cluster-wide. Applies
+        # live — no reboot. See cluster/k8s/haku-ci.
         sysctls = {
           "user.max_user_namespaces" = "1048576"
         }
@@ -379,9 +379,10 @@ locals {
         # `storage.allegedly.works/tier` drives the media-scoped local-path-ovh-{hdd,ssd} SCs
         # (cluster/k8s/local-path-provisioner); see cluster/docs/plans/ovh_storage_tiering.md.
         nodeLabels = {
-          "topology.kubernetes.io/region" = "hil"
-          "topology.kubernetes.io/zone"   = v.zone
-          "storage.allegedly.works/tier"  = v.storage_tier
+          "topology.kubernetes.io/region"     = "hil"
+          "topology.kubernetes.io/zone"       = v.zone
+          "storage.allegedly.works/tier"      = v.storage_tier
+          "workload.allegedly.works/haku-ci" = "true"
         }
       })
       cluster = local.worker_cluster_config
