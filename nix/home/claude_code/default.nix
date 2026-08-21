@@ -557,6 +557,11 @@ in
     ];
 
     mcpServers = {
+      "haku-console" = {
+        type = "http";
+        url = "https://haku.allegedly.works/mcp";
+      };
+
       # Disabled - Tana MCP server now in cluster
       # tana-local = {
       #   type = "http";
@@ -664,6 +669,7 @@ in
           "MultiEdit"
           "Search"
           "Task"
+          "mcp__haku-console__*"
           # Domain-scoped WebFetch rules auto-approve sandbox network prompts for
           # known domains. Tradeoff: triggers --unshare-net, so Bazel commands must
           # use dangerouslyDisableSandbox: true. See docs/claude_code_sandbox.md.

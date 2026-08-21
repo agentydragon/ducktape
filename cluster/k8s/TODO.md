@@ -165,22 +165,6 @@ errors until migrations complete. After a manual visit to the Grocy web UI,
 the MCP server starts successfully. Consider an init container or startup probe
 that pokes Grocy's `/login` endpoint before the MCP server starts.
 
-## Remove `kubectl-local` MCP server
-
-Now that `cluster-kubectl-sandbox-diagnostics` (in-cluster OAuth MCP at
-`kubectl-sandbox-mcp.allegedly.works`) is configured in `.mcp.json`, the local
-`kubectl-local` MCP wrapper (`devinfra/claude/kubectl_local_mcp.py`) is
-likely redundant — both resolve to the same sandbox-scoped RBAC.
-
-Before removing:
-
-- [ ] Verify that the in-cluster OAuth MCP server works from Claude Code **web**
-      (currently blocked: claude.ai OAuth redirect mismatch prevents auth against
-      the in-cluster server; plan is to configure the URL as an MCP server in
-      claude.ai and have Claude Code web inherit it)
-- [ ] Once web works, remove `kubectl-local` from `.mcp.json` and update CLAUDE.md
-      references to `kubectl-local`
-
 ## `ghcr.io/servercontainers/samba:latest`
 
 No semver tags published. Keep `:latest` until upstream adopts versioned releases.

@@ -43,6 +43,13 @@ let
     history = {
       persistence = "save-all";
     };
+    mcp_servers = {
+      "haku-console" = {
+        url = "https://haku.allegedly.works/mcp";
+        auth = "oauth";
+        default_tools_approval_mode = "approve";
+      };
+    };
     apps = {
       ${githubCodexAppsConnectorId} = {
         tools = {
