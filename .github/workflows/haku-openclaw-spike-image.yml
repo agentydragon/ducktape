@@ -1,6 +1,6 @@
-# Build and push Haku's Claude-backed OpenClaw spike with Nix. The image keeps
-# the exact upstream beta gateway as a pinned base and layers the repository's
-# CLI surface declaratively instead of maintaining an apt/npm Dockerfile.
+# Build and push Haku's Claude-backed OpenClaw spike with Nix. The image builds
+# the exact beta gateway from an overridden nix-openclaw source pin and layers
+# the repository's CLI surface declaratively.
 name: Haku OpenClaw Spike Image
 
 on:
@@ -73,10 +73,29 @@ jobs:
           printf '%s\n' "$loaded"
           image="$(printf '%s\n' "$loaded" | sed -n -e 's/^Loaded image: //p' -e 's/^Loaded image ID: //p' | tail -n 1)"
           test -n "$image"
+          entrypoint="$(docker inspect --format='{{json .Config.Entrypoint}}' "$image")"
+          cmd="$(docker inspect --format='{{json .Config.Cmd}}' "$image")"
+          test "$entrypoint" = "null"
+          case "$cmd" in
+            *'"gateway"]') ;;
+            *)
+              echo "unexpected default command: $cmd" >&2
+              exit 1
+              ;;
+          esac
+          case "$entrypoint" in
+            *tini*)
+              echo "unexpected tini entrypoint: $entrypoint" >&2
+              exit 1
+              ;;
+          esac
           docker run --rm --entrypoint /bin/sh "$image" -ceu '
+            test -x "$(command -v node)"
             openclaw --version
             node --version
             node -p "process.versions.sqlite"
+            node -e "const [major, minor, patch] = process.versions.sqlite.split(\".\").map(Number); const supported = major === 3 && ((minor > 51) || (minor === 51 && patch >= 3) || (minor === 50 && patch >= 7) || (minor === 44 && patch >= 6)); if (!supported) process.exit(1)"
+            openclaw gateway --help
             claude --version
             java -version
             keytool -version
