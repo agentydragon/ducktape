@@ -2,21 +2,28 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from haku.console.mcp_config import AccessProfile
-from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionCaller
-from haku.console.tool_call_actor import AgentActor, ToolCallActor
+from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionCaller, OperatorMcpExecutionCaller
+from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 
 
 class RecallIndexAccessPolicy:
-    """Deployment-owned, default-deny logical-index grants selected by Agent profile."""
+    """Deployment-owned logical-index grants for Agents and the authenticated Operator."""
 
-    def __init__(self, profiles: tuple[AccessProfile, ...]) -> None:
+    def __init__(self, profiles: tuple[AccessProfile, ...], *, configured_index_ids: Iterable[str] = ()) -> None:
         self._profile_indexes = {profile.id: frozenset(profile.recall_index_ids) for profile in profiles}
+        # The browser Operator is trusted to inspect the whole reviewed Recall catalog. Keep this
+        # separate from Agent grants: a configured index may intentionally be withheld from every
+        # Agent profile while remaining visible to the Operator.
+        self._operator_indexes = tuple(sorted(set(configured_index_ids)))
 
     def allowed_indexes(self, caller: ToolCallActor | McpExecutionCaller | None) -> tuple[str, ...]:
         match caller:
+            case OperatorActor() | OperatorMcpExecutionCaller():
+                return self._operator_indexes
             case (
                 AgentActor(access_profile_id=access_profile_id)
                 | AgentMcpExecutionCaller(access_profile_id=access_profile_id)

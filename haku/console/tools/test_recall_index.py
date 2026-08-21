@@ -49,7 +49,8 @@ ACCESS = RecallIndexAccessPolicy(
     (
         AccessProfile(id="haku", auto_approval_policy="manual", recall_index_ids={"haku-state", "haku-conversations"}),
         AccessProfile(id="public-coder", auto_approval_policy="manual", recall_index_ids={"ducktape-public"}),
-    )
+    ),
+    configured_index_ids=("haku-state", "haku-conversations", "ducktape-public"),
 )
 
 
@@ -211,10 +212,9 @@ async def test_ungranted_index_fails_before_embedding_or_querying() -> None:
         AgentActor(
             agent_id=UUID(int=3), operator_id=HAKU.operator_id, binding_id=UUID(int=4), access_profile_id="missing"
         ),
-        OperatorActor(operator_id=HAKU.operator_id),
     ],
 )
-async def test_unprofiled_unknown_and_operator_actors_are_denied_before_querying(actor: ToolCallActor) -> None:
+async def test_unprofiled_and_unknown_actors_are_denied_before_querying(actor: ToolCallActor) -> None:
     searcher = _Searcher()
     async with Client(_mcp(searcher)) as client:
         result = await _call(
@@ -253,6 +253,16 @@ async def test_status_passes_the_full_granted_set_to_the_searcher() -> None:
     async with Client(_mcp(searcher)) as client:
         await _call(client, "index_status", {})
     assert searcher.status_queries == [("haku-conversations", "haku-state")]
+
+
+async def test_operator_can_search_and_check_status_for_every_configured_index() -> None:
+    searcher = _Searcher()
+    operator = OperatorActor(operator_id=HAKU.operator_id)
+    async with Client(_mcp(searcher)) as client:
+        await _call(client, "search", {"query": "public", "index_id": "ducktape-public"}, actor=operator)
+        await _call(client, "index_status", {}, actor=operator)
+    assert searcher.queries[-1]["index_id"] == "ducktape-public"
+    assert searcher.status_queries[-1] == ("ducktape-public", "haku-conversations", "haku-state")
 
 
 def test_the_server_is_named_for_its_id() -> None:

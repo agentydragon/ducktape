@@ -450,7 +450,8 @@ async def test_recall_index_authorizer_denies_argument_escalation_before_submiss
     assert isinstance(stored_agent, AgentActor)
     actor = replace(stored_agent, access_profile_id="public-coder")
     access = RecallIndexAccessPolicy(
-        (AccessProfile(id="public-coder", auto_approval_policy="manual", recall_index_ids={"ducktape-public"}),)
+        (AccessProfile(id="public-coder", auto_approval_policy="manual", recall_index_ids={"ducktape-public"}),),
+        configured_index_ids=("ducktape-public",),
     )
 
     def unexpected_builder(_: str | None) -> Never:

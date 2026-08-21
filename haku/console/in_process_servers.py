@@ -60,12 +60,15 @@ class InProcessServerDependencies:
     # `config.yaml` lists the server, which is also what requires an embedder to be configured.
     index: recall_index_tools.IndexSearcher | None = None
     recall_access_profiles: tuple[AccessProfile, ...] = ()
+    configured_recall_index_ids: tuple[str, ...] = ()
 
 
 def build_in_process_servers(dependencies: InProcessServerDependencies) -> InProcessServers:
     """Build the per-call builder for every configured in-process server."""
 
-    recall_access = RecallIndexAccessPolicy(dependencies.recall_access_profiles)
+    recall_access = RecallIndexAccessPolicy(
+        dependencies.recall_access_profiles, configured_index_ids=dependencies.configured_recall_index_ids
+    )
     in_process_access = InProcessServerAccessPolicy(dependencies.recall_access_profiles)
     servers: InProcessServers = {
         gmail_tools.GMAIL_SERVER_ID: InProcessServerRegistration(

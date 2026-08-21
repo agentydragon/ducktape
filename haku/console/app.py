@@ -499,6 +499,7 @@ def create_app(
                 hostexec=hostexec_server,
                 index=index_searcher,
                 recall_access_profiles=tuple(console_config.access_profiles),
+                configured_recall_index_ids=tuple(index.index_id for index in console_config.recall_indexes),
                 # Only when the Claude runtime is configured: without it nothing writes sessions,
                 # so the read tools would reflect an always-empty corpus.
                 conversations=session_store if claude_runtime is not None else None,

@@ -319,8 +319,8 @@ MCP servers from `@mcp.tool`-decorated functions:
   profiles fail closed. `index_status` reports only the same permitted logical indexes. The separate
   `haku_conversations` server is instead governed by its profile's explicit
   `in_process_server_ids` grant: server access is not an index grant and is not an auto-approval
-  decision. Direct `OperatorActor` calls do not inherit an Agent profile and are denied on these
-  profile-scoped surfaces. Search returns each
+  decision. Direct `OperatorActor` calls can read every configured Recall index; they do not inherit
+  an Agent profile. Search returns each
   matching indexed chunk by default, plus a Git index id, path, commit, and blob sha, or a session,
   room, and message ids to read through `haku_conversations`. Set `include_content=false` for
   provenance without chunk text; returned chunks remain retrieval context rather than an authoritative
