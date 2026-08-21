@@ -47,11 +47,6 @@ let
     jq
     kubectl
     less
-    # The upstream CLI wrapper is `#!/usr/bin/env node`. dockerTools does not
-    # expose the base image's Node executable after it writes this image's PATH,
-    # so retain a compatible Node runtime explicitly rather than inheriting an
-    # implicit base-layer executable.
-    nodejs_22
     openssl
     procps
     python3
@@ -86,9 +81,8 @@ pkgs.dockerTools.buildLayeredImage {
     User = "1000:1000";
     WorkingDir = "/app";
     Env = [
-      # Keep the upstream Node/OpenClaw bin directories after the Nix tools:
-      # `openclaw` and `node openclaw.mjs gateway` remain supplied by the
-      # pinned upstream beta, whereas all supporting CLI tools come from Nix.
+      # The pinned upstream beta supplies the Node/OpenClaw runtime; the Nix
+      # tools below it provide the supporting CLI surface.
       "PATH=${toolPath}:/home/node/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
       "HOME=/home/openclaw"
       "USER=openclaw"

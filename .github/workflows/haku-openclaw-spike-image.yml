@@ -75,6 +75,8 @@ jobs:
           test -n "$image"
           docker run --rm --entrypoint /bin/sh "$image" -ceu '
             openclaw --version
+            node --version
+            node -p "process.versions.sqlite"
             claude --version
             java -version
             keytool -version
