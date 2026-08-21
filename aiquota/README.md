@@ -77,6 +77,13 @@ available credential for each provider through `/auth-files`. It does not read
 file names, file contents, access tokens, or refresh tokens. If CLIProxyAPI
 adds provider-based selection to `/api-call`, this discovery can be removed.
 
+CLIProxyAPI can hold multiple credentials for a provider, for example when
+cycling between subscriptions. AIQuota deliberately does not choose between
+them: it fails unless exactly one matching credential is enabled and available.
+The current deployment therefore expects one Claude and one Codex credential;
+support for displaying or cycling multiple subscriptions would be a separate
+explicit feature.
+
 The CLIProxyAPI management surface is not exposed through the public
 `cli-proxy-api.allegedly.works` route; that route only forwards `/v1` model
 traffic. The integration key is broad by design, so keep it limited to this
