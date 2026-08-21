@@ -4,7 +4,7 @@ metadata:
   name: aiquota
   namespace: ducktape-flux
   annotations:
-    description: aiquota API with Codex quota through the CLIProxyAPI integration.
+    description: aiquota API with Claude and Codex quota through the CLIProxyAPI integration.
 spec:
   retryInterval: 1m
   interval: 10m
@@ -23,6 +23,4 @@ spec:
   dependsOn:
     # Provides the shared namespace and the CLIProxyAPI integration Secret.
     - name: cli-proxy-api
-      namespace: ducktape-flux
-    - name: haku-egress-proxy
       namespace: ducktape-flux

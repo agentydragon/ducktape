@@ -1,5 +1,5 @@
-# Holds the Codex OAuth auth.json that CLIProxyAPI refreshes in place. Single replica
-# (Recreate strategy) because the refresh token is rotated by this one writer.
+# Holds the Claude and Codex OAuth auth files that CLIProxyAPI refreshes in place.
+# Single replica (Recreate strategy) because refresh tokens are rotated by this one writer.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

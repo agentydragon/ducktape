@@ -17,9 +17,9 @@ spec:
       metadata:
         annotations:
           description: Trust bundle for haku-egress-proxy-inspected sandbox HTTPS traffic
-    # Written into Haku trust domains and the cli-proxy-api namespace. The
-    # standalone aiquota Deployment trusts this CA solely for its Claude usage
-    # request sent through the OAuth-substituting listener.
+    # Written into Haku trust domains. The CLIProxyAPI-backed aiquota path
+    # connects directly to the in-cluster management service and does not
+    # trust or use this inspected egress listener.
     namespaceSelector:
       matchExpressions:
         - key: kubernetes.io/metadata.name
@@ -29,4 +29,3 @@ spec:
             - haku-claude-sandbox
             - haku-openclaw-spike
             - haku-ci
-            - cli-proxy-api

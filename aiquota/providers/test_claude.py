@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import httpx
@@ -14,6 +15,7 @@ from aiquota.providers.claude import (
     _spend_to_extra_spend,
     _to_success,
 )
+from aiquota.providers.cli_proxy_api import MANAGEMENT_API_CALL_PATH, MANAGEMENT_AUTH_FILES_PATH
 from aiquota.providers.client import provider_client
 from devinfra.claude.claude_api.usage import UsageResponse
 
@@ -77,3 +79,41 @@ async def test_explicit_token_is_read_only_and_never_refreshed(tmp_path: Path) -
     assert post_route.call_count == 0
     assert usage_route.calls.last.request.headers["Authorization"] == "Bearer placeholder"
     assert "placeholder" not in path.read_text()
+
+
+async def test_management_api_uses_claude_auth_index_and_does_not_use_legacy_token() -> None:
+    provider = ClaudeProvider(
+        ClaudeSettings(access_token="legacy-placeholder"),
+        provider_client(),
+        cli_proxy_api_url="http://cliproxy.test/v0/management",
+        cli_proxy_api_key="management-key",
+    )
+    usage_body = {"five_hour": {"utilization": 10, "resets_at": "2026-08-20T05:00:00Z"}}
+
+    with respx.mock(assert_all_called=False) as mock:
+        auth_files = mock.get("http://cliproxy.test/v0/management" + MANAGEMENT_AUTH_FILES_PATH).mock(
+            return_value=httpx.Response(200, json={"files": [{"provider": "claude", "auth_index": "claude-auth"}]})
+        )
+        api_call = mock.post("http://cliproxy.test/v0/management" + MANAGEMENT_API_CALL_PATH).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "status_code": 200,
+                    "header": {"Content-Type": ["application/json"]},
+                    "body": json.dumps(usage_body),
+                },
+            )
+        )
+        legacy_usage = mock.get(USAGE_URL).mock(side_effect=AssertionError("legacy token path must not be used"))
+        output = await provider.fetch()
+
+    assert isinstance(output.result, FetchSuccess)
+    assert auth_files.calls.last.request.headers["Authorization"] == "Bearer management-key"
+    assert api_call.calls.last.request.headers["Authorization"] == "Bearer management-key"
+    assert json.loads(api_call.calls.last.request.read()) == {
+        "auth_index": "claude-auth",
+        "method": "GET",
+        "url": USAGE_URL,
+        "header": {"Authorization": "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20"},
+    }
+    assert legacy_usage.call_count == 0

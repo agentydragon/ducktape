@@ -297,7 +297,7 @@ resources:
   # --- cli-proxy-api (Claude Code on ChatGPT/Codex via CLIProxyAPI) ---
   - cli-proxy-api/flux-kustomization.yaml
 
-  # --- aiquota (initially Claude-only; no shared Codex auth mount) ---
+  # --- aiquota (Claude and Codex quota via the CLIProxyAPI integration) ---
   - aiquota/flux-kustomization.yaml
 
   # --- headlamp ---

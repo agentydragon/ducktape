@@ -12,12 +12,6 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: haku-claude-sandbox
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: cli-proxy-api
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: aiquota
       ports:
         - port: 8180
           protocol: TCP

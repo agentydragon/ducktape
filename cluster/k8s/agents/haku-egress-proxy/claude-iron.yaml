@@ -25,17 +25,6 @@ transforms:
             match_headers: ["Authorization"]
           rules:
             - host: "api.anthropic.com"
-        # The standalone Claude-only aiquota Deployment is a read-only
-        # subscription-usage consumer. It gets this non-secret sentinel from
-        # its ConfigMap; the actual setup token remains only in this proxy.
-        - source:
-            type: env
-            var: CLAUDE_CODE_OAUTH_TOKEN
-          replace:
-            proxy_value: "aiquota-claude-oauth-placeholder"
-            match_headers: ["Authorization"]
-          rules:
-            - host: "api.anthropic.com"
         - source:
             type: env
             var: GITHUB_TOKEN

@@ -5,7 +5,7 @@
 Anthropic `/v1/messages` to Claude Code and the ChatGPT Codex backend upstream, and —
 unlike LiteLLM's `/v1/messages` bridge (BerriAI/litellm#25429) and claude-code-router —
 **translates tool calls correctly** (`function_call` → `tool_use`). It goes direct to
-`chatgpt.com/backend-api/codex`, holding its own Codex OAuth session.
+`chatgpt.com/backend-api/codex`, holding its own Claude and Codex OAuth sessions.
 
 The `codex-claude` wrapper points Claude Code at the main LiteLLM proxy
 (`litellm.allegedly.works`), which fronts CLIProxyAPI as its `codex-*` upstream
@@ -37,6 +37,46 @@ Open the printed URL, enter the code, approve with the ChatGPT account. CLIProxy
 `/data/auth/auth.json` (PVC) and its file watcher loads it without a restart. The PVC
 persists the token across pod restarts; the auto-refresh worker (15m) keeps it valid.
 
+## One-time setup: Claude OAuth login
+
+Run this only when adding or re-authenticating the Claude subscription. Keep the
+callback local: do not publish port `54545` through the Service or public route.
+
+In one terminal, forward the callback port to the pod:
+
+```bash
+kubectl -n cli-proxy-api port-forward deploy/cli-proxy-api 54545:54545
+```
+
+In a second terminal, start the one-shot login process:
+
+```bash
+kubectl -n cli-proxy-api exec -it deploy/cli-proxy-api -- \
+  ./CLIProxyAPI -claude-login -no-browser \
+  -oauth-callback-port 54545 -config /config/config.yaml
+```
+
+Open the printed Anthropic authorization URL in the local browser and finish
+the login. Anthropic redirects to `http://localhost:54545/callback`; the
+port-forward delivers that callback to the process in the pod. CLIProxyAPI
+writes the Claude auth file, including its refresh token, under `/data/auth`.
+The normal server process watches that directory and then owns future refreshes.
+
+Verify only the file names, never the credential contents:
+
+```bash
+kubectl -n cli-proxy-api exec deploy/cli-proxy-api -- \
+  sh -c 'find /data/auth -maxdepth 1 -type f -printf "%f\\n"'
+```
+
+The existing SOPS-managed Claude setup token and its egress proxy remain in
+place for the existing Haku Claude runner. AIQuota has no fallback token path;
+this keeps the quota service from maintaining two Claude credential owners.
+
+AIQuota uses the management API's opaque `auth_index` only because the current
+`/api-call` contract requires it for `$TOKEN$` substitution. It never reads or
+stores the auth file or either OAuth token.
+
 ## Secrets
 
 - `client-key.sops.yaml` — SSOT of the client key. ESO renders it into
@@ -53,7 +93,7 @@ Rotate the client key: generate a new value and update `client-key.sops.yaml` on
 
 ## Session ownership (rotation)
 
-CLIProxyAPI holds and refreshes a **dedicated** Codex OAuth session, independent of
-LiteLLM's. This avoids the shared-token refresh race (LiteLLM's own deployment warns of it
-for its replicas). LiteLLM keeps its separate session for its own consumers. If we ever
-want a single rotation owner across both, that's a follow-up.
+CLIProxyAPI holds and refreshes **dedicated** Claude and Codex OAuth sessions. LiteLLM owns no
+subscription OAuth credential or auth PVC: its `codex-*` routes proxy model traffic to
+CLIProxyAPI with an API key, while its plain `claude-*` routes use the separate Anthropic API
+key. This keeps AIQuota from mounting or writing the CLIProxyAPI PVC.

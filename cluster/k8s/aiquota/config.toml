@@ -1,14 +1,12 @@
-# The CLIProxyAPI integration keeps the Codex OAuth credential and performs the
-# authenticated usage request. The value is a non-secret sentinel; the
-# dedicated proxy substitutes the long-lived Claude setup token only on the
-# exact Anthropic Authorization header. This Deployment cannot refresh/write it.
+# The CLIProxyAPI integration keeps the Claude and Codex OAuth credentials and
+# performs the authenticated usage requests. The legacy Claude setup token
+# remains owned by Haku's existing egress proxy, not by this Deployment.
 
 [cli_proxy_api]
 url = "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v0/management"
 
 [claude]
 enabled = true
-access_token = "aiquota-claude-oauth-placeholder"
 
 [codex]
 enabled = true

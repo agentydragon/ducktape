@@ -17,6 +17,7 @@ from pydantic.alias_generators import to_camel
 
 from aiquota.models import ExtraSpend, FetchError, FetchSuccess, ProviderFetch, QuotaWindow
 from aiquota.providers.base import Provider
+from aiquota.providers.cli_proxy_api import fetch_usage_via_management
 from aiquota.providers.client import ProviderClientFactory
 from devinfra.claude.claude_api.usage import Spend, UsageBucket, UsageResponse
 
@@ -157,12 +158,39 @@ def _to_success(usage: UsageResponse) -> FetchSuccess:
 class ClaudeProvider(Provider):
     name = "claude"
 
-    def __init__(self, settings: ClaudeSettings, client_factory: ProviderClientFactory) -> None:
+    def __init__(
+        self,
+        settings: ClaudeSettings,
+        client_factory: ProviderClientFactory,
+        cli_proxy_api_url: str | None = None,
+        cli_proxy_api_key: str | None = None,
+    ) -> None:
         self.settings = settings
         self.client_factory = client_factory
+        self.cli_proxy_api_url = cli_proxy_api_url
+        self.cli_proxy_api_key = cli_proxy_api_key
 
     async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
+        if self.cli_proxy_api_url:
+            if not self.cli_proxy_api_key:
+                return ProviderFetch(fetched_at=now, result=FetchError(error="CLIProxyAPI key is not configured"))
+            api_call_url = f"{self.cli_proxy_api_url.rstrip('/')}/api-call"
+            try:
+                async with self.client_factory(self.name, {api_call_url}, API_TIMEOUT_SECS) as client:
+                    body = await fetch_usage_via_management(
+                        self.cli_proxy_api_url,
+                        self.cli_proxy_api_key,
+                        "claude",
+                        USAGE_URL,
+                        {"Authorization": "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20"},
+                        client,
+                    )
+                usage = UsageResponse.model_validate_json(body)
+            except Exception as e:
+                return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "CLIProxyAPI integration"))
+            return ProviderFetch(fetched_at=now, result=_to_success(usage))
+
         path = self.settings.credentials_path
         creds, stored_token = _read_credentials(path)
         configured_token = self.settings.access_token.get_secret_value() if self.settings.access_token else None

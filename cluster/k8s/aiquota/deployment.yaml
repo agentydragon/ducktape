@@ -40,10 +40,6 @@ spec:
                 secretKeyRef:
                   name: aiquota-api-bearer
                   key: bearer-token
-            - name: AIQUOTA_CLAUDE_PROXY
-              value: http://haku-claude-oauth-proxy.haku-egress-proxy.svc:8180
-            - name: AIQUOTA_CLAUDE_PROXY_CA
-              value: /egress-proxy-ca/ca-certificates.crt
             - name: AIQUOTA_CLIPROXY_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -52,9 +48,6 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/aiquota
-              readOnly: true
-            - name: haku-egress-proxy-ca
-              mountPath: /egress-proxy-ca
               readOnly: true
           resources:
             requests:
@@ -83,6 +76,3 @@ spec:
         - name: config
           configMap:
             name: aiquota-api-config
-        - name: haku-egress-proxy-ca
-          configMap:
-            name: haku-egress-proxy-ca-cert

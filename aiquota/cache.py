@@ -60,7 +60,10 @@ def _instantiate(
 ) -> list[Provider]:
     """Build the enabled provider instances in display order."""
     candidates: list[tuple[Provider, bool]] = [
-        (ClaudeProvider(config.claude, client_factory), config.claude.enabled),
+        (
+            ClaudeProvider(config.claude, client_factory, config.cli_proxy_api.url, cli_proxy_api_key),
+            config.claude.enabled,
+        ),
         (
             CodexProvider(config.codex, client_factory, config.cli_proxy_api.url, cli_proxy_api_key),
             config.codex.enabled,

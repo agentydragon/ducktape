@@ -70,7 +70,7 @@ class _CapturingClientFactory:
             content = await response.aread()
             status_code = response.status_code
             content_type = response.headers.get("Content-Type")
-            if provider == "codex" and str(response.request.url).endswith("/api-call"):
+            if str(response.request.url).endswith("/api-call"):
                 try:
                     envelope = json.loads(content)
                     if isinstance(envelope, dict) and isinstance(envelope.get("status_code"), int):
@@ -100,9 +100,10 @@ class _CapturingClientFactory:
         kwargs: dict[str, object] = {
             "timeout": timeout,
             "event_hooks": {"response": [capture]},
-            # Do not inherit a pod-wide HTTPS_PROXY: only Claude needs the
-            # credential-substitution proxy.  Codex goes directly to its usage
-            # endpoint using the read-only OAuth file shared with CLIProxyAPI.
+            # Do not inherit a pod-wide HTTPS_PROXY. The legacy Claude
+            # credential-substitution proxy is used only for the direct-token
+            # fallback; CLIProxyAPI management calls must go directly to the
+            # in-cluster service.
             "trust_env": False,
         }
         if provider == "claude" and self._claude_proxy:
@@ -141,7 +142,8 @@ class QuotaAPIService:
                 assert self._snapshot is not None
                 return self._snapshot
             factory: ProviderClientFactory = _CapturingClientFactory(
-                claude_proxy=self._claude_proxy, claude_proxy_ca=self._claude_proxy_ca
+                claude_proxy=(self._claude_proxy if not self._config.cli_proxy_api.url else None),
+                claude_proxy_ca=(self._claude_proxy_ca if not self._config.cli_proxy_api.url else None),
             )
             providers = _instantiate(self._config, client_factory=factory, cli_proxy_api_key=self._cli_proxy_api_key)
             outputs = await asyncio.gather(*(provider.fetch() for provider in providers))

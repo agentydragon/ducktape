@@ -17,12 +17,21 @@ py_library(
 )
 
 py_library(
+    name = "cli_proxy_lib",
+    srcs = ["cli_proxy_api.py"],
+    imports = ["../.."],
+    visibility = ["//aiquota:__subpackages__"],
+    deps = ["@pypi//httpx"],
+)
+
+py_library(
     name = "claude_lib",
     srcs = ["claude.py"],
     imports = ["../.."],
     visibility = ["//aiquota:__subpackages__"],
     deps = [
         ":base",
+        ":cli_proxy_lib",
         ":client",
         "//aiquota:models",
         "//devinfra/claude/claude_api:usage",
@@ -38,6 +47,7 @@ py_library(
     visibility = ["//aiquota:__subpackages__"],
     deps = [
         ":base",
+        ":cli_proxy_lib",
         ":client",
         "//aiquota:models",
         "@pypi//atomicwrites",

@@ -1,7 +1,6 @@
 # CLIProxyAPI: Anthropic Messages (/v1/messages) <-> ChatGPT/Codex subscription backend,
-# with tool-call translation (function_call -> tool_use). Backs the `codex-claude` wrapper.
-# Goes direct to chatgpt.com; it holds and auto-refreshes its OWN Codex OAuth session in
-# the PVC (see README for the one-time device login). Bypasses LiteLLM for codex.
+# with tool-call translation (function_call -> tool_use). Backs the `codex-claude` wrapper
+# and owns the Claude/Codex OAuth sessions used by the CLIProxyAPI integration.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -16,7 +15,7 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: cli-proxy-api
-  # Recreate: single owner of the refresh-rotated Codex token on the PVC.
+  # Recreate: single owner of the refresh-rotated OAuth tokens on the PVC.
   strategy:
     type: Recreate
   template:
