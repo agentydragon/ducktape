@@ -11,5 +11,5 @@ to the allowed resources. Check:
 
 1. `cluster/k8s/agents/agent-rbac-base/role-sandbox.yaml` — add `secrets` to the `claude-sandbox` role
 2. The in-cluster MCP servers may need their Authentik scope mappings to grant secret access
-**Why it matters**: Every suspension/deletion workflow needs secret access. Falling back to
-`kubectl` via Bash works but defeats the purpose of having dedicated MCP servers.
+   **Why it matters**: Every suspension/deletion workflow needs secret access. Falling back to
+   `kubectl` via Bash works but defeats the purpose of having dedicated MCP servers.

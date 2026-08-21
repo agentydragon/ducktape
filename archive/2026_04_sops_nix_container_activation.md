@@ -45,11 +45,11 @@ There are **two distinct kubeconfigs**:
 2. **claude-sandbox service account kubeconfig** (`secrets/claude-web-k8s-jwt.yaml`)
    — scoped SA token. Used in **both** environments:
 
-| Consumer                | Environment | Invocation                                          | Key source                                                       |
-| ----------------------- | ----------- | --------------------------------------------------- | ---------------------------------------------------------------- |
+| Consumer                   | Environment | Invocation                                          | Key source                                                       |
+| -------------------------- | ----------- | --------------------------------------------------- | ---------------------------------------------------------------- |
 | retired local MCP launcher | CLI (local) | `decrypt_jwt()` + `build_kubeconfig()` + memfd exec | `SOPS_AGE_KEY` derived from `~/.ssh/id_ed25519` via `ssh-to-age` |
-| retired local MCP launcher | Web         | Same launcher                                       | `SOPS_AGE_KEY` env var from Claude Code UI                     |
-| `web_env.sh` bg command | Web         | `kubeconfig.py --write ~/.kube/config`              | `SOPS_AGE_KEY` env var                                           |
+| retired local MCP launcher | Web         | Same launcher                                       | `SOPS_AGE_KEY` env var from Claude Code UI                       |
+| `web_env.sh` bg command    | Web         | `kubeconfig.py --write ~/.kube/config`              | `SOPS_AGE_KEY` env var                                           |
 
 All three go through `kubeconfig.py` → `build_kubeconfig()`, so the
 generation logic is **already deduplicated** in Python. The complexity is in
