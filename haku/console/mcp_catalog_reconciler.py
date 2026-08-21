@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from uuid import UUID
 
-from haku.console.console_events import McpOperatorAuthChangedEvent, OperatorConnectionChangedEvent
+from haku.console.console_events import ConsoleEvent, McpOperatorAuthChangedEvent, OperatorConnectionChangedEvent
 from haku.console.mcp_approval import DegradedReflection, McpServerDispatcher, ServerReflection, metadata_for_operator
 from haku.console.mcp_config import McpServerEntry
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
@@ -83,9 +83,7 @@ class OperatorCatalogReconciler:
 
         task.add_done_callback(done_callback)
 
-    def connection_changed(
-        self, operator_id: UUID, event: McpOperatorAuthChangedEvent | OperatorConnectionChangedEvent | object
-    ) -> None:
+    def connection_changed(self, operator_id: UUID, event: ConsoleEvent) -> None:
         """Invalidate authority-sensitive discovery immediately, then rebuild it off-path."""
         if not isinstance(event, McpOperatorAuthChangedEvent | OperatorConnectionChangedEvent):
             return
