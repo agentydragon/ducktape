@@ -25,6 +25,8 @@ spec:
         app.kubernetes.io/name: cli-proxy-api
     spec:
       automountServiceAccountToken: false
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       initContainers:
         - name: init-auth-dir
           image: busybox:1.37
