@@ -21,7 +21,10 @@ py_library(
     srcs = ["cli_proxy_api.py"],
     imports = ["../.."],
     visibility = ["//aiquota:__subpackages__"],
-    deps = ["@pypi//httpx"],
+    deps = [
+        ":client",
+        "@pypi//httpx",
+    ],
 )
 
 py_library(
