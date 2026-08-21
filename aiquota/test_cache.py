@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest_bazel
@@ -67,6 +67,17 @@ async def test_force_refresh_bypasses_fresh_cache(tmp_path: Path) -> None:
     await cache.fetch_all([provider], force_refresh=True)
 
     assert provider.fetch_count == 2
+
+
+async def test_remote_refresh_falls_back_to_stale_local_snapshot(tmp_path: Path) -> None:
+    cache = QuotaCache(path=tmp_path / "cache.json")
+    cached = AllQuotas(providers=[], fetched_at=datetime.now(UTC) - timedelta(hours=1))
+    cache.write(cached)
+
+    async def unavailable() -> AllQuotas:
+        raise OSError("offline")
+
+    assert await cache.fetch_remote(unavailable, force_refresh=True) == cached
 
 
 def _success(

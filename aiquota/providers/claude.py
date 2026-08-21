@@ -162,25 +162,18 @@ class ClaudeProvider(Provider):
         self,
         settings: ClaudeSettings,
         client_factory: ProviderClientFactory,
-        cli_proxy_api_url: str | None = None,
-        cli_proxy_api_key: str | None = None,
+        management_client: CLIProxyAPIManagementClient | None = None,
     ) -> None:
         self.settings = settings
         self.client_factory = client_factory
-        self.cli_proxy_api_url = cli_proxy_api_url
-        self.cli_proxy_api_key = cli_proxy_api_key
+        self.management_client = management_client
 
     async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
-        if self.cli_proxy_api_url:
-            if not self.cli_proxy_api_key:
-                return ProviderFetch(fetched_at=now, result=FetchError(error="CLIProxyAPI key is not configured"))
+        if self.management_client:
             try:
-                management = CLIProxyAPIManagementClient(
-                    self.cli_proxy_api_url, self.cli_proxy_api_key, self.name, self.client_factory, API_TIMEOUT_SECS
-                )
-                body = await management.fetch_usage(
-                    USAGE_URL, {"Authorization": "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20"}
+                body = await self.management_client.fetch_usage(
+                    self.name, USAGE_URL, {"Authorization": "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20"}
                 )
                 usage = UsageResponse.model_validate_json(body)
             except Exception as e:

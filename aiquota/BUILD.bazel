@@ -29,12 +29,24 @@ py_library(
     deps = [
         ":config",
         ":models",
+        ":remote",
         "//aiquota/providers:base",
         "//aiquota/providers:claude_lib",
         "//aiquota/providers:client",
         "//aiquota/providers:codex_lib",
         "//aiquota/providers:zai_lib",
         "@pypi//platformdirs",
+    ],
+)
+
+py_library(
+    name = "remote",
+    srcs = ["remote.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        "@pypi//httpx",
     ],
 )
 
@@ -165,6 +177,30 @@ py_test(
         "//:conftest",
         "//aiquota/providers:base",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_remote",
+    srcs = ["test_remote.py"],
+    imports = [".."],
+    deps = [
+        ":remote",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
+    ],
+)
+
+py_test(
+    name = "test_config",
+    srcs = ["test_config.py"],
+    imports = [".."],
+    deps = [
+        ":config",
         "@pypi//pytest_bazel",
     ],
 )

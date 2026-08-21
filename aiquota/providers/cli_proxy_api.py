@@ -78,14 +78,13 @@ class CLIProxyAPIManagementClient:
     """Client for provider usage calls through CLIProxyAPI management."""
 
     url: str
-    key: str
-    provider: str
+    key: str | None
     client_factory: ProviderClientFactory
-    timeout: float
+    timeout: float = 5.0
 
-    async def fetch_usage(self, usage_url: str, usage_headers: dict[str, str]) -> str:
+    async def fetch_usage(self, provider: str, usage_url: str, usage_headers: dict[str, str]) -> str:
+        if not self.key:
+            raise ValueError("CLIProxyAPI key is not configured")
         api_call_url = f"{self.url.rstrip('/')}{MANAGEMENT_API_CALL_PATH}"
-        async with self.client_factory(self.provider, {api_call_url}, self.timeout) as client:
-            return await _fetch_usage_via_management(
-                self.url, self.key, self.provider, usage_url, usage_headers, client
-            )
+        async with self.client_factory(provider, {api_call_url}, self.timeout) as client:
+            return await _fetch_usage_via_management(self.url, self.key, provider, usage_url, usage_headers, client)

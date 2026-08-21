@@ -49,6 +49,7 @@ in
   '';
 
   ducktape.aiquota.enable = true;
+  ducktape.aiquota.remoteApi.enable = true;
 
   # Atlas-specific configuration (Proxmox host with GUI)
   home.stateVersion = "24.05";

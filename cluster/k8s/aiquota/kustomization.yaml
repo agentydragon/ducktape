@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - aiquota-api-bearer.sops.yaml
   - deployment.yaml
+  - httproute.yaml
   - service.yaml
 configMapGenerator:
   - name: aiquota-api-config

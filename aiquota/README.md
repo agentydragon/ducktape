@@ -25,6 +25,18 @@ body from the provider's usage endpoint, with fetch status and content type.
 It never returns request or response headers, OAuth refresh responses, cookies,
 or credentials.
 
+## Local clients
+
+The CLI and GNOME extension can use the same API through the managed
+`~/.config/aiquota/remote.toml` companion file. Home Manager materializes that
+file with the bearer token and configures it for `https://aiquota.allegedly.works`;
+the token is not kept in the normal provider config or in the source tree.
+
+Remote results use the normal local `~/.cache/aiquota/quotas.json` cache. A fresh
+cache avoids a network request, and an unavailable API falls back to the last
+cached snapshot so the CLI and GNOME panel still show the most recent known
+quotas while offline.
+
 Responses use `Cache-Control: no-store`. The service keeps the most recent
 snapshot only in process memory (default 120 seconds); it does not write quota
 or raw-response data to disk.

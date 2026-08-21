@@ -240,9 +240,9 @@ async def _fetch_usage(auth: _AuthState, client: httpx.AsyncClient) -> _UsageRes
     return _UsageResponse.model_validate(resp.json())
 
 
-async def _fetch_usage_via_management(management: CLIProxyAPIManagementClient) -> _UsageResponse:
+async def _fetch_usage_via_management(management: CLIProxyAPIManagementClient, provider: str) -> _UsageResponse:
     body = await management.fetch_usage(
-        USAGE_URL, {"Authorization": "Bearer $TOKEN$", "User-Agent": "codex_cli_rs/0.125.0 (Linux; x86_64)"}
+        provider, USAGE_URL, {"Authorization": "Bearer $TOKEN$", "User-Agent": "codex_cli_rs/0.125.0 (Linux; x86_64)"}
     )
     return _UsageResponse.model_validate_json(body)
 
@@ -282,24 +282,17 @@ class CodexProvider(Provider):
         self,
         settings: CodexSettings,
         client_factory: ProviderClientFactory,
-        cli_proxy_api_url: str | None = None,
-        cli_proxy_api_key: str | None = None,
+        management_client: CLIProxyAPIManagementClient | None = None,
     ) -> None:
         self.settings = settings
         self.client_factory = client_factory
-        self.cli_proxy_api_url = cli_proxy_api_url
-        self.cli_proxy_api_key = cli_proxy_api_key
+        self.management_client = management_client
 
     async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
-        if self.cli_proxy_api_url:
-            if not self.cli_proxy_api_key:
-                return ProviderFetch(fetched_at=now, result=FetchError(error="CLIProxyAPI key is not configured"))
+        if self.management_client:
             try:
-                management = CLIProxyAPIManagementClient(
-                    self.cli_proxy_api_url, self.cli_proxy_api_key, self.name, self.client_factory, API_TIMEOUT_SECS
-                )
-                usage = await _fetch_usage_via_management(management)
+                usage = await _fetch_usage_via_management(self.management_client, self.name)
             except Exception as e:
                 return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "CLIProxyAPI integration"))
             return ProviderFetch(fetched_at=now, result=_to_success(usage))

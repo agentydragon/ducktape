@@ -15,7 +15,11 @@ from aiquota.providers.claude import (
     _spend_to_extra_spend,
     _to_success,
 )
-from aiquota.providers.cli_proxy_api import MANAGEMENT_API_CALL_PATH, MANAGEMENT_AUTH_FILES_PATH
+from aiquota.providers.cli_proxy_api import (
+    MANAGEMENT_API_CALL_PATH,
+    MANAGEMENT_AUTH_FILES_PATH,
+    CLIProxyAPIManagementClient,
+)
 from aiquota.providers.client import provider_client
 from devinfra.claude.claude_api.usage import UsageResponse
 
@@ -85,8 +89,7 @@ async def test_management_api_uses_claude_auth_index_and_does_not_use_legacy_tok
     provider = ClaudeProvider(
         ClaudeSettings(access_token="legacy-placeholder"),
         provider_client(),
-        cli_proxy_api_url="http://cliproxy.test/v0/management",
-        cli_proxy_api_key="management-key",
+        CLIProxyAPIManagementClient("http://cliproxy.test/v0/management", "management-key", provider_client()),
     )
     usage_body = {"five_hour": {"utilization": 10, "resets_at": "2026-08-20T05:00:00Z"}}
 

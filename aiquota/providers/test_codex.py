@@ -9,7 +9,11 @@ import pytest_bazel
 import respx
 
 from aiquota.models import FetchError, FetchSuccess
-from aiquota.providers.cli_proxy_api import MANAGEMENT_API_CALL_PATH, MANAGEMENT_AUTH_FILES_PATH
+from aiquota.providers.cli_proxy_api import (
+    MANAGEMENT_API_CALL_PATH,
+    MANAGEMENT_AUTH_FILES_PATH,
+    CLIProxyAPIManagementClient,
+)
 from aiquota.providers.client import provider_client
 from aiquota.providers.codex import OAUTH_CLIENT_ID, TOKEN_URL, USAGE_URL, CodexProvider, CodexSettings
 
@@ -57,8 +61,7 @@ def _management_provider() -> CodexProvider:
     return CodexProvider(
         CodexSettings(),
         provider_client(),
-        cli_proxy_api_url="http://cliproxy.test/v0/management",
-        cli_proxy_api_key="management-key",
+        CLIProxyAPIManagementClient("http://cliproxy.test/v0/management", "management-key", provider_client()),
     )
 
 
