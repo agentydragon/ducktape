@@ -273,10 +273,10 @@ const QuotaIndicator = GObject.registerClass(
         return;
       }
 
-      // Show all providers; Python config.toml controls which are enabled.
-      const shows = {};
-      for (const { id } of PROVIDER_DEFS) shows[id] = true;
-      this._initUI(shows);
+      // The subprocess response is the source of truth for provider visibility.
+      // Start empty so an unconfigured provider (for example z.ai when using
+      // the remote API) is never shown as a misleading empty entry.
+      this._initUI({});
       this._refresh();
       this._timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, POLL_INTERVAL_SECONDS, () => {
         this._refresh();
@@ -410,6 +410,7 @@ const QuotaIndicator = GObject.registerClass(
         provBox.add_child(p.paceLabel);
         box.add_child(provBox);
       }
+      this._panelBox = box;
       this.add_child(box);
     }
 
@@ -515,6 +516,12 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _loadSubprocessData(data) {
+      const providerIds = new Set(
+        (Array.isArray(data.providers) ? data.providers : [])
+          .map((provider) => provider?.provider)
+          .filter((id) => PROVIDER_DEFS.some((definition) => definition.id === id))
+      );
+      this._setProviderVisibility(providerIds);
       const fetchedAt = data.fetched_at ? new Date(data.fetched_at).getTime() : null;
       for (const p of this._providers) {
         const pq = data.providers?.find((x) => x.provider === p.id);
@@ -542,6 +549,29 @@ const QuotaIndicator = GObject.registerClass(
           lastSuccess,
         };
       }
+      this._buildPopup();
+    }
+
+    _setProviderVisibility(providerIds) {
+      const currentIds = this._providers.map(({ id }) => id);
+      const nextIds = PROVIDER_DEFS.filter(({ id }) => providerIds.has(id)).map(({ id }) => id);
+      if (currentIds.length === nextIds.length && currentIds.every((id, index) => id === nextIds[index])) return;
+
+      const priorState = new Map(this._providers.map((provider) => [provider.id, provider.state]));
+      this._providers = PROVIDER_DEFS.filter(({ id }) => providerIds.has(id)).map((def) => ({
+        ...def,
+        state: priorState.get(def.id) ?? emptyProviderState(),
+        icon: null,
+        paceLabel: null,
+        header: null,
+        windowRows: [],
+      }));
+
+      if (this._panelBox) {
+        this.remove_child(this._panelBox);
+        this._panelBox.destroy();
+      }
+      this._buildPanel();
       this._buildPopup();
     }
 
