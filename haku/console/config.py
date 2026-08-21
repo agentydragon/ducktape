@@ -526,13 +526,12 @@ class Settings(BaseSettings):
     # than httpx's historical 10-second default while retaining a bounded deployment knob.
     mcp_operator_oauth_token_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
 
-    # How long one upstream server's reflected tool catalog stays reusable. `tools/list` reflects
-    # every configured server live and `stateless_http=True` means that happens on every request,
-    # so without this the aggregate listing pays a full MCP connect per server per request.
-    # Bounded low because nothing invalidates on an upstream adding a tool: this is a staleness
-    # budget, not a cache lifetime. 0 disables reuse across requests but still collapses concurrent
-    # reflections of the same server.
-    mcp_catalog_cache_ttl_seconds: float = Field(default=60.0, ge=0.0, le=900.0)
+    # The background reconciler refreshes every Operator's configured MCP catalogs this often.
+    # `tools/list` itself reads only the already-published in-memory generation, so an upstream
+    # connect, OAuth refresh, or large tool schema can never extend the client startup path.
+    # This is also the dispatcher's successful-reflection reuse window and therefore the maximum
+    # routine staleness budget for an upstream adding or removing a tool.
+    mcp_catalog_refresh_interval_seconds: float = Field(default=60.0, ge=5.0, le=900.0)
 
     # Required when the config file lists the `haku_index` server, and unused otherwise: the
     # console refuses to start with search configured and nowhere to embed a query.

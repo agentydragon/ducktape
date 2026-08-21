@@ -36,6 +36,7 @@ from haku.console import (
     kube_proxy_authorization,
     mcp_agent_auth,
     mcp_approval,
+    mcp_catalog_reconciler,
     mcp_mount,
     mcp_operator_oauth,
     mcp_server,
@@ -510,8 +511,17 @@ def create_app(
     # catalog are the same dispatch over the same transports, so they are one object: executing and
     # reflecting are not separate roles with separate wiring.
     dispatcher = mcp_approval.McpServerDispatcher(
-        in_process_servers, catalog_cache_ttl_seconds=settings.mcp_catalog_cache_ttl_seconds
+        in_process_servers, catalog_cache_ttl_seconds=settings.mcp_catalog_refresh_interval_seconds
     )
+    catalogs = mcp_catalog_reconciler.OperatorCatalogReconciler(
+        servers=console_config.mcp.servers,
+        dispatcher=dispatcher,
+        oauth_store=mcp_operator_oauth_store,
+        provider_store=provider_connection_store,
+        operator_ids=operator_identity_store.list_active_ids,
+        refresh_interval_seconds=settings.mcp_catalog_refresh_interval_seconds,
+    )
+    console_event_hub.add_listener(catalogs.connection_changed)
     tool_calls = tool_call_service.ToolCallApplicationService(
         settings=settings,
         repository=tool_call_ledger,
@@ -534,6 +544,7 @@ def create_app(
         oauth_store=mcp_operator_oauth_store,
         provider_store=provider_connection_store,
         dispatcher=dispatcher,
+        catalogs=catalogs,
         node_daemons=node_daemon_service,
     )
 
@@ -579,6 +590,7 @@ def create_app(
         async with (
             agent_authority.expiry_maintenance(),
             oauth_maintenance.run(),
+            catalogs.run(),
             matrix_running,
             supervising,
             noticing,
@@ -636,6 +648,7 @@ def create_app(
     app.state.session_service = session_service
     app.state.in_process_servers = in_process_servers
     app.state.mcp_dispatcher = dispatcher
+    app.state.mcp_catalogs = catalogs
     app.state.node_daemon_service = node_daemon_service
     app.state.push_subscription_store = push_subscription_store
     app.state.web_push_identity = web_push_identity

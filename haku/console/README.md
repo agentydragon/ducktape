@@ -199,7 +199,8 @@ fetched and discarded.
 
 **The two reflection tools split on whether they touch the network.** `list_mcp_servers` is passive:
 the configured catalog plus each persisted per-Operator OAuth/provider status, never a credential
-refresh and never a downstream connect, so live tool discovery stays the normal `tools/list` path.
+refresh and never a downstream connect. Background reconciliation, rather than `tools/list`, owns
+live discovery.
 Each server's discriminated `backend` mirrors the safe configuration shape, and no status object
 ever carries an access token, refresh token, client secret, or static-bearer secret reference. A
 cataloged provider connection whose deploy-time OAuth client is absent reports
@@ -231,28 +232,33 @@ result-schema catalog used by Gmail, Google Calendar, Grocy, and routine rendere
 generated from the Python response models at build time; the frontend does not restate those wire
 models in handwritten Zod.
 
-#### Catalog reuse
+#### Catalog reconciliation
 
-Reflection stays live and request-local, but a reflected catalog is reusable for
-`HAKU_CONSOLE_MCP_CATALOG_CACHE_TTL_SECONDS` (default 60) — see `mcp_reflection_cache.py`. Without
-it, every `tools/list` pays a full MCP connect (`initialize`, `tools/list`, teardown) to each
-configured server, and `stateless_http=True` means there is no session to amortize that over. The
-fan-out is concurrent, so a listing costs its slowest upstream — and an upstream addressed by its
-public URL costs several times one addressed in-cluster, because it hairpins out through the Gateway
-for a same-cluster service. Single-flight matters at least as much as the TTL, because one client
-handshake opens several connections at once.
+`tools/list` is a snapshot read: it performs no downstream MCP connect and no OAuth token refresh.
+Each replica reconciles every active Operator's configured servers before its MCP endpoint becomes
+ready, then refreshes them throughout the process lifetime at
+`HAKU_CONSOLE_MCP_CATALOG_REFRESH_INTERVAL_SECONDS` (default 60) — see
+`mcp_catalog_reconciler.py`. One complete per-Operator generation is published atomically, so a
+request sees the previous generation while the next concurrent fan-out is still running. A newly
+admitted Operator queues an immediate background pass; the first listing remains non-blocking and
+may be empty until that pass publishes.
 
-The cache key is `(server_id, config fingerprint, credential fingerprint)`, and that third component
-is what preserves the fail-closed property described above: credentials are resolved **before** the
-cache is consulted, so a disconnected Operator never reaches a cached entry, and a rotated credential
-lands on a different key rather than reusing the previous holder's catalog. The key holds a digest,
-never a bearer. Only successful reflections are stored — a degraded server is retried on the next
-listing rather than held degraded for the TTL.
+OAuth and provider connection-change events cross replicas through the existing Postgres
+`LISTEN`/`NOTIFY` stream. Each replica immediately removes that Operator's generation and queues a
+replacement, so a disconnect cannot leave callable-looking proxy tools around for the periodic
+refresh window.
 
-Nothing invalidates when an upstream _adds_ a tool, so the TTL is a staleness budget, not a cache
-lifetime; that is why it is bounded low. Picking up an upstream `notifications/tools/list_changed`
-would need persistent upstream sessions, which is the natural next step (it would also remove the
-per-reflection connect entirely).
+The dispatcher still reuses each successful reflection for the same interval and collapses
+concurrent work by `(server_id, config fingerprint, credential fingerprint)`. The key contains a
+digest rather than a bearer, and a rotated credential cannot reuse the previous holder's reflection.
+Failed credential resolution or discovery publishes a degraded snapshot, which contributes no proxy
+tools. Tool execution never trusts the snapshot as authority: it revalidates the Operator/Agent
+binding and resolves the current server credential independently.
+
+Nothing invalidates immediately when an upstream changes its tools, so the refresh interval is the
+routine staleness budget. Persistent upstream sessions plus
+`notifications/tools/list_changed` remain a possible lower-latency refinement, but they are no
+longer required to keep network and OAuth latency out of the client discovery path.
 
 ### Canonical Agent authority and enrollment
 
@@ -491,7 +497,8 @@ Two operational notes:
 | `web_push.py`                      | Web Push delivery of pending-approval notifications: the VAPID identity, the per-Operator subscription store, and the notifier that shows and retracts one call's notification.                                                                                              |
 | `push_routes.py`                   | Operator-browser `/api/push/*` surface: the public VAPID key the SPA subscribes with, plus subscription registration, listing, and removal.                                                                                                                                  |
 | `mcp_config.py`                    | Connected-MCP-server catalog plus in-process/remote transport and static bearer resolution, shared by the application service, `McpServerDispatcher`, and operator OAuth linkage.                                                                                            |
-| `mcp_reflection_cache.py`          | Short-lived reuse of reflected upstream tool catalogs: a TTL plus single-flight, keyed so a catalog never outlives the credential that read it.                                                                                                                              |
+| `mcp_reflection_cache.py`          | Short-lived reuse inside catalog reconciliation: a TTL plus single-flight, keyed so a reflected catalog never crosses credential revisions.                                                                                                                                  |
+| `mcp_catalog_reconciler.py`        | Startup and continuous per-Operator catalog reconciliation; atomically publishes the in-memory generations read by `tools/list`.                                                                                                                                             |
 | `in_process_servers.py`            | Canonical builder catalog for the Gmail, Google Calendar, routine, conversations, index, and hostexec FastMCP servers, shared by the production app and schema exporter.                                                                                                     |
 | `recall_index_reader.py`           | Binds the `haku_index` tools to the console's database and embedder; it resolves configured logical index ids to their `git`/`chat` source shapes.                                                                                                                           |
 | `recall_index_sync.py`             | The sweeps that keep every configured index current: chat from the console's own tables and Git sources from their bare mirrors. One Postgres advisory lock per index, so one replica syncs each.                                                                            |

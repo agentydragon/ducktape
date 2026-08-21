@@ -75,6 +75,7 @@ class SessionChangedEvent(BaseModel):
 type ConsoleEvent = (
     ToolCallsChangedEvent | SessionChangedEvent | McpOperatorAuthChangedEvent | OperatorConnectionChangedEvent
 )
+type ConsoleEventListener = Callable[[UUID, ConsoleEvent], None]
 
 
 class _RoutedConsoleEvent(BaseModel):
@@ -112,6 +113,11 @@ class ConsoleEventHub:
         self._inbound: asyncio.Queue[str] = asyncio.Queue()
         self._deliver_task: asyncio.Task[None] | None = None
         self._publish_lock = asyncio.Lock()
+        self._listeners: list[ConsoleEventListener] = []
+
+    def add_listener(self, listener: ConsoleEventListener) -> None:
+        """Observe each decoded cross-replica event before browser-socket routing."""
+        self._listeners.append(listener)
 
     async def start(self) -> None:
         if self._deliver_task is None:
@@ -227,6 +233,8 @@ class ConsoleEventHub:
         if isinstance(event, ToolCallsChangedEvent):
             for waiter in self._tool_call_waiters.get((event_operator_id, event.tool_call_id), ()):
                 waiter.set()
+        for listener in self._listeners:
+            listener(event_operator_id, event)
         if not self._connections:
             return
         if not await self._operator_identity_store.is_active(event_operator_id):

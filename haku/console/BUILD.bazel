@@ -629,6 +629,35 @@ py_library(
 )
 
 py_library(
+    name = "mcp_catalog_reconciler",
+    srcs = ["mcp_catalog_reconciler.py"],
+    deps = [
+        ":console_events",
+        ":mcp_approval",
+        ":mcp_config",
+        ":mcp_operator_oauth",
+        ":mcp_reflection_cache",
+        ":tool_call_service",
+    ],
+)
+
+py_test(
+    name = "test_mcp_catalog_reconciler",
+    srcs = ["test_mcp_catalog_reconciler.py"],
+    deps = [
+        ":console_events",
+        ":mcp_approval",
+        ":mcp_catalog_reconciler",
+        ":mcp_config",
+        ":mcp_reflection_cache",
+        "//:conftest",
+        "@pypi//mcp",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "mcp_approval",
     srcs = ["mcp_approval.py"],
     deps = [
@@ -705,6 +734,7 @@ py_library(
         ":auto_approval",
         ":config",
         ":mcp_approval",
+        ":mcp_catalog_reconciler",
         ":mcp_config",
         ":mcp_execution",
         ":mcp_operator_oauth",
@@ -973,6 +1003,7 @@ py_library(
         ":kubernetes_authorization",
         ":mcp_agent_auth",
         ":mcp_approval",
+        ":mcp_catalog_reconciler",
         ":mcp_config",
         ":mcp_operator_oauth",
         ":mcp_server",

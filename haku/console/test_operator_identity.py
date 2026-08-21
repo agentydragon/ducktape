@@ -96,6 +96,18 @@ async def test_disabled_operator_invalidates_session_static_and_resolution_paths
         await store.resolve_configured_external_user_key("disabled-user")
 
 
+async def test_list_active_ids_is_scoped_to_current_trust_domain(migrated_db_url: str) -> None:
+    current_store = _store(migrated_db_url)
+    current = await current_store.resolve_configured_external_user_key("current-user")
+    other_store = PostgresOperatorIdentityStore(
+        console_sessions(migrated_db_url),
+        OperatorIdentityTrust(trust_domain="auth.test/other/v1", trusted_issuers=frozenset({_BROWSER_ISSUER})),
+    )
+    await other_store.resolve_configured_external_user_key("other-user")
+
+    assert await current_store.list_active_ids() == [current]
+
+
 async def test_existing_authority_fails_closed_when_current_trust_changes(migrated_db_url: str) -> None:
     identity = await _store(migrated_db_url).resolve_verified_identity(
         VerifiedExternalIdentity(issuer=_BROWSER_ISSUER, subject="trust-rotation-user")

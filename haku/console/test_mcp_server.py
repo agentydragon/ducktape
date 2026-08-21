@@ -28,7 +28,7 @@ from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
 from sqlalchemy.engine import make_url
 
-from haku.console import mcp_server as mcp_server_module
+from haku.console import mcp_catalog_reconciler as mcp_catalog_reconciler_module, mcp_server as mcp_server_module
 from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig, OperatorOidcConfig
 from haku.console.conftest import console_settings, operator_session_cookie, resolve_operator_identity, write_config
@@ -1083,6 +1083,10 @@ async def test_tool_surface_tracks_each_operators_connected_servers(
 
             connected.clear()
             connected.add(other_operator_id)
+            await asyncio.gather(
+                app.state.mcp_catalogs.refresh_operator(operator_identity.operator_id),
+                app.state.mcp_catalogs.refresh_operator(other_operator_id),
+            )
 
             async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
                 assert "standin__echo" not in {tool.name for tool in await client.list_tools()}
@@ -1186,6 +1190,7 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
         oauth_store=oauth_store,
         provider_store=provider_store,
         dispatcher=dispatcher,
+        catalogs=Mock(),
     )
     actor = AgentActor(agent_id=UUID(int=1), operator_id=UUID(int=2), binding_id=UUID(int=3))
 
@@ -1389,6 +1394,7 @@ async def test_get_mcp_server_status_includes_schemas_only_when_requested(
             instructions="Echo server: send text, get it back.",
         )
 
+    monkeypatch.setattr(mcp_catalog_reconciler_module, "metadata_for_operator", metadata_for_operator)
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
     with serve_app_sync(app) as base:
         async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
@@ -1451,7 +1457,7 @@ async def test_tool_discovery_is_concurrent_and_preserves_config_order(
             await asyncio.sleep(0.01)
         return ReflectedCatalog(tools=[Tool(name="echo", inputSchema={"type": "object"})])
 
-    monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
+    monkeypatch.setattr(mcp_catalog_reconciler_module, "metadata_for_operator", metadata_for_operator)
     with serve_app_sync(app) as base:
         async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
             proxy_names = [tool.name for tool in await client.list_tools() if tool.name.endswith("__echo")]
@@ -1482,19 +1488,17 @@ async def test_tool_discovery_isolates_unexpected_server_failure(
             raise RuntimeError("unexpected reflection failure")
         return ReflectedCatalog(tools=[Tool(name="echo", inputSchema={"type": "object"})])
 
-    monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
+    monkeypatch.setattr(mcp_catalog_reconciler_module, "metadata_for_operator", metadata_for_operator)
     with serve_app_sync(app) as base:
         async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
             proxy_names = [tool.name for tool in await client.list_tools() if tool.name.endswith("__echo")]
 
     assert proxy_names == ["healthy__echo"]
-    assert "failed to reflect server broken" in caplog.text
+    assert "catalog reconciliation failed for server broken" in caplog.text
     assert "unexpected reflection failure" in caplog.text
 
 
-async def test_tool_dispatch_reflects_only_target_server(
-    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_tool_dispatch_reads_only_target_server_snapshot(migrated_db_url: str, tmp_path: Path) -> None:
     config_file = _write_console_config(
         tmp_path / "targeted-dispatch.yaml",
         {
@@ -1511,12 +1515,14 @@ async def test_tool_dispatch_reflects_only_target_server(
     app = create_app(settings)
     reflected: list[str] = []
 
-    async def metadata_for_operator(**kwargs: Any) -> ReflectedCatalog:
-        server_id = str(kwargs["server"].id)
+    def metadata(*, operator_id: UUID, server: Any) -> ReflectedCatalog:
+        _ = operator_id
+        server_id = str(server.id)
         reflected.append(server_id)
         return ReflectedCatalog(tools=[Tool(name="echo", inputSchema={"type": "object"})])
 
-    monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
+    catalogs = Mock()
+    catalogs.metadata = Mock(side_effect=metadata)
     actor = AgentActor(
         agent_id=UUID("40000000-0000-4000-8000-000000000001"),
         operator_id=UUID("10000000-0000-4000-8000-000000000001"),
@@ -1531,6 +1537,7 @@ async def test_tool_dispatch_reflects_only_target_server(
             oauth_store=app.state.mcp_operator_oauth_store,
             provider_store=app.state.provider_connection_store,
             dispatcher=app.state.mcp_dispatcher,
+            catalogs=catalogs,
         ),
         actor_resolver,
     )
@@ -1543,9 +1550,7 @@ async def test_tool_dispatch_reflects_only_target_server(
     assert reflected == ["beta"]
 
 
-async def test_targeted_dispatch_reports_a_known_degraded_server(
-    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_targeted_dispatch_reports_a_known_degraded_server(migrated_db_url: str, tmp_path: Path) -> None:
     config_file = _write_console_config(
         tmp_path / "degraded-dispatch.yaml",
         {
@@ -1563,12 +1568,10 @@ async def test_targeted_dispatch_reports_a_known_degraded_server(
     settings = console_settings(migrated_db_url, config_file=config_file)
     app = create_app(settings)
 
-    async def metadata_for_operator(**kwargs: Any) -> DegradedReflection:
-        return DegradedReflection(
-            failure_stage="credential_resolution", degraded_reason="MCP OAuth token refresh failed: 401"
-        )
-
-    monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
+    catalogs = Mock()
+    catalogs.metadata.return_value = DegradedReflection(
+        failure_stage="credential_resolution", degraded_reason="MCP OAuth token refresh failed: 401"
+    )
     actor_resolver = Mock(spec=mcp_server_module.HakuMcpActorResolver)
     actor_resolver.resolve = AsyncMock(
         return_value=AgentActor(agent_id=UUID(int=1), operator_id=UUID(int=2), binding_id=UUID(int=3))
@@ -1580,6 +1583,7 @@ async def test_targeted_dispatch_reports_a_known_degraded_server(
             oauth_store=app.state.mcp_operator_oauth_store,
             provider_store=app.state.provider_connection_store,
             dispatcher=app.state.mcp_dispatcher,
+            catalogs=catalogs,
         ),
         actor_resolver,
     )

@@ -58,6 +58,7 @@ from haku.console.mcp_approval import (
     server_metadata_response,
 )
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver
+from haku.console.mcp_catalog_reconciler import OperatorCatalogReconciler
 from haku.console.mcp_config import (
     InProcessBackend,
     InProcessCredential,
@@ -163,6 +164,7 @@ class ConsoleMcpContext:
     oauth_store: PostgresMcpOperatorOAuthStore
     provider_store: PostgresProviderConnectionStore
     dispatcher: McpServerDispatcher
+    catalogs: OperatorCatalogReconciler
     node_daemons: NodeDaemonService | None = None
 
 
@@ -602,13 +604,7 @@ class OperatorServerCatalog:
         return max(candidates, key=lambda candidate: len(server_tool_prefix(candidate.id)))
 
     async def metadata(self, server: McpServerEntry, actor: ToolCallActor) -> ServerReflection:
-        return await metadata_for_operator(
-            operator_id=actor.operator_id,
-            server=server,
-            dispatcher=self._context.dispatcher,
-            oauth_store=self._context.oauth_store,
-            provider_store=self._context.provider_store,
-        )
+        return self._context.catalogs.metadata(operator_id=actor.operator_id, server=server)
 
 
 def _unavailable_server_message(server_id: str, reason: str) -> str:
@@ -623,8 +619,8 @@ class OperatorToolProvider(Provider):
     """Reflect the connected-server catalog for the current principal's Operator.
 
     FastMCP providers are consulted for both ``tools/list`` and ``tools/call``.
-    Keeping reflection here makes discovery request-local and also fails closed
-    if a client calls a tool after its Operator disconnects that server.
+    Discovery reads a generation already published by the background reconciler. Tool execution
+    independently re-resolves authorization, so a retained schema is never execution authority.
     """
 
     def __init__(
@@ -672,7 +668,8 @@ class OperatorToolProvider(Provider):
 
     async def _list_tools(self) -> Sequence[Tool]:
         actor = await self._actor_resolver.resolve()
-        # gather preserves input order even when servers finish reflection out of order.
+        # Snapshot reads are async only because FastMCP's Provider contract is async. They perform
+        # no downstream or OAuth I/O; gather preserves configured server order.
         reflected = await asyncio.gather(
             *(self._server_tools(server, actor) for server in _load_servers(self._context.settings))
         )
