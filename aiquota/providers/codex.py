@@ -26,6 +26,8 @@ USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
 TOKEN_URL = "https://auth.openai.com/oauth/token"
 OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 API_TIMEOUT_SECS = 5.0
+MANAGEMENT_AUTH_FILES_PATH = "/auth-files"
+MANAGEMENT_API_CALL_PATH = "/api-call"
 TOKEN_REFRESH_INTERVAL = timedelta(days=8)
 TOKEN_EXPIRY_SKEW_SECS = 30
 
@@ -239,6 +241,62 @@ async def _fetch_usage(auth: _AuthState, client: httpx.AsyncClient) -> _UsageRes
     return _UsageResponse.model_validate(resp.json())
 
 
+def _management_headers(key: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {key}"}
+
+
+def _select_auth_index(payload: object) -> str | None:
+    if not isinstance(payload, dict) or not isinstance(payload.get("files"), list):
+        return None
+    candidates = [
+        entry
+        for entry in payload["files"]
+        if isinstance(entry, dict)
+        and str(entry.get("provider", "")).lower() == "codex"
+        and not entry.get("disabled", False)
+        and not entry.get("unavailable", False)
+        and entry.get("auth_index")
+    ]
+    if len(candidates) != 1:
+        return None
+    return str(candidates[0]["auth_index"])
+
+
+async def _fetch_usage_via_management(
+    cli_proxy_api_url: str, cli_proxy_api_key: str, client: httpx.AsyncClient
+) -> _UsageResponse:
+    auth_files_response = await client.get(
+        f"{cli_proxy_api_url.rstrip('/')}{MANAGEMENT_AUTH_FILES_PATH}", headers=_management_headers(cli_proxy_api_key)
+    )
+    auth_files_response.raise_for_status()
+    auth_index = _select_auth_index(auth_files_response.json())
+    if not auth_index:
+        raise ValueError("expected exactly one available Codex auth file")
+
+    api_call_response = await client.post(
+        f"{cli_proxy_api_url.rstrip('/')}{MANAGEMENT_API_CALL_PATH}",
+        headers={**_management_headers(cli_proxy_api_key), "Content-Type": "application/json"},
+        json={
+            "auth_index": auth_index,
+            "method": "GET",
+            "url": USAGE_URL,
+            "header": {"Authorization": "Bearer $TOKEN$", "User-Agent": "codex_cli_rs/0.125.0 (Linux; x86_64)"},
+        },
+    )
+    api_call_response.raise_for_status()
+    envelope = api_call_response.json()
+    if not isinstance(envelope, dict) or not isinstance(envelope.get("status_code"), int):
+        raise ValueError("invalid CLIProxyAPI /api-call response")
+    status_code = envelope["status_code"]
+    body = envelope.get("body", "")
+    if not isinstance(body, str):
+        raise ValueError("invalid CLIProxyAPI /api-call body")
+    if status_code >= 400:
+        upstream_response = httpx.Response(status_code, content=body, request=api_call_response.request)
+        upstream_response.raise_for_status()
+    return _UsageResponse.model_validate_json(body)
+
+
 def _to_window(w: _WindowData | None, name: str | None = None, display: bool = True) -> QuotaWindow | None:
     if w is None or w.limit_window_seconds <= 0:
         return None
@@ -270,12 +328,31 @@ def _to_success(usage: _UsageResponse) -> FetchSuccess:
 class CodexProvider(Provider):
     name = "codex"
 
-    def __init__(self, settings: CodexSettings, client_factory: ProviderClientFactory) -> None:
+    def __init__(
+        self,
+        settings: CodexSettings,
+        client_factory: ProviderClientFactory,
+        cli_proxy_api_url: str | None = None,
+        cli_proxy_api_key: str | None = None,
+    ) -> None:
         self.settings = settings
         self.client_factory = client_factory
+        self.cli_proxy_api_url = cli_proxy_api_url
+        self.cli_proxy_api_key = cli_proxy_api_key
 
     async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
+        if self.cli_proxy_api_url:
+            if not self.cli_proxy_api_key:
+                return ProviderFetch(fetched_at=now, result=FetchError(error="CLIProxyAPI key is not configured"))
+            api_call_url = f"{self.cli_proxy_api_url.rstrip('/')}{MANAGEMENT_API_CALL_PATH}"
+            try:
+                async with self.client_factory(self.name, {api_call_url}, API_TIMEOUT_SECS) as client:
+                    usage = await _fetch_usage_via_management(self.cli_proxy_api_url, self.cli_proxy_api_key, client)
+            except Exception as e:
+                return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "CLIProxyAPI integration"))
+            return ProviderFetch(fetched_at=now, result=_to_success(usage))
+
         auth = _read_auth(self.settings.auth_path)
         if not auth:
             return ProviderFetch(fetched_at=now, result=FetchError(error="no codex auth found"))

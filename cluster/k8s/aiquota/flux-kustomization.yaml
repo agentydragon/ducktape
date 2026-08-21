@@ -4,7 +4,7 @@ metadata:
   name: aiquota
   namespace: ducktape-flux
   annotations:
-    description: Claude-only aiquota API; Codex PVC integration is deliberately deferred.
+    description: aiquota API with Codex quota through the CLIProxyAPI integration.
 spec:
   retryInterval: 1m
   interval: 10m
@@ -21,8 +21,7 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    # Provides the shared namespace. aiquota does not mount its PVC in this
-    # initial Claude-only release.
+    # Provides the shared namespace and the CLIProxyAPI integration Secret.
     - name: cli-proxy-api
       namespace: ducktape-flux
     - name: haku-egress-proxy

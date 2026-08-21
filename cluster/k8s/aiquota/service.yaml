@@ -4,7 +4,7 @@ metadata:
   name: aiquota-api
   namespace: cli-proxy-api
   annotations:
-    description: Internal bearer-authenticated API for normalized and raw Claude subscription quota responses. Codex is intentionally deferred.
+    description: Internal bearer-authenticated API for normalized and raw Claude and Codex subscription quota responses via CLIProxyAPI.
 spec:
   selector:
     app.kubernetes.io/name: aiquota

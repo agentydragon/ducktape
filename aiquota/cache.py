@@ -55,11 +55,16 @@ class QuotaService:
         return await self.cache.fetch_all(self.providers, force_refresh=self.debug)
 
 
-def _instantiate(config: Config, client_factory: ProviderClientFactory) -> list[Provider]:
+def _instantiate(
+    config: Config, client_factory: ProviderClientFactory, cli_proxy_api_key: str | None = None
+) -> list[Provider]:
     """Build the enabled provider instances in display order."""
     candidates: list[tuple[Provider, bool]] = [
         (ClaudeProvider(config.claude, client_factory), config.claude.enabled),
-        (CodexProvider(config.codex, client_factory), config.codex.enabled),
+        (
+            CodexProvider(config.codex, client_factory, config.cli_proxy_api.url, cli_proxy_api_key),
+            config.codex.enabled,
+        ),
         (ZaiProvider(config.zai, client_factory), config.zai.enabled),
     ]
     return [p for p, enabled in candidates if enabled]

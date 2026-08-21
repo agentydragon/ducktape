@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: aiquota
   annotations:
-    description: Claude subscription quota API. Codex support is intentionally deferred.
+    description: Claude and Codex subscription quota API via the CLIProxyAPI integration.
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
@@ -44,6 +44,11 @@ spec:
               value: http://haku-claude-oauth-proxy.haku-egress-proxy.svc:8180
             - name: AIQUOTA_CLAUDE_PROXY_CA
               value: /egress-proxy-ca/ca-certificates.crt
+            - name: AIQUOTA_CLIPROXY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cli-proxy-api-management
+                  key: management-password
           volumeMounts:
             - name: config
               mountPath: /etc/aiquota

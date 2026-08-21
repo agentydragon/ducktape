@@ -10,7 +10,15 @@ import respx
 
 from aiquota.models import FetchError, FetchSuccess
 from aiquota.providers.client import provider_client
-from aiquota.providers.codex import OAUTH_CLIENT_ID, TOKEN_URL, USAGE_URL, CodexProvider, CodexSettings
+from aiquota.providers.codex import (
+    MANAGEMENT_API_CALL_PATH,
+    MANAGEMENT_AUTH_FILES_PATH,
+    OAUTH_CLIENT_ID,
+    TOKEN_URL,
+    USAGE_URL,
+    CodexProvider,
+    CodexSettings,
+)
 
 if __name__ == "__main__":
     pytest_bazel.main()
@@ -50,6 +58,15 @@ _USAGE_BODY = {
 
 def _provider(path: Path) -> CodexProvider:
     return CodexProvider(CodexSettings(auth_path=path), provider_client())
+
+
+def _management_provider() -> CodexProvider:
+    return CodexProvider(
+        CodexSettings(),
+        provider_client(),
+        cli_proxy_api_url="http://cliproxy.test/v0/management",
+        cli_proxy_api_key="management-key",
+    )
 
 
 def _fixture(name: str) -> dict[str, Any]:
@@ -187,3 +204,59 @@ async def test_weekly_primary_window_preserves_provider_duration(tmp_path: Path)
     assert output.result.windows[0].name is None
     assert output.result.windows[1].name == "GPT-5.3-Codex-Spark"
     assert not output.result.windows[1].display
+
+
+async def test_management_api_uses_runtime_codex_auth_index() -> None:
+    with respx.mock(assert_all_called=False) as mock:
+        auth_files = mock.get("http://cliproxy.test/v0/management" + MANAGEMENT_AUTH_FILES_PATH).mock(
+            return_value=httpx.Response(
+                200, json={"files": [{"provider": "codex", "auth_index": "codex-auth", "disabled": False}]}
+            )
+        )
+        api_call = mock.post("http://cliproxy.test/v0/management" + MANAGEMENT_API_CALL_PATH).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "status_code": 200,
+                    "header": {"Content-Type": ["application/json"]},
+                    "body": json.dumps(_USAGE_BODY),
+                },
+            )
+        )
+
+        output = await _management_provider().fetch()
+
+    assert isinstance(output.result, FetchSuccess)
+    assert auth_files.calls.last.request.headers["Authorization"] == "Bearer management-key"
+    assert api_call.calls.last.request.headers["Authorization"] == "Bearer management-key"
+    request_body = json.loads(api_call.calls.last.request.read())
+    assert request_body == {
+        "auth_index": "codex-auth",
+        "method": "GET",
+        "url": USAGE_URL,
+        "header": {"Authorization": "Bearer $TOKEN$", "User-Agent": "codex_cli_rs/0.125.0 (Linux; x86_64)"},
+    }
+
+
+async def test_management_api_rejects_multiple_codex_auth_files() -> None:
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get("http://cliproxy.test/v0/management" + MANAGEMENT_AUTH_FILES_PATH).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "files": [
+                        {"provider": "codex", "auth_index": "codex-a"},
+                        {"provider": "codex", "auth_index": "codex-b"},
+                    ]
+                },
+            )
+        )
+        api_call = mock.post("http://cliproxy.test/v0/management" + MANAGEMENT_API_CALL_PATH).mock(
+            side_effect=AssertionError("must not choose an ambiguous auth file")
+        )
+
+        output = await _management_provider().fetch()
+
+    assert isinstance(output.result, FetchError)
+    assert output.result.error == "CLIProxyAPI integration: expected exactly one available Codex auth file"
+    assert api_call.call_count == 0

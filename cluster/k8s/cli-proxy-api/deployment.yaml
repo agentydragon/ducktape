@@ -44,6 +44,12 @@ spec:
           # replace the binary. Set `command` explicitly and pass -config via args.
           command: ["./CLIProxyAPI"]
           args: [-config, /config/config.yaml]
+          env:
+            - name: MANAGEMENT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cli-proxy-api-management
+                  key: management-password
           ports:
             - name: http
               containerPort: 8317

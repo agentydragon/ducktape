@@ -63,6 +63,7 @@ def test_settings_are_loaded_and_validated_from_environment(monkeypatch: pytest.
     monkeypatch.setenv("AIQUOTA_CACHE_TTL_SECONDS", "30")
     monkeypatch.setenv("AIQUOTA_CLAUDE_PROXY", "http://proxy:8180")
     monkeypatch.setenv("AIQUOTA_CLAUDE_PROXY_CA", "/tmp/proxy-ca.pem")
+    monkeypatch.setenv("AIQUOTA_CLIPROXY_API_KEY", "management-key")
 
     settings = Settings()
 
@@ -71,6 +72,8 @@ def test_settings_are_loaded_and_validated_from_environment(monkeypatch: pytest.
     assert settings.cache_ttl.total_seconds() == 30
     assert settings.claude_proxy == "http://proxy:8180"
     assert settings.claude_proxy_ca == Path("/tmp/proxy-ca.pem")
+    assert settings.cli_proxy_api_key is not None
+    assert settings.cli_proxy_api_key.get_secret_value() == "management-key"
 
 
 async def test_health_is_public(client: httpx.AsyncClient) -> None:

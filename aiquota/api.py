@@ -19,7 +19,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from aiquota.cache import _assemble, _instantiate
@@ -68,6 +68,25 @@ class _CapturingClientFactory:
             if str(response.request.url) not in response_urls:
                 return
             content = await response.aread()
+            status_code = response.status_code
+            content_type = response.headers.get("Content-Type")
+            if provider == "codex" and str(response.request.url).endswith("/api-call"):
+                try:
+                    envelope = json.loads(content)
+                    if isinstance(envelope, dict) and isinstance(envelope.get("status_code"), int):
+                        status_code = envelope["status_code"]
+                        inner_body = envelope.get("body", "")
+                        if isinstance(inner_body, str):
+                            content = inner_body.encode()
+                        inner_headers = envelope.get("header")
+                        if isinstance(inner_headers, dict):
+                            raw_content_type = inner_headers.get("Content-Type") or inner_headers.get("content-type")
+                            if isinstance(raw_content_type, list) and raw_content_type:
+                                raw_content_type = raw_content_type[0]
+                            if isinstance(raw_content_type, str):
+                                content_type = raw_content_type
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    pass
             truncated = len(content) > _MAX_CAPTURE_BYTES
             captured = content[:_MAX_CAPTURE_BYTES]
             try:
@@ -75,10 +94,7 @@ class _CapturingClientFactory:
             except (json.JSONDecodeError, UnicodeDecodeError):
                 body = captured.decode("utf-8", errors="replace")
             self.responses[provider] = RawUpstreamResponse(
-                status_code=response.status_code,
-                content_type=response.headers.get("Content-Type"),
-                body=body,
-                truncated=truncated,
+                status_code=status_code, content_type=content_type, body=body, truncated=truncated
             )
 
         kwargs: dict[str, object] = {
@@ -106,11 +122,13 @@ class QuotaAPIService:
         cache_ttl: timedelta = timedelta(seconds=120),
         claude_proxy: str | None = None,
         claude_proxy_ca: Path | None = None,
+        cli_proxy_api_key: str | None = None,
     ) -> None:
         self._config = config
         self._cache_ttl = cache_ttl
         self._claude_proxy = claude_proxy
         self._claude_proxy_ca = claude_proxy_ca
+        self._cli_proxy_api_key = cli_proxy_api_key
         self._snapshot: QuotaSnapshot | None = None
         self._lock = asyncio.Lock()
 
@@ -125,7 +143,7 @@ class QuotaAPIService:
             factory: ProviderClientFactory = _CapturingClientFactory(
                 claude_proxy=self._claude_proxy, claude_proxy_ca=self._claude_proxy_ca
             )
-            providers = _instantiate(self._config, client_factory=factory)
+            providers = _instantiate(self._config, client_factory=factory, cli_proxy_api_key=self._cli_proxy_api_key)
             outputs = await asyncio.gather(*(provider.fetch() for provider in providers))
             prior = {quota.provider: quota for quota in self._snapshot.quotas.providers} if self._snapshot else {}
             quotas = AllQuotas(
@@ -154,6 +172,7 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = Field(default=120, ge=0)
     claude_proxy: str | None = None
     claude_proxy_ca: Path | None = None
+    cli_proxy_api_key: SecretStr | None = Field(default=None, validation_alias="AIQUOTA_CLIPROXY_API_KEY")
 
     @property
     def cache_ttl(self) -> timedelta:
@@ -245,6 +264,7 @@ def main() -> None:
         cache_ttl=settings.cache_ttl,
         claude_proxy=settings.claude_proxy,
         claude_proxy_ca=settings.claude_proxy_ca,
+        cli_proxy_api_key=settings.cli_proxy_api_key.get_secret_value() if settings.cli_proxy_api_key else None,
     )
     uvicorn.run(create_app(bearer_token=settings.api_bearer_token, fetcher=service), host="0.0.0.0", port=8080)
 

@@ -5,6 +5,7 @@ resources:
   - pvc.yaml
   - config-eso.yaml
   - client-key.sops.yaml
+  - management-key.sops.yaml
   - deployment.yaml
   - service.yaml
   - httproute.yaml

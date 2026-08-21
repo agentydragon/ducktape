@@ -14,6 +14,10 @@ spec:
     - timeouts:
         request: "600s"
         backendRequest: "600s"
+      matches:
+        - path:
+            type: PathPrefix
+            value: /v1
       backendRefs:
         - name: cli-proxy-api
           port: 8317

@@ -46,6 +46,8 @@ persists the token across pod restarts; the auto-refresh worker (15m) keeps it v
 - `config-eso.yaml` — plaintext CLIProxyAPI configuration template. It includes three bounded
   stream bootstrap retries, which retry a failed upstream stream only before any response bytes
   have been sent to the caller.
+- `management-key.sops.yaml` — SOPS-managed key shared only by CLIProxyAPI's
+  management endpoint and the in-cluster aiquota CLIProxyAPI integration.
 
 Rotate the client key: generate a new value and update `client-key.sops.yaml` only, then push.
 

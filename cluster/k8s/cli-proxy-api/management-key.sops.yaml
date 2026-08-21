@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: cli-proxy-api-management
+    namespace: cli-proxy-api
+    annotations:
+        description: CLIProxyAPI management key shared with the in-cluster aiquota integration
+type: Opaque
+stringData:
+    management-password: ENC[AES256_GCM,data:tqRCddwBaXTgQld4X4LFGocgJ/rJrB5H6TRNmqMUxy7p2PZLYT9oArNQ+XNEG+yU0arIwEeZVsH+XeyQOE1tDg==,iv:wnXLEbjKtgSX98HCMHd10+IYz6nH/1e572vd2QYWPqY=,tag:pwbNapkSg2E4TDnaX1+5Iw==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB1bzU4TUFZRk0wL01Ha0t5
+            VVRBcm85cG9jcEdFbWNmZ0NLV2NQVCtwcUJJCmdnNUdBcmZlTzhMQ0VhcXpsUnFE
+            TXNQRThJK1pYREE2RjBGSzdmbXYrSUkKLS0tIFVmekV4d2dIS1lWZmtUQUQrdXVW
+            N3VQRmxXbkdaRVlpUEVCTFhINGVqZkkKDLtr1h7xxAbrd1sdm4lrZ9WKchOD6MwZ
+            2mRGF/R8+8h2F9XPKFU15XlJ1UAgTF1CTWrJVR6iG34trdST3WdvbQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBDb1FBeFRORkRNMDNsUlQx
+            bEZDZHErWGx6Tk5vUXRDdXhqODBmWmZpMFJ3CnlLMVNVUk02Nm0zYmhVWm8vV3Yv
+            NG9jVmE1UTFYZm9tdVNtTitaZllobmMKLS0tIHptK2N1TzhKb1MrdnlmRnhVMEU0
+            VXhsU2dvU1Q0OXp3QW52TkRNTzJsc0kK5Xl3uejbJlTGJo8taIbF9uWr07E+WkqF
+            qD2LH5r+SB5+Hb4vy09V1ZrFv7+kM6A9pdpU2UmiQOw0x7vB9V8w/w==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-08-21T01:27:03Z"
+    mac: ENC[AES256_GCM,data:ffyQqgmUvi61ASL/+/EE3hRKhhsZQI7jCgkg3E7VGVR87erstRRT5B45tBvEEMF3rXF9yYhF9MdNKt96gB/wGaTNUqQeSOW7vbP800elZT1ysX/H3lmXaKNdbYGyaye1op8fjHr3jKJz0EXwbVq2gmSX7gtROWywyvapItlpMH8=,iv:R9dblTZFYpEUFFxpH5t+U6pPNLw7KCMIyos+dNV9oR8=,tag:8/Z/kMl3vjOin6ws//EfSw==,type:str]
+    version: 3.13.3
