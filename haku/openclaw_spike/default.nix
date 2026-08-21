@@ -99,11 +99,6 @@ pkgs.dockerTools.buildLayeredImage {
       "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
     ];
     Labels."org.opencontainers.image.source" = "https://github.com/agentydragon/ducktape";
-    Entrypoint = [
-      "tini"
-      "-s"
-      "--"
-    ];
     Cmd = [
       "node"
       "openclaw.mjs"
