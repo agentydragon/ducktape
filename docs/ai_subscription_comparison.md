@@ -81,12 +81,12 @@ Two pools are easy to confuse: interactive sessions draw subscription first, the
 
 Subscriptions beat the API because they are sold below API cost. The size of that discount is the whole game, and it varies by an order of magnitude between vendors.
 
-| Plan                                |    $/mo | Included capacity       |           Value at API rates | Subsidy |
-| ----------------------------------- | ------: | ----------------------- | ---------------------------: | ------: |
-| Cerebras Code Max                   |     200 | 120M tok/day (~3.6B/mo) |                      ~$3,300 |    ~17x |
-| Z.ai GLM (any tier)                 |  18-168 | credits                 |     vendor states 15-30x fee |  15-30x |
-| Cerebras Code Pro                   |      50 | 24M tok/day (~720M/mo)  |                        ~$660 |    ~13x |
-| Claude Max 20x + ChatGPT Pro (pair) | 300-400 | opaque                  | displaced 4-figure API spend |  >=2.5x |
+| Plan                                |   $/mo | Included capacity       |           Value at API rates | Subsidy |
+| ----------------------------------- | -----: | ----------------------- | ---------------------------: | ------: |
+| Cerebras Code Max                   |    200 | 120M tok/day (~3.6B/mo) |                      ~$3,300 |    ~17x |
+| Z.ai GLM (any tier)                 | 18-168 | credits                 |     vendor states 15-30x fee |  15-30x |
+| Cerebras Code Pro                   |     50 | 24M tok/day (~720M/mo)  |                        ~$660 |    ~13x |
+| Claude Max 20x + ChatGPT Pro (pair) |    400 | opaque                  | displaced 4-figure API spend |  >=2.5x |
 
 Cerebras figures use GLM-4.7 at Z.ai list ($0.60/$2.20) blended 80/20 input/output; Z.ai's multiple is [its own published figure](https://docs.z.ai/devpack/notice/usage-revision) ("approximately 15-30x the monthly subscription fee").
 
@@ -141,6 +141,8 @@ Throughput figures are order-of-magnitude. Treat them as ±2× ranges.
 ## Recommendation
 
 The loadout is already at the ceiling of subsidized frontier capacity. Max 20x is the top individual Claude tier — nothing above it short of per-seat Team/Enterprise — and ChatGPT Pro $200 is likewise OpenAI's top consumer tier. Neither vendor sells more subsidized capacity to one person. So the moves available are: spend existing quota better, add a third vendor's subsidized plan, or pay per token somewhere far cheaper than Anthropic.
+
+**First, check whether more capacity is the goal at all.** If the 5h caps on Max 20x and on the top ChatGPT tier are rarely reached, the binding constraint is not quota — it is what those tokens are spent on. A third subscription then buys nothing unless it is bought for a specific job: moving bulk, routine, or parallel work off expensive frontier quota so the frontier quota goes further on the work that needs it. Buy for that job or don't buy.
 
 The GLM disappointment is best explained as one fault, not two: an undersized tier running a model two generations old, where the model's weakness drove the quota burn that made the tier feel small. Both halves have moved since.
 
