@@ -90,7 +90,11 @@ Per-minute limits, not just per-window quotas, decide whether a fleet runs. [Cer
 | Cerebras Code Pro |  50 |                5 |   1M |        24M |
 | Cerebras Code Max | 120 |               12 | 1.5M |       120M |
 
-At 5-10 agents firing parallel tool calls, Pro's 5 RPS is exceeded outright and even Max's 12 RPS is marginal. That produces 429s rather than lockouts — retry backoff smooths them — but it means the fleet runs at the rate limit rather than at its own pace, and it rules Pro out for this workload. Max's 120M/day is likewise reachable: ten saturated agents at 1-2M tokens/hour each exhaust it inside a long working day.
+**RPS is not the binding one.** An agent spends most of a turn generating and running tools, not issuing requests, so its cadence is one request per several seconds to tens of seconds. Ten agents therefore sit in the low single-digit RPS, inside even Pro's 5 RPS, with occasional bursts that retry backoff absorbs.
+
+**RPM and tokens/day bind first, and Cerebras's speed makes RPM worse rather than better.** At ~1000 tok/s a turn completes in seconds, so each agent cycles faster and issues more requests per minute than it would against a slower endpoint — plausibly 10-20 RPM each. Ten agents then land at 100-200 RPM, over Pro's 50 and at or above Max's 120. The daily token cap is the other real ceiling: 24M on Pro is reachable within a heavy session, 120M on Max within a long day.
+
+Both are numbers to size against rather than verdicts — request cadence varies enormously with task shape, and a fleet-hour of real measurement beats this arithmetic.
 
 **Z.ai still moved the wrong way on shape.** The [2026-07-30 plan revision](https://docs.z.ai/devpack/notice/usage-revision) switched GLM Coding Plans from prompt counts to credits, kept the 5-hour rolling window, and added a peak-hour multiplier: GLM-5.3 and GLM-5-Turbo bill at **3x during 14:00-18:00 SGT weekdays**, 1x off-peak. A 3x drain rate against the window that was already the problem.
 
@@ -151,23 +155,23 @@ Z.ai rows convert its published 15-30x multiple at GLM-5.3 blended $2.00/M. The 
 
 Throughput figures are order-of-magnitude. Treat them as ±2× ranges.
 
-| Plan                    |   $/mo | Quota shape                       | Burst | Models                            | Notes                                       |
-| ----------------------- | -----: | --------------------------------- | ----- | --------------------------------- | ------------------------------------------- |
-| **Cerebras Code Pro**   |     50 | 24M tok/**day**, 1M TPM, 5 RPS    | ●●○   | GLM-4.7                           | Daily reset; RPS too low for a fleet        |
-| **Cerebras Code Max**   |    200 | 120M tok/**day**, 1.5M TPM, 12 RPS| ●●○   | GLM-4.7                           | No 5h or weekly window at all               |
-| **Z.ai GLM Lite**       |     18 | 10k credits/wk + 5h window        | ○○○   | GLM-5.3 / 5.2 / 5.1 / 4.7         | 3× peak multiplier on 5.3                   |
-| **Z.ai GLM Pro**        |     80 | 60k credits/wk + 5h window        | ○○○   | same                              | Best raw throughput/$; worst failure mode   |
-| **Z.ai GLM Max**        |    168 | 140k credits/wk + 5h window       | ○○○   | same                              | Top tier; 5h wall still hit by a fleet      |
-| **Claude Max 20x**      |    200 | 5h + weekly (all-models + Sonnet) | ●●○ ³ | Opus 5, Sonnet 5                  | Opus 5 default on Max since 2026-07-25      |
-| **Claude Max 5x**       |    100 | same, 5×                          | ●●○ ³ | Opus 5, Sonnet 5                  | Half the capacity of 20x for half the price |
-| **ChatGPT Pro ($200)**  |    200 | 5h windows, 20× Plus              | ○○○   | GPT-5.6, o-series, Codex          | 250 deep research runs/mo, Sora, Operator   |
-| **ChatGPT Pro ($100)**  |    100 | 5h windows, 5× Plus               | ○○○   | GPT-5.6, GPT-5.4, o3-pro, Codex   | Added 2026-04-09                            |
-| **Cursor Ultra**        |    200 | 10k requests/**month**            | ●●●   | Multi-frontier routing            | Cursor-bound                                |
-| **GitHub Copilot Pro+** |     39 | 1.5k premium requests/**month**   | ●●●   | Multi-frontier routing            | IDE/CLI-bound                               |
-| **MiniMax Max**         |     50 | 1000 prompts/5h                   | ○○○   | M3, M2.7                          | Cheap, index ~50 tier                       |
-| **Kimi Allegretto**     |   ¥199 | 5h + weekly                       | ○○○   | K3, K2.7                          | K3 is index 60; ¥699 tier adds 1M context   |
-| **Qwen Standard**       |   ¥139 | 3k credits/5h, 10k/wk             | ○○○   | Qwen3.8-Max, DeepSeek-V4-Pro, GLM | Multi-vendor routing                        |
-| **DeepSeek API**        | pay-go | none                              | ●●●   | V4-Pro 0813, V4-Flash             | Cheapest frontier-adjacent tokens anywhere  |
+| Plan                    |   $/mo | Quota shape                         | Burst | Models                            | Notes                                       |
+| ----------------------- | -----: | ----------------------------------- | ----- | --------------------------------- | ------------------------------------------- |
+| **Cerebras Code Pro**   |     50 | 24M tok/**day**, 1M TPM, 50 RPM     | ●●○   | GLM-4.7                           | Daily reset; 50 RPM is the fleet constraint |
+| **Cerebras Code Max**   |    200 | 120M tok/**day**, 1.5M TPM, 120 RPM | ●●○   | GLM-4.7                           | No 5h or weekly window at all               |
+| **Z.ai GLM Lite**       |     18 | 10k credits/wk + 5h window          | ○○○   | GLM-5.3 / 5.2 / 5.1 / 4.7         | 3× peak multiplier on 5.3                   |
+| **Z.ai GLM Pro**        |     80 | 60k credits/wk + 5h window          | ○○○   | same                              | Best raw throughput/$; worst failure mode   |
+| **Z.ai GLM Max**        |    168 | 140k credits/wk + 5h window         | ○○○   | same                              | Top tier; 5h wall still hit by a fleet      |
+| **Claude Max 20x**      |    200 | 5h + weekly (all-models + Sonnet)   | ●●○ ³ | Opus 5, Sonnet 5                  | Opus 5 default on Max since 2026-07-25      |
+| **Claude Max 5x**       |    100 | same, 5×                            | ●●○ ³ | Opus 5, Sonnet 5                  | Half the capacity of 20x for half the price |
+| **ChatGPT Pro ($200)**  |    200 | 5h windows, 20× Plus                | ○○○   | GPT-5.6, o-series, Codex          | 250 deep research runs/mo, Sora, Operator   |
+| **ChatGPT Pro ($100)**  |    100 | 5h windows, 5× Plus                 | ○○○   | GPT-5.6, GPT-5.4, o3-pro, Codex   | Added 2026-04-09                            |
+| **Cursor Ultra**        |    200 | 10k requests/**month**              | ●●●   | Multi-frontier routing            | Cursor-bound                                |
+| **GitHub Copilot Pro+** |     39 | 1.5k premium requests/**month**     | ●●●   | Multi-frontier routing            | IDE/CLI-bound                               |
+| **MiniMax Max**         |     50 | 1000 prompts/5h                     | ○○○   | M3, M2.7                          | Cheap, index ~50 tier                       |
+| **Kimi Allegretto**     |   ¥199 | 5h + weekly                         | ○○○   | K3, K2.7                          | K3 is index 60; ¥699 tier adds 1M context   |
+| **Qwen Standard**       |   ¥139 | 3k credits/5h, 10k/wk               | ○○○   | Qwen3.8-Max, DeepSeek-V4-Pro, GLM | Multi-vendor routing                        |
+| **DeepSeek API**        | pay-go | none                                | ●●●   | V4-Pro 0813, V4-Flash             | Cheapest frontier-adjacent tokens anywhere  |
 
 ³ Claude's own windows are 5h + weekly. Extra-usage credits remove the ceiling on demand, but at list API rates — availability, not capacity. Rated ●●○ on that basis, not ●●●.
 
@@ -177,18 +181,18 @@ The loadout is at the ceiling of subsidized frontier capacity. Max 20x is the to
 
 Two facts set the buying criteria:
 
-- **The workload runs 5-10 agents in parallel.** Short rolling windows drain 5-10x faster than a serial workload implies, and per-minute RPS/TPM ceilings become binding rather than theoretical.
+- **The workload runs 5-10 agents in parallel.** Short rolling windows drain 5-10x faster than a serial workload implies, and per-minute request ceilings stop being theoretical — though RPM and daily token caps bind well before RPS does.
 - **Claude Max 20x binds weekly, not at 5h.** Its 5h window absorbs the fleet. Z.ai GLM Max — the top Z.ai tier — did not.
 
 So the target is a big pool whose _failure mode_ is a 429 or a predictable daily reset, never a multi-hour rolling lockout. That criterion, not tokens-per-dollar, does most of the ranking.
 
-**Consumer subscriptions are priced for one human at a keyboard.** A 5-10 agent fleet is an order of magnitude outside that design point, which is why every plan surveyed binds _somewhere_ — 5h window, weekly cap, RPS ceiling, or daily quota. No amount of tier shopping escapes that; the tiers are all drawn against single-operator assumptions. The realistic shape is a **base plus a metered layer**: keep the frontier subscriptions for interactive work, and put fleet-scale bulk on pay-per-token capacity where the only ceiling is the bill. Expect the metered layer to be a real line item rather than a rounding error, and size the cheap-model routing to keep it small.
+**Consumer subscriptions are priced for one human at a keyboard.** A 5-10 agent fleet is an order of magnitude outside that design point, which is why every plan surveyed binds _somewhere_ — 5h window, weekly cap, RPM ceiling, or daily quota. No amount of tier shopping escapes that; the tiers are all drawn against single-operator assumptions. The realistic shape is a **base plus a metered layer**: keep the frontier subscriptions for interactive work, and put fleet-scale bulk on pay-per-token capacity where the only ceiling is the bill. Expect the metered layer to be a real line item rather than a rounding error, and size the cheap-model routing to keep it small.
 
 ### Where to buy more, ranked
 
 1. **Pay-per-token API as the fleet's primary capacity.** No window of any kind is the only structure that scales with agent count — API rate limits exist but are 429-with-retry and rise with spend tier, never a multi-hour lockout. DeepSeek V4-Pro at ~$0.92/M blended off-peak is roughly a tenth of Anthropic list; GLM-5.3 at $1.40/$4.40 buys index-60 quality with no Coding Plan window attached. Unsubsidized and linear, which is the trade: it converts "everything stops for 3.7 hours" into a bounded, predictable dollar cost. Set a monthly cap and treat that cap as the real budget decision.
 
-2. **Cerebras Code Max ($200) — the best-shaped subscription, with real caveats.** **No 5h or weekly window exists**: only a daily token cap and per-minute ceilings, so the failure mode is a 429 that clears within the minute. 120M tokens/day, 1.5M TPM, 120 RPM. Against a 10-agent fleet its 12 RPS is marginal and the daily cap is reachable in a long day, so it raises the floor rather than removing the ceiling. **Pro ($50) is ruled out** — 5 RPS is below what the fleet needs. Further caveats: Cerebras serves GLM-4.7, two generations behind GLM-5.3, and independent testing has found real throughput well under the marketing figure. Worth one month against real load before renewing.
+2. **Cerebras Code Max ($200) — the best-shaped subscription, with real caveats.** **No 5h or weekly window exists**: only a daily token cap and per-minute ceilings, so the failure mode is a 429 that clears within the minute. 120M tokens/day, 1.5M TPM, 120 RPM. Against a 10-agent fleet the 120 RPM is the number to watch — Cerebras's speed makes agents cycle faster, so requests-per-minute climbs — and 120M/day is reachable in a long day, so it raises the floor rather than removing the ceiling. **Pro ($50) is the cheaper experiment** if 50 RPM and 24M/day clear a measured fleet-hour; Max buys 2.4x the RPM and 5x the daily tokens. Further caveats: Cerebras serves GLM-4.7, two generations behind GLM-5.3, and independent testing has found real throughput well under the marketing figure. Worth one month against real load before renewing.
 
 3. **Anthropic Batch API for anything that can run async.** 50% off list — Opus 5 at $2.50/$12.50 — and it draws from neither the 5h nor the weekly window. Frontier quality, off the quota that currently binds. Overnight and unattended work is exactly its shape, and shifting that class of work off the weekly cap is worth more than its dollar cost suggests.
 
@@ -224,7 +228,7 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 - **Index/$ flatters cheap models.** A failed task costs a retry plus the operator attention to notice. Weight the frontier position, not the ratio.
 - **AA cost-per-task is API pricing.** It does not model subscription quotas, and a plan's effective rate can beat or trail it by several times depending on saturation.
 - **Token-pool figures assume saturation.** No one sustains 24M tokens/day every day; the tokens-per-dollar column is a ceiling, not an expectation, and the realized multiple depends entirely on how much load actually moves to the new plan.
-- **Per-agent burn rates here are estimates.** The "1-2M tokens/hour per saturated agent" figure behind the Cerebras daily-cap arithmetic is a rough planning number, not a measurement. Measure a real fleet-hour before sizing a plan on it.
+- **Per-agent request and burn rates here are estimates.** The 10-20 RPM per agent behind the Cerebras arithmetic is a planning number, not a measurement, and it swings with task shape, context size, and endpoint speed. Measure a real fleet-hour before sizing a plan on it.
 - **Benchmarks proxy for the loop, badly.** Index scores say little about tool-call reliability, long-context coherence, or structured-output discipline — the properties that actually decide whether an agent run completes.
 - **Quotas drift fast.** Z.ai re-tiered twice in 2026; OpenAI added a $100 Pro tier in April; Gemini CLI quotas change without notice. Re-check before committing.
 - **Geopolitical / data-handling risk for Z.ai, DeepSeek, Moonshot, Alibaba, MiniMax.** All PRC-jurisdiction. Z.ai has been US Entity-Listed since Jan 2025. APIs carry no-train/no-store clauses but no anti-government-request carveout. Don't route proprietary code through any of them.
