@@ -2,12 +2,15 @@
 
 ## Goal
 
-Find AI capacity that complements an existing **Claude Max + ChatGPT Pro** loadout for heavy agentic coding. Two metrics decide it, and they are independent:
+Find AI capacity that complements an existing **Claude Max 20x + ChatGPT Pro** loadout for heavy agentic coding. That loadout is already at the ceiling of what either frontier vendor sells one person: Max 20x is the top individual Claude tier and ChatGPT Pro $200 the top consumer OpenAI tier, with nothing above either short of per-seat Team/Enterprise plans.
 
-1. **Cost per unit of intelligence** — how much useful complex work per dollar.
-2. **Burst tolerance** — whether the plan's quota shape survives spiky usage. A plan metered in 5-hour windows is unusable for a workload that does nothing for two days and then wants six hours of saturated agent work.
+Three axes decide what to add, and they are independent:
 
-Ignoring (2) is how the GLM Coding Plan looked good on paper and disappointed in practice. It is now a first-class axis here.
+1. **Cost per unit of intelligence** — how much useful complex work per dollar, at API list rates.
+2. **Subsidy multiple** — how far below API list a subscription sells that work. This is why the loadout exists at all: the pair displaced a four-figure monthly API bill.
+3. **Quota headroom** — whether the plan's windows are large enough that they stop being visible. Shape matters less than size; see below.
+
+Optimizing any one alone gives the wrong answer. Axis 1 alone recommends list-price API, which is the bill being escaped. Axis 2 alone recommends the cheapest coding plan on offer, which is how the GLM Coding Plan looked good on paper and disappointed in practice.
 
 ## The cost-per-intelligence source
 
@@ -53,20 +56,43 @@ Models are scored per reasoning-effort setting, so one model appears several tim
 
 Opus 5 spans $0.72 → $2.34 per task (medium → max) for 59 → 63 index points. Dropping `max` to `medium` costs 4 index points and saves 69% of spend — a larger swing than switching vendors. Same for GPT-5.6 Sol: $0.37 at medium vs $1.23 at max.
 
-## Burst tolerance — the axis that actually bit
+## Quota shape and headroom
 
-Quota shape, worst to best for spiky use:
+Quota shape, worst to best for bursty use:
 
-| Shape                        | Plans                                          | Spiky-usage behavior                                          |
-| ---------------------------- | ---------------------------------------------- | ------------------------------------------------------------- |
-| **5h rolling + weekly**      | Z.ai GLM, Claude, ChatGPT, MiniMax, Kimi, Qwen | Worst. A burst hits the 5h wall in under an hour, then idles. |
-| **Daily reset**              | Cerebras Code                                  | A big day is capped, but tomorrow is whole again.             |
-| **Monthly pool**             | Cursor, GitHub Copilot, Warp, Windsurf         | Bursts freely until the month's pool is gone.                 |
-| **Pay-per-token, no window** | All raw APIs; Claude extra-usage credits       | Best. No window exists to run out of.                         |
+| Shape                        | Plans                                          | Burst behavior                                                                                        |
+| ---------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **5h rolling + weekly**      | Z.ai GLM, Claude, ChatGPT, MiniMax, Kimi, Qwen | A burst can hit the 5h wall and then idle — but only if the window is small relative to the workload. |
+| **Daily reset**              | Cerebras Code                                  | A big day is capped; tomorrow is whole again.                                                         |
+| **Monthly pool**             | Cursor, GitHub Copilot, Warp, Windsurf         | Bursts freely until the month's pool is gone.                                                         |
+| **Pay-per-token, no window** | All raw APIs; Claude extra-usage credits       | No window to run out of — but zero subsidy, so cost scales linearly and without bound.                |
 
-**Z.ai moved the wrong way.** The [2026-07-30 plan revision](https://docs.z.ai/devpack/notice/usage-revision) switched GLM Coding Plans from prompt counts to credits, but kept the 5-hour rolling window _and_ added a peak-hour multiplier: GLM-5.3 and GLM-5-Turbo bill at **3× during 14:00–18:00 SGT weekdays**, 1× off-peak. The specific thing that made GLM frustrating is now more punishing, not less.
+**Shape is not what bit the GLM plan — size was.** The same usage pattern rarely reaches the 5h cap on Claude Max 20x or on Codex, yet hit GLM's 5h wall routinely. Identical shape, opposite outcome, so the variable is the window's absolute size, not the fact that it is five hours long.
 
-**Claude has an escape valve the others don't.** [Extra usage credits](https://support.claude.com/en/articles/11049741-what-is-the-max-plan) let Pro/Max keep working past the cap at standard API rates, drawn down automatically, capped at $2,000/day redemption. Enabling it costs nothing until a burst actually overruns the plan — it converts a windowed subscription into a windowless one exactly when needed. Note the separate pools: interactive sessions draw subscription → extra usage, while unattended Agent SDK work draws its own monthly pool that does not roll over.
+**And quality feeds back into quota burn.** A weaker model bills for its failures: extra iterations, retried tool calls, and re-reads all consume window. A model needing three passes where a frontier model needs one triples effective consumption of a nominally equal quota. On Z.ai's own Code Bench, GLM-5.3 completes a task in ~50k output tokens where Opus 4.8 spends ~120k. So "it wasn't very smart" and "the quotas ran out fast" are most likely one root cause rather than two — and both point at the same fix, which is a better model on a larger tier rather than a different quota shape.
+
+**Z.ai still moved the wrong way on shape.** The [2026-07-30 plan revision](https://docs.z.ai/devpack/notice/usage-revision) switched GLM Coding Plans from prompt counts to credits, kept the 5-hour rolling window, and added a peak-hour multiplier: GLM-5.3 and GLM-5-Turbo bill at **3x during 14:00-18:00 SGT weekdays**, 1x off-peak. That is a real cost, just not the one that caused the original disappointment.
+
+**Claude's escape valve has a price tag.** [Extra usage credits](https://support.claude.com/en/articles/11049741-what-is-the-max-plan) let Pro/Max keep working past the cap, drawn down automatically, capped at $2,000/day redemption. They bill at **standard API list rates** — no subscription discount whatsoever — so they solve the availability problem by abandoning the economics one. For a Max 20x workload, an overrun priced at Opus 5's $5/$25 reaches three figures in a session and four in a month, which is the bill the subscriptions were bought to replace. Useful as a capped emergency valve; ruinous as a capacity plan.
+
+Two pools are easy to confuse: interactive sessions draw subscription first, then extra usage; unattended Agent SDK work draws its own monthly pool that does not roll over.
+
+## What a subscription is actually worth
+
+Subscriptions beat the API because they are sold below API cost. The size of that discount is the whole game, and it varies by an order of magnitude between vendors.
+
+| Plan                                |    $/mo | Included capacity       |           Value at API rates | Subsidy |
+| ----------------------------------- | ------: | ----------------------- | ---------------------------: | ------: |
+| Cerebras Code Max                   |     200 | 120M tok/day (~3.6B/mo) |                      ~$3,300 |    ~17x |
+| Z.ai GLM (any tier)                 |  18-168 | credits                 |     vendor states 15-30x fee |  15-30x |
+| Cerebras Code Pro                   |      50 | 24M tok/day (~720M/mo)  |                        ~$660 |    ~13x |
+| Claude Max 20x + ChatGPT Pro (pair) | 300-400 | opaque                  | displaced 4-figure API spend |  >=2.5x |
+
+Cerebras figures use GLM-4.7 at Z.ai list ($0.60/$2.20) blended 80/20 input/output; Z.ai's multiple is [its own published figure](https://docs.z.ai/devpack/notice/usage-revision) ("approximately 15-30x the monthly subscription fee").
+
+**The frontier vendors subsidize least.** Serving Opus 5 and GPT-5.6 costs more, and the plans price accordingly. A marginal capacity dollar buys roughly 5-10x more tokens at Cerebras or Z.ai than at Anthropic or OpenAI — at correspondingly lower model quality. That trade is the only real decision here.
+
+**Extra-usage credits are not a discount.** Anthropic's overflow bills at list API rates, which is a 1x subsidy — precisely the pricing a subscription exists to avoid. It buys availability, never economy. For a workload large enough to justify Max 20x, leaving it enabled without a hard cap reproduces the four-figure API bill that the subscriptions replaced. Treat it as an emergency valve with a cap set low enough to hurt, not as a capacity plan.
 
 ## API pricing (per 1M tokens, 2026-08)
 
@@ -99,8 +125,8 @@ Throughput figures are order-of-magnitude. Treat them as ±2× ranges.
 | **Z.ai GLM Lite**       |     18 | 10k credits/wk + 5h window        | ○○○   | GLM-5.3 / 5.2 / 5.1 / 4.7         | 3× peak multiplier on 5.3                   |
 | **Z.ai GLM Pro**        |     80 | 60k credits/wk + 5h window        | ○○○   | same                              | Best raw throughput/$; worst burst shape    |
 | **Z.ai GLM Max**        |    168 | 140k credits/wk + 5h window       | ○○○   | same                              | same                                        |
-| **Claude Max 20x**      |    200 | 5h + weekly (all-models + Sonnet) | ●●● ³ | Opus 5, Sonnet 5                  | Opus 5 default on Max since 2026-07-25      |
-| **Claude Max 5x**       |    100 | same, 5×                          | ●●● ³ | Opus 5, Sonnet 5                  | Half the capacity of 20x for half the price |
+| **Claude Max 20x**      |    200 | 5h + weekly (all-models + Sonnet) | ●●○ ³ | Opus 5, Sonnet 5                  | Opus 5 default on Max since 2026-07-25      |
+| **Claude Max 5x**       |    100 | same, 5×                          | ●●○ ³ | Opus 5, Sonnet 5                  | Half the capacity of 20x for half the price |
 | **ChatGPT Pro ($200)**  |    200 | 5h windows, 20× Plus              | ○○○   | GPT-5.6, o-series, Codex          | 250 deep research runs/mo, Sora, Operator   |
 | **ChatGPT Pro ($100)**  |    100 | 5h windows, 5× Plus               | ○○○   | GPT-5.6, GPT-5.4, o3-pro, Codex   | Added 2026-04-09                            |
 | **Cursor Ultra**        |    200 | 10k requests/**month**            | ●●●   | Multi-frontier routing            | Cursor-bound                                |
@@ -110,34 +136,39 @@ Throughput figures are order-of-magnitude. Treat them as ±2× ranges.
 | **Qwen Standard**       |   ¥139 | 3k credits/5h, 10k/wk             | ○○○   | Qwen3.8-Max, DeepSeek-V4-Pro, GLM | Multi-vendor routing                        |
 | **DeepSeek API**        | pay-go | none                              | ●●●   | V4-Pro 0813, V4-Flash             | Cheapest frontier-adjacent tokens anywhere  |
 
-³ Claude's own windows are 5h + weekly, but extra-usage credits remove the ceiling on demand — the only windowed plan here with a first-party overflow path.
+³ Claude's own windows are 5h + weekly. Extra-usage credits remove the ceiling on demand, but at list API rates — availability, not capacity. Rated ●●○ on that basis, not ●●●.
 
 ## Recommendation
 
-The GLM disappointment had two causes. Only one of them has been fixed.
+The loadout is already at the ceiling of subsidized frontier capacity. Max 20x is the top individual Claude tier — nothing above it short of per-seat Team/Enterprise — and ChatGPT Pro $200 is likewise OpenAI's top consumer tier. Neither vendor sells more subsidized capacity to one person. So the moves available are: spend existing quota better, add a third vendor's subsidized plan, or pay per token somewhere far cheaper than Anthropic.
 
-**Quality: fixed.** GLM-5.3 (2026-08-14) scores 59.5–60 on the AA Intelligence Index against Opus 5's 63. Whatever was tried during the quarterly plan predates it by two model generations. On Z.ai's own Code Bench at high effort, GLM-5.3 beats Opus 4.8 (31.4% vs 29.5%) while spending ~50k output tokens per task against ~120k. It still loses badly on long-horizon agentic work — Terminal-Bench 3.0 has Opus 5 at 42.7% vs GLM-5.3 at 28.3% — so it is a good everyday model, not an Opus replacement.
+The GLM disappointment is best explained as one fault, not two: an undersized tier running a model two generations old, where the model's weakness drove the quota burn that made the tier feel small. Both halves have moved since.
 
-**Quota shape: worse.** The credits migration kept the 5h rolling window and added the 3× peak multiplier. Renewing Z.ai would re-buy the exact problem.
+**Quality.** GLM-5.3 (2026-08-14) scores 59.5-60 on the AA Intelligence Index against Opus 5's 63, and finishes Z.ai Code Bench tasks in ~50k output tokens against Opus 4.8's ~120k. It still loses badly on long-horizon agentic work — Terminal-Bench 3.0 has Opus 5 at 42.7% against GLM-5.3's 28.3% — so it is a plausible everyday model, not an Opus replacement.
+
+**Tier.** Max carries 140k weekly credits against Lite's 10k, a 14x span. A wall hit on a small tier says nothing about the large one.
 
 In priority order:
 
-1. **Enable Claude extra usage credits.** Free until a burst overruns the plan, then bills at standard API rates with no window at all. This is the single highest-value change available: it directly targets the spiky-overflow failure mode, on a subscription already owned, with no TOS question and no new vendor. Set a monthly cap ($50–100) to bound the downside. If it consistently exceeds $100/mo, that is the signal to move up a Max tier rather than keep paying overage.
+1. **Spend the existing Max 20x quota better — free, and probably the largest single win.** Max is metered in tokens, so cutting tokens per task raises tasks per window one-for-one. Opus 5 at `medium` costs 69% less than at `max` for 4 index points, close to a 3x throughput increase on the same subscription. Route routine work to Sonnet 5, and keep prompt caching healthy — cache reads bill at ~0.1x, and a silently invalidated cache is a multiple on quota burn, not just on money. Since the 5h caps are rarely reached today, this mostly buys room to raise ambition rather than relief from a wall.
 
-2. **Add a DeepSeek V4-Pro API key as unmetered overflow.** $0.66/$1.98 off-peak, index 53 at $0.25/task — the cheapest point on the AA frontier, roughly 9× under Opus 5 (max) per task. Zero commitment, no window, Anthropic-compatible endpoint so existing Claude Code configs work unchanged. This is the right shape for spiky use precisely because there is nothing to run out of. Data caveat below.
+2. **Retry Z.ai at GLM Max ($168), not at the tier that disappointed.** Highest subsidy of anything here (15-30x by Z.ai's own figure), GLM-5.3 at index 60 for $0.68/task, and 14x the weekly credits of Lite. The original failure mode — a 5h wall reached constantly — is explained by tier size and by a weak model burning quota on retries, and both inputs have changed. De-risk it by testing GLM-5.3 on pay-per-token API first at $1.40/$4.40: a week of real work answers the quality question for a few dollars, without committing to a plan. Convert only if the answer is yes.
 
-3. **Cerebras Code Pro ($50) only if load turns out to be sustained rather than spiky.** Daily reset, 24M tokens/day, ~1000 tok/s. Better burst shape than Z.ai and the speed is genuinely different in an agent loop, but it serves GLM-4.7 — two generations behind, and the quality complaint applies with more force, not less.
+3. **Cerebras Code Pro ($50) as bulk overflow.** ~13x subsidy, 720M tokens/month, daily reset, ~1000 tok/s. The speed is genuinely different inside an agent loop. The catch is that it serves GLM-4.7 — older than the GLM that already underwhelmed — so it is capacity for bulk and routine work, never a frontier substitute. Cheap enough to test against one month of real usage, but rank it below (2) now that burst shape is not the deciding constraint.
 
-4. **Re-test GLM-5.3 before renewing anything at Z.ai**, and test it via pay-per-token API rather than a plan. $1.40/$4.40 with no window answers the quality question without re-buying the quota problem. Only convert to a Coding Plan if the answer is yes _and_ usage has flattened out.
+4. **DeepSeek V4-Pro as the pay-per-token valve, never Anthropic extra usage.** $0.66/$1.98 off-peak against Opus 5's $5/$25 is roughly an order of magnitude: a burst that would cost $400 in Claude extra usage costs ~$40 here. Not free and it does not scale like a subscription, but an expensive month is expensive by tens, not thousands.
 
-5. **Drop effort settings before buying capacity.** Running Opus 5 at `medium` instead of `max` is a 69% cost cut for 4 index points. On the existing Max plan that is a direct throughput increase for free — likely worth more than any tier of anything below.
+5. **Read <aiquota/README.md> before and after any of the above.** The tool already polls Claude, Codex, and Z.ai, computes burn pace against each window, and reports which window binds. It is the instrument that would have caught the tier-size diagnosis at the time, and it is how to tell whether a new plan is actually being used or is quietly idle.
+
+**Do not enable Claude extra usage as a capacity strategy.** It is list API pricing wearing a subscription's clothes, and it is the mechanism that produces four-figure months.
 
 ## Skip
 
-- **Another 5h-windowed subscription of any brand** — MiniMax, Kimi, Qwen tiers all repeat the GLM failure mode regardless of their per-token economics.
+- **Undersized tiers of anything** — the GLM lesson generalizes: a small tier of a cheap plan buys a wall, not capacity. Buy the tier that clears the workload or skip the vendor.
 - **SuperGrok Heavy ($300)** — Grok 4.6 is a strong model (index 61) but at $2/$6 the API is the sane way to buy it.
 - **Cursor Ultra / Copilot Pro+** — good burst shape, but the value is in their IDE surfaces; from Claude Code the routing is redundant.
 - **Perplexity Max** — search-optimized, wrong tool.
+- **Claude extra usage as a capacity plan** — list API pricing by another name; see above. Cap it and treat it as an emergency valve.
 - **Discounted-credit resale marketplaces** — both Anthropic and OpenAI prohibit reselling API access, so credits bought at "40–60% off" carry termination risk on an account that matters.
 
 ## TOS notes
