@@ -90,6 +90,18 @@ Subscriptions beat the API because they are sold below API cost. The size of tha
 
 Cerebras figures use GLM-4.7 at Z.ai list ($0.60/$2.20) blended 80/20 input/output; Z.ai's multiple is [its own published figure](https://docs.z.ai/devpack/notice/usage-revision) ("approximately 15-30x the monthly subscription fee").
 
+Restated as raw capacity, which is what a weekly ceiling actually rations:
+
+| Plan              | $/mo | Tokens/month (approx) | Tokens per $ |
+| ----------------- | ---: | --------------------: | -----------: |
+| Cerebras Code Max |  200 |                 ~3.6B |         ~18M |
+| Cerebras Code Pro |   50 |                 ~720M |       ~14.4M |
+| Z.ai GLM Max      |  168 |            ~1.3B-2.5B |      ~8M-15M |
+| Z.ai GLM Pro      |   80 |            ~600M-1.2B |      ~8M-15M |
+| Claude Max 20x    |  200 |                 ~110M |        ~0.6M |
+
+Z.ai rows convert its published 15-30x multiple at GLM-5.3 blended $2.00/M. The Claude row back-solves from a four-figure API bill displaced at Opus 5 blended ~$9/M, so it is an estimate with wide error bars. The spread is still roughly **30x between the cheapest and most expensive token pools** — and they are not interchangeable tokens.
+
 **The frontier vendors subsidize least.** Serving Opus 5 and GPT-5.6 costs more, and the plans price accordingly. A marginal capacity dollar buys roughly 5-10x more tokens at Cerebras or Z.ai than at Anthropic or OpenAI — at correspondingly lower model quality. That trade is the only real decision here.
 
 **Extra-usage credits are not a discount.** Anthropic's overflow bills at list API rates, which is a 1x subsidy — precisely the pricing a subscription exists to avoid. It buys availability, never economy. For a workload large enough to justify Max 20x, leaving it enabled without a hard cap reproduces the four-figure API bill that the subscriptions replaced. Treat it as an emergency valve with a cap set low enough to hurt, not as a capacity plan.
@@ -142,7 +154,7 @@ Throughput figures are order-of-magnitude. Treat them as ±2× ranges.
 
 The loadout is already at the ceiling of subsidized frontier capacity. Max 20x is the top individual Claude tier — nothing above it short of per-seat Team/Enterprise — and ChatGPT Pro $200 is likewise OpenAI's top consumer tier. Neither vendor sells more subsidized capacity to one person. So the moves available are: spend existing quota better, add a third vendor's subsidized plan, or pay per token somewhere far cheaper than Anthropic.
 
-**First, check whether more capacity is the goal at all.** If the 5h caps on Max 20x and on the top ChatGPT tier are rarely reached, the binding constraint is not quota — it is what those tokens are spent on. A third subscription then buys nothing unless it is bought for a specific job: moving bulk, routine, or parallel work off expensive frontier quota so the frontier quota goes further on the work that needs it. Buy for that job or don't buy.
+**The binding constraint is Max 20x's weekly cap, not its 5h window.** The 5h caps are rarely reached; the weekly all-models cap is hit often. That narrows the question sharply: what is wanted is a large _weekly or monthly_ pool, and burst shape barely matters. A plan metered in 5h windows is fine so long as its longer window is big — which is the opposite of the conclusion a spiky-usage framing would reach.
 
 The GLM disappointment is best explained as one fault, not two: an undersized tier running a model two generations old, where the model's weakness drove the quota burn that made the tier feel small. Both halves have moved since.
 
@@ -150,17 +162,21 @@ The GLM disappointment is best explained as one fault, not two: an undersized ti
 
 **Tier.** Max carries 140k weekly credits against Lite's 10k, a 14x span. A wall hit on a small tier says nothing about the large one.
 
-In priority order:
+### Where to buy more, ranked
 
-1. **Spend the existing Max 20x quota better — free, and probably the largest single win.** Max is metered in tokens, so cutting tokens per task raises tasks per window one-for-one. Opus 5 at `medium` costs 69% less than at `max` for 4 index points, close to a 3x throughput increase on the same subscription. Route routine work to Sonnet 5, and keep prompt caching healthy — cache reads bill at ~0.1x, and a silently invalidated cache is a multiple on quota burn, not just on money. Since the 5h caps are rarely reached today, this mostly buys room to raise ambition rather than relief from a wall.
+1. **Cerebras Code Max ($200) — the most capacity per dollar in the market.** ~3.6B tokens/month at ~18M tokens per dollar, roughly 30x the token pool of a Claude Max seat, and it resets **daily**, so there is no weekly ceiling to hit at all. That directly answers the constraint. The price is model quality: GLM-4.7, two generations behind GLM-5.3. Start at **Pro ($50)** — 720M tokens/month is already ~6x a Max 20x seat's pool, enough to prove whether GLM-4.7 output is acceptable for the work being displaced before committing $200.
 
-2. **Retry Z.ai at GLM Max ($168), not at the tier that disappointed.** Highest subsidy of anything here (15-30x by Z.ai's own figure), GLM-5.3 at index 60 for $0.68/task, and 14x the weekly credits of Lite. The original failure mode — a 5h wall reached constantly — is explained by tier size and by a weak model burning quota on retries, and both inputs have changed. De-risk it by testing GLM-5.3 on pay-per-token API first at $1.40/$4.40: a week of real work answers the quality question for a few dollars, without committing to a plan. Convert only if the answer is yes.
+2. **Z.ai GLM Max ($168) — best pool-per-dollar at a model worth using.** ~8-15M tokens per dollar, and GLM-5.3 at index 60 is three points off Opus 5 rather than a generation behind. 140k credits/week is 14x the Lite tier. The weekly window is a real ceiling, unlike Cerebras's daily reset, but at Max tier it is a high one. Test GLM-5.3 on pay-per-token API first ($1.40/$4.40) — a week of real work settles the quality question for a few dollars, and the earlier disappointment was a two-generations-old model on a small tier.
 
-3. **Cerebras Code Pro ($50) as bulk overflow.** ~13x subsidy, 720M tokens/month, daily reset, ~1000 tok/s. The speed is genuinely different inside an agent loop. The catch is that it serves GLM-4.7 — older than the GLM that already underwhelmed — so it is capacity for bulk and routine work, never a frontier substitute. Cheap enough to test against one month of real usage, but rank it below (2) now that burst shape is not the deciding constraint.
+3. **A second cheap-vendor plan rather than a bigger one of the first.** Kimi K3 (index 60, same tier as GLM-5.3) and Qwen Pro (¥499, routes Qwen3.8-Max at index 58 plus DeepSeek-V4-Pro and GLM) are genuine alternates. Two $80 plans across vendors beat one $168 plan if GLM specifically turns out not to suit the work — and vendor diversity also hedges the quota re-tiering that Z.ai has now done twice in a year.
 
-4. **DeepSeek V4-Pro as the pay-per-token valve, never Anthropic extra usage.** $0.66/$1.98 off-peak against Opus 5's $5/$25 is roughly an order of magnitude: a burst that would cost $400 in Claude extra usage costs ~$40 here. Not free and it does not scale like a subscription, but an expensive month is expensive by tens, not thousands.
+4. **DeepSeek V4-Pro API for anything that must not queue.** ~$0.92/M blended off-peak, no window at all. Not subsidized, so it scales linearly, but at roughly a tenth of Anthropic list it is the cheap way to buy the unmetered tail.
 
-5. **Read <aiquota/README.md> before and after any of the above.** The tool already polls Claude, Codex, and Z.ai, computes burn pace against each window, and reports which window binds. It is the instrument that would have caught the tier-size diagnosis at the time, and it is how to tell whether a new plan is actually being used or is quietly idle.
+5. **Anthropic Batch API for async frontier work — the one real discount Anthropic offers.** 50% off list, so Opus 5 at $2.50/$12.50. Still expensive next to everything above, but it is the only way to get more _frontier-quality_ Claude tokens below list price, and unattended or overnight work is exactly what it fits. Unlike extra usage, the discount is real.
+
+### Stretching what is already bought
+
+Routing traffic to cheaper models is the other half of this and is free. Since Max is metered in tokens, cutting tokens per task raises tasks per weekly window one-for-one: Opus 5 at `medium` costs 69% less than at `max` for 4 index points, and prompt caching bills reads at ~0.1x, so a silently invalidated cache is a multiple on weekly burn rather than only on money. <aiquota/README.md> already polls Claude, Codex, and Z.ai and reports which window binds — worth reading before and after any purchase, to confirm the new plan is absorbing load rather than sitting idle.
 
 **Do not enable Claude extra usage as a capacity strategy.** It is list API pricing wearing a subscription's clothes, and it is the mechanism that produces four-figure months.
 
@@ -185,6 +201,7 @@ In priority order:
 
 - **Index/$ flatters cheap models.** A failed task costs a retry plus the operator attention to notice. Weight the frontier position, not the ratio.
 - **AA cost-per-task is API pricing.** It does not model subscription quotas, and a plan's effective rate can beat or trail it by several times depending on saturation.
+- **Token-pool figures assume saturation.** No one sustains 24M tokens/day every day; the tokens-per-dollar column is a ceiling, not an expectation, and the realized multiple depends entirely on how much load actually moves to the new plan.
 - **Benchmarks proxy for the loop, badly.** Index scores say little about tool-call reliability, long-context coherence, or structured-output discipline — the properties that actually decide whether an agent run completes.
 - **Quotas drift fast.** Z.ai re-tiered twice in 2026; OpenAI added a $100 Pro tier in April; Gemini CLI quotas change without notice. Re-check before committing.
 - **Geopolitical / data-handling risk for Z.ai, DeepSeek, Moonshot, Alibaba, MiniMax.** All PRC-jurisdiction. Z.ai has been US Entity-Listed since Jan 2025. APIs carry no-train/no-store clauses but no anti-government-request carveout. Don't route proprietary code through any of them.
