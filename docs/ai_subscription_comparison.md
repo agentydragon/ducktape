@@ -12,6 +12,49 @@ Three axes decide what to add, and they are independent:
 
 Optimizing any one alone gives the wrong answer. Axis 1 alone recommends list-price API, which is the bill being escaped. Axis 2 alone recommends the cheapest coding plan on offer, which is how the GLM Coding Plan looked good on paper and disappointed in practice.
 
+## The landscape
+
+Five structurally different ways to buy AI capacity. The category predicts the failure mode better than the vendor does.
+
+| Category                       | Examples                                                                             | Meter                                      |
+| ------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------ |
+| **Frontier labs, own subs**    | Anthropic, OpenAI, Google (AI Pro $20 / Ultra $250), xAI SuperGrok, Mistral          | Opaque; 5h + weekly windows                |
+| **Chinese labs, coding plans** | Z.ai GLM, Moonshot Kimi, Alibaba Qwen, MiniMax                                       | Credits or prompts; 5h + weekly            |
+| **Inference hosts, flat-rate** | Cerebras Code, Featherless, Synthetic, NanoGPT, Awan, Chutes                         | Tokens/day, requests, or concurrency slots |
+| **Agent & IDE products**       | Cursor, Windsurf (Devin Desktop), Copilot, Zed Pro, DevPass, Cline Pass, OpenCode Go | Monthly request pools                      |
+| **Aggregators**                | Perplexity, Poe, Kagi                                                                | Chat-shaped; not agent-shaped              |
+
+Only the inference hosts sell anything other than a windowed quota, and they serve open weights only. That is the structural reason a fleet has no good subscription answer: the vendors with frontier models all meter in windows, and the vendors that do not have no frontier models.
+
+### Concurrency pricing — a fourth meter, and why it does not help here
+
+[Featherless](https://featherless.ai/) charges for **in-flight request slots** rather than tokens: unlimited tokens, capped concurrency, $10 / $25 / $75+ tiers. That sounds built for a parallel fleet until the unit math lands — a 70B-class model costs **4 concurrency units per in-flight request**, so the $75 Scale tier's 8 units buys two simultaneous large-model requests. The category rule holds generally: flat-rate concurrency suits high-volume, low-concurrency work, and pay-per-token wins for highly parallel traffic.
+
+[Synthetic](https://synthetic.new/pricing) ($30/mo) is the closest near-miss and worth recording so it is not re-investigated: excellent menu (Kimi K3 at 512k context, GLM-5.2, Qwen3.8, gpt-oss-120b), no per-token billing, and **both** OpenAI- and Anthropic-compatible endpoints, so it is a genuine Claude Code drop-in. It fails on volume: **500 requests per 5h**, one concurrent request per model per pack. At 10-20 RPM per agent that is roughly one agent-hour, and packs stack linearly, so even ten packs at $300/mo falls short of a saturated fleet. Excellent for one or two agents; structurally wrong for ten.
+
+[Chutes](https://chutes.ai/pricing) is a hybrid rather than a flat plan — the subscription buys queue priority and frontier access, per-token billing still applies underneath, and total usage is capped at 5x the pay-as-you-go value. A far thinner subsidy than Z.ai's stated 15-30x.
+
+## How to compare plans at all
+
+No standard unit exists. Four published approaches, and what each cannot see:
+
+| Method                            | What it computes                                                                                            | Blind spot                                      |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| **Artificial Analysis**           | Index vs. cost per task, with a Pareto frontier                                                             | API pricing only; models no subscription at all |
+| **Quality-adjusted tokens/$**     | tokens x quality / price, quality being a z-score blend of Arena text ELO, Arena code ELO, and the AA index | Needs a published token quota                   |
+| **Value multiple**                | API-priced value of the quota / price                                                                       | Vendor-self-reported or reverse-engineered      |
+| **"Actually unlimited" taxonomy** | Splits flat-rate into metered-but-fixed-price, value-multiplier gateway, and genuinely unmetered            | Descriptive, not quantitative                   |
+
+Quality-adjusted tokens per dollar is the strongest single number available, and its appeal is real: it puts a GPU, a $20/mo plan and a $0.07/M API on one axis. Five things defeat it:
+
+1. **Units do not convert.** Tokens, prompts, credits, premium-requests-with-multipliers, concurrency units. No conversion exists without vendor disclosure.
+2. **The frontier subs are opaque.** Anthropic and OpenAI publish no token quotas, so every tokens-per-dollar figure for them — including the one in this document — is back-solved from a bill.
+3. **Quality is multiplied linearly when it is not linear.** A model that fails costs a retry plus the attention to notice. Index 34 is not half as useful as index 63.
+4. **Realized usage is not purchased usage.** A quota you are afraid to spend is not capacity. No published method models this, and it is the largest term for a plan with a harsh failure mode.
+5. **Workload shape swings the answer by multiples.** Concurrency, burstiness, cache-hit rate and input/output ratio all move effective cost several-fold. Featherless above is the clean demonstration: same plan, opposite verdict depending on parallelism.
+
+Hence the three axes this document uses. Cost per intelligence and subsidy multiple are the field's existing tools; **failure mode is the third axis they omit**, and for a parallel fleet it dominates the other two.
+
 ## The cost-per-intelligence source
 
 [**Artificial Analysis**](https://artificialanalysis.ai/) publishes the _Intelligence Index vs. Cost per Intelligence Index Task_ scatter with a Pareto frontier line — the chart that circulates on Twitter. The [Intelligence Index v4.1.1](https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index) aggregates nine evals: GDPval-AA v2, τ³-Banking, Terminal-Bench v2.1, SciCode, Humanity's Last Exam, GPQA Diamond, CritPt, AA-Omniscience, AA-LCR.
@@ -183,23 +226,26 @@ Cerebras's multiple buys index-34 tokens while Z.ai's buys index-60 ones, so the
 
 Throughput figures are order-of-magnitude. Treat them as ±2× ranges.
 
-| Plan                    |   $/mo | Quota shape                         | Burst | Models                            | Notes                                       |
-| ----------------------- | -----: | ----------------------------------- | ----- | --------------------------------- | ------------------------------------------- |
-| **Cerebras Code Pro**   |     50 | 24M tok/**day**, 1M TPM, 50 RPM     | ●●○   | GLM-4.7 only (index 34)           | Daily reset; 50 RPM is the fleet constraint |
-| **Cerebras Code Max**   |    200 | 120M tok/**day**, 1.5M TPM, 120 RPM | ●●○   | GLM-4.7 only (index 34)           | Best shape here; weakest model here         |
-| **Z.ai GLM Lite**       |     18 | 10k credits/wk + 5h window          | ○○○   | GLM-5.3 / 5.2 / 5.1 / 4.7         | 3× peak multiplier on 5.3                   |
-| **Z.ai GLM Pro**        |     80 | 60k credits/wk + 5h window          | ○○○   | same                              | Best raw throughput/$; worst failure mode   |
-| **Z.ai GLM Max**        |    168 | 140k credits/wk + 5h window         | ○○○   | same                              | Top tier; 5h wall still hit by a fleet      |
-| **Claude Max 20x**      |    200 | 5h + weekly (all-models + Sonnet)   | ●●○ ³ | Opus 5, Sonnet 5                  | Opus 5 default on Max since 2026-07-25      |
-| **Claude Max 5x**       |    100 | same, 5×                            | ●●○ ³ | Opus 5, Sonnet 5                  | Half the capacity of 20x for half the price |
-| **ChatGPT Pro ($200)**  |    200 | 5h windows, 20× Plus                | ○○○   | GPT-5.6, o-series, Codex          | 250 deep research runs/mo, Sora, Operator   |
-| **ChatGPT Pro ($100)**  |    100 | 5h windows, 5× Plus                 | ○○○   | GPT-5.6, GPT-5.4, o3-pro, Codex   | Added 2026-04-09                            |
-| **Cursor Ultra**        |    200 | 10k requests/**month**              | ●●●   | Multi-frontier routing            | Cursor-bound                                |
-| **GitHub Copilot Pro+** |     39 | 1.5k premium requests/**month**     | ●●●   | Multi-frontier routing            | IDE/CLI-bound                               |
-| **MiniMax Max**         |     50 | 1000 prompts/5h                     | ○○○   | M3, M2.7                          | Cheap, index ~50 tier                       |
-| **Kimi Allegretto**     |   ¥199 | 5h + weekly                         | ○○○   | K3, K2.7                          | K3 is index 60; ¥699 tier adds 1M context   |
-| **Qwen Standard**       |   ¥139 | 3k credits/5h, 10k/wk               | ○○○   | Qwen3.8-Max, DeepSeek-V4-Pro, GLM | Multi-vendor routing                        |
-| **DeepSeek API**        | pay-go | none                                | ●●●   | V4-Pro 0813, V4-Flash             | Cheapest frontier-adjacent tokens anywhere  |
+| Plan                    |   $/mo | Quota shape                           | Burst | Models                            | Notes                                       |
+| ----------------------- | -----: | ------------------------------------- | ----- | --------------------------------- | ------------------------------------------- |
+| **Cerebras Code Pro**   |     50 | 24M tok/**day**, 1M TPM, 50 RPM       | ●●○   | GLM-4.7 only (index 34)           | Daily reset; 50 RPM is the fleet constraint |
+| **Cerebras Code Max**   |    200 | 120M tok/**day**, 1.5M TPM, 120 RPM   | ●●○   | GLM-4.7 only (index 34)           | Best shape here; weakest model here         |
+| **Z.ai GLM Lite**       |     18 | 10k credits/wk + 5h window            | ○○○   | GLM-5.3 / 5.2 / 5.1 / 4.7         | 3× peak multiplier on 5.3                   |
+| **Z.ai GLM Pro**        |     80 | 60k credits/wk + 5h window            | ○○○   | same                              | Best raw throughput/$; worst failure mode   |
+| **Z.ai GLM Max**        |    168 | 140k credits/wk + 5h window           | ○○○   | same                              | Top tier; 5h wall still hit by a fleet      |
+| **Claude Max 20x**      |    200 | 5h + weekly (all-models + Sonnet)     | ●●○ ³ | Opus 5, Sonnet 5                  | Opus 5 default on Max since 2026-07-25      |
+| **Claude Max 5x**       |    100 | same, 5×                              | ●●○ ³ | Opus 5, Sonnet 5                  | Half the capacity of 20x for half the price |
+| **ChatGPT Pro ($200)**  |    200 | 5h windows, 20× Plus                  | ○○○   | GPT-5.6, o-series, Codex          | 250 deep research runs/mo, Sora, Operator   |
+| **ChatGPT Pro ($100)**  |    100 | 5h windows, 5× Plus                   | ○○○   | GPT-5.6, GPT-5.4, o3-pro, Codex   | Added 2026-04-09                            |
+| **Cursor Ultra**        |    200 | 10k requests/**month**                | ●●●   | Multi-frontier routing            | Cursor-bound                                |
+| **GitHub Copilot Pro+** |     39 | 1.5k premium requests/**month**       | ●●●   | Multi-frontier routing            | IDE/CLI-bound                               |
+| **MiniMax Max**         |     50 | 1000 prompts/5h                       | ○○○   | M3, M2.7                          | Cheap, index ~50 tier                       |
+| **Kimi Allegretto**     |   ¥199 | 5h + weekly                           | ○○○   | K3, K2.7                          | K3 is index 60; ¥699 tier adds 1M context   |
+| **Qwen Standard**       |   ¥139 | 3k credits/5h, 10k/wk                 | ○○○   | Qwen3.8-Max, DeepSeek-V4-Pro, GLM | Multi-vendor routing                        |
+| **Synthetic**           |     30 | 500 req/5h + weekly, 1 concur/model   | ○○○   | Kimi K3, GLM-5.2, Qwen3.8         | Claude Code drop-in; ~1 agent of volume     |
+| **Featherless Scale**   |    75+ | unlimited tokens, 8 concurrency units | ●●○   | 30k+ open weights                 | 70B-class costs 4 units/request             |
+| **Chutes Pro**          |      3 | 5x PAYGO value, hybrid billing        | ●●○   | Open weights                      | Subscription buys priority, not capacity    |
+| **DeepSeek API**        | pay-go | none                                  | ●●●   | V4-Pro 0813, V4-Flash             | Cheapest frontier-adjacent tokens anywhere  |
 
 ³ Claude's own windows are 5h + weekly. Extra-usage credits remove the ceiling on demand, but at list API rates — availability, not capacity. Rated ●●○ on that basis, not ●●●.
 
@@ -226,7 +272,9 @@ So the target is a big pool whose _failure mode_ is a 429 or a predictable daily
 
 4. **Z.ai GLM: do not re-buy on current terms.** It was already tested at Max, the largest tier, and failed on precisely this axis. The credits migration kept the 5h window and added a 3x peak multiplier, so the drain rate against the binding constraint got worse. GLM-5.3 is a genuinely better model than what was tried and is worth using **through the API**, where no window exists — but the Coding Plan's shape is wrong for a parallel fleet at any tier Z.ai sells. Revisit only if the window structure changes.
 
-5. **Kimi and Qwen plans inherit the same 5h structure** and should be assumed to fail the same way until their 5h ceilings are checked against a parallel fleet specifically. Kimi K3 matches GLM-5.3 on quality (index 60); if a plan is wanted from either, verify the short-window ceiling before the model quality.
+5. **Synthetic ($30) if the fleet ever shrinks.** Kimi K3 and GLM-5.2 with no per-token billing and an Anthropic-compatible endpoint is the best model menu per dollar in the flat-rate category. Its 500 requests/5h caps it at roughly one agent, so it is the right answer for a different workload than this one — worth remembering rather than re-investigating.
+
+6. **Kimi and Qwen plans inherit the same 5h structure** and should be assumed to fail the same way until their 5h ceilings are checked against a parallel fleet specifically. Kimi K3 matches GLM-5.3 on quality (index 60); if a plan is wanted from either, verify the short-window ceiling before the model quality.
 
 ### Stretching what is already bought
 
