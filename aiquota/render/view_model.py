@@ -11,13 +11,14 @@ forecasts) stays on the extension side so the popup can tick once per
 second without re-spawning the CLI.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import BaseModel
 
 from aiquota.models import AllQuotas, FetchSuccess, ProviderFetch, ProviderQuota, SuccessfulProviderFetch
 from aiquota.pace import is_exhausted
+from aiquota.peak_windows import BurnStatus, status_for
 
 ExtraStatus = Literal["none", "informational", "active"]
 
@@ -28,6 +29,7 @@ class ProviderView(BaseModel):
     last_success: SuccessfulProviderFetch | None
     currently_over_plan: bool
     extra_status: ExtraStatus
+    burn: BurnStatus | None
 
 
 class AllQuotasView(BaseModel):
@@ -35,17 +37,21 @@ class AllQuotasView(BaseModel):
     providers: list[ProviderView]
 
 
-def to_view(quotas: AllQuotas) -> AllQuotasView:
-    return AllQuotasView(fetched_at=quotas.fetched_at, providers=[_provider_view(pq) for pq in quotas.providers])
+def to_view(quotas: AllQuotas, now: datetime | None = None) -> AllQuotasView:
+    moment = now or datetime.now(UTC)
+    return AllQuotasView(
+        fetched_at=quotas.fetched_at, providers=[_provider_view(pq, moment) for pq in quotas.providers]
+    )
 
 
-def _provider_view(pq: ProviderQuota) -> ProviderView:
+def _provider_view(pq: ProviderQuota, now: datetime) -> ProviderView:
     return ProviderView(
         provider=pq.provider,
         last_output=pq.last_output,
         last_success=pq.last_success,
         currently_over_plan=currently_over_plan(pq.last_output),
         extra_status=_extra_status(pq.last_output),
+        burn=status_for(pq.provider, now),
     )
 
 

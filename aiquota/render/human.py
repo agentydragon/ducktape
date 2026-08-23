@@ -1,19 +1,28 @@
 """Human-readable CLI rendering — mirrors the GNOME extension popup bars."""
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, tzinfo
 
 from aiquota.models import AllQuotas, ExtraSpend, FetchSuccess, QuotaWindow, SuccessfulProviderFetch
 from aiquota.pace import compute_pace, is_exhausted
-from aiquota.render.format import format_age, format_duration, format_pace, format_pace_forecast, format_window_label
+from aiquota.render.format import (
+    format_age,
+    format_burn,
+    format_duration,
+    format_pace,
+    format_pace_forecast,
+    format_peak_schedule,
+    format_window_label,
+)
 from aiquota.render.view_model import ProviderView, to_view
 
 
-def render(quotas: AllQuotas, now: datetime | None = None) -> str:
-    view = to_view(quotas)
+def render(quotas: AllQuotas, now: datetime | None = None, tz: tzinfo | None = None) -> str:
+    """`tz` defaults to system local; tests pin it so snapshots hold on any machine."""
     render_time = now or datetime.now(UTC)
+    view = to_view(quotas, render_time)
     widths = _column_widths(view.providers, render_time)
-    return "\n".join(_render_provider(pv, render_time, widths) for pv in view.providers)
+    return "\n".join(_render_provider(pv, render_time, widths, tz) for pv in view.providers)
 
 
 @dataclass(frozen=True)
@@ -31,7 +40,7 @@ class _WindowRow:
     forecast: str | None
 
 
-def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths) -> str:
+def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz: tzinfo | None) -> str:
     out_result = pv.last_output.result
     error = out_result.error if not isinstance(out_result, FetchSuccess) else None
 
@@ -45,17 +54,32 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths) -> 
         # bars are noise, but both reset countdowns still matter.
         lines = [f"{pv.provider}  {_format_extra_active(extra)}"]
         lines.append(_active_windows_line(windows))
+        lines.extend(_burn_lines(pv, now, tz))
         return "\n".join(lines)
 
     lines = [_header(pv.provider, error, pv.last_output.fetched_at, now, stale_age)]
+    lines.extend(_burn_lines(pv, now, tz))
     lines.extend(_format_window_line(_window_row(window), widths) for window in windows)
-    if pv.extra_status == "informational" and extra is not None:
+    show_extra = pv.extra_status == "informational" and extra is not None
+    if show_extra:
         # Prepaid still has room, but the user incurred billable spend earlier
         # in the billing month. Surface it so the monthly bill doesn't sneak up.
         lines.append(f"  {_format_extra_informational(extra)}")
-    if not windows and len(lines) == 1:
+    if not windows and not show_extra:
+        # Gate on "nothing substantive was reported", not on line count — the
+        # burn schedule adds lines without saying anything about quota.
         lines.append("  no data")
     return "\n".join(lines)
+
+
+def _burn_lines(pv: ProviderView, now: datetime, tz: tzinfo | None) -> list[str]:
+    if pv.burn is None:
+        return []
+    lines = [f"  {format_burn(pv.burn, now, tz)}"]
+    schedule = format_peak_schedule(pv.burn, tz)
+    if schedule:
+        lines.append(f"    {schedule}")
+    return lines
 
 
 def _effective_windows(pv: ProviderView, now: datetime) -> tuple[list[QuotaWindow], ExtraSpend | None, str | None]:
