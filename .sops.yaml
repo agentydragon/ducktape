@@ -85,6 +85,23 @@ creation_rules:
           - *cluster-secrets
           - *claude-web
 
+  # Brave Search API key — Flux applies the Secret and the agent egress proxies
+  # consume it in-cluster (cluster-secrets), AND workstations read it directly
+  # as $BRAVE_API_KEY via ducktape.sopsEnv (user keys), so the subscription is
+  # not duplicated into a second ciphertext under secrets/. More specific than
+  # the generic cluster/k8s/* rule below, so this match wins.
+  - path_regex: cluster/k8s/agents/shared-secrets/brave-search-api-key\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+          - *gecko-agentydragon
+
   # tofu-state PG backend credentials — Flux applies the Secret, CNPG consumes it
   # in-cluster (cluster-secrets), AND tofu running on user machines needs to read
   # the password to set PG_CONN_STR (user keys). More specific than the generic

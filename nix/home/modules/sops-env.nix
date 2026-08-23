@@ -8,24 +8,40 @@
 let
   cfg = config.ducktape.sopsEnv;
 
-  envType = lib.types.submodule {
-    options = {
-      sopsFile = lib.mkOption {
-        type = lib.types.path;
-        description = "Path to the SOPS-encrypted YAML file.";
+  envType = lib.types.submodule (
+    { config, ... }:
+    {
+      options = {
+        sopsFile = lib.mkOption {
+          type = lib.types.path;
+          description = "Path to the SOPS-encrypted YAML file.";
+        };
+        key = lib.mkOption {
+          type = lib.types.str;
+          description = ''
+            Key within the SOPS file to decrypt. Nested keys use `/` as a
+            separator, so a k8s Secret manifest can be read directly
+            (`stringData/api-key`) rather than copied to a flat file.
+          '';
+        };
+        name = lib.mkOption {
+          type = lib.types.str;
+          default = builtins.replaceStrings [ "/" ] [ "_" ] config.key;
+          description = ''
+            Attribute name of the underlying sops-nix secret, which also names
+            the decrypted file. Defaults to `key` with separators flattened,
+            since a nested key would otherwise become a directory path.
+          '';
+        };
       };
-      key = lib.mkOption {
-        type = lib.types.str;
-        description = "Key within the SOPS file to decrypt.";
-      };
-    };
-  };
+    }
+  );
 
   enabledVars = cfg;
 
   shellExports = lib.concatStringsSep "\n" (
     lib.mapAttrsToList (
-      envVar: opts: ''export ${envVar}="$(cat ${config.sops.secrets.${opts.key}.path})"''
+      envVar: opts: ''export ${envVar}="$(cat ${config.sops.secrets.${opts.name}.path})"''
     ) enabledVars
   );
 in
@@ -39,8 +55,8 @@ in
   config = lib.mkIf (enabledVars != { }) {
     sops.secrets = lib.mapAttrs' (
       _envVar: opts:
-      lib.nameValuePair opts.key {
-        inherit (opts) sopsFile;
+      lib.nameValuePair opts.name {
+        inherit (opts) sopsFile key;
       }
     ) enabledVars;
 
