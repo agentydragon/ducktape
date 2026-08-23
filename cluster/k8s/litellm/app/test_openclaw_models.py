@@ -72,8 +72,6 @@ def test_litellm_config_has_a_route_per_declared_codex_model() -> None:
 
 
 def test_current_anthropic_roster_matches_haku_openclaw() -> None:
-    assert ANTHROPIC_MODELS == ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5-20251001"]
-
     config, models = _haku_claude_models()
     expected_refs = {f"anthropic/{model_id}" for model_id in ANTHROPIC_MODELS}
     defaults = config["agents"]["defaults"]

@@ -27,7 +27,6 @@ py_test(
         "//tf/gitops/litellm-keys:main.tf",
     ],
     deps = [
-        ":model_rosters",
         "//cluster/validation:terraform_hcl",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
