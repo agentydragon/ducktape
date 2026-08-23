@@ -68,7 +68,10 @@ or otherwise trusted official installs. Loading the same derivation through an
 arbitrary `plugins.load.paths` entry marks it as `origin: "config"`, and the
 provider exits before sync with `openKeyedStore is only available for trusted
 plugins in this release.` Keep the config limited to enabling the bundled
-`plugins.entries.matrix`; do not restore a path-load workaround.
+`plugins.entries.matrix`; do not restore a path-load workaround. The Brave
+runtime plugin is likewise bundled into the Nix-built gateway image so its
+pinned artifact, rather than a mutable install in the state PVC, supplies
+`web_search`.
 
 `requestTimeoutMs` on the haku-console server is load-bearing, and its absence is not
 a slow-server problem. OpenClaw gives the startup catalog listing a hardcoded

@@ -149,6 +149,28 @@
     "entries": {
       "matrix": {
         "enabled": true
+      },
+      "brave": {
+        "enabled": true,
+        "config": {
+          "webSearch": {
+            // This resolves to the non-secret placeholder in the OpenClaw Pod;
+            // iron-proxy replaces it only at Brave's API endpoint.
+            "apiKey": { "source": "env", "id": "BRAVE_API_KEY" },
+            "mode": "web"
+          }
+        }
+      }
+    }
+  },
+  "tools": {
+    "web": {
+      "search": {
+        "enabled": true,
+        "provider": "brave",
+        "maxResults": 5,
+        "timeoutSeconds": 30,
+        "cacheTtlMinutes": 15
       }
     }
   },

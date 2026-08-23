@@ -110,6 +110,17 @@ transforms:
               paths: ["/v1/quotas", "/v1/providers/*/raw"]
         - source:
             type: env
+            var: BRAVE_API_KEY
+          replace:
+            # Brave authenticates with X-Subscription-Token rather than an
+            # Authorization header. Keep the real key in this proxy and scope
+            # replacement to Brave's one public API endpoint.
+            proxy_value: "proxy-brave-search-api-key-placeholder"
+            match_headers: ["X-Subscription-Token"]
+          rules:
+            - host: "api.search.brave.com"
+        - source:
+            type: env
             var: MATRIX_BOT_PASSWORD
           replace:
             # OpenClaw's password login sends this placeholder in the JSON

@@ -1,6 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  - brave-search-api-key.sops.yaml
   - github-token-eso.yaml
   - gateway-password-eso.yaml
   - public-coder-devbox-ssh.sops.yaml

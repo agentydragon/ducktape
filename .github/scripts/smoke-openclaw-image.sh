@@ -48,6 +48,9 @@ cat >"$config" <<'JSON'
     "entries": {
       "matrix": {
         "enabled": true
+      },
+      "brave": {
+        "enabled": true
       }
     }
   }
@@ -55,29 +58,38 @@ cat >"$config" <<'JSON'
 JSON
 
 OPENCLAW_CONFIG_PATH="$config" openclaw plugins list --json >"$plugins"
-jq '{matrix: [.plugins[] | select(.id == "matrix")], diagnostics}' "$plugins"
-jq -e '.plugins[] | select(.id == "matrix" and .origin == "bundled" and .status == "loaded")' "$plugins"
+jq '{matrix: [.plugins[] | select(.id == "matrix")], brave: [.plugins[] | select(.id == "brave")], diagnostics}' "$plugins"
 
-source=$(jq -er '.plugins[] | select(.id == "matrix") | .source' "$plugins")
-case "$source" in
-  */dist/extensions/matrix/dist/index.js)
-    gateway_root=${source%/dist/extensions/matrix/dist/index.js}
-    ;;
-  */dist-runtime/extensions/matrix/dist/index.js)
-    gateway_root=${source%/dist-runtime/extensions/matrix/dist/index.js}
-    ;;
-  *)
-    echo "unexpected Matrix plugin source: $source" >&2
-    exit 1
-    ;;
-esac
-matrix_root=${source%/dist/index.js}
+bundled_plugin_root() {
+  plugin_id=$1
+  jq -e --arg id "$plugin_id" '.plugins[] | select(.id == $id and .origin == "bundled" and .status == "loaded")' "$plugins" >/dev/null
 
-test -f "$matrix_root/openclaw.plugin.json"
+  source=$(jq -er --arg id "$plugin_id" '.plugins[] | select(.id == $id) | .source' "$plugins")
+  case "$source" in
+    */dist/extensions/"$plugin_id"/dist/index.js)
+      gateway_root=${source%/dist/extensions/"$plugin_id"/dist/index.js}
+      ;;
+    */dist-runtime/extensions/"$plugin_id"/dist/index.js)
+      gateway_root=${source%/dist-runtime/extensions/"$plugin_id"/dist/index.js}
+      ;;
+    *)
+      echo "unexpected $plugin_id plugin source: $source" >&2
+      exit 1
+      ;;
+  esac
+  plugin_root=${source%/dist/index.js}
+
+  test -f "$plugin_root/openclaw.plugin.json"
+  test "$(readlink -f "$plugin_root/node_modules/openclaw")" = "$gateway_root"
+  test -f "$gateway_root/dist/extensions/$plugin_id/openclaw.plugin.json"
+  test -f "$gateway_root/dist-runtime/extensions/$plugin_id/openclaw.plugin.json"
+  test "$(readlink -f "$gateway_root/dist-runtime/extensions/$plugin_id/node_modules/openclaw")" = "$gateway_root"
+  printf '%s\n' "$plugin_root"
+}
+
+matrix_root=$(bundled_plugin_root matrix)
 test -d "$matrix_root/node_modules/matrix-js-sdk"
-test "$(readlink -f "$matrix_root/node_modules/openclaw")" = "$gateway_root"
-test -f "$gateway_root/dist/extensions/matrix/openclaw.plugin.json"
-test -f "$gateway_root/dist-runtime/extensions/matrix/openclaw.plugin.json"
-test "$(readlink -f "$gateway_root/dist-runtime/extensions/matrix/node_modules/openclaw")" = "$gateway_root"
+bundled_plugin_root brave >/dev/null
 jq -e '[.diagnostics[] | select(.message | contains("blocked plugin candidate"))] | length == 0' "$plugins"
 test ! -e /opt/openclaw/plugins/matrix
+test ! -e /opt/openclaw/plugins/brave

@@ -9,6 +9,9 @@ let
   system = pkgs.stdenv.hostPlatform.system;
   gateway = nix-openclaw.packages.${system}.openclaw-gateway;
   matrixPlugin = nix-openclaw.packages.${system}.openclaw-runtime-plugin-matrix;
+  # Brave is an official external runtime plugin. Bundle its pinned Nix artifact
+  # with the gateway rather than installing it mutably in the state PVC.
+  bravePlugin = nix-openclaw.packages.${system}.openclaw-runtime-plugin-brave;
   repoBazelVersion = pkgs.lib.removeSuffix "\n" (builtins.readFile ../.bazelversion);
   # The primary nixpkgs pin still has Bazel 8.4.2. Override it with the
   # repository's 8.6.0 pin and the corresponding upstream dist hash rather
@@ -47,7 +50,7 @@ let
   # markers and therefore prefers dist/extensions, while a future package that
   # omits those markers will prefer dist-runtime/extensions. Hard-linking the
   # second tree avoids storing a duplicate copy of the plugin payload.
-  gatewayWithMatrix = gateway.overrideAttrs (previous: {
+  gatewayWithRuntimePlugins = gateway.overrideAttrs (previous: {
     # nix-openclaw supplies a complete custom installPhase rather than the
     # stdenv default, so append here instead of relying on a postInstall hook
     # that the package's install script does not run.
@@ -57,6 +60,8 @@ let
       + ''
         ${pkgs.bash}/bin/bash ${./bundle-runtime-plugin.sh} \
           "$out/lib/openclaw" matrix ${matrixPlugin}
+        ${pkgs.bash}/bin/bash ${./bundle-runtime-plugin.sh} \
+          "$out/lib/openclaw" brave ${bravePlugin}
       '';
   });
 
@@ -128,10 +133,10 @@ let
   proxySetup = pkgs.runCommand "openclaw-proxy-setup" { } ''
     mkdir -p "$out/lib/openclaw"
     cp ${./proxy-setup.mjs} "$out/lib/openclaw/proxy-setup.mjs"
-    ln -s ${gatewayWithMatrix}/lib/openclaw/node_modules "$out/lib/openclaw/node_modules"
+    ln -s ${gatewayWithRuntimePlugins}/lib/openclaw/node_modules "$out/lib/openclaw/node_modules"
   '';
 
-  path = pkgs.lib.makeBinPath ([ gatewayWithMatrix ] ++ tools);
+  path = pkgs.lib.makeBinPath ([ gatewayWithRuntimePlugins ] ++ tools);
 in
 assert bazelPkg.version == repoBazelVersion;
 pkgs.dockerTools.buildLayeredImage {
@@ -140,7 +145,7 @@ pkgs.dockerTools.buildLayeredImage {
   tag = null;
 
   contents = [
-    gatewayWithMatrix
+    gatewayWithRuntimePlugins
     proxySetup
   ]
   ++ tools;
@@ -199,7 +204,7 @@ pkgs.dockerTools.buildLayeredImage {
       "--"
     ];
     Cmd = [
-      "${gatewayWithMatrix}/bin/openclaw"
+      "${gatewayWithRuntimePlugins}/bin/openclaw"
       "gateway"
     ];
   };

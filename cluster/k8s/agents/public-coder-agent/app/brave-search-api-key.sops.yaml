@@ -1,0 +1,38 @@
+# The actual Brave Search API key. It is intentionally SOPS-encrypted before
+# committing; Flux decrypts it into this Secret, which only the egress proxy
+# consumes. The OpenClaw container receives a fixed non-secret placeholder.
+#
+# Replace the placeholder with the Brave key using:
+#   sops cluster/k8s/agents/public-coder-agent/app/brave-search-api-key.sops.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+    name: public-coder-agent-brave-search-api-key
+    namespace: public-coder-agent
+type: Opaque
+stringData:
+    BRAVE_API_KEY: ENC[AES256_GCM,data:R9wI3wMZ6pgQo0njgin15W0CN4LM8eOeSqfSBzohcGrh,iv:Nel/VjWE/RYzqkLkzbLeZkQvgWOyMZ85wL4e70Rritk=,tag:q7Rz5rNgKDD+iPrlLu3C6g==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBoTXlud0RqYkJ2MkJOeXBK
+            ZXlrRkpwVFZ0NFZDK3ZmdUZtQi94MUJXWGhvCnhEWlhHeTJxZEw3QWUycnVnZlho
+            SWxuTjdKa1RoR0l2UEUxdGNJMmtBb0UKLS0tIFA4RE1PRitLcWhiNnBGb1RuLzNr
+            bG9JLzVWUUl2aTcrQi9wTXlxRUpGeFUKqvtcjxm35crmOKV4r7IItnzS6CV3vbjZ
+            NFHh6qbSU5LtVxU10OI4cCd+53gseNVhyTmOuQ1oesUA9yvhVtBReA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBhV2NsS21uOFMxQmltME5Q
+            R0kzZllFSGM2KzErQ3pIZyszbnRPTWl5N1dBCm1Id2NWOGg2am11UStWWWUzeVY0
+            dUczRjNjUWlkNFdVK2VIdy9vVFNnd2sKLS0tIDlzOWoyd0lUYUlxVTN1bWl5MVBo
+            cFUrMTJzQ3RMT2J0RnVKdGNvVHdJSDQK28IddOTDVqGdPXzbYgXrDmtljJLD1BWa
+            BkdSvQn6/4Uk9h19X97wz0qaMUemo2qRgHoyl9Zht4dDmnDtFKCbpw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-08-23T18:13:14Z"
+    mac: ENC[AES256_GCM,data:fxyPUlCAmkdC7SNLFPttNKhKjlersD1uJKluScijfV1mqSjEs3S7DxYlcqKKoezS76lRwOtIWmRKSMY22RskDpVIGSEHt01FZiKeov9hPpvcz5ecQqbRR2eU17gCimnn8alaE3omiq2X/11EiYCR6h8C/EFc0u8MVC+BW//hdqE=,iv:n1qtDVrgz8Yn2ZCKYZguU9M0omJpKlimteew+qiiqP0=,tag:ppYhzurX/oVSSsFA5qlzUA==,type:str]
+    version: 3.13.3

@@ -124,6 +124,11 @@ spec:
             # actual shared bearer is mounted only into the proxy container.
             - name: AIQUOTA_API_BEARER_TOKEN
               value: "proxy-aiquota-api-bearer-placeholder"
+            # This is likewise an inert placeholder. The real Brave Search API
+            # key is mounted only in the egress proxy and substituted solely in
+            # X-Subscription-Token requests to api.search.brave.com.
+            - name: BRAVE_API_KEY
+              value: "proxy-brave-search-api-key-placeholder"
             # Unlike the GitHub PAT above, this must be the real credential.
             # Either half of the BuildBuddy setup can use proxy substitution on
             # its own: a local Bazel client sends its authenticated gRPC traffic

@@ -85,6 +85,14 @@ spec:
                 secretKeyRef:
                   name: aiquota-api-bearer-public-coder
                   key: bearer-token
+            # The Brave Search API key is consumed only by iron-proxy. The
+            # OpenClaw Pod gets a non-secret placeholder that is swapped only
+            # for Brave's X-Subscription-Token header on its API host.
+            - name: BRAVE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: public-coder-agent-brave-search-api-key
+                  key: BRAVE_API_KEY
             # Matrix password login is the one credential that lives in a JSON
             # body rather than Authorization. iron.yaml swaps the app's
             # placeholder only on the Matrix login endpoint.
