@@ -28,13 +28,16 @@ _SECRETS_DIR_MARKER = "_main/devinfra/claude/claude_hook/testdata/e2e_secrets/te
 # get_required_path() receives "_main/" + path; dest is project / path.
 _STAGED_FILES = ["devinfra/secrets/web_env.sh", "devinfra/secrets/_common.sh", "devinfra/k8s/kubeconfig.py"]
 
-_TEST_SECRET_FILES = [
-    "alloy-otlp-bearer-token.yaml",
-    "buildbuddy.yaml",
-    "github-pat-agentydragon-agent.yaml",
-    "github-ci-read-pat.yaml",
-    "claude-web-k8s-jwt.yaml",
-]
+# Fixture filename -> repo-relative destination. The test exercises the real
+# web_env.sh against the real paths, so the BuildBuddy key is staged where the
+# shared cluster Secret lives rather than under secrets/.
+_TEST_SECRET_FILES = {
+    "alloy-otlp-bearer-token.yaml": "secrets/alloy-otlp-bearer-token.yaml",
+    "github-pat-agentydragon-agent.yaml": "secrets/github-pat-agentydragon-agent.yaml",
+    "github-ci-read-pat.yaml": "secrets/github-ci-read-pat.yaml",
+    "claude-web-k8s-jwt.yaml": "secrets/claude-web-k8s-jwt.yaml",
+    "buildbuddy-api-key.sops.yaml": "cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml",
+}
 
 _CONTAINER_NAME = "ducktape-container-e2e"
 _SESSION_ID = "container-e2e-test"
@@ -92,10 +95,10 @@ def staged_project(tmp_path: Path) -> Path:
 
     shutil.copy2(get_required_path(_TEST_PROFILE), project / "profile.yaml")
     secrets_fixtures = get_required_path(_SECRETS_DIR_MARKER).parent
-    project_secrets = project / "secrets"
-    project_secrets.mkdir()
-    for name in _TEST_SECRET_FILES:
-        shutil.copy2(secrets_fixtures / name, project_secrets / name)
+    for name, dest in _TEST_SECRET_FILES.items():
+        target = project / dest
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(secrets_fixtures / name, target)
 
     (project / ".git").mkdir()
     return project

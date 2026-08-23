@@ -1,10 +1,14 @@
 # BuildBuddy remote cache/execution credentials.
-# Decrypts the API key from SOPS using ~/.ssh/id_ed25519 and renders
-# ~/.config/bazel/buildbuddy.bazelrc via sops-nix templates.
+# Exports the API key and renders ~/.config/bazel/buildbuddy.bazelrc from it.
 { config, ... }:
 {
-  sops.secrets.buildbuddy_api_key = {
-    sopsFile = ../../../secrets/buildbuddy.yaml;
+  # The shared cluster Secret is the only copy of this key; .sops.yaml grants
+  # this file the workstation and agent keys so it can be read here directly.
+  # Declaring it through sopsEnv also gives the template below its placeholder.
+  ducktape.sopsEnv.BUILDBUDDY_API_KEY = {
+    sopsFile = ../../../cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml;
+    key = "stringData/api-key";
+    name = "buildbuddy_api_key";
   };
 
   sops.templates."buildbuddy.bazelrc" = {
@@ -14,11 +18,5 @@
       common:rbe --remote_header=x-buildbuddy-api-key=${config.sops.placeholder.buildbuddy_api_key}
     '';
     mode = "0600";
-  };
-
-  # TODO: consider moving to repo-local .envrc with sops caching
-  ducktape.sopsEnv.BUILDBUDDY_API_KEY = {
-    sopsFile = ../../../secrets/buildbuddy.yaml;
-    key = "buildbuddy_api_key";
   };
 }

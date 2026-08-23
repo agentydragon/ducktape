@@ -85,6 +85,30 @@ creation_rules:
           - *cluster-secrets
           - *claude-web
 
+  # BuildBuddy API key — the widest-audience shared credential here. Flux
+  # applies the Secret and reflects it to the agent namespaces; the in-cluster
+  # tofu-controller reads it from claude-sandbox to set the ducktape
+  # BUILDBUDDY_API_KEY GitHub Actions secret (tf/gitops/github-secrets-sync);
+  # and every workstation and agent identity that runs bbr decrypts this file
+  # directly. Recipients are the union of the two rules this replaced, so no
+  # reader lost access when the duplicate under secrets/ was removed. More
+  # specific than the generic cluster/k8s/* rule below, so this match wins.
+  - path_regex: cluster/k8s/agents/shared-secrets/buildbuddy-api-key\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+          - *gecko-agentydragon
+          - *claude-web
+          - *codex-cloud-agent
+          - *agent-box-codex-user
+          - *haku
+
   # Brave Search API key — Flux applies the Secret and the agent egress proxies
   # consume it in-cluster (cluster-secrets), AND workstations read it directly
   # as $BRAVE_API_KEY via ducktape.sopsEnv (user keys), so the subscription is
@@ -811,20 +835,6 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
-  # Shared dev secrets (all users + claude-web agent + codex agent)
-  - path_regex: secrets/buildbuddy\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *wyrm2-agentydragon
-          - *rugged-agentydragon
-          - *atlas-agentydragon
-          - *iguana-agentydragon
-          - *gecko-agentydragon
-          - *claude-web
-          - *codex-cloud-agent
-          - *agent-box-codex-user
-          - *haku
   # Hetzner Robot webservice credentials (admin + all user keys)
   - path_regex: secrets/hetzner-robot\.sops\.yaml$
     encrypted_regex: ^password$

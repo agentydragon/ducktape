@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: buildbuddy-api-key
+    namespace: claude-sandbox
+type: Opaque
+stringData:
+    api-key: ENC[AES256_GCM,data:y7rXovhKd6AG5TXocunRrQ==,iv:JDi2peLyQwGrjDE8qe2NmafRzJMHf+uaSdxVY8hvpiI=,tag:4BptBceGYiM8VcpGsM8jVg==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAxcmpXVlhmTmRtU1d3dlRT
+            Ukw5WVo3MjZVNzl4NURMVHZJQWxMTU1IYmpBCnJ2cjlmN0RHVFQva1VRVGpKaDJx
+            ajNnY3hGcVJQVmh6SDFCS3RKdlFKd0kKLS0tIDd3VzNHSEFhSHFGQWRWeVhlbTd0
+            QmVBeVRGbFovc25ZZWxGV2hVQ2dkZUUKHoBuyAaBFzB9TY0rpEl8UyqNNbHSinWF
+            B0d1c0SaaGDw4Cpxa2Tbcsiu5J3m59TeDGOnxoZWAnTJpebac0lPdw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age102xf0yxnha25gye8rtuxvx64y39sxhgxvg0msx5n32ujg503tumsmhd4zf
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-08-23T22:51:36Z"
+    mac: ENC[AES256_GCM,data:fpCX9jRwePv61w+BK3jUgu5iDCej8pOcneaO9kenVkqm09tM+QHYm5Tfk4Gknbd2HktxBnPG0j6bpzusLco3gJpStveZi3fyIiZqYEd+yXV3D895AuXzlhlLvmWQfULAITxy8TyO3XMojVv+dz4KXEjH8EFJSGoeTMX/4Vh8dYw=,iv:/9GwuKJ0AZQGtO0CcY13DdeM2U0JpNhi5OluRKk4cXA=,tag:zqqZWT39UiIEyTzwf9GJxw==,type:str]
+    version: 3.13.3

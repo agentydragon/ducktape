@@ -9,7 +9,7 @@ filegroup(
     testonly = True,
     srcs = [
         "alloy-otlp-bearer-token.yaml",
-        "buildbuddy.yaml",
+        "buildbuddy-api-key.sops.yaml",
         "claude-web-k8s-jwt.yaml",
         "github-ci-read-pat.yaml",
         "github-pat-agentydragon-agent.yaml",

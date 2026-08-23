@@ -6,22 +6,26 @@ lives next to the test as `test_profile.yaml`.
 
 ## What's Here
 
-| File                                 | Purpose                                                                                                                                 |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `test_age.key`                       | Test-only age keypair. **Not a real secret.** Only decrypts the fake files in this directory.                                           |
-| `buildbuddy.yaml`                    | Encrypted `buildbuddy_api_key: test-fake-bb-key` — mounted at `/project/secrets/buildbuddy.yaml` in the test container.                 |
-| `github-pat-agentydragon-agent.yaml` | Encrypted `github_token: test-fake-gh-agent-token` — mounted at `/project/secrets/github-pat-agentydragon-agent.yaml`.                  |
-| `github-ci-read-pat.yaml`            | Encrypted `github_token: test-fake-ci-read-token` — mounted at `/project/secrets/github-ci-read-pat.yaml`.                              |
-| `claude-web-k8s-jwt.yaml`            | Encrypted `jwt: test-fake-k8s-jwt` — mounted at `/project/secrets/claude-web-k8s-jwt.yaml`, consumed by the daemon's kubeconfig writer. |
-| `alloy-otlp-bearer-token.yaml`       | Encrypted `token: test-fake-otel-jwt` — mounted at `/project/secrets/alloy-otlp-bearer-token.yaml`, consumed by `web_env.sh`.           |
+| File                                 | Purpose                                                                                                                                                |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `test_age.key`                       | Test-only age keypair. **Not a real secret.** Only decrypts the fake files in this directory.                                                          |
+| `buildbuddy-api-key.sops.yaml`       | Encrypted `stringData.api-key: test-fake-bb-key` — a k8s Secret, mounted at `/project/cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml`. |
+| `github-pat-agentydragon-agent.yaml` | Encrypted `github_token: test-fake-gh-agent-token` — mounted at `/project/secrets/github-pat-agentydragon-agent.yaml`.                                 |
+| `github-ci-read-pat.yaml`            | Encrypted `github_token: test-fake-ci-read-token` — mounted at `/project/secrets/github-ci-read-pat.yaml`.                                             |
+| `claude-web-k8s-jwt.yaml`            | Encrypted `jwt: test-fake-k8s-jwt` — mounted at `/project/secrets/claude-web-k8s-jwt.yaml`, consumed by the daemon's kubeconfig writer.                |
+| `alloy-otlp-bearer-token.yaml`       | Encrypted `token: test-fake-otel-jwt` — mounted at `/project/secrets/alloy-otlp-bearer-token.yaml`, consumed by `web_env.sh`.                          |
 
 ## Why Fake Encrypted Files?
 
 The container E2E test exercises the **real** `devinfra/secrets/web_env.sh`
-and the **real** kubeconfig writer against the **real** SOPS file paths
-(`secrets/*.yaml`) — just with fake values encrypted by a test-only age
-key. This catches regressions in the secret flow (env script + daemon
-kubeconfig path) that a hand-rolled mock would miss.
+and the **real** kubeconfig writer against the **real** SOPS file paths —
+just with fake values encrypted by a test-only age key. This catches
+regressions in the secret flow (env script + daemon kubeconfig path) that a
+hand-rolled mock would miss.
+
+The paths are not all under `secrets/`. The BuildBuddy key is read from the
+shared cluster Secret, so its fixture is staged at that path and carries a k8s
+Secret's shape — including the nested `stringData` lookup.
 
 ## Regenerating
 
@@ -31,11 +35,25 @@ age-keygen -o test_age.key
 
 # 2. Re-encrypt fixtures (each file is independent; key is in test_age.key)
 TEST_AGE_PUB=$(grep 'public key' test_age.key | awk '{print $NF}')
-for f in alloy-otlp-bearer-token.yaml buildbuddy.yaml \
-         github-pat-agentydragon-agent.yaml github-ci-read-pat.yaml \
-         claude-web-k8s-jwt.yaml; do
+for f in alloy-otlp-bearer-token.yaml github-pat-agentydragon-agent.yaml \
+         github-ci-read-pat.yaml claude-web-k8s-jwt.yaml; do
   # Edit the plaintext content inline, then re-encrypt with only the test key.
   # SOPS --age flag avoids inheriting the repo's .sops.yaml creation rules.
   sops encrypt --age "$TEST_AGE_PUB" <(echo "<plaintext YAML>") > "$f"
 done
+```
+
+`buildbuddy-api-key.sops.yaml` is a k8s Secret, so it also needs
+`encrypted_regex` — which `--age` alone cannot set. Point SOPS at a standalone
+config instead, so the repo's creation rules are not inherited:
+
+```bash
+cat > /tmp/fixture-sops.yaml <<CFG
+creation_rules:
+  - path_regex: .*
+    encrypted_regex: ^(data|stringData)$
+    age: ${TEST_AGE_PUB}
+CFG
+# write the plaintext Secret to buildbuddy-api-key.sops.yaml first, then:
+SOPS_CONFIG=/tmp/fixture-sops.yaml sops -e -i buildbuddy-api-key.sops.yaml
 ```

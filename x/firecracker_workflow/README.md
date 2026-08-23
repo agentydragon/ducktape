@@ -192,8 +192,8 @@ re-uses the in-memory analysis cache with zero analysis work.
 fresh Firecracker VM (~4-5s uptime). Useful for one-off commands from Claude Code web.
 
 ```bash
-export BUILDBUDDY_API_KEY=$(sops -d --extract '["buildbuddy_api_key"]' \
-  secrets/buildbuddy.yaml)
+export BUILDBUDDY_API_KEY=$(sops -d --extract '["stringData"]["api-key"]' \
+  cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml)
 
 bb execute \
   -remote_header="x-buildbuddy-api-key=$BUILDBUDDY_API_KEY" \
@@ -245,8 +245,8 @@ fc_exec bash -c '
 echo $BUILDBUDDY_API_KEY
 
 # Option B: decrypt from SOPS secret
-export BUILDBUDDY_API_KEY=$(sops -d --extract '["buildbuddy_api_key"]' \
-  secrets/buildbuddy.yaml)
+export BUILDBUDDY_API_KEY=$(sops -d --extract '["stringData"]["api-key"]' \
+  cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml)
 ```
 
 ---
