@@ -24,6 +24,8 @@ Five structurally different ways to buy AI capacity. The category predicts the f
 | **Agent & IDE products**       | Cursor, Windsurf (Devin Desktop), Copilot, Zed Pro, DevPass, Cline Pass, OpenCode Go | Monthly request pools                      |
 | **Aggregators**                | Perplexity, Poe, Kagi                                                                | Chat-shaped; not agent-shaped              |
 
+**Jurisdiction splits the table before price does.** Every vendor in the second row is PRC-hosted. Where the work is already public that is a non-issue and they are simply the cheapest capacity available; where it is not, the row is unavailable at any price and the comparison reduces to the frontier labs and the US inference hosts. Decide that first — it changes which half of this document applies.
+
 Only the inference hosts sell anything other than a windowed quota, and they serve open weights only. That is the structural reason a fleet has no good subscription answer: the vendors with frontier models all meter in windows, and the vendors that do not have no frontier models.
 
 ### Concurrency pricing — a fourth meter, and why it does not help here
@@ -277,6 +279,8 @@ Z.ai supports the pattern natively, on one key, with two independent meters — 
 
 Burn the subsidized quota first; on exhaustion, spill to per-token at $1.40/$4.40. The 5h wall stops being a wall the moment there is somewhere to go, and the blended cost stays near the plan's rate for as long as the plan lasts each window.
 
+**Why not Google, given it has frontier models and no jurisdiction problem.** Because it fails the binding constraint harder than anyone. [AI Ultra](https://gemini.google/subscriptions/) ($99.99 for 5x Pro, $199.99 for 20x) caps Gemini CLI at **2,000 requests/day and 120 RPM** — at 10-20 RPM per agent a ten-agent fleet exceeds the rate limit outright and burns the daily allowance inside an hour, and Google's own docs note agent mode turns one prompt into several requests while Code Assist and the CLI share the pool. [Issue #12859](https://github.com/google-gemini/gemini-cli/issues/12859) has been open since the quota was raised and still reports single developers exhausting Ultra in 2-3 hours. Google also retired the free CLI login path on 2026-06-18, routing consumer terminal use through Antigravity. Gemini is worth buying **as API** — Gemini 3.7 Flash is index 56 at $0.40/task, the cheapest non-PRC point on the frontier — but the subscription is the wrong instrument for a fleet. Ultra's bundled $100/mo of Google Cloud credit is the one unexplored angle, if it turns out to buy Vertex inference outside the CLI quota.
+
 ### Where to buy more, ranked
 
 1. **Z.ai GLM Max ($168) plus a pay-as-you-go balance on the same key, with failover.** This is the cheapest delivered token available at index-60 quality, and the failover is what makes the plan usable at fleet scale. The subsidy does the volume; the per-token spill absorbs the burst that used to stop everything. GLM-5.3 at index 60 is also two generations past the model that disappointed.
@@ -324,7 +328,7 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 - **Per-agent request and burn rates here are estimates.** The 10-20 RPM per agent behind the Cerebras arithmetic is a planning number, not a measurement, and it swings with task shape, context size, and endpoint speed. Measure a real fleet-hour before sizing a plan on it.
 - **Benchmarks proxy for the loop, badly.** Index scores say little about tool-call reliability, long-context coherence, or structured-output discipline — the properties that actually decide whether an agent run completes. GLM-4.7 is a case in point: index 34 overall, but Cerebras cites it as #1 on the Berkeley Function Calling Leaderboard, and tool-call reliability is what governs whether a fleet run finishes.
 - **Quotas drift fast.** Z.ai re-tiered twice in 2026; OpenAI added a $100 Pro tier in April; Gemini CLI quotas change without notice. Re-check before committing.
-- **Geopolitical / data-handling risk for Z.ai, DeepSeek, Moonshot, Alibaba, MiniMax.** All PRC-jurisdiction. Z.ai has been US Entity-Listed since Jan 2025. APIs carry no-train/no-store clauses but no anti-government-request carveout. Don't route proprietary code through any of them.
+- **Jurisdiction is a per-workload boundary, not a vendor verdict.** Z.ai, DeepSeek, Moonshot, Alibaba and MiniMax are all PRC-jurisdiction; Z.ai has been US Entity-Listed since Jan 2025, and their APIs carry no-train/no-store clauses but no anti-government-request carveout. That disqualifies them for anything confidential and is irrelevant for anything already public — so the question is which repo the work is in, not which vendor is cheapest. Route by workload: public repositories to the cheap tier, private code and anything touching credentials to the first-party subscriptions. A blanket reading of this caveat silently removes the entire cheap tier from consideration, which is the wrong answer for a workload that is mostly open source.
 - **Peak-hour multipliers are easy to miss** in both directions: Z.ai's 3× peak on GLM-5.3 (14:00–18:00 SGT) and DeepSeek's 2× peak (01:00–04:00, 06:00–10:00 UTC) can double or triple an expected bill.
 
 ## Sources
