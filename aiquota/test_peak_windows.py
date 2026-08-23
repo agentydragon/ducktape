@@ -11,7 +11,13 @@ _WEEKDAYS = frozenset(range(5))
 
 
 def _schedule(*periods: PeakPeriod, tz: ZoneInfo = _SGT, multiplier: float = 3.0) -> BurnSchedule:
-    return BurnSchedule(multiplier=multiplier, tz=tz, periods=periods, applies_to="test models")
+    return BurnSchedule(
+        multiplier=multiplier,
+        tz=tz,
+        periods=periods,
+        applies_to="test models",
+        source="https://example.invalid/test-schedule",
+    )
 
 
 _AFTERNOON = PeakPeriod(weekdays=_WEEKDAYS, start=time(14, 0), end=time(18, 0))
