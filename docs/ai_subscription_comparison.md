@@ -46,6 +46,11 @@ Models are scored per reasoning-effort setting, so one model appears several tim
 | GLM-5.2 (max)                  | Z.ai      |    53 |     $0.44 |     121 |
 | **DeepSeek V4-Pro 0813 (max)** | DeepSeek  |    53 | **$0.25** | **212** |
 | Gemini 3.7 Flash (medium)      | Google    |    53 |     $0.26 |     204 |
+| **GLM-4.7 (reasoning)**        | Z.ai      |    34 |         — |       — |
+| Gemma 4 31B (reasoning)        | Google    |    30 |         — |       — |
+| gpt-oss-120b (high)            | OpenAI    |    24 |         — |       — |
+
+The last three are what Cerebras actually serves (see below). They are included to show the gap, not because they compete: **GLM-4.7 at index 34 is roughly half Opus 5 and 26 points under GLM-5.3.**
 
 **Read Index/$ with care.** Index points are not linear in usefulness: a model that scores 53 and fails your task costs a full retry, so the ratio systematically flatters cheap models. The frontier view is the honest one — the question is not "best ratio" but "cheapest model that clears my quality bar". Two entries matter for that:
 
@@ -96,14 +101,26 @@ Per-minute limits, not just per-window quotas, decide whether a fleet runs. [Cer
 
 Both are numbers to size against rather than verdicts — request cadence varies enormously with task shape, and a fleet-hour of real measurement beats this arithmetic.
 
-### Cerebras serves GLM-4.7 only — with an upgrade path
+### What Cerebras actually serves
 
-[Cerebras Code](https://www.cerebras.ai/code) lists GLM-4.7 across all three tiers (Free, Pro, Max). There is no GLM-5.2 or GLM-5.3 option at any price, so the whole plan family sits two releases behind Z.ai's own menu.
+Three separate surfaces, and only one of them is a coding plan:
 
-Two things soften that:
+| Surface                        | Models                           |            AA index |
+| ------------------------------ | -------------------------------- | ------------------: |
+| Cerebras Code ($50 / $200)     | GLM-4.7 only, all tiers          |                  34 |
+| Public pay-as-you-go endpoints | gpt-oss-120b                     |                  24 |
+|                                | Gemma 4 31B                      |                  30 |
+| Dedicated endpoints            | "many additional model families" | enterprise contract |
 
-- **Cerebras tracks open weights, and it has upgraded before** — GLM-4.6 first, then GLM-4.7 in June 2026. GLM-5.3's weights are due roughly two weeks after its 2026-08-14 launch, so a 5.3 migration is plausible rather than speculative. Worth re-checking the model list before renewing, and a reason to prefer monthly over annual billing here.
-- **GLM-4.7's weakness is not tool calling.** Cerebras cites it as #1 on the Berkeley Function Calling Leaderboard — a vendor claim, but the relevant axis for a fleet, where tool-call reliability governs whether a run completes more than raw index score does. A model two generations back on general intelligence can still be the right one for bulk agent work.
+That is the whole self-serve menu. There is no GLM-5.2, GLM-5.3, Kimi, Qwen, or DeepSeek option at any price short of a reserved-capacity contract.
+
+**This is the same quality tier that already disappointed.** GLM-4.7's index 34 sits in the neighbourhood of the GLM generation that prompted this whole review — so buying Cerebras to escape the 5h lockout means accepting roughly the quality that was rejected on its own terms. The quota shape is genuinely better; the model is not better, and the earlier framing of "two generations behind" understated a 26-point gap.
+
+It also runs into the feedback loop noted above: a weaker model bills for its retries, so 120M tokens/day of index-34 output completes fewer tasks than the headline number implies. The tokens-per-dollar advantage shrinks by however much rework the model causes.
+
+**Where it still earns a place:** mechanical bulk with a cheap correctness check — codemods, test scaffolding, log triage, bulk summarisation — where index 34 is sufficient and 1000 tok/s with no rolling window is the point. Not for work where a wrong answer is expensive to detect.
+
+**Upgrade path, worth tracking.** Cerebras serves open weights and has migrated before (GLM-4.6, then 4.7 in June 2026). GLM-5.3's weights are due roughly two weeks after its 2026-08-14 launch. A 5.3 migration would move Cerebras from index 34 to 60 and change this verdict entirely — so prefer monthly billing and re-check the model list before renewing.
 
 **Z.ai still moved the wrong way on shape.** The [2026-07-30 plan revision](https://docs.z.ai/devpack/notice/usage-revision) switched GLM Coding Plans from prompt counts to credits, kept the 5-hour rolling window, and added a peak-hour multiplier: GLM-5.3 and GLM-5-Turbo bill at **3x during 14:00-18:00 SGT weekdays**, 1x off-peak. A 3x drain rate against the window that was already the problem.
 
@@ -134,7 +151,7 @@ Restated as raw capacity, which is what a weekly ceiling actually rations:
 | Z.ai GLM Pro      |   80 |            ~600M-1.2B |      ~8M-15M |
 | Claude Max 20x    |  200 |                 ~110M |        ~0.6M |
 
-Z.ai rows convert its published 15-30x multiple at GLM-5.3 blended $2.00/M. The Claude row back-solves from a four-figure API bill displaced at Opus 5 blended ~$9/M, so it is an estimate with wide error bars. The spread is still roughly **30x between the cheapest and most expensive token pools** — and they are not interchangeable tokens.
+Cerebras's multiple buys index-34 tokens while Z.ai's buys index-60 ones, so these rows are not comparable at face value. Z.ai rows convert its published 15-30x multiple at GLM-5.3 blended $2.00/M. The Claude row back-solves from a four-figure API bill displaced at Opus 5 blended ~$9/M, so it is an estimate with wide error bars. The spread is still roughly **30x between the cheapest and most expensive token pools** — and they are not interchangeable tokens.
 
 **The frontier vendors subsidize least.** Serving Opus 5 and GPT-5.6 costs more, and the plans price accordingly. A marginal capacity dollar buys roughly 5-10x more tokens at Cerebras or Z.ai than at Anthropic or OpenAI — at correspondingly lower model quality. That trade is the only real decision here.
 
@@ -153,8 +170,10 @@ Z.ai rows convert its published 15-30x multiple at GLM-5.3 blended $2.00/M. The 
 | Grok 4.6             | $2.00                | $6.00                  | $4.00/$12.00 once prompt ≥200K; cached $0.50 |
 | Qwen3.8-Max          | $2.00                | $6.00                  | flat, since 2026-08-03                       |
 | GLM-5.3              | $1.40                | $4.40                  | same rate as GLM-5.2                         |
+| Gemma 4 31B          | $0.99                | $1.49                  | via Cerebras on OpenRouter; 262K context     |
 | Gemini 3.7 Flash     | $0.75                | $3.75                  | promo; doubles 2027-01-01                    |
 | DeepSeek V4-Pro 0813 | $0.66                | $1.98                  | off-peak; $1.32/$3.96 peak²                  |
+| gpt-oss-120b         | $0.35                | $0.75                  | via Cerebras on OpenRouter; 131K context     |
 | MiniMax M2.7         | $0.30                | $1.20                  | 205K context                                 |
 
 ¹ Sonnet 5 introductory rate runs through 2026-08-31.
@@ -166,8 +185,8 @@ Throughput figures are order-of-magnitude. Treat them as ±2× ranges.
 
 | Plan                    |   $/mo | Quota shape                         | Burst | Models                            | Notes                                       |
 | ----------------------- | -----: | ----------------------------------- | ----- | --------------------------------- | ------------------------------------------- |
-| **Cerebras Code Pro**   |     50 | 24M tok/**day**, 1M TPM, 50 RPM     | ●●○   | GLM-4.7 only                      | Daily reset; 50 RPM is the fleet constraint |
-| **Cerebras Code Max**   |    200 | 120M tok/**day**, 1.5M TPM, 120 RPM | ●●○   | GLM-4.7 only                      | No 5h or weekly window at all               |
+| **Cerebras Code Pro**   |     50 | 24M tok/**day**, 1M TPM, 50 RPM     | ●●○   | GLM-4.7 only (index 34)           | Daily reset; 50 RPM is the fleet constraint |
+| **Cerebras Code Max**   |    200 | 120M tok/**day**, 1.5M TPM, 120 RPM | ●●○   | GLM-4.7 only (index 34)           | Best shape here; weakest model here         |
 | **Z.ai GLM Lite**       |     18 | 10k credits/wk + 5h window          | ○○○   | GLM-5.3 / 5.2 / 5.1 / 4.7         | 3× peak multiplier on 5.3                   |
 | **Z.ai GLM Pro**        |     80 | 60k credits/wk + 5h window          | ○○○   | same                              | Best raw throughput/$; worst failure mode   |
 | **Z.ai GLM Max**        |    168 | 140k credits/wk + 5h window         | ○○○   | same                              | Top tier; 5h wall still hit by a fleet      |
@@ -199,9 +218,9 @@ So the target is a big pool whose _failure mode_ is a 429 or a predictable daily
 
 ### Where to buy more, ranked
 
-1. **Pay-per-token API as the fleet's primary capacity.** No window of any kind is the only structure that scales with agent count — API rate limits exist but are 429-with-retry and rise with spend tier, never a multi-hour lockout. DeepSeek V4-Pro at ~$0.92/M blended off-peak is roughly a tenth of Anthropic list; GLM-5.3 at $1.40/$4.40 buys index-60 quality with no Coding Plan window attached. Unsubsidized and linear, which is the trade: it converts "everything stops for 3.7 hours" into a bounded, predictable dollar cost. Set a monthly cap and treat that cap as the real budget decision.
+1. **Pay-per-token API as the fleet's primary capacity.** No window of any kind is the only structure that scales with agent count — API rate limits exist but are 429-with-retry and rise with spend tier, never a multi-hour lockout. DeepSeek V4-Pro at ~$0.92/M blended off-peak is roughly a tenth of Anthropic list; GLM-5.3 at $1.40/$4.40 buys index-60 quality with no Coding Plan window attached. Unsubsidized and linear, which is the trade: it converts "everything stops for 3.7 hours" into a bounded, predictable dollar cost. Set a monthly cap and treat that cap as the real budget decision. **This is now the answer rather than one option among several**, because it is the only route to index-60 quality without a rolling window.
 
-2. **Cerebras Code Max ($200) — the best-shaped subscription, with real caveats.** **No 5h or weekly window exists**: only a daily token cap and per-minute ceilings, so the failure mode is a 429 that clears within the minute. 120M tokens/day, 1.5M TPM, 120 RPM. Against a 10-agent fleet the 120 RPM is the number to watch — Cerebras's speed makes agents cycle faster, so requests-per-minute climbs — and 120M/day is reachable in a long day, so it raises the floor rather than removing the ceiling. **Pro ($50) is the cheaper experiment** if 50 RPM and 24M/day clear a measured fleet-hour; Max buys 2.4x the RPM and 5x the daily tokens. Caveats: independent testing has found real throughput well under the marketing figure, and the model menu is GLM-4.7 only (see above). Worth one month against real load before renewing.
+2. **Cerebras Code — right shape, wrong model tier.** It is the only subscription here with **no 5h or weekly window at all**: a daily token cap plus per-minute ceilings, failing as a 429 that clears within the minute. Max ($200) gives 120M tokens/day, 1.5M TPM, 120 RPM; Pro ($50) gives 24M/day and 50 RPM, which a 10-agent fleet will exceed. But it serves GLM-4.7 at index 34 and nothing better, which is approximately the quality already rejected — so this buys a better failure mode at a worse model, not a better deal overall. **Take it only for mechanical bulk** (codemods, scaffolding, log triage) where index 34 suffices and 1000 tok/s is the draw. Re-evaluate if Cerebras picks up GLM-5.3 once its weights land; that single change would move it to index 60 and make it the clear first choice.
 
 3. **Anthropic Batch API for anything that can run async.** 50% off list — Opus 5 at $2.50/$12.50 — and it draws from neither the 5h nor the weekly window. Frontier quality, off the quota that currently binds. Overnight and unattended work is exactly its shape, and shifting that class of work off the weekly cap is worth more than its dollar cost suggests.
 
@@ -238,7 +257,7 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 - **AA cost-per-task is API pricing.** It does not model subscription quotas, and a plan's effective rate can beat or trail it by several times depending on saturation.
 - **Token-pool figures assume saturation.** No one sustains 24M tokens/day every day; the tokens-per-dollar column is a ceiling, not an expectation, and the realized multiple depends entirely on how much load actually moves to the new plan.
 - **Per-agent request and burn rates here are estimates.** The 10-20 RPM per agent behind the Cerebras arithmetic is a planning number, not a measurement, and it swings with task shape, context size, and endpoint speed. Measure a real fleet-hour before sizing a plan on it.
-- **Benchmarks proxy for the loop, badly.** Index scores say little about tool-call reliability, long-context coherence, or structured-output discipline — the properties that actually decide whether an agent run completes.
+- **Benchmarks proxy for the loop, badly.** Index scores say little about tool-call reliability, long-context coherence, or structured-output discipline — the properties that actually decide whether an agent run completes. GLM-4.7 is a case in point: index 34 overall, but Cerebras cites it as #1 on the Berkeley Function Calling Leaderboard, and tool-call reliability is what governs whether a fleet run finishes.
 - **Quotas drift fast.** Z.ai re-tiered twice in 2026; OpenAI added a $100 Pro tier in April; Gemini CLI quotas change without notice. Re-check before committing.
 - **Geopolitical / data-handling risk for Z.ai, DeepSeek, Moonshot, Alibaba, MiniMax.** All PRC-jurisdiction. Z.ai has been US Entity-Listed since Jan 2025. APIs carry no-train/no-store clauses but no anti-government-request carveout. Don't route proprietary code through any of them.
 - **Peak-hour multipliers are easy to miss** in both directions: Z.ai's 3× peak on GLM-5.3 (14:00–18:00 SGT) and DeepSeek's 2× peak (01:00–04:00, 06:00–10:00 UTC) can double or triple an expected bill.
@@ -250,7 +269,8 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 - [Artificial Analysis](https://artificialanalysis.ai/) — Intelligence Index vs. Cost per Task chart with Pareto frontier
 - [AA Intelligence Index v4.1.1](https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index) — index composition
 - [AA model leaderboard](https://artificialanalysis.ai/leaderboards/models) — per-effort scores and cost per task
-- [AA Intelligence Index v4.1 — shift toward agentic workloads](https://artificialanalysis.ai/articles/artificial-analysis-intelligence-index-v4-1)
+- [AA GLM-4.7 vs gpt-oss-120b](https://artificialanalysis.ai/models/comparisons/glm-4-7-vs-gpt-oss-120b) — index 34 vs 24
+- [AA Gemma 4 31B vs gpt-oss-120b](https://artificialanalysis.ai/models/comparisons/gemma-4-31b-vs-gpt-oss-120b) — index 30 vs 24
 - [BenchLM AA leaderboard mirror](https://benchlm.ai/benchmarks/artificialanalysis)
 
 ### Quota structures and rate limits
@@ -261,7 +281,8 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 - [Claude usage limits timeline](https://explainx.ai/blog/claude-usage-limits-2026-timeline-explained)
 - [Cerebras Code](https://www.cerebras.ai/code) — plan tiers and model menu
 - [Cerebras Code FAQ](https://support.cerebras.net/articles/9996007307-cerebras-code-faq) — published RPM/RPS/TPM/day limits per plan
-- [Cerebras Inference rate limits](https://inference-docs.cerebras.ai/support/rate-limits)
+- [Cerebras model catalog](https://inference-docs.cerebras.ai/models/overview) — public-endpoint models
+- [Cerebras on OpenRouter](https://openrouter.ai/provider/cerebras) — served models and per-token pricing
 - [Down and out with Cerebras Code (InfoWorld)](https://www.infoworld.com/article/4055909/down-and-out-with-cerebras-code.html) — critical field report on throughput and 429s
 - [Coding plan comparison](https://codingplan.org/en), [AI deals roundup](https://tokenmonopoly.com/ai-deals)
 - [ChatGPT subscription tiers](https://www.aipricing.guru/chatgpt-subscription-pricing/)
