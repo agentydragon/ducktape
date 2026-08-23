@@ -95,10 +95,10 @@ def staged_project(tmp_path: Path) -> Path:
 
     shutil.copy2(get_required_path(_TEST_PROFILE), project / "profile.yaml")
     secrets_fixtures = get_required_path(_SECRETS_DIR_MARKER).parent
-    for name, dest in _TEST_SECRET_FILES.items():
-        target = project / dest
+    for fixture_name, rel_dest in _TEST_SECRET_FILES.items():
+        target = project / rel_dest
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(secrets_fixtures / name, target)
+        shutil.copy2(secrets_fixtures / fixture_name, target)
 
     (project / ".git").mkdir()
     return project
