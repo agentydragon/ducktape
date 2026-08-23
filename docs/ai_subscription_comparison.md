@@ -65,6 +65,8 @@ Cost per task is derived from input, cache-hit, cache-write, reasoning, and answ
 
 Models are scored per reasoning-effort setting, so one model appears several times.
 
+OpenAI's current generation is a size ladder — **Luna (small), Terra (medium), Sol (large)** — so GPT-5.6 rows are three different models, not three settings of one. Luna is the interesting end: index 52 at $0.20/$1.20 after an 80% price cut on 2026-07-30.
+
 ### Intelligence Index vs. cost per task (2026-08)
 
 `Index/$` is index points per dollar of task cost — the "cost per intelligence" ratio read the useful way round.
@@ -89,6 +91,7 @@ Models are scored per reasoning-effort setting, so one model appears several tim
 | GPT-5.6 Sol (medium)           | OpenAI    |    56 |     $0.37 |     151 |
 | Claude Sonnet 5 (max)          | Anthropic |    55 |     $1.72 |      32 |
 | GLM-5.2 (max)                  | Z.ai      |    53 |     $0.44 |     121 |
+| **GPT-5.6 Luna**               | OpenAI    |    52 |         — |       — |
 | **DeepSeek V4-Pro 0813 (max)** | DeepSeek  |    53 | **$0.25** | **212** |
 | Gemini 3.7 Flash (medium)      | Google    |    53 |     $0.26 |     204 |
 | **GLM-4.7 (reasoning)**        | Z.ai      |    34 |         — |       — |
@@ -172,6 +175,69 @@ It also runs into the feedback loop noted above: a weaker model bills for its re
 **Claude's escape valve has a price tag.** [Extra usage credits](https://support.claude.com/en/articles/11049741-what-is-the-max-plan) let Pro/Max keep working past the cap, drawn down automatically, capped at $2,000/day redemption. They bill at **standard API list rates** — no subscription discount whatsoever — so they solve the availability problem by abandoning the economics one. For a Max 20x workload, an overrun priced at Opus 5's $5/$25 reaches three figures in a session and four in a month, which is the bill the subscriptions were bought to replace. Useful as a capped emergency valve; ruinous as a capacity plan.
 
 Two pools are easy to confuse: interactive sessions draw subscription first, then extra usage; unattended Agent SDK work draws its own monthly pool that does not roll over.
+
+## Converting between API prices and subscriptions
+
+The two are only comparable through one number: **tokens consumed per month.** With it, API cost is arithmetic and a subscription's worth is the API price of the tokens it covers, divided by its fee. Without it, the comparison cannot be made at all — which is why most published analyses quietly compare models instead of plans.
+
+**Estimating it here.** A loadout of Claude Max 20x plus top-tier ChatGPT Pro, both regularly exhausted, displaced a four-figure monthly API bill. At Opus-5-class blended rates (~$9/M on an 80/20 input/output split) that puts consumption on the order of **100M tokens/month**, with wide error bars. Measure rather than trust it: a week billed through a capped API key converts everything exactly, and costs a few dollars at the rates below.
+
+### What 100M tokens/month costs at API rates
+
+Blended 80/20 input/output, no cache hits.
+
+| Model                | $/M in | $/M out | 100M tok/mo | AA index |
+| -------------------- | -----: | ------: | ----------: | -------: |
+| **GPT-5.6 Luna**     |  $0.20 |   $1.20 |     **$40** |       52 |
+| DeepSeek V4-Pro 0813 |  $0.66 |   $1.98 |         $92 |       53 |
+| Gemini 3.7 Flash     |  $0.75 |   $3.75 |        $135 |       56 |
+| GLM-5.3              |  $1.40 |   $4.40 |        $200 |       60 |
+| Grok 4.6             |  $2.00 |   $6.00 |        $280 |       61 |
+| Claude Sonnet 5      |  $3.00 |  $15.00 |        $540 |       55 |
+| Kimi K3              |  $3.00 |  $15.00 |        $540 |       60 |
+| Claude Opus 5        |  $5.00 |  $25.00 |        $900 |       63 |
+| GPT-5.6 Sol          |  $5.00 |  $30.00 |      $1,000 |       59 |
+
+**This is the finding that reframes the API question.** "API is ruinously expensive" is true at frontier rates and false a few index points down. The same volume that costs $900/mo on Opus 5 costs $40 on GPT-5.6 Luna — OpenAI cut Luna 80% on 2026-07-30 — and $135 on Gemini 3.7 Flash. A fear calibrated on Opus and GPT-5.6 Sol does not transfer to the models a bulk tier would actually use.
+
+Two things move these numbers materially. **Prompt caching** bills reads at roughly a tenth, and agent work re-sends large stable prefixes, so a well-cached loop can land far under the table. **Reasoning effort** moves spend several-fold on the models that expose it, in the same direction.
+
+## Subscriptions, side by side
+
+Every plan below is agent-usable; chat-only products are omitted. Blank cells are unpublished, which is itself a finding — a plan whose capacity cannot be stated cannot be compared, only tried.
+
+| Provider    | Plan                  |       $/mo | Models (AA index)                      | Quota                               | Concurrency             | Endpoint             | Juris. |
+| ----------- | --------------------- | ---------: | -------------------------------------- | ----------------------------------- | ----------------------- | -------------------- | ------ |
+| Anthropic   | Max 20x               |        200 | Opus 5 (63), Sonnet 5 (55)             | 5h + weekly, sizes unpublished      | —                       | native               | US     |
+| Anthropic   | Max 5x                |        100 | same                                   | same, 1/4 the size                  | —                       | native               | US     |
+| OpenAI      | ChatGPT Pro           |        200 | GPT-5.6 family (52-61), Codex          | 5h windows, 20x Plus                | —                       | native (Codex)       | US     |
+| OpenAI      | ChatGPT Pro           |        100 | same                                   | 5x Plus                             | —                       | native               | US     |
+| Google      | AI Ultra              |     199.99 | Gemini 3.1 Pro, Deep Think             | **2,000 req/day, 120 RPM**          | —                       | CLI / Antigravity    | US     |
+| Google      | AI Ultra (5x)         |      99.99 | same                                   | lower                               | —                       | same                 | US     |
+| xAI         | SuperGrok Heavy       |        300 | Grok 4.5, Grok 4 Heavy                 | "maximum", unpublished              | —                       | —                    | US     |
+| xAI         | Grok Build SuperHeavy | 99 (intro) | Grok Build                             | unpublished                         | **8 sub-agents**        | —                    | US     |
+| Cerebras    | Code Max              |        200 | GLM-4.7 (34)                           | **120M tok/day**, 1.5M TPM, 120 RPM | —                       | OpenAI-compatible    | US     |
+| Cerebras    | Code Pro              |         50 | GLM-4.7 (34)                           | 24M tok/day, 1M TPM, 50 RPM         | —                       | same                 | US     |
+| Z.ai        | GLM Max               |        168 | GLM-5.3 (60), 5.2, 5.1, 4.7            | 140k credits/wk + 5h, 3x peak       | —                       | Anthropic-compatible | PRC    |
+| Z.ai        | GLM Pro               |         80 | same                                   | 60k credits/wk + 5h                 | —                       | same                 | PRC    |
+| Z.ai        | GLM Lite              |         18 | same                                   | 10k credits/wk + 5h                 | —                       | same                 | PRC    |
+| Alibaba     | Qwen Pro              |        ~68 | Qwen3.8-Max (58), DeepSeek-V4-Pro, GLM | 12k credits/5h, 40k/7d              | **6-8 agents**          | Claude Code          | PRC    |
+| Alibaba     | Qwen Standard         |        ~18 | same                                   | 3k credits/5h, 10k/7d               | **3-4 agents**          | same                 | PRC    |
+| Moonshot    | Kimi Vivace           |        199 | Kimi K3 (60)                           | ~1,200 calls/5h (30x base)          | —                       | Anthropic-compatible | PRC    |
+| Moonshot    | Kimi Allegro          |         99 | same                                   | 15x base                            | —                       | same                 | PRC    |
+| Moonshot    | Kimi Allegretto       |         39 | same                                   | 5x base                             | —                       | same                 | PRC    |
+| Moonshot    | Kimi Moderato         |         19 | same                                   | ~300 calls/5h (1x)                  | —                       | same                 | PRC    |
+| MiniMax     | Max                   |         50 | M3, M2.7 (~50)                         | 1,000 prompts/5h                    | —                       | —                    | PRC    |
+| Synthetic   | Pack                  |         30 | Kimi K3 (60), GLM-5.2 (53), Qwen3.8    | 500 req/5h + weekly                 | 1/model/pack            | Anthropic + OpenAI   | US     |
+| Featherless | Scale                 |        75+ | 30k+ open weights                      | unlimited tokens                    | 8 units (2 large-model) | OpenAI-compatible    | US     |
+| Cursor      | Ultra                 |        200 | multi-frontier routing                 | 10k requests/month                  | 8 agents                | Cursor-bound         | US     |
+| GitHub      | Copilot Pro+          |         39 | multi-frontier routing                 | 1.5k premium req/month              | —                       | Copilot-bound        | US     |
+
+Three readings the table supports and the earlier framing did not:
+
+- **Only three plans publish anything fleet-shaped.** Qwen states concurrent-agent counts outright (6-8 on Pro), Grok Build SuperHeavy claims 8 sub-agents, Cerebras publishes RPM/TPM/day. Everyone else states windows sized for one operator, or nothing.
+- **Qwen Pro is the closest published match to a 5-10 agent workload** at roughly $68, and it routes Qwen3.8-Max, DeepSeek-V4-Pro _and_ GLM behind one plan — vendor diversity inside a single subscription. It went unexamined for eight rounds because the analysis was Z.ai-shaped.
+- **Z.ai is unremarkable on this table.** Comparable price, comparable models, no published concurrency, and the only plan that charges a 3x peak multiplier. Its distinguishing feature was an Anthropic-compatible endpoint, which Kimi and Synthetic also have.
 
 ## What a subscription is actually worth
 
