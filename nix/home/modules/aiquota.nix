@@ -39,8 +39,8 @@ in
       key = "stringData/bearer-token";
     };
 
-    sops.templates."aiquota-remote.toml" = lib.mkIf cfg.remoteApi.enable {
-      path = "${config.xdg.configHome}/aiquota/remote.toml";
+    sops.templates."aiquota-config.toml" = lib.mkIf cfg.remoteApi.enable {
+      path = "${config.xdg.configHome}/aiquota/config.toml";
       mode = "0600";
       content = ''
         [remote_api]

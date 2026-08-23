@@ -32,13 +32,11 @@ OAuth refresh responses, cookies, or credentials.
 
 ## Local clients
 
-The CLI and GNOME extension can use the same API through the managed
-`~/.config/aiquota/remote.toml` companion file. Home Manager materializes that
-file with the bearer token and configures it for `https://aiquota.allegedly.works`;
-the token is not kept in the normal provider config or in the source tree.
-Local clients require either that companion file or
-`~/.config/aiquota/config.toml`; without either file they fail instead of
-enabling the local provider defaults.
+The CLI and GNOME extension can use the same API through
+`~/.config/aiquota/config.toml`. Home Manager materializes that file with the
+bearer token and configures it for `https://aiquota.allegedly.works`; the token
+is not kept in the source tree. Local clients require this configuration file;
+without it they fail instead of enabling the local provider defaults.
 
 Remote results use the normal local `~/.cache/aiquota/quotas.json` cache. A fresh
 cache avoids a network request, and an unavailable API falls back to the last

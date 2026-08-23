@@ -55,24 +55,4 @@ class Config(BaseModel):
 
 
 def load(path: Path) -> Config:
-    config_error: FileNotFoundError | None = None
-    try:
-        raw = tomllib.loads(path.read_text())
-    except FileNotFoundError as error:
-        config_error = error
-        raw = {}
-
-    # Home Manager can own this small companion file without overwriting a
-    # user's provider configuration in config.toml. Its remote_api section is
-    # deliberately authoritative whenever present, so enabling the managed
-    # client cannot accidentally fall back to local provider credentials.
-    remote_path = path.with_name("remote.toml")
-    try:
-        remote_raw = tomllib.loads(remote_path.read_text())
-    except FileNotFoundError:
-        if config_error is not None:
-            raise config_error
-        remote_raw = {}
-    if isinstance(remote_raw.get("remote_api"), dict):
-        raw["remote_api"] = remote_raw["remote_api"]
-    return Config.model_validate(raw)
+    return Config.model_validate(tomllib.loads(path.read_text()))

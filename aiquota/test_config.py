@@ -14,22 +14,12 @@ def test_missing_configuration_is_rejected(tmp_path: Path) -> None:
         load(tmp_path / "config.toml")
 
 
-def test_remote_companion_is_sufficient_configuration(tmp_path: Path) -> None:
-    (tmp_path / "remote.toml").write_text('[remote_api]\nurl = "https://aiquota.test"\n')
-
-    config = load(tmp_path / "config.toml")
-
-    assert config.remote_api.url == "https://aiquota.test"
-
-
-def test_remote_companion_overrides_remote_api_without_replacing_main_config(tmp_path: Path) -> None:
+def test_loads_remote_api_configuration(tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
-    config_path.write_text("[claude]\nenabled = false\n")
-    (tmp_path / "remote.toml").write_text('[remote_api]\nurl = "https://aiquota.test"\nbearer_token = "api-bearer"\n')
+    config_path.write_text('[remote_api]\nurl = "https://aiquota.test"\nbearer_token = "api-bearer"\n')
 
     config = load(config_path)
 
-    assert config.claude.enabled is False
     assert config.remote_api.url == "https://aiquota.test"
     assert config.remote_api.bearer_token is not None
     assert config.remote_api.bearer_token.get_secret_value() == "api-bearer"
