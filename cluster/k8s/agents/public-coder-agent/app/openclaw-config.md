@@ -33,8 +33,22 @@ published: openai_utils/probe_context_window.py binary-searches the live
 serving path and all three 5.6 models reject identically just above
 372,000 total context. Published figures disagree in both directions --
 the raw models are ~1.05M, Codex product docs say 272K -- and neither is
-what this chain accepts. cluster/validation/test_codex_context_window.py
+what this chain accepts. cluster/k8s/litellm/app/test_openclaw_models.py
 pins every declaration in the repo to the same measured numbers.
+
+The same LiteLLM key and `litellm-subscription` provider also offer Google's
+Gemini chat lineup (`gemini-*`, mirroring GEMINI_MODELS in
+cluster/k8s/litellm/app/model_rosters.py), routed the same way Codex is --
+LiteLLM's `/v1/messages` surface accepts an Anthropic-shaped request for any
+backend model and translates it, so no separate provider entry is needed.
+Unlike Codex, there is no live serving-path probe for a hosted third-party
+API: contextWindow (1,048,576) and maxTokens (65,536) are Google's published
+limits for the current Gemini generation, shared by every entry except that
+gemini-3.1-flash-lite ships thinking off by default and is marked
+`"reasoning": false`. cluster/k8s/litellm/app/test_openclaw_models.py pins
+the catalog to the roster and these figures. The agent's default model is
+unchanged (still a Codex 5.6 model) -- Gemini is added as a selectable
+option, not a new default.
 
 `bind` is an enum -- `loopback`, `lan`, `tailnet`, `auto`, `custom`. `"all"` is
 not a member and the gateway exits with

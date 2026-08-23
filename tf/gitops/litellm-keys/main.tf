@@ -139,20 +139,23 @@ resource "kubernetes_secret" "codex_pod" {
 }
 
 # ============================================================================
-# public-coder-agent — second OpenClaw agent, same Codex-subscription lane
+# public-coder-agent — second OpenClaw agent, Codex-subscription + Gemini
 # ============================================================================
 # The coder agent at public-coder-agent.allegedly.works runs the same harness
-# against the same `codex-*` models, but gets its own virtual key rather than
-# sharing openclaw's: usage is then attributable per agent, and either can be
-# revoked without taking the other down. Deleting this key is its kill switch.
+# against the same `codex-*` models plus the Gemini chat lineup, but gets its
+# own virtual key rather than sharing openclaw's: usage is then attributable
+# per agent, and either can be revoked without taking the other down. Deleting
+# this key is its kill switch.
 
 resource "litellm_key" "public_coder_agent" {
   key_alias = "public-coder-agent"
-  # Codex subscription models plus embeddings. Embeddings ride along because
-  # OpenClaw's memory index needs a backend and this agent has no route to
-  # api.openai.com -- its egress allowlist is git hosting plus package indexes,
-  # and it should not gain one merely to embed.
-  models = concat(local.codex_client_models, local.embedding_client_models)
+  # Codex subscription models, the Gemini chat lineup, plus embeddings.
+  # Embeddings ride along because OpenClaw's memory index needs a backend and
+  # this agent has no route to api.openai.com -- its egress allowlist is git
+  # hosting plus package indexes, and it should not gain one merely to embed.
+  # Gemini reaches Google through LiteLLM's own in-cluster GEMINI_API_KEY, so
+  # this key never carries that credential either.
+  models = concat(local.codex_client_models, local.gemini_client_models, local.embedding_client_models)
   metadata = {
     consumer = "public-coder-agent"
   }
@@ -163,7 +166,7 @@ resource "kubernetes_secret" "public_coder_agent" {
     name      = "litellm-key-public-coder-agent"
     namespace = "litellm"
     annotations = {
-      description                                                     = "LiteLLM virtual key for the public-coder-agent OpenClaw instance (Codex subscription models through CLIProxyAPI plus embeddings)"
+      description                                                     = "LiteLLM virtual key for the public-coder-agent OpenClaw instance (Codex subscription models through CLIProxyAPI, Gemini chat models, plus embeddings)"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "public-coder-agent"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"

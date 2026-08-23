@@ -6,7 +6,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.k8s.litellm.app.model_rosters import ANTHROPIC_MODELS
+from cluster.k8s.litellm.app.model_rosters import ANTHROPIC_MODELS, GEMINI_EMBEDDING_MODELS, GEMINI_MODELS
 from cluster.validation.terraform_hcl import locals_blocks
 from util.bazel.runfiles import get_required_path
 
@@ -27,41 +27,6 @@ _MODELS: list[tuple[str, list[tuple[str, int | None]]]] = [
 # GROQ_API_KEY env var (litellm-groq-key secret). Free tier.
 GROQ_CHAT_MODELS: list[str] = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
 GROQ_WHISPER_MODELS: list[str] = ["whisper-large-v3", "whisper-large-v3-turbo"]
-
-# Google AI (Gemini). Key from the GEMINI_API_KEY env var (litellm-gemini-key
-# secret). Chat lineup verified against generativelanguage.googleapis.com/v1beta/models
-# (2026-07-18): the Gemini-3.x preview family (pro / flash / flash-lite) + gemini-3.5-flash,
-# the stable 2.5 pair, and the -latest aliases that auto-point at the newest generation.
-# Remaining specialty SKUs (image, tts, live/bidi, customtools, imagen, veo) are
-# intentionally excluded — add on demand.
-GEMINI_MODELS: list[str] = [
-    "gemini-3-pro-preview",
-    "gemini-3-flash-preview",
-    "gemini-3.1-pro-preview",
-    "gemini-3.1-flash-lite",
-    "gemini-3.5-flash",
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
-    "gemini-pro-latest",
-    "gemini-flash-latest",
-]
-
-# Gemini embeddings, same key as the chat lineup. Added for OpenClaw memory search,
-# whose index needs an embedding backend and had none — see
-# plans/personal_agents/findings/harness_behaviour.md F9.
-#
-# Both are stable and their embedding spaces are **mutually incompatible**: vectors
-# from one cannot be compared against the other, so switching a consumer between
-# them means re-embedding its whole corpus. Verified against
-# ai.google.dev/gemini-api/docs/embeddings (2026-07-30).
-#
-# gemini-embedding-2 is the current one (8,192 input tokens, multimodal);
-# gemini-embedding-001 is text-only with a 2,048-token limit and is kept because it
-# is the longer-established route through LiteLLM. Both expose flexible output
-# dimensionality (128-3072, recommended 768/1536/3072), selected per request rather
-# than per deployment, so neither entry pins a size.
-GEMINI_EMBEDDING_MODELS: list[str] = ["gemini-embedding-2", "gemini-embedding-001"]
-
 
 # Tana (Tana-UI models) fronted through the DB-less tana-litellm proxy. tana-litellm is a
 # standard LiteLLM that speaks /v1/messages and authenticates with the same litellm-master-key

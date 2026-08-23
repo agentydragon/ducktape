@@ -2,7 +2,14 @@ import json5
 import pytest_bazel
 import yaml
 
-from cluster.k8s.litellm.app.model_rosters import ANTHROPIC_MODELS, OPENCLAW_CODEX_MODELS
+from cluster.k8s.litellm.app.model_rosters import (
+    ANTHROPIC_MODELS,
+    GEMINI_CONTEXT_WINDOW,
+    GEMINI_MAX_OUTPUT_TOKENS,
+    GEMINI_MODELS,
+    GEMINI_NON_REASONING_MODELS,
+    OPENCLAW_CODEX_MODELS,
+)
 from util.bazel.runfiles import get_required_path
 
 # Measured, not published, and the published figures are wrong in both
@@ -32,7 +39,7 @@ _TANA_MODELS = {
 }
 
 
-def _public_coder_agent_codex_models() -> list[dict]:
+def _public_coder_agent_models() -> list[dict]:
     config = json5.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
     models: list[dict] = config["models"]["providers"]["litellm-subscription"]["models"]
     return models
@@ -120,8 +127,8 @@ def test_tana_compatibility_roster_remains_explicitly_pinned() -> None:
 
 
 def test_public_coder_agent_models_match_litellm_codex_routes() -> None:
-    """The agent's catalog is pinned to the committed LiteLLM routes."""
-    assert [model["id"] for model in _public_coder_agent_codex_models()] == OPENCLAW_CODEX_MODELS
+    """The agent's catalog is pinned to exactly the Codex and Gemini routes it should offer."""
+    assert [model["id"] for model in _public_coder_agent_models()] == [*OPENCLAW_CODEX_MODELS, *GEMINI_MODELS]
 
     config = json5.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
     provider = config["models"]["providers"]["litellm-subscription"]
@@ -140,12 +147,29 @@ def test_codex_context_window_is_the_measured_one() -> None:
     OpenClaw gateway was deleted on 2026-07-31; `public-coder-agent` is the only
     declaring manifest now, so it guards against regression rather than drift.
     """
-    declared = _public_coder_agent_codex_models()
+    models = {model["id"]: model for model in _public_coder_agent_models()}
+    declared = [models[model_id] for model_id in OPENCLAW_CODEX_MODELS]
 
     assert [model["contextWindow"] for model in declared] == [CODEX_CONTEXT_WINDOW] * len(declared)
     assert [model["maxTokens"] for model in declared] == [CODEX_MAX_TOKENS] * len(declared)
     # maxTokens is reserved out of the window, so it has to leave room for input.
     assert CODEX_MAX_TOKENS < CODEX_CONTEXT_WINDOW
+
+
+def test_gemini_models_match_the_published_spec() -> None:
+    """Gemini catalog entries route to a committed LiteLLM model and carry Google's published limits."""
+    litellm_models = _litellm_models()
+    models = {model["id"]: model for model in _public_coder_agent_models()}
+
+    for model_id in GEMINI_MODELS:
+        assert model_id in litellm_models, f"{model_id} has no committed LiteLLM route"
+        entry = models[model_id]
+        assert entry["contextWindow"] == GEMINI_CONTEXT_WINDOW
+        assert entry["maxTokens"] == GEMINI_MAX_OUTPUT_TOKENS
+        assert entry["input"] == ["text", "image"]
+        assert entry["reasoning"] == (model_id not in GEMINI_NON_REASONING_MODELS)
+    # maxTokens is reserved out of the window, so it has to leave room for input.
+    assert GEMINI_MAX_OUTPUT_TOKENS < GEMINI_CONTEXT_WINDOW
 
 
 if __name__ == "__main__":
