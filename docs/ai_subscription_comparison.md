@@ -262,23 +262,36 @@ So the target is a big pool whose _failure mode_ is a 429 or a predictable daily
 
 **Consumer subscriptions are priced for one human at a keyboard.** A 5-10 agent fleet is an order of magnitude outside that design point, which is why every plan surveyed binds _somewhere_ — 5h window, weekly cap, RPM ceiling, or daily quota. No amount of tier shopping escapes that; the tiers are all drawn against single-operator assumptions. The realistic shape is a **base plus a metered layer**: keep the frontier subscriptions for interactive work, and put fleet-scale bulk on pay-per-token capacity where the only ceiling is the bill. Expect the metered layer to be a real line item rather than a rounding error, and size the cheap-model routing to keep it small.
 
+### The subsidy is real — a window is only fatal without an overflow path
+
+Subscriptions are sold well below API cost, and that holds even when badly utilized. A GLM Max plan at $168 delivering only a quarter of its nominal quota before the walls deter you still works out near $0.42/M against GLM-5.3's $2.00/M blended list — roughly 5x cheaper per _delivered_ token than the API, despite three quarters of the plan going unspent. Giving up a 15-30x subsidy to escape a window is an expensive way to solve a scheduling problem.
+
+What actually failed was not the subscription. It was the subscription **with nothing to spill into**. "Everything pauses, come back in 3.7 hours" is the behavior of a plan whose quota exhaustion has no fallback — and Anthropic's extra-usage credits exist precisely to be that fallback, just at a price that makes them unusable at scale.
+
+Z.ai supports the pattern natively, on one key, with two independent meters — confirmed in <docs/zai_api.md>:
+
+| Base URL                              | Meter                                       |
+| ------------------------------------- | ------------------------------------------- |
+| `https://api.z.ai/api/coding/paas/v4` | Coding Plan quota (5h + weekly)             |
+| `https://api.z.ai/api/paas/v4`        | Pay-per-token; does **not** draw plan quota |
+
+Burn the subsidized quota first; on exhaustion, spill to per-token at $1.40/$4.40. The 5h wall stops being a wall the moment there is somewhere to go, and the blended cost stays near the plan's rate for as long as the plan lasts each window.
+
 ### Where to buy more, ranked
 
-1. **Pay-per-token API as the fleet's primary capacity.** No window of any kind is the only structure that scales with agent count — API rate limits exist but are 429-with-retry and rise with spend tier, never a multi-hour lockout. DeepSeek V4-Pro at ~$0.92/M blended off-peak is roughly a tenth of Anthropic list; GLM-5.3 at $1.40/$4.40 buys index-60 quality with no Coding Plan window attached.
+1. **Z.ai GLM Max ($168) plus a pay-as-you-go balance on the same key, with failover.** This is the cheapest delivered token available at index-60 quality, and the failover is what makes the plan usable at fleet scale. The subsidy does the volume; the per-token spill absorbs the burst that used to stop everything. GLM-5.3 at index 60 is also two generations past the model that disappointed.
 
-   **Endpoint trap on Z.ai.** One API key serves both billing modes, and the wrong base URL puts the test back inside the 5h window it exists to avoid. `https://api.z.ai/api/paas/v4` (OpenAI-shaped, general) is confirmed _not_ to draw Coding Plan quota; `https://api.z.ai/api/coding/paas/v4` explicitly does. The Anthropic-compatible `https://api.z.ai/api/anthropic` is the one Z.ai markets for Claude Code and its billing mode is **not documented either way** — verify empirically rather than assuming. The ambiguity only bites with an active Coding Plan: with no plan on the account there is no plan quota to draw, so every endpoint bills per token and the Anthropic-shaped one is simply the convenient drop-in. It does then require a pay-as-you-go balance — <docs/zai_api.md> records a `429 "Insufficient balance or no resource package"` from an endpoint with no credit behind it. Endpoint details: <docs/zai_api.md>.
+   **The work is in the harness, not the purchase.** Something has to detect quota exhaustion and switch base URL mid-flight. That is the real cost of this option and it should be scoped before buying — if the fleet's runner cannot fail over, this degrades to exactly the experience already rejected.
 
-   **How to verify in two minutes:** call `GET /api/monitor/usage/quota/limit` (documented in <docs/zai_api.md>, and already polled by <aiquota/README.md>), send one request, call it again. If the `TOKENS_LIMIT` percentages moved, you are on plan quota, not pay-per-token. Routing through **OpenRouter** sidesteps the question entirely at a small markup — no plan quota can apply, and swapping models for comparison needs no new accounts, which is worth the premium for an experiment. Unsubsidized and linear, which is the trade: it converts "everything stops for 3.7 hours" into a bounded, predictable dollar cost. Set a monthly cap and treat that cap as the real budget decision. **This is now the answer rather than one option among several**, because it is the only route to index-60 quality without a rolling window.
+2. **Prove the model first, on pay-per-token alone.** Before committing $168/mo, run GLM-5.3 through `https://api.z.ai/api/paas/v4` (or the Anthropic-shaped endpoint — with no active plan every endpoint bills per token) for a week of real bulk work. A few dollars settles whether index 60 clears the quality bar. If it does not, the whole cheap tier is closed and no plan is worth buying.
 
-2. **Cerebras Code — right shape, wrong model tier.** It is the only subscription here with **no 5h or weekly window at all**: a daily token cap plus per-minute ceilings, failing as a 429 that clears within the minute. Max ($200) gives 120M tokens/day, 1.5M TPM, 120 RPM; Pro ($50) gives 24M/day and 50 RPM, which a 10-agent fleet will exceed. But it serves GLM-4.7 at index 34 and nothing better, which is approximately the quality already rejected — so this buys a better failure mode at a worse model, not a better deal overall. **Take it only for mechanical bulk** (codemods, scaffolding, log triage) where index 34 suffices and 1000 tok/s is the draw. Re-evaluate if Cerebras picks up GLM-5.3 once its weights land; that single change would move it to index 60 and make it the clear first choice.
+3. **Anthropic Batch API for anything async.** 50% off list — Opus 5 at $2.50/$12.50 — and it draws from neither the 5h nor the weekly window. Frontier quality, off the constraint that actually binds. Independent of everything above, and worth doing regardless.
 
-3. **Anthropic Batch API for anything that can run async.** 50% off list — Opus 5 at $2.50/$12.50 — and it draws from neither the 5h nor the weekly window. Frontier quality, off the quota that currently binds. Overnight and unattended work is exactly its shape, and shifting that class of work off the weekly cap is worth more than its dollar cost suggests.
+4. **Cerebras Code — only for mechanical bulk.** Best failure mode in the survey (no rolling window at all), worst model in it (GLM-4.7, index 34). Reconsider if GLM-5.3 weights land there.
 
-4. **Z.ai GLM: do not re-buy on current terms.** It was already tested at Max, the largest tier, and failed on precisely this axis. The credits migration kept the 5h window and added a 3x peak multiplier, so the drain rate against the binding constraint got worse. GLM-5.3 is a genuinely better model than what was tried and is worth using **through the API**, where no window exists — but the Coding Plan's shape is wrong for a parallel fleet at any tier Z.ai sells. Revisit only if the window structure changes.
+5. **Synthetic ($30) if the fleet ever shrinks.** Kimi K3 and GLM-5.2, no per-token billing, Anthropic-compatible. Its 500 requests/5h caps it near one agent, so it answers a different workload — recorded so it is not re-investigated.
 
-5. **Synthetic ($30) if the fleet ever shrinks.** Kimi K3 and GLM-5.2 with no per-token billing and an Anthropic-compatible endpoint is the best model menu per dollar in the flat-rate category. Its 500 requests/5h caps it at roughly one agent, so it is the right answer for a different workload than this one — worth remembering rather than re-investigating.
-
-6. **Kimi and Qwen plans inherit the same 5h structure** and should be assumed to fail the same way until their 5h ceilings are checked against a parallel fleet specifically. Kimi K3 matches GLM-5.3 on quality (index 60); if a plan is wanted from either, verify the short-window ceiling before the model quality.
+6. **Kimi and Qwen plans inherit the same 5h structure** and should be assumed to fail the same way until their short-window ceilings are checked against a fleet. Kimi K3 matches GLM-5.3 on quality (index 60); verify the ceiling before the model.
 
 ### Stretching what is already bought
 
@@ -288,7 +301,7 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 
 ## Skip
 
-- **Any 5h-rolling-window plan, at any tier, for a parallel fleet** — the GLM Max result generalizes: a fleet drains a short window several times faster than the tier sizing assumes, and the lockout suppresses use of the plan well beyond the hours it blocks.
+- **A 5h-rolling-window plan with no overflow path** — that combination, not the window itself, is what produced the GLM Max result. Paired with per-token spill on the same key the subsidy is worth having; unpaired, a fleet drains the window several times faster than tier sizing assumes and the lockout suppresses use well beyond the hours it blocks.
 - **SuperGrok Heavy ($300)** — Grok 4.6 is a strong model (index 61) but at $2/$6 the API is the sane way to buy it.
 - **Cursor Ultra / Copilot Pro+** — monthly pools are the right shape, but the value is in their IDE surfaces; from Claude Code the routing is redundant.
 - **Perplexity Max** — search-optimized, wrong tool.
