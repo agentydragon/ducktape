@@ -1193,6 +1193,8 @@ vitest_bin.vitest_test(
         "//haku/console/frontend/tool_rendering/hostexec:requests_test",
         "//haku/console/frontend/tool_rendering/hostexec:responses_test",
         "//haku/console/frontend/tool_rendering/kubectl:requests_test",
+        "//haku/console/frontend/tool_rendering/kubernetes:requests_test",
+        "//haku/console/frontend/tool_rendering/kubernetes:responses_test",
         "//haku/console/frontend/tool_rendering/tana:requests_test",
         "//haku/console/frontend/x:bootstrap_narration_test",
         "//haku/console/frontend/x:chat_scroll_test",

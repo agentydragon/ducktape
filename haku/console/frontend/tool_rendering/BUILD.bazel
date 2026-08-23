@@ -59,6 +59,7 @@ ts_library(
         "//haku/console/frontend/tool_rendering/haku_routine:actions",
         "//haku/console/frontend/tool_rendering/hostexec:actions",
         "//haku/console/frontend/tool_rendering/kubectl:actions",
+        "//haku/console/frontend/tool_rendering/kubernetes:actions",
         "//haku/console/frontend/tool_rendering/tana:actions",
     ],
 )
@@ -147,6 +148,8 @@ ts_library(
         "//haku/console/frontend/tool_rendering/hostexec:requests",
         "//haku/console/frontend/tool_rendering/hostexec:responses",
         "//haku/console/frontend/tool_rendering/kubectl:requests",
+        "//haku/console/frontend/tool_rendering/kubernetes:requests",
+        "//haku/console/frontend/tool_rendering/kubernetes:responses",
         "//haku/console/frontend/tool_rendering/tana:requests",
     ],
 )
@@ -163,6 +166,7 @@ filegroup(
         "//haku/console/frontend/tool_rendering/haku_routine:tailwind_srcs",
         "//haku/console/frontend/tool_rendering/hostexec:tailwind_srcs",
         "//haku/console/frontend/tool_rendering/kubectl:tailwind_srcs",
+        "//haku/console/frontend/tool_rendering/kubernetes:tailwind_srcs",
         "//haku/console/frontend/tool_rendering/tana:tailwind_srcs",
     ],
 )

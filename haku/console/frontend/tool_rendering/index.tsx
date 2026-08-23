@@ -27,6 +27,8 @@ import { hakuRoutinePreviews } from "./haku_routine/requests";
 import { hostexecPreviews } from "./hostexec/requests";
 import { hostexecResultPreviews } from "./hostexec/responses";
 import { kubectlPreviews } from "./kubectl/requests";
+import { kubernetesPreviews } from "./kubernetes/requests";
+import { kubernetesResultPreviews } from "./kubernetes/responses";
 import { renderResultPreview, type ToolResultPreview } from "./result_entry";
 import {
   GMAIL_SERVER_ID,
@@ -35,6 +37,7 @@ import {
   HAKU_ROUTINE_SERVER_ID,
   HOSTEXEC_SERVER_ID,
   KUBECTL_SERVER_ID,
+  KUBERNETES_SERVER_ID,
   TANA_RW_SERVER_ID,
 } from "./server_ids";
 import { tanaPreviews } from "./tana/requests";
@@ -47,6 +50,7 @@ const REGISTRY = {
   [HAKU_ROUTINE_SERVER_ID]: hakuRoutinePreviews,
   [HOSTEXEC_SERVER_ID]: hostexecPreviews,
   [KUBECTL_SERVER_ID]: kubectlPreviews,
+  [KUBERNETES_SERVER_ID]: kubernetesPreviews,
   [TANA_RW_SERVER_ID]: tanaPreviews,
 } as const satisfies Record<string, Record<string, ToolPreview>>;
 
@@ -60,6 +64,7 @@ const RESULT_REGISTRY = {
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarResultPreviews,
   [GROCY_SERVER_ID]: grocyResultPreviews,
   [HOSTEXEC_SERVER_ID]: hostexecResultPreviews,
+  [KUBERNETES_SERVER_ID]: kubernetesResultPreviews,
 } as const satisfies Record<string, Record<string, ToolResultPreview>>;
 type ResultRegistry = typeof RESULT_REGISTRY;
 const RUNTIME_RESULT_REGISTRY: Record<string, Record<string, ToolResultPreview>> = RESULT_REGISTRY;
