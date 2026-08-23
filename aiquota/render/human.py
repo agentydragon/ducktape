@@ -60,12 +60,15 @@ def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz:
     lines = [_header(pv.provider, error, pv.last_output.fetched_at, now, stale_age)]
     lines.extend(_burn_lines(pv, now, tz))
     lines.extend(_format_window_line(_window_row(window), widths) for window in windows)
-    show_extra = pv.extra_status == "informational" and extra is not None
-    if show_extra:
-        # Prepaid still has room, but the user incurred billable spend earlier
-        # in the billing month. Surface it so the monthly bill doesn't sneak up.
-        lines.append(f"  {_format_extra_informational(extra)}")
-    if not windows and not show_extra:
+    # Prepaid still has room, but the user incurred billable spend earlier in the
+    # billing month. Surface it so the monthly bill doesn't sneak up. Built as a
+    # value rather than a flag so `extra`'s narrowing survives into the call.
+    extra_line = (
+        f"  {_format_extra_informational(extra)}" if pv.extra_status == "informational" and extra is not None else None
+    )
+    if extra_line is not None:
+        lines.append(extra_line)
+    if not windows and extra_line is None:
         # Gate on "nothing substantive was reported", not on line count — the
         # burn schedule adds lines without saying anything about quota.
         lines.append("  no data")

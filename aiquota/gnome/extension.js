@@ -213,6 +213,46 @@ function formatExtraSpend(extra) {
   return `extra $${Math.round(used)}/$${Math.round(limit)} (${pct}%) this month`;
 }
 
+// Peak-burn formatting. The policy (is it peak, which windows are next) is
+// decided in aiquota/peak_windows.py and delivered as state.burn; this only
+// formats it. Instants arrive absolute and are shown in the viewer's local
+// zone — the whole point, since vendors publish these in their own.
+function formatMultiplier(value) {
+  return `${value}x`;
+}
+
+function burnChangesAt(burn) {
+  const first = burn?.upcoming?.[0];
+  if (!first) return null;
+  return new Date(burn.in_peak ? first.end : first.start);
+}
+
+function formatClock(date) {
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+function formatPeakInterval(interval) {
+  const start = new Date(interval.start);
+  const weekday = start.toLocaleDateString([], { weekday: "short" });
+  return `${weekday} ${formatClock(start)}-${formatClock(new Date(interval.end))}`;
+}
+
+function formatBurnSummary(burn) {
+  const changesAt = burnChangesAt(burn);
+  if (!changesAt) return null;
+  const until = formatDuration(Math.max(0, (changesAt.getTime() - Date.now()) / 1000));
+  if (burn.in_peak) {
+    return `🔥 ${formatMultiplier(burn.multiplier)} burn until ${formatClock(changesAt)} (${until})`;
+  }
+  return `${formatMultiplier(burn.multiplier)} burn — next ${formatMultiplier(burn.peak_multiplier)} in ${until}`;
+}
+
+function formatPeakSchedule(burn) {
+  const ahead = burn.in_peak ? burn.upcoming.slice(1) : burn.upcoming;
+  if (!ahead.length) return null;
+  return `${formatMultiplier(burn.peak_multiplier)}: ${ahead.map(formatPeakInterval).join("  ")}`;
+}
+
 function clamp01(value) {
   if (value == null || !Number.isFinite(value)) return null;
   return Math.max(0, Math.min(1, value));
@@ -232,6 +272,8 @@ function emptyProviderState() {
     extraSpend: null,
     currentlyOverPlan: false,
     extraStatus: "none",
+    // Peak-burn schedule from the Python view model; null when the provider has none.
+    burn: null,
     // Last successful fetch — populated when the most recent attempt failed
     // but a prior good snapshot exists. {windows, extraSpend, fetchedAt}.
     lastSuccess: null,
@@ -333,6 +375,7 @@ const QuotaIndicator = GObject.registerClass(
           extraSpend: node?.extraSpend ?? null,
           currentlyOverPlan: node?.currentlyOverPlan === true,
           extraStatus: node?.extraStatus ?? "none",
+          burn: node?.burn ?? null,
           lastSuccess: loadLastSuccess(node?.lastSuccess),
         };
       };
@@ -429,10 +472,22 @@ const QuotaIndicator = GObject.registerClass(
         const { windows } = effectiveState(p.state);
         const rowCount = p.state.currentlyOverPlan ? 1 : Math.max(1, windows.length);
         p.windowRows = Array.from({ length: rowCount }, () => this._makeQuotaRow("quota"));
+        // Separate from windowRows so window indexing is unaffected; hidden
+        // outright for providers with no published schedule.
+        p.burnRow = this._makeTextRow();
         this.menu.addMenuItem(p.header);
+        this.menu.addMenuItem(p.burnRow);
         for (const row of p.windowRows) this.menu.addMenuItem(row);
         p.header.label.add_style_class_name("quota-popup-header");
       }
+    }
+
+    _makeTextRow() {
+      const item = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
+      item.add_style_class_name("quota-popup-bar-item");
+      item._summaryLabel = new St.Label({ text: "", style_class: "quota-popup-row", x_expand: true });
+      item.add_child(item._summaryLabel);
+      return item;
     }
 
     _makeQuotaRow(label) {
@@ -546,6 +601,7 @@ const QuotaIndicator = GObject.registerClass(
           // Derived policy bits from the Python view model — single source of truth.
           currentlyOverPlan: pq.currently_over_plan === true,
           extraStatus: pq.extra_status ?? "none",
+          burn: pq.burn ?? null,
           lastSuccess,
         };
       }
@@ -623,20 +679,24 @@ const QuotaIndicator = GObject.registerClass(
         }
       }
       const paceText = formatPace(paces[summaryIndex]) ?? "";
+      // A peak window costs a multiple per token, so it belongs in the panel
+      // where it is visible without opening the popup.
+      const burning = state.burn?.in_peak === true ? "🔥" : "";
       if (overPlan) {
-        paceLabel.set_text(`${formatCompactDollars(state.extraSpend.used_usd)} ⚡`);
+        paceLabel.set_text(`${formatCompactDollars(state.extraSpend.used_usd)} ⚡${burning}`);
       } else if (exhaustedWindows.length > 0) {
         // Multiple exhausted windows keep the provider blocked until the last reset.
         const resetSeconds = Math.max(...exhaustedWindows.map((window) => window.resetSeconds));
-        paceLabel.set_text(`↻${formatDuration(resetSeconds)}`);
+        paceLabel.set_text(`↻${formatDuration(resetSeconds)}${burning}`);
       } else {
-        paceLabel.set_text(paceText);
+        paceLabel.set_text(burning ? `${paceText}${burning}`.trim() : paceText);
       }
     }
 
     _renderPopup() {
       for (const p of this._providers) {
         this._renderProviderHeader(p.header, p.label, p.state);
+        this._renderBurnRow(p.burnRow, p.state.burn);
         if (p.state.currentlyOverPlan === true) {
           const { windows } = effectiveState(p.state);
           this._renderExtraActiveRow(p.windowRows[0], windows);
@@ -669,6 +729,14 @@ const QuotaIndicator = GObject.registerClass(
       if (extraStr) parts.push(extraStr);
       if (!state.error) parts.push(formatFreshness(state.lastFetch));
       item.label.set_text(parts.join(" · "));
+    }
+
+    _renderBurnRow(item, burn) {
+      const summary = burn ? formatBurnSummary(burn) : null;
+      item.visible = summary != null;
+      if (summary == null) return;
+      const schedule = formatPeakSchedule(burn);
+      item._summaryLabel.set_text(schedule ? `${summary}\n${schedule}` : summary);
     }
 
     _renderExtraActiveRow(item, windows) {

@@ -1,10 +1,10 @@
 """Provider peak-burn schedules — periods where quota drains faster than 1x.
 
-Vendors publish these as wall-clock ranges in their own timezone, frequently
-without naming it: z.ai's "14:00-18:00" is Singapore time, and nothing on the
-page says so. Pinning the zone here is the point of the module — callers get
-UTC instants and render them in the viewer's local zone, so "when is it
-expensive" never requires mental arithmetic.
+Vendors publish these as wall-clock ranges in their own timezone: z.ai's
+"14:00-18:00" is Singapore time, named on the plan notice but dropped nearly
+everywhere the window is quoted, and useless to convert in your head besides.
+Pinning the zone here is the point of the module — callers get UTC instants and
+render them in the viewer's local zone.
 
 Schedules are vendor policy and change without notice; they are data, kept in
 `SCHEDULES` at the bottom, not logic.
@@ -41,6 +41,13 @@ class BurnSchedule:
     tz: ZoneInfo
     periods: tuple[PeakPeriod, ...]
     applies_to: str
+    source: str
+    """Where the hours, weekdays, multiplier and timezone were read from.
+
+    Vendors restate these without changelogs, so a schedule that cannot be
+    re-checked against its origin is a liability. Anyone editing the numbers is
+    expected to move the URL with them.
+    """
 
 
 class PeakInterval(BaseModel):
@@ -126,13 +133,18 @@ def status_for(provider: str, now: datetime, count: int = 3) -> BurnStatus | Non
 
 _WEEKDAYS = frozenset(range(5))
 
-# z.ai GLM Coding Plan: advanced models bill at 3x during weekday afternoons,
-# Singapore time. https://docs.z.ai/devpack/notice/usage-revision
 SCHEDULES: dict[str, BurnSchedule] = {
+    # Hours, weekdays and the 3x coefficient are all stated in the plan-revision
+    # notice. The notice writes the zone as "Singapore Standard Time"; elsewhere
+    # z.ai writes the same window as "14:00-18:00 UTC+8" and in places omits the
+    # zone entirely, which is what makes this worth encoding rather than reading
+    # off the page each time. SGT is UTC+8 year-round with no DST, so the two
+    # spellings agree.
     "zai": BurnSchedule(
         multiplier=3.0,
         tz=ZoneInfo("Asia/Singapore"),
         periods=(PeakPeriod(weekdays=_WEEKDAYS, start=time(14, 0), end=time(18, 0)),),
         applies_to="GLM-5.3, GLM-5-Turbo",
+        source="https://docs.z.ai/devpack/notice/usage-revision",
     )
 }

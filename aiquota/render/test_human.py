@@ -63,10 +63,12 @@ def test_renders_both_windows_with_reset_and_pace(snapshot: SnapshotAssertion) -
 
 @pytest.mark.parametrize("used_percent", [100, 105])
 def test_exhausted_window_suppresses_pace_and_projection(used_percent: float) -> None:
+    # A provider with no burn schedule, so the whole-output equality below stays
+    # about pace suppression rather than also pinning the peak-window lines.
     out = human.render(
         _quotas(
             _pq(
-                "zai",
+                "codex",
                 _success(
                     short_window=QuotaWindow(
                         used_percent=used_percent, reset_seconds=3 * 3600 + 60, window_seconds=5 * 3600
@@ -78,7 +80,7 @@ def test_exhausted_window_suppresses_pace_and_projection(used_percent: float) ->
         tz=UTC,
     )
 
-    assert out == f"zai\n  5h: {round(used_percent):>3d}%  ↻ 3h01m  exhausted"
+    assert out == f"codex\n  5h: {round(used_percent):>3d}%  ↻ 3h01m  exhausted"
     assert "Δ" not in out
     assert "exhausts" not in out
 
