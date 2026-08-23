@@ -96,6 +96,15 @@ Per-minute limits, not just per-window quotas, decide whether a fleet runs. [Cer
 
 Both are numbers to size against rather than verdicts — request cadence varies enormously with task shape, and a fleet-hour of real measurement beats this arithmetic.
 
+### Cerebras serves GLM-4.7 only — with an upgrade path
+
+[Cerebras Code](https://www.cerebras.ai/code) lists GLM-4.7 across all three tiers (Free, Pro, Max). There is no GLM-5.2 or GLM-5.3 option at any price, so the whole plan family sits two releases behind Z.ai's own menu.
+
+Two things soften that:
+
+- **Cerebras tracks open weights, and it has upgraded before** — GLM-4.6 first, then GLM-4.7 in June 2026. GLM-5.3's weights are due roughly two weeks after its 2026-08-14 launch, so a 5.3 migration is plausible rather than speculative. Worth re-checking the model list before renewing, and a reason to prefer monthly over annual billing here.
+- **GLM-4.7's weakness is not tool calling.** Cerebras cites it as #1 on the Berkeley Function Calling Leaderboard — a vendor claim, but the relevant axis for a fleet, where tool-call reliability governs whether a run completes more than raw index score does. A model two generations back on general intelligence can still be the right one for bulk agent work.
+
 **Z.ai still moved the wrong way on shape.** The [2026-07-30 plan revision](https://docs.z.ai/devpack/notice/usage-revision) switched GLM Coding Plans from prompt counts to credits, kept the 5-hour rolling window, and added a peak-hour multiplier: GLM-5.3 and GLM-5-Turbo bill at **3x during 14:00-18:00 SGT weekdays**, 1x off-peak. A 3x drain rate against the window that was already the problem.
 
 **Claude's escape valve has a price tag.** [Extra usage credits](https://support.claude.com/en/articles/11049741-what-is-the-max-plan) let Pro/Max keep working past the cap, drawn down automatically, capped at $2,000/day redemption. They bill at **standard API list rates** — no subscription discount whatsoever — so they solve the availability problem by abandoning the economics one. For a Max 20x workload, an overrun priced at Opus 5's $5/$25 reaches three figures in a session and four in a month, which is the bill the subscriptions were bought to replace. Useful as a capped emergency valve; ruinous as a capacity plan.
@@ -157,8 +166,8 @@ Throughput figures are order-of-magnitude. Treat them as ±2× ranges.
 
 | Plan                    |   $/mo | Quota shape                         | Burst | Models                            | Notes                                       |
 | ----------------------- | -----: | ----------------------------------- | ----- | --------------------------------- | ------------------------------------------- |
-| **Cerebras Code Pro**   |     50 | 24M tok/**day**, 1M TPM, 50 RPM     | ●●○   | GLM-4.7                           | Daily reset; 50 RPM is the fleet constraint |
-| **Cerebras Code Max**   |    200 | 120M tok/**day**, 1.5M TPM, 120 RPM | ●●○   | GLM-4.7                           | No 5h or weekly window at all               |
+| **Cerebras Code Pro**   |     50 | 24M tok/**day**, 1M TPM, 50 RPM     | ●●○   | GLM-4.7 only                      | Daily reset; 50 RPM is the fleet constraint |
+| **Cerebras Code Max**   |    200 | 120M tok/**day**, 1.5M TPM, 120 RPM | ●●○   | GLM-4.7 only                      | No 5h or weekly window at all               |
 | **Z.ai GLM Lite**       |     18 | 10k credits/wk + 5h window          | ○○○   | GLM-5.3 / 5.2 / 5.1 / 4.7         | 3× peak multiplier on 5.3                   |
 | **Z.ai GLM Pro**        |     80 | 60k credits/wk + 5h window          | ○○○   | same                              | Best raw throughput/$; worst failure mode   |
 | **Z.ai GLM Max**        |    168 | 140k credits/wk + 5h window         | ○○○   | same                              | Top tier; 5h wall still hit by a fleet      |
@@ -192,7 +201,7 @@ So the target is a big pool whose _failure mode_ is a 429 or a predictable daily
 
 1. **Pay-per-token API as the fleet's primary capacity.** No window of any kind is the only structure that scales with agent count — API rate limits exist but are 429-with-retry and rise with spend tier, never a multi-hour lockout. DeepSeek V4-Pro at ~$0.92/M blended off-peak is roughly a tenth of Anthropic list; GLM-5.3 at $1.40/$4.40 buys index-60 quality with no Coding Plan window attached. Unsubsidized and linear, which is the trade: it converts "everything stops for 3.7 hours" into a bounded, predictable dollar cost. Set a monthly cap and treat that cap as the real budget decision.
 
-2. **Cerebras Code Max ($200) — the best-shaped subscription, with real caveats.** **No 5h or weekly window exists**: only a daily token cap and per-minute ceilings, so the failure mode is a 429 that clears within the minute. 120M tokens/day, 1.5M TPM, 120 RPM. Against a 10-agent fleet the 120 RPM is the number to watch — Cerebras's speed makes agents cycle faster, so requests-per-minute climbs — and 120M/day is reachable in a long day, so it raises the floor rather than removing the ceiling. **Pro ($50) is the cheaper experiment** if 50 RPM and 24M/day clear a measured fleet-hour; Max buys 2.4x the RPM and 5x the daily tokens. Further caveats: Cerebras serves GLM-4.7, two generations behind GLM-5.3, and independent testing has found real throughput well under the marketing figure. Worth one month against real load before renewing.
+2. **Cerebras Code Max ($200) — the best-shaped subscription, with real caveats.** **No 5h or weekly window exists**: only a daily token cap and per-minute ceilings, so the failure mode is a 429 that clears within the minute. 120M tokens/day, 1.5M TPM, 120 RPM. Against a 10-agent fleet the 120 RPM is the number to watch — Cerebras's speed makes agents cycle faster, so requests-per-minute climbs — and 120M/day is reachable in a long day, so it raises the floor rather than removing the ceiling. **Pro ($50) is the cheaper experiment** if 50 RPM and 24M/day clear a measured fleet-hour; Max buys 2.4x the RPM and 5x the daily tokens. Caveats: independent testing has found real throughput well under the marketing figure, and the model menu is GLM-4.7 only (see above). Worth one month against real load before renewing.
 
 3. **Anthropic Batch API for anything that can run async.** 50% off list — Opus 5 at $2.50/$12.50 — and it draws from neither the 5h nor the weekly window. Frontier quality, off the quota that currently binds. Overnight and unattended work is exactly its shape, and shifting that class of work off the weekly cap is worth more than its dollar cost suggests.
 
@@ -250,6 +259,7 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 - [Anthropic: what is the Max plan](https://support.claude.com/en/articles/11049741-what-is-the-max-plan)
 - [Claude extra usage: three billing pools](https://agentshortlist.com/articles/claude-extra-usage)
 - [Claude usage limits timeline](https://explainx.ai/blog/claude-usage-limits-2026-timeline-explained)
+- [Cerebras Code](https://www.cerebras.ai/code) — plan tiers and model menu
 - [Cerebras Code FAQ](https://support.cerebras.net/articles/9996007307-cerebras-code-faq) — published RPM/RPS/TPM/day limits per plan
 - [Cerebras Inference rate limits](https://inference-docs.cerebras.ai/support/rate-limits)
 - [Down and out with Cerebras Code (InfoWorld)](https://www.infoworld.com/article/4055909/down-and-out-with-cerebras-code.html) — critical field report on throughput and 429s
