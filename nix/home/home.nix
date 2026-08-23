@@ -112,6 +112,12 @@ in
       sopsFile = ../../secrets/shared/habitify.yaml;
       key = "habitify_api_key";
     };
+    # Same Brave Search key the agent egress proxies hold; the cluster copy is
+    # cluster/k8s/agents/shared-secrets/brave-search-api-key.sops.yaml.
+    BRAVE_API_KEY = {
+      sopsFile = ../../secrets/shared/brave-search.yaml;
+      key = "brave_api_key";
+    };
     # Tana-scoped LiteLLM virtual key powering the `tana-claude` alias below.
     TANA_LITELLM_KEY = {
       sopsFile = ../../tf/gitops/litellm-keys/litellm-tana-clients-key.yaml;

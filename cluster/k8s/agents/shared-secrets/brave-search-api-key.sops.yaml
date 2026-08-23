@@ -1,0 +1,45 @@
+# Brave Search API key. It authenticates to an external platform rather than to
+# anything this cluster owns, so it is shared here instead of living under the
+# one agent that happens to use it first. The workstation copy of the same key
+# is secrets/shared/brave-search.yaml; rotation touches both.
+#
+# Only egress proxies consume this. Agent containers receive a non-secret
+# placeholder that their proxy substitutes into X-Subscription-Token on
+# api.search.brave.com.
+apiVersion: v1
+kind: Secret
+metadata:
+    name: brave-search-api-key
+    namespace: claude-sandbox
+    annotations:
+        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: public-coder-agent
+        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: public-coder-agent
+type: Opaque
+stringData:
+    api-key: ENC[AES256_GCM,data:7CVL4rT/j8o5c2wGokAVs6ioGP6+aPKKPJ/Q95rbm+JKhGIxC1Y+,iv:kpdxXkJw8Ktj41BaAobih3E7Sfc3h9kxqfFIVZt8yWQ=,tag:p7q6gVzgmDZe0BXZuVoQtw==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBlbFltQ0RpSGkzOFJkemNK
+            ZmU1K2pwS2d1eW9MUFNFbm5rV2lYdGViRzJNCm1QMUVRSVBkK0ZmZkpzdWNzWGRG
+            eVE1eXhTWFJxVE5xMVcrR2kxaEtNdmcKLS0tIEFTRUNEbzZTd1NGWWFGRjI3SHo4
+            cThBWU83czhZd0FMUjk3b2h5ZXNPVHcK3ETIHgNe+8NGVrxNFyFj1YY0Oyiovju0
+            p3id+zdQ01O+uUXj1v/QS8LpZDM0MBT9dsfeTxl7T24YsuktGb8Qeg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBBZ2lHdGZ5ZERJUXU4b09s
+            dDRTdW5WckFoM3FDYWJzZGFwT0tURTdoWFI4CnM3dmswanVTMkYzN2xnakZOWktE
+            UWpmVGxpd2k4YnN5VGU5RkFjS1M3aFkKLS0tIFpvRXdyQmVKZGdYRHgxckQ0TEpF
+            djhjejdvd0xoanQvOVFuTCs1bWVnRVEK1JWoYWH4TMvqoetDvGMY0hOUSgjaN8b8
+            GlGi+kNcriK7iVkr2IMLRAFzG547T9c5w2uLmjILgJ4EYUr8/ztsLA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-08-23T22:20:50Z"
+    mac: ENC[AES256_GCM,data:kLs16Wh1fUO60RX7gbnRDPCXjLL88ZWTIr5r3z2/NG6KZzoXCxHXkSZdl6AKU8wB7nMJGO3HGiIaKjSD65l76V2TRgDE9KNFumqOWt98tvKxRNNUT3IB7IukMPTmUXU9vwDfdjWRE72AlHNn44yqA2qTqLxznyFKDmBDL+04vG0=,iv:U4vLeeJZl+zEHQZZtOWHMrsaoM9yvcuQDAW7QW8oo6E=,tag:UQiy2BsR1LTfqWUbBW5QBQ==,type:str]
+    version: 3.13.3

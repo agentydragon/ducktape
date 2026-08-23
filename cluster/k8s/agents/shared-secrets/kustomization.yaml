@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - ankiweb-credentials.sops.yaml
   - attic-push-token.sops.yaml
+  - brave-search-api-key.sops.yaml
   - buildbuddy-api-key.sops.yaml
   - github-token.sops.yaml
   - openclaw-telegram-bot-token.sops.yaml
