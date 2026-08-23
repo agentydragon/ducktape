@@ -1,11 +1,25 @@
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 
 from aiquota.config import load
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+def test_missing_configuration_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match=r"config\.toml"):
+        load(tmp_path / "config.toml")
+
+
+def test_remote_companion_is_sufficient_configuration(tmp_path: Path) -> None:
+    (tmp_path / "remote.toml").write_text('[remote_api]\nurl = "https://aiquota.test"\n')
+
+    config = load(tmp_path / "config.toml")
+
+    assert config.remote_api.url == "https://aiquota.test"
 
 
 def test_remote_companion_overrides_remote_api_without_replacing_main_config(tmp_path: Path) -> None:

@@ -231,6 +231,7 @@ py_test(
     imports = [".."],
     deps = [
         ":config",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
