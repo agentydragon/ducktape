@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import subprocess
 from pathlib import Path
@@ -20,6 +22,7 @@ from devinfra.pr_visuals.publisher import (
     find_test_invocations,
     list_ci_failures,
     no_visual_comment_body,
+    refresh_stale_pull_request_comment,
     success_comment_body,
     target_slug,
     upload_bundle,
@@ -296,6 +299,8 @@ def test_comment_bodies_link_commit_targets_and_report_errors() -> None:
     assert "[Open visual review](https://visuals/commits/sha/index.html)" in success
     assert "tests/example-visuals-" in success
     assert "Visual review failed" in failure
+    assert "publisher failed while processing this Bazel CI run" in failure
+    assert "invalid or incomplete" not in failure
     assert "missing artifact screen.png" in failure
 
     warning = success_comment_body(
@@ -318,6 +323,87 @@ def test_comment_bodies_link_commit_targets_and_report_errors() -> None:
     )
     assert "No visual artifacts were available" in no_visuals
     assert "https://github/actions/runs/1" in no_visuals
+
+
+@pytest.mark.parametrize(
+    ("existing_body", "expected_edit"),
+    [
+        (
+            "<!-- pr-visuals -->\n## Visual review failed for "
+            "[`01234567`](https://github.com/agentydragon/ducktape/commit/"
+            "0123456789abcdef0123456789abcdef01234567)",
+            True,
+        ),
+        (
+            "<!-- pr-visuals -->\n## Visual review for "
+            "[`fedcba98`](https://github.com/agentydragon/ducktape/commit/"
+            "fedcba9876543210fedcba9876543210fedcba98)",
+            True,
+        ),
+        (
+            "<!-- pr-visuals -->\n## Visual review for "
+            "[`01234567`](https://github.com/agentydragon/ducktape/commit/"
+            "0123456789abcdef0123456789abcdef01234567)\n\n"
+            "[Open visual review](https://visuals/commits/01234567/index.html)",
+            False,
+        ),
+        (
+            "<!-- pr-visuals -->\n## Visual review for "
+            "[`01234567`](https://github.com/agentydragon/ducktape/commit/"
+            "0123456789abcdef0123456789abcdef01234567)\n\n"
+            "> Bazel CI concluded `failure`.\n\nNo visual artifacts were available from the Bazel CI run.",
+            True,
+        ),
+        (None, False),
+    ],
+)
+def test_refresh_stale_pull_request_comment(
+    monkeypatch: pytest.MonkeyPatch, existing_body: str | None, expected_edit: bool
+) -> None:
+    edits: list[str] = []
+    created: list[str] = []
+
+    class FakeComment:
+        body = existing_body
+        user = type("User", (), {"type": "Bot"})()
+
+        def edit(self, body: str) -> None:
+            edits.append(body)
+
+    class FakeIssue:
+        def get_comments(self) -> list[FakeComment]:
+            return [] if existing_body is None else [FakeComment()]
+
+        def create_comment(self, body: str) -> None:
+            created.append(body)
+
+    class FakeGithub:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeGithub:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            pass
+
+        def get_repo(self, _repository: str) -> FakeGithub:
+            return self
+
+        def get_issue(self, _pull_request: int) -> FakeIssue:
+            return FakeIssue()
+
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.Github", FakeGithub)
+    refresh_stale_pull_request_comment(
+        repository="agentydragon/ducktape",
+        pull_request=4594,
+        commit_sha="0123456789abcdef0123456789abcdef01234567",
+        body="replacement",
+        token="token",
+    )
+
+    assert edits == (["replacement"] if expected_edit else [])
+    assert created == []
 
 
 def test_upload_publishes_all_indexes_last(tmp_path: Path) -> None:

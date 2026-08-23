@@ -696,7 +696,7 @@ def error_comment_body(
         lines += [*notice, ""]
     lines += [
         "> [!CAUTION]",
-        "> Bazel CI produced an invalid or incomplete visual-review artifact set.",
+        "> The visual-review publisher failed while processing this Bazel CI run.",
         "",
         "```text",
         message,
@@ -705,20 +705,48 @@ def error_comment_body(
     return "\n".join(lines)
 
 
+def _is_current_success_comment(*, body: str, repository: str, commit_sha: str) -> bool:
+    commit_url = f"https://github.com/{repository}/commit/{commit_sha}"
+    return f"## Visual review for [`{commit_sha[:8]}`]({commit_url})" in body and "[Open visual review](" in body
+
+
+def _find_pull_request_comment(issue: Any) -> Any | None:
+    return next(
+        (
+            comment
+            for comment in issue.get_comments()
+            if comment.user is not None and comment.user.type == "Bot" and COMMENT_MARKER in (comment.body or "")
+        ),
+        None,
+    )
+
+
 def upsert_pull_request_comment(*, repository: str, pull_request: int, body: str, token: str) -> None:
     with Github(auth=Auth.Token(token)) as github:
         issue = github.get_repo(repository).get_issue(pull_request)
-        existing = next(
-            (
-                comment
-                for comment in issue.get_comments()
-                if comment.user is not None and comment.user.type == "Bot" and COMMENT_MARKER in (comment.body or "")
-            ),
-            None,
-        )
+        existing = _find_pull_request_comment(issue)
         if existing is None:
             issue.create_comment(body)
         else:
+            existing.edit(body)
+
+
+def refresh_stale_pull_request_comment(
+    *, repository: str, pull_request: int, commit_sha: str, body: str, token: str
+) -> None:
+    """Refresh a singleton comment after a successful run exposed no visual artifacts.
+
+    A cache-hit rerun has no manifest to republish.  Preserve a useful successful
+    review already published for this exact SHA, but do not leave a failure or a
+    previous head's result attached to the PR.  With no existing singleton there
+    is nothing stale to correct, so the no-artifact run remains comment-free.
+    """
+    with Github(auth=Auth.Token(token)) as github:
+        issue = github.get_repo(repository).get_issue(pull_request)
+        existing = _find_pull_request_comment(issue)
+        if existing is not None and not _is_current_success_comment(
+            body=existing.body or "", repository=repository, commit_sha=commit_sha
+        ):
             existing.edit(body)
 
 
@@ -777,6 +805,7 @@ def main() -> None:
     conclusion: Literal["success", "failure", "neutral"] = "neutral"
     summary = "No tests executed by Bazel CI exposed visual-review.json."
     comment_body: str | None = None
+    refresh_stale_comment_body: str | None = None
     details_url: str | None = args.ci_details_url or workflow_url
     ci_failures: list[str] = []
     try:
@@ -791,14 +820,17 @@ def main() -> None:
                 output.write(f"found={'true' if tests else 'false'}\n")
         if not tests:
             summary += _ci_failure_summary(args.ci_conclusion, ci_failures)
-            if args.ci_conclusion != "success":
-                comment_body = no_visual_comment_body(
-                    repository=args.repository,
-                    commit_sha=args.sha,
-                    ci_conclusion=args.ci_conclusion,
-                    ci_failures=ci_failures,
-                    details_url=args.ci_details_url or workflow_url,
-                )
+            no_visual_body = no_visual_comment_body(
+                repository=args.repository,
+                commit_sha=args.sha,
+                ci_conclusion=args.ci_conclusion,
+                ci_failures=ci_failures,
+                details_url=args.ci_details_url or workflow_url,
+            )
+            if args.ci_conclusion == "success":
+                refresh_stale_comment_body = no_visual_body
+            else:
+                comment_body = no_visual_body
             print(f"{summary} Skipping publication.")
             return
 
@@ -870,6 +902,14 @@ def main() -> None:
         if comment_body is not None and args.pull_request is not None:
             upsert_pull_request_comment(
                 repository=args.repository, pull_request=args.pull_request, body=comment_body, token=github_token
+            )
+        elif refresh_stale_comment_body is not None and args.pull_request is not None:
+            refresh_stale_pull_request_comment(
+                repository=args.repository,
+                pull_request=args.pull_request,
+                commit_sha=args.sha,
+                body=refresh_stale_comment_body,
+                token=github_token,
             )
         upsert_check_run(
             repository=args.repository,
