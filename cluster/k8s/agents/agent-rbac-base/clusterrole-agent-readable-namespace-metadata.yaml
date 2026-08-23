@@ -1,0 +1,31 @@
+# Read-only namespace state explicitly classified as safe for durable agent access.
+#
+# Deliberately excludes Secrets and pod logs. ConfigMaps are included only when
+# the GitOps-owned Namespace opts in, asserting that its non-secret configuration
+# and workload metadata are not sensitive.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agent-readable-namespace-metadata
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - services
+      - configmaps
+      - persistentvolumeclaims
+      - events
+    verbs: ["get", "list", "watch"]
+
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+      - statefulsets
+    verbs: ["get", "list", "watch"]
+
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]

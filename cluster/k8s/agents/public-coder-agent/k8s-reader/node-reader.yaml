@@ -20,12 +20,21 @@ kind: ClusterRoleBinding
 metadata:
   name: public-coder-agent-node-reader
   annotations:
-    description: Binds public-coder-agent-reader to read-only node inventory.
+    description: Binds public-coder and its Haku superset to read-only node inventory.
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: public-coder-agent-node-reader
 subjects:
+  - kind: Group
+    name: oidc-ksbx-groups:haku
+    apiGroup: rbac.authorization.k8s.io
+  - kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
+  - kind: ServiceAccount
+    name: haku-claude
+    namespace: haku-claude-sandbox
   - kind: ServiceAccount
     name: public-coder-agent-reader
     namespace: public-coder-agent

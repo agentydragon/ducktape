@@ -1,6 +1,6 @@
 # Grant approved agent identities access in explicitly opted-in namespaces.
-# The namespace labels are GitOps-owned; they are access grants, not merely
-# metadata.
+# The namespace labels are GitOps-owned data classifications and access grants,
+# not merely descriptive metadata.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -11,12 +11,14 @@ metadata:
     policies.kyverno.io/severity: high
     policies.kyverno.io/subject: Namespace, RoleBinding
     policies.kyverno.io/description: >-
-      Generates namespaced, read-only diagnostics RoleBindings when a
-      GitOps-managed Namespace opts in with the corresponding RBAC label.
+      Generates namespaced, read-only metadata and optional pod-log
+      RoleBindings when a GitOps-managed Namespace opts in.
 spec:
   background: true
   rules:
-    - name: generate-agent-namespace-diagnostics-reader
+    # Either label grants the common metadata baseline. The logs label means
+    # metadata plus logs, so a namespace needs only one classification label.
+    - name: generate-agent-readable-metadata
       match:
         any:
           - resources:
@@ -24,23 +26,29 @@ spec:
                 - Namespace
               selector:
                 matchLabels:
-                  rbac.ducktape.io/agent-namespace-diagnostics-reader: "true"
+                  rbac.ducktape.io/agent-readable-metadata: "true"
+          - resources:
+              kinds:
+                - Namespace
+              selector:
+                matchLabels:
+                  rbac.ducktape.io/agent-readable-logs: "true"
       generate:
         generateExisting: true
         synchronize: true
         apiVersion: rbac.authorization.k8s.io/v1
         kind: RoleBinding
-        name: agent-namespace-diagnostics-reader
+        name: agent-readable-metadata
         namespace: "{{request.object.metadata.name}}"
         data:
           metadata:
             labels:
               rbac.ducktape.io/managed-by: kyverno
-              rbac.ducktape.io/access: agent-namespace-diagnostics-reader
+              rbac.ducktape.io/access: agent-readable-metadata
           roleRef:
             apiGroup: rbac.authorization.k8s.io
             kind: ClusterRole
-            name: namespace-diagnostics-reader
+            name: agent-readable-namespace-metadata
           subjects:
             - kind: Group
               name: oidc-ksbx-groups:haku
@@ -54,11 +62,11 @@ spec:
             - kind: Group
               name: oidc-ksbx-groups:kubectl-sandbox-users
               apiGroup: rbac.authorization.k8s.io
-    # The public-coder profile's standing SAR subject is deliberately separate
-    # from the Haku and interactive-kubectl identities above. A namespace must
-    # explicitly grant it diagnostics access; adding the generic agent label
-    # must not widen public-coder's Haku auto-approved Kubernetes surface.
-    - name: generate-public-coder-namespace-diagnostics-reader
+            - kind: ServiceAccount
+              name: public-coder-agent-reader
+              namespace: public-coder-agent
+
+    - name: generate-agent-readable-logs
       match:
         any:
           - resources:
@@ -66,24 +74,36 @@ spec:
                 - Namespace
               selector:
                 matchLabels:
-                  rbac.ducktape.io/public-coder-namespace-diagnostics-reader: "true"
+                  rbac.ducktape.io/agent-readable-logs: "true"
       generate:
         generateExisting: true
         synchronize: true
         apiVersion: rbac.authorization.k8s.io/v1
         kind: RoleBinding
-        name: public-coder-namespace-diagnostics-reader
+        name: agent-readable-logs
         namespace: "{{request.object.metadata.name}}"
         data:
           metadata:
             labels:
               rbac.ducktape.io/managed-by: kyverno
-              rbac.ducktape.io/access: public-coder-namespace-diagnostics-reader
+              rbac.ducktape.io/access: agent-readable-logs
           roleRef:
             apiGroup: rbac.authorization.k8s.io
             kind: ClusterRole
-            name: namespace-diagnostics-reader
+            name: agent-readable-namespace-logs
           subjects:
+            - kind: Group
+              name: oidc-ksbx-groups:haku
+              apiGroup: rbac.authorization.k8s.io
+            - kind: ServiceAccount
+              name: haku
+              namespace: haku-sandbox
+            - kind: ServiceAccount
+              name: haku-claude
+              namespace: haku-claude-sandbox
+            - kind: Group
+              name: oidc-ksbx-groups:kubectl-sandbox-users
+              apiGroup: rbac.authorization.k8s.io
             - kind: ServiceAccount
               name: public-coder-agent-reader
               namespace: public-coder-agent

@@ -3,5 +3,4 @@ kind: Namespace
 metadata:
   name: cert-manager
   labels:
-    rbac.ducktape.io/agent-namespace-diagnostics-reader: "true"
-    rbac.ducktape.io/public-coder-namespace-diagnostics-reader: "true"
+    rbac.ducktape.io/agent-readable-logs: "true"

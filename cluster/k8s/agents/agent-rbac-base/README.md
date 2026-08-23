@@ -82,26 +82,31 @@ diagnostics access without duplicating any permission rules:
   ClusterRoleBinding). Secret-free: no `secrets`/`pods/log`/`configmaps`, so it grants Haku no
   readable credential material — it can see what's running and how it's wired, nothing it could
   exfiltrate.
-- **Diagnostics in explicitly opted-in namespaces**. A GitOps-owned Namespace label,
-  `rbac.ducktape.io/agent-namespace-diagnostics-reader: "true"`, is the source of truth.
-  The `generate-agent-diagnostics-readers` Kyverno policy generates one namespaced
-  `RoleBinding` containing the Haku group, both Haku ServiceAccounts, and the
-  `kubectl-sandbox-users` group. It grants read-only access to controller diagnostics
-  and namespace workload inventory, not user content.
+- **Metadata and logs in explicitly classified namespaces**. GitOps-owned Namespace labels
+  are the source of truth. The `generate-agent-diagnostics-readers` Kyverno policy generates
+  namespaced RoleBindings for the Haku group, both Haku ServiceAccounts,
+  `kubectl-sandbox-users`, and `public-coder-agent-reader`.
 
 The labels are namespace-level access grants for the approved agent identities; the
 ClusterRoles remain the permission source of truth. Adding an agent identity means updating
 the generated subjects once, rather than changing every opted-in Namespace.
 
-The `public-coder` Haku access profile has a separate generated binding and namespace label:
-`rbac.ducktape.io/public-coder-namespace-diagnostics-reader: "true"`. Its sole subject is the
-fixed `public-coder-agent/public-coder-agent-reader` standing SAR identity. This is intentionally
-not a subject of the generic agent binding: a namespace must opt in separately before the
-public-coder profile receives automatic Kubernetes diagnostics access.
+There are exactly two generated namespace classifications:
+
+- `rbac.ducktape.io/agent-readable-metadata: "true"` grants the common metadata baseline:
+  workload/controller state, Events, PVCs, Jobs/CronJobs, and explicitly classified ConfigMaps.
+  It excludes Secrets and pod logs.
+- `rbac.ducktape.io/agent-readable-logs: "true"` means the same metadata is readable **and**
+  pod logs are readable. A logs label alone generates both bindings; the namespace does not need
+  both labels. The additive logs role grants only `get` on `pods/log`.
+
+Both labels use the same agent subject set. This keeps Haku structurally at least as capable as
+public-coder and makes the label a statement about the namespace's data sensitivity, not about a
+particular identity.
 
 The separate `oidc-ksbx-groups:kubectl-sandbox-users` group belongs to the interactive Claude
-Code Web/kubectl sandbox environment. It is not a parent group of Haku and is granted access
-independently by its Namespace labels or explicit RoleBindings.
+Code Web/kubectl sandbox environment. It is not a parent group of Haku, but it participates in
+the same explicit namespace classifications.
 
 This widens the original `haku-sandbox`-only perimeter (<../../../../haku/PLAN.md>) to read-only
 diagnostics; the structural fences (read-only verbs, no secret material, mitmproxy egress) are

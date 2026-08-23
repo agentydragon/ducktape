@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: public-coder-diagnostics-fixture
-  labels:
-    rbac.ducktape.io/public-coder-namespace-diagnostics-reader: "true"

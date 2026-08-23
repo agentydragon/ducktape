@@ -24,8 +24,8 @@ py_test(
     name = "test_agent_diagnostics_readers",
     srcs = ["test_agent_diagnostics_readers.py"],
     data = [
-        "testdata/namespace_agent_namespace_diagnostics.yaml",
-        "testdata/namespace_public_coder_diagnostics.yaml",
+        "testdata/namespace_agent_readable_logs.yaml",
+        "testdata/namespace_agent_readable_metadata.yaml",
         "testdata/namespace_without_agent_rbac.yaml",
         "//cluster/k8s:kyverno_policy_files",
         "@multitool//tools/kyverno",

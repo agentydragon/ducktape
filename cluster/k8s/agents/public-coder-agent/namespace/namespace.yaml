@@ -6,5 +6,6 @@ metadata:
     goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: "auto"
     name: public-coder-agent
+    rbac.ducktape.io/agent-readable-metadata: "true"
   annotations:
     description: Second OpenClaw agent, egress-confined to a CONNECT proxy and reachable only through the Authentik proxy outpost. Opens pull requests against public repositories as agentydragon-agent.

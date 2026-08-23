@@ -1,0 +1,46 @@
+# Narrow metadata/configuration diagnostics for the trusted Haku Console namespace.
+#
+# Do not replace this with namespace-diagnostics-reader: that broader role includes
+# pods/log, while Console logs can contain operator and personal-service data.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agent-haku-console-metadata-reader
+  namespace: haku-console
+  annotations:
+    description: Read-only Console workload, event, and public ConfigMap metadata.
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - events
+      - configmaps
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-haku-console-metadata-reader
+  namespace: haku-console
+  annotations:
+    description: Binds Haku and public-coder to narrow Console metadata diagnostics.
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agent-haku-console-metadata-reader
+subjects:
+  - kind: Group
+    name: oidc-ksbx-groups:haku
+    apiGroup: rbac.authorization.k8s.io
+  - kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
+  - kind: ServiceAccount
+    name: haku-claude
+    namespace: haku-claude-sandbox
+  - kind: ServiceAccount
+    name: public-coder-agent-reader
+    namespace: public-coder-agent

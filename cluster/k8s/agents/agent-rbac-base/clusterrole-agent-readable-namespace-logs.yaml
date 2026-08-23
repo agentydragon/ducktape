@@ -1,0 +1,14 @@
+# Pod logs explicitly classified as safe for durable agent access.
+#
+# This role is additive to agent-readable-namespace-metadata and grants only the
+# Kubernetes log subresource. A Namespace with the agent-readable-logs label
+# receives both bindings.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agent-readable-namespace-logs
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods/log
+    verbs: ["get"]

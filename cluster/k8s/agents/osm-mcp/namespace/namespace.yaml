@@ -4,5 +4,4 @@ metadata:
   name: osm-mcp
   labels:
     goldilocks.fairwinds.com/enabled: "false"
-    rbac.ducktape.io/agent-namespace-diagnostics-reader: "true"
-    rbac.ducktape.io/public-coder-namespace-diagnostics-reader: "true"
+    rbac.ducktape.io/agent-readable-logs: "true"

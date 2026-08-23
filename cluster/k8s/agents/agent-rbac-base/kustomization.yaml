@@ -8,6 +8,8 @@ resources:
   - rolebinding-sandbox.yaml
   - rolebinding-ollama-consumer.yaml
   - clusterrole-cluster-diagnostics-reader.yaml
+  - clusterrole-agent-readable-namespace-logs.yaml
+  - clusterrole-agent-readable-namespace-metadata.yaml
   - clusterrole-logs-configmaps-reader.yaml
   - clusterrole-namespace-diagnostics-reader.yaml
   - clusterrole-secrets-reader.yaml

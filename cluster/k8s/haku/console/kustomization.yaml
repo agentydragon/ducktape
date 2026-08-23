@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: haku-console
 
 resources:
+  - agent-diagnostics-rbac.yaml
   - deployment.yaml
   - serviceaccount.yaml
   - haku-console-google-calendar-client-credentials.sops.yaml

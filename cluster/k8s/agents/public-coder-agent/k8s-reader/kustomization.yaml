@@ -4,4 +4,6 @@ resources:
   - serviceaccount.yaml
   - role.yaml
   - node-reader.yaml
+  - cluster-metadata-reader.yaml
+  - extended-diagnostics-reader.yaml
   - cluster-admin-ceiling.yaml

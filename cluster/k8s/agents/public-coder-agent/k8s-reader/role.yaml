@@ -69,12 +69,21 @@ metadata:
   name: public-coder-agent-reader
   namespace: public-coder-agent
   annotations:
-    description: Binds the reader SA to the reader Role in this namespace.
+    description: Binds public-coder and its Haku superset to the reader Role.
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: public-coder-agent-reader
 subjects:
+  - kind: Group
+    name: oidc-ksbx-groups:haku
+    apiGroup: rbac.authorization.k8s.io
+  - kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
+  - kind: ServiceAccount
+    name: haku-claude
+    namespace: haku-claude-sandbox
   - kind: ServiceAccount
     name: public-coder-agent-reader
     namespace: public-coder-agent

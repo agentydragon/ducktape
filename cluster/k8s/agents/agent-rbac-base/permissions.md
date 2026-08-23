@@ -6,20 +6,26 @@ sensitive grants are sourced from the set of `*rolebinding-*.yaml` files under:
 - `cluster/k8s/agents/shared-rbac/`
 
 Use `roleRef.name` in those files to determine which permission class is bound:
-`namespace-diagnostics-reader`, `logs-configmaps-reader`, or `secrets-reader`
+`namespace-diagnostics-reader`, `agent-readable-namespace-metadata`,
+`agent-readable-namespace-logs`,
+`logs-configmaps-reader`, or `secrets-reader`
 (`secrets-reader` is an explicit per-service opt-in for
 `kubectl-sandbox-users` only — never Haku), or a
 service-specific reader Role/ClusterRole such as `ollama-reader`,
 `langfuse-log-reader`, or `claude-props-reader`.
 
-The common `namespace-diagnostics-reader` grant is the exception to the file matrix. A
-GitOps-owned Namespace opts the Haku and `kubectl-sandbox-users` identities in with
-`rbac.ducktape.io/agent-namespace-diagnostics-reader: "true"`; a separate
-`rbac.ducktape.io/public-coder-namespace-diagnostics-reader: "true"` label opts in only the
-`public-coder-agent/public-coder-agent-reader` standing SAR identity. The Kyverno policy at
+The common generated grants are exceptions to the file matrix. A GitOps-owned Namespace uses
+one of two data-classification labels:
+
+- `rbac.ducktape.io/agent-readable-metadata: "true"` binds the secret-free, log-free
+  `agent-readable-namespace-metadata` baseline.
+- `rbac.ducktape.io/agent-readable-logs: "true"` binds that metadata baseline plus the additive
+  `agent-readable-namespace-logs` role, which grants only `get` on `pods/log`.
+
+Both classifications grant the same subjects: Haku, its in-cluster ServiceAccounts,
+`kubectl-sandbox-users`, and `public-coder-agent-reader`. The Kyverno policy at
 `cluster/k8s/kyverno/policies/generate-agent-diagnostics-readers.yaml` generates the corresponding
-namespaced RoleBinding. The `kubectl-sandbox-users` group remains a separate Claude Code Web
-identity.
+namespaced RoleBindings. Sensitive or identity-specific access remains explicit service RBAC.
 
 Augur is reconciled from `gaffer-private`, so its agent RBAC lives cross-repo at
 `gaffer-private/k8s/augur/agent-rbac/`. That directory also defines an

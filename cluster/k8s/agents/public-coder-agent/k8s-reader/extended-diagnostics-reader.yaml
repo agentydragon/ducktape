@@ -1,0 +1,39 @@
+# Additional secret-free status for the public-coder workload itself.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agent-public-coder-extended-diagnostics-reader
+  namespace: public-coder-agent
+  annotations:
+    description: Read-only VolSync backup status for Haku and public-coder.
+rules:
+  - apiGroups: ["volsync.backube"]
+    resources:
+      - replicationsources
+      - replicationdestinations
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-public-coder-extended-diagnostics-reader
+  namespace: public-coder-agent
+  annotations:
+    description: Binds Haku and public-coder to VolSync status.
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agent-public-coder-extended-diagnostics-reader
+subjects:
+  - kind: Group
+    name: oidc-ksbx-groups:haku
+    apiGroup: rbac.authorization.k8s.io
+  - kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
+  - kind: ServiceAccount
+    name: haku-claude
+    namespace: haku-claude-sandbox
+  - kind: ServiceAccount
+    name: public-coder-agent-reader
+    namespace: public-coder-agent

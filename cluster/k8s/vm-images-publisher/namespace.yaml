@@ -13,4 +13,4 @@ metadata:
     # Events are included in namespace-diagnostics-reader and are safe for the
     # public-coder diagnostics surface; the old narrower RoleBinding is no
     # longer needed here.
-    rbac.ducktape.io/public-coder-namespace-diagnostics-reader: "true"
+    rbac.ducktape.io/agent-readable-metadata: "true"

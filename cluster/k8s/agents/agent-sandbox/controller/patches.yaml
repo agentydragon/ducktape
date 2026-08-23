@@ -5,6 +5,7 @@ metadata:
   labels:
     name: agent-sandbox-system
     goldilocks.fairwinds.com/enabled: "false"
+    rbac.ducktape.io/agent-readable-metadata: "true"
 ---
 apiVersion: apps/v1
 kind: Deployment

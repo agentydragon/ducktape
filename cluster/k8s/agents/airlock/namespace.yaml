@@ -6,8 +6,7 @@ metadata:
     name: airlock
     goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: "auto"
-    rbac.ducktape.io/agent-namespace-diagnostics-reader: "true"
-    rbac.ducktape.io/public-coder-namespace-diagnostics-reader: "true"
+    rbac.ducktape.io/agent-readable-logs: "true"
   annotations:
     # controlledValues has to be spelled out here: default-vpa-requests-only
     # only adds the annotation when it is absent, so declaring any policy of

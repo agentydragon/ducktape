@@ -1,0 +1,43 @@
+# Narrow cluster-scoped infrastructure metadata for public-coder.
+#
+# Haku already receives these resources through cluster-diagnostics-reader, and
+# is repeated here to make the Haku-superset invariant explicit. Keep public-coder
+# on this smaller surface rather than binding it to that broad role, which also
+# exposes all Pods, PVs, RBAC, webhooks, and node proxy endpoints.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: public-coder-agent-cluster-metadata-reader
+  annotations:
+    description: Read-only CRD schemas and node metrics for public-coder diagnostics.
+rules:
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: public-coder-agent-cluster-metadata-reader
+  annotations:
+    description: Binds public-coder and its Haku superset to CRD schemas and node metrics only.
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: public-coder-agent-cluster-metadata-reader
+subjects:
+  - kind: Group
+    name: oidc-ksbx-groups:haku
+    apiGroup: rbac.authorization.k8s.io
+  - kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
+  - kind: ServiceAccount
+    name: haku-claude
+    namespace: haku-claude-sandbox
+  - kind: ServiceAccount
+    name: public-coder-agent-reader
+    namespace: public-coder-agent

@@ -1,0 +1,62 @@
+# Public, secret-free analytics control-plane diagnostics for Haku and public-coder.
+#
+# The main resources include their observed status. This intentionally grants no
+# Secrets, pod exec, writes, or status-subresource mutation.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agent-analytics-diagnostics-reader
+  namespace: analytics
+  annotations:
+    description: Read-only analytics operator and observability resource status.
+rules:
+  - apiGroups: ["clickhouse.altinity.com"]
+    resources: ["clickhouseinstallations"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["clickhouse-keeper.altinity.com"]
+    resources: ["clickhousekeeperinstallations"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["helm.toolkit.fluxcd.io"]
+    resources: ["helmreleases"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["grafana.integreatly.org"]
+    resources:
+      - grafanadashboards
+      - grafanadatasources
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources:
+      - podmonitors
+      - servicemonitors
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-analytics-diagnostics-reader
+  namespace: analytics
+  annotations:
+    description: Binds Haku and public-coder to secret-free analytics status.
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agent-analytics-diagnostics-reader
+subjects:
+  - kind: Group
+    name: oidc-ksbx-groups:haku
+    apiGroup: rbac.authorization.k8s.io
+  - kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
+  - kind: ServiceAccount
+    name: haku-claude
+    namespace: haku-claude-sandbox
+  - kind: ServiceAccount
+    name: public-coder-agent-reader
+    namespace: public-coder-agent

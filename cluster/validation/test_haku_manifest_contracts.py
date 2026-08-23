@@ -153,6 +153,136 @@ def test_both_haku_runtimes_share_one_grant(k8s_dir: Path) -> None:
     assert not kinds & {"Role", "RoleBinding", "ClusterRole", "ClusterRoleBinding"}
 
 
+def test_public_coder_and_haku_standing_diagnostics_are_secret_free(k8s_dir: Path) -> None:
+    """Frequently used public diagnostics stay standing without widening secret or exec access."""
+    agent_readable_metadata_label = "rbac.ducktape.io/agent-readable-metadata"
+    agent_readable_logs_label = "rbac.ducktape.io/agent-readable-logs"
+    expected_namespace_labels = {
+        "agents/agent-sandbox/controller/patches.yaml": agent_readable_metadata_label,
+        "agents/public-coder-agent/namespace/namespace.yaml": agent_readable_metadata_label,
+        "monitoring/loki/namespace.yaml": agent_readable_metadata_label,
+        "nix-cache/namespace/namespace.yaml": agent_readable_metadata_label,
+        "vm-images-publisher/namespace.yaml": agent_readable_metadata_label,
+        "cli-proxy-api/namespace.yaml": agent_readable_logs_label,
+        "grocy/sf/app/namespace.yaml": agent_readable_logs_label,
+        "grocy/vallejo/app/namespace.yaml": agent_readable_logs_label,
+        "haku-ci/namespace.yaml": agent_readable_logs_label,
+        "props/namespace/namespace.yaml": agent_readable_logs_label,
+    }
+    for path, expected_label in expected_namespace_labels.items():
+        namespace = one(obj for obj in yaml.safe_load_all((k8s_dir / path).read_text()) if obj["kind"] == "Namespace")
+        labels = namespace["metadata"]["labels"]
+        assert labels[expected_label] == "true", path
+        assert not ({agent_readable_metadata_label, agent_readable_logs_label} - {expected_label}) & labels.keys(), path
+
+    for path in ("matrix/namespace/namespace.yaml", "x/haku/dispatch/namespace/namespace.yaml"):
+        namespace = one(obj for obj in yaml.safe_load_all((k8s_dir / path).read_text()) if obj["kind"] == "Namespace")
+        assert (
+            not {agent_readable_metadata_label, agent_readable_logs_label} & namespace["metadata"]["labels"].keys()
+        ), path
+
+    metadata_role = yaml.safe_load(
+        (k8s_dir / "agents/agent-rbac-base/clusterrole-agent-readable-namespace-metadata.yaml").read_text()
+    )
+    metadata_resources = set().union(*(set(rule["resources"]) for rule in metadata_role["rules"]))
+    assert metadata_role["metadata"]["name"] == "agent-readable-namespace-metadata"
+    assert all(rule["verbs"] == ["get", "list", "watch"] for rule in metadata_role["rules"])
+    assert not {"secrets", "pods/log", "pods/exec", "pods/attach", "pods/portforward"} & metadata_resources
+
+    logs_role = yaml.safe_load(
+        (k8s_dir / "agents/agent-rbac-base/clusterrole-agent-readable-namespace-logs.yaml").read_text()
+    )
+    assert logs_role["metadata"]["name"] == "agent-readable-namespace-logs"
+    assert logs_role["rules"] == [{"apiGroups": [""], "resources": ["pods/log"], "verbs": ["get"]}]
+
+    haku_subjects = {
+        ("Group", "oidc-ksbx-groups:haku", None),
+        ("ServiceAccount", "haku", "haku-sandbox"),
+        ("ServiceAccount", "haku-claude", "haku-claude-sandbox"),
+    }
+    public_coder_subject = ("ServiceAccount", "public-coder-agent-reader", "public-coder-agent")
+
+    expected_roles = {
+        "analytics/cluster/agent-diagnostics-rbac.yaml": {
+            "clickhouse.altinity.com": {"clickhouseinstallations"},
+            "clickhouse-keeper.altinity.com": {"clickhousekeeperinstallations"},
+            "helm.toolkit.fluxcd.io": {"helmreleases"},
+            "batch": {"jobs"},
+            "policy": {"poddisruptionbudgets"},
+            "grafana.integreatly.org": {"grafanadashboards", "grafanadatasources"},
+            "monitoring.coreos.com": {"podmonitors", "servicemonitors"},
+        },
+        "haku/console/agent-diagnostics-rbac.yaml": {"": {"pods", "events", "configmaps"}, "apps": {"deployments"}},
+        "agents/public-coder-agent/k8s-reader/extended-diagnostics-reader.yaml": {
+            "volsync.backube": {"replicationsources", "replicationdestinations"}
+        },
+    }
+    expected_kustomization_resources = {
+        "analytics/cluster/kustomization.yaml": "agent-diagnostics-rbac.yaml",
+        "haku/console/kustomization.yaml": "agent-diagnostics-rbac.yaml",
+        "agents/public-coder-agent/k8s-reader/kustomization.yaml": "extended-diagnostics-reader.yaml",
+    }
+    for path, resource in expected_kustomization_resources.items():
+        kustomization = yaml.safe_load((k8s_dir / path).read_text())
+        assert resource in kustomization["resources"], path
+    public_coder_kustomization = yaml.safe_load(
+        (k8s_dir / "agents/public-coder-agent/k8s-reader/kustomization.yaml").read_text()
+    )
+    assert "cluster-metadata-reader.yaml" in public_coder_kustomization["resources"]
+
+    for path, expected_rules in expected_roles.items():
+        objects = list(yaml.safe_load_all((k8s_dir / path).read_text()))
+        role = one(obj for obj in objects if obj["kind"] == "Role")
+        binding = one(obj for obj in objects if obj["kind"] == "RoleBinding")
+        assert binding["roleRef"] == {
+            "apiGroup": "rbac.authorization.k8s.io",
+            "kind": "Role",
+            "name": role["metadata"]["name"],
+        }
+        subjects = {(item["kind"], item["name"], item.get("namespace")) for item in binding["subjects"]}
+        assert subjects == haku_subjects | {public_coder_subject}
+        actual_rules = {one(rule["apiGroups"]): set(rule["resources"]) for rule in role["rules"]}
+        assert actual_rules == expected_rules
+        assert all(rule["verbs"] == ["get", "list", "watch"] for rule in role["rules"])
+        assert not {"secrets", "pods/log", "pods/exec"} & set().union(*actual_rules.values())
+
+    cluster_objects = list(
+        yaml.safe_load_all((k8s_dir / "agents/public-coder-agent/k8s-reader/cluster-metadata-reader.yaml").read_text())
+    )
+    cluster_role = one(obj for obj in cluster_objects if obj["kind"] == "ClusterRole")
+    cluster_binding = one(obj for obj in cluster_objects if obj["kind"] == "ClusterRoleBinding")
+    assert cluster_role["rules"] == [
+        {
+            "apiGroups": ["apiextensions.k8s.io"],
+            "resources": ["customresourcedefinitions"],
+            "verbs": ["get", "list", "watch"],
+        },
+        {"apiGroups": ["metrics.k8s.io"], "resources": ["nodes"], "verbs": ["get", "list"]},
+    ]
+    cluster_subjects = {(item["kind"], item["name"], item.get("namespace")) for item in cluster_binding["subjects"]}
+    assert cluster_subjects == haku_subjects | {public_coder_subject}
+
+    # Haku also has the same two cluster-scoped reads through its existing,
+    # secret-free cluster diagnostics binding; do not bind public-coder to that
+    # much broader role merely to reuse it.
+    haku_cluster_role = yaml.safe_load(
+        (k8s_dir / "agents/agent-rbac-base/clusterrole-cluster-diagnostics-reader.yaml").read_text()
+    )
+    haku_cluster_rules = {
+        (one(rule["apiGroups"]), resource) for rule in haku_cluster_role["rules"] for resource in rule["resources"]
+    }
+    assert ("apiextensions.k8s.io", "customresourcedefinitions") in haku_cluster_rules
+    assert ("metrics.k8s.io", "nodes") in haku_cluster_rules
+    haku_cluster_binding = yaml.safe_load(
+        (k8s_dir / "agents/shared-rbac/clusterrolebinding-cluster-diagnostics-reader.yaml").read_text()
+    )
+    bound_haku_subjects = {
+        (item["kind"], item["name"], item.get("namespace")) for item in haku_cluster_binding["subjects"]
+    }
+    assert haku_subjects <= bound_haku_subjects
+    assert public_coder_subject not in bound_haku_subjects
+
+
 def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     """Agent traffic, standing SAR identity, and proxy execution authority stay separate."""
     agent_dir = k8s_dir / "agents" / "public-coder-agent"
@@ -287,10 +417,19 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
         "name": "public-coder-agent-reader",
         "namespace": "public-coder-agent",
     }
+    haku_standing_subjects = {
+        ("Group", "oidc-ksbx-groups:haku", None),
+        ("ServiceAccount", "haku", "haku-sandbox"),
+        ("ServiceAccount", "haku-claude", "haku-claude-sandbox"),
+    }
     standing_binding_files = (
         agent_dir / "k8s-reader" / "role.yaml",
         agent_dir / "k8s-reader" / "node-reader.yaml",
+        agent_dir / "k8s-reader" / "cluster-metadata-reader.yaml",
+        agent_dir / "k8s-reader" / "extended-diagnostics-reader.yaml",
+        k8s_dir / "analytics" / "cluster" / "agent-diagnostics-rbac.yaml",
         k8s_dir / "ducktape-flux" / "ducktape-flux-reader.yaml",
+        console_dir / "agent-diagnostics-rbac.yaml",
     )
     standing_role_refs = {
         (obj["metadata"].get("namespace"), obj["roleRef"]["kind"], obj["roleRef"]["name"])
@@ -300,10 +439,25 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     }
     assert standing_role_refs == {
         ("public-coder-agent", "Role", "public-coder-agent-reader"),
+        ("public-coder-agent", "Role", "agent-public-coder-extended-diagnostics-reader"),
         (None, "ClusterRole", "public-coder-agent-node-reader"),
+        (None, "ClusterRole", "public-coder-agent-cluster-metadata-reader"),
+        ("analytics", "Role", "agent-analytics-diagnostics-reader"),
         ("ducktape-flux", "Role", "ducktape-flux-reader"),
+        ("haku-console", "Role", "agent-haku-console-metadata-reader"),
     }
     assert standing_subject not in ceiling["subjects"]
+    subjects_by_role_ref: dict[tuple[str | None, str, str], set[tuple[str, str, str | None]]] = {}
+    for path in standing_binding_files:
+        for binding in yaml.safe_load_all(path.read_text()):
+            if binding["kind"] not in {"RoleBinding", "ClusterRoleBinding"}:
+                continue
+            role_ref = (binding["metadata"].get("namespace"), binding["roleRef"]["kind"], binding["roleRef"]["name"])
+            subjects_by_role_ref.setdefault(role_ref, set()).update(
+                (item["kind"], item["name"], item.get("namespace")) for item in binding["subjects"]
+            )
+    for role_ref in standing_role_refs:
+        assert haku_standing_subjects <= subjects_by_role_ref[role_ref], role_ref
 
     reader_kustomization = yaml.safe_load((agent_dir / "k8s-reader" / "kustomization.yaml").read_text())
     assert "cluster-admin-ceiling.yaml" in reader_kustomization["resources"]
