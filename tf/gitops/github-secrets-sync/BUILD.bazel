@@ -5,7 +5,6 @@ tf_providers_versions(
     providers = {
         "github": "integrations/github:~>6.6",
         "kubernetes": "hashicorp/kubernetes:~>2.35",
-        "random": "hashicorp/random:~>3.9.0",
     },
     tf_version = "1.9.8",
 )
@@ -15,7 +14,6 @@ tf_module(
     providers = [
         "github",
         "kubernetes",
-        "random",
     ],
     providers_versions = ":providers",
 )

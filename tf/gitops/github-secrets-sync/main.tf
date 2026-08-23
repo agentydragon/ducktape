@@ -39,35 +39,15 @@ data "kubernetes_secret" "buildbuddy_api_key" {
   }
 }
 
-data "github_user" "agentydragon" {
-  username = "agentydragon"
-}
-
-resource "random_password" "pr_visuals_access_key" {
-  length  = 32
-  special = false
-  keepers = {
-    rotation = "2026-07-12-1"
-  }
-}
-
-resource "random_password" "pr_visuals_secret_key" {
-  length  = 64
-  special = false
-  keepers = {
-    rotation = "2026-07-12-1"
-  }
-}
-
-resource "kubernetes_secret" "pr_visuals_s3_credentials" {
+data "kubernetes_secret" "pr_visuals_s3_credentials" {
   metadata {
-    name      = "pr-visuals-s3-credentials"
+    name      = "s3-identity-pr-visuals-writer"
     namespace = "seaweedfs"
   }
-  data = {
-    prVisualsAccessKey = random_password.pr_visuals_access_key.result
-    prVisualsSecretKey = random_password.pr_visuals_secret_key.result
-  }
+}
+
+data "github_user" "agentydragon" {
+  username = "agentydragon"
 }
 
 # --- GitHub Actions Secrets ---
@@ -115,17 +95,15 @@ removed {
 }
 
 resource "github_actions_secret" "pr_visuals_access_key" {
-  #checkov:skip=CKV_GIT_4: Value is generated in Terraform state and sent over TLS; GitHub encrypts it at rest. This module's existing SOPS key uses the same provider path.
   repository      = "ducktape"
   secret_name     = "PR_VISUALS_ACCESS_KEY"
-  plaintext_value = random_password.pr_visuals_access_key.result
+  plaintext_value = data.kubernetes_secret.pr_visuals_s3_credentials.data["accessKey"]
 }
 
 resource "github_actions_secret" "pr_visuals_secret_key" {
-  #checkov:skip=CKV_GIT_4: Value is generated in Terraform state and sent over TLS; GitHub encrypts it at rest. This module's existing SOPS key uses the same provider path.
   repository      = "ducktape"
   secret_name     = "PR_VISUALS_SECRET_KEY"
-  plaintext_value = random_password.pr_visuals_secret_key.result
+  plaintext_value = data.kubernetes_secret.pr_visuals_s3_credentials.data["secretKey"]
 }
 
 # --- GitHub Actions Variables ---

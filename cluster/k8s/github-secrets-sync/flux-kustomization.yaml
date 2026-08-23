@@ -26,5 +26,5 @@ spec:
       namespace: ducktape-flux
     - name: github-secrets-sync-secrets
       namespace: ducktape-flux
-    - name: seaweedfs-public-s3
+    - name: seaweedfs-pr-visuals-bucket
       namespace: ducktape-flux
