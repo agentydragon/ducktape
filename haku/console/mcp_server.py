@@ -43,7 +43,7 @@ from fastmcp.server.providers import Provider
 from fastmcp.tools import Tool, ToolResult
 from fastmcp.utilities.versions import VersionSpec
 from mcp import types as mcp_types
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, ValidationError, model_serializer
 
 from haku.console.auto_approval import AutoApprovalPolicyRegistry, ToolAutoApprovalMode
 from haku.console.config import Settings, tool_call_console_url
@@ -89,7 +89,6 @@ from haku.console.tool_calls import (
     MCP_TOOL_META_KEY,
     McpProxyToolMetadata,
     McpToolCallMetadata,
-    McpToolCallRecord,
     SubmitToolCallRequest,
     ToolCallPayloadField,
     ToolCallRecord,
@@ -188,15 +187,25 @@ class ToolCallView(BaseModel):
     url: str
 
 
-class McpToolCallResponse(McpToolCallRecord):
-    """A projected tool-call response with its operator-facing deep link."""
+class McpToolCallResponse(ToolCallRecord):
+    """A compact MCP edge rendering of the shared domain record with its deep link."""
 
     url: str
 
+    @model_serializer(mode="wrap")
+    def _serialize(self, serializer: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = serializer(self)
+        for field in ToolCallPayloadField:
+            if field.value not in self.model_fields_set:
+                data.pop(field.value, None)
+        return data
 
-def _mcp_tool_call_response(record: McpToolCallRecord, settings: Settings) -> McpToolCallResponse:
-    return McpToolCallResponse.model_validate(
-        {**record.model_dump(), "url": _tool_call_url(settings, record.tool_call_id)}
+
+def _mcp_tool_call_response(record: ToolCallRecord, settings: Settings) -> McpToolCallResponse:
+    return McpToolCallResponse.model_construct(
+        _fields_set=record.model_fields_set | {"url"},
+        **record.model_dump(),
+        url=_tool_call_url(settings, record.tool_call_id),
     )
 
 
@@ -908,7 +917,7 @@ def build_console_mcp(
         blobs; nested selectors are not supported.
         """
         try:
-            record = await context.tool_calls.get_mcp_tool_call(tool_call_id, actor=actor, fields=frozenset(fields))
+            record = await context.tool_calls.get(tool_call_id, actor=actor, fields=frozenset(fields))
         except (ToolCallNotFoundError, ToolCallStateConflictError) as error:
             raise ToolError(str(error)) from error
         return _mcp_tool_call_response(record, context.settings)
@@ -966,7 +975,7 @@ def build_console_mcp(
         whole opaque ``arguments``, ``rationale``, or ``result`` payloads; nested selectors are not
         supported.
         """
-        records = await context.tool_calls.list_mcp_tool_calls(
+        records = await context.tool_calls.list_tool_calls(
             actor=actor,
             fields=frozenset(fields),
             statuses=status,

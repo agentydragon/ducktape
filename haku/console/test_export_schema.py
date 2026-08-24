@@ -45,5 +45,11 @@ def test_runtime_kind_is_a_read_only_closed_identity_field() -> None:
         assert "runtime_kind" in published[model]["required"]
 
 
+def test_tool_call_serializer_preserves_the_structured_frontend_schema() -> None:
+    published = schemas()["ToolCallRecord"]
+    assert {"tool_call_id", "caller", "status", "arguments", "rationale", "result"} <= published["properties"].keys()
+    assert {"tool_call_id", "caller", "status", "arguments"} <= set(published["required"])
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

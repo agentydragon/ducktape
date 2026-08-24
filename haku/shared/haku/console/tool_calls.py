@@ -13,7 +13,7 @@ from enum import StrEnum
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
+from pydantic import BaseModel, Field
 
 MCP_TOOL_META_KEY = "works.allegedly.haku/tool"
 MCP_TOOL_CALL_META_KEY = "works.allegedly.haku/tool-call"
@@ -81,6 +81,8 @@ type ToolCallCaller = Annotated[OperatorToolCallCaller | AgentToolCallCaller, Fi
 
 
 class ToolCallRecord(BaseModel):
+    """The single actor-scoped domain record behind console and MCP edge projections."""
+
     tool_call_id: str
     server_id: str
     tool_name: str
@@ -98,38 +100,3 @@ class ToolCallRecord(BaseModel):
     approval_policy_id: str | None = None
     auto_approval_evaluation: str | None = None
     approved_at: datetime.datetime | None = None
-
-
-class McpToolCallRecord(BaseModel):
-    """The actor-scoped MCP projection of a tool call.
-
-    The three payload fields are populated only when requested by the MCP caller. The custom
-    serializer keeps an explicitly selected nullable value (for example ``result=None``) distinct
-    from a field that was not selected at all.
-    """
-
-    tool_call_id: str
-    server_id: str
-    tool_name: str
-    caller: ToolCallCaller
-    status: ToolCallStatus
-    created_at: datetime.datetime
-    updated_at: datetime.datetime
-    arguments: dict[str, Any] | None = None
-    rationale: str | None = None
-    title: str | None = None
-    result: dict[str, Any] | None = None
-    error: str | None = None
-    denial_reason: str | None = None
-    withdrawal_reason: str | None = None
-    approval_policy_id: str | None = None
-    auto_approval_evaluation: str | None = None
-    approved_at: datetime.datetime | None = None
-
-    @model_serializer(mode="wrap")
-    def _serialize(self, serializer: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        data = serializer(self)
-        for field in ToolCallPayloadField:
-            if field.value not in self.model_fields_set:
-                data.pop(field.value, None)
-        return data

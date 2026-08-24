@@ -73,7 +73,6 @@ from haku.console.tool_call_service import (
 from haku.console.tool_calls import (
     AgentToolCallCaller,
     ApprovalDecisionRequest,
-    McpToolCallRecord,
     OperatorToolCallCaller,
     SubmitToolCallRequest,
     ToolCallCaller,
@@ -302,30 +301,21 @@ class PostgresToolCallLedger:
             session.add(principal)
             return record
 
-    async def get(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallRecord:
+    async def get(
+        self, tool_call_id: str, *, actor: ToolCallActor, fields: frozenset[ToolCallPayloadField] | None = None
+    ) -> ToolCallRecord:
         async with self._sessions.begin() as session:
-            stmt = self._record_projection_stmt(actor).where(McpToolCall.tool_call_id == tool_call_id)
-            result = await session.execute(stmt)
-            projection = result.tuples().first()
+            stmt = self._projection_stmt(actor, fields).where(McpToolCall.tool_call_id == tool_call_id)
+            projection = (await session.execute(stmt)).mappings().first()
             if projection is None:
                 raise ToolCallNotFoundError("tool call not found")
-            return self._record_from_projection(*projection)
-
-    async def get_mcp_tool_call(
-        self, tool_call_id: str, *, actor: ToolCallActor, fields: frozenset[ToolCallPayloadField]
-    ) -> McpToolCallRecord:
-        async with self._sessions.begin() as session:
-            stmt = self._mcp_projection_stmt(actor, fields).where(McpToolCall.tool_call_id == tool_call_id)
-            result = await session.execute(stmt)
-            projection = result.mappings().first()
-            if projection is None:
-                raise ToolCallNotFoundError("tool call not found")
-            return self._mcp_record_from_projection(projection, fields)
+            return self._record_from_mapping(projection)
 
     async def list_tool_calls(
         self,
         *,
         actor: ToolCallActor,
+        fields: frozenset[ToolCallPayloadField] | None = None,
         statuses: list[ToolCallStatus] | None = None,
         since: datetime.datetime | None = None,
         auto_approved: bool | None = None,
@@ -334,7 +324,7 @@ class PostgresToolCallLedger:
         cursor: ToolCallPageCursor | None = None,
     ) -> list[ToolCallRecord]:
         async with self._sessions.begin() as session:
-            stmt = self._record_projection_stmt(actor)
+            stmt = self._projection_stmt(actor, fields)
             if since is not None:
                 stmt = stmt.where(McpToolCall.updated_at > since)
             if statuses:
@@ -359,37 +349,8 @@ class PostgresToolCallLedger:
                 boundary = tuple_(literal(cursor.created_at), literal(cursor.tool_call_id))
                 stmt = stmt.where(position < boundary if newest_first else position > boundary)
             result = await session.execute(stmt.order_by(*order).limit(limit))
-            projections = result.tuples().all()
-            return [self._record_from_projection(*projection) for projection in projections]
-
-    async def list_mcp_tool_calls(
-        self,
-        *,
-        actor: ToolCallActor,
-        fields: frozenset[ToolCallPayloadField],
-        statuses: list[ToolCallStatus] | None = None,
-        since: datetime.datetime | None = None,
-        auto_approved: bool | None = None,
-        limit: int = 100,
-        newest_first: bool = False,
-    ) -> list[McpToolCallRecord]:
-        async with self._sessions.begin() as session:
-            stmt = self._mcp_projection_stmt(actor, fields)
-            if since is not None:
-                stmt = stmt.where(McpToolCall.updated_at > since)
-            if statuses:
-                stmt = stmt.where(McpToolCall.status.in_(statuses))
-            if auto_approved is not None:
-                condition = McpToolCall.approval_policy_id.isnot(None)
-                stmt = stmt.where(condition if auto_approved else ~condition)
-            order = (
-                (McpToolCall.created_at.desc(), McpToolCall.tool_call_id.desc())
-                if newest_first
-                else (McpToolCall.created_at, McpToolCall.tool_call_id)
-            )
-            result = await session.execute(stmt.order_by(*order).limit(limit))
             projections = result.mappings().all()
-            return [self._mcp_record_from_projection(projection, fields) for projection in projections]
+            return [self._record_from_mapping(projection) for projection in projections]
 
     async def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> ToolCallRecord:
         operator = self._require_operator_actor(actor)
@@ -548,31 +509,11 @@ class PostgresToolCallLedger:
                 raise TypeError(f"unsupported tool-call actor: {type(actor).__name__}")
 
     @classmethod
-    def _record_projection_stmt(
-        cls, actor: ToolCallActor
-    ) -> Select[tuple[McpToolCall, McpToolCallPrincipal, UUID, UUID, str]]:
-        """Select a scoped call together with the exact durable principal used to render it."""
-        return cls._scope_to_actor(
-            select(
-                McpToolCall,
-                McpToolCallPrincipal,
-                CredentialBinding.agent_id,
-                Agent.owner_operator_id,
-                AgentNameReservation.display_name,
-            ),
-            actor,
-        ).outerjoin(
-            AgentNameReservation,
-            and_(
-                AgentNameReservation.agent_id == Agent.agent_id,
-                AgentNameReservation.reservation_id == Agent.current_name_reservation_id,
-            ),
-        )
-
-    @classmethod
-    def _mcp_projection_stmt(
-        cls, actor: ToolCallActor, fields: frozenset[ToolCallPayloadField]
+    def _projection_stmt(
+        cls, actor: ToolCallActor, fields: frozenset[ToolCallPayloadField] | None
     ) -> Select[tuple[Any, ...]]:
+        """Select one actor-scoped row shape; ``fields`` only controls optional payload columns."""
+        selected = frozenset(ToolCallPayloadField) if fields is None else fields
         columns: list[Any] = [
             McpToolCall.tool_call_id.label("tool_call_id"),
             McpToolCall.server_id.label("server_id"),
@@ -599,7 +540,7 @@ class PostgresToolCallLedger:
             ToolCallPayloadField.RATIONALE: McpToolCall.rationale.label("rationale"),
             ToolCallPayloadField.RESULT: McpToolCall.result_json.label("result"),
         }
-        columns.extend(payload_columns[field] for field in ToolCallPayloadField if field in fields)
+        columns.extend(payload_columns[field] for field in ToolCallPayloadField if field in selected)
         return cls._scope_to_actor(select(*columns), actor).outerjoin(
             AgentNameReservation,
             and_(
@@ -630,45 +571,31 @@ class PostgresToolCallLedger:
         )
 
     @classmethod
-    def _record_from_projection(
-        cls,
-        row: McpToolCall,
-        principal_row: McpToolCallPrincipal,
-        agent_id: UUID | None,
-        operator_id: UUID | None,
-        display_name: str | None,
-    ) -> ToolCallRecord:
-        principal = cls._resolve_principal(
-            row.tool_call_id, principal_row, agent_id=agent_id, operator_id=operator_id, display_name=display_name
-        )
-        return cls._record_from_principal(row, principal)
-
-    @classmethod
-    def _mcp_record_from_projection(
-        cls, projection: Mapping[str, Any], fields: frozenset[ToolCallPayloadField]
-    ) -> McpToolCallRecord:
-        principal_row = McpToolCallPrincipal(
-            tool_call_id=projection["tool_call_id"],
-            operator_id=projection["principal_operator_id"],
-            binding_id=projection["principal_binding_id"],
-            session_id=projection["principal_session_id"],
-        )
+    def _record_from_mapping(cls, projection: Mapping[str, Any]) -> ToolCallRecord:
         principal = cls._resolve_principal(
             projection["tool_call_id"],
-            principal_row,
+            McpToolCallPrincipal(
+                tool_call_id=projection["tool_call_id"],
+                operator_id=projection["principal_operator_id"],
+                binding_id=projection["principal_binding_id"],
+                session_id=projection["principal_session_id"],
+            ),
             agent_id=projection["agent_id"],
             operator_id=projection["operator_id"],
             display_name=projection["display_name"],
         )
-        caller: ToolCallCaller
         if isinstance(principal, _OperatorToolCallPrincipal):
-            caller = OperatorToolCallCaller()
+            caller: ToolCallCaller = OperatorToolCallCaller()
         else:
             caller = AgentToolCallCaller(
                 agent_id=principal.agent_id, display_name=principal.display_name, session_id=principal.session_id
             )
-        payload = {field.value: projection[field.value] for field in ToolCallPayloadField if field in fields}
-        return McpToolCallRecord(
+        selected_payloads = {field.value for field in ToolCallPayloadField if field.value in projection}
+        fields_set = (
+            set(ToolCallRecord.model_fields) - {field.value for field in ToolCallPayloadField} | selected_payloads
+        )
+        return ToolCallRecord.model_construct(
+            _fields_set=fields_set,
             tool_call_id=projection["tool_call_id"],
             server_id=projection["server_id"],
             tool_name=projection["tool_name"],
@@ -683,7 +610,9 @@ class PostgresToolCallLedger:
             approval_policy_id=projection["approval_policy_id"],
             auto_approval_evaluation=projection["auto_approval_evaluation"],
             approved_at=projection["approved_at"],
-            **payload,
+            arguments=projection.get("arguments", {}),
+            rationale=projection.get("rationale", ""),
+            result=projection.get("result"),
         )
 
     @staticmethod
