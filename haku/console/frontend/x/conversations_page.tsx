@@ -292,6 +292,12 @@ function ConversationListPage() {
                         <Badge size="sm" color={statusColor(conversation.live_session.status)} variant="light">
                           {conversation.live_session.status}
                         </Badge>
+                      ) : conversation.last_session_status === "failed" ? (
+                        // A failed session is not live, so without this branch the row would read
+                        // like any idle thread.
+                        <Badge size="sm" color="red" variant="light">
+                          failed
+                        </Badge>
                       ) : (
                         <Badge size="sm" color="gray" variant="light">
                           no live session

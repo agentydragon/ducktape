@@ -252,8 +252,10 @@ const setupNarration = [
   },
 ] as const;
 // One conversation per row, with the channels holding it rather than one surface: the first is a
-// room with a live session, the second a room between runners, the third a browser thread nothing
-// is attached to.
+// room with a live session, the second a room between runners whose last session closed cleanly,
+// the third a browser thread whose runner failed. A failed session is never live — the backend
+// reports it through `last_session_status` — so the third row is the shape production actually
+// serves for a failed thread.
 const conversationPage = {
   conversations: [
     {
@@ -263,6 +265,7 @@ const conversationPage = {
       last_activity_at: "2026-08-01T03:01:00Z",
       attachments: [{ surface: "matrix", address: "!ops:example.org", attached_at: "2026-08-01T03:00:00Z" }],
       live_session: { session_id: conversationSessionId, status: "ready" },
+      last_session_status: null,
       item_count: 6,
     },
     {
@@ -272,6 +275,7 @@ const conversationPage = {
       last_activity_at: "2026-07-31T18:42:00Z",
       attachments: [{ surface: "matrix", address: "!archive:example.org", attached_at: "2026-07-31T18:20:00Z" }],
       live_session: null,
+      last_session_status: "closed",
       item_count: 8,
     },
     {
@@ -280,7 +284,8 @@ const conversationPage = {
       created_at: "2026-07-30T09:10:00Z",
       last_activity_at: "2026-07-30T09:12:00Z",
       attachments: [],
-      live_session: { session_id: "70000000-0000-4000-8000-000000000003", status: "failed" },
+      live_session: null,
+      last_session_status: "failed",
       item_count: 2,
     },
   ],

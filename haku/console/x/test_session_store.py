@@ -862,6 +862,31 @@ async def test_a_replacement_session_leaves_the_thread_and_its_attachment_where_
     assert [attachment.address for attachment in detail.attachments] == [ROOM]
 
 
+async def test_a_conversation_whose_last_session_failed_says_so_in_the_inventory(chat_store, operator_id) -> None:
+    """A failed session is not live, so `live_session: null` alone would make a thread whose runner
+    died read like any idle thread. The inventory says how the newest session ended — and only for
+    conversations no session is holding, so a failed session already replaced reports nothing."""
+    failed, _ = await chat_store.create(operator_id)
+    await chat_store.fail(failed.session_id, "the sandbox went away")
+    replaced, _ = await chat_store.create(operator_id)
+    await chat_store.fail(replaced.session_id, "the sandbox went away")
+    await chat_store.create(operator_id, conversation_id=await chat_store.conversation_of(replaced.session_id))
+    live, _ = await chat_store.create(operator_id)
+
+    page = await chat_store.list_operator_conversations(operator_id, cursor=None, limit=10)
+    rows = {conversation.conversation_id: conversation for conversation in page.conversations}
+
+    failed_row = rows[await chat_store.conversation_of(failed.session_id)]
+    assert failed_row.live_session is None
+    assert failed_row.last_session_status == SessionStatus.FAILED
+    replaced_row = rows[await chat_store.conversation_of(replaced.session_id)]
+    assert replaced_row.live_session is not None
+    assert replaced_row.last_session_status is None
+    live_row = rows[await chat_store.conversation_of(live.session_id)]
+    assert live_row.live_session is not None
+    assert live_row.last_session_status is None
+
+
 async def test_a_conversation_created_between_two_pages_cannot_shift_what_the_second_one_holds(
     chat_store, operator_id
 ) -> None:

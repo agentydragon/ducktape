@@ -114,6 +114,12 @@ class ConversationSummary(BaseModel):
     )
     attachments: list[ChannelAttachment]
     live_session: LiveSession | None
+    last_session_status: SessionStatus | None = Field(
+        default=None,
+        description="How this conversation's most recent session ended — what separates a thread whose"
+        " runner failed from one that closed cleanly, which `live_session: null` alone cannot say."
+        " None while a session is live (its state is `live_session`).",
+    )
     item_count: int = Field(
         description="How many transcript rows this conversation holds — prompts, answers and calls alike."
     )
