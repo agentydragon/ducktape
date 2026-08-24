@@ -42,7 +42,9 @@ from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActo
 from haku.console.tool_calls import (
     ApprovalDecision,
     ApprovalDecisionRequest,
+    McpToolCallRecord,
     SubmitToolCallRequest,
+    ToolCallPayloadField,
     ToolCallRecord,
     ToolCallStatus,
 )
@@ -102,6 +104,10 @@ class ToolCallRepository(Protocol):
 
     async def get(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallRecord: ...
 
+    async def get_mcp_tool_call(
+        self, tool_call_id: str, *, actor: ToolCallActor, fields: frozenset[ToolCallPayloadField]
+    ) -> McpToolCallRecord: ...
+
     async def list_tool_calls(
         self,
         *,
@@ -113,6 +119,18 @@ class ToolCallRepository(Protocol):
         newest_first: bool = False,
         cursor: ToolCallPageCursor | None = None,
     ) -> list[ToolCallRecord]: ...
+
+    async def list_mcp_tool_calls(
+        self,
+        *,
+        actor: ToolCallActor,
+        fields: frozenset[ToolCallPayloadField],
+        statuses: list[ToolCallStatus] | None = None,
+        since: datetime.datetime | None = None,
+        auto_approved: bool | None = None,
+        limit: int = 100,
+        newest_first: bool = False,
+    ) -> list[McpToolCallRecord]: ...
 
     async def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> ToolCallRecord: ...
 
@@ -412,6 +430,11 @@ class ToolCallApplicationService:
     async def get(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallRecord:
         return await self._repository.get(tool_call_id, actor=self._require_actor(actor))
 
+    async def get_mcp_tool_call(
+        self, tool_call_id: str, *, actor: ToolCallActor, fields: frozenset[ToolCallPayloadField]
+    ) -> McpToolCallRecord:
+        return await self._repository.get_mcp_tool_call(tool_call_id, actor=self._require_actor(actor), fields=fields)
+
     async def list_tool_calls(
         self,
         *,
@@ -432,6 +455,27 @@ class ToolCallApplicationService:
             limit=limit,
             newest_first=newest_first,
             cursor=cursor,
+        )
+
+    async def list_mcp_tool_calls(
+        self,
+        *,
+        actor: ToolCallActor,
+        fields: frozenset[ToolCallPayloadField],
+        statuses: list[ToolCallStatus] | None = None,
+        since: datetime.datetime | None = None,
+        auto_approved: bool | None = None,
+        limit: int = 100,
+        newest_first: bool = False,
+    ) -> list[McpToolCallRecord]:
+        return await self._repository.list_mcp_tool_calls(
+            actor=self._require_actor(actor),
+            fields=fields,
+            statuses=statuses,
+            since=since,
+            auto_approved=auto_approved,
+            limit=limit,
+            newest_first=newest_first,
         )
 
     async def pending_approvals(self, *, actor: ToolCallActor) -> list[ToolCallRecord]:

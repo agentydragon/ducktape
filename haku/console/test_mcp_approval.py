@@ -80,7 +80,13 @@ from haku.console.oauth_token_state import new_oauth_token_state
 from haku.console.operator_identity import OperatorStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import ToolCallApplicationService, backend_auth_for_operator
-from haku.console.tool_calls import AgentToolCallCaller, OperatorToolCallCaller, SubmitToolCallRequest, ToolCallStatus
+from haku.console.tool_calls import (
+    AgentToolCallCaller,
+    OperatorToolCallCaller,
+    SubmitToolCallRequest,
+    ToolCallPayloadField,
+    ToolCallStatus,
+)
 from haku.console.tools.gmail import build_mcp as build_gmail_mcp
 from util.net import pick_free_port
 from util.testing.asgi import serve_app_sync
@@ -1592,6 +1598,26 @@ async def test_ledger_get_and_list_load_principal_projection_in_one_query(
         fetched = await ledger.get(agent_call_id, actor=actor)
         assert len(statements) == 1, statements
         assert fetched == by_id[agent_call_id]
+
+        statements.clear()
+        summaries = await ledger.list_mcp_tool_calls(actor=actor, fields=frozenset())
+        assert len(summaries) == 2
+        assert len(statements) == 1, statements
+        summary_sql = statements[0].casefold()
+        assert "arguments_json" not in summary_sql
+        assert "rationale" not in summary_sql
+        assert "result_json" not in summary_sql
+
+        statements.clear()
+        resolved = await ledger.get_mcp_tool_call(
+            agent_call_id, actor=actor, fields=frozenset({ToolCallPayloadField.RESULT})
+        )
+        assert resolved.tool_call_id == agent_call_id
+        assert len(statements) == 1, statements
+        result_sql = statements[0].casefold()
+        assert "result_json" in result_sql
+        assert "arguments_json" not in result_sql
+        assert "rationale" not in result_sql
     finally:
         event.remove(ledger_engine.sync_engine, "before_cursor_execute", record_tool_call_query)
 

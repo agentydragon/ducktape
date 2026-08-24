@@ -429,6 +429,13 @@ traffic fills a page. The same `auto_approved` parameter is threaded through
 `ToolCallApplicationService.list_tool_calls` to the agent-facing MCP `list_tool_calls` tool
 (`mcp_server.py`), so an agent reviewing its own call history can filter the same way.
 
+The agent-facing MCP reads keep payloads compact by default: `list_tool_calls` returns status
+summaries without request or result bodies, while `get_tool_call` returns the selected call's
+`result` by default. Both accept `fields`, whose only values are the whole opaque payloads
+`arguments`, `rationale`, and `result`; `get_tool_call(fields=[])` is the cheap status-poll form.
+There are no nested selectors. Use the normal workflow of listing IDs and statuses first, then
+resolving one call with `get_tool_call` when its result is needed.
+
 ## Notifications — Web Push for pending approvals
 
 The console's event socket keeps open tabs current, but it reaches nobody when no browser has the

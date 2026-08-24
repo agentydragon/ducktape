@@ -15,6 +15,7 @@ import datetime
 import hashlib
 import logging
 import secrets
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Never, TypeVar, cast
 from uuid import UUID
@@ -72,9 +73,11 @@ from haku.console.tool_call_service import (
 from haku.console.tool_calls import (
     AgentToolCallCaller,
     ApprovalDecisionRequest,
+    McpToolCallRecord,
     OperatorToolCallCaller,
     SubmitToolCallRequest,
     ToolCallCaller,
+    ToolCallPayloadField,
     ToolCallRecord,
     ToolCallStatus,
 )
@@ -308,6 +311,17 @@ class PostgresToolCallLedger:
                 raise ToolCallNotFoundError("tool call not found")
             return self._record_from_projection(*projection)
 
+    async def get_mcp_tool_call(
+        self, tool_call_id: str, *, actor: ToolCallActor, fields: frozenset[ToolCallPayloadField]
+    ) -> McpToolCallRecord:
+        async with self._sessions.begin() as session:
+            stmt = self._mcp_projection_stmt(actor, fields).where(McpToolCall.tool_call_id == tool_call_id)
+            result = await session.execute(stmt)
+            projection = result.mappings().first()
+            if projection is None:
+                raise ToolCallNotFoundError("tool call not found")
+            return self._mcp_record_from_projection(projection, fields)
+
     async def list_tool_calls(
         self,
         *,
@@ -347,6 +361,35 @@ class PostgresToolCallLedger:
             result = await session.execute(stmt.order_by(*order).limit(limit))
             projections = result.tuples().all()
             return [self._record_from_projection(*projection) for projection in projections]
+
+    async def list_mcp_tool_calls(
+        self,
+        *,
+        actor: ToolCallActor,
+        fields: frozenset[ToolCallPayloadField],
+        statuses: list[ToolCallStatus] | None = None,
+        since: datetime.datetime | None = None,
+        auto_approved: bool | None = None,
+        limit: int = 100,
+        newest_first: bool = False,
+    ) -> list[McpToolCallRecord]:
+        async with self._sessions.begin() as session:
+            stmt = self._mcp_projection_stmt(actor, fields)
+            if since is not None:
+                stmt = stmt.where(McpToolCall.updated_at > since)
+            if statuses:
+                stmt = stmt.where(McpToolCall.status.in_(statuses))
+            if auto_approved is not None:
+                condition = McpToolCall.approval_policy_id.isnot(None)
+                stmt = stmt.where(condition if auto_approved else ~condition)
+            order = (
+                (McpToolCall.created_at.desc(), McpToolCall.tool_call_id.desc())
+                if newest_first
+                else (McpToolCall.created_at, McpToolCall.tool_call_id)
+            )
+            result = await session.execute(stmt.order_by(*order).limit(limit))
+            projections = result.mappings().all()
+            return [self._mcp_record_from_projection(projection, fields) for projection in projections]
 
     async def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> ToolCallRecord:
         operator = self._require_operator_actor(actor)
@@ -526,6 +569,45 @@ class PostgresToolCallLedger:
             ),
         )
 
+    @classmethod
+    def _mcp_projection_stmt(
+        cls, actor: ToolCallActor, fields: frozenset[ToolCallPayloadField]
+    ) -> Select[tuple[Any, ...]]:
+        columns: list[Any] = [
+            McpToolCall.tool_call_id.label("tool_call_id"),
+            McpToolCall.server_id.label("server_id"),
+            McpToolCall.tool_name.label("tool_name"),
+            McpToolCall.status.label("status"),
+            McpToolCall.created_at.label("created_at"),
+            McpToolCall.updated_at.label("updated_at"),
+            McpToolCall.title.label("title"),
+            McpToolCall.error.label("error"),
+            McpToolCall.denial_reason.label("denial_reason"),
+            McpToolCall.withdrawal_reason.label("withdrawal_reason"),
+            McpToolCall.approval_policy_id.label("approval_policy_id"),
+            McpToolCall.auto_approval_evaluation.label("auto_approval_evaluation"),
+            McpToolCall.approved_at.label("approved_at"),
+            McpToolCallPrincipal.operator_id.label("principal_operator_id"),
+            McpToolCallPrincipal.binding_id.label("principal_binding_id"),
+            McpToolCallPrincipal.session_id.label("principal_session_id"),
+            CredentialBinding.agent_id.label("agent_id"),
+            Agent.owner_operator_id.label("operator_id"),
+            AgentNameReservation.display_name.label("display_name"),
+        ]
+        payload_columns = {
+            ToolCallPayloadField.ARGUMENTS: McpToolCall.arguments_json.label("arguments"),
+            ToolCallPayloadField.RATIONALE: McpToolCall.rationale.label("rationale"),
+            ToolCallPayloadField.RESULT: McpToolCall.result_json.label("result"),
+        }
+        columns.extend(payload_columns[field] for field in ToolCallPayloadField if field in fields)
+        return cls._scope_to_actor(select(*columns), actor).outerjoin(
+            AgentNameReservation,
+            and_(
+                AgentNameReservation.agent_id == Agent.agent_id,
+                AgentNameReservation.reservation_id == Agent.current_name_reservation_id,
+            ),
+        )
+
     @staticmethod
     def _row_from_record(record: ToolCallRecord) -> McpToolCall:
         return McpToolCall(
@@ -560,6 +642,49 @@ class PostgresToolCallLedger:
             row.tool_call_id, principal_row, agent_id=agent_id, operator_id=operator_id, display_name=display_name
         )
         return cls._record_from_principal(row, principal)
+
+    @classmethod
+    def _mcp_record_from_projection(
+        cls, projection: Mapping[str, Any], fields: frozenset[ToolCallPayloadField]
+    ) -> McpToolCallRecord:
+        principal_row = McpToolCallPrincipal(
+            tool_call_id=projection["tool_call_id"],
+            operator_id=projection["principal_operator_id"],
+            binding_id=projection["principal_binding_id"],
+            session_id=projection["principal_session_id"],
+        )
+        principal = cls._resolve_principal(
+            projection["tool_call_id"],
+            principal_row,
+            agent_id=projection["agent_id"],
+            operator_id=projection["operator_id"],
+            display_name=projection["display_name"],
+        )
+        caller: ToolCallCaller
+        if isinstance(principal, _OperatorToolCallPrincipal):
+            caller = OperatorToolCallCaller()
+        else:
+            caller = AgentToolCallCaller(
+                agent_id=principal.agent_id, display_name=principal.display_name, session_id=principal.session_id
+            )
+        payload = {field.value: projection[field.value] for field in ToolCallPayloadField if field in fields}
+        return McpToolCallRecord(
+            tool_call_id=projection["tool_call_id"],
+            server_id=projection["server_id"],
+            tool_name=projection["tool_name"],
+            caller=caller,
+            status=projection["status"],
+            created_at=projection["created_at"],
+            updated_at=projection["updated_at"],
+            title=projection["title"],
+            error=projection["error"],
+            denial_reason=projection["denial_reason"],
+            withdrawal_reason=projection["withdrawal_reason"],
+            approval_policy_id=projection["approval_policy_id"],
+            auto_approval_evaluation=projection["auto_approval_evaluation"],
+            approved_at=projection["approved_at"],
+            **payload,
+        )
 
     @staticmethod
     def _record_from_principal(row: McpToolCall, principal: _ResolvedToolCallPrincipal) -> ToolCallRecord:
