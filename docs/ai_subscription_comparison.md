@@ -271,7 +271,9 @@ its coding score (78.3 vs 78.0) for a third of the price.
 to 46.9 against Opus 5's 59.2 — a 12.3-point gap, twice its coding gap. Agentic
 capability is what decides whether a long tool-use loop finishes, so this is the
 number that should govern how much of the fleet moves to Luna. Expect it to do well
-on bounded, well-specified work and to need supervision on long autonomous runs.
+on bounded, well-specified work and to need supervision on long autonomous runs. It
+is also the column that degrades fastest as models get cheaper, which is why picking
+a bulk model on general index alone goes wrong — see the Haiku example below.
 
 **GLM-5.3 ties Opus 5 on agentic** — 59.1 against 59.2 — at 3.4x less per task. That
 is a stronger claim for it than anything in the general-index comparison, and it is
@@ -284,6 +286,68 @@ are what the plan would be bought for.
 **The caveat above still applies, harder.** These are benchmark aggregates, not this
 codebase. They rank models; they do not tell you whether index 71.5 of coding clears
 your bar on ducktape. Only running it does.
+
+#### Worked example: Haiku 4.5 costs more than Luna and is far worse in a loop
+
+A concrete case where the headline figures mislead and the sub-indices do not. Both
+are "the cheap model" in their vendor's lineup, so intuition puts them in the same
+class. They are not close.
+
+|                        | Claude 4.5 Haiku (Reasoning) | GPT-5.6 Luna (max) |
+| ---------------------- | ---------------------------: | -----------------: |
+| Cost per task          |                  **$0.2174** |        **$0.0471** |
+| General index          |                         29.9 |               52.3 |
+| Coding index           |                         43.9 |               71.5 |
+| **Agentic index**      |                     **16.5** |           **46.9** |
+| τ³-Banking (tool use)  |                          9.3 |               31.1 |
+| Terminal-Bench 2.1     |                         44.2 |               80.9 |
+| Price /M in-out        |                $1.00 / $5.00 |      $0.20 / $1.20 |
+| Cache read /M          |                        $0.10 |              $0.02 |
+| Released               |                   2025-10-15 |         2026-07-09 |
+| **Agentic per dollar** |                       **76** |            **995** |
+
+Luna (max) is 2.8x Haiku's agentic score at 4.6x less per task — **13x the agentic
+capability per dollar**. Three separate things produce that, and each is worth
+extracting because each generalises.
+
+**The cost inversion is price, not verbosity.** Haiku spends _fewer_ tokens per task
+than Luna (88,626 input against 115,994; 17,216 reasoning against 14,393). It costs
+4.6x more because it is priced 5x higher per token, cache reads included. **"The
+vendor's cheap model" is a vendor-relative label, not a market position** — it means
+cheap next to Opus, and says nothing about cheap next to another lab's small model.
+The nine months between these two release dates covered an 80% cut to Luna, and
+nothing in either model's name reflects that.
+
+**Agentic capability collapses faster than coding as models get weaker.** This is the
+structural finding, and it is why cheap models disappoint in agent loops more than
+their benchmark scores suggest. Median agentic score by coding band, across all 169
+models:
+
+| Coding band |   n | Median agentic | Agentic / coding |
+| ----------- | --: | -------------: | ---------------: |
+| 70-80       |  34 |           49.5 |             0.66 |
+| 60-70       |  22 |           40.8 |             0.63 |
+| 50-60       |  29 |           30.6 |             0.56 |
+| 40-50       |  23 |           21.6 |             0.48 |
+| 30-40       |  19 |           11.1 |             0.32 |
+| 20-30       |  21 |            4.6 |             0.19 |
+| 10-20       |  15 |            1.9 |             0.12 |
+
+The ratio falls monotonically: halving a model's coding score more than halves its
+agentic score, and below coding ~40 agentic is essentially gone. A general index that
+averages a gracefully-degrading skill with a cliff-edge one will always overstate the
+weak end for this workload. **Read the agentic column, and treat coding 40 as the
+floor below which a model cannot drive a loop at all**, whatever its other scores say.
+
+**Haiku is weak even for its own coding level.** Among the eighteen models scoring
+coding 40-48, its agentic 16.5 is second from bottom against a band median of 21.6.
+Luna (low) — the cheapest setting of the cheapest frontier-adjacent model, at $0.0088
+— scores coding 44.2 and **agentic 25.7**: the same coding ability, 56% more agentic
+capability, at **one twenty-fifth the cost per task**.
+
+So the surprise is not that the cost figures disagree with lived experience. It is
+that the general index and cost per task were the wrong two columns to compare on, and
+the dataset had the right one all along.
 
 #### Off-frontier models worth naming
 
