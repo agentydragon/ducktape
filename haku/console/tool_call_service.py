@@ -338,10 +338,15 @@ class ToolCallApplicationService:
         ):
             all_allowed = True
             try:
-                for auth_req in auth_requests:
-                    decision = await self._kubernetes_authorization.evaluate(
-                        agent_id=actor.agent_id, access_profile_id=actor.access_profile_id, request=auth_req
-                    )
+                decisions = await asyncio.gather(
+                    *[
+                        self._kubernetes_authorization.evaluate(
+                            agent_id=actor.agent_id, access_profile_id=actor.access_profile_id, request=auth_req
+                        )
+                        for auth_req in auth_requests
+                    ]
+                )
+                for decision in decisions:
                     if not decision.allowed:
                         all_allowed = False
                         break

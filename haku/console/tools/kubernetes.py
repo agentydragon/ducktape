@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 from typing import Annotated
 from uuid import UUID
@@ -95,22 +96,22 @@ class KubernetesToolsService:
 
     async def can_i(self, *, context: McpExecutionContext, requests: list[KubernetesAccessCheck]) -> list[CanIResult]:
         caller = self._caller(context)
-        results: list[CanIResult] = []
-        for request in requests:
-            attributes = request.attributes
-            decision = await self.authorization.authorize_agent(
+        tasks = [
+            self.authorization.authorize_agent(
                 agent_id=caller.agent_id,
                 access_profile_id=caller.access_profile_id,
                 request=AuthorizationRequest(
-                    attributes=attributes,
+                    attributes=request.attributes,
                     required_scope=required_scope(
-                        attributes, unnamespaced_resource_kind=request.unnamespaced_resource_kind
+                        request.attributes, unnamespaced_resource_kind=request.unnamespaced_resource_kind
                     ),
-                    required_rules=[required_rule(attributes)],
+                    required_rules=[required_rule(request.attributes)],
                 ),
             )
-            results.append(_can_i_result(decision))
-        return results
+            for request in requests
+        ]
+        decisions = await asyncio.gather(*tasks)
+        return [_can_i_result(decision) for decision in decisions]
 
 
 def _can_i_result(decision: AuthorizationResponse) -> CanIResult:
