@@ -19,6 +19,8 @@ from uuid import UUID
 
 from haku.console.auto_approval import AutoApprovalPolicyRegistry, SchemaDenial, auto_approve_tool_call
 from haku.console.config import Settings
+from haku.console.kubectl_passthrough_policy import map_kubectl_passthrough_request
+from haku.console.kubernetes_authorization import KubernetesAuthorizationService
 from haku.console.mcp_config import (
     InProcessBackend,
     InProcessServers,
@@ -297,6 +299,7 @@ class ToolCallApplicationService:
         authentik_token_store: AuthentikOperatorTokenStore,
         approval_notifier: PendingApprovalNotifier,
         gmail_client_provider: GmailClientProvider = _no_gmail_client,
+        kubernetes_authorization: KubernetesAuthorizationService | None = None,
     ) -> None:
         self._settings = settings
         self._repository = repository
@@ -308,6 +311,7 @@ class ToolCallApplicationService:
         self._provider_store = provider_store
         self._authentik_token_store = authentik_token_store
         self._gmail_client_provider = gmail_client_provider
+        self._kubernetes_authorization = kubernetes_authorization
         self._auto_approval_policies = AutoApprovalPolicyRegistry(load_console_config(settings))
         # In-flight background execution tasks dispatched by `decide`. Held so they aren't GC'd
         # mid-run, and drained/cancelled at shutdown (`aclose`).
@@ -325,6 +329,49 @@ class ToolCallApplicationService:
     async def submit_and_wait(self, *, req: SubmitToolCallRequest, actor: ToolCallActor) -> ToolCallRecord:
         actor = self._require_actor(actor)
         server = _server_entry(self._settings, req.server_id)
+        if (
+            server.id == "kubectl-passthrough-mcp"
+            and isinstance(actor, AgentActor)
+            and actor.access_profile_id is not None
+            and self._kubernetes_authorization is not None
+            and (auth_requests := map_kubectl_passthrough_request(req.tool_name, req.arguments)) is not None
+        ):
+            all_allowed = True
+            try:
+                for auth_req in auth_requests:
+                    decision = await self._kubernetes_authorization.evaluate(
+                        agent_id=actor.agent_id, access_profile_id=actor.access_profile_id, request=auth_req
+                    )
+                    if not decision.allowed:
+                        all_allowed = False
+                        break
+            except Exception:
+                logger.warning(
+                    "Kubernetes authorization evaluation failed during kubectl-passthrough pre-check", exc_info=True
+                )
+                all_allowed = False
+
+            if all_allowed:
+                record = await self._repository.submit(
+                    server=server,
+                    req=req,
+                    actor=actor,
+                    auto_approval_evaluation="denied: covered by direct agent access",
+                    auto_denial_reason=(
+                        "Covered by your direct Kubernetes permissions. Use your direct Haku "
+                        "Kubernetes proxy or local kubectl instead of kubectl-passthrough-mcp."
+                    ),
+                )
+                logger.info(
+                    "tool call %s auto-denied (direct agent access) server=%s tool=%s caller=%s",
+                    record.tool_call_id,
+                    record.server_id,
+                    record.tool_name,
+                    record.caller,
+                )
+                await self._publish(actor.operator_id, record.tool_call_id)
+                return record
+
         # Gmail label auto-approval resolves label IDs against the acting Operator's own Gmail; the
         # schema check needs the tool's input schema, so build the (credential-independent) server.
         gmail = await self._gmail_client_provider(actor.operator_id) if server.id == GMAIL_SERVER_ID else None

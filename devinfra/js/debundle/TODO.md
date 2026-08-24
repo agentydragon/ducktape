@@ -3,7 +3,7 @@
 Forward-looking gaps in the Rust debundler. Items are written to be removed
 once closed; this file is not a changelog.
 
-## Current AI-worker priority queue (2026-06-27)
+## Current AI-worker priority queue (2026-07-07)
 
 This file is the dispatch queue, not a design record or changelog. Detailed
 plans and evidence live here:
@@ -31,14 +31,17 @@ dispatch summary:
    selector constraints.
 2. Keep exact target assignment owned by `CompiledSelectorProblem` +
    OR-Tools CP-SAT or a measured SAT fallback with semantic `all_different`.
-3. Move production materialization, `match_selector`, codemods, synthesis, and
-   repair/prove gates onto one solver-backed selector semantics path.
+3. Make production `source_match` materialization native-first, retire the
+   legacy projection path that still constructs `ChunkResolver`, and move
+   codemods, synthesis, and repair/prove gates onto one solver-backed selector
+   semantics path. `match-selector` already uses `selector_runtime` for its
+   baseline solve.
 4. Fold staged relational vocabulary (`cross_ref`, `reads_member`,
    `member_of_module`, `passed_to_call`, `makes_decorate_call`,
    `intrinsic_alias`) into IR atoms or derived predicates over owner/reference
    plus AST facts.
-5. Keep unsupported selector forms fail-closed; do not add a permanent
-   procedural fallback.
+5. Keep unsupported selector forms fail-closed after the projection fallback is
+   retired; do not add a permanent procedural fallback.
 
 Interactive agent-facing commands should target under 10 seconds on warmed
 inputs for the largest known downstream specs. Anything over 60 seconds is a

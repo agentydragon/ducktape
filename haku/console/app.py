@@ -586,6 +586,7 @@ def create_app(
         provider_store=provider_connection_store,
         authentik_token_store=authentik_operator_token_store,
         approval_notifier=approval_notifier,
+        kubernetes_authorization=kubernetes_authorization,
     )
 
     # The console's own Agent-and-Operator MCP server, mounted at /mcp — its reason to run.

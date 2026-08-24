@@ -1,23 +1,27 @@
 # Plan: selectors as one global constraint problem (relational spec model)
 
-**Current state (2026-06-26).** PR #2439 landed on `devel` as `db25ef639`
+**Current state (2026-07-07).** PR #2439 landed on `devel` as `db25ef639`
 and closed the first global-solver bridge: `source_match` selectors now enter
 the global selector IR/solver instead of bypassing it. PR #2443 lowered exact
 single-statement selectors onto native AST facts. PR #2446 stopped asking
 `ChunkResolver` for candidate rows when a selector already lowers natively. PR
 #2447 added native `AstSuperClass` constraints for `class ... extends ...`
-matches. That proved the right architectural direction, but profiling the
-production-sized path showed the current Ascent exact-assignment encoding is
-not the final backend: it pushes `AssignmentRow = Vec<(var, value)>` payloads
-through `partial_assignment` / `stepped_assignment`, and `all_different` becomes
-pairwise row filtering instead of native finite-domain propagation.
+matches. `match-selector` now lowers its baseline probe through selector IR and
+`selector_runtime` instead of calling `ChunkResolver` directly. That proved the
+right architectural direction, but profiling the production-sized path showed
+the current Ascent exact-assignment encoding is not the final backend: it pushes
+`AssignmentRow = Vec<(var, value)>` payloads through `partial_assignment` /
+`stepped_assignment`, and `all_different` becomes pairwise row filtering instead
+of native finite-domain propagation.
 
-The bridge that remains is narrower: some retained selector shapes still need
-faithful native lowering before they can be accepted in production, and
-tooling/authoring paths still call `ChunkResolver` directly. The P0 pivot is to
-keep one whole-spec constraint model, but split backend ownership explicitly:
-Ascent/Rust may derive facts and allowed tuples; exact assignment belongs to a
-finite-domain CP/SAT backend with semantic `all_different`, not to
+The bridge that remains is narrower: production materialization still has a
+legacy `source_match` projection path that asks `ChunkResolver` for candidate
+rows before trying native fallback, source-only validation still calls
+`ChunkResolver` as a fast preflight, and some retained selector shapes still
+need faithful native lowering before they can be accepted in production. The P0
+pivot is to keep one whole-spec constraint model, but split backend ownership
+explicitly: Ascent/Rust may derive facts and allowed tuples; exact assignment
+belongs to a finite-domain CP/SAT backend with semantic `all_different`, not to
 `AssignmentRow` enumeration.
 
 **Reframing.** The next architectural goal is not to grow more bridge
@@ -67,7 +71,8 @@ matcher we cannot trust.
 Operationally, this means the Ducktape-side work leads with the engine contract:
 
 1. one engine-facing selector IR shared by `run`, `validate`,
-   `match-selector`, `selector-debt`, synthesis, and repair;
+   `selector-debt`, synthesis, repair, and authoring probes such as the already
+   migrated `match-selector`;
 2. one fact store per chunk/component containing AST-shape facts,
    binding-resolution facts, owner/reference facts, and derived-predicate inputs,
    with the solver consuming the AST facts natively rather than candidate rows;
@@ -391,10 +396,12 @@ This is not a side tool — it is the **resolution layer**: the code that maps
 each readable spec entity to its minified node on the chunk. After #2439, the
 global selector solver is on that path. After #2443/#2446/#2447, exact
 single-statement and superclass `source_match` forms lower to native AST
-constraints and no longer ask `ChunkResolver` for oracle rows. Current work
-deletes the member/group candidate-oracle schema entirely and removes the
+constraints without needing candidate rows. `match-selector`'s baseline probe
+also uses this solver path. Current work is to try native materialization first,
+delete the remaining member/group candidate-projection path, and remove the
 production anonymous fallback. Remaining production work is native coverage for
-retained selector shapes that now fail closed as unsupported.
+retained selector shapes that should fail closed as unsupported once projection
+is gone.
 
 The reference oracle is named in code: `source_match::SelectorResolver`, the
 trait `ChunkResolver` implements — `(parsed chunk, JS-template selector) →
@@ -412,7 +419,8 @@ EDB:
 - owner/reference rows already consumed by `selector_ir_solver.rs`;
 - AST `kind` / `child` / literal / identifier / property / operator /
   top-level rows already stored by `SelectorFactStore::extend_chunk_facts`;
-- label posting lists still used by `ChunkResolver` in tooling/authoring paths.
+- label posting lists still used by `ChunkResolver` in source-only validation
+  and the production `source_match` projection fallback.
 
 The cutover is a consumer change: add native AST relations and shape rules to
 the fact/tuple derivation layer, build the shared `CompiledSelectorProblem`,
@@ -422,13 +430,14 @@ solver-backed semantics.
 
 ### It replaces several workflow parts, not just the matcher
 
-| Today                                                                       | Becomes                                                                                                                                  |
-| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| tooling command paths still call `ChunkResolver` directly                   | one native `solve(spec, edb)` over AST + owner/reference facts; callers consume solver outcomes                                          |
-| `validate` no-match / ambiguous / duplicate-claim (per-selector + post-hoc) | solver categoricity (no-match / ambiguous) + `all_different` (duplicate-claim) in one keep-going pass                                    |
-| `match_selector.rs` resolves one candidate                                  | single-query solve over the EDB; gains probing of **relational/cross-ref** candidates, not just local shapes                             |
-| `selector_codemod.rs` prove-gate (candidate-index uniqueness)               | solver categoricity; the minimizer's search space grows to relational atoms — it can now _propose_ the cross-ref selectors that now skip |
-| `selector_debt.rs` source-aware near-ambiguous / repeated-body scan         | solver reports per target **which atoms forced uniqueness, tagged invariant/variant**, and the categoricity margin                       |
+| Today                                                                                                     | Becomes                                                                                                                                     |
+| --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| production `source_match` projection still asks `ChunkResolver` for candidate rows before native fallback | native-first solve over AST + owner/reference facts; legacy projection kept only as a migration census until unsupported shapes are covered |
+| source-only `validate --modules --source-file` still calls `ChunkResolver` directly                       | same solver-backed result model as materialization, with the legacy resolver retained only as a parity oracle                               |
+| `validate` no-match / ambiguous / duplicate-claim (per-selector + post-hoc)                               | solver categoricity (no-match / ambiguous) + `all_different` (duplicate-claim) in one keep-going pass                                       |
+| `match-selector` baseline resolution is native, but slack/provenance remain command-local                 | solver-native explanations/provenance so the probe and production diagnostics share one result vocabulary                                   |
+| `selector_codemod.rs` prove-gate (candidate-index uniqueness)                                             | solver categoricity; the minimizer's search space grows to relational atoms — it can now _propose_ the cross-ref selectors that now skip    |
+| `selector_debt.rs` source-aware near-ambiguous / repeated-body scan                                       | solver reports per target **which atoms forced uniqueness, tagged invariant/variant**, and the categoricity margin                          |
 
 The cycle/atomic gate (`gate.rs`, `realizability/`, `atomic_units.rs`) and emit run
 **downstream of resolution on the resolved ownership** — unchanged, as are the module
@@ -702,11 +711,12 @@ assignment to a finite-domain solver.
 - `source_match` selectors now enter the global selector IR/solver.
 - The materializer has a single Ascent-backed selector solve path for binding
   pins, staged relational selectors, and `source_match` claims.
-- Exact native `source_match` forms no longer call the legacy candidate oracle,
-  and the member/group candidate-oracle schema has been deleted.
-- Production anonymous statements now lower into the global selector solver or
-  fail closed as unsupported; materialization no longer constructs
-  `ChunkResolver`.
+- Exact native `source_match` forms and `match-selector` baseline probes lower
+  through the selector IR/solver instead of using `ChunkResolver`.
+- Production anonymous statements and source-match claims can lower natively
+  for supported shapes. Materialization still constructs `ChunkResolver` for
+  the legacy projection path; deleting that path is remaining work, not closed
+  work.
 - Exact single-statement shape and superclass constraints lower to native AST
   facts.
 - Profiling identified the production-sized bottleneck in the current
@@ -736,7 +746,8 @@ This is the detailed P0 queue; <../TODO.md> should only summarize it.
   simple existential holes, regex string predicates, run-hole placement
   (`STMT_LIST`, `ARGS`, `OBJECT_PROPS`, `DECLARATORS`, `CLASS_REST`,
   `CASE_REST`), anonymous statements as distinguished targets, exact
-  identifiers, target bindings, and binding groups. Each construct either
+  identifiers, target bindings, and binding groups. Prioritize shapes that
+  still force the production projection fallback. Each construct either
   compiles faithfully or reports `unsupported`.
 - **G4 — source-match surface pruning.** Keep unused authoring/tooling options
   out of the native query model. Current Gaffer/Tana census showed no use of
@@ -748,11 +759,13 @@ This is the detailed P0 queue; <../TODO.md> should only summarize it.
   mode, exact anonymous `match`, readability labels, and top-level `STMT_LIST`
   cleanup until either gaffer-private is migrated or the single-resolution
   backend owns the retained forms.
-- **G5 — tooling semantics cutover.** Move `match_selector`, selector codemods,
-  synthesis, and repair/prove gates onto solver-backed selector semantics so
-  authoring tools and production materialization do not drift. No-match,
-  ambiguous, unsupported, and duplicate-claim diagnostics should be projections
-  of the native solver result, not `ChunkResolver` side tables.
+- **G5 — tooling semantics cutover.** `match-selector` baseline resolution
+  already uses `selector_runtime`; move source-only validation, selector
+  codemods, synthesis, repair/prove gates, and slack/provenance diagnostics onto
+  solver-backed selector semantics so authoring tools and production
+  materialization do not drift. No-match, ambiguous, unsupported, and
+  duplicate-claim diagnostics should be projections of the native solver result,
+  not `ChunkResolver` side tables.
 - **G6 — relation/language fold-in.** Re-express `cross_ref`, `reads_member`,
   `member_of_module`, `passed_to_call`, `makes_decorate_call`,
   `intrinsic_alias`, and the Gaffer feature-request vocabulary as IR atoms or
