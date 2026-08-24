@@ -17,9 +17,8 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID
 
-from haku.console.auto_approval import AutoApprovalPolicyRegistry, SchemaDenial, auto_approve_tool_call
+from haku.console.auto_approval import AutoApprovalPolicyRegistry, PolicyDenial, auto_approve_tool_call
 from haku.console.config import Settings
-from haku.console.kubectl_passthrough_policy import map_kubectl_passthrough_request
 from haku.console.kubernetes_authorization import KubernetesAuthorizationService
 from haku.console.mcp_config import (
     InProcessBackend,
@@ -312,7 +311,9 @@ class ToolCallApplicationService:
         self._authentik_token_store = authentik_token_store
         self._gmail_client_provider = gmail_client_provider
         self._kubernetes_authorization = kubernetes_authorization
-        self._auto_approval_policies = AutoApprovalPolicyRegistry(load_console_config(settings))
+        self._auto_approval_policies = AutoApprovalPolicyRegistry(
+            load_console_config(settings), kubernetes_authorization=self._kubernetes_authorization
+        )
         # In-flight background execution tasks dispatched by `decide`. Held so they aren't GC'd
         # mid-run, and drained/cancelled at shutdown (`aclose`).
         self._execution_tasks: set[asyncio.Task[ToolCallRecord]] = set()
@@ -329,54 +330,6 @@ class ToolCallApplicationService:
     async def submit_and_wait(self, *, req: SubmitToolCallRequest, actor: ToolCallActor) -> ToolCallRecord:
         actor = self._require_actor(actor)
         server = _server_entry(self._settings, req.server_id)
-        if (
-            server.id == "kubectl-passthrough-mcp"
-            and isinstance(actor, AgentActor)
-            and actor.access_profile_id is not None
-            and self._kubernetes_authorization is not None
-            and (auth_requests := map_kubectl_passthrough_request(req.tool_name, req.arguments)) is not None
-        ):
-            all_allowed = True
-            try:
-                decisions = await asyncio.gather(
-                    *[
-                        self._kubernetes_authorization.evaluate(
-                            agent_id=actor.agent_id, access_profile_id=actor.access_profile_id, request=auth_req
-                        )
-                        for auth_req in auth_requests
-                    ]
-                )
-                for decision in decisions:
-                    if not decision.allowed:
-                        all_allowed = False
-                        break
-            except Exception:
-                logger.warning(
-                    "Kubernetes authorization evaluation failed during kubectl-passthrough pre-check", exc_info=True
-                )
-                all_allowed = False
-
-            if all_allowed:
-                record = await self._repository.submit(
-                    server=server,
-                    req=req,
-                    actor=actor,
-                    auto_approval_evaluation="denied: covered by direct agent access",
-                    auto_denial_reason=(
-                        "Covered by your direct Kubernetes permissions. Use your direct Haku "
-                        "Kubernetes proxy or local kubectl instead of kubectl-passthrough-mcp."
-                    ),
-                )
-                logger.info(
-                    "tool call %s auto-denied (direct agent access) server=%s tool=%s caller=%s",
-                    record.tool_call_id,
-                    record.server_id,
-                    record.tool_name,
-                    record.caller,
-                )
-                await self._publish(actor.operator_id, record.tool_call_id)
-                return record
-
         # Gmail label auto-approval resolves label IDs against the acting Operator's own Gmail; the
         # schema check needs the tool's input schema, so build the (credential-independent) server.
         gmail = await self._gmail_client_provider(actor.operator_id) if server.id == GMAIL_SERVER_ID else None
@@ -409,10 +362,9 @@ class ToolCallApplicationService:
             gmail=gmail,
             mcp=server_builder.builder(None) if server_builder is not None else None,
         )
-        if isinstance(decision, SchemaDenial):
-            # Arguments failed an owned in-process schema: the call can never execute, so it is
-            # persisted born-denied (full audit row, never pending) and the validation error goes
-            # straight back to the caller to self-correct (operator directive 2026-07-16).
+        if isinstance(decision, PolicyDenial):
+            # Schema failure or policy auto-denial: the call can never execute, so it is
+            # persisted born-denied (full audit row, never pending).
             record = await self._repository.submit(
                 server=server,
                 req=req,
@@ -421,7 +373,7 @@ class ToolCallApplicationService:
                 auto_denial_reason=decision.reason,
             )
             logger.info(
-                "tool call %s auto-denied (schema) server=%s tool=%s caller=%s reason=%r",
+                "tool call %s auto-denied (policy/schema) server=%s tool=%s caller=%s reason=%r",
                 record.tool_call_id,
                 record.server_id,
                 record.tool_name,

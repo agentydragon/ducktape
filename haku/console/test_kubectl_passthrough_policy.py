@@ -86,8 +86,10 @@ async def test_kubectl_passthrough_suppression_when_fully_covered(tmp_path: Path
     config_file = write_config(
         tmp_path / "config.yaml",
         {
-            "auto_approval_policies": [{"id": "manual", "type": "never"}],
-            "access_profiles": [{"id": "public-coder", "auto_approval_policy": "manual"}],
+            "auto_approval_policies": [
+                {"id": "k8s-passthrough", "type": "kubernetes_passthrough", "server": "kubectl-passthrough-mcp"}
+            ],
+            "access_profiles": [{"id": "public-coder", "auto_approval_policy": "k8s-passthrough"}],
             "default_access_profile_id": "public-coder",
             "mcp": {
                 "servers": [
@@ -152,8 +154,10 @@ async def test_kubectl_passthrough_falls_through_when_denied(tmp_path: Path) -> 
     config_file = write_config(
         tmp_path / "config.yaml",
         {
-            "auto_approval_policies": [{"id": "manual", "type": "never"}],
-            "access_profiles": [{"id": "public-coder", "auto_approval_policy": "manual"}],
+            "auto_approval_policies": [
+                {"id": "k8s-passthrough", "type": "kubernetes_passthrough", "server": "kubectl-passthrough-mcp"}
+            ],
+            "access_profiles": [{"id": "public-coder", "auto_approval_policy": "k8s-passthrough"}],
             "default_access_profile_id": "public-coder",
             "mcp": {
                 "servers": [

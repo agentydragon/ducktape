@@ -719,6 +719,8 @@ py_library(
     name = "auto_approval",
     srcs = ["auto_approval.py"],
     deps = [
+        ":kubectl_passthrough_policy",
+        ":kubernetes_authorization",
         ":mcp_config",
         ":tool_call_actor",
         "//haku/console/tools:gmail_client",

@@ -250,6 +250,13 @@ class GitHubRepositoryAutoApprovalPolicy(AutoApprovalPolicyBase):
     tools: set[str] = Field(min_length=1)
 
 
+class KubernetesPassthroughAutoApprovalPolicy(AutoApprovalPolicyBase):
+    """Conditionally auto-deny passthrough calls when covered by direct agent Kubernetes grants/SAR."""
+
+    type: Literal["kubernetes_passthrough"] = "kubernetes_passthrough"
+    server: str = Field(min_length=1)
+
+
 class AnyOfAutoApprovalPolicy(AutoApprovalPolicyBase):
     """Auto-approve when any referenced policy auto-approves."""
 
@@ -267,6 +274,7 @@ type AutoApprovalPolicy = Annotated[
     ExactToolsAutoApprovalPolicy
     | GmailLabelNamespaceAutoApprovalPolicy
     | GitHubRepositoryAutoApprovalPolicy
+    | KubernetesPassthroughAutoApprovalPolicy
     | AnyOfAutoApprovalPolicy
     | NeverAutoApprovalPolicy,
     Field(discriminator="type"),
