@@ -477,10 +477,13 @@ against a single session's 318M. And a long single-threaded conversation is the
 best case for caching; a fleet of short-lived agents re-warms more often, so $0.76/M
 is a floor and $9/M a ceiling, with real fleet traffic somewhere in $1-3/M.
 
-**Do not mix your own token counts with AA's cost per task.** They embed different
-cache behaviour: AA's benchmark runs re-warm far more often than a long conversation
-does, so its implied rate for Opus 5 (max) is $3.13/M against this session's $0.76/M.
-Compare AA-to-AA or measured-to-measured, never across.
+**AA's benchmark runs and this session are cached to a similar degree**, which makes
+the two comparable in a way an earlier draft of this document denied. AA measures Opus
+5 (max) at 95.9% cache reads and an effective $1.2544/M; the session above ran 98.0%
+cache reads at $0.76/M. The remaining gap is that a single long thread reuses one
+growing prefix while benchmark tasks start fresh, plus a different output share — a
+factor under two, not the order of magnitude implied by comparing against an uncached
+blend.
 
 ### What 100M tokens/month costs at API rates
 
@@ -619,32 +622,63 @@ column and to every other plan.
 Tokens per task for the models these plans actually serve (input including cached
 replay, plus output):
 
-| Model                  | Tokens/task | API $/task | Agentic |
-| ---------------------- | ----------: | ---------: | ------: |
-| GLM-4.7 (reasoning)    |      79,226 |     0.3586 |    26.2 |
-| GPT-5.6 Luna (max)     |     136,040 |     0.0471 |    46.9 |
-| Kimi K3 (max)          |     187,773 |     0.8375 |    54.3 |
-| Claude Opus 5 (medium) |     177,829 |     0.7243 |    50.4 |
-| GLM-5.3 (max)          |     440,984 |     0.6829 |    59.1 |
-| Claude Opus 5 (max)    |     746,743 |     2.3369 |    59.2 |
+**Provenance.** Tokens per task are not published directly. They are derived by
+inverting AA's own cost model: each of `cost.nonCacheInput`, `cost.cacheRead`,
+`cost.cacheWrite` and `cost.output` divided by its matching price
+(`price1mInputTokens`, `cacheHitPrice`, `cacheWritePrice`, `price1mOutputTokens`).
+The derivation validates exactly — the output leg reproduces AA's separately published
+`intelligenceIndexOutputTokensPerTask` to the token for every model checked. All four
+cost legs, the derived totals, the cache-read share and the effective rate are columns
+in <artificial_analysis/intelligence_index_2026_08_23.csv>
+(`cost_noncache_input_usd` … `effective_usd_per_m_tokens`), so nothing below rests on a
+scratch calculation.
 
-Agentic tasks are input-dominated — the loop replays its context every turn — so these
-counts are 3-10x what a single-shot prompt would suggest.
+| Model                   | Tokens/task | Cache reads | API $/task | Effective $/M | Agentic |
+| ----------------------- | ----------: | ----------: | ---------: | ------------: | ------: |
+| Claude Opus 5 (medium)  |     454,754 |       92.0% |     0.7243 |        1.5927 |    50.4 |
+| GLM-4.7 (reasoning)     |     532,428 |    **0.0%** |     0.3586 |        0.6734 |    26.2 |
+| GPT-5.6 Luna (max)      |     805,382 |       95.7% |     0.0471 |        0.0585 |    46.9 |
+| Kimi K3 (max)           |     934,054 |       92.5% |     0.8375 |        0.8966 |    54.3 |
+| MiniMax-M3              |   1,427,640 |       94.4% |     0.1387 |        0.0972 |    36.1 |
+| Gemini 3.7 Flash (high) |   1,569,470 |       85.6% |     0.4022 |        0.2562 |    45.1 |
+| GLM-5.3 (max)           |   1,696,267 |       96.2% |     0.6829 |        0.4026 |    59.1 |
+| Claude Opus 5 (max)     |   1,862,866 |       95.9% |     2.3369 |        1.2544 |    59.2 |
+
+**Cache reads are 86-96% of input tokens, and input is most of everything.** An agent
+loop re-sends its whole context every turn, so total input grows roughly with the
+square of the turn count. Whether those re-sends bill at input price or at the ~10%
+cache-read price therefore swings the bill by nearly an order of magnitude, and it
+swings the _token count_ not at all — which is exactly why a capacity quoted in tokens
+means nothing without the cache behaviour alongside it. AA models this properly:
+non-cached input, cache reads and cache writes are separate cost lines against separate
+published prices, and they reconcile to the total exactly.
+
+**One model on this list has no caching at all.** GLM-4.7's cache-read share is 0.0% —
+every replayed token bills at full input price, which is why its effective rate,
+$0.6734/M, is the _highest_ of any cheap model here and higher than GLM-5.3's
+$0.4026/M despite one-fifth the sticker price. For a token-capped plan that is worse
+than it looks: with no cache, an agent loop draws down the cap at full rate on every
+turn.
 
 #### Where capacity is published or measured
 
 | Plan              | $/mo | Capacity     | Tasks/mo | **$/task** | API $/task | Subsidy |
 | ----------------- | ---: | ------------ | -------: | ---------: | ---------: | ------: |
-| Cerebras Code Max |  200 | 120M tok/day |   45,400 | **0.0044** |     0.3586 |     81x |
-| Cerebras Code Pro |   50 | 24M tok/day  |    9,100 | **0.0055** |     0.3586 |     65x |
-| Z.ai GLM Max      |  168 | ~5B tok/mo¹  |   11,300 | **0.0149** |     0.6829 |     46x |
+| Cerebras Code Max |  200 | 120M tok/day |    6,761 | **0.0296** |     0.3586 |     12x |
+| Cerebras Code Pro |   50 | 24M tok/day  |    1,352 | **0.0370** |     0.3586 |     10x |
+| Z.ai GLM Max      |  168 | ~5B tok/mo¹  |    2,940 | **0.0571** |     0.6829 |     12x |
 
 ¹ Extrapolated from a 4-day sample of 665M tokens across 5,765 model calls recorded
 against a Coding Max plan in <zai_api.md> (May 2026, GLM-5.1 era, previous metering).
 Treat as an order of magnitude. Z.ai's own published claim is a 15-30x subsidy, which
-back-converts to 3,700-7,400 tasks/mo and $0.023-$0.046/task — **two to three times
-more conservative than the measurement**, which is worth knowing before sizing on
-either.
+brackets the 12x derived here — the vendor claim is the more generous of the two, so
+sizing on this row is the conservative choice.
+
+**These three land within 10-12x of each other**, which is a much narrower spread than
+tokens-per-dollar suggests. Cerebras buys the most tokens per dollar by a wide margin
+and still lands beside Z.ai per task, because GLM-4.7 has no caching and burns 532k
+uncached tokens per task where GLM-5.3 spends 1.70M tokens of which 96% are cheap cache
+reads. Token capacity and delivered work are not the same ranking.
 
 #### Where only requests are published
 
