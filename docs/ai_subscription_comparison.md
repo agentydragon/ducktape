@@ -104,14 +104,39 @@ on it is both smarter and cheaper.
 Four things fall out of it, and three of them contradict what this document said
 before the data was checked.
 
-**There is a cliff at index 53, and it is a factor of 5.4.** Luna (max) scores 52.3
-for 4.7 cents a task; the next point up the frontier, DeepSeek V4-Pro 0813, scores
-53.2 for 25.2 cents. Nine tenths of an index point costs 5.4x. Every model between
-index 33 and 52 on the frontier is a Luna effort setting — nothing else from any
-vendor is priced competitively in that band. **Luna is the single most consequential
-row in this dataset**, and the note that it is "quite good and cheap" understates it:
-per index point it is roughly 5x better value than anything above it and 40x better
-than Opus 5 (max).
+**Luna owns the whole cheap half of the frontier.** Every frontier point between
+index 33 and 52 is a Luna effort setting; nothing from any other vendor is priced
+competitively in that band. That is the durable finding, and it is worth separating
+from the size of the step above it, which is easy to overstate.
+
+**The step above Luna is a factor of 2-3, not 5.** The raw frontier arithmetic says
+5.4x — Luna (max) at 52.3 for 4.7 cents against DeepSeek V4-Pro 0813 at 53.2 for
+25.2 cents — but that number is an artifact of two things and should not be quoted
+on its own. AA prices V4-Pro 0813 at DeepSeek's **peak** rate ($1.32/$3.96); off-peak
+is half that, putting the step at about 2.7x. And comparing at equal index rather
+than at the next frontier point, **DeepSeek V4-Flash 0731 scores 51.8 for 11.2
+cents** — half an index point below Luna (max) at 2.4x the cost. Luna is meaningfully
+cheaper than the nearest DeepSeek, by roughly 2-3x rather than 5x.
+
+**What actually makes Luna cheap is terseness, not headline price.** Cost per task is
+tokens times price, and Luna wins on both. Its per-token price is ~3x under V4-Pro
+0813's, and it spends far fewer reasoning tokens reaching a comparable score:
+
+| Model (effort)             | Index | Reasoning tok/task | Input tok/task | $/task |
+| -------------------------- | ----: | -----------------: | -------------: | -----: |
+| GPT-5.6 Luna (max)         |  52.3 |             14,400 |        116,000 | 0.0471 |
+| DeepSeek V4-Pro 0813 (max) |  53.2 |             31,200 |        270,000 | 0.2521 |
+| DeepSeek V4-Flash 0731     |  51.8 |             37,100 |        288,000 | 0.1122 |
+
+Luna reaches index 52 on **less than half** the reasoning tokens and **40% of the
+input tokens**. That matters beyond price: fewer tokens per task is also less
+context pressure and lower latency, and it is the property that survives a price cut
+by any competitor.
+
+Reasoning effort is the dial underneath all of this, and Luna's ladder is unusually
+wide — 624 → 1,416 → 4,865 → 8,726 → 14,400 reasoning tokens per task from low to
+max, index 33.9 → 52.3, cost $0.0088 → $0.0471. Choosing the effort setting is a
+bigger decision than choosing between Luna and its neighbours.
 
 **The frontier is mostly US-hosted.** Fourteen of seventeen points are US vendors;
 only MiMo-V2.5, DeepSeek V4-Pro and GLM-5.3 are PRC. Ruling out PRC hosting for
@@ -444,9 +469,10 @@ subscription at all, and it is testable this week for the price of a coffee.
 
 1. **Route bulk to GPT-5.6 Luna on the API, before buying anything.** Index 52 at
    $0.20/$1.20 — **$40 per 100M tokens**, against $900 for the same volume on Opus 5.
-   It is the best capability-per-dollar on the board by a factor of five, it needs no
-   plan, it has no window and therefore no lockout, and it is a US vendor already in
-   the loadout. Point the bulk agents at it and measure. Every other option below
+   It is the best capability-per-dollar on the board — roughly 2-3x under the nearest
+   DeepSeek at the same index, and far more than that against anything above index 53
+   — it needs no plan, it has no window and therefore no lockout, and it is a US
+   vendor already in the loadout. Point the bulk agents at it and measure. Every other option below
    costs more and answers a question this one may close.
 
    **The open question is quality, and only a week of real work settles it.** Index
@@ -455,7 +481,8 @@ subscription at all, and it is testable this week for the price of a coffee.
    applies.
 
 2. **If index 52 is not enough, the next real step up is index ~59, and it costs 14x
-   per task.** Two options are indistinguishable on capability per dollar — **Grok
+   per task.** (Index 53-57 is available for 2-8x, but see the frontier section: the
+   whole band buys 1-4 index points for multiples of Luna's cost.) Two options are indistinguishable on capability per dollar — **Grok
    4.6 (medium)** at $0.6679 and **GLM-5.3 (max)** at $0.6829 — so pick on
    jurisdiction and endpoint, not on the numbers. Grok is US-hosted and works for any
    workload; GLM is PRC-hosted, so it is available for ducktape and non-sensitive
@@ -527,6 +554,7 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 - **The committed index data is a 2026-08-23 snapshot.** AA re-scores on new releases and index revisions, and models are added weekly. Re-fetch before treating any ranking here as current; the refresh recipe is in <artificial_analysis/README.md>.
 - **Quotas drift fast.** Z.ai re-tiered twice in 2026; OpenAI added a $100 Pro tier in April; Gemini CLI quotas change without notice. Re-check before committing.
 - **Jurisdiction is a per-workload boundary, not a vendor verdict.** Z.ai, DeepSeek, Moonshot, Alibaba and MiniMax are all PRC-jurisdiction; Z.ai has been US Entity-Listed since Jan 2025, and their APIs carry no-train/no-store clauses but no anti-government-request carveout. That disqualifies them for anything confidential and is irrelevant for anything already public — so the question is which repo the work is in, not which vendor is cheapest. Route by workload: public repositories to the cheap tier, private code and anything touching credentials to the first-party subscriptions. A blanket reading of this caveat silently removes the entire cheap tier from consideration, which is the wrong answer for a workload that is mostly open source.
+- **AA prices peak-rate models at their peak rate.** DeepSeek V4-Pro 0813's $1.32/$3.96 in the committed data is the peak tariff; off-peak halves it, and any cost-per-task or Index/$ figure for a DeepSeek row is correspondingly a ceiling. Comparisons that straddle a peak-priced and a flat-priced vendor need this checked before the ratio means anything.
 - **Peak-hour multipliers are easy to miss** in both directions: Z.ai's 3× peak on GLM-5.3 (14:00–18:00 SGT) and DeepSeek's 2× peak (01:00–04:00, 06:00–10:00 UTC) can double or triple an expected bill.
 
 ## Sources
