@@ -929,6 +929,48 @@ it delivers **essentially Opus-5-at-max agentic capability (59.1 vs 59.2) for 1/
 Opus 5's API cost**. Nothing else in the survey does that. Whether it is worth buying
 reduces to a single question: is agentic ~47 enough, or do you need ~59?
 
+### Does the plan ever beat pay-per-token?
+
+The per-task figures already say Luna is cheaper. The stronger version of that claim is
+a break-even: at what monthly volume does a flat $168 fee overtake paying per token?
+
+| Against          |  $/task | Break-even volume | Plan's own ceiling | Reachable? |
+| ---------------- | ------: | ----------------: | -----------------: | ---------: |
+| Luna (max), API  | $0.0471 |    3,567 tasks/mo |        2,940 tasks |     **No** |
+| Luna (high), API | $0.0216 |    7,778 tasks/mo |        2,940 tasks |     **No** |
+
+**The plan runs out of quota before it gets cheap.** There is no volume at which Z.ai
+GLM Max beats Luna on price, because reaching break-even would require more tasks than
+the plan permits. Even at hypothetical full saturation it is 1.21x Luna (max) and 2.65x
+Luna (high) per task.
+
+At the consumption estimated earlier — 1.3-2.6B tokens/month, so roughly 766-1,533
+tasks at GLM-5.3's 1.70M tokens each — the absolute monthly numbers are not close:
+
+| Option            | ~766 tasks/mo | ~1,533 tasks/mo |
+| ----------------- | ------------: | --------------: |
+| Luna (high), API  |       **$17** |         **$33** |
+| Luna (max), API   |       **$36** |         **$72** |
+| **Z.ai GLM Max**  |      **$168** |        **$168** |
+| GLM-5.3, API      |          $523 |          $1,047 |
+| Opus 5 (max), API |        $1,791 |          $3,582 |
+
+That workload uses 26-52% of the plan, so its realised rate is $0.11-0.22/task against
+Luna's $0.047.
+
+**So the plan is never the cheap way to buy tasks. It is a 3-6x discount on
+agentic-59 tasks specifically** — $168 against $523-1,047 for the same model on
+pay-per-token at the same volume. That is the only comparison in which it wins, and it
+is a real win, but it is narrow: it applies once you have established that agentic ~47
+is not enough _and_ that the frontier subscriptions you already pay for are exhausted.
+
+**Which makes one unverified fact decisive rather than merely untidy.** The 2,940-task
+ceiling assumes Z.ai's token counter includes cached prefix reads. If it excludes them,
+the ceiling is roughly 26x higher, break-even at 3,567 tasks falls far inside it, and
+Z.ai flips from 21% more expensive than Luna to roughly **21x cheaper**. The same
+`cached_tokens` field settles it in one API call. Nothing else in this document changes
+its own conclusion by that much, so check it first.
+
 **Cerebras is not competitive on delivered work**, despite selling the most tokens per
 dollar by a wide margin. Its ~4x subsidy and index-26 agentic put it an order of
 magnitude behind the top three. It remains defensible only for mechanical bulk where a
@@ -1024,11 +1066,18 @@ subscription at all, and it is testable this week for the price of a coffee.
    Grok 4.5 (high) and Muse Spark 1.2 sit on the frontier there, but the whole band
    costs 5-8x Luna for 1-4 index points.
 
-3. **A Z.ai GLM Max plan ($168) only if step 2 lands on GLM _and_ the volume
-   justifies it.** The plan's value is the 15-30x subsidy, and it is real even when
-   badly utilized (below). What makes it usable at fleet scale is the spill path:
-   Z.ai's two base URLs meter separately on one key, so quota exhaustion becomes a
-   base-URL switch rather than a 3.7-hour stop.
+3. **A Z.ai GLM Max plan ($168) only if step 2 lands on GLM _and_ the frontier
+   subscriptions are actually exhausted.** Not "if the volume justifies it" — no
+   volume does. The plan never breaks even against Luna, because break-even needs
+   3,567 tasks/month and the plan only permits 2,940 (see the break-even table above).
+   Its win is narrower and real: **$168 against $523-1,047** for GLM-5.3 on
+   pay-per-token at this workload's volume, a 3-6x discount on agentic-59 capacity
+   specifically. Since Opus 5 already delivers agentic 59.2, that discount only matters
+   in the weeks Claude's cap binds first.
+
+   What makes it usable at fleet scale is the spill path: Z.ai's two base URLs meter
+   separately on one key, so quota exhaustion becomes a base-URL switch rather than a
+   3.7-hour stop.
 
    **The work is in the harness, not the purchase.** Something has to detect
    exhaustion and switch mid-flight. Scope that before buying — without failover this
