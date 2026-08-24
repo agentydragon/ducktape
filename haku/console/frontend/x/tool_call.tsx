@@ -1,4 +1,5 @@
 import { Badge, Code, Stack, Text } from "@mantine/core";
+import type { ReactNode } from "react";
 import type { ConversationItem } from "../client";
 
 import { CodeBlock } from "../code_block";
@@ -124,25 +125,55 @@ function ToolPayload({
 }
 
 const SUMMARY_CHARACTERS = 110;
-/** The arguments a human would name a call by, tried most-identifying first: a Bash call is its
- * description or command, a search its query, a file tool its path. */
-const SUMMARY_KEYS = ["description", "command", "query", "pattern", "file_path", "path", "url", "prompt"];
-
-/** The one line that identifies a call while it is folded. */
-export function toolCallSummary(args: unknown): string {
-  if (args !== null && typeof args === "object" && !Array.isArray(args)) {
-    const record = args as Record<string, unknown>;
-    for (const key of SUMMARY_KEYS) {
-      const value = record[key];
-      if (typeof value === "string" && value.trim()) return snippet(value);
-    }
-  }
-  return snippet(previewText(toolPayloadText(args)));
-}
 
 function snippet(value: string): string {
   const line = value.trim().split("\n")[0];
   return line.length <= SUMMARY_CHARACTERS ? line : `${line.slice(0, SUMMARY_CHARACTERS - 1)}…`;
+}
+
+/** A code-valued fragment of a folded line: a command, a path, a pattern. */
+function mono(value: unknown): ReactNode | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  return <span className="haku-chat-tool-call-snippet-mono">{snippet(value)}</span>;
+}
+
+/** A prose-valued fragment of a folded line: a description, a query. */
+function prose(value: unknown): ReactNode | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  return <>{snippet(value)}</>;
+}
+
+/** Per-tool folded lines, the transcript counterpart of `tool_rendering/`'s per-server widgets.
+ *
+ * `tool_rendering/` keys on the console's MCP servers; a transcript's calls are the CLI harness's
+ * own tools, so they get their own registry. Each renderer says how *its* arguments identify the
+ * call — Bash by its description (falling back to the command itself), a file tool by its path —
+ * rather than one heuristic guessing across all of them. A tool without an entry falls back to the
+ * first meaningful line of its raw arguments.
+ */
+const TOOL_SUMMARIES: Record<string, (args: Record<string, unknown>) => ReactNode | null> = {
+  Bash: (args) => prose(args.description) ?? mono(args.command),
+  BashOutput: (args) => mono(args.bash_id),
+  Write: (args) => mono(args.file_path),
+  Edit: (args) => mono(args.file_path),
+  MultiEdit: (args) => mono(args.file_path),
+  NotebookEdit: (args) => mono(args.notebook_path),
+  Read: (args) => mono(args.file_path),
+  Grep: (args) => mono(args.pattern),
+  Glob: (args) => mono(args.pattern),
+  WebFetch: (args) => mono(args.url),
+  WebSearch: (args) => prose(args.query),
+  Task: (args) => prose(args.description),
+  TodoWrite: () => null,
+};
+
+function toolCallSummary(item: ConversationItem): ReactNode {
+  const args = item.arguments;
+  if (args !== null && typeof args === "object" && !Array.isArray(args)) {
+    const rendered = TOOL_SUMMARIES[item.tool_name ?? ""]?.(args as Record<string, unknown>);
+    if (rendered !== undefined && rendered !== null) return rendered;
+  }
+  return mono(previewText(toolPayloadText(args)));
 }
 
 /** One call, whole: what was asked, what it printed, and what it produced that no string carries.
@@ -160,7 +191,7 @@ export function ToolCallView({ item }: { item: ConversationItem }) {
     <details className="haku-chat-tool-call">
       <summary className="haku-chat-tool-call-summary">
         <span className="haku-chat-tool-call-name">{item.tool_name}</span>
-        <span className="haku-chat-tool-call-snippet">{toolCallSummary(item.arguments)}</span>
+        <span className="haku-chat-tool-call-snippet">{toolCallSummary(item)}</span>
         {item.outcome === "failed" && (
           <Badge variant="light" color="red">
             failed

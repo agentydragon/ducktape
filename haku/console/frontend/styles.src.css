@@ -461,8 +461,8 @@
 }
 
 .haku-chat-tool-call-name {
-  font-family: var(--mantine-font-family-monospace);
-  font-size: var(--mantine-font-size-xs);
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
@@ -498,6 +498,12 @@
   text-overflow: ellipsis;
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* Code identifies itself as code — a command, a path, a pattern — while a prose description reads
+ * as prose. */
+.haku-chat-tool-call-snippet-mono {
+  font-family: var(--mantine-font-family-monospace);
 }
 
 /* Expanded content indents under the chevron so it visibly belongs to its line, since there is no
