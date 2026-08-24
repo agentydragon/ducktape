@@ -934,12 +934,15 @@ dollar by a wide margin. Its ~4x subsidy and index-26 agentic put it an order of
 magnitude behind the top three. It remains defensible only for mechanical bulk where a
 cheap correctness check exists.
 
-**The agent-product and request-metered plans cannot be ranked here at all** — Synthetic,
-Kimi, MiniMax, Google AI Ultra, Cursor, Copilot. A request cap says nothing about how
-many tokens a request may carry, and inferring one from another vendor's tokens-per-call
-is exactly the mixing error this document warns against elsewhere. What can be said is
-narrow and unflattering: Cursor Ultra and Copilot Pro+ land within 2x of API list under
-any plausible assumption, so they sell routing and interface rather than cheap inference.
+**The agent-product and request-metered plans cannot be ranked here at all** —
+Synthetic, Kimi, MiniMax, Google AI Ultra, Cursor, Copilot. Two things block it: a
+request cap says nothing about how many tokens a request may carry, and an AA task has
+no characteristic call count to divide by, since six of its nine evals are single-call
+while the three agentic ones carry most of the cost. Any number in those rows would be
+an assumption wearing a measurement's clothes, so they are left empty. What survives is
+only the shape: a request allowance is a hard ceiling independent of how much work each
+request does, so Copilot Pro+ at 1,500 requests a month runs out on call count long
+before token volume becomes the constraint.
 
 **Claude Max 20x and ChatGPT Pro stay unranked, and that is a real gap** — they are the
 two largest line items in the loadout. Neither publishes a denominator. The calibration
