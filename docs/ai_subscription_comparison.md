@@ -153,6 +153,82 @@ $0.3586/task at index 34.5. Gemini 3.7 Flash (medium) is 19 index points better 
 $0.2629 — cheaper _and_ far smarter. GLM-4.7 is not a budget choice; it is simply
 dominated.
 
+#### What the index actually measures, and why it is the wrong column here
+
+Worth being precise, because the number invites a reading it does not support.
+
+**Mechanically it is close to "fraction of benchmark items solved."** The index is a
+weighted mean of nine per-eval scores, each a solve rate in 0-1. So 0 means nothing
+solved and 100 means everything solved, and the arithmetic is honest.
+
+**But 100 is unreachable, so the scale does not mean what it looks like.** The best
+model in the dataset scores 63.0, and nothing in 169 models exceeds it, because three
+of the nine evals are built to resist saturation. Opus 5 (max) is made of:
+
+| Eval               | Opus 5 (max) |
+| ------------------ | -----------: |
+| GPQA Diamond       |         93.2 |
+| Terminal-Bench 2.1 |         89.1 |
+| AA-LCR             |         75.7 |
+| GDPval-AA          |         67.2 |
+| SciCode            |         55.7 |
+| HLE                |         54.9 |
+| τ³-Banking         |         42.1 |
+| AA-Omniscience     |         37.1 |
+| CritPt             |         29.1 |
+
+Index 52 is therefore not "half the tasks completed." It is 52 on a scale whose
+practical ceiling today is 63.
+
+**And the task mix is not this workload's.** Four of the nine are academic or
+scientific knowledge tests (HLE, GPQA Diamond, CritPt, SciCode) and a fifth scores
+knowledge with a hallucination penalty. Only three — GDPval-AA, τ³-Banking,
+Terminal-Bench — resemble work. GPQA Diamond is PhD-level science multiple choice;
+scoring 93 there says nothing about whether an agent run completes.
+
+**AA publishes the columns that do fit, and they change the answer.** `coding_index`
+and `agentic_index` are in the committed CSV:
+
+| Model (effort)          | General | Coding | Agentic | $/task | Coding/$ | Agentic/$ |
+| ----------------------- | ------: | -----: | ------: | -----: | -------: | --------: |
+| Claude Opus 5 (max)     |    63.0 |   78.0 |    59.2 | 2.3369 |       33 |        25 |
+| GPT-5.6 Sol (xhigh)     |    59.0 |   78.3 |    53.6 | 0.8072 |       97 |        66 |
+| GPT-5.6 Terra (max)     |    56.6 |   76.7 |    50.2 | 0.5080 |      151 |        99 |
+| Grok 4.6 (high)         |    60.9 |   76.8 |    58.7 | 0.8367 |       92 |        70 |
+| Gemini 3.7 Flash (high) |    56.0 |   76.1 |    45.1 | 0.4022 |      189 |       112 |
+| GLM-5.3 (max)           |    59.5 |   74.8 |    59.1 | 0.6829 |      109 |        87 |
+| Claude Opus 5 (medium)  |    58.6 |   74.3 |    50.4 | 0.7243 |      103 |        70 |
+| **GPT-5.6 Luna (max)**  |    52.3 |   71.5 |    46.9 | 0.0471 |    1,517 |       996 |
+| DeepSeek V4-Flash 0731  |    51.8 |   69.1 |    48.4 | 0.1122 |      616 |       431 |
+| GPT-5.6 Luna (high)     |    47.0 |   63.3 |    41.0 | 0.0216 |    2,932 |     1,900 |
+| GLM-4.7 (reasoning)     |    34.5 |   45.3 |    26.2 | 0.3586 |      126 |        73 |
+
+Four things this says that the general index hides.
+
+**Coding is far more compressed than the headline suggests.** Luna (max) scores 71.5
+against Opus 5's 78.0 — a 6.5-point gap where the general index shows 10.7 — at 1/50th
+the cost. On coding per dollar Luna is twenty times better than anything else on the
+board, and **Opus 5 (max) is off the coding frontier entirely**: Sol (xhigh) matches
+its coding score (78.3 vs 78.0) for a third of the price.
+
+**Agentic is where the spread is real, and where Luna is weakest.** Luna (max) drops
+to 46.9 against Opus 5's 59.2 — a 12.3-point gap, twice its coding gap. Agentic
+capability is what decides whether a long tool-use loop finishes, so this is the
+number that should govern how much of the fleet moves to Luna. Expect it to do well
+on bounded, well-specified work and to need supervision on long autonomous runs.
+
+**GLM-5.3 ties Opus 5 on agentic** — 59.1 against 59.2 — at 3.4x less per task. That
+is a stronger claim for it than anything in the general-index comparison, and it is
+the one place in this document where Z.ai's model genuinely stands out.
+
+**GLM-4.7 collapses on agentic to 26.2**, worse relative to the field than its general
+index of 34.5 implies. For Cerebras that is the relevant number, because agent loops
+are what the plan would be bought for.
+
+**The caveat above still applies, harder.** These are benchmark aggregates, not this
+codebase. They rank models; they do not tell you whether index 71.5 of coding clears
+your bar on ducktape. Only running it does.
+
 #### Off-frontier models worth naming
 
 Included because they come up in plan comparisons, not because they compete on ratio.
