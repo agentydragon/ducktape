@@ -151,26 +151,28 @@ function prose(value: unknown): ReactNode | null {
  * rather than one heuristic guessing across all of them. A tool without an entry falls back to the
  * first meaningful line of its raw arguments.
  */
-const TOOL_SUMMARIES: Record<string, (args: Record<string, unknown>) => ReactNode | null> = {
-  Bash: (args) => prose(args.description) ?? mono(args.command),
-  BashOutput: (args) => mono(args.bash_id),
-  Write: (args) => mono(args.file_path),
-  Edit: (args) => mono(args.file_path),
-  MultiEdit: (args) => mono(args.file_path),
-  NotebookEdit: (args) => mono(args.notebook_path),
-  Read: (args) => mono(args.file_path),
-  Grep: (args) => mono(args.pattern),
-  Glob: (args) => mono(args.pattern),
-  WebFetch: (args) => mono(args.url),
-  WebSearch: (args) => prose(args.query),
-  Task: (args) => prose(args.description),
-  TodoWrite: () => null,
-};
+const TOOL_SUMMARIES = new Map<string, (args: Record<string, unknown>) => ReactNode | null>([
+  ["Bash", (args) => prose(args.description) ?? mono(args.command)],
+  ["BashOutput", (args) => mono(args.bash_id)],
+  ["Write", (args) => mono(args.file_path)],
+  ["Edit", (args) => mono(args.file_path)],
+  ["MultiEdit", (args) => mono(args.file_path)],
+  ["NotebookEdit", (args) => mono(args.notebook_path)],
+  ["Read", (args) => mono(args.file_path)],
+  ["Grep", (args) => mono(args.pattern)],
+  ["Glob", (args) => mono(args.pattern)],
+  ["WebFetch", (args) => mono(args.url)],
+  ["WebSearch", (args) => prose(args.query)],
+  ["Task", (args) => prose(args.description)],
+  ["TodoWrite", () => null],
+]);
 
 function toolCallSummary(item: ConversationItem): ReactNode {
   const args = item.arguments;
-  if (args !== null && typeof args === "object" && !Array.isArray(args)) {
-    const rendered = TOOL_SUMMARIES[item.tool_name ?? ""]?.(args as Record<string, unknown>);
+  if (args !== null && typeof args === "object" && !Array.isArray(args) && item.tool_name != null) {
+    // A Map, not a keyed object: the tool name is wire data, and object indexing would dispatch
+    // `"constructor"` and friends to the prototype.
+    const rendered = TOOL_SUMMARIES.get(item.tool_name)?.(args as Record<string, unknown>);
     if (rendered !== undefined && rendered !== null) return rendered;
   }
   return mono(previewText(toolPayloadText(args)));
