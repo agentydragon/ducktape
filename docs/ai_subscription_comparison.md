@@ -682,17 +682,36 @@ artifact suggested, and the ordering one would expect from the sticker prices.
 
 #### Where capacity is published or measured
 
-| Plan              | $/mo | Capacity     | Tasks/mo | **$/task** | API $/task | Subsidy |
-| ----------------- | ---: | ------------ | -------: | ---------: | ---------: | ------: |
-| Z.ai GLM Max      |  168 | ~5B tok/mo¹  |    2,940 | **0.0571** |     0.6829 |     12x |
-| Cerebras Code Max |  200 | 120M tok/day |  ~2,100² | **~0.095** |     0.3586 |     ~4x |
-| Cerebras Code Pro |   50 | 24M tok/day  |    ~420² | **~0.118** |     0.3586 |     ~3x |
+| Plan              | $/mo | Capacity      |    Tasks/mo |        **$/task** | API $/task | Subsidy |
+| ----------------- | ---: | ------------- | ----------: | ----------------: | ---------: | ------: |
+| Z.ai GLM Max      |  168 | vendor claim¹ | 3,690-7,380 | **0.0228-0.0455** |     0.6829 |  15-30x |
+| Cerebras Code Max |  200 | 120M tok/day  |     ~2,100² |        **~0.095** |     0.3586 |     ~4x |
+| Cerebras Code Pro |   50 | 24M tok/day   |       ~420² |        **~0.118** |     0.3586 |     ~3x |
 
-¹ Extrapolated from a 4-day sample of 665M tokens across 5,765 model calls recorded
-against a Coding Max plan in <zai_api.md> (May 2026, GLM-5.1 era, previous metering).
-Treat as an order of magnitude. Z.ai's own published claim is a 15-30x subsidy, which
-brackets the 12x derived here — the vendor claim is the more generous of the two, so
-sizing on this row is the conservative choice.
+¹ **This row is Z.ai's own published claim, not a measurement.** An earlier revision
+derived 2,940 tasks and a 12x subsidy by extrapolating a 4-day usage sample from
+<zai_api.md>. That derivation is withdrawn — the sample cannot carry it, for six
+separate reasons:
+
+- **Wrong model generation.** The sample is GLM-5.1 (released 2026-04-07); it was
+  divided by GLM-5.3's tokens per task, and GLM-5.3 did not exist until 2026-08-18.
+- **Mixed workload.** `modelSummaryList` attributes only 333,868,066 of the sample's
+  665,031,733 tokens to GLM-5.1. Half the traffic is some other model, so any
+  per-call average spans a mixture.
+- **Different cache composition.** AA measures GLM-5.1 at 73.6% cache reads against
+  GLM-5.3's 96.2% — the two generations do not spend tokens alike.
+- **Possibly pre-caching.** Every prompt-caching observation in <zai_api.md> dates from
+  2026-06 onward; the sample is 2026-05-07 to 05-10.
+- **Different metering regime.** The 2026-07-30 revision switched Coding Plans from
+  prompt counts to credits. The sample predates it.
+- **Unknown counting convention.** Whether `tokensUsage` includes cached prefix reads
+  is undocumented, and at 96.2% cache reads that alone is a ~26x swing.
+
+Z.ai's published "approximately 15-30x the monthly subscription fee" is independent of
+all six, because it is a claim about API value per fee rather than about token
+counting. Converted at GLM-5.3's $0.6829/task it gives the range above. **It is the
+vendor's own marketing figure**, so read it as their upper bound on generosity, not as
+a measurement either.
 
 ² **The Cerebras rows are imputed, not derived**, because Cerebras serves GLM-4.7 only
 and AA's token split for GLM-4.7 is the incoherent one. Two independent routes agree,
@@ -709,8 +728,7 @@ which is why a number is given at all rather than a blank:
   task**, centre ~1.65M, effective **$0.16-$0.28/M**.
 
 Both land near **1.7M tokens/task**, which is what the table uses. The subsidy is
-therefore roughly **3-5x** — a third of Z.ai's 12x, and nowhere near the 81x an earlier
-revision published. **Cerebras's headline 120M tokens/day is only about 2,100 agentic
+therefore roughly **3-5x**, nowhere near the 81x an earlier revision published. **Cerebras's headline 120M tokens/day is only about 2,100 agentic
 tasks a month**, because an agent loop spends most of its tokens replaying context and
 a token cap counts every replayed token whether or not the provider charges for it.
 
@@ -720,23 +738,16 @@ token-capped plan it may be worth nothing at all, depending on whether the vendo
 counts cached reads against the cap. Cerebras does not document which it does, and the
 answer moves the rows above by several times. Worth asking before buying.
 
-**Z.ai's 12x rests on one unverified assumption, and it is a big one.** The
-calculation divides Z.ai's own `tokensUsage` figure by AA's tokens per task, and those
-are only the same currency if Z.ai's counter **includes cached prefix reads**.
-<zai_api.md> documents the field as "token usage" and says no more. GLM-5.3 is 96.2%
-cache reads, so if the counter excludes them the plan's real AA-equivalent throughput
-is ~26x higher than assumed and the subsidy is in the hundreds rather than 12x.
+**No subscription in this survey has a measured cost per task.** Z.ai's is a vendor
+claim, Cerebras's is imputed from a sibling model, the request-metered plans have no
+defined conversion, and Claude and ChatGPT publish no denominator at all. That is worth
+stating plainly rather than leaving implicit in footnotes: **the only options here whose
+cost per task is actually known are the pay-per-token ones**, and they are known because
+AA computes them from published list prices rather than because anyone measured a plan.
 
-One cross-check argues for inclusion: the sample works out to 115,357 tokens per model
-call, which is plausible as a whole agent turn with its replayed context and
-implausible as _fresh_ input per turn — no loop sends 115k novel tokens every call.
-That is inference, not documentation. **Verify it against a live `usage` response
-before sizing on this row**; the endpoint reports `cached_tokens` per request, so one
-call settles it.
-
-Token capacity and delivered work are not the same ranking: Cerebras sells roughly five
-times the raw tokens per dollar that Z.ai does and delivers roughly a third the subsidy
-per task.
+The measurement that would fix the Z.ai row is small and local: run a week of real work
+through the plan, count tasks completed, divide. Everything else about that row is
+inference stacked on inference.
 
 #### Where only requests are published
 
@@ -901,75 +912,71 @@ Everything above, reduced to one table. Cost per delivered task, ranked by agent
 capability per dollar, because agentic is the column that decides whether a loop
 finishes.
 
-| Option                      | $/task | Agentic | Coding | Agentic/$ | Failure mode         |
-| --------------------------- | -----: | ------: | -----: | --------: | -------------------- |
-| **Luna (high), API**        | 0.0216 |    41.0 |   63.3 |     1,900 | none                 |
-| **Z.ai GLM Max plan**       | 0.0571 |    59.1 |   74.8 |     1,035 | 5h + weekly, 3x peak |
-| **Luna (max), API**         | 0.0471 |    46.9 |   71.5 |       996 | none                 |
-| Cerebras Code Max (imputed) | ~0.095 |    26.2 |   45.3 |       276 | daily reset          |
-| Cerebras Code Pro (imputed) | ~0.118 |    26.2 |   45.3 |       222 | daily reset          |
-| Gemini 3.7 Flash (med), API | 0.2629 |    45.1 |   71.5 |       172 | none                 |
-| GLM-5.3 (max), API          | 0.6829 |    59.1 |   74.8 |        87 | none                 |
-| Grok 4.6 (medium), API      | 0.6679 |    56.3 |   74.4 |        84 | none                 |
-| Opus 5 (medium), API        | 0.7243 |    50.4 |   74.3 |        70 | none                 |
-| Opus 5 (max), API           | 2.3369 |    59.2 |   78.0 |        25 | none                 |
+| Option                      |       $/task | Agentic | Coding |   Agentic/$ | Failure mode         |
+| --------------------------- | -----------: | ------: | -----: | ----------: | -------------------- |
+| **Luna (high), API**        |       0.0216 |    41.0 |   63.3 |       1,900 | none                 |
+| **Z.ai GLM Max plan**       | 0.023-0.046¹ |    59.1 |   74.8 | 1,300-2,600 | 5h + weekly, 3x peak |
+| **Luna (max), API**         |       0.0471 |    46.9 |   71.5 |         996 | none                 |
+| Cerebras Code Max (imputed) |       ~0.095 |    26.2 |   45.3 |         276 | daily reset          |
+| Cerebras Code Pro (imputed) |       ~0.118 |    26.2 |   45.3 |         222 | daily reset          |
+| Gemini 3.7 Flash (med), API |       0.2629 |    45.1 |   71.5 |         172 | none                 |
+| GLM-5.3 (max), API          |       0.6829 |    59.1 |   74.8 |          87 | none                 |
+| Grok 4.6 (medium), API      |       0.6679 |    56.3 |   74.4 |          84 | none                 |
+| Opus 5 (medium), API        |       0.7243 |    50.4 |   74.3 |          70 | none                 |
+| Opus 5 (max), API           |       2.3369 |    59.2 |   78.0 |          25 | none                 |
 
 **The top three are 4-8x better than everything else, and one of them is not a
 subscription.** That is the finding the whole exercise converges on.
 
-**A subscription is not, in general, the cheap way to buy capacity.** Luna on
-unsubsidized pay-per-token costs _less per task_ than the best plan in this survey —
-$0.0471 against Z.ai GLM Max's $0.0571 — with no window, no commitment and no lockout.
-Every plan here except Z.ai is beaten outright by simply paying per token for a cheaper
-model.
+¹ **The Z.ai row is the vendor's published 15-30x claim, not a measurement** — the
+derived figure that stood here was withdrawn once its underlying sample turned out to
+be a mixed-model, GLM-5.1-era, pre-metering-change extract. Read it as the vendor's
+upper bound on their own generosity.
 
-**What Z.ai's 12x subsidy actually buys is capability, not price.** At $0.0571/task it
-sits beside Luna on cost while delivering agentic 59.1 against 46.9. Put differently,
-it delivers **essentially Opus-5-at-max agentic capability (59.1 vs 59.2) for 1/41st of
-Opus 5's API cost**. Nothing else in the survey does that. Whether it is worth buying
-reduces to a single question: is agentic ~47 enough, or do you need ~59?
+**Every plan here except Z.ai is beaten outright by paying per token for a cheaper
+model**, and that comparison needs no contested numbers. Z.ai is the one that might
+not be: on its own claim it costs $0.023-$0.046/task against Luna (max)'s $0.0471,
+while delivering agentic 59.1 against 46.9 — **essentially Opus-5-at-max agentic
+capability (59.1 vs 59.2) for a fraction of Opus 5's API cost**. Nothing else in the
+survey does that.
+
+**But the plan's figures are ceilings and Luna's are not.** At the volume estimated
+here the plan runs well under saturation and its realised rate lands at $0.11-0.22/task
+— several times Luna's — because the 5-hour window stops the fleet before the quota
+does. So the buy question has two parts, not one: is agentic ~47 enough, and if not,
+would you actually consume enough of the plan for its ceiling rate to mean anything?
 
 ### Does the plan ever beat pay-per-token?
 
-The per-task figures already say Luna is cheaper. The stronger version of that claim is
-a break-even: at what monthly volume does a flat $168 fee overtake paying per token?
+**Undetermined — and the honest answer spans the decision boundary.** An earlier
+revision answered "never", from a break-even against a 2,940-task ceiling that has
+since been withdrawn. Recomputed against Z.ai's own published 15-30x claim, the plan
+lands at **$0.0228-$0.0455 per task**, which brackets Luna:
 
-| Against          |  $/task | Break-even volume | Plan's own ceiling | Reachable? |
-| ---------------- | ------: | ----------------: | -----------------: | ---------: |
-| Luna (max), API  | $0.0471 |    3,567 tasks/mo |        2,940 tasks |     **No** |
-| Luna (high), API | $0.0216 |    7,778 tasks/mo |        2,940 tasks |     **No** |
+| Option                     | $/task | Agentic |
+| -------------------------- | -----: | ------: |
+| Luna (high), API           | 0.0216 |    41.0 |
+| Z.ai GLM Max, at 30x claim | 0.0228 |    59.1 |
+| Z.ai GLM Max, at 15x claim | 0.0455 |    59.1 |
+| Luna (max), API            | 0.0471 |    46.9 |
 
-**The plan runs out of quota before it gets cheap.** There is no volume at which Z.ai
-GLM Max beats Luna on price, because reaching break-even would require more tasks than
-the plan permits. Even at hypothetical full saturation it is 1.21x Luna (max) and 2.65x
-Luna (high) per task.
+At the generous end the plan is **half** Luna (max)'s cost with 12 more agentic points;
+at the conservative end it ties Luna (max) and still carries those 12 points. On the
+vendor's own numbers, Z.ai dominates. That is exactly why the vendor's own numbers are
+not enough to decide on.
 
-At the consumption estimated earlier — 1.3-2.6B tokens/month, so roughly 766-1,533
-tasks at GLM-5.3's 1.70M tokens each — the absolute monthly numbers are not close:
+**Utilisation is what actually decides it, and it is the thing that failed before.**
+Every figure above is a saturation ceiling. At the 1.3-2.6B tokens/month estimated
+earlier — roughly 766-1,533 tasks — the plan runs at 10-40% of even its conservative
+capacity, and its realised rate is $0.11-0.22/task against Luna (max)'s $0.047. The
+5-hour wall is precisely the mechanism that keeps realisation low, and it is why the
+last GLM plan disappointed. **Pay-per-token takes no such haircut**, which is the
+durable argument in Luna's favour and does not depend on any contested number.
 
-| Option            | ~766 tasks/mo | ~1,533 tasks/mo |
-| ----------------- | ------------: | --------------: |
-| Luna (high), API  |       **$17** |         **$33** |
-| Luna (max), API   |       **$36** |         **$72** |
-| **Z.ai GLM Max**  |      **$168** |        **$168** |
-| GLM-5.3, API      |          $523 |          $1,047 |
-| Opus 5 (max), API |        $1,791 |          $3,582 |
-
-That workload uses 26-52% of the plan, so its realised rate is $0.11-0.22/task against
-Luna's $0.047.
-
-**So the plan is never the cheap way to buy tasks. It is a 3-6x discount on
-agentic-59 tasks specifically** — $168 against $523-1,047 for the same model on
-pay-per-token at the same volume. That is the only comparison in which it wins, and it
-is a real win, but it is narrow: it applies once you have established that agentic ~47
-is not enough _and_ that the frontier subscriptions you already pay for are exhausted.
-
-**Which makes one unverified fact decisive rather than merely untidy.** The 2,940-task
-ceiling assumes Z.ai's token counter includes cached prefix reads. If it excludes them,
-the ceiling is roughly 26x higher, break-even at 3,567 tasks falls far inside it, and
-Z.ai flips from 21% more expensive than Luna to roughly **21x cheaper**. The same
-`cached_tokens` field settles it in one API call. Nothing else in this document changes
-its own conclusion by that much, so check it first.
+So the comparison reduces to one empirical question that no published figure answers:
+**what fraction of the plan would you actually consume before the window stops you?**
+Above roughly half, the plan wins on both price and capability. Below a quarter, Luna
+wins on price and the plan is buying capability only.
 
 **Cerebras is not competitive on delivered work**, despite selling the most tokens per
 dollar by a wide margin. Its ~4x subsidy and index-26 agentic put it an order of
@@ -993,11 +1000,12 @@ this document.
 
 ### Two caveats that could move the ranking
 
-**Saturation.** Every plan figure is a ceiling. Z.ai's $0.0571 assumes the full ~2,940
-tasks land; the 5-hour wall is precisely what stopped that happening. At a quarter
-utilisation it becomes $0.23/task — still ahead of Opus 5 (medium) on API, but four
-times behind Luna. **The pay-per-token options have no equivalent haircut**, which
-widens their advantage in practice beyond what the table shows.
+**Saturation.** Every plan figure is a ceiling; every pay-per-token figure is what you
+actually pay. Z.ai's $0.023-$0.046 assumes the plan is consumed to its claimed capacity,
+and the 5-hour wall is precisely what stopped that happening last time — at the volume
+estimated here it realises $0.11-0.22/task instead. **The pay-per-token options take no
+equivalent haircut**, which is the one argument in their favour that survives every
+correction in this document.
 
 **Index 47 versus index 59 is not a small gap.** Agentic capability decides whether a
 long tool-use loop completes, and the retry correction bites hardest exactly where
@@ -1066,14 +1074,18 @@ subscription at all, and it is testable this week for the price of a coffee.
    Grok 4.5 (high) and Muse Spark 1.2 sit on the frontier there, but the whole band
    costs 5-8x Luna for 1-4 index points.
 
-3. **A Z.ai GLM Max plan ($168) only if step 2 lands on GLM _and_ the frontier
-   subscriptions are actually exhausted.** Not "if the volume justifies it" — no
-   volume does. The plan never breaks even against Luna, because break-even needs
-   3,567 tasks/month and the plan only permits 2,940 (see the break-even table above).
-   Its win is narrower and real: **$168 against $523-1,047** for GLM-5.3 on
-   pay-per-token at this workload's volume, a 3-6x discount on agentic-59 capacity
-   specifically. Since Opus 5 already delivers agentic 59.2, that discount only matters
-   in the weeks Claude's cap binds first.
+3. **A Z.ai GLM Max plan ($168) only if step 2 lands on GLM, the frontier
+   subscriptions are actually exhausted, and you would genuinely saturate it.** On the
+   vendor's own 15-30x claim the plan beats Luna on both price and capability; at the
+   realisation the 5-hour window actually permits, it does not. Which of those holds is
+   the whole decision, and no published number settles it.
+
+   Two comparisons are worth keeping straight. Against **Luna** the plan is contested —
+   $0.023-$0.046/task claimed against $0.0471, but $0.11-0.22 realised. Against
+   **GLM-5.3 on pay-per-token** it is unambiguous: $168 against $523-1,047 at this
+   workload's volume. So the plan is a reliable 3-6x discount on the agentic-59 tier
+   and an unreliable one on capacity generally. Since Opus 5 already delivers agentic
+   59.2, even that discount only matters in the weeks Claude's cap binds first.
 
    What makes it usable at fleet scale is the spill path: Z.ai's two base URLs meter
    separately on one key, so quota exhaustion becomes a base-URL switch rather than a
