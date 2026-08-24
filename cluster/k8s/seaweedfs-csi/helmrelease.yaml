@@ -34,6 +34,24 @@ spec:
       enabled: true
       image: chrislusf/seaweedfs-mount
       tag: v1.4.14
+      # QoS / eviction protection. Without requests this pod is BestEffort: the
+      # kubelet's first eviction target and the kernel OOM-killer's first victim
+      # (max oom_score_adj) under node memory pressure. It holds the weed-mount
+      # FUSE processes for every SeaweedFS volume on the node, so its death is
+      # catastrophic and silent -- consumers keep a dead mount ("transport
+      # endpoint is not connected") while their own readiness stays green. That
+      # is exactly how it died on 2026-08-23, breaking ~half of all git for
+      # ~14.5h (agentydragon/ducktape#4616). Request sized above observed
+      # working set (~300Mi peak aggregate across a node's volumes); generous
+      # memory limit as a safety cap; no CPU limit (never throttle the live data
+      # path). priorityClassName (system-node-critical, chart default) already
+      # shields from preemption and defers eviction in the priority sort.
+      resources:
+        requests:
+          cpu: 100m
+          memory: 384Mi
+        limits:
+          memory: 1536Mi
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -45,6 +63,15 @@ spec:
 
     node:
       enabled: true
+      # BestEffort -> Burstable so the CSI node plugin (NodeStage/NodePublish,
+      # the path that mounts volumes into pods) isn't an early eviction/OOM
+      # target either. Steady state ~40Mi; see mountService above and #4616.
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -56,6 +83,14 @@ spec:
 
     controller:
       replicas: 1
+      # BestEffort -> Burstable; provisioning/attach path (not the live data
+      # path, but no reason to leave it first-to-evict). Steady state ~85Mi.
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
