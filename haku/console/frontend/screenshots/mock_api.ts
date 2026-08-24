@@ -13,6 +13,7 @@ import {
   SAMPLE_PENDING,
   SAMPLE_TOOL_CALLS,
 } from "./sample_data";
+import type { Conversation, ConversationItem, ConversationPage, SessionFramePage } from "../client";
 import { mockOperatorMcpFetch } from "../tool_rendering/screenshot/mcp_mock";
 import { GOOGLE_CALENDAR_MCP_FIXTURES } from "../tool_rendering/google_calendar/fixtures";
 import { GROCY_MCP_FIXTURES } from "../tool_rendering/grocy/fixtures";
@@ -29,24 +30,9 @@ function jsonResponse(body: unknown): Response {
 
 const realFetch = globalThis.fetch;
 const scene = (window as unknown as { __SCENE__?: string }).__SCENE__;
-type MockItem = {
-  item_id: string;
-  item_type: "prompt" | "message" | "reasoning" | "tool_call";
-  status: "open" | "complete" | "failed";
-  text: string;
-  call_id: string | null;
-  tool_name: string | null;
-  arguments: Record<string, unknown> | null;
-  outcome: "succeeded" | "failed" | "unknown" | null;
-  structured: unknown;
-  disclosure: "summary" | "withheld" | null;
-  origin?: { kind: string };
-  created_at: string;
-  updated_at: string;
-};
 
 /** The session waking itself — a prompt nobody typed, whose text says what woke it. */
-function woke(item_id: string, text: string, at: string): MockItem {
+function woke(item_id: string, text: string, at: string): ConversationItem {
   return {
     item_id,
     item_type: "prompt",
@@ -70,7 +56,7 @@ function spoke(
   text: string,
   at: string,
   until: string = at
-): MockItem {
+): ConversationItem {
   return {
     item_id,
     item_type,
@@ -95,7 +81,7 @@ function called(
   args: Record<string, unknown>,
   at: string,
   answer?: { text: string; outcome: "succeeded" | "failed" }
-): MockItem {
+): ConversationItem {
   return {
     item_id,
     item_type: "tool_call",
@@ -122,7 +108,7 @@ const DIFF_CHECK_OUTPUT = Array.from(
   (_unused, line) => `checked generated file ${line + 1}: no whitespace errors`
 ).join("\n");
 
-const boundaryItems: readonly MockItem[] = [
+const boundaryItems: ConversationItem[] = [
   spoke("61000000-0000-4000-8000-000000000010", "prompt", "Try the Haku Console MCP tools.", "2026-08-01T03:00:10Z"),
   spoke(
     "62000000-0000-4000-8000-000000000010",
@@ -167,7 +153,7 @@ const boundaryItems: readonly MockItem[] = [
     "2026-08-01T03:00:13Z"
   ),
 ];
-const standardItems: readonly MockItem[] = [
+const standardItems: ConversationItem[] = [
   spoke(
     "61000000-0000-4000-8000-000000000006",
     "prompt",
@@ -182,7 +168,7 @@ const standardItems: readonly MockItem[] = [
     "2026-08-01T03:00:15Z"
   ),
 ];
-const overflowingItems: readonly MockItem[] = Array.from({ length: 8 }, (_unused, index) => {
+const overflowingItems: ConversationItem[] = Array.from({ length: 8 }, (_unused, index) => {
   const sequence = String(index + 1).padStart(12, "0");
   const asked = `2026-08-01T03:00:${String(index * 2).padStart(2, "0")}Z`;
   const answered = `2026-08-01T03:00:${String(index * 2 + 1).padStart(2, "0")}Z`;
@@ -204,7 +190,7 @@ const overflowingItems: readonly MockItem[] = Array.from({ length: 8 }, (_unused
   ];
 }).flat();
 /** A thought as one item: dimmed to a line while empty, folded behind "Thinking" once it has text. */
-function thought(item_id: string, text: string, at: string): MockItem {
+function thought(item_id: string, text: string, at: string): ConversationItem {
   return {
     item_id,
     item_type: "reasoning",
@@ -223,7 +209,7 @@ function thought(item_id: string, text: string, at: string): MockItem {
 
 // The same transcript with every state a tool call can be in: answered, failed, still running, and
 // one long enough to need its own scroll.
-const toolUsingItems: readonly MockItem[] = [
+const toolUsingItems: ConversationItem[] = [
   ...standardItems,
   // One of each thinking shape: withheld folds to the one-liner, disclosed to an openable fold.
   thought("64000000-0000-4000-8000-000000000001", "", "2026-08-01T03:00:11Z"),
@@ -317,7 +303,7 @@ const setupNarration = [
     text: "Workspace ready at /workspace/haku-state (tip 9f2c1ab8d4e05137c2a9b6f1e83d47a0c5b29e6f).",
     created_at: "2026-08-01T02:59:53Z",
   },
-] as const;
+] satisfies Conversation["session"]["narration"];
 // One conversation per row, with the channels holding it rather than one surface: the first is a
 // room with a live session, the second a room between runners whose last session closed cleanly,
 // the third a browser thread whose runner failed. A failed session is never live — the backend
@@ -358,10 +344,10 @@ const conversationPage = {
   ],
   // Not the last page, so the keyset's "Load older conversations" control renders.
   next_cursor: { last_activity_at: "2026-07-29T22:05:00Z", conversation_id: "70000000-0000-4000-8000-0000000000a4" },
-} as const;
+} satisfies ConversationPage;
 // Two exchanges, so the detail scene shows a turn boundary landing between them rather than a
 // single marker that could sit anywhere and still look right.
-const conversationItems: readonly MockItem[] = [
+const conversationItems: ConversationItem[] = [
   ...boundaryItems,
   spoke(
     "61000000-0000-4000-8000-000000000011",
@@ -400,7 +386,7 @@ const conversationSession = {
       outcome: "answered",
     },
   ],
-} as const;
+} satisfies Conversation["session"];
 const conversationDetail = {
   conversation_id: conversationId,
   runtime_kind: "claude_code",
@@ -412,7 +398,7 @@ const conversationDetail = {
   earlier_sessions: [
     { session_id: "70000000-0000-4000-8000-000000000010", status: "failed", created_at: "2026-07-31T22:14:00Z" },
   ],
-} as const;
+} satisfies Conversation;
 // The same session a few seconds earlier: still provisioning, mid-clone, with nothing but the
 // narration to show.
 const conversationBootstrap = {
@@ -425,7 +411,7 @@ const conversationBootstrap = {
     items: [],
     turns: [],
   },
-} as const;
+} satisfies Conversation;
 // A sandbox still being handed out, where the live Kubernetes read is the whole account for a
 // session that never comes up.
 const conversationProvisioning = {
@@ -454,24 +440,24 @@ const conversationProvisioning = {
     items: [],
     turns: [],
   },
-} as const;
+} satisfies Conversation;
 // A finished session short enough that the collapsed panel stays on screen: the detail scene's
 // transcript opens scrolled to its newest message, which puts the collapsed panel above the fold.
 const conversationNarrationCollapsed = {
   ...conversationDetail,
   session: { ...conversationSession, items: standardItems, turns: [] },
-} as const;
+} satisfies Conversation;
 // A transcript long enough to overflow its viewport, so the scroll stays pinned to the newest
 // message rather than opening at the top.
 const conversationOverflow = {
   ...conversationDetail,
   session: { ...conversationSession, narration: [], items: overflowingItems, turns: [] },
-} as const;
+} satisfies Conversation;
 // Tool calls with their results, which is what the transcript's card rendering exists for.
 const conversationToolUse = {
   ...conversationDetail,
   session: { ...conversationSession, narration: [], items: toolUsingItems, turns: [] },
-} as const;
+} satisfies Conversation;
 const conversationDetailForScene = scene?.startsWith("conversation-bootstrap")
   ? conversationBootstrap
   : scene?.startsWith("conversation-provisioning")
@@ -560,7 +546,7 @@ const conversationFrames = {
     },
   ],
   next_before_seq: 412,
-} as const;
+} satisfies SessionFramePage;
 const mcpServers =
   scene === "settings-oauth-success"
     ? SAMPLE_MCP_SERVERS.map((server) =>
