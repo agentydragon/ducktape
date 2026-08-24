@@ -72,9 +72,15 @@ class RequestAttributes(BaseModel):
     resource: str = ""
     subresource: str = ""
     name: str = ""
-    path: str = Field(min_length=1)
+    path: str = ""
     field_selector: str = ""
     label_selector: str = ""
+
+    @model_validator(mode="after")
+    def validate_path_for_non_resource(self) -> RequestAttributes:
+        if not self.resource_request and not self.path:
+            raise ValueError("non-resource requests require a non-empty path")
+        return self
 
 
 class AuthorizationRequest(BaseModel):
@@ -272,21 +278,33 @@ class KubernetesAuthorizationService:
         except Exception as error:
             raise KubernetesAuthorizationUnavailableError("Kubernetes authorization evaluation failed") from error
         decision_id = f"sar:{uuid4()}"
-        logger.info(
-            "Kubernetes standing-policy decision agent_id=%s access_profile_id=%s subject=%s "
-            "decision_id=%s allowed=%s verb=%s namespace=%s resource=%s subresource=%s name=%s path=%s",
-            agent_id,
-            access_profile_id,
-            subject.username,
-            decision_id,
-            result.allowed,
-            request.attributes.verb,
-            request.attributes.namespace,
-            request.attributes.resource,
-            request.attributes.subresource,
-            request.attributes.name,
-            request.attributes.path,
-        )
+        if request.attributes.resource_request:
+            logger.info(
+                "Kubernetes standing-policy decision agent_id=%s access_profile_id=%s subject=%s "
+                "decision_id=%s allowed=%s verb=%s namespace=%s resource=%s subresource=%s name=%s",
+                agent_id,
+                access_profile_id,
+                subject.username,
+                decision_id,
+                result.allowed,
+                request.attributes.verb,
+                request.attributes.namespace,
+                request.attributes.resource,
+                request.attributes.subresource,
+                request.attributes.name,
+            )
+        else:
+            logger.info(
+                "Kubernetes standing-policy decision agent_id=%s access_profile_id=%s subject=%s "
+                "decision_id=%s allowed=%s verb=%s path=%s",
+                agent_id,
+                access_profile_id,
+                subject.username,
+                decision_id,
+                result.allowed,
+                request.attributes.verb,
+                request.attributes.path,
+            )
         if result.allowed:
             return AuthorizationResponse(
                 allowed=True, reason=result.reason, source=KubernetesAuthorizationSource.SAR, decision_id=decision_id

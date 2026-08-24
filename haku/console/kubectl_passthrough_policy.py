@@ -24,25 +24,6 @@ def _parse_api_version(api_version: str) -> tuple[str, str]:
     return api_group, version
 
 
-def _build_path(
-    api_group: str,
-    version: str,
-    resource: str,
-    namespace: str | None = None,
-    name: str | None = None,
-    subresource: str | None = None,
-) -> str:
-    prefix = f"/apis/{api_group}/{version}" if api_group else f"/api/{version}"
-    if namespace:
-        prefix = f"{prefix}/namespaces/{namespace}"
-    path = f"{prefix}/{resource}"
-    if name:
-        path = f"{path}/{name}"
-    if subresource:
-        path = f"{path}/{subresource}"
-    return path
-
-
 def _make_req(
     verb: str,
     api_group: str,
@@ -62,14 +43,6 @@ def _make_req(
             else KubernetesAllNamespacesGrantScope()
         )
     )
-    path = _build_path(
-        api_group,
-        version,
-        resource,
-        namespace=namespace if not cluster_scoped else None,
-        name=name,
-        subresource=subresource,
-    )
     attributes = RequestAttributes(
         resource_request=True,
         verb=verb,
@@ -79,7 +52,6 @@ def _make_req(
         resource=resource,
         name=name or "",
         subresource=subresource or "",
-        path=path,
     )
     return AuthorizationRequest(attributes=attributes, required_scope=scope, required_rules=[required_rule(attributes)])
 
