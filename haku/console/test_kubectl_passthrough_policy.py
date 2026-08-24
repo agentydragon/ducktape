@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
 import pytest_bazel
 
+from haku.console.conftest import console_settings, write_config
 from haku.console.kubectl_passthrough_policy import map_kubectl_passthrough_request
 from haku.console.kubernetes_authorization import AuthorizationResponse, KubernetesAuthorizationSource
 from haku.console.tool_call_actor import AgentActor
@@ -69,7 +71,7 @@ def test_map_unknown_tool() -> None:
 
 
 @pytest.mark.asyncio
-async def test_kubectl_passthrough_suppression_when_fully_covered() -> None:
+async def test_kubectl_passthrough_suppression_when_fully_covered(tmp_path: Path) -> None:
     repo = AsyncMock()
     submitted_record = AsyncMock()
     submitted_record.tool_call_id = "tc_123"
@@ -81,13 +83,33 @@ async def test_kubectl_passthrough_suppression_when_fully_covered() -> None:
         allowed=True, reason="covered by SAR", source=KubernetesAuthorizationSource.SAR, decision_id="sar:1"
     )
 
+    config_file = write_config(
+        tmp_path / "config.yaml",
+        {
+            "auto_approval_policies": [{"id": "manual", "type": "never"}],
+            "access_profiles": [{"id": "public-coder", "auto_approval_policy": "manual"}],
+            "default_access_profile_id": "public-coder",
+            "mcp": {
+                "servers": [
+                    {
+                        "id": "kubectl-passthrough-mcp",
+                        "backend": {
+                            "kind": "remote_mcp",
+                            "url": "https://kubectl-passthrough.test/mcp",
+                            "auth": {"kind": "none"},
+                        },
+                    }
+                ]
+            },
+        },
+    )
     service = ToolCallApplicationService(
-        settings=AsyncMock(),
+        settings=console_settings("postgresql://...", config_file=config_file),
         repository=repo,
         invalidation_publisher=AsyncMock(),
         executor=AsyncMock(),
         oauth_store=AsyncMock(),
-        in_process_servers=AsyncMock(),
+        in_process_servers={},
         provider_store=AsyncMock(),
         authentik_token_store=AsyncMock(),
         approval_notifier=AsyncMock(),
@@ -114,25 +136,46 @@ async def test_kubectl_passthrough_suppression_when_fully_covered() -> None:
 
 
 @pytest.mark.asyncio
-async def test_kubectl_passthrough_falls_through_when_denied() -> None:
+async def test_kubectl_passthrough_falls_through_when_denied(tmp_path: Path) -> None:
     repo = AsyncMock()
     submitted_record = AsyncMock()
     submitted_record.tool_call_id = "tc_123"
     submitted_record.status = ToolCallStatus.PENDING_APPROVAL
     repo.submit.return_value = submitted_record
+    repo.get.return_value = submitted_record
 
     authorization = AsyncMock()
     authorization.evaluate.return_value = AuthorizationResponse(
         allowed=False, reason="not permitted", source=KubernetesAuthorizationSource.SAR, decision_id="sar:1"
     )
 
+    config_file = write_config(
+        tmp_path / "config.yaml",
+        {
+            "auto_approval_policies": [{"id": "manual", "type": "never"}],
+            "access_profiles": [{"id": "public-coder", "auto_approval_policy": "manual"}],
+            "default_access_profile_id": "public-coder",
+            "mcp": {
+                "servers": [
+                    {
+                        "id": "kubectl-passthrough-mcp",
+                        "backend": {
+                            "kind": "remote_mcp",
+                            "url": "https://kubectl-passthrough.test/mcp",
+                            "auth": {"kind": "none"},
+                        },
+                    }
+                ]
+            },
+        },
+    )
     service = ToolCallApplicationService(
-        settings=AsyncMock(),
+        settings=console_settings("postgresql://...", config_file=config_file),
         repository=repo,
         invalidation_publisher=AsyncMock(),
         executor=AsyncMock(),
         oauth_store=AsyncMock(),
-        in_process_servers=AsyncMock(),
+        in_process_servers={},
         provider_store=AsyncMock(),
         authentik_token_store=AsyncMock(),
         approval_notifier=AsyncMock(),
@@ -154,7 +197,7 @@ async def test_kubectl_passthrough_falls_through_when_denied() -> None:
     assert record.status == ToolCallStatus.PENDING_APPROVAL
     repo.submit.assert_awaited_once()
     kwargs = repo.submit.call_args.kwargs
-    assert kwargs.get("auto_approval_evaluation") is None
+    assert kwargs.get("auto_denial_reason") is None
 
 
 if __name__ == "__main__":

@@ -17,6 +17,73 @@ from haku.console.kubernetes_grant_models import (
 logger = logging.getLogger(__name__)
 
 
+def _parse_api_version(api_version: str) -> tuple[str, str]:
+    api_group, _, version = api_version.partition("/")
+    if not version:
+        return "", api_group
+    return api_group, version
+
+
+def _build_path(
+    api_group: str,
+    version: str,
+    resource: str,
+    namespace: str | None = None,
+    name: str | None = None,
+    subresource: str | None = None,
+) -> str:
+    prefix = f"/apis/{api_group}/{version}" if api_group else f"/api/{version}"
+    if namespace:
+        prefix = f"{prefix}/namespaces/{namespace}"
+    path = f"{prefix}/{resource}"
+    if name:
+        path = f"{path}/{name}"
+    if subresource:
+        path = f"{path}/{subresource}"
+    return path
+
+
+def _make_req(
+    verb: str,
+    api_group: str,
+    version: str,
+    resource: str,
+    namespace: str | None = None,
+    name: str | None = None,
+    cluster_scoped: bool = False,
+    subresource: str | None = None,
+) -> AuthorizationRequest:
+    scope = (
+        KubernetesClusterGrantScope()
+        if cluster_scoped
+        else (
+            KubernetesNamespacesGrantScope(namespaces=(namespace,))
+            if namespace
+            else KubernetesAllNamespacesGrantScope()
+        )
+    )
+    path = _build_path(
+        api_group,
+        version,
+        resource,
+        namespace=namespace if not cluster_scoped else None,
+        name=name,
+        subresource=subresource,
+    )
+    attributes = RequestAttributes(
+        resource_request=True,
+        verb=verb,
+        api_group=api_group,
+        api_version=version,
+        namespace=namespace if not cluster_scoped else "",
+        resource=resource,
+        name=name or "",
+        subresource=subresource or "",
+        path=path,
+    )
+    return AuthorizationRequest(attributes=attributes, required_scope=scope, required_rules=[required_rule(attributes)])
+
+
 def map_kubectl_passthrough_request(tool_name: str, arguments: dict[str, Any]) -> list[AuthorizationRequest] | None:
     """Map a kubectl-passthrough-mcp tool name and arguments to canonical AuthorizationRequests.
 
@@ -26,276 +93,56 @@ def map_kubectl_passthrough_request(tool_name: str, arguments: dict[str, Any]) -
         match tool_name:
             case "pods_list":
                 namespace = arguments.get("namespace", "")
-                scope = (
-                    KubernetesNamespacesGrantScope(namespaces=(namespace,))
-                    if namespace
-                    else KubernetesAllNamespacesGrantScope()
-                )
-                attributes = RequestAttributes(
-                    resource_request=True,
-                    verb="list",
-                    api_group="",
-                    api_version="v1",
-                    namespace=namespace,
-                    resource="pods",
-                    path=f"/api/v1/namespaces/{namespace}/pods" if namespace else "/api/v1/pods",
-                )
-                return [
-                    AuthorizationRequest(
-                        attributes=attributes, required_scope=scope, required_rules=[required_rule(attributes)]
-                    )
-                ]
+                return [_make_req("list", "", "v1", "pods", namespace=namespace)]
 
-            case "pods_get":
+            case "pods_get" | "pods_delete" | "pods_log":
                 name = arguments.get("name")
                 if not name:
                     return None
                 namespace = arguments.get("namespace") or "default"
-                scope = KubernetesNamespacesGrantScope(namespaces=(namespace,))
-                attributes = RequestAttributes(
-                    resource_request=True,
-                    verb="get",
-                    api_group="",
-                    api_version="v1",
-                    namespace=namespace,
-                    resource="pods",
-                    name=name,
-                    path=f"/api/v1/namespaces/{namespace}/pods/{name}",
-                )
-                return [
-                    AuthorizationRequest(
-                        attributes=attributes, required_scope=scope, required_rules=[required_rule(attributes)]
-                    )
-                ]
-
-            case "pods_delete":
-                name = arguments.get("name")
-                if not name:
-                    return None
-                namespace = arguments.get("namespace") or "default"
-                scope = KubernetesNamespacesGrantScope(namespaces=(namespace,))
-                attributes = RequestAttributes(
-                    resource_request=True,
-                    verb="delete",
-                    api_group="",
-                    api_version="v1",
-                    namespace=namespace,
-                    resource="pods",
-                    name=name,
-                    path=f"/api/v1/namespaces/{namespace}/pods/{name}",
-                )
-                return [
-                    AuthorizationRequest(
-                        attributes=attributes, required_scope=scope, required_rules=[required_rule(attributes)]
-                    )
-                ]
-
-            case "pods_log":
-                name = arguments.get("name")
-                if not name:
-                    return None
-                namespace = arguments.get("namespace") or "default"
-                scope = KubernetesNamespacesGrantScope(namespaces=(namespace,))
-                attributes = RequestAttributes(
-                    resource_request=True,
-                    verb="get",
-                    api_group="",
-                    api_version="v1",
-                    namespace=namespace,
-                    resource="pods",
-                    subresource="log",
-                    name=name,
-                    path=f"/api/v1/namespaces/{namespace}/pods/{name}/log",
-                )
-                return [
-                    AuthorizationRequest(
-                        attributes=attributes, required_scope=scope, required_rules=[required_rule(attributes)]
-                    )
-                ]
+                verb = "get" if tool_name in ("pods_get", "pods_log") else "delete"
+                subresource = "log" if tool_name == "pods_log" else None
+                return [_make_req(verb, "", "v1", "pods", namespace=namespace, name=name, subresource=subresource)]
 
             case "pods_exec":
                 name = arguments.get("name")
                 if not name:
                     return None
                 namespace = arguments.get("namespace") or "default"
-                scope = KubernetesNamespacesGrantScope(namespaces=(namespace,))
-                exec_attr = RequestAttributes(
-                    resource_request=True,
-                    verb="create",
-                    api_group="",
-                    api_version="v1",
-                    namespace=namespace,
-                    resource="pods",
-                    subresource="exec",
-                    name=name,
-                    path=f"/api/v1/namespaces/{namespace}/pods/{name}/exec",
-                )
-                get_attr = RequestAttributes(
-                    resource_request=True,
-                    verb="get",
-                    api_group="",
-                    api_version="v1",
-                    namespace=namespace,
-                    resource="pods",
-                    name=name,
-                    path=f"/api/v1/namespaces/{namespace}/pods/{name}",
-                )
                 return [
-                    AuthorizationRequest(
-                        attributes=exec_attr, required_scope=scope, required_rules=[required_rule(exec_attr)]
-                    ),
-                    AuthorizationRequest(
-                        attributes=get_attr, required_scope=scope, required_rules=[required_rule(get_attr)]
-                    ),
+                    _make_req("create", "", "v1", "pods", namespace=namespace, name=name, subresource="exec"),
+                    _make_req("get", "", "v1", "pods", namespace=namespace, name=name),
                 ]
 
             case "nodes_list":
-                scope = KubernetesClusterGrantScope()
-                attributes = RequestAttributes(
-                    resource_request=True,
-                    verb="list",
-                    api_group="",
-                    api_version="v1",
-                    resource="nodes",
-                    path="/api/v1/nodes",
-                )
-                return [
-                    AuthorizationRequest(
-                        attributes=attributes, required_scope=scope, required_rules=[required_rule(attributes)]
-                    )
-                ]
+                return [_make_req("list", "", "v1", "nodes", cluster_scoped=True)]
 
             case "nodes_get":
                 name = arguments.get("name")
                 if not name:
                     return None
-                scope = KubernetesClusterGrantScope()
-                attributes = RequestAttributes(
-                    resource_request=True,
-                    verb="get",
-                    api_group="",
-                    api_version="v1",
-                    resource="nodes",
-                    name=name,
-                    path=f"/api/v1/nodes/{name}",
-                )
-                return [
-                    AuthorizationRequest(
-                        attributes=attributes, required_scope=scope, required_rules=[required_rule(attributes)]
-                    )
-                ]
+                return [_make_req("get", "", "v1", "nodes", name=name, cluster_scoped=True)]
 
-            case "resources_list":
+            case "resources_list" | "resources_get" | "resources_delete":
                 api_version = arguments.get("apiVersion")
                 kind = arguments.get("kind")
                 if not api_version or not kind:
                     return None
-                namespace = arguments.get("namespace", "")
-                api_group, _, version = api_version.partition("/")
-                if not version:
-                    version = api_group
-                    api_group = ""
-                resource_plural = _kind_to_plural(kind)
-                scope = (
-                    KubernetesNamespacesGrantScope(namespaces=(namespace,))
-                    if namespace
-                    else KubernetesAllNamespacesGrantScope()
-                )
-                path = (
-                    (
-                        f"/apis/{api_group}/{version}/namespaces/{namespace}/{resource_plural}"
-                        if api_group
-                        else f"/api/{version}/namespaces/{namespace}/{resource_plural}"
-                    )
-                    if namespace
-                    else (
-                        f"/apis/{api_group}/{version}/{resource_plural}"
-                        if api_group
-                        else f"/api/{version}/{resource_plural}"
-                    )
-                )
-                attributes = RequestAttributes(
-                    resource_request=True,
-                    verb="list",
-                    api_group=api_group,
-                    api_version=version,
-                    namespace=namespace,
-                    resource=resource_plural,
-                    path=path,
-                )
-                return [
-                    AuthorizationRequest(
-                        attributes=attributes, required_scope=scope, required_rules=[required_rule(attributes)]
-                    )
-                ]
-
-            case "resources_get":
-                api_version = arguments.get("apiVersion")
-                kind = arguments.get("kind")
                 name = arguments.get("name")
-                if not api_version or not kind or not name:
+                if tool_name in ("resources_get", "resources_delete") and not name:
                     return None
-                namespace = arguments.get("namespace") or "default"
-                api_group, _, version = api_version.partition("/")
-                if not version:
-                    version = api_group
-                    api_group = ""
-                resource_plural = _kind_to_plural(kind)
-                scope = KubernetesNamespacesGrantScope(namespaces=(namespace,))
-                path = (
-                    f"/apis/{api_group}/{version}/namespaces/{namespace}/{resource_plural}/{name}"
-                    if api_group
-                    else f"/api/{version}/namespaces/{namespace}/{resource_plural}/{name}"
-                )
-                attributes = RequestAttributes(
-                    resource_request=True,
-                    verb="get",
-                    api_group=api_group,
-                    api_version=version,
-                    namespace=namespace,
-                    resource=resource_plural,
-                    name=name,
-                    path=path,
-                )
-                return [
-                    AuthorizationRequest(
-                        attributes=attributes, required_scope=scope, required_rules=[required_rule(attributes)]
-                    )
-                ]
 
-            case "resources_delete":
-                api_version = arguments.get("apiVersion")
-                kind = arguments.get("kind")
-                name = arguments.get("name")
-                if not api_version or not kind or not name:
-                    return None
-                namespace = arguments.get("namespace") or "default"
-                api_group, _, version = api_version.partition("/")
-                if not version:
-                    version = api_group
-                    api_group = ""
+                api_group, version = _parse_api_version(api_version)
                 resource_plural = _kind_to_plural(kind)
-                scope = KubernetesNamespacesGrantScope(namespaces=(namespace,))
-                path = (
-                    f"/apis/{api_group}/{version}/namespaces/{namespace}/{resource_plural}/{name}"
-                    if api_group
-                    else f"/api/{version}/namespaces/{namespace}/{resource_plural}/{name}"
+                namespace = (
+                    arguments.get("namespace", "")
+                    if tool_name == "resources_list"
+                    else (arguments.get("namespace") or "default")
                 )
-                attributes = RequestAttributes(
-                    resource_request=True,
-                    verb="delete",
-                    api_group=api_group,
-                    api_version=version,
-                    namespace=namespace,
-                    resource=resource_plural,
-                    name=name,
-                    path=path,
+                verb = (
+                    "list" if tool_name == "resources_list" else ("get" if tool_name == "resources_get" else "delete")
                 )
-                return [
-                    AuthorizationRequest(
-                        attributes=attributes, required_scope=scope, required_rules=[required_rule(attributes)]
-                    )
-                ]
+                return [_make_req(verb, api_group, version, resource_plural, namespace=namespace, name=name)]
 
             case "resources_create_or_update":
                 raw_resource = arguments.get("resource")
@@ -312,62 +159,12 @@ def map_kubectl_passthrough_request(tool_name: str, arguments: dict[str, Any]) -
                 if not api_version or not kind or not name:
                     return None
 
-                api_group, _, version = api_version.partition("/")
-                if not version:
-                    version = api_group
-                    api_group = ""
+                api_group, version = _parse_api_version(api_version)
                 resource_plural = _kind_to_plural(kind)
-                scope = KubernetesNamespacesGrantScope(namespaces=(namespace,))
-                path = (
-                    f"/apis/{api_group}/{version}/namespaces/{namespace}/{resource_plural}/{name}"
-                    if api_group
-                    else f"/api/{version}/namespaces/{namespace}/{resource_plural}/{name}"
-                )
-                collection_path = (
-                    f"/apis/{api_group}/{version}/namespaces/{namespace}/{resource_plural}"
-                    if api_group
-                    else f"/api/{version}/namespaces/{namespace}/{resource_plural}"
-                )
-
-                get_attr = RequestAttributes(
-                    resource_request=True,
-                    verb="get",
-                    api_group=api_group,
-                    api_version=version,
-                    namespace=namespace,
-                    resource=resource_plural,
-                    name=name,
-                    path=path,
-                )
-                create_attr = RequestAttributes(
-                    resource_request=True,
-                    verb="create",
-                    api_group=api_group,
-                    api_version=version,
-                    namespace=namespace,
-                    resource=resource_plural,
-                    path=collection_path,
-                )
-                patch_attr = RequestAttributes(
-                    resource_request=True,
-                    verb="patch",
-                    api_group=api_group,
-                    api_version=version,
-                    namespace=namespace,
-                    resource=resource_plural,
-                    name=name,
-                    path=path,
-                )
                 return [
-                    AuthorizationRequest(
-                        attributes=get_attr, required_scope=scope, required_rules=[required_rule(get_attr)]
-                    ),
-                    AuthorizationRequest(
-                        attributes=create_attr, required_scope=scope, required_rules=[required_rule(create_attr)]
-                    ),
-                    AuthorizationRequest(
-                        attributes=patch_attr, required_scope=scope, required_rules=[required_rule(patch_attr)]
-                    ),
+                    _make_req("get", api_group, version, resource_plural, namespace=namespace, name=name),
+                    _make_req("create", api_group, version, resource_plural, namespace=namespace),
+                    _make_req("patch", api_group, version, resource_plural, namespace=namespace, name=name),
                 ]
 
             case _:

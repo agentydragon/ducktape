@@ -1842,6 +1842,7 @@ py_test(
     name = "test_kubectl_passthrough_policy",
     srcs = ["test_kubectl_passthrough_policy.py"],
     deps = [
+        ":conftest",
         ":kubectl_passthrough_policy",
         ":kubernetes_authorization",
         ":tool_call_actor",
