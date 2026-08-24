@@ -63,7 +63,7 @@ class PolicyDenial:
     """A policy or schema check explicitly auto-denies the tool call."""
 
     reason: str
-    evaluation: str = SCHEMA_AUTO_DENIAL_EVALUATION
+    evaluation: str
 
 
 SchemaDenial = PolicyDenial
@@ -361,7 +361,10 @@ async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str,
         jsonschema.validate(instance=arguments, schema=tool.to_mcp_tool().inputSchema)
     except jsonschema.ValidationError as exc:
         logger.warning("auto-denied invalid MCP arguments tool=%s: %s", tool_name, exc)
-        return SchemaDenial(reason=f"arguments failed the registered tool schema: {exc.message}")
+        return SchemaDenial(
+            reason=f"arguments failed the registered tool schema: {exc.message}",
+            evaluation=SCHEMA_AUTO_DENIAL_EVALUATION,
+        )
     except jsonschema.SchemaError:
         logger.exception("auto-approval tool schema is invalid tool=%s", tool_name)
         return "error: registered tool schema is invalid"
