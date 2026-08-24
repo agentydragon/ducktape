@@ -425,18 +425,72 @@
   margin-top: auto;
 }
 
-.haku-chat-message {
-  width: min(88%, 46rem);
+/* The operator's prompt, as a messenger-style bubble on the right; its text stays left-aligned. */
+.haku-chat-prompt {
+  align-self: flex-end;
+  max-width: min(80%, 40rem);
+  background: var(--haku-shell-active-bg);
+  border-radius: 14px 14px 4px 14px;
+  padding: 0.45rem 0.85rem;
+}
+
+/* The agent's prose sits flush left with no chrome of its own — the transcript is mostly this,
+ * so it gets the page rather than a card on it. */
+.haku-chat-assistant {
+  align-self: flex-start;
+  width: min(100%, 46rem);
+}
+
+.haku-chat-thinking {
+  align-self: flex-start;
+  width: min(100%, 46rem);
+}
+
+.haku-chat-tool-call {
+  align-self: flex-start;
+  width: min(100%, 46rem);
+  border: 1px solid var(--haku-border);
+  border-radius: var(--mantine-radius-sm);
+  padding: 0.4rem 0.6rem;
   background: var(--haku-panel-bg);
 }
 
-.haku-chat-message-user {
-  align-self: flex-end;
-  background: var(--haku-shell-active-bg);
+.haku-chat-tool-call-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  cursor: pointer;
+  list-style: none;
 }
 
-.haku-chat-message-assistant {
-  align-self: flex-start;
+.haku-chat-tool-call-summary::-webkit-details-marker {
+  display: none;
+}
+
+.haku-chat-tool-call-summary::before {
+  content: "▸";
+  color: var(--mantine-color-dimmed);
+  flex: 0 0 auto;
+}
+
+.haku-chat-tool-call[open] > .haku-chat-tool-call-summary::before {
+  content: "▾";
+}
+
+/* One line while folded: the snippet takes what the badges leave and ellipsizes. */
+.haku-chat-tool-call-snippet {
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.haku-chat-tool-call-body {
+  margin-top: 0.5rem;
 }
 
 .haku-chat-markdown {
@@ -480,8 +534,8 @@
     line-height: 1.15;
   }
 
-  .haku-chat-message {
-    width: 94%;
+  .haku-chat-prompt {
+    max-width: 92%;
   }
 }
 

@@ -183,10 +183,35 @@ const overflowingItems: readonly MockItem[] = Array.from({ length: 8 }, (_unused
     ),
   ];
 }).flat();
+/** A thought as one item: dimmed to a line while empty, folded behind "Thinking" once it has text. */
+function thought(item_id: string, text: string, at: string): MockItem {
+  return {
+    item_id,
+    item_type: "reasoning",
+    status: "complete",
+    text,
+    call_id: null,
+    tool_name: null,
+    arguments: null,
+    outcome: null,
+    structured: null,
+    disclosure: text ? "summary" : "withheld",
+    created_at: at,
+    updated_at: at,
+  };
+}
+
 // The same transcript with every state a tool call can be in: answered, failed, still running, and
 // one long enough to need its own scroll.
 const toolUsingItems: readonly MockItem[] = [
   ...standardItems,
+  // One of each thinking shape: withheld folds to the one-liner, disclosed to an openable fold.
+  thought("64000000-0000-4000-8000-000000000001", "", "2026-08-01T03:00:11Z"),
+  thought(
+    "64000000-0000-4000-8000-000000000002",
+    "The note should live in the sandbox workspace, so `/workspace` is the right root; a failed write there is worth surfacing verbatim.",
+    "2026-08-01T03:00:11Z"
+  ),
   called(
     "63000000-0000-4000-8000-000000000006",
     "toolu_01HakuConsoleRead",
@@ -197,6 +222,17 @@ const toolUsingItems: readonly MockItem[] = [
       text: '{"servers": [{"server_id": "gmail", "status": "alive"}, {"server_id": "tana", "status": "degraded"}]}',
       outcome: "succeeded",
     }
+  ),
+  called(
+    "63000000-0000-4000-8000-00000000000b",
+    "toolu_06BashDescribed",
+    "Bash",
+    {
+      command: 'find / -maxdepth 4 -iname "*haku-state*" 2>/dev/null',
+      description: "Search for the haku-state checkout",
+    },
+    "2026-08-01T03:00:12Z",
+    { text: "/workspace/haku-state", outcome: "succeeded" }
   ),
   called(
     "63000000-0000-4000-8000-000000000007",

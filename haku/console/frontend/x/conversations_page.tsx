@@ -132,39 +132,54 @@ function BootstrapNarrationPanel({ narration, starting }: { narration: Bootstrap
   );
 }
 
-/** Who produced an item, in the words the transcript shows. */
-const SPOKE_BY: Record<ConversationItem["item_type"], string> = {
-  prompt: "You",
-  message: "Claude",
-  reasoning: "Claude thought",
-  tool_call: "Claude",
-};
-
-/** One item of the transcript. A tool call is a sibling of the message rather than a field on it,
- * which is why it renders here rather than inside one. */
+/** One item of the transcript, in chat shape: the operator's prompts as right-side bubbles, the
+ * agent's prose flush left with no chrome of its own, thinking folded to one line, and a tool call
+ * as a sibling of the message rather than a field on it. Who is speaking is carried by the layout —
+ * a bubble on the right is the operator, everything on the left is the agent — so no line is spent
+ * saying so. */
 function ItemView({ item }: { item: ConversationItem }) {
   if (item.item_type === "tool_call") return <ToolCallView item={item} />;
-  return (
-    <Paper withBorder p="sm" className={`haku-chat-message haku-chat-message-${item.item_type}`}>
-      <Group justify="space-between" align="center" mb={4}>
-        <Text fw={600} size="xs">
-          {SPOKE_BY[item.item_type]}
+  const text = item.text.trim();
+  if (item.item_type === "prompt") {
+    return (
+      <div className="haku-chat-prompt">
+        <Markdown source={text} className="haku-chat-markdown" />
+      </div>
+    );
+  }
+  if (item.item_type === "reasoning") {
+    // The thought is secondary to the answer it produced: one dimmed line when there is nothing to
+    // show — withheld, or still arriving — and a fold when there is.
+    if (!text) {
+      return (
+        <Text c="dimmed" size="xs" className="haku-chat-thinking">
+          Thinking{item.status === "open" ? "…" : ""}
         </Text>
-        {item.status !== "complete" && (
-          <Badge size="xs" variant="light" color={item.status === "failed" ? "red" : "blue"}>
-            {item.status}
-          </Badge>
-        )}
-      </Group>
-      <Markdown source={item.text.trim() || (item.status === "open" ? "…" : "")} className="haku-chat-markdown" />
-      {!item.text.trim() && item.status === "complete" && (
+      );
+    }
+    return (
+      <details className="haku-shell-disclosure haku-chat-thinking">
+        <summary>Thinking</summary>
+        <div className="haku-shell-disclosure-body">
+          <Markdown source={text} className="haku-chat-markdown" />
+        </div>
+      </details>
+    );
+  }
+  return (
+    <div className="haku-chat-assistant">
+      {item.status === "failed" && (
+        <Badge size="xs" variant="light" color="red" mb={4}>
+          failed
+        </Badge>
+      )}
+      <Markdown source={text || (item.status === "open" ? "…" : "")} className="haku-chat-markdown" />
+      {!text && item.status === "complete" && (
         <Text c="dimmed" size="xs">
-          {item.item_type === "reasoning" && item.disclosure === "withheld"
-            ? "The model thought, and none of it was disclosed."
-            : "Nothing was captured for this."}
+          Nothing was captured for this.
         </Text>
       )}
-    </Paper>
+    </div>
   );
 }
 

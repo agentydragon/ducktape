@@ -1,4 +1,4 @@
-import { Badge, Code, Group, Paper, Stack, Text } from "@mantine/core";
+import { Badge, Code, Stack, Text } from "@mantine/core";
 import type { ConversationItem } from "../client";
 
 import { CodeBlock } from "../code_block";
@@ -123,26 +123,56 @@ function ToolPayload({
   );
 }
 
+const SUMMARY_CHARACTERS = 110;
+/** The arguments a human would name a call by, tried most-identifying first: a Bash call is its
+ * description or command, a search its query, a file tool its path. */
+const SUMMARY_KEYS = ["description", "command", "query", "pattern", "file_path", "path", "url", "prompt"];
+
+/** The one line that identifies a call while it is folded. */
+export function toolCallSummary(args: unknown): string {
+  if (args !== null && typeof args === "object" && !Array.isArray(args)) {
+    const record = args as Record<string, unknown>;
+    for (const key of SUMMARY_KEYS) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim()) return snippet(value);
+    }
+  }
+  return snippet(previewText(toolPayloadText(args)));
+}
+
+function snippet(value: string): string {
+  const line = value.trim().split("\n")[0];
+  return line.length <= SUMMARY_CHARACTERS ? line : `${line.slice(0, SUMMARY_CHARACTERS - 1)}…`;
+}
+
 /** One call, whole: what was asked, what it printed, and what it produced that no string carries.
  *
  * A call is an item, so its ask and its answer are the same row — `status` is what says whether the
  * answer has arrived, rather than a nested result being present or absent.
+ *
+ * **Folded to one line by default.** In a transcript the calls are the agent's working, not its
+ * answer, and an open card per call buried the prose between them. The folded line carries the
+ * name, the argument that identifies the call, and its state; everything else — full arguments,
+ * output, structured result — is behind the fold.
  */
 export function ToolCallView({ item }: { item: ConversationItem }) {
   return (
-    <Paper withBorder p="sm" radius="sm" className="haku-claude-tool-use">
-      <Group gap="xs" mb="xs">
-        <Badge variant="light" color="gray">
-          Tool
-        </Badge>
+    <details className="haku-chat-tool-call">
+      <summary className="haku-chat-tool-call-summary">
         <Code style={{ overflowWrap: "anywhere" }}>{item.tool_name}</Code>
+        <span className="haku-chat-tool-call-snippet">{toolCallSummary(item.arguments)}</span>
         {item.outcome === "failed" && (
           <Badge variant="light" color="red">
             failed
           </Badge>
         )}
-      </Group>
-      <Stack gap="xs">
+        {item.status !== "complete" && (
+          <Badge variant="light" color="blue">
+            running
+          </Badge>
+        )}
+      </summary>
+      <Stack gap="xs" className="haku-chat-tool-call-body">
         <ToolPayload label="Arguments" value={item.arguments} emptyLabel="No arguments." emptyWhenNoKeys />
         {item.status === "complete" ? (
           <>
@@ -159,6 +189,6 @@ export function ToolCallView({ item }: { item: ConversationItem }) {
           </Text>
         )}
       </Stack>
-    </Paper>
+    </details>
   );
 }
