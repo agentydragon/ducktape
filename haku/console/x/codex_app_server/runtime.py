@@ -71,6 +71,10 @@ class CodexRuntimeAdapter:
             )
         )
 
+    def wake_watcher(self) -> None:
+        # Codex's idle-time frames are unclassified, so the stream is only consumed inside a turn.
+        return None
+
     def project_log(self, frames_: Iterable[tuple[int, HarnessFrame]]) -> Projection:
         return projection.project_log(
             projection.RecordedFrame(frame_seq=seq, payload=envelope.frame) for seq, envelope in frames_

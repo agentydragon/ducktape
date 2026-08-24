@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.chat_models import (
+    HARNESS_ORIGIN,
     OPEN_SESSION_STATUSES,
     SPA_ORIGIN,
     BridgeFrameKind,
@@ -41,7 +42,15 @@ from haku.console.chat_models import (
 )
 from haku.console.config import ChatRuntimesConfig, ClaudeRuntimeConfig
 from haku.console.conftest import console_sessions
-from haku.console.database_schema import Agent, Conversation, ConversationEvent, ConversationItem, Session, SessionFrame
+from haku.console.database_schema import (
+    Agent,
+    Conversation,
+    ConversationEvent,
+    ConversationItem,
+    ConversationTurn,
+    Session,
+    SessionFrame,
+)
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.x import reprojection
 from haku.console.x.claude_code.client import ClaudeCli
@@ -53,6 +62,7 @@ from haku.console.x.claude_code.testing.wire import (
     input_json_delta,
     prompt,
     result,
+    system,
     text_block,
     text_delta,
     thinking_block,
@@ -445,6 +455,9 @@ class _UnrelatedRuntimeAdapter:
 
     def prompt_submitted(self, frames: Iterable[HarnessFrame]) -> bool:
         return any(frame.frame.get("动作") == "输入" for frame in frames)
+
+    def wake_watcher(self) -> None:
+        return None
 
     def client(self, websocket, launch, progress, frames_to):
         raise AssertionError("this projection-only test must not construct a runner client")
@@ -2288,6 +2301,115 @@ async def test_transient_database_error_rejects_an_integrity_error(
                 )
             )
     assert not _transient_database_error(excinfo.value)
+
+
+_WAKE_TURN_ONE = [
+    assistant(text_block("Started the fetch in the background.")),
+    result(text="Started the fetch in the background."),
+]
+# The idle-time shape pinned by `claude_code/testdata/background_wake.jsonl`: announcement chatter,
+# then the exchange's own content with nothing on stdin.
+_WAKE_CHATTER = [
+    system("background_tasks_changed", tasks=[]),
+    system("task_updated", task_id="task_1", patch={"status": "completed"}),
+    system(
+        "task_notification",
+        task_id="task_1",
+        status="completed",
+        summary='Background command "fetch" completed (exit code 0)',
+    ),
+    system("init"),
+    system("status", status="requesting"),
+]
+_WAKE_EXCHANGE = [
+    text_delta("The fetch finished."),
+    assistant(text_block("The fetch finished.")),
+    result(text="The fetch finished."),
+]
+
+
+class _WakingClaudeClient(_LifecycleClaudeClient):
+    """Answers the operator's turn from its script, then hands the test the wheel."""
+
+    instance: object | None = None
+
+    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: FrameSink):
+        super().__init__(adapter, launch, on_progress, frames_to)
+        self.script = list(_WAKE_TURN_ONE)
+        type(self).instance = self
+
+    async def arrive(self, frames_list: list[dict[str, Any]]) -> None:
+        """Frames the CLI produces on its own: recorded through the real sink, then delivered."""
+        for frame in frames_list:
+            recorded_frame = await self._frames_to.received(HarnessFrame(frame=frame))
+            self.deliver(frame, recorded_frame.frame_seq)
+
+
+async def _eventually(read: Callable[[], Awaitable[bool]], *, saying: str) -> None:
+    for _ in range(400):
+        if await read():
+            return
+        await asyncio.sleep(0.025)
+    pytest.fail(saying)
+
+
+async def test_a_harness_initiated_exchange_becomes_an_ordinary_turn(
+    allocator, chat_store, recording_claims, notifications, operator_id, migrated_sessions
+) -> None:
+    """The session wakes itself — a background task's notification, then an unprompted exchange —
+    and the console brackets it like any turn: a row, a harness-origin prompt item saying what
+    woke it, the answer projected, and the cursor carried past it so the next operator prompt
+    cannot swallow the wake's stale terminal frame."""
+    websocket = _LifecycleWebSocket()
+    runtimes = configured_runtimes(recording_claims, client_factory=_WakingClaudeClient)
+    chat_service = SessionService(runtimes, chat_store, notifications)
+    session = await chat_service.create(operator_id)
+    session_id = session.session_id
+    await chat_service.enqueue_prompt(operator_id, session_id, "start the fetch", SPA_ORIGIN)
+    await allocator.allocate_once()
+    runner = asyncio.ensure_future(
+        chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])
+    )
+    try:
+
+        async def answered(expected: list[str]) -> bool:
+            return await answers(migrated_sessions, session_id) == expected
+
+        await _eventually(lambda: answered(["Started the fetch in the background."]), saying="turn one never completed")
+        client = _WakingClaudeClient.instance
+        assert isinstance(client, _WakingClaudeClient)
+        await client.arrive(_WAKE_CHATTER + _WAKE_EXCHANGE)
+        await _eventually(
+            lambda: answered(["Started the fetch in the background.", "The fetch finished."]),
+            saying="the wake exchange never completed",
+        )
+        # End the loop from the store, then nudge the idle wait with one more chatter frame so the
+        # loop re-checks status without waiting out its notification timeout.
+        await chat_store.request_close(operator_id, session_id)
+        await client.arrive([system("status", status="idle")])
+        await asyncio.wait_for(runner, timeout=15)
+    finally:
+        runner.cancel()
+
+    async with migrated_sessions() as db:
+        turns = (
+            await db.scalars(
+                select(ConversationTurn)
+                .where(ConversationTurn.session_id == session_id)
+                .order_by(ConversationTurn.started_at)
+            )
+        ).all()
+    assert [turn.outcome for turn in turns] == [TurnOutcome.ANSWERED, TurnOutcome.ANSWERED]
+    view = await chat_store.get(operator_id, session_id)
+    prompts = [item for item in view.items if item.item_type is ItemType.PROMPT]
+    assert [(item.text, item.origin) for item in prompts] == [
+        ("start the fetch", SPA_ORIGIN),
+        ('Background command "fetch" completed (exit code 0)', HARNESS_ORIGIN),
+    ]
+    assert client.prompts == ["start the fetch"], "a wake turn asks no question"
+    async with migrated_sessions() as db:
+        report = await reprojection.check_session(db, session_id, runtimes=runtimes)
+    assert [turn.outcome for turn in report.turns] == [reprojection.Agrees(), reprojection.Agrees()]
 
 
 if __name__ == "__main__":

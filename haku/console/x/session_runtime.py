@@ -44,6 +44,7 @@ from haku.console.x.runtime import (
     RuntimeLaunch,
     RuntimeMcpServer,
     RuntimeRegistry,
+    RuntimeWakeWatcher,
     TurnCompletion,
     TurnProjectionSeed,
 )
@@ -58,6 +59,7 @@ from haku.console.x.session_store import (
     SandboxDemand,
     SessionStore,
     TurnStart,
+    WakeTurn,
 )
 from haku.console.x.session_views import (
     DEFAULT_FRAME_PAGE,
@@ -200,7 +202,7 @@ class RolloutRecorder:
         return await self._store.record_frame(self._session_id, direction, kind, payload, runner_seq=runner_seq)
 
 
-def _inherited(turn: TurnStart | ResumedTurn) -> TurnProjectionSeed:
+def _inherited(turn: TurnStart | ResumedTurn | WakeTurn) -> TurnProjectionSeed:
     """Where an adopting replica's fold picks the turn up.
 
     Empty only for a turn this process opened. What the store hands back is the open message, when
@@ -209,7 +211,7 @@ def _inherited(turn: TurnStart | ResumedTurn) -> TurnProjectionSeed:
     already there. Materialised call ids are inherited independently of prose so completed
     compatibility blocks arriving after a roll stay duplicates rather than new calls.
     """
-    if isinstance(turn, TurnStart):
+    if not isinstance(turn, ResumedTurn):
         return TurnProjectionSeed()
     if turn.streaming is None and turn.reasoning is None:
         return TurnProjectionSeed(seen_call_ids=turn.seen_call_ids, completed_call_ids=turn.completed_call_ids)
@@ -595,6 +597,12 @@ class SessionService:
                     # socket. Without it a roll leaves an idle session waiting out the whole
                     # graceful-shutdown timeout before it hands back.
                     connection = helpers.create_task(self._watch_connection(client))
+                    # **One read of the stream in flight, ever, owned here.** An async generator
+                    # refuses to be advanced twice at once and cancelling a read closes it, so the
+                    # pending read survives idle waits and is handed into the turn that consumes it
+                    # rather than being restarted. Declared before the try so the finally can always
+                    # ask about it.
+                    pending_frame: asyncio.Task[ReceivedFrame] | None = None
                     try:
                         await client.connect()
                         # One stream for the session, not one per turn: a folded prompt is answered
@@ -602,6 +610,7 @@ class SessionService:
                         # is gone. A turn is a bracket over this stream, not a request/response
                         # pair.
                         frames = _replaying(() if resumed is None else resumed.replay, client.frames().__aiter__())
+                        watcher: RuntimeWakeWatcher | None = None
                         while True:
                             status = await self._store.status(session_id)
                             if status is None or status in ENDED_SESSION_STATUSES:
@@ -609,22 +618,60 @@ class SessionService:
                             # The inherited turn before any new prompt, and once: its remaining
                             # frames are already on their way, so opening a second turn to take them
                             # would deliver one exchange's answer into another's bracket.
-                            turn: TurnStart | ResumedTurn | None = resumed
+                            turn: TurnStart | ResumedTurn | WakeTurn | None = resumed
                             resumed = None
                             if turn is None:
                                 turn = await self._store.next_prompt(session_id)
                             if turn is None:
-                                # Wait for a LISTEN/NOTIFY instead of polling.
-                                await self._notifications.wait(
-                                    SessionEventKind.PROMPT, session_id, timeout_seconds=30.0
+                                # **An exchange has two legitimate initiators, so idle is one wait
+                                # on both**: the operator's prompt queue, and the stream itself —
+                                # the harness waking to observe work it left running. Whichever
+                                # speaks first decides what the next turn is. A runtime with no
+                                # wake watcher keeps the old contract: only the queue can start an
+                                # exchange, and the stream is read only inside one.
+                                if watcher is None:
+                                    watcher = runtime.wake_watcher()
+                                if watcher is None:
+                                    # Wait for a LISTEN/NOTIFY instead of polling.
+                                    await self._notifications.wait(
+                                        SessionEventKind.PROMPT, session_id, timeout_seconds=30.0
+                                    )
+                                    continue
+                                if pending_frame is None:
+                                    pending_frame = asyncio.ensure_future(anext(frames))
+                                prompted = asyncio.ensure_future(
+                                    self._notifications.wait(SessionEventKind.PROMPT, session_id, timeout_seconds=30.0)
                                 )
-                                continue
+                                await asyncio.wait([pending_frame, prompted], return_when=asyncio.FIRST_COMPLETED)
+                                prompted.cancel()
+                                if not pending_frame.done():
+                                    continue
+                                received = pending_frame.result()
+                                pending_frame = None
+                                if (wake := watcher.observe(received.envelope)) is None:
+                                    # Idle chatter — task bookkeeping, lifecycle markers. Consumed
+                                    # and dropped: it projects to nothing, so an adoption replaying
+                                    # over it loses nothing.
+                                    continue
+                                opened = await self._store.open_wake_turn(
+                                    session_id, wake.description, first_frame_seq=received.frame_seq
+                                )
+                                if opened is None:
+                                    continue
+                                # The frame that began the exchange goes back on the front of the
+                                # stream, so the turn loop reads the exchange from its first frame.
+                                frames = _replaying((received,), frames)
+                                turn = opened
+                                watcher = None
                             # Cleared before the turn, not after: an abort notified just as the
                             # previous one ended would otherwise sit set through the idle wait and
                             # kill this turn on arrival.
                             abort_event.clear()
+                            handed_frame, pending_frame = pending_frame, None
                             try:
-                                await self._run_turn(client, frames, session_id, turn, abort_event=abort_event)
+                                await self._run_turn(
+                                    client, frames, session_id, turn, abort_event=abort_event, pending=handed_frame
+                                )
                             except Exception as error:
                                 if _transient_database_error(error):
                                     # Says nothing about the session, so it gets the lost-runner
@@ -645,6 +692,9 @@ class SessionService:
                         abort_watch.cancel()
                         renewal.cancel()
                         connection.cancel()
+                        # Closes the stream, which is fine: this connection is over either way.
+                        if pending_frame is not None:
+                            pending_frame.cancel()
             except* WebSocketDisconnect:
                 # The runner went away, which is not the session being over: it keeps the CLI alive
                 # across a lost socket and redials. Hand the session back and let the lease decide —
@@ -739,9 +789,10 @@ class SessionService:
         client: RuntimeClient,
         frames: AsyncIterator[ReceivedFrame],
         session_id: UUID,
-        turn: TurnStart | ResumedTurn,
+        turn: TurnStart | ResumedTurn | WakeTurn,
         *,
         abort_event: asyncio.Event,
+        pending: asyncio.Task[ReceivedFrame] | None = None,
     ) -> None:
         """Ask *turn*'s question if it has not been asked, then consume the stream until the turn
         completes.
@@ -767,8 +818,9 @@ class SessionService:
         runtime = await self._runtime(session_id)
         turn_id = turn.turn_id
         if isinstance(turn, TurnStart):
-            # A resumed turn's question was asked by a process that is gone; only its answer is
-            # still coming.
+            # A resumed turn's question was asked by a process that is gone, and a wake turn's was
+            # never asked at all — the harness began the exchange itself. Either way only the
+            # answer is still coming.
             await client.query(turn.prompt)
         # The provider owns every bit of protocol state. The generic loop gives it only durable
         # neutral facts inherited from the open turn and acts on the neutral effects it returns.
@@ -784,8 +836,11 @@ class SessionService:
             while completion is None:
                 # Exactly one `anext` in flight, and the drain consumes the one it finds rather
                 # than starting another: an async generator refuses to be advanced twice at once,
-                # and an abort always arrives while this call is parked here.
-                next_frame = asyncio.ensure_future(anext(frames))
+                # and an abort always arrives while this call is parked here. The caller's idle
+                # wait may already hold that one read (`pending`); it is consumed first for the
+                # same reason.
+                next_frame = pending if pending is not None else asyncio.ensure_future(anext(frames))
+                pending = None
                 if not interrupted:
                     await asyncio.wait([next_frame, aborted], return_when=asyncio.FIRST_COMPLETED)
                     if interrupted := abort_event.is_set():

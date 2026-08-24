@@ -125,6 +125,29 @@ class RuntimeTurnHandler(Protocol):
     def apply(self, *, frame_seq: int, frame: HarnessFrame) -> FrameEffects: ...
 
 
+@dataclass(frozen=True, slots=True)
+class WakeStart:
+    """The harness began an exchange of its own while no turn was open.
+
+    *description* is what woke it, in the harness's words where it gave any — a background task's
+    completion notification, or the generic fallback where the wake carried no prose.
+    """
+
+    description: str
+
+
+class RuntimeWakeWatcher(Protocol):
+    """Provider-owned classification of frames arriving while no turn is open.
+
+    Stateful across one idle span: the frames announcing a wake (a task notification, a command
+    lifecycle marker) precede the frame that begins the exchange, so the watcher remembers what it
+    has seen. `observe` returns a `WakeStart` for the frame that begins an exchange — that frame is
+    then the opened turn's first — and None for every frame that is idle chatter.
+    """
+
+    def observe(self, frame: HarnessFrame) -> WakeStart | None: ...
+
+
 class RuntimeAdapter(Protocol):
     """Provider-owned protocol behavior behind one immutable ``RuntimeKind``."""
 
@@ -139,6 +162,14 @@ class RuntimeAdapter(Protocol):
     ) -> RuntimeClient: ...
 
     def turn_handler(self, seed: TurnProjectionSeed = EMPTY_TURN_PROJECTION_SEED) -> RuntimeTurnHandler: ...
+
+    def wake_watcher(self) -> RuntimeWakeWatcher | None:
+        """A fresh watcher for one idle span, or None for a harness that never wakes itself.
+
+        None is also the conservative answer: a provider whose idle-time frames are unclassified
+        keeps the pre-wake behaviour, where the stream is only consumed inside a turn.
+        """
+        ...
 
     def project_log(self, frames: Iterable[tuple[int, HarnessFrame]]) -> Projection: ...
 

@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import (
     ENDED_SESSION_STATUSES,
+    HARNESS_ORIGIN,
     LEASED_SESSION_STATUSES,
     OPEN_SESSION_STATUSES,
     BridgeFrameKind,
@@ -281,6 +282,16 @@ class TurnStart:
     turn_id: UUID
     item_id: UUID
     prompt: str
+
+
+@dataclass(frozen=True, slots=True)
+class WakeTurn:
+    """An exchange the harness began itself, opened when its first frame arrived.
+
+    Nothing to send: the harness is already mid-exchange, so the turn loop only drains it.
+    """
+
+    turn_id: UUID
 
 
 @dataclass(frozen=True, slots=True)
@@ -1388,6 +1399,32 @@ class SessionStore:
             chat.updated_at = now
             await notify(db, SessionEventKind.UPDATE, session_id)
             return TurnStart(turn_id=turn.turn_id, item_id=item.item_id, prompt=item.item_text)
+
+    async def open_wake_turn(self, session_id: UUID, description: str, *, first_frame_seq: int) -> WakeTurn | None:
+        """Open the turn bracketing an exchange the harness began itself, or None if the session ended.
+
+        *first_frame_seq* is the exchange's first content frame, already received and recorded, so
+        the cursor anchors just before it: an adopting replica replays the exchange from its own
+        first frame, and the idle frames before it — which project to nothing — stay outside the
+        bracket.
+
+        The wake is admitted as a prompt item in the harness's voice (`HARNESS_ORIGIN`), so the
+        transcript says what woke the session where the answer would otherwise follow nothing.
+        """
+        async with self._sessions.begin() as db:
+            chat = await db.get(Session, session_id, with_for_update=True)
+            if chat is None or chat.status in ENDED_SESSION_STATUSES:
+                return None
+            now = datetime.now(UTC)
+            chat.projected_frame_seq = first_frame_seq - 1
+            turn, writer = await conversation_log.open_turn(db, chat.conversation_id, session_id=session_id, now=now)
+            turn.first_frame_seq = first_frame_seq
+            item = await db.get(ConversationItem, await writer.authored_prompt(description, HARNESS_ORIGIN))
+            assert item is not None
+            item.turn_id = turn.turn_id
+            chat.updated_at = now
+            await notify(db, SessionEventKind.UPDATE, session_id)
+            return WakeTurn(turn_id=turn.turn_id)
 
     async def turn_state(self, turn_id: UUID) -> TurnState:
         """How far *turn_id* has got, read off its row.

@@ -22,6 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.chat_models import (
+    HARNESS_ORIGIN,
     OPEN_SESSION_STATUSES,
     SPA_ORIGIN,
     AuthoredEventKind,
@@ -40,7 +41,14 @@ from haku.console.chat_models import (
     ToolOutcome,
     TurnOutcome,
 )
-from haku.console.database_schema import Conversation, ConversationEvent, ConversationItem, ConversationPrompt, Session
+from haku.console.database_schema import (
+    Conversation,
+    ConversationEvent,
+    ConversationItem,
+    ConversationPrompt,
+    ConversationTurn,
+    Session,
+)
 from haku.console.x.claude_code.testing.wire import assistant, result, text_block, text_delta
 from haku.console.x.conftest import age_lease, answers, attach_channel, lease_of, make_idle
 from haku.console.x.conversation_events import (
@@ -1781,6 +1789,37 @@ async def test_the_update_refuses_a_conversation_another_operator_owns(chat_stor
         await chat_store.read_operator_conversation_changes(
             uuid4(), await chat_store.conversation_of(view.session_id), after=0, limit=50
         )
+
+
+async def test_open_wake_turn_brackets_a_harness_initiated_exchange(chat_store, migrated_sessions, operator_id) -> None:
+    """The harness began an exchange itself, so the store opens the bracket after the fact: a turn
+    anchored on the exchange's first recorded frame, and a prompt item in the harness's voice
+    saying what woke it."""
+    view, token = await chat_store.create(operator_id)
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+
+    wake = await chat_store.open_wake_turn(view.session_id, 'Background command "fetch" completed', first_frame_seq=7)
+
+    assert wake is not None
+    async with migrated_sessions() as db:
+        turn = await db.get(ConversationTurn, wake.turn_id)
+        assert turn is not None
+        assert turn.first_frame_seq == 7
+        session_row = await db.get(Session, view.session_id)
+        assert session_row is not None
+        assert session_row.projected_frame_seq == 6
+    prompt = one(
+        item for item in (await chat_store.get(operator_id, view.session_id)).items if item.item_type is ItemType.PROMPT
+    )
+    assert prompt.text == 'Background command "fetch" completed'
+    assert prompt.origin == HARNESS_ORIGIN
+
+
+async def test_open_wake_turn_refuses_a_session_that_ended(chat_store, operator_id) -> None:
+    """A wake frame can race the session's end; the bracket must not reopen a dead session."""
+    view, _token = await chat_store.create(operator_id)
+    await chat_store.fail(view.session_id, "the sandbox went away")
+    assert await chat_store.open_wake_turn(view.session_id, "too late", first_frame_seq=1) is None
 
 
 if __name__ == "__main__":

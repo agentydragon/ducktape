@@ -15,6 +15,7 @@ from pathlib import Path
 from haku.console.chat_models import RuntimeKind
 from haku.console.x.claude_code import frames, projection
 from haku.console.x.claude_code.client import cli_over_websocket
+from haku.console.x.claude_code.wake import ClaudeWakeWatcher
 from haku.console.x.conversation_events import Projection, TurnCompleted
 from haku.console.x.runtime import (
     EMPTY_TURN_PROJECTION_SEED,
@@ -92,6 +93,9 @@ class ClaudeRuntimeAdapter:
                 seen_call_ids=seed.seen_call_ids,
             )
         )
+
+    def wake_watcher(self) -> ClaudeWakeWatcher:
+        return ClaudeWakeWatcher()
 
     def project_log(self, frames: Iterable[tuple[int, HarnessFrame]]) -> Projection:
         return projection.project_log(

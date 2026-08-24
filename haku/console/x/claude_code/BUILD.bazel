@@ -52,6 +52,7 @@ py_library(
         ":client",
         ":frames",
         ":projection",
+        ":wake",
         "//haku/console:chat_models",
         "//haku/console/x:conversation_events",
         "//haku/console/x:runtime",
@@ -59,6 +60,15 @@ py_library(
         "//haku/runtime/x/bridge:client",
         "//haku/runtime/x/bridge:protocol",
         "//haku/runtime/x/bridge:transport",
+    ],
+)
+
+py_library(
+    name = "wake",
+    srcs = ["wake.py"],
+    deps = [
+        "//haku/console/x:runtime",
+        "//haku/runtime/x/bridge:protocol",
     ],
 )
 
@@ -182,6 +192,25 @@ py_test(
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_wake",
+    srcs = ["test_wake.py"],
+    data = [
+        "testdata/background_wake.jsonl",
+        "testdata/scheduled_wakeup_fire.jsonl",
+    ],
+    deps = [
+        ":projection",
+        ":wake",
+        "//:conftest",
+        "//haku/console/x:conversation_events",
+        "//haku/console/x/claude_code/testing:wire",
+        "//haku/runtime/x/bridge:protocol",
+        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )
