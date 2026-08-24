@@ -43,6 +43,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import (
+    HarnessOrigin,
     ItemStatus,
     ItemType,
     LeaseExpiryReason,
@@ -223,7 +224,9 @@ def _arrived_here(origin: PromptOrigin, room_id: str) -> bool:
     match origin:
         case MatrixOrigin(address=address):
             return address == room_id
-        case SpaOrigin():
+        case SpaOrigin() | HarnessOrigin():
+            # The harness types into no room: a wake prompt reaches this room the same way an
+            # SPA prompt does — by being posted, so the room learns the session woke itself.
             return False
 
 
