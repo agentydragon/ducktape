@@ -66,9 +66,6 @@ class PolicyDenial:
     evaluation: str
 
 
-SchemaDenial = PolicyDenial
-
-
 @dataclass(frozen=True, slots=True)
 class AutoDenied:
     reason: str
@@ -348,7 +345,7 @@ def _evaluate_github_code_search(arguments: dict[str, Any], owner: str, reposito
     return AutoApproved(f"reviewed code search targets repository {expected_repository}")
 
 
-async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str, Any]) -> SchemaDenial | str | None:
+async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str, Any]) -> PolicyDenial | str | None:
     """Validate arguments against an owned in-process tool's generated schema."""
     try:
         tool = await mcp.get_tool(tool_name)
@@ -361,7 +358,7 @@ async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str,
         jsonschema.validate(instance=arguments, schema=tool.to_mcp_tool().inputSchema)
     except jsonschema.ValidationError as exc:
         logger.warning("auto-denied invalid MCP arguments tool=%s: %s", tool_name, exc)
-        return SchemaDenial(
+        return PolicyDenial(
             reason=f"arguments failed the registered tool schema: {exc.message}",
             evaluation=SCHEMA_AUTO_DENIAL_EVALUATION,
         )
@@ -380,14 +377,14 @@ async def auto_approve_tool_call(
     arguments: dict[str, Any],
     gmail: GmailToolsClient | None,
     mcp: FastMCP | None,
-) -> tuple[str | None, str | None] | SchemaDenial:
+) -> tuple[str | None, str | None] | PolicyDenial:
     """Evaluate one call under the authenticated Agent's configured policy graph."""
     if not isinstance(actor, AgentActor):
         return None, None
     mode = policies.tool_mode(actor, server_id, tool_name)
     if mode is not ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED and mcp is not None:
         error = await _validate_arguments(mcp, tool_name, arguments)
-        if isinstance(error, SchemaDenial):
+        if isinstance(error, PolicyDenial):
             return error
         if error is not None:
             return None, error

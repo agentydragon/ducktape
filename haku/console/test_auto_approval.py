@@ -11,7 +11,7 @@ from gmail_api.labels import GmailLabel, LabelType
 from haku.console.auto_approval import (
     AGENT_AUTO_APPROVAL_ID,
     AutoApprovalPolicyRegistry,
-    SchemaDenial,
+    PolicyDenial,
     ToolAutoApprovalMode,
     auto_approve_tool_call,
 )
@@ -152,9 +152,9 @@ async def _decision(tool_name: str, arguments: dict, *, gmail=None, actor: ToolC
     )
 
 
-def _approval(decision: tuple[str | None, str | None] | SchemaDenial) -> tuple[str | None, str | None]:
+def _approval(decision: tuple[str | None, str | None] | PolicyDenial) -> tuple[str | None, str | None]:
     """Unwrap a decision the test expects NOT to be a terminal schema denial."""
-    assert not isinstance(decision, SchemaDenial), decision
+    assert not isinstance(decision, PolicyDenial), decision
     return decision
 
 
@@ -163,7 +163,7 @@ async def _policy_id(tool_name: str, arguments: dict, **kwargs):
     return policy_id
 
 
-async def _calendar_decision(tool_name: str, arguments: dict) -> tuple[str | None, str | None] | SchemaDenial:
+async def _calendar_decision(tool_name: str, arguments: dict) -> tuple[str | None, str | None] | PolicyDenial:
     calendar = Mock()
     return await auto_approve_tool_call(
         policies=_POLICIES,
@@ -238,14 +238,14 @@ async def test_calendar_create_stays_manual() -> None:
 
 async def test_calendar_read_with_invalid_arguments_is_auto_denied() -> None:
     denial = await _calendar_decision("list_events", {"max_results": 251})
-    assert isinstance(denial, SchemaDenial)
+    assert isinstance(denial, PolicyDenial)
     assert denial.evaluation == "denied: arguments failed the registered tool schema"
     assert "251" in denial.reason  # the concrete validation error reaches the caller
 
 
 async def test_read_with_unknown_argument_is_auto_denied() -> None:
     denial = await _decision("threads_list", {"q": "", "unexpected": True})
-    assert isinstance(denial, SchemaDenial)
+    assert isinstance(denial, PolicyDenial)
     assert "unexpected" in denial.reason
 
 
@@ -259,7 +259,7 @@ async def test_modify_rejects_unknown_arguments() -> None:
     denial = await _decision(
         "threads_modify_labels", {"thread_ids": ["t1"], "add": ["haku/triaged"], "unexpected": True}
     )
-    assert isinstance(denial, SchemaDenial)
+    assert isinstance(denial, PolicyDenial)
     assert "unexpected" in denial.reason
 
 
