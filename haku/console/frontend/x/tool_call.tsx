@@ -151,29 +151,41 @@ function prose(value: unknown): ReactNode | null {
  * rather than one heuristic guessing across all of them. A tool without an entry falls back to the
  * first meaningful line of its raw arguments.
  */
-const TOOL_SUMMARIES = new Map<string, (args: Record<string, unknown>) => ReactNode | null>([
-  ["Bash", (args) => prose(args.description) ?? mono(args.command)],
-  ["BashOutput", (args) => mono(args.bash_id)],
-  ["Write", (args) => mono(args.file_path)],
-  ["Edit", (args) => mono(args.file_path)],
-  ["MultiEdit", (args) => mono(args.file_path)],
-  ["NotebookEdit", (args) => mono(args.notebook_path)],
-  ["Read", (args) => mono(args.file_path)],
-  ["Grep", (args) => mono(args.pattern)],
-  ["Glob", (args) => mono(args.pattern)],
-  ["WebFetch", (args) => mono(args.url)],
-  ["WebSearch", (args) => prose(args.query)],
-  ["Task", (args) => prose(args.description)],
-  ["TodoWrite", () => null],
-]);
+function registeredSummary(toolName: string, args: Record<string, unknown>): ReactNode | null {
+  // A switch, not a callable looked up by name: the tool name is wire data, and dynamic dispatch
+  // on it — object keys and Map.get alike — is what CodeQL's unvalidated-dynamic-method-call
+  // query rejects.
+  switch (toolName) {
+    case "Bash":
+      return prose(args.description) ?? mono(args.command);
+    case "BashOutput":
+      return mono(args.bash_id);
+    case "Write":
+    case "Edit":
+    case "MultiEdit":
+    case "Read":
+      return mono(args.file_path);
+    case "NotebookEdit":
+      return mono(args.notebook_path);
+    case "Grep":
+    case "Glob":
+      return mono(args.pattern);
+    case "WebFetch":
+      return mono(args.url);
+    case "WebSearch":
+      return prose(args.query);
+    case "Task":
+      return prose(args.description);
+    default:
+      return null;
+  }
+}
 
 function toolCallSummary(item: ConversationItem): ReactNode {
   const args = item.arguments;
   if (args !== null && typeof args === "object" && !Array.isArray(args) && item.tool_name != null) {
-    // A Map, not a keyed object: the tool name is wire data, and object indexing would dispatch
-    // `"constructor"` and friends to the prototype.
-    const rendered = TOOL_SUMMARIES.get(item.tool_name)?.(args as Record<string, unknown>);
-    if (rendered !== undefined && rendered !== null) return rendered;
+    const rendered = registeredSummary(item.tool_name, args as Record<string, unknown>);
+    if (rendered !== null) return rendered;
   }
   return mono(previewText(toolPayloadText(args)));
 }
