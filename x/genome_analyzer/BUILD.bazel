@@ -1,0 +1,15 @@
+load("//devinfra/python:defs.bzl", "py_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "genome_analyzer",
+    srcs = ["genome_analyzer.py"],
+    data = ["report_template.html.j2"],
+    deps = [
+        "@pypi//jinja2",
+        "@pypi//pandas",
+        "@pypi//pydantic",
+        "@pypi//requests",
+    ],
+)
