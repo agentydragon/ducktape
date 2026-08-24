@@ -18,6 +18,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 
 from haku.console.chat_models import (
     ENDED_SESSION_STATUSES,
@@ -84,6 +85,27 @@ OBSERVATION_TTL = timedelta(seconds=2)
 # The conversation tail a replacement session receives. Counted in finished prompts/answers, not
 # transport events, and read from the console's record rather than any attached channel's copy.
 RE_AWAKENING_MESSAGES = 20
+
+
+# Aborts Postgres resolves by choosing a loser it expects to re-run: deadlock and serialization
+# failure. The statements were not wrong; the interleaving was.
+_RERUNNABLE_SQLSTATES = frozenset({"40001", "40P01"})
+
+
+def _transient_database_error(error: BaseException) -> bool:
+    """A database error that says nothing about the turn: the transaction never committed, and the
+    same statements succeed on a healthy connection — a dropped connection (a CNPG failover or
+    restart), or an abort Postgres asks the loser to re-run. Never an IntegrityError or a
+    programming error, which fail identically on retry and so are the turn's own."""
+    if not isinstance(error, DBAPIError):
+        return False
+    # `orig` is the dialect-adapted DBAPI error; the asyncpg adapter stamps the server's SQLSTATE
+    # onto it as `sqlstate`, and `DBAPIError` offers no typed accessor for it.
+    return (
+        error.connection_invalidated
+        or isinstance(error, (InterfaceError, OperationalError))
+        or getattr(error.orig, "sqlstate", None) in _RERUNNABLE_SQLSTATES
+    )
 
 
 def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
@@ -604,6 +626,18 @@ class SessionService:
                             try:
                                 await self._run_turn(client, frames, session_id, turn, abort_event=abort_event)
                             except Exception as error:
+                                if _transient_database_error(error):
+                                    # Says nothing about the session, so it gets the lost-runner
+                                    # treatment rather than a terminal row: hand the session back,
+                                    # and whichever replica the runner redials adopts the
+                                    # still-open turn and replays it from the cursor.
+                                    logger.exception(
+                                        "transient database error mid-turn for session %s; leaving it for adoption",
+                                        session_id,
+                                    )
+                                    keep_sandbox = True
+                                    await self._store.release_lease(session_id)
+                                    break
                                 logger.exception("turn failed for session %s", session_id)
                                 await self._store.fail(session_id, str(error))
                                 break
@@ -802,6 +836,12 @@ class SessionService:
                 assert completion.failure is not None
                 raise RuntimeError(completion.failure)
         except Exception as error:
+            if _transient_database_error(error):
+                # The transaction never committed, so the turn is still open and its cursor still
+                # points before the unwritten frame. Closing it FAILED would record a permanent
+                # outcome for an infrastructure blip; the caller hands the session back for
+                # adoption instead, which replays the open turn from the cursor.
+                raise
             # Bounded only where the failure was diagnosed from a terminal frame; otherwise this
             # turn ended on no frame of its own and `end_turn` bounds it by what it recorded.
             await self._store.end_turn(turn_id, TurnOutcome.FAILED, last_frame_seq=completion_frame_seq)
