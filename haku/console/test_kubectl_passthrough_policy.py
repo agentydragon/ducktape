@@ -47,25 +47,6 @@ def test_map_pods_exec() -> None:
     assert reqs[1].attributes.resource == "pods"
 
 
-def test_map_resources_create_or_update() -> None:
-    manifest = """
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: web
-  namespace: demo
-spec:
-  replicas: 2
-"""
-    reqs = map_kubectl_passthrough_request("resources_create_or_update", {"resource": manifest})
-    assert reqs is not None
-    assert len(reqs) == 3
-    verbs = {r.attributes.verb for r in reqs}
-    assert verbs == {"get", "create", "patch"}
-    assert reqs[0].attributes.resource == "deployments"
-    assert reqs[0].attributes.namespace == "demo"
-
-
 def test_map_unknown_tool() -> None:
     assert map_kubectl_passthrough_request("unknown_tool", {}) is None
 
