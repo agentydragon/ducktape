@@ -720,31 +720,59 @@ token-capped plan it may be worth nothing at all, depending on whether the vendo
 counts cached reads against the cap. Cerebras does not document which it does, and the
 answer moves the rows above by several times. Worth asking before buying.
 
-Z.ai's 12x is the one fully derived number in this tier, and it is well under the 46x
-an earlier revision published — that figure came from token counts understated 2.5-6.7x
-(see the provenance note above). Token capacity and delivered work are not the same
-ranking: Cerebras sells roughly five times the raw tokens per dollar that Z.ai does and
-delivers roughly a third the subsidy per task.
+**Z.ai's 12x rests on one unverified assumption, and it is a big one.** The
+calculation divides Z.ai's own `tokensUsage` figure by AA's tokens per task, and those
+are only the same currency if Z.ai's counter **includes cached prefix reads**.
+<zai_api.md> documents the field as "token usage" and says no more. GLM-5.3 is 96.2%
+cache reads, so if the counter excludes them the plan's real AA-equivalent throughput
+is ~26x higher than assumed and the subsidy is in the hundreds rather than 12x.
+
+One cross-check argues for inclusion: the sample works out to 115,357 tokens per model
+call, which is plausible as a whole agent turn with its replayed context and
+implausible as _fresh_ input per turn — no loop sends 115k novel tokens every call.
+That is inference, not documentation. **Verify it against a live `usage` response
+before sizing on this row**; the endpoint reports `cached_tokens` per request, so one
+call settles it.
+
+Token capacity and delivered work are not the same ranking: Cerebras sells roughly five
+times the raw tokens per dollar that Z.ai does and delivers roughly a third the subsidy
+per task.
 
 #### Where only requests are published
 
-These meter calls, not tokens, so the conversion needs a calls-per-agentic-task figure
-that no vendor publishes and this document has not measured. Shown across a 10-30 band
-so the assumption is visible rather than buried:
+These meter calls, not tokens. Converting that into tasks needs a calls-per-task
+figure, and **no such figure exists for the unit this document costs in.**
 
-| Plan                |   $/mo | Requests/mo | $/task @30 calls | $/task @10 calls | API $/task |
-| ------------------- | -----: | ----------: | ---------------: | ---------------: | ---------: |
-| Synthetic Pack      |     30 |      72,000 |           0.0125 |           0.0042 |     0.8375 |
-| MiniMax Max         |     50 |     144,000 |           0.0104 |           0.0035 |     0.1387 |
-| Kimi Vivace         |    199 |     172,800 |           0.0345 |           0.0115 |     0.8375 |
-| Google AI Ultra     | 199.99 |      60,000 |           0.1000 |           0.0333 |     0.4022 |
-| Cursor Ultra        |    200 |      10,000 |           0.6000 |           0.2000 |     0.7243 |
-| GitHub Copilot Pro+ |     39 |       1,500 |           0.7800 |           0.2600 |     0.7243 |
+| Plan                |   $/mo | Requests/mo | Tasks/mo | $/task |
+| ------------------- | -----: | ----------: | -------- | ------ |
+| Synthetic Pack      |     30 |      72,000 | —        | —      |
+| MiniMax Max         |     50 |     144,000 | —        | —      |
+| Kimi Vivace         |    199 |     172,800 | —        | —      |
+| Google AI Ultra     | 199.99 |      60,000 | —        | —      |
+| Cursor Ultra        |    200 |      10,000 | —        | —      |
+| GitHub Copilot Pro+ |     39 |       1,500 | —        | —      |
 
-**The agent-product plans barely subsidize at all.** Cursor Ultra and Copilot Pro+ land
-within a factor of two of API list under either assumption — they sell routing,
-interface and support, not cheap inference. Read against a 300x spread across this
-whole table, "10,000 requests a month" is not a large allowance.
+An earlier revision filled those columns from a 10-30 calls-per-task band. That was
+wrong, and not merely imprecise — **an AA task has no characteristic call count.** Six
+of the nine evals are single-call items: GPQA Diamond, HLE, CritPt, AA-Omniscience and
+AA-LCR ask one question and take one answer. The other three — GDPval-AA,
+Terminal-Bench and τ³-Banking — are multi-turn agentic episodes, and they carry 82-95%
+of the cost. So the AA task is single-call by count and agentic by cost, and no single
+multiplier describes it. A `$/task` produced by dividing through one would not
+denominate the same thing as the API `$/task` beside it, which is the whole point of
+the column.
+
+Two unknowns have to close before these plans can be compared at all: **how many tokens
+a request may carry** on each plan, and **how many calls your real tasks take**. The
+first is a vendor fact nobody publishes; the second is measurable locally from the same
+session logs used elsewhere in this document — but it would measure _your_ tasks, not
+AA's, so it converts these plans against your own workload rather than against this
+document's tables.
+
+What survives without either number is only the shape: a request allowance is a hard
+ceiling independent of how much work each request does, so a plan like Copilot Pro+ at
+1,500 requests a month runs out on call count long before token volume becomes the
+constraint.
 
 #### Where it cannot be derived at all: Claude and ChatGPT
 
