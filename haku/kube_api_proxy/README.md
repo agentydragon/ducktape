@@ -142,9 +142,13 @@ Console-side SAR authorization is separately opt-in. Its production-safe
 default is unset, which leaves the internal endpoint unavailable and the proxy
 denied. Deployment configuration maps `subjects_by_access_profile` entries to
 fixed Kubernetes usernames/groups and may set a bounded `timeout_seconds`.
-Console validates the Haku bearer through the canonical static-Agent authority,
-uses the Agent's deploy-managed access profile to select a subject, and fails
-closed when that profile has no configured subject.
+Console validates the Haku bearer through the same MCP bearer authority:
+configured static-Agent credentials, active Console-minted session bridge
+bearers, and verified MCP OAuth access tokens all resolve to a canonical Agent.
+The proxy never accepts the Console's browser-session principal. Console uses
+the resolved Agent's deploy-managed access profile to select a subject, and
+fails closed when that profile has no configured subject or the bearer cannot
+be revalidated.
 
 ## Deployment status and TODOs
 

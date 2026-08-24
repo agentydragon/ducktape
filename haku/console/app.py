@@ -54,12 +54,7 @@ from haku.console import (
     web_push,
 )
 from haku.console.agents import enrollment_routes
-from haku.console.agents.authorization import (
-    PostgresAgentAuthority,
-    StaticAgentDefinition,
-    StaticAgentRejectedError,
-    fingerprint_static_token,
-)
+from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.config import MCP_PATH, EmbedderConfig, GitRecallIndexDefinition, Settings
 from haku.console.database_migrate import main as migration_main, verify_schema
@@ -441,27 +436,25 @@ def create_app(
         )
     static_credential_registry = mcp_agent_auth.StaticAgentCredentialRegistry(fingerprints=static_agent_fingerprints)
 
-    async def resolve_kubernetes_agent(token: str) -> AgentActor | None:
-        """Resolve only configured static Agent bearers for the proxy hop.
+    mcp_auth = mcp_agent_auth.build_auth(
+        settings,
+        agent_authority=agent_authority,
+        static_credentials=static_credential_registry,
+        operator_identity_store=operator_identity_store,
+        session_tokens=db_sessions if session_service is not None else None,
+    )
+    actor_resolver = HakuMcpActorResolver(agent_authority, static_actor_resolver=mcp_auth.static_actor_resolver)
+    kubernetes_agent_resolver = mcp_agent_auth.McpBearerAgentResolver(provider=mcp_auth.provider, actors=actor_resolver)
 
-        The proxy has no OAuth browser exchange and therefore cannot invent an
-        Agent identity.  Resolution still goes through the canonical authority
-        so revoked/rotated bindings are rejected before a SAR is attempted.
+    async def resolve_kubernetes_agent(token: str) -> AgentActor | None:
+        """Resolve static, session, or OAuth MCP bearers to an Agent.
+
+        This shares MCP's bearer verification and canonical actor resolution,
+        while deliberately excluding the browser-session principal that MCP
+        accepts only through its exact-Origin-gated cookie path.
         """
 
-        fingerprint = static_credential_registry.configured_fingerprint(token)
-        if fingerprint is None:
-            return None
-        try:
-            authorization = await agent_authority.static_authorization_for_fingerprint(fingerprint=fingerprint)
-        except (StaticAgentRejectedError, ValueError):
-            return None
-        return AgentActor(
-            agent_id=authorization.agent_id,
-            operator_id=authorization.operator_id,
-            binding_id=authorization.binding_id,
-            access_profile_id=authorization.access_profile_id,
-        )
+        return await kubernetes_agent_resolver.resolve_agent(token)
 
     kubernetes_grants = KubernetesGrantService(
         PostgresKubernetesGrantRepository(db_sessions),
@@ -605,14 +598,6 @@ def create_app(
         node_daemons=node_daemon_service,
     )
 
-    mcp_auth = mcp_agent_auth.build_auth(
-        settings,
-        agent_authority=agent_authority,
-        static_credentials=static_credential_registry,
-        operator_identity_store=operator_identity_store,
-        session_tokens=db_sessions if session_service is not None else None,
-    )
-    actor_resolver = HakuMcpActorResolver(agent_authority, static_actor_resolver=mcp_auth.static_actor_resolver)
     console_mcp = mcp_server.build_console_mcp(
         console_mcp_context, auth=mcp_auth.provider, actor_resolver=actor_resolver
     )

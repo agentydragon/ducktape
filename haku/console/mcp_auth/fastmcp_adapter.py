@@ -543,6 +543,19 @@ class HakuMcpActorResolver:
         operator_actor = token.claims.get(_OPERATOR_ACTOR_CLAIM)
         if isinstance(operator_actor, OperatorActor):
             return operator_actor
+        return await self.resolve_agent_bearer(token)
+
+    async def resolve_agent_bearer(self, token: AccessToken) -> AgentActor:
+        """Resolve a verified bearer to an Agent, never an Operator.
+
+        The Kubernetes proxy uses this after the same MCP bearer verifier has
+        authenticated a raw Authorization header. Browser sessions deliberately
+        cannot enter this path: their trusted OperatorActor is not an Agent
+        credential and must not become Kubernetes authority.
+        """
+
+        if isinstance(token.claims.get(_OPERATOR_ACTOR_CLAIM), OperatorActor):
+            raise ToolError("Agent bearer is required")
         if "upstream_claims" not in token.claims:
             return await self._resolve_static_actor(token)
         return await self._activate_oauth_actor(token)

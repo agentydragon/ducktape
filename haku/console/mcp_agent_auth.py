@@ -7,6 +7,7 @@ import hmac
 from dataclasses import dataclass
 from uuid import UUID
 
+from fastmcp.exceptions import ToolError
 from fastmcp.server.auth.auth import AccessToken, AuthProvider, TokenVerifier
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -23,10 +24,12 @@ from haku.console.chat_models import SessionStatus
 from haku.console.config import MCP_PATH, Settings
 from haku.console.database_schema import Conversation, Session
 from haku.console.mcp_auth.fastmcp_adapter import (
+    AgentActorResolutionUnavailableError,
     AgentGrantAuthorityUnavailableError,
     BearerVerificationUnavailableError,
     HakuAgentOAuthProxy,
     HakuFailurePreservingMultiAuth,
+    HakuMcpActorResolver,
     OperatorSessionAuthenticationError,
     StaticAgentActorResolver,
     assert_fastmcp_adapter_compatibility,
@@ -229,6 +232,30 @@ class OAuthMcpAuth:
 
 
 type McpAuth = StaticMcpAuth | OAuthMcpAuth
+
+
+@dataclass(frozen=True, slots=True)
+class McpBearerAgentResolver:
+    """Resolve every verified MCP bearer family to a canonical Agent actor.
+
+    This is deliberately bearer-only. The MCP transport separately accepts a
+    DB-revalidated Operator browser session, but that session is not a bearer
+    credential and must never authorize Kubernetes API proxy requests.
+    """
+
+    provider: AuthProvider
+    actors: HakuMcpActorResolver
+
+    async def resolve_agent(self, token: str) -> AgentActor | None:
+        access = await self.provider.verify_token(token)
+        if access is None:
+            return None
+        try:
+            return await self.actors.resolve_agent_bearer(access)
+        except AgentActorResolutionUnavailableError as error:
+            raise BearerVerificationUnavailableError("Agent authorization is temporarily unavailable") from error
+        except ToolError:
+            return None
 
 
 class _OperatorMcpSessionAuthenticator:
