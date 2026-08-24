@@ -653,20 +653,31 @@ means nothing without the cache behaviour alongside it. AA models this properly:
 non-cached input, cache reads and cache writes are separate cost lines against separate
 published prices, and they reconcile to the total exactly.
 
-**One model on this list has no caching at all.** GLM-4.7's cache-read share is 0.0% —
-every replayed token bills at full input price, which is why its effective rate,
-$0.6734/M, is the _highest_ of any cheap model here and higher than GLM-5.3's
-$0.4026/M despite one-fifth the sticker price. For a token-capped plan that is worse
-than it looks: with no cache, an agent loop draws down the cap at full rate on every
-turn.
+**GLM-4.7 is missing from that table because AA's cache accounting for it is
+self-contradictory, not because it is uncached.** Its `cost.cacheRead` is exactly zero
+while `cost.cacheWrite` is 98.8% of its input cost — a loop that writes a cache and
+never reads it is not a thing that happens. Its `cacheHitDiscountPercent` says 80% off
+while its `cacheHitPrice` equals its input price, so the discount was recorded but not
+applied. AA books the replayed context as writes for these models, which leaves the
+token split unusable even though the total cost is fine.
+
+Thirty-nine of the 169 models are affected. The CSV marks them
+`cache_accounting_coherent=no` and leaves `tokens_per_task` blank rather than
+publishing a number derived from a contradiction.
+
+**Independent evidence that GLM-4.7 does cache:** <zai_api.md> records a direct
+measurement on the coding endpoint (June 2026) — `cached_tokens` goes from `0` on a
+cold call to `12544` on a follow-up sharing a ~12.5k-token prefix. An earlier revision
+of this document read the 0.0% as a property of the model and concluded its effective
+rate was the worst of any cheap model here. That conclusion is withdrawn.
 
 #### Where capacity is published or measured
 
-| Plan              | $/mo | Capacity     | Tasks/mo | **$/task** | API $/task | Subsidy |
-| ----------------- | ---: | ------------ | -------: | ---------: | ---------: | ------: |
-| Cerebras Code Max |  200 | 120M tok/day |    6,761 | **0.0296** |     0.3586 |     12x |
-| Cerebras Code Pro |   50 | 24M tok/day  |    1,352 | **0.0370** |     0.3586 |     10x |
-| Z.ai GLM Max      |  168 | ~5B tok/mo¹  |    2,940 | **0.0571** |     0.6829 |     12x |
+| Plan              | $/mo | Capacity     |  Tasks/mo | **$/task** | API $/task | Subsidy |
+| ----------------- | ---: | ------------ | --------: | ---------: | ---------: | ------: |
+| Z.ai GLM Max      |  168 | ~5B tok/mo¹  |     2,940 | **0.0571** |     0.6829 |     12x |
+| Cerebras Code Max |  200 | 120M tok/day | see below |          — |     0.3586 |       — |
+| Cerebras Code Pro |   50 | 24M tok/day  | see below |          — |     0.3586 |       — |
 
 ¹ Extrapolated from a 4-day sample of 665M tokens across 5,765 model calls recorded
 against a Coding Max plan in <zai_api.md> (May 2026, GLM-5.1 era, previous metering).
@@ -674,11 +685,19 @@ Treat as an order of magnitude. Z.ai's own published claim is a 15-30x subsidy, 
 brackets the 12x derived here — the vendor claim is the more generous of the two, so
 sizing on this row is the conservative choice.
 
-**These three land within 10-12x of each other**, which is a much narrower spread than
-tokens-per-dollar suggests. Cerebras buys the most tokens per dollar by a wide margin
-and still lands beside Z.ai per task, because GLM-4.7 has no caching and burns 532k
-uncached tokens per task where GLM-5.3 spends 1.70M tokens of which 96% are cheap cache
-reads. Token capacity and delivered work are not the same ranking.
+**The Cerebras rows cannot be computed, and that is the finding.** Converting a token
+cap into tasks needs tokens per task for the model served, and Cerebras serves GLM-4.7
+only — the one model whose token split AA has booked incoherently. Any figure would be
+the cache-write fallback assumption dressed up as a measurement, so it is left blank.
+The sensitivity is the point: cache reads are 86-96% of input tokens elsewhere, and a
+token cap counts them all. Whether Cerebras serves GLM-4.7 with prompt caching decides
+its real capacity to within an order of magnitude, and it is documented nowhere. Ask
+before buying, or measure a day of it.
+
+Z.ai's 12x is the one solid number in this tier, and it is well under the 46x an
+earlier revision published — that figure came from token counts understated 2.5-6.7x
+(see the provenance note above). Token capacity and delivered work are not the same
+ranking, and the gap between them is mostly cache behaviour.
 
 #### Where only requests are published
 
