@@ -563,7 +563,9 @@ Subscriptions beat the API because they are sold below API cost. The size of tha
 
 Cerebras figures use GLM-4.7 at Z.ai list ($0.60/$2.20) blended 80/20 input/output; Z.ai's multiple is [its own published figure](https://docs.z.ai/devpack/notice/usage-revision) ("approximately 15-30x the monthly subscription fee").
 
-Restated as raw capacity, which is what a weekly ceiling actually rations:
+Restated as raw capacity, which is what a weekly ceiling actually rations. This is the
+intermediate step — tokens are not comparable across models, so the section below
+converts these into tasks, which are:
 
 | Plan              | $/mo | Tokens/month (approx) | Tokens per $ |
 | ----------------- | ---: | --------------------: | -----------: |
@@ -578,6 +580,118 @@ Cerebras's multiple buys index-34 tokens while Z.ai's buys index-60 ones, so the
 **The frontier vendors subsidize least.** Serving Opus 5 and GPT-5.6 costs more, and the plans price accordingly. A marginal capacity dollar buys roughly 5-10x more tokens at Cerebras or Z.ai than at Anthropic or OpenAI — at correspondingly lower model quality. That trade is the only real decision here.
 
 **Extra-usage credits are not a discount.** Anthropic's overflow bills at list API rates, which is a 1x subsidy — precisely the pricing a subscription exists to avoid. It buys availability, never economy. For a workload large enough to justify Max 20x, leaving it enabled without a hard cap reproduces the four-figure API bill that the subscriptions replaced. Treat it as an emergency valve with a cap set low enough to hurt, not as a capacity plan.
+
+### How many tasks does a plan actually buy
+
+Tokens per dollar is still the wrong unit, because a token buys different amounts of
+work at different models. The AA dataset closes that gap: it publishes **tokens
+consumed per task** per model, so a plan's capacity converts into tasks, and the fee
+divided by tasks gives **cost per delivered task** — directly comparable to the API
+column and to every other plan.
+
+Tokens per task for the models these plans actually serve (input including cached
+replay, plus output):
+
+| Model                  | Tokens/task | API $/task | Agentic |
+| ---------------------- | ----------: | ---------: | ------: |
+| GLM-4.7 (reasoning)    |      79,226 |     0.3586 |    26.2 |
+| GPT-5.6 Luna (max)     |     136,040 |     0.0471 |    46.9 |
+| Kimi K3 (max)          |     187,773 |     0.8375 |    54.3 |
+| Claude Opus 5 (medium) |     177,829 |     0.7243 |    50.4 |
+| GLM-5.3 (max)          |     440,984 |     0.6829 |    59.1 |
+| Claude Opus 5 (max)    |     746,743 |     2.3369 |    59.2 |
+
+Agentic tasks are input-dominated — the loop replays its context every turn — so these
+counts are 3-10x what a single-shot prompt would suggest.
+
+#### Where capacity is published or measured
+
+| Plan              | $/mo | Capacity     | Tasks/mo | **$/task** | API $/task | Subsidy |
+| ----------------- | ---: | ------------ | -------: | ---------: | ---------: | ------: |
+| Cerebras Code Max |  200 | 120M tok/day |   45,400 | **0.0044** |     0.3586 |     81x |
+| Cerebras Code Pro |   50 | 24M tok/day  |    9,100 | **0.0055** |     0.3586 |     65x |
+| Z.ai GLM Max      |  168 | ~5B tok/mo¹  |   11,300 | **0.0149** |     0.6829 |     46x |
+
+¹ Extrapolated from a 4-day sample of 665M tokens across 5,765 model calls recorded
+against a Coding Max plan in <zai_api.md> (May 2026, GLM-5.1 era, previous metering).
+Treat as an order of magnitude. Z.ai's own published claim is a 15-30x subsidy, which
+back-converts to 3,700-7,400 tasks/mo and $0.023-$0.046/task — **two to three times
+more conservative than the measurement**, which is worth knowing before sizing on
+either.
+
+#### Where only requests are published
+
+These meter calls, not tokens, so the conversion needs a calls-per-agentic-task figure
+that no vendor publishes and this document has not measured. Shown across a 10-30 band
+so the assumption is visible rather than buried:
+
+| Plan                |   $/mo | Requests/mo | $/task @30 calls | $/task @10 calls | API $/task |
+| ------------------- | -----: | ----------: | ---------------: | ---------------: | ---------: |
+| Synthetic Pack      |     30 |      72,000 |           0.0125 |           0.0042 |     0.8375 |
+| MiniMax Max         |     50 |     144,000 |           0.0104 |           0.0035 |     0.1387 |
+| Kimi Vivace         |    199 |     172,800 |           0.0345 |           0.0115 |     0.8375 |
+| Google AI Ultra     | 199.99 |      60,000 |           0.1000 |           0.0333 |     0.4022 |
+| Cursor Ultra        |    200 |      10,000 |           0.6000 |           0.2000 |     0.7243 |
+| GitHub Copilot Pro+ |     39 |       1,500 |           0.7800 |           0.2600 |     0.7243 |
+
+**The agent-product plans barely subsidize at all.** Cursor Ultra and Copilot Pro+ land
+within a factor of two of API list under either assumption — they sell routing,
+interface and support, not cheap inference. Read against a 300x spread across this
+whole table, "10,000 requests a month" is not a large allowance.
+
+#### Where it cannot be derived at all: Claude and ChatGPT
+
+Both expose a usage API, and both report the _included_ quota as a percentage with no
+denominator — the same limitation Z.ai's quota endpoint has. So the honest entry for
+the two largest line items in this loadout is **unknown**, and any figure quoted for
+them is an assumption wearing a number's clothes. Back-solving from a displaced API
+bill shows how wide that is:
+
+| Assumed monthly tokens | On Opus 5 (max)                  | On Opus 5 (medium)               |
+| ---------------------- | -------------------------------- | -------------------------------- |
+| 55M                    | 74 tasks, $2.72/task — **0.9x**  | 309 tasks, $0.65/task — **1.1x** |
+| 110M                   | 147 tasks, $1.36/task — **1.7x** | 619 tasks, $0.32/task — **2.2x** |
+
+The subsidy ranges from _worse than API_ to 2.2x depending entirely on an input that
+was guessed, and the effort setting moves it as much as the volume does. That is not a
+measurement, and it should not be treated as one.
+
+**It is measurable locally, and cheaply — the raw responses carry more than the
+summary.** `aiquota` reduces each provider to a utilization figure, but what the
+endpoints return underneath is richer, and three parts of it are exactly what a
+calibration needs:
+
+- **Anthropic reports separate weekly windows per model family** — `seven_day_opus`
+  and `seven_day_sonnet` alongside the combined `seven_day`. Burn can therefore be
+  attributed per family instead of disentangled from a mixed total, which is what
+  makes a short calibration accurate rather than indicative.
+- **Anthropic reports extra-usage spend in absolute money** (`limit`, `used`, currency
+  and exponent — e.g. a $700.00 cap against $598.86 drawn), and extra usage bills at
+  list API rates. That is a dollar-denominated meter on real work, at known prices.
+- **OpenAI reports per-feature windows** in `additional_rate_limits`, each with its own
+  `used_percent`, `limit_window_seconds` and `reset_at`.
+
+The percentage gauge is half an instrument; the other half is tokens counted at the
+client. If a known N tokens of Opus work moves `seven_day_opus` by X%, the window's
+capacity is `N / (X/100)`. One instrumented week converts both frontier plans exactly,
+closes the largest gap in this document, and needs no vendor cooperation. The
+extra-usage meter gives an independent cross-check in dollars. Until that is run, the
+two rows stay blank rather than estimated.
+
+#### What the table is not
+
+**Every figure above is a ceiling that assumes saturation, and no one saturates.** The
+constraint that stops you is window shape, not monthly capacity: Cerebras Code Max's
+45,400 tasks/month is 1,500 a day, unreachable in practice, and Z.ai's 11,300 assumes
+never hitting the 5-hour wall — which is precisely what did happen. Realized cost per
+task is the fee divided by tasks _actually completed_, so a plan used at a quarter of
+its ceiling costs four times the number shown.
+
+That is the number worth acting on, and it is the one a subscription's marketing never
+states. It also means the ranking here does not change what to buy on its own — a 46x
+subsidy realized at 25% is still 11x, and better than a 2x subsidy realized in full.
+Pair it with the failure-mode table: capacity says how much is theoretically bought,
+window shape says how much survives contact with a fleet.
 
 ## API pricing (per 1M tokens, 2026-08)
 
