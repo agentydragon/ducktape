@@ -680,13 +680,24 @@ bill shows how wide that is:
 | 110M                   | 147 tasks, $1.36/task — **1.7x** | 619 tasks, $0.32/task — **2.2x** |
 
 The subsidy ranges from _worse than API_ to 2.2x depending entirely on an input that
-was guessed, and the effort setting moves it as much as the volume does. That is not a
-measurement, and it should not be treated as one.
+was guessed, and the effort setting moves it as much as the volume does. **Both rows
+are almost certainly far too low**, because the 55-110M anchor came from dividing a
+displaced bill by an uncached blended rate — the error corrected above. Against a
+realistic 0.7-1.3B tokens/month for Claude's share, the same arithmetic gives thousands
+of tasks and a subsidy in the same 2.5-5x range the dollar-denominated estimate
+implies. The table is kept to show how wide the uncertainty is, not as a range to plan
+against.
 
-**It is measurable locally, and cheaply — the raw responses carry more than the
-summary.** `aiquota` reduces each provider to a utilization figure, but what the
-endpoints return underneath is richer, and three parts of it are exactly what a
-calibration needs:
+**The token half of the calibration already exists on disk.** Claude Code writes a
+`usage` object on every assistant message into
+`~/.claude/projects/<project>/<session>.jsonl`, with the full four-way split — cache
+reads, cache writes, uncached input, output. Nothing needs instrumenting; the ledger
+is already there for every session ever run, and off-the-shelf tools (`ccusage` and
+friends) parse it. The measurement above came straight out of one such file.
+
+**The gauge half is richer than `aiquota`'s summary suggests.** It reduces each
+provider to a utilization figure, but the endpoints return more underneath, and three
+parts of it are exactly what a calibration needs:
 
 - **Anthropic reports separate weekly windows per model family** — `seven_day_opus`
   and `seven_day_sonnet` alongside the combined `seven_day`. Burn can therefore be
@@ -698,12 +709,19 @@ calibration needs:
 - **OpenAI reports per-feature windows** in `additional_rate_limits`, each with its own
   `used_percent`, `limit_window_seconds` and `reset_at`.
 
-The percentage gauge is half an instrument; the other half is tokens counted at the
-client. If a known N tokens of Opus work moves `seven_day_opus` by X%, the window's
-capacity is `N / (X/100)`. One instrumented week converts both frontier plans exactly,
-closes the largest gap in this document, and needs no vendor cooperation. The
-extra-usage meter gives an independent cross-check in dollars. Until that is run, the
-two rows stay blank rather than estimated.
+Put the two together and the conversion is arithmetic: if N tokens of Opus work
+(summed from the session files) move `seven_day_opus` by X%, the window's capacity is
+`N / (X/100)`. Both inputs are already local and both are exact — the only missing
+ingredient is sampling the gauge before and after a known stretch of work. The
+extra-usage meter gives an independent cross-check in dollars.
+
+**Anthropic publishes nothing to check this against.** Its Max plan pages state only
+"5x or 20x more usage than Pro" — a multiple of an unstated base — while documenting
+that Opus has its own weekly window separate from other models, which is what
+`seven_day_opus` reflects. Third-party token figures circulating for these plans are
+not derived from any published number and, where checkable, are wrong by orders of
+magnitude. Until the calibration is actually run, the two rows here stay blank rather
+than estimated.
 
 #### What the table is not
 
