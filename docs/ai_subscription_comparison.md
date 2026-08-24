@@ -479,7 +479,8 @@ four-figure bill corresponds to **1.3-2.6B tokens/month**, not 100M.
 Two consequences worth carrying forward. Any capacity figure quoted in tokens is
 meaningless without the cache-hit ratio behind it — which is why third-party estimates
 like "220,000 tokens per 5-hour session on Max 20x" are off by orders of magnitude
-against a single session's 318M. And a long single-threaded conversation is the
+against a single session's 318M. (The Langfuse measurement below shows even the 1.3-2.6B
+figure derived here is a floor: ChatGPT alone measures ~6B/month.) And a long single-threaded conversation is the
 best case for caching; a fleet of short-lived agents re-warms more often, so $0.76/M
 is a floor and $9/M a ceiling, with real fleet traffic somewhere in $1-3/M.
 
@@ -613,7 +614,7 @@ converts these into tasks, which are:
 
 Cerebras's multiple buys index-34 tokens while Z.ai's buys index-60 ones, so these rows are not comparable at face value. Z.ai rows convert its published 15-30x multiple at GLM-5.3 blended $2.00/M. The Claude row back-solves from a four-figure API bill displaced at Opus 5 blended ~$9/M, so it is an estimate with wide error bars. The spread is still roughly **30x between the cheapest and most expensive token pools** — and they are not interchangeable tokens.
 
-**The frontier vendors subsidize least.** Serving Opus 5 and GPT-5.6 costs more, and the plans price accordingly. A marginal capacity dollar buys roughly 5-10x more tokens at Cerebras or Z.ai than at Anthropic or OpenAI — at correspondingly lower model quality. That trade is the only real decision here.
+**The frontier vendors subsidize least — except they do not, once measured.** The intuition is that serving Opus 5 and GPT-5.6 costs more so the plans must price accordingly, and a marginal capacity dollar therefore buys more tokens at Cerebras or Z.ai. Measurement contradicts it: this cluster's Langfuse traces put ChatGPT Pro at a **12x floor** (below), already inside Z.ai's _claimed_ 15-30x band while serving GPT-5.6 Sol rather than GLM. The reason applies to Anthropic too — a subscription does not meter cache reads separately, and cache reads are ~99% of agentic token volume, so the vendors serving the priciest models absorb the most replayed context. Retained as the intuition to distrust, not as a finding.
 
 **Extra-usage credits are not a discount.** Anthropic's overflow bills at list API rates, which is a 1x subsidy — precisely the pricing a subscription exists to avoid. It buys availability, never economy. For a workload large enough to justify Max 20x, leaving it enabled without a hard cap reproduces the four-figure API bill that the subscriptions replaced. Treat it as an emergency valve with a cap set low enough to hurt, not as a capacity plan.
 
@@ -785,13 +786,76 @@ ceiling independent of how much work each request does, so a plan like Copilot P
 1,500 requests a month runs out on call count long before token volume becomes the
 constraint.
 
-#### Where it cannot be derived at all: Claude and ChatGPT
+#### Measured: what a ChatGPT Pro subscription actually delivers
 
-Both expose a usage API, and both report the _included_ quota as a percentage with no
-denominator — the same limitation Z.ai's quota endpoint has. So the honest entry for
-the two largest line items in this loadout is **unknown**, and any figure quoted for
-them is an assumption wearing a number's clothes. Back-solving from a displaced API
-bill shows how wide that is:
+**This is the only measured subscription figure in the document**, and it comes from
+this cluster's own Langfuse instance rather than from any vendor. The LiteLLM proxy at
+<../cluster/k8s/litellm/app/> routes `gpt-5.6-luna`, `-sol` and `-terra` through
+`cli-proxy-api`, a credential-substitution proxy backed by the ChatGPT subscription —
+so its traces record subscription consumption, priced at nothing, with real token
+counts on real work.
+
+Fifteen calendar days sampled (2026-07-28 to 2026-08-24, with gaps where queries timed
+out):
+
+|                    |           Sampled window |
+| ------------------ | -----------------------: |
+| Calls              |                   15,411 |
+| Input tokens       |                **3.25B** |
+| Output tokens      |                     5.4M |
+| **Input : output** |              **599 : 1** |
+| Busiest single day | 6,657 calls, 1.58B input |
+
+Two things follow, and both correct figures elsewhere in this document.
+
+**Consumption was underestimated by more than an order of magnitude.** The back-solved
+figure above puts the whole Claude-plus-ChatGPT loadout at 1.3-2.6B tokens/month. The
+ChatGPT side alone measures ~0.22B input tokens per sampled day, or **roughly 6B per
+month** — and Claude Code does not route through this proxy at all, so none of the
+Claude side is counted. Treat 6B as a floor on the pair.
+
+**Agent traffic is essentially all input.** At 599:1 the output is a rounding error.
+That is the same effect the token-per-task work found, at a far greater extreme than
+either AA's benchmark tasks (39:1 for Luna at max effort) or a single long Claude Code
+session (326:1). A fleet replaying large contexts across many short turns sits at the
+far end of that distribution.
+
+**Priced at API list, that subscription is worth $2,400-$22,100/month.** Against a $200
+fee that is a **12x-111x subsidy** — and the low end of that range assumes every input
+token is a cache read, which is the most generous assumption available to OpenAI, not
+the least. So **12x is a floor.**
+
+**The range is 9x wide for one missing number: the cache rate.** Langfuse cannot supply
+it. Its aggregate metrics API offers no cache measure (valid measures are `count`,
+`latency`, `inputTokens`, `outputTokens`, `totalTokens`, cost and latency variants,
+`toolCalls` — nothing cache-related), and `totalCost` is `0` throughout because no
+pricing is configured for these custom model names. The split exists only in
+per-observation `usageDetails`, which means reading trace bodies. Configuring model
+prices in Langfuse would make `totalCost` self-computing and close this permanently —
+a smaller job than any other measurement this document asks for.
+
+**What this does to the frontier-versus-cheap-tier comparison.** The claim that
+frontier vendors subsidize least does not survive measurement. At 12x floor, ChatGPT
+Pro is already in the same band as Z.ai's _claimed_ 15-30x, and it delivers GPT-5.6 Sol
+and Terra rather than GLM. The reason is structural and applies to Anthropic equally:
+a subscription does not meter cache reads separately, and cache reads are ~99% of
+agentic token volume. The vendors serving the most expensive models are also the ones
+absorbing the most replayed context.
+
+**And it reframes the buying question.** The loadout already in place is delivering a
+subsidy at least as large as anything on offer elsewhere. What it does not deliver is
+_more_ capacity once the weekly cap binds — which is the actual constraint, and the
+thing no additional subscription fixes better than pay-per-token overflow does.
+
+#### Where it still cannot be derived: Claude
+
+ChatGPT is measured above; Claude is not, because Claude Code talks to Anthropic
+directly rather than through the instrumented proxy. Both expose a usage API, and both
+report the _included_ quota as a percentage with no denominator — the same limitation
+Z.ai's quota endpoint has. So the honest entry for the largest single line item in this
+loadout remains **unknown**, and any figure quoted for it is an assumption wearing a
+number's clothes. Back-solving from a displaced API bill shows how wide that is — and
+note that the ChatGPT measurement above suggests every row here is far too low:
 
 | Assumed monthly tokens | On Opus 5 (max)                  | On Opus 5 (medium)               |
 | ---------------------- | -------------------------------- | -------------------------------- |
@@ -993,10 +1057,13 @@ only the shape: a request allowance is a hard ceiling independent of how much wo
 request does, so Copilot Pro+ at 1,500 requests a month runs out on call count long
 before token volume becomes the constraint.
 
-**Claude Max 20x and ChatGPT Pro stay unranked, and that is a real gap** — they are the
-two largest line items in the loadout. Neither publishes a denominator. The calibration
-is local and cheap (see above), and running it is the single highest-value follow-up to
-this document.
+**ChatGPT Pro is now measured; Claude Max 20x is not.** Langfuse traces from this
+cluster put ChatGPT Pro's subsidy at a **12x floor** — 3.25B input tokens over 15
+sampled days at 599:1 input-to-output, worth $2,400-$22,100/month at API list against a
+$200 fee. That makes the loadout already in place at least as subsidised as anything on
+offer elsewhere, which is the single most decision-relevant thing in this document.
+Claude stays unranked only because Claude Code bypasses the instrumented proxy; the
+calibration for it is local and cheap, and remains the highest-value follow-up.
 
 ### Two caveats that could move the ranking
 
