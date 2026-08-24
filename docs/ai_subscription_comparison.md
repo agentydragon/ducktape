@@ -153,6 +153,62 @@ $0.3586/task at index 34.5. Gemini 3.7 Flash (medium) is 19 index points better 
 $0.2629 — cheaper _and_ far smarter. GLM-4.7 is not a budget choice; it is simply
 dominated.
 
+#### What a "task" is, and what the cost figure does not include
+
+**A task is one benchmark item** — one HLE question, one Terminal-Bench episode, one
+GDPval work product — not a unit of anyone's actual work. The headline figure is a
+weighted average of the per-item cost across the nine evals, using the index weights:
+summing each eval's `weightedCostPerTask` reproduces the total exactly.
+
+**One attempt per item. Failures are not retried, and the cost of being wrong is not
+in the number.** This is the single most important thing to know about the column, and
+the data settles it two ways:
+
+- **The prompt set is sent once, identically, to every model.** Across 582 model
+  configurations, GPQA Diamond input tokens have a median of 49,132 and a p10-p90 of
+  48,874-53,015 — a ±4% band spanning models from index 24 to index 63. HLE is the
+  same (median 670,811, p10-p90 630k-776k). A model that gets a third of the items
+  wrong sends no more input than one that gets them right, which is only possible if
+  nothing is re-asked. Output tokens vary 46x over the same set — that is reasoning
+  effort, not retries.
+- **Cost rises with capability rather than falling.** Median cost per task is $0.195
+  for models at index 20-35 and $1.041 for models at index 58+. If the figure priced
+  attempts-until-success, the weakest models would be the most expensive.
+
+So `$/task` is **the cost of one attempt, whether or not it succeeded.** Real work
+pays for the failures too, and that gap widens as the model gets weaker. A first-order
+correction — dividing by the coding solve rate, i.e. the naive cost of retrying until
+one lands — shows how much:
+
+| Model (effort)          | Coding | $/attempt | $/success (1st-order) | Penalty |
+| ----------------------- | -----: | --------: | --------------------: | ------: |
+| Claude Opus 5 (max)     |   78.0 |    2.3369 |                2.9968 |   1.28x |
+| GPT-5.6 Sol (xhigh)     |   78.3 |    0.8072 |                1.0302 |   1.28x |
+| Gemini 3.7 Flash (high) |   76.1 |    0.4022 |                0.5284 |   1.31x |
+| GLM-5.3 (max)           |   74.8 |    0.6829 |                0.9135 |   1.34x |
+| **GPT-5.6 Luna (max)**  |   71.5 |    0.0471 |                0.0659 |   1.40x |
+| DeepSeek V4-Flash 0731  |   69.1 |    0.1122 |                0.1625 |   1.45x |
+| GLM-4.7 (reasoning)     |   45.3 |    0.3586 |                0.7923 |   2.21x |
+
+The correction is mild across the top of the table (1.28-1.45x) and does not disturb
+the ranking there — Luna stays roughly 45x cheaper than Opus 5 rather than 50x. It
+bites only at the bottom, where **GLM-4.7 more than doubles** and ends up costing more
+per landed task than Gemini 3.7 Flash costs per landed task at 31 index points higher.
+
+Treat that column as an illustration, not a measurement. Retries are not independent —
+a model that fails a task usually fails it again, so `1/p` understates the penalty on
+hard items and overstates it wherever you would give up or escalate instead. The point
+is the direction: cheap-model ratios are flattered, and the flattery grows as quality
+falls.
+
+**One asymmetry worth knowing when reading Index/$.** Cost and score are not weighted
+alike. Across models, 82-95% of the cost figure comes from just three evals — GDPval-AA,
+Terminal-Bench and τ³-Banking, the agentic and long-context ones — while the index
+those costs are divided by is diluted by five academic knowledge tests that contribute
+almost nothing to spend. GPQA Diamond is 0.2-1.3% of cost and a ninth of the score.
+So Index/$ divides an agentic-weighted numerator by a knowledge-diluted denominator,
+which is another reason to read the coding and agentic columns instead.
+
 #### What the index actually measures, and why it is the wrong column here
 
 Worth being precise, because the number invites a reading it does not support.
@@ -622,7 +678,7 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 
 ## Caveats
 
-- **Index/$ flatters cheap models.** A failed task costs a retry plus the operator attention to notice. Weight the frontier position, not the ratio.
+- **Index/$ flatters cheap models, and the dataset proves it rather than merely suggesting it.** AA's cost per task is one attempt, priced whether or not it succeeded — the eval prompt set goes out once regardless of score. A failed task costs a retry plus the operator attention to notice, and none of that is in the figure. Weight the frontier position, not the ratio.
 - **AA cost-per-task is API pricing.** It does not model subscription quotas, and a plan's effective rate can beat or trail it by several times depending on saturation.
 - **Token-pool figures assume saturation.** No one sustains 24M tokens/day every day; the tokens-per-dollar column is a ceiling, not an expectation, and the realized multiple depends entirely on how much load actually moves to the new plan.
 - **Per-agent request and burn rates here are estimates.** The 10-20 RPM per agent behind the Cerebras arithmetic is a planning number, not a measurement, and it swings with task shape, context size, and endpoint speed. Measure a real fleet-hour before sizing a plan on it.
