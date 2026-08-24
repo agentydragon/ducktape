@@ -53,14 +53,16 @@ class ChatSurface(StrEnum):
 class PromptOriginKind(StrEnum):
     """Which arm of `PromptOrigin` a prompt carries.
 
-    Its members coincide with `ChatSurface`'s and it stays its own vocabulary: this discriminates a
-    value stored inside a `prompt_enqueued` body, `ChatSurface` names which kind of channel holds a
-    conversation, and one enum for both would make a change to either meaning rewrite the other's
-    stored strings.
+    Its first two members coincide with `ChatSurface`'s and it stays its own vocabulary: this
+    discriminates a value stored inside a `prompt_enqueued` body, `ChatSurface` names which kind of
+    channel holds a conversation, and one enum for both would make a change to either meaning
+    rewrite the other's stored strings. `HARNESS` is the member with no surface at all — the
+    harness resuming its own session is not a channel anything can attach to.
     """
 
     SPA = "spa"
     MATRIX = "matrix"
+    HARNESS = "harness"
 
 
 class SpaOrigin(BaseModel):
@@ -96,11 +98,27 @@ class MatrixOrigin(BaseModel):
     refs: tuple[str, ...] = Field(description="The events folded into this prompt, oldest first.")
 
 
-type PromptOrigin = SpaOrigin | MatrixOrigin
+class HarnessOrigin(BaseModel):
+    """The harness resumed the session itself — nobody typed this.
+
+    Claude Code wakes its own session to observe work it left running: a background command's
+    completion notification, a `ScheduleWakeup` firing. The exchange that follows has no operator
+    behind it, and a transcript that rendered its opening as the operator speaking would put words
+    in their mouth. What woke the harness is the prompt item's own text; the origin only has to say
+    whose voice it is.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[PromptOriginKind.HARNESS] = PromptOriginKind.HARNESS
+
+
+type PromptOrigin = SpaOrigin | MatrixOrigin | HarnessOrigin
 
 # The console's own surface, as one value rather than one per call: `SpaOrigin` carries nothing, so
 # every instance is the same statement and a shared frozen one says so.
 SPA_ORIGIN = SpaOrigin()
+HARNESS_ORIGIN = HarnessOrigin()
 
 
 class FrameDirection(StrEnum):

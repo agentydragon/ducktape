@@ -446,6 +446,12 @@
   width: min(100%, 46rem);
 }
 
+/* The session waking itself: a margin note between exchanges, not anyone speaking. */
+.haku-chat-wake {
+  align-self: flex-start;
+  width: min(100%, 46rem);
+}
+
 /* No card of its own: while folded a call is one plain line, so consecutive calls read as a run of
  * working notes rather than a stack of boxes. The negative margins pull adjacent working lines
  * back through the list's gap. */

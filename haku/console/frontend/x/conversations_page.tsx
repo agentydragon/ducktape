@@ -141,6 +141,15 @@ function ItemView({ item }: { item: ConversationItem }) {
   if (item.item_type === "tool_call") return <ToolCallView item={item} />;
   const text = item.text.trim();
   if (item.item_type === "prompt") {
+    // A harness-origin prompt is the session waking itself — a background command's notification,
+    // a scheduled wakeup — so it renders as a note in the margin, never as the operator's bubble.
+    if (item.origin?.kind === "harness") {
+      return (
+        <Text c="dimmed" size="xs" fs="italic" className="haku-chat-wake">
+          {text}
+        </Text>
+      );
+    }
     return (
       <div className="haku-chat-prompt">
         <Markdown source={text} className="haku-chat-markdown" />

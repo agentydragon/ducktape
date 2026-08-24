@@ -40,9 +40,29 @@ type MockItem = {
   outcome: "succeeded" | "failed" | "unknown" | null;
   structured: unknown;
   disclosure: "summary" | "withheld" | null;
+  origin?: { kind: string };
   created_at: string;
   updated_at: string;
 };
+
+/** The session waking itself — a prompt nobody typed, whose text says what woke it. */
+function woke(item_id: string, text: string, at: string): MockItem {
+  return {
+    item_id,
+    item_type: "prompt",
+    status: "complete",
+    text,
+    call_id: null,
+    tool_name: null,
+    arguments: null,
+    outcome: null,
+    structured: null,
+    disclosure: null,
+    origin: { kind: "harness" },
+    created_at: at,
+    updated_at: at,
+  };
+}
 
 function spoke(
   item_id: string,
@@ -260,6 +280,17 @@ const toolUsingItems: readonly MockItem[] = [
     { command: "git diff --check" },
     "2026-08-01T03:00:14Z",
     { text: DIFF_CHECK_OUTPUT, outcome: "succeeded" }
+  ),
+  woke(
+    "61000000-0000-4000-8000-00000000000c",
+    'Background command "Retry unshallow fetch with longer timeout" completed (exit code 0)',
+    "2026-08-01T03:02:20Z"
+  ),
+  spoke(
+    "62000000-0000-4000-8000-00000000000c",
+    "message",
+    "The background fetch finished — the repo is fully unshallowed now.",
+    "2026-08-01T03:02:22Z"
   ),
 ];
 const conversationId = "70000000-0000-4000-8000-000000000001";

@@ -8,8 +8,17 @@ from uuid import uuid4
 
 import pytest_bazel
 
-from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection, ItemType, RuntimeKind
-from haku.console.database_schema import SessionFrame
+from haku.console.chat_models import (
+    HARNESS_ORIGIN,
+    SPA_ORIGIN,
+    BridgeFrameKind,
+    FrameDirection,
+    ItemStatus,
+    ItemType,
+    MatrixOrigin,
+    RuntimeKind,
+)
+from haku.console.database_schema import ConversationItem, SessionFrame
 from haku.console.x import session_views
 from haku.console.x.claude_code import projection
 from haku.console.x.claude_code.testing.wire import assistant, tool_result, tool_use_block
@@ -137,6 +146,37 @@ def test_the_inspector_keeps_native_payloads_opaque() -> None:
     assert [(frame.kind, frame.payload) for frame in page.frames] == [(row.kind, row.payload) for row in _INSPECTED]
     assert all("native_kind" not in frame.model_fields_set for frame in page.frames)
     assert all("unprojected" not in frame.model_fields_set for frame in page.frames)
+
+
+def _prompt_row(origin: dict[str, object] | None) -> ConversationItem:
+    now = datetime.now(UTC)
+    return ConversationItem(
+        item_id=uuid4(),
+        conversation_id=uuid4(),
+        item_type=ItemType.PROMPT,
+        status=ItemStatus.COMPLETE,
+        opened_seq=1,
+        closed_seq=3,
+        item_text="a prompt",
+        origin=origin,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def test_a_prompts_origin_reads_back_typed_for_every_arm() -> None:
+    """The view says whose voice a prompt is — including the harness's own, which the renderer
+    must be able to tell from the operator's before anything writes it (readers ship a release
+    ahead of the writer; see AGENTS.md § Vocabularies across a roll)."""
+    assert session_views.item_view(_prompt_row({"kind": "spa"})).origin == SPA_ORIGIN
+    assert session_views.item_view(_prompt_row({"kind": "harness"})).origin == HARNESS_ORIGIN
+    matrix = session_views.item_view(_prompt_row({"kind": "matrix", "address": "!r:x", "refs": ["$e"]})).origin
+    assert isinstance(matrix, MatrixOrigin)
+    assert matrix.address == "!r:x"
+
+
+def test_an_item_without_an_origin_reports_none() -> None:
+    assert session_views.item_view(_prompt_row(None)).origin is None
 
 
 if __name__ == "__main__":
