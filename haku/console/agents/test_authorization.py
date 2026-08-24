@@ -17,7 +17,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import IntegrityError, TimeoutError as SQLAlchemyTimeoutError
+from sqlalchemy.exc import DBAPIError, IntegrityError, TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session
 
@@ -864,6 +864,61 @@ async def test_launch_authorization_requires_caller_owned_transaction(harness: H
             await harness.authority.launch_authorization(
                 db, operator_id=harness.browser.operator_id, agent_id=definition.agent_id
             )
+
+
+async def test_launch_authorization_deadlocks_against_a_concurrent_operator_referencing_write(harness: Harness) -> None:
+    """Two ordinary same-operator transactions deadlock because they lock ``operators`` and
+    ``agents`` in opposite orders.
+
+    Reproduces the production incident (haku-console-db, 2026-08-23/24, SQLSTATE 40P01):
+
+    - ``launch_authorization`` (authorization.py) locks ``operators`` FOR UPDATE, then ``agents``
+      FOR UPDATE.
+    - A concurrent write path holds the ``agents`` row (activation, ``record_seen``, revocation —
+      all take ``agents`` FOR UPDATE) and then performs a write that references the operator. Any
+      INSERT/UPDATE touching an ``operator_id`` foreign key — the session or conversation the launch
+      and frame paths create — takes an implicit ``FOR KEY SHARE`` on that ``operators`` row. That is
+      the reverse order over the same two rows.
+
+    ``FOR KEY SHARE`` (the foreign-key check) and ``FOR UPDATE`` (launch_authorization) conflict, as
+    do the two ``agents`` ``FOR UPDATE`` locks, so the two transactions form a cycle. Neither path
+    coordinates a global lock order and neither retries, so one transaction dies with
+    ``DeadlockDetectedError``. This asserts the bug is live; the fix (one documented lock order plus a
+    deadlock retry) turns this into a "both commit" assertion.
+
+    Deterministic, not timing-dependent: a barrier holds both first locks before either reaches for
+    its second, which is exactly the interleaving a serial test can never produce — so the cycle is
+    guaranteed and Postgres's detector must break it.
+    """
+    definition = await _launch_definition(harness)
+    operator_id = harness.browser.operator_id
+    agent_id = definition.agent_id
+
+    both_first_locks_held = asyncio.Barrier(2)
+
+    async def operator_referencing_writer() -> None:
+        # Holds ``agents`` first (as activation/record_seen/revocation do), then takes the
+        # ``operators`` FOR KEY SHARE that any write referencing the operator performs.
+        async with harness.sessions.begin() as db:
+            await db.execute(select(Agent).where(Agent.agent_id == agent_id).with_for_update())
+            await both_first_locks_held.wait()
+            await db.execute(
+                select(Operator).where(Operator.operator_id == operator_id).with_for_update(key_share=True)
+            )
+
+    async def launcher_gated() -> None:
+        # launch_authorization's own order (authorization.py: operators FOR UPDATE, then agents
+        # FOR UPDATE), with a barrier between the two locks so the inversion is forced, not raced.
+        async with harness.sessions.begin() as db:
+            await db.get(Operator, operator_id, with_for_update=True)
+            await both_first_locks_held.wait()
+            await db.get(Agent, agent_id, with_for_update=True)
+
+    outcomes = await asyncio.gather(operator_referencing_writer(), launcher_gated(), return_exceptions=True)
+    errors = [outcome for outcome in outcomes if isinstance(outcome, BaseException)]
+    assert len(errors) == 1, outcomes
+    assert isinstance(errors[0], DBAPIError)
+    assert "deadlock detected" in str(errors[0]).lower()
 
 
 async def test_chat_launch_authorizer_fails_closed_for_missing_agent(harness: Harness) -> None:
