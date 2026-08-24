@@ -867,6 +867,71 @@ Throughput figures are order-of-magnitude. Treat them as ±2× ranges.
 
 ³ Claude's own windows are 5h + weekly. Extra-usage credits remove the ceiling on demand, but at list API rates — availability, not capacity. Rated ●●○ on that basis, not ●●●.
 
+## Bottom line: what actually measures up
+
+Everything above, reduced to one table. Cost per delivered task, ranked by agentic
+capability per dollar, because agentic is the column that decides whether a loop
+finishes.
+
+| Option                      | $/task | Agentic | Coding | Agentic/$ | Failure mode         |
+| --------------------------- | -----: | ------: | -----: | --------: | -------------------- |
+| **Luna (high), API**        | 0.0216 |    41.0 |   63.3 |     1,900 | none                 |
+| **Z.ai GLM Max plan**       | 0.0571 |    59.1 |   74.8 |     1,035 | 5h + weekly, 3x peak |
+| **Luna (max), API**         | 0.0471 |    46.9 |   71.5 |       996 | none                 |
+| Cerebras Code Max (imputed) | ~0.095 |    26.2 |   45.3 |       276 | daily reset          |
+| Cerebras Code Pro (imputed) | ~0.118 |    26.2 |   45.3 |       222 | daily reset          |
+| Gemini 3.7 Flash (med), API | 0.2629 |    45.1 |   71.5 |       172 | none                 |
+| GLM-5.3 (max), API          | 0.6829 |    59.1 |   74.8 |        87 | none                 |
+| Grok 4.6 (medium), API      | 0.6679 |    56.3 |   74.4 |        84 | none                 |
+| Opus 5 (medium), API        | 0.7243 |    50.4 |   74.3 |        70 | none                 |
+| Opus 5 (max), API           | 2.3369 |    59.2 |   78.0 |        25 | none                 |
+
+**The top three are 4-8x better than everything else, and one of them is not a
+subscription.** That is the finding the whole exercise converges on.
+
+**A subscription is not, in general, the cheap way to buy capacity.** Luna on
+unsubsidized pay-per-token costs _less per task_ than the best plan in this survey —
+$0.0471 against Z.ai GLM Max's $0.0571 — with no window, no commitment and no lockout.
+Every plan here except Z.ai is beaten outright by simply paying per token for a cheaper
+model.
+
+**What Z.ai's 12x subsidy actually buys is capability, not price.** At $0.0571/task it
+sits beside Luna on cost while delivering agentic 59.1 against 46.9. Put differently,
+it delivers **essentially Opus-5-at-max agentic capability (59.1 vs 59.2) for 1/41st of
+Opus 5's API cost**. Nothing else in the survey does that. Whether it is worth buying
+reduces to a single question: is agentic ~47 enough, or do you need ~59?
+
+**Cerebras is not competitive on delivered work**, despite selling the most tokens per
+dollar by a wide margin. Its ~4x subsidy and index-26 agentic put it an order of
+magnitude behind the top three. It remains defensible only for mechanical bulk where a
+cheap correctness check exists.
+
+**The agent-product and request-metered plans cannot be ranked here at all** — Synthetic,
+Kimi, MiniMax, Google AI Ultra, Cursor, Copilot. A request cap says nothing about how
+many tokens a request may carry, and inferring one from another vendor's tokens-per-call
+is exactly the mixing error this document warns against elsewhere. What can be said is
+narrow and unflattering: Cursor Ultra and Copilot Pro+ land within 2x of API list under
+any plausible assumption, so they sell routing and interface rather than cheap inference.
+
+**Claude Max 20x and ChatGPT Pro stay unranked, and that is a real gap** — they are the
+two largest line items in the loadout. Neither publishes a denominator. The calibration
+is local and cheap (see above), and running it is the single highest-value follow-up to
+this document.
+
+### Two caveats that could move the ranking
+
+**Saturation.** Every plan figure is a ceiling. Z.ai's $0.0571 assumes the full ~2,940
+tasks land; the 5-hour wall is precisely what stopped that happening. At a quarter
+utilisation it becomes $0.23/task — still ahead of Opus 5 (medium) on API, but four
+times behind Luna. **The pay-per-token options have no equivalent haircut**, which
+widens their advantage in practice beyond what the table shows.
+
+**Index 47 versus index 59 is not a small gap.** Agentic capability decides whether a
+long tool-use loop completes, and the retry correction bites hardest exactly where
+capability is lowest. A model that needs supervision on long autonomous runs may cost
+more in attention than it saves in dollars — and attention is the resource this whole
+document is nominally optimising. The table ranks dollars; it cannot rank that.
+
 ## Recommendation
 
 The loadout is at the ceiling of subsidized frontier capacity. Max 20x is the top individual Claude tier — nothing above it short of per-seat Team/Enterprise — and ChatGPT Pro $200 is likewise OpenAI's top consumer tier. Neither vendor sells more subsidized capacity to one person.
