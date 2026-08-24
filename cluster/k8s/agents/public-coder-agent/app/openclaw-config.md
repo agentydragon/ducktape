@@ -44,7 +44,7 @@ backend model and translates it, so no separate provider entry is needed.
 Unlike Codex, there is no live serving-path probe for a hosted third-party
 API: contextWindow (1,048,576) and maxTokens (65,536) are Google's published
 limits for the current Gemini generation, shared by every entry except that
-gemini-3.1-flash-lite ships thinking off by default and is marked
+gemini-3.5-flash-lite is the deliberately cheap/fast tier and is marked
 `"reasoning": false`. cluster/k8s/litellm/app/test_openclaw_models.py pins
 the catalog to the roster and these figures. The agent's default model is
 unchanged (still a Codex 5.6 model) -- Gemini is added as a selectable

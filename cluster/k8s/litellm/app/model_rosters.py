@@ -9,23 +9,21 @@ ANTHROPIC_MODELS: list[str] = ["claude-opus-5", "claude-sonnet-5", "claude-fable
 OPENCLAW_CODEX_MODELS: list[str] = ["codex-gpt-5.6-luna", "codex-gpt-5.6-terra", "codex-gpt-5.6-sol"]
 
 # Google AI (Gemini). Key from the GEMINI_API_KEY env var (litellm-gemini-key
-# secret). Chat lineup verified against generativelanguage.googleapis.com/v1beta/models
-# (2026-07-18): the Gemini-3.x preview family (pro / flash / flash-lite) + gemini-3.5-flash,
-# the stable 2.5 pair, and the -latest aliases that auto-point at the newest generation.
-# Remaining specialty SKUs (image, tts, live/bidi, customtools, imagen, veo) are
-# intentionally excluded — add on demand. Mirrored into the gemini-clients Terraform
-# key and public-coder-agent's OpenClaw catalog; both are pinned against this list.
-GEMINI_MODELS: list[str] = [
-    "gemini-3-pro-preview",
-    "gemini-3-flash-preview",
-    "gemini-3.1-pro-preview",
-    "gemini-3.1-flash-lite",
-    "gemini-3.5-flash",
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
-    "gemini-pro-latest",
-    "gemini-flash-latest",
-]
+# secret). Current-generation lineup only (Gemini 3.x) -- the 2.5 generation,
+# the shut-down gemini-3-pro-preview, and every non-latest 3.x minor version
+# (gemini-3-flash-preview, 3.5-flash, 3.6-flash, 3.1-flash-lite) are dropped,
+# the same "only the newest group" policy as OPENCLAW_CODEX_MODELS above. The
+# gemini-pro-latest/gemini-flash-latest floating aliases are dropped too --
+# redundant with pinning the current models explicitly. Verified against
+# ai.google.dev/gemini-api/docs/models (2026-08-23): Pro is frozen at 3.1
+# (preview) since February 2026 -- no 3.5/3.6/3.7 Pro exists -- while Flash
+# advanced through 3.5 -> 3.6 -> 3.7 (shipped 2026-08-13) on an independent,
+# faster cadence; 3.5-flash-lite is the current lite tier. Remaining specialty
+# SKUs (image, tts, live/bidi, customtools, imagen, veo, "Cyber") are
+# intentionally excluded — add on demand. Mirrored into the gemini-clients
+# Terraform key and public-coder-agent's OpenClaw catalog; both are pinned
+# against this list.
+GEMINI_MODELS: list[str] = ["gemini-3.1-pro-preview", "gemini-3.7-flash", "gemini-3.5-flash-lite"]
 
 # Gemini embeddings, same key as the chat lineup. Added for OpenClaw memory search,
 # whose index needs an embedding backend and had none — see
@@ -43,16 +41,18 @@ GEMINI_MODELS: list[str] = [
 # than per deployment, so neither entry pins a size.
 GEMINI_EMBEDDING_MODELS: list[str] = ["gemini-embedding-2", "gemini-embedding-001"]
 
-# Published input/output token limits shared by the whole current Gemini chat
-# generation (2.5 and 3.x alike): ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview
-# and ai.google.dev/gemini-api/docs/gemini-3 (2026-08-23). Unlike Codex's
-# CODEX_CONTEXT_WINDOW below, there is no live serving-path probe for a
-# third-party hosted API, so this is Google's published figure rather than a
-# measured one. Used by public-coder-agent's OpenClaw catalog.
+# Published input/output token limits shared across the current Gemini chat
+# generation: ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview,
+# .../gemini-3.7-flash, and .../gemini-3.5-flash-lite (2026-08-23). Unlike
+# Codex's CODEX_CONTEXT_WINDOW below, there is no live serving-path probe for
+# a third-party hosted API, so this is Google's published figure rather than
+# a measured one. Used by public-coder-agent's OpenClaw catalog.
 GEMINI_CONTEXT_WINDOW = 1_048_576
 GEMINI_MAX_OUTPUT_TOKENS = 65_536
 
-# The "-lite" tier ships with thinking off by default (Google's positioning: the
-# lowest-latency, highest-throughput tier); every other current Gemini chat model
-# is a hybrid reasoning model with thinking on by default.
-GEMINI_NON_REASONING_MODELS: frozenset[str] = frozenset({"gemini-3.1-flash-lite"})
+# The "-lite" tier is the deliberately cheap/fast one; Pro and plain Flash are
+# both positioned around their reasoning ("thinking") capability, Pro's
+# effectively mandatory. Google's own gemini-3.7-flash page notes thinking is
+# supported but not automatic-by-default -- this tracks capability/product
+# positioning, not the literal default toggle.
+GEMINI_NON_REASONING_MODELS: frozenset[str] = frozenset({"gemini-3.5-flash-lite"})

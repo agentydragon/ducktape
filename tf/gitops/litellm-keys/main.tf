@@ -79,18 +79,15 @@ locals {
   # route to it and should not gain one just to embed. Routing embeddings through
   # LiteLLM keeps them on the in-cluster path the agent already uses for turns.
   embedding_client_models = ["gemini-embedding-2", "gemini-embedding-001"]
-  # Google Gemini models (GEMINI_MODELS in test_litellm_config.py) fronted through the
-  # `gemini/` provider. Consumed by the laptop gemini-claude alias.
+  # Google Gemini models (GEMINI_MODELS in model_rosters.py) fronted through the
+  # `gemini/` provider. Current generation only -- see that module for why the
+  # 2.5 generation, gemini-3-pro-preview (shut down), and every non-latest 3.x
+  # minor version are excluded. Consumed by the laptop gemini-claude alias and
+  # public-coder-agent.
   gemini_client_models = [
-    "gemini-3-pro-preview",
-    "gemini-3-flash-preview",
     "gemini-3.1-pro-preview",
-    "gemini-3.1-flash-lite",
-    "gemini-3.5-flash",
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
-    "gemini-pro-latest",
-    "gemini-flash-latest",
+    "gemini-3.7-flash",
+    "gemini-3.5-flash-lite",
   ]
 }
 
@@ -283,12 +280,13 @@ data "sops_file" "gemini_clients_key" {
 resource "litellm_team" "gemini_clients" {
   team_alias = "gemini-clients"
   router_settings = {
-    # A quota-throttled preview model (gemini-3-pro-preview) degrades to the cheap,
-    # high-quota flash tier instead of hard-failing Claude Code.
+    # The primary model (gemini-3.1-pro-preview) is still a preview release and can be
+    # quota-throttled; degrade to the cheap, high-quota flash-lite tier instead of
+    # hard-failing Claude Code.
     fallbacks = [
       {
         model           = "*"
-        fallback_models = ["gemini-3.5-flash"]
+        fallback_models = ["gemini-3.5-flash-lite"]
       }
     ]
   }

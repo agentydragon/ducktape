@@ -4,8 +4,8 @@
 # the upstream reaches Google with the in-cluster GEMINI_API_KEY, so this key never carries
 # it. WebFetch/WebSearch are disabled: they are Anthropic-hosted server tools a non-Anthropic
 # backend cannot execute. The
-# gemini-clients team falls back to gemini-3.5-flash, so a quota-throttled preview model
-# (gemini-3-pro-preview has tight Google quota) degrades instead of hard-failing. See
+# gemini-clients team falls back to gemini-3.5-flash-lite, so a quota-throttled preview
+# model (gemini-3.1-pro-preview has tight Google quota) degrades instead of hard-failing. See
 # ./gateway.nix for the shared wrapper pattern.
 #
 # Prompt caching (settled empirically 2026-07-18, do not relitigate): Claude Code's
@@ -22,8 +22,8 @@ in
 import ./gateway.nix { inherit pkgs lib; } "gemini-claude" {
   baseUrl = "https://litellm.allegedly.works";
   authTokenEnvVar = "GEMINI_LITELLM_KEY";
-  model = "gemini-3-pro-preview";
-  haikuModel = "gemini-3.5-flash";
+  model = "gemini-3.1-pro-preview";
+  haikuModel = "gemini-3.5-flash-lite";
   disallowedTools = [
     "WebFetch"
     "WebSearch"
