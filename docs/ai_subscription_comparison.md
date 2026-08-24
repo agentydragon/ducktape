@@ -453,11 +453,38 @@ Two pools are easy to confuse: interactive sessions draw subscription first, the
 
 The two are only comparable through one number: **tokens consumed per month.** With it, API cost is arithmetic and a subscription's worth is the API price of the tokens it covers, divided by its fee. Without it, the comparison cannot be made at all — which is why most published analyses quietly compare models instead of plans.
 
-**Estimating it here.** A loadout of Claude Max 20x plus top-tier ChatGPT Pro, both regularly exhausted, displaced a four-figure monthly API bill. At Opus-5-class blended rates (~$9/M on an 80/20 input/output split) that puts consumption on the order of **100M tokens/month**, with wide error bars. Measure rather than trust it: a week billed through a capped API key converts everything exactly, and costs a few dollars at the rates below.
+**Estimating it here — and the naive estimate is wrong by an order of magnitude.** A loadout of Claude Max 20x plus top-tier ChatGPT Pro, both regularly exhausted, displaced a four-figure monthly API bill. Dividing that by an Opus-5-class blended rate of ~$9/M (80/20 input/output, no cache) gives ~100M tokens/month. **That rate does not describe agentic traffic at all.** An agent loop re-sends its whole context every turn, and those re-sends are cache reads billed at a tenth of input price, so they dominate the token count while contributing little to the bill.
+
+Measured on one real Claude Code session (788 assistant turns, this document's own):
+
+|                |          Tokens |
+| -------------- | --------------: |
+| Cache reads    |     311,444,006 |
+| Cache writes   |       6,176,800 |
+| Output         |         954,205 |
+| Uncached input |           1,576 |
+| **Total**      | **318,576,587** |
+
+**Cache reads outnumber output 326 to 1.** At Opus 5 list — $0.50/M cache read, $10/M
+cache write at the 1-hour TTL, $5/$25 in-out — that session costs **$241**, an
+effective **$0.76/M**. Twelve times under the $9/M the estimate assumed. So the same
+four-figure bill corresponds to **1.3-2.6B tokens/month**, not 100M.
+
+Two consequences worth carrying forward. Any capacity figure quoted in tokens is
+meaningless without the cache-hit ratio behind it — which is why third-party estimates
+like "220,000 tokens per 5-hour session on Max 20x" are off by orders of magnitude
+against a single session's 318M. And a long single-threaded conversation is the
+best case for caching; a fleet of short-lived agents re-warms more often, so $0.76/M
+is a floor and $9/M a ceiling, with real fleet traffic somewhere in $1-3/M.
+
+**Do not mix your own token counts with AA's cost per task.** They embed different
+cache behaviour: AA's benchmark runs re-warm far more often than a long conversation
+does, so its implied rate for Opus 5 (max) is $3.13/M against this session's $0.76/M.
+Compare AA-to-AA or measured-to-measured, never across.
 
 ### What 100M tokens/month costs at API rates
 
-Blended 80/20 input/output, no cache hits.
+Blended 80/20 input/output, **no cache hits** — so these are worst-case rates, useful for ranking models against each other rather than for predicting a bill. Real agentic traffic runs far under them, per the measurement above.
 
 | Model                           | $/M in | $/M out | 100M tok/mo | AA index |
 | ------------------------------- | -----: | ------: | ----------: | -------: |
