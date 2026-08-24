@@ -118,25 +118,31 @@ than at the next frontier point, **DeepSeek V4-Flash 0731 scores 51.8 for 11.2
 cents** — half an index point below Luna (max) at 2.4x the cost. Luna is meaningfully
 cheaper than the nearest DeepSeek, by roughly 2-3x rather than 5x.
 
-**What actually makes Luna cheap is terseness, not headline price.** Cost per task is
-tokens times price, and Luna wins on both. Its per-token price is ~3x under V4-Pro
-0813's, and it spends far fewer reasoning tokens reaching a comparable score:
+**Luna's advantage is overwhelmingly price, not terseness.** Cost per task factors
+cleanly into the two, and against V4-Pro 0813 the split is lopsided:
 
-| Model (effort)             | Index | Reasoning tok/task | Input tok/task | $/task |
-| -------------------------- | ----: | -----------------: | -------------: | -----: |
-| GPT-5.6 Luna (max)         |  52.3 |             14,400 |        116,000 | 0.0471 |
-| DeepSeek V4-Pro 0813 (max) |  53.2 |             31,200 |        270,000 | 0.2521 |
-| DeepSeek V4-Flash 0731     |  51.8 |             37,100 |        288,000 | 0.1122 |
+    5.35x cheaper per task  =  4.28x cheaper per token  x  1.25x fewer tokens
 
-Luna reaches index 52 on **less than half** the reasoning tokens and **40% of the
-input tokens**. That matters beyond price: fewer tokens per task is also less
-context pressure and lower latency, and it is the property that survives a price cut
-by any competitor.
+| Model (effort)             | Index | Reasoning tok/task | Total tok/task |    $/M | $/task |
+| -------------------------- | ----: | -----------------: | -------------: | -----: | -----: |
+| GPT-5.6 Luna (max)         |  52.3 |             14,400 |        805,382 | 0.0585 | 0.0471 |
+| DeepSeek V4-Pro 0813 (max) |  53.2 |             31,200 |      1,007,583 | 0.2502 | 0.2521 |
+| DeepSeek V4-Flash 0731     |  51.8 |             37,100 |      1,369,243 | 0.0819 | 0.1122 |
 
-Reasoning effort is the dial underneath all of this, and Luna's ladder is unusually
-wide — 624 → 1,416 → 4,865 → 8,726 → 14,400 reasoning tokens per task from low to
-max, index 33.9 → 52.3, cost $0.0088 → $0.0471. Choosing the effort setting is a
-bigger decision than choosing between Luna and its neighbours.
+Luna does use **less than half** the reasoning tokens for a comparable score, which is
+real and worth having — fewer reasoning tokens mean lower latency and less context
+pressure. But it barely dents the total, because reasoning output is only ~2.5% of
+tokens once replayed context is counted; Luna's total is 80% of V4-Pro's, not the 40%
+an earlier revision of this document claimed from a mis-derived input count. Terseness
+contributes 1.25x of the 5.35x. **The other 4.28x is simply a cheaper token, and a
+cheaper token is exactly the thing a competitor can match with a price cut.**
+
+Where terseness does bite is cost mix rather than token count: output is 51% of Luna's
+cost per task against 61% of V4-Pro's, despite being a rounding error in token terms.
+Reasoning effort is the dial underneath that, and Luna's ladder is unusually wide —
+624 → 1,416 → 4,865 → 8,726 → 14,400 reasoning tokens per task from low to max, index
+33.9 → 52.3, cost $0.0088 → $0.0471. Choosing the effort setting is a bigger decision
+than choosing between Luna and its neighbours.
 
 **The frontier is mostly US-hosted.** Fourteen of seventeen points are US vendors;
 only MiMo-V2.5, DeepSeek V4-Pro and GLM-5.3 are PRC. Ruling out PRC hosting for
@@ -665,19 +671,22 @@ Thirty-nine of the 169 models are affected. The CSV marks them
 `cache_accounting_coherent=no` and leaves `tokens_per_task` blank rather than
 publishing a number derived from a contradiction.
 
-**Independent evidence that GLM-4.7 does cache:** <zai_api.md> records a direct
+**Independent evidence that GLM-4.7 does cache:** <zai*api.md> records a direct
 measurement on the coding endpoint (June 2026) — `cached_tokens` goes from `0` on a
 cold call to `12544` on a follow-up sharing a ~12.5k-token prefix. An earlier revision
 of this document read the 0.0% as a property of the model and concluded its effective
-rate was the worst of any cheap model here. That conclusion is withdrawn.
+rate was the worst of any cheap model here, at $0.6734/M. That conclusion is withdrawn:
+imputing the split from its siblings (below) puts GLM-4.7 nearer **$0.16-$0.28/M**,
+which makes it \_cheaper* per token than GLM-5.3's $0.4026/M — the opposite of what the
+artifact suggested, and the ordering one would expect from the sticker prices.
 
 #### Where capacity is published or measured
 
-| Plan              | $/mo | Capacity     |  Tasks/mo | **$/task** | API $/task | Subsidy |
-| ----------------- | ---: | ------------ | --------: | ---------: | ---------: | ------: |
-| Z.ai GLM Max      |  168 | ~5B tok/mo¹  |     2,940 | **0.0571** |     0.6829 |     12x |
-| Cerebras Code Max |  200 | 120M tok/day | see below |          — |     0.3586 |       — |
-| Cerebras Code Pro |   50 | 24M tok/day  | see below |          — |     0.3586 |       — |
+| Plan              | $/mo | Capacity     | Tasks/mo | **$/task** | API $/task | Subsidy |
+| ----------------- | ---: | ------------ | -------: | ---------: | ---------: | ------: |
+| Z.ai GLM Max      |  168 | ~5B tok/mo¹  |    2,940 | **0.0571** |     0.6829 |     12x |
+| Cerebras Code Max |  200 | 120M tok/day |  ~2,100² | **~0.095** |     0.3586 |     ~4x |
+| Cerebras Code Pro |   50 | 24M tok/day  |    ~420² | **~0.118** |     0.3586 |     ~3x |
 
 ¹ Extrapolated from a 4-day sample of 665M tokens across 5,765 model calls recorded
 against a Coding Max plan in <zai_api.md> (May 2026, GLM-5.1 era, previous metering).
@@ -685,19 +694,37 @@ Treat as an order of magnitude. Z.ai's own published claim is a 15-30x subsidy, 
 brackets the 12x derived here — the vendor claim is the more generous of the two, so
 sizing on this row is the conservative choice.
 
-**The Cerebras rows cannot be computed, and that is the finding.** Converting a token
-cap into tasks needs tokens per task for the model served, and Cerebras serves GLM-4.7
-only — the one model whose token split AA has booked incoherently. Any figure would be
-the cache-write fallback assumption dressed up as a measurement, so it is left blank.
-The sensitivity is the point: cache reads are 86-96% of input tokens elsewhere, and a
-token cap counts them all. Whether Cerebras serves GLM-4.7 with prompt caching decides
-its real capacity to within an order of magnitude, and it is documented nowhere. Ask
-before buying, or measure a day of it.
+² **The Cerebras rows are imputed, not derived**, because Cerebras serves GLM-4.7 only
+and AA's token split for GLM-4.7 is the incoherent one. Two independent routes agree,
+which is why a number is given at all rather than a blank:
 
-Z.ai's 12x is the one solid number in this tier, and it is well under the 46x an
-earlier revision published — that figure came from token counts understated 2.5-6.7x
+- **From the sibling model.** Tokens per task is mostly a property of the task and the
+  harness rather than the model — the loop replays the same context either way. GLM-5.3
+  on the same suite needs 1,696,267. A weaker model takes more turns, not fewer, so
+  that is a floor.
+- **From GLM-4.7's own cost.** Its aggregate input cost, $0.3048/task, is reliable even
+  though the read/write split is not. Applying Z.ai's standard ~80% cache discount
+  ($0.12/M against $0.60/M input) and a cache-read share taken from its siblings —
+  GLM-5.1 73.6%, GLM-5.2 87.9%, GLM-5.3 96.2% — brackets it at **1.26M-2.23M tokens per
+  task**, centre ~1.65M, effective **$0.16-$0.28/M**.
+
+Both land near **1.7M tokens/task**, which is what the table uses. The subsidy is
+therefore roughly **3-5x** — a third of Z.ai's 12x, and nowhere near the 81x an earlier
+revision published. **Cerebras's headline 120M tokens/day is only about 2,100 agentic
+tasks a month**, because an agent loop spends most of its tokens replaying context and
+a token cap counts every replayed token whether or not the provider charges for it.
+
+That last point is the one to carry: **caching changes what you pay per token, not how
+many tokens the loop sends.** For a dollar-metered API it is a 5-10x saving; for a
+token-capped plan it may be worth nothing at all, depending on whether the vendor
+counts cached reads against the cap. Cerebras does not document which it does, and the
+answer moves the rows above by several times. Worth asking before buying.
+
+Z.ai's 12x is the one fully derived number in this tier, and it is well under the 46x
+an earlier revision published — that figure came from token counts understated 2.5-6.7x
 (see the provenance note above). Token capacity and delivered work are not the same
-ranking, and the gap between them is mostly cache behaviour.
+ranking: Cerebras sells roughly five times the raw tokens per dollar that Z.ai does and
+delivers roughly a third the subsidy per task.
 
 #### Where only requests are published
 
