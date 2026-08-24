@@ -47,6 +47,7 @@ them is large.
 | `price_1m_*`                    | List price per 1M tokens, including cache read and cache write                                                            |
 | `cost_*_usd`                    | AA's per-task cost split into non-cached input, cache reads, cache writes, output — these four sum to `cost_per_task_usd` |
 | `tokens_per_task`               | **Derived**, not published: each `cost_*_usd` leg divided by its matching price, summed                                   |
+| `cache_accounting_coherent`     | `no` where AA books cache writes but zero cache reads — see below                                                         |
 | `cache_read_share_of_input`     | Cache reads as a fraction of input tokens per task (0-1)                                                                  |
 | `effective_usd_per_m_tokens`    | **Derived**: `cost_per_task_usd` / `tokens_per_task` — the real blended rate, cache included                              |
 | `gdpval_aa` … `aa_lcr`          | The nine raw eval scores, 0-1 (`omniscience` is 0-100)                                                                    |
@@ -69,8 +70,27 @@ count. Those totals and the per-task figures use different weightings across the
 evals, and doing so understates tokens per task by 2.5-6.7x depending on the model.
 
 Cache reads run 86-96% of input tokens for most models, so any figure quoted in tokens
-is meaningless without the cache behaviour beside it. `GLM-4.7 (Reasoning)` is the
-instructive exception at 0.0%.
+is meaningless without the cache behaviour beside it.
+
+## Where the cache accounting is incoherent
+
+**39 of the 169 models book a nonzero `cost.cacheWrite` against exactly zero
+`cost.cacheRead`.** A loop that writes a cache and never reads it does not describe
+anything real, so for those models AA has evidently attributed the replayed context to
+writes. In six of them the contradiction is explicit in AA's own fields: a
+`cacheHitDiscountPercent` of 80% sits beside a `cacheHitPrice` equal to the
+undiscounted input price. Cache writes are 88.5-99.6% of input cost across the affected
+set (median 98.7%), so the token split is dominated by whichever fallback price is
+assumed.
+
+Those rows carry `cache_accounting_coherent=no` and leave `tokens_per_task`,
+`cache_read_share_of_input` and `effective_usd_per_m_tokens` **blank**. Their
+`cost_per_task_usd` and index scores are unaffected and remain usable.
+
+Do not read a 0.0% cache share as "this model has no prompt caching". `GLM-4.7
+(Reasoning)` is flagged here, and <../zai_api.md> records a direct measurement that it
+caches: `cached_tokens` goes `0` to `12544` on a follow-up call sharing a ~12.5k-token
+prefix.
 
 Everything is **API list price**. A subscription's economics do not follow from it —
 that conversion is what the comparison document exists to do.
