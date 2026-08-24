@@ -13,7 +13,6 @@ export const kubernetesActions: Record<string, ActionEntry> = {
   create_grant: fromArgs(zCreateGrantArgs, (args) => ({
     text: `Kubernetes: Create ${plural(args.grants.length)}`,
   })),
-  release_grant: { describe: () => ({ text: "Kubernetes: Release grant", destructive: true }) },
   release_grants: fromArgs(zReleaseGrantsArgs, (args) => ({
     text: `Kubernetes: Release ${plural(args.grant_ids.length)}`,
     destructive: true,

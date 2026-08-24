@@ -16,11 +16,9 @@ import {
 } from "../vocabulary";
 
 export const zCreateGrantArgs = mcpToolSchema(KUBERNETES_SERVER_ID, "create_grant");
-const zReleaseGrantArgs = mcpToolSchema(KUBERNETES_SERVER_ID, "release_grant");
 const zReleaseGrantsArgs = mcpToolSchema(KUBERNETES_SERVER_ID, "release_grants");
 
 type CreateGrantArgs = z.infer<typeof zCreateGrantArgs>;
-type ReleaseGrantArgs = z.infer<typeof zReleaseGrantArgs>;
 type ReleaseGrantsArgs = z.infer<typeof zReleaseGrantsArgs>;
 export type GrantSpec = CreateGrantArgs["grants"][number];
 export type GrantRule = {
@@ -128,15 +126,6 @@ function GrantIdList({ ids, variant }: { ids: readonly string[]; variant: "compa
   );
 }
 
-function ReleaseGrantPreview({ args }: PreviewProps<ReleaseGrantArgs>) {
-  return (
-    <Stack gap="xs">
-      <PreviewTitle className="haku-shell-mono">{args.grant_id}</PreviewTitle>
-      <Field label="Reason">{args.reason ?? "released"}</Field>
-    </Stack>
-  );
-}
-
 function ReleaseGrantsPreview({ args, variant }: PreviewProps<ReleaseGrantsArgs>) {
   return (
     <Stack gap="xs">
@@ -149,6 +138,5 @@ function ReleaseGrantsPreview({ args, variant }: PreviewProps<ReleaseGrantsArgs>
 
 export const kubernetesPreviews = {
   create_grant: definePreview(zCreateGrantArgs, CreateGrantPreview),
-  release_grant: definePreview(zReleaseGrantArgs, ReleaseGrantPreview),
   release_grants: definePreview(zReleaseGrantsArgs, ReleaseGrantsPreview),
 } satisfies Record<string, ToolPreview>;

@@ -93,13 +93,6 @@ class KubernetesToolsService:
             agent_id=self._caller(context).agent_id, grant_ids=grant_ids, reason=reason
         )
 
-    async def release_grant(
-        self, *, context: McpExecutionContext, grant_id: UUID, reason: str = "released"
-    ) -> KubernetesGrant:
-        return await self.grants.release_grant(
-            agent_id=self._caller(context).agent_id, grant_id=grant_id, reason=reason
-        )
-
     async def can_i(self, *, context: McpExecutionContext, requests: list[KubernetesAccessCheck]) -> list[CanIResult]:
         caller = self._caller(context)
         results: list[CanIResult] = []
@@ -182,14 +175,6 @@ def build_mcp(service: KubernetesToolsService) -> FastMCP:
         context: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
     ) -> KubernetesGrant:
         return await service.get_grant(context=context, grant_id=grant_id)
-
-    @mcp.tool
-    async def release_grant(
-        grant_id: Annotated[UUID, Field(description="Grant UUID returned by create_grant.")],
-        reason: Annotated[str, Field(min_length=1, max_length=500)] = "released",
-        context: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
-    ) -> KubernetesGrant:
-        return await service.release_grant(context=context, grant_id=grant_id, reason=reason)
 
     @mcp.tool
     async def release_grants(

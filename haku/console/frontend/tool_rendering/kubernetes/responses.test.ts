@@ -20,14 +20,7 @@ describe("kubernetesResultPreviews", () => {
   it("renders create and release results in both variants", () => {
     for (const variant of ["compact", "detailed"] as const) {
       expect(renderResultPreview(kubernetesResultPreviews.create_grant, [GRANT], variant)).not.toBeNull();
-      expect(renderResultPreview(kubernetesResultPreviews.release_grant, GRANT, variant)).not.toBeNull();
       expect(renderResultPreview(kubernetesResultPreviews.release_grants, [GRANT], variant)).not.toBeNull();
     }
-  });
-
-  it("returns null for a malformed grant result", () => {
-    expect(
-      renderResultPreview(kubernetesResultPreviews.release_grant, { ...GRANT, grant_id: 42 }, "detailed")
-    ).toBeNull();
   });
 });

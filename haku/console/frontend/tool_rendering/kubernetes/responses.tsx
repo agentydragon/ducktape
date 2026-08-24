@@ -18,10 +18,9 @@ import {
 import { GrantScopeAndRules } from "./requests";
 
 const zCreateGrantResult = mcpToolResultSchema(KUBERNETES_SERVER_ID, "create_grant");
-const zReleaseGrantResult = mcpToolResultSchema(KUBERNETES_SERVER_ID, "release_grant");
 const zReleaseGrantsResult = mcpToolResultSchema(KUBERNETES_SERVER_ID, "release_grants");
 
-type KubernetesGrant = McpToolResultFor<typeof KUBERNETES_SERVER_ID, "release_grant">;
+type KubernetesGrant = McpToolResultFor<typeof KUBERNETES_SERVER_ID, "release_grants">[number];
 
 function statusColor(status: string): string {
   switch (status) {
@@ -84,16 +83,11 @@ function CreateGrantResult({ result, variant }: ResultPreviewProps<z.infer<typeo
   return <GrantsResult grants={result} variant={variant} />;
 }
 
-function ReleaseGrantResult({ result, variant }: ResultPreviewProps<z.infer<typeof zReleaseGrantResult>>) {
-  return <GrantResult grant={result} variant={variant} />;
-}
-
 function ReleaseGrantsResult({ result, variant }: ResultPreviewProps<z.infer<typeof zReleaseGrantsResult>>) {
   return <GrantsResult grants={result} variant={variant} />;
 }
 
 export const kubernetesResultPreviews = {
   create_grant: defineResultPreview(zCreateGrantResult, CreateGrantResult),
-  release_grant: defineResultPreview(zReleaseGrantResult, ReleaseGrantResult),
   release_grants: defineResultPreview(zReleaseGrantsResult, ReleaseGrantsResult),
 } satisfies Record<string, ToolResultPreview>;

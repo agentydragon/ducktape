@@ -57,7 +57,7 @@ _EXPECTED_TOOLS = {
     "haku_index": ("index_status", "search"),
     "haku_routine": ("launch_routine",),
     "hostexec": ("bash",),
-    "kubernetes": ("can_i", "create_grant", "get_grant", "list_grants", "release_grant", "release_grants"),
+    "kubernetes": ("can_i", "create_grant", "get_grant", "list_grants", "release_grants"),
 }
 _SERVER_IDS = list(_EXPECTED_TOOLS)
 _RESULT_SERVER_IDS = [*_SERVER_IDS, "haku-console"]

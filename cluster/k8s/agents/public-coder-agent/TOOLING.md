@@ -104,8 +104,7 @@ Kubernetes request. Use the `kubernetes` MCP server's `can_i` first, then submit
 that call share one start and expiry; do not split a coherent debugging session into per-operation
 approval work. End a set with one `release_grants` call containing the durable grant IDs returned
 by `create_grant`. Release is deliberately sequential rather than transactional: if one item fails,
-earlier releases remain effective, so reconcile the result with `list_grants`; `release_grant`
-remains available for one ID. The Operator UI
+earlier releases remain effective, so reconcile the result with `list_grants`. The Operator UI
 groups rows by source ToolCall and can revoke every still-active row from one approval together.
 
 The proxy's static execution ceiling is `cluster-admin`, but the standing SAR group remains the

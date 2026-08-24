@@ -14,7 +14,7 @@ const GRANT: CreateGrantArgs["grants"][number] = {
   ],
 };
 
-const RESULT_GRANT: McpToolResultFor<"kubernetes", "release_grant"> = {
+const RESULT_GRANT: McpToolResultFor<"kubernetes", "release_grants">[number] = {
   grant_id: "20000000-0000-4000-8000-000000000002",
   agent_id: "10000000-0000-4000-8000-000000000001",
   source_tool_call_id: "tc_create_grant",
@@ -32,18 +32,6 @@ const PREVIEW_FIXTURES = [
     toolName: "create_grant",
     args: { grants: [GRANT], duration_seconds: 3600 },
     result: [RESULT_GRANT],
-  },
-  {
-    title: "Release one Kubernetes grant",
-    serverId: "kubernetes",
-    toolName: "release_grant",
-    args: { grant_id: RESULT_GRANT.grant_id, reason: "probe complete" },
-    result: {
-      ...RESULT_GRANT,
-      status: "released" as const,
-      ended_at: "2026-08-23T10:15:00Z",
-      end_reason: "probe complete",
-    },
   },
   {
     title: "Release several Kubernetes grants",

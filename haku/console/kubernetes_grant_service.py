@@ -227,11 +227,6 @@ class KubernetesGrantService:
             grant = await self._repository.get(agent_id=agent_id, grant_id=grant_id)
         return grant
 
-    async def release_grant(self, *, agent_id: UUID, grant_id: UUID, reason: str = "released") -> KubernetesGrant:
-        return await self._repository.release(
-            agent_id=agent_id, grant_id=grant_id, reason=reason, ended_at=self._clock()
-        )
-
     async def release_grants(
         self, *, agent_id: UUID, grant_ids: Sequence[UUID], reason: str = "released"
     ) -> tuple[KubernetesGrant, ...]:

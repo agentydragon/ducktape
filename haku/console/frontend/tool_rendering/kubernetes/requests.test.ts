@@ -22,14 +22,7 @@ describe("kubernetesPreviews", () => {
     ).toBe("Kubernetes: Create 1 grant");
   });
 
-  it("renders single and batched release calls and marks them destructive", () => {
-    expect(
-      renderPreview(
-        kubernetesPreviews.release_grant,
-        { grant_id: "20000000-0000-4000-8000-000000000002", reason: "probe complete" },
-        "detailed"
-      )
-    ).not.toBeNull();
+  it("renders batched release calls and marks them destructive", () => {
     const args = {
       grant_ids: ["20000000-0000-4000-8000-000000000002", "20000000-0000-4000-8000-000000000003"],
       reason: "probe complete",

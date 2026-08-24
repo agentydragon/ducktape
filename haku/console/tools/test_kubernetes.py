@@ -70,7 +70,6 @@ def _service() -> tuple[KubernetesToolsService, AsyncMock, AsyncMock]:
     grants.create_grants.return_value = (_grant(),)
     grants.list_grants.return_value = (_grant(),)
     grants.get_grant.return_value = _grant()
-    grants.release_grant.return_value = _grant()
     grants.release_grants.return_value = (_grant(),)
     authorization.authorize_agent.return_value = AuthorizationResponse(
         allowed=True, reason="standing", source=KubernetesAuthorizationSource.SAR, decision_id="sar:decision"
@@ -83,14 +82,7 @@ async def test_server_exposes_exact_stable_tool_set_without_context_argument() -
     service, _, _ = _service()
     async with Client(build_mcp(service)) as client:
         tools = await client.list_tools()
-    assert {tool.name for tool in tools} == {
-        "can_i",
-        "create_grant",
-        "list_grants",
-        "get_grant",
-        "release_grant",
-        "release_grants",
-    }
+    assert {tool.name for tool in tools} == {"can_i", "create_grant", "list_grants", "get_grant", "release_grants"}
     for tool in tools:
         assert "context" not in tool.inputSchema.get("properties", {})
     create_grant = next(tool for tool in tools if tool.name == "create_grant")
@@ -131,8 +123,6 @@ async def test_operator_cannot_mint_or_inspect_agent_grants() -> None:
         await service.list_grants(context=_operator_context())
     with pytest.raises(PermissionError):
         await service.get_grant(context=_operator_context(), grant_id=_GRANT)
-    with pytest.raises(PermissionError):
-        await service.release_grant(context=_operator_context(), grant_id=_GRANT)
     with pytest.raises(PermissionError):
         await service.release_grants(context=_operator_context(), grant_ids=[_GRANT])
 
