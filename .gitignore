@@ -75,6 +75,7 @@ devinfra/nixos_bazel_test/result
 # Project-specific
 **/.claude/settings.local.json
 **/.claude/scheduled_tasks.lock
+/props/specimens/pending-match-file-restriction.md
 worktrees
 cluster/.git
 cluster/.claude/
