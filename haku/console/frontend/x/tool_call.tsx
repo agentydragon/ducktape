@@ -159,7 +159,7 @@ export function ToolCallView({ item }: { item: ConversationItem }) {
   return (
     <details className="haku-chat-tool-call">
       <summary className="haku-chat-tool-call-summary">
-        <Code style={{ overflowWrap: "anywhere" }}>{item.tool_name}</Code>
+        <span className="haku-chat-tool-call-name">{item.tool_name}</span>
         <span className="haku-chat-tool-call-snippet">{toolCallSummary(item.arguments)}</span>
         {item.outcome === "failed" && (
           <Badge variant="light" color="red">

@@ -446,13 +446,24 @@
   width: min(100%, 46rem);
 }
 
+/* No card of its own: while folded a call is one plain line, so consecutive calls read as a run of
+ * working notes rather than a stack of boxes. The negative margins pull adjacent working lines
+ * back through the list's gap. */
 .haku-chat-tool-call {
   align-self: flex-start;
   width: min(100%, 46rem);
-  border: 1px solid var(--haku-border);
-  border-radius: var(--mantine-radius-sm);
-  padding: 0.4rem 0.6rem;
-  background: var(--haku-panel-bg);
+}
+
+.haku-chat-tool-call + .haku-chat-tool-call,
+.haku-chat-thinking + .haku-chat-tool-call,
+.haku-chat-tool-call + .haku-chat-thinking {
+  margin-top: -0.55rem;
+}
+
+.haku-chat-tool-call-name {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-xs);
+  overflow-wrap: anywhere;
 }
 
 .haku-chat-tool-call-summary {
@@ -489,8 +500,13 @@
   min-width: 0;
 }
 
+/* Expanded content indents under the chevron so it visibly belongs to its line, since there is no
+ * box to group it. */
 .haku-chat-tool-call-body {
   margin-top: 0.5rem;
+  margin-left: 0.35rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--haku-border);
 }
 
 .haku-chat-markdown {
