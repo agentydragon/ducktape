@@ -79,6 +79,7 @@ py_library(
         "//haku/runtime/x/bridge:protocol",
         "@pypi//fastapi",
         "@pypi//pydantic",
+        "@pypi//sqlalchemy",
     ],
 )
 

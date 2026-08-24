@@ -621,11 +621,19 @@ class PostgresAgentAuthority:
         """Resolve active launch authority at the caller's transaction linearization point."""
         if not db.in_transaction():
             raise RuntimeError("launch authorization requires an active caller transaction")
-        # Lock in a stable order.  The locks are held until the caller's transaction commits, so a
-        # concurrent disable/rotation cannot pass this check and then invalidate the conversation
-        # or attachment before it is durable.
-        operator = await db.get(Operator, operator_id, with_for_update=True)
-        agent = await db.get(Agent, agent_id, with_for_update=True)
+        # Lock in a stable order (operators → agents → credential_bindings → static_credentials).
+        # The locks are held until the caller's transaction commits, so a concurrent
+        # disable/rotation cannot pass this check and then invalidate the conversation or
+        # attachment before it is durable.
+        #
+        # Guard locks, so FOR NO KEY UPDATE — never FOR UPDATE. A disable/rotation is a non-key
+        # UPDATE, which FOR NO KEY UPDATE already blocks. FOR UPDATE would additionally conflict
+        # with the implicit FOR KEY SHARE that any concurrent INSERT/UPDATE referencing these rows
+        # takes through its foreign-key check (a session or conversation write naming its
+        # operator). Such a writer already holds its own rows, so the stronger mode closes a lock
+        # cycle and deadlocks where this one merely waits its turn.
+        operator = await db.get(Operator, operator_id, with_for_update={"key_share": True})
+        agent = await db.get(Agent, agent_id, with_for_update={"key_share": True})
         binding = await db.scalar(
             select(CredentialBinding)
             .where(
@@ -636,10 +644,12 @@ class PostgresAgentAuthority:
             )
             .order_by(CredentialBinding.activated_at.desc())
             .limit(1)
-            .with_for_update()
+            .with_for_update(key_share=True)
         )
         credential = (
-            None if binding is None else await db.get(StaticCredential, binding.binding_id, with_for_update=True)
+            None
+            if binding is None
+            else await db.get(StaticCredential, binding.binding_id, with_for_update={"key_share": True})
         )
         if (
             operator is None
