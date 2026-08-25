@@ -429,6 +429,17 @@ py_test(
 )
 
 py_test(
+    name = "test_descheduler_priority_threshold",
+    srcs = ["test_descheduler_priority_threshold.py"],
+    data = ["//cluster/k8s:descheduler_priority_threshold_files"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
     name = "test_ntfy_manifest_contract",
     srcs = ["test_ntfy_manifest_contract.py"],
     data = ["//cluster/k8s:ntfy_manifest_contract_files"],

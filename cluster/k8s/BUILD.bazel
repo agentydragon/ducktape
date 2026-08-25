@@ -180,6 +180,16 @@ filegroup(
 )
 
 filegroup(
+    name = "descheduler_priority_threshold_files",
+    srcs = [
+        "descheduler/helmrelease.yaml",
+        "seaweedfs/cluster/priorityclass.yaml",
+        "seaweedfs/cluster/seaweed.yaml",
+    ],
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
+filegroup(
     name = "ntfy_manifest_contract_files",
     srcs = ["flux-webhook/ntfy-webhook.sops.yaml"],
     visibility = ["//cluster/validation:__pkg__"],

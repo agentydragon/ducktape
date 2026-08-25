@@ -1,11 +1,16 @@
 # Custom non-system PriorityClass for stateful infrastructure pods.
 #
-# Value 1_000_000: well above ordinary workloads (default 0) so the descheduler
-# (which evicts lowest-priority first) and the scheduler's preemption defer these
-# pods — but far below the built-in system-cluster-critical (2_000_000_000), so
-# they are NOT treated as control-plane components and stay below the
-# descheduler's default priorityThreshold. NOT globalDefault: only pods that opt
-# in via priorityClassName get it.
+# Value 1_000_000: well above ordinary workloads (default 0) so the scheduler's
+# preemption defers these pods, but far below the built-in
+# system-cluster-critical (2_000_000_000) so they are NOT treated as
+# control-plane components. NOT globalDefault: only pods that opt in via
+# priorityClassName get it.
+#
+# The descheduler's eviction exemption is a hard threshold, not a preference:
+# priority only breaks ties among pods that are already eligible, and everything
+# below `DefaultEvictor.priorityThreshold` is eligible. So this value alone
+# exempts nothing — cluster/k8s/descheduler/helmrelease.yaml must set that
+# threshold to match, and a validation test enforces that it does.
 #
 # Currently used by the SeaweedFS master/volume/filer/s3 components
 # (cluster/k8s/seaweedfs/cluster/seaweed.yaml). Reusable for other stateful

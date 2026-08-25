@@ -41,6 +41,19 @@ spec:
             - name: DefaultEvictor
               args:
                 nodeFit: true
+                # Pods whose priority is at or above this are never evicted, by
+                # any plugin. Set to the `stateful-infra` value so SeaweedFS
+                # master/volume/filer/s3 are exempt outright: a filer restart
+                # desynchronizes every FUSE client's cached chunk locations, and
+                # git then dies of SIGBUS on mmap'd packfiles cluster-wide — so
+                # the cost of bouncing one is nothing like the "brief re-election"
+                # a balance pass assumes. PriorityClass alone does not do this;
+                # only `system-{cluster,node}-critical` are exempt by default, and
+                # a lower class merely loses the QoS tiebreak. Given as a value
+                # because the PriorityClass is owned by a different Flux
+                # Kustomization; a validation test pins the two together.
+                priorityThreshold:
+                  value: 1000000
             - name: LowNodeUtilization
               args:
                 metricsUtilization:
