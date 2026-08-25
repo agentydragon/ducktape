@@ -8,6 +8,23 @@ spec:
   install:
     remediation:
       retries: 3
+  upgrade:
+    # Deviation: upgrades do not wait for resource health. The mount DaemonSet is
+    # `updateStrategy: OnDelete` (chart default, and deliberate — rolling it kills
+    # the node's FUSE mounts and consumers do not self-heal, #4616). Flux assesses
+    # health with kstatus, which reports a DaemonSet InProgress while
+    # updatedNumberScheduled < desiredNumberScheduled and has no OnDelete
+    # exemption, so any values change here hangs until the timeout and then
+    # Stalls the release — which also wedges the Kustomization that health-checks
+    # it. (Helm's own readiness checker does exempt OnDelete; Flux does not use
+    # it.) Adding resource requests in #4626 triggered exactly this.
+    #
+    # The cost is that a genuinely broken upgrade of the controller or node
+    # DaemonSet is no longer caught by the release going NotReady. Reverting this
+    # requires either dropping OnDelete or a per-resource wait exemption.
+    disableWait: true
+    remediation:
+      retries: 3
   chart:
     spec:
       chart: deploy/helm/seaweedfs-csi-driver
