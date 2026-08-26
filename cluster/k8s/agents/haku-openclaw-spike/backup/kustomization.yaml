@@ -6,4 +6,3 @@ resources:
   - repository.yaml
   - networkpolicy.yaml
   - volsync-backup.yaml
-  - volsync-restore.yaml

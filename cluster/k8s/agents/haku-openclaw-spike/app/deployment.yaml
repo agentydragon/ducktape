@@ -20,19 +20,15 @@ spec:
         app.kubernetes.io/name: haku-openclaw-spike
     spec:
       automountServiceAccountToken: false
-      # Retain the current local-PV holder through the control-plane taint, but
-      # prefer a worker for any subsequent placement before its separate
-      # migration-or-retirement decision.
-      tolerations:
-        - key: node-role.kubernetes.io/control-plane
-          operator: Exists
-          effect: NoSchedule
+      # State now lives on the optiplex home worker (state-v2 / local-path-home-ssd),
+      # so the pod is pinned there by that PVC's node affinity. Hard anti-control-plane
+      # (no toleration) guarantees it can never schedule back onto a cp node and starve
+      # etcd/kubelet with agent I/O -- the failure this migration resolves (#4706).
       affinity:
         nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              preference:
-                matchExpressions:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
       imagePullSecrets:
@@ -99,7 +95,13 @@ spec:
               startup --host_jvm_args=-Djavax.net.ssl.trustStore=$truststore
               startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit
               startup --host_jvm_args=-Djavax.net.ssl.trustStoreType=PKCS12
-              build --disk_cache=/home/openclaw/.cache/bazel-disk
+              # Keep Bazel's output base + disk cache on the ephemeral /bazel-cache
+              # emptyDir, never the persistent state PVC: a single agent run accreted
+              # a 65G output base of regenerable build artifacts on the PVC before this
+              # migration. Ephemeral means re-fetched per pod start, and the volume's
+              # sizeLimit caps runaway growth (the enforcement gap in #4717).
+              startup --output_user_root=/bazel-cache/output
+              build --disk_cache=/bazel-cache/disk
               build --repo_env=SSL_CERT_FILE
               build --repo_env=REQUESTS_CA_BUNDLE
               build --repo_env=PIP_CERT
@@ -247,6 +249,10 @@ spec:
             # Claude Code's native transcripts and resumable session metadata.
             - name: state
               mountPath: /home/openclaw
+            # Ephemeral Bazel output base + disk cache (targeted by the init
+            # bazelrc), kept off the persistent state volume.
+            - name: bazel-cache
+              mountPath: /bazel-cache
             - name: trust
               mountPath: /etc/ssl/certs/ca-certificates.crt
               subPath: ca-certificates.crt
@@ -254,7 +260,7 @@ spec:
             - name: tmp
               mountPath: /tmp
       nodeSelector:
-        topology.kubernetes.io/region: hil
+        topology.kubernetes.io/region: home
       volumes:
         - name: config
           configMap:
@@ -264,9 +270,16 @@ spec:
             name: haku-openclaw-spike-kubeconfig
         - name: state
           persistentVolumeClaim:
-            claimName: haku-openclaw-spike-state
+            claimName: haku-openclaw-spike-state-v2
         - name: trust
           configMap:
             name: haku-egress-proxy-ca-cert
         - name: tmp
           emptyDir: {}
+        # Ephemeral, capped Bazel output base + disk cache -- deliberately NOT the
+        # state PVC and NOT local-path (which enforces no size, #4717). sizeLimit
+        # bounds the regenerable cache so a runaway build evicts the pod rather than
+        # filling the node disk.
+        - name: bazel-cache
+          emptyDir:
+            sizeLimit: 30Gi
