@@ -136,14 +136,14 @@ spec:
       # scanned, not data returned. See ducktape#4763.
       extraEnv:
         - name: GOMEMLIMIT
-          value: "410MiB"
+          value: "3277MiB"
       resources:
         requests:
           cpu: 50m
           memory: 128Mi
         limits:
           cpu: 500m
-          memory: 512Mi
+          memory: 4Gi
 
     backend:
       replicas: 2
