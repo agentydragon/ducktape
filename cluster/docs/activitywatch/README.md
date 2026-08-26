@@ -1,24 +1,18 @@
-# ActivityWatch (retired)
+# ActivityWatch
 
-**Retired 2026-08-17.** The cluster receiver, importer, public query route,
-machine credentials, and desktop `aw-sync`/Syncthing transport are suspended.
-The receive-only input cannot be imported correctly with upstream `aw-sync`:
-it mutates SQLite inputs, loses provenance, and is not idempotent. The retained
-manifests live in `cluster/k8s/x/activitywatch/`; reconsider only with a
-repo-owned snapshot/export and idempotent importer. This preserves a future
-cluster-queryable, agent-readable activity-history effort without preserving an
-incorrect central dataset.
+**Revived 2026-08-26.** The repo-owned idempotent importer this retirement waited for
+(`@ducktape_activitywatch//importer`) now feeds the central store: each device reads its
+own aw-server over REST and pushes into the central one over a bearer-gated write route at
+`https://activitywatch-write.allegedly.works` — no snapshot files, no `aw-sync`, no
+Syncthing. The central store and write route are live; rugged and wyrm2 feed it, deduped
+and idempotent (re-running inserts only genuinely new events). Remaining rollout — more
+devices, retiring the desktop Syncthing material, and switching to incremental/chunked
+writes — is tracked in [revival-plan.md](revival-plan.md).
 
-**Revival in progress.** The repo-owned idempotent importer this retirement
-waited for now exists (`@ducktape_activitywatch//importer`): each device reads its
-own aw-server over REST and pushes into the central one, no snapshot files and no
-`aw-sync`. The remaining wiring — a desktop-side importer timer, the desktop's path
-to the cluster write API, retiring Syncthing, CI, and one end-to-end canary — is
-tracked in [revival-plan.md](revival-plan.md). The design below is the historical
-`aw-sync`/Syncthing wiring, retired and being replaced.
-
-The remainder of this directory is historical design and incident evidence;
-it does not describe a running service.
+**History.** Retired 2026-08-17 because the receive-only input could not be imported
+correctly with upstream `aw-sync`: it mutated SQLite inputs, lost provenance, and was not
+idempotent. The design below is that historical `aw-sync`/Syncthing wiring, retired and
+replaced; it does not describe the running service.
 
 Personal activity tracking via [aw-server-rust](https://github.com/ActivityWatch/aw-server-rust).
 The cluster is intended to be the query surface; individual devices keep local ActivityWatch
@@ -30,13 +24,14 @@ This directory is the documentation hub for the cluster ActivityWatch project:
 - [Syncthing conflicts](syncthing-conflicts.md): receiver index-loss and conflict-file RCA.
 - [GNOME Wayland capture](gnome-wayland-capture.md): missing window events on `rugged`.
 
-**Ingestion is not operational.** The importer and its Flux Kustomization are suspended after
-the first live pull canary exposed source mutation, provenance collisions, and already-amplified
-desktop staging data. The central database contains partial canary output and is not canonical.
-See [the importer canary record](importer-canary.md).
+The first-generation `aw-sync` pull canary — which exposed the source mutation, provenance
+collisions, and heartbeat amplification that forced the 2026-08-17 retirement — is recorded
+in [the importer canary record](importer-canary.md). The current instance-to-instance
+importer avoids all three (read-only at the source, provenance from the device id, idempotent
+insert); see the status at the top of this file.
 
 No built-in ActivityWatch auth is enabled. Read/query access goes through the
-read-only proxy and, for public access, Authentik.
+read-only proxy and, for public access, Authentik. The write path is bearer-gated.
 
 ## Former Design
 
