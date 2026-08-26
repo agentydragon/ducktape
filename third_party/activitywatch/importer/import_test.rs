@@ -516,3 +516,51 @@ fn imports_into_a_key_gated_central() {
         );
     });
 }
+
+#[test]
+fn large_bucket_inserts_across_batches() {
+    // The importer POSTs a bucket's new events in bounded batches so a first
+    // backfill is many small requests, not one oversized one. Seed more than one
+    // batch worth, prove they all land (across >1 POST), and prove a re-import
+    // across batches still adds nothing.
+    runtime().block_on(async {
+        let root = temp_root("batch");
+        let (_source_server, source) = aw_server(&root, "source").await;
+        let (_dest_server, dest) = aw_server(&root, "dest").await;
+
+        let n = aw_importer::INSERT_BATCH_SIZE + 50;
+        let seeded: Vec<Event> = (0..n as i64)
+            .map(|i| {
+                let start = 1_000_000_000_000 + i * 1_000_000;
+                event(start, start + 500_000, &format!(r#"{{"app":"a","n":{i}}}"#))
+            })
+            .collect();
+        seed_bucket(
+            &source,
+            "aw-watcher-window_localhost",
+            "currentwindow",
+            "aw-watcher-window",
+            "localhost",
+            seeded,
+        )
+        .await;
+
+        let summary = import_device(&source, &dest, "rugged").await.unwrap();
+        assert_eq!(summary.total_inserted(), n);
+        assert_eq!(
+            events(&dest, "rugged::aw-watcher-window_localhost")
+                .await
+                .len(),
+            n
+        );
+
+        // Re-import across batches is still idempotent.
+        assert_eq!(
+            import_device(&source, &dest, "rugged")
+                .await
+                .unwrap()
+                .total_inserted(),
+            0
+        );
+    });
+}
