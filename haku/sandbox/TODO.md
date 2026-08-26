@@ -30,7 +30,18 @@ claims expire — so it is correct within a claim TTL, but silent throughout.
 **Claimed pods keeping their image is correct.** Yanking a box mid-run to roll an image
 would be worse than the skew, so this warns and never acts.
 
-**An idle warm pod being handed out stale is arguably a pool bug**, not just a reporting
-gap — `updateStrategy: Recreate` on the `SandboxWarmPool` did not replace it when the
-template changed. Check whether the upstream controller intends to, before building
-anything on the assumption that a fresh claim implies a fresh spec.
+**Whether an idle warm pod gets recycled on a template change is unsettled**, and that is
+the part worth chasing. On 2026-07-25 `updateStrategy: Recreate` did not replace one. On
+2026-08-26 it did — a change editing `podTemplate` fields (`automountServiceAccountToken`,
+one added env var) alongside the image pin had the pool recreate its idle pod twice inside
+eight minutes of the merge, and the replacement carried the new spec.
+
+The difference that fits both observations is _what_ changed: 2026-07-25 bumped only the
+image pin, 2026-08-26 also edited the pod spec. So the hypothesis to test is that an
+image-only bump does not trigger recreation while other `podTemplate` edits do. Until that
+is settled, do not assume a fresh claim implies a fresh image.
+
+Do not try to answer this from labels. `agents.x-k8s.io/sandbox-template-ref-hash` hashes
+the template _reference_, not its content: it equals `warm-pool-sandbox` and stayed fixed
+across the 2026-08-26 spec change. Only the pod spec says whether a pod carries the current
+template.
