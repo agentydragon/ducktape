@@ -16,3 +16,23 @@ the console booting on the next deploy.
   gaps, which say nothing about the link structure, so a filename sort is not the chain.
 - **Never reserve a number in advance.** One that was free at authoring time is taken by merge
   time, so choose it as the branch goes out and re-check before every push.
+
+## Conversation data may be dropped; tool-call data may not
+
+**A standing operator allowance, revocable at any time.** Nothing in the prod database's
+conversation tables is worth keeping — the console is still in development and what is there is
+test traffic. A migration that would otherwise need expand/contract, a backfill, or a read-only
+compatibility variant to keep stored conversation rows readable may **delete the rows instead**,
+and should: take the simpler schema.
+
+`conversation` is the root, and every conversation-scoped table cascades from it —
+`chat_attachment`, `sessions`, `conversation_event`, `conversation_item`, `conversation_turn`,
+`conversation_prompt`, `session_frames`, and the per-attachment channel state — so deleting there
+is the whole of it.
+
+**Nothing else is covered.** `mcp_tool_calls` and `mcp_tool_call_principals` are the audit record
+for privileged execution and are kept; so are identity, credentials, grants, and OAuth state. A
+migration touching any of those gets the full expand/contract treatment.
+
+Say in the PR that a migration drops conversation rows, so a reviewer sees it was chosen rather
+than overlooked. When the allowance is withdrawn this section goes, and the exemption with it.
