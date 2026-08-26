@@ -1,9 +1,11 @@
 """Read a finished Bazel invocation's outputs and test verdicts from BuildBuddy.
 
 `bazel-ci` already builds and tests everything on a devel push — measured on the
-`//...` sweep, that covers 42 of 42 image `.digest` outputs and 49 of 51 release
+`//...` sweep, that covers 41 of 42 image `.digest` outputs and 47 of 50 release
 artifacts. The publish planners used to rebuild those in their own `bb remote`
-invocations; this reads what the first build already produced instead.
+invocations; this reads what the first build already produced instead. What a
+`//...` sweep cannot cover — an external repository, a `manual` target, another
+configuration — is listed in devinfra/ci/TODO.md and takes the slow path.
 
 BuildBuddy serves the invocation's whole Build Event Protocol stream as JSON, and
 it carries three things at once: every output file with its content digest, the
@@ -19,7 +21,8 @@ Two things are easy to get wrong here:
 
   A file's name does not identify it. A source file carries an empty path prefix
   while the generated file of the same name sits under `bazel-out/...`, and a
-  configuration transition writes to its own prefix. Only prefix + name is unique.
+  configuration transition writes to its own prefix. Only prefix + name is unique,
+  and where a label is available (`by_label`) it is a better handle still.
 
 Deliberately not via `bbapi`, which grew the same capability for humans: `bbapi`
 is itself one of the artifacts in artifact_targets.json, so a release planner
@@ -52,6 +55,9 @@ class Output:
 
     label: str
     path: str
+    #: `bytestream://` location, for the callers that need the bytes and not just
+    #: the identity — an image's digest lives *inside* its file.
+    uri: str
     digest: str
     size: int
     output_group: str
@@ -66,6 +72,18 @@ class Invocation:
     def by_path(self) -> dict[str, Output]:
         """Outputs keyed by their full path. A later duplicate wins, as in Bazel."""
         return {output.path: output for output in self.outputs}
+
+    def by_label(self) -> dict[str, list[Output]]:
+        """Outputs grouped by the target that produced them.
+
+        Preferable to deriving a path from a label: an external repository's
+        directory name is mangled by bzlmod and cannot be reconstructed, and many
+        targets share a basename (most images here are literally named `image`).
+        """
+        grouped: dict[str, list[Output]] = {}
+        for output in self.outputs:
+            grouped.setdefault(output.label, []).append(output)
+        return grouped
 
 
 def _api_key(explicit: str | None = None) -> str:
@@ -150,6 +168,7 @@ def parse(raw: bytes) -> Invocation:
                 Output(
                     label=label,
                     path=_full_path(file),
+                    uri=file.get("uri", ""),
                     digest=file.get("digest", ""),
                     size=int(file.get("length", 0)),
                     output_group=group.get("name", ""),

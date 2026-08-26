@@ -49,6 +49,25 @@ def test_outputs_carry_the_label_that_produced_them() -> None:
     assert by_path["bazel-out/k8-fastbuild/bin/aiquota/aiquota.zip"].label == "//skills/backtrace:backtrace_skill"
 
 
+def test_outputs_can_be_found_by_label() -> None:
+    """A label is the only reliable handle: an external repo's directory name is
+    mangled by bzlmod, and most image targets share the basename `image`."""
+    grouped = parse(STREAM).by_label()
+    assert {o.path for o in grouped["//util/testing:clock"]} == {
+        "util/testing/frozen-clock.js",
+        "bazel-out/k8-fastbuild/bin/util/testing/frozen-clock.js",
+    }
+
+
+def test_outputs_carry_the_uri_needed_to_fetch_them() -> None:
+    """An image's digest is the *contents* of its file, not the file's own digest."""
+    assert (
+        parse(STREAM)
+        .by_path()["bazel-out/k8-fastbuild/bin/skills/backtrace/backtrace.skill"]
+        .uri.startswith("bytestream://")
+    )
+
+
 def test_size_survives_being_a_json_string() -> None:
     """BES encodes int64 as a string; decoding it as one would break comparisons."""
     assert parse(STREAM).by_path()["bazel-out/k8-fastbuild/bin/aiquota/aiquota.zip"].size == 34

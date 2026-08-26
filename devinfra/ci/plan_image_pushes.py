@@ -5,17 +5,32 @@ which checked out the repo, installed the devshell, ran the image's tests and as
 Bazel for a digest only to discover the digest was unchanged — 42 runner slots and
 ~92 `bb remote` invocations per merge to publish, typically, nothing.
 
-This runs once instead: one `bb remote build` materializes every image's digest
-sibling, and one pass over the registries decides which of them moved. The workflow
-fans out only over those.
+This runs once instead, and builds nothing at all. `bazel-ci` already built every
+image's `.digest` sibling on this commit (41 of 42, measured on devel's `//...`
+sweep), and BuildBuddy still holds that invocation's build event stream. So the
+planner asks the stream where each digest file is and fetches it — ~70 bytes
+apiece — rather than allocating a runner to rebuild them.
 
-Runs as bare `python3` on a GitHub Actions runner (like bb_runner_probe.py and
-emit_bb_remote_linkage.py), so it stays on the standard library. `crane` comes from
-the workflow's setup-crane step.
+An image is not identified the way a release is. A release's identity *is* its
+output's content digest, which the stream reports directly; an image's identity
+lives *inside* its `.json.sha256` file, so those bytes have to be fetched. They
+are tiny, and the fetch is the whole cost.
 
-Subcommands:
-  targets  print the `.digest` labels to hand to a single `bb remote build`
-  plan     resolve those digests, diff against the registries, emit matrix.include
+Outputs are found by label, never by deriving a path from one. An external
+repository's directory name is mangled by bzlmod and cannot be reconstructed, and
+most image targets here are literally named `image`, so a path or basename guess
+resolves to the wrong file — quietly.
+
+It fails open. An image the stream never mentions, an unreadable blob, an
+unreachable registry — anything short of proof that the image is unchanged keeps
+it in the push matrix, where the per-image job checks properly. Wrongly including
+an image costs one job; wrongly excluding one silently skips a deployment.
+
+Runs as bare `python3 -m` on a GitHub Actions runner, so it stays on the standard
+library. `crane` comes from the workflow's setup-crane step.
+
+TODO (devinfra/ci/TODO.md): gate each push on the image's `testSummary` verdict
+from the same stream, instead of the push job re-running its tests.
 """
 
 from __future__ import annotations
@@ -28,14 +43,11 @@ import os
 import re
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Protocol
 
-# `bb remote build` materializes outputs under this prefix on the GitHub runner.
-# k8-fastbuild is the Linux x86_64 fastbuild the bb-remote action always selects
-# via --config=rbe --config=ci.
-BB_OUT_BIN = Path("bb-out/bazel-out/k8-fastbuild/bin")
+from devinfra.ci.bes import BuildBuddyError, Invocation, Output, fetch_blob, read
 
 DIGEST_SUFFIX = ".json.sha256"
 
@@ -63,6 +75,11 @@ class Image:
     def repo(self) -> str:
         return f"{REGISTRY_PREFIX[self.registry]}/{self.name}"
 
+    @property
+    def digest_label(self) -> str:
+        """The sibling target whose only output is the image's ~70-byte digest file."""
+        return f"{self.target}.digest"
+
 
 def load_images(path: Path) -> list[Image]:
     doc = json.loads(path.read_text())
@@ -75,42 +92,36 @@ def load_images(path: Path) -> list[Image]:
     return images
 
 
-def digest_target(label: str) -> str:
-    """The sibling target whose only output is the image's ~70-byte digest file."""
-    return f"{label}.digest"
+def digest_uri(image: Image, by_label: Mapping[str, list[Output]]) -> str | None:
+    """Where the stream says this image's digest file lives, if it built one."""
+    candidates = [o for o in by_label.get(image.digest_label, []) if o.path.endswith(DIGEST_SUFFIX)]
+    if not candidates:
+        return None
+    if len(candidates) > 1:
+        raise RuntimeError(
+            f"{image.digest_label} produced {len(candidates)} digest files: {[c.path for c in candidates]}"
+        )
+    return candidates[0].uri
 
 
-def digest_glob(label: str) -> str:
-    """Glob, relative to the repo root, matching `label`'s digest file under bb-out.
-
-    Bazel writes an oci_image's digest beside the image in its own package directory,
-    so the path follows from the label. Main-repo labels resolve exactly. An external
-    label's canonical repo directory is mangled by bzlmod and can't be derived, so that
-    component stays a wildcard and the caller requires exactly one match — the same
-    contract the per-image `find` had before.
-    """
-    repo, separator, rest = label.rpartition("//")
-    if not separator:
-        raise ValueError(f"not a Bazel label: {label=}")
-    package, _, name = rest.partition(":")
-    if not name:
-        raise ValueError(f"image label must name its target explicitly: {label=}")
-    prefix = BB_OUT_BIN / "external" / "*" if repo else BB_OUT_BIN
-    return str(prefix / package / f"{name}{DIGEST_SUFFIX}")
-
-
-def resolve_digest_file(label: str, root: Path) -> Path | None:
-    """The single digest file `label` produced, or None if it was not materialized.
-
-    `bb remote build` does not reliably bring every requested output back to the
-    GitHub runner, so a missing file is an expected state, not a fault: the caller
-    treats it as "cannot prove unchanged" and keeps the image. More than one match
-    still raises — that means the label derivation is wrong, which is a bug.
-    """
-    matches = sorted(root.glob(digest_glob(label)))
-    if len(matches) > 1:
-        raise RuntimeError(f"expected at most one digest file for {label=}, found {[str(m) for m in matches]}")
-    return matches[0] if matches else None
+def local_digests(images: list[Image], invocation: Invocation | None, fetch: Callable[[str], bytes]) -> dict[str, str]:
+    """Each image's built digest, for those the build reported and we could read."""
+    if invocation is None:
+        return {}
+    by_label = invocation.by_label()
+    digests = {}
+    for image in images:
+        uri = digest_uri(image, by_label)
+        if not uri:
+            print(
+                f"::warning::{image.name}: {image.digest_label} not in the build; pushing to be safe", file=sys.stderr
+            )
+            continue
+        try:
+            digests[image.name] = fetch(uri).decode().strip()
+        except (BuildBuddyError, UnicodeDecodeError) as e:
+            print(f"::warning::{image.name}: could not read its digest ({e}); pushing to be safe", file=sys.stderr)
+    return digests
 
 
 class RegistryReader(Protocol):
@@ -164,13 +175,13 @@ class Decision:
 
     @property
     def needs_push(self) -> bool:
-        # An unresolvable local digest is not evidence the image is unchanged.
+        # An unknown local digest is not evidence the image is unchanged.
         return self.local_digest is None or self.local_digest != self.published_digest
 
     @property
     def reason(self) -> str:
         if self.local_digest is None:
-            return "digest not materialized; pushing to be safe"
+            return "digest not known from the build; pushing to be safe"
         if self.published_tag is None:
             return "no devel tag published yet"
         if self.published_digest is None:
@@ -178,15 +189,15 @@ class Decision:
         return "digest unchanged" if not self.needs_push else f"digest changed since {self.published_tag}"
 
 
-def decide(image: Image, root: Path, crane: RegistryReader) -> Decision:
-    digest_file = resolve_digest_file(image.target, root)
-    if digest_file is None:
-        print(f"::warning::{image.name}: digest not downloaded; keeping it in the push matrix", file=sys.stderr)
+def decide(image: Image, digests: Mapping[str, str], crane: RegistryReader) -> Decision:
+    """Whether `image` needs a push, given the digests read out of the build."""
+    local_digest = digests.get(image.name)
+    if local_digest is None:
         return Decision(image=image, local_digest=None, published_tag=None, published_digest=None)
     published_tag = crane.latest_devel_tag(image.repo)
     return Decision(
         image=image,
-        local_digest=digest_file.read_text().strip(),
+        local_digest=local_digest,
         published_tag=published_tag,
         published_digest=crane.digest(f"{image.repo}:{published_tag}") if published_tag else None,
     )
@@ -222,6 +233,27 @@ def _write_github_output(**values: str) -> None:
         f.writelines(f"{key}={value}\n" for key, value in values.items())
 
 
+def _read_invocations(ids: list[str]) -> Invocation | None:
+    """Merge the invocations bazel-ci reported, or None if none can be read."""
+    merged: Invocation | None = None
+    for invocation_id in ids:
+        try:
+            current = read(invocation_id)
+        except BuildBuddyError as e:
+            print(
+                f"::warning::could not read invocation {invocation_id} ({e}); pushing more than needed", file=sys.stderr
+            )
+            continue
+        merged = (
+            current
+            if merged is None
+            else Invocation(
+                outputs=merged.outputs + current.outputs, test_status={**merged.test_status, **current.test_status}
+            )
+        )
+    return merged
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -230,22 +262,24 @@ def main(argv: list[str] | None = None) -> int:
         default=Path("devinfra/ci/image_targets.json"),
         help="Image SSOT (default: devinfra/ci/image_targets.json)",
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.add_parser("targets", help="print the .digest labels for a single bb remote build")
-    plan_parser = subparsers.add_parser("plan", help="emit matrix.include for the images that moved")
-    plan_parser.add_argument("--root", type=Path, default=Path(), help="repo root holding bb-out/")
-    plan_parser.add_argument("--crane", default="crane", help="crane binary")
-    plan_parser.add_argument("--workers", type=int, default=8, help="concurrent registry queries")
+    parser.add_argument(
+        "--invocations", default="", help="comma-separated bazel-ci invocation ids; empty pushes everything (fail open)"
+    )
+    parser.add_argument("--crane", default="crane", help="crane binary")
+    parser.add_argument("--workers", type=int, default=8, help="concurrent registry queries")
 
     args = parser.parse_args(argv)
     images = load_images(args.spec)
 
-    if args.command == "targets":
-        print(" ".join(digest_target(image.target) for image in images))
-        return 0
+    # bazel-ci runs `bazel test` then `bazel build`, so it reports more than one
+    # invocation; merge them rather than guess which one holds a given output.
+    invocation_ids = [i for i in args.invocations.split(",") if i]
+    if not invocation_ids:
+        print("::warning::no bazel-ci invocation to read; pushing everything", file=sys.stderr)
+    digests = local_digests(images, _read_invocations(invocation_ids), fetch_blob)
 
     crane = Crane(args.crane)
-    decisions = plan(images, lambda image: decide(image, args.root, crane), args.workers)
+    decisions = plan(images, lambda image: decide(image, digests, crane), args.workers)
     include = matrix_include(decisions)
 
     for d in sorted(decisions, key=lambda d: d.image.name):

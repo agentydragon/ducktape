@@ -61,4 +61,6 @@ jobs:
     needs: [bazel-ci]
     if: always() && !cancelled() && github.event_name == 'push'
     uses: ./.github/workflows/push-images.yml
+    with:
+      bazel_invocation_ids: ${{ needs.bazel-ci.outputs.bazel_invocation_ids }}
     secrets: inherit

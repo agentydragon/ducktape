@@ -12,8 +12,11 @@ Single source of truth for Bazel targets, artifact outputs, and release
 grouping for every artifact pinned in `nix/artifact-pins.json` (except `bb`,
 which is an external buildbuddy-io binary). Consumed by:
 
-- <../../.github/workflows/release.yml> — builds + publishes each release
-  group. `matrix` job jq-transforms this file into `matrix.include`.
+- <../../.github/workflows/release.yml> — publishes each release group. Its
+  `matrix` job builds nothing: `plan_releases.py` turns this file into a
+  `matrix.include` of only the groups whose content changed, reading what
+  bazel-ci already built. How that works, and what was rejected on the way:
+  <docs/publish_planning.md>.
 - <../../.github/workflows/nix-wheel-check.yml> — the PR-time nix
   imports-check gate. Rebuilds artifacts from PR source and feeds them into
   `nix build .#packages.x86_64-linux.<pin>` via `DUCKTAPE_ARTIFACT_OVERRIDES`

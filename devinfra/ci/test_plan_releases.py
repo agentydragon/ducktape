@@ -41,7 +41,9 @@ def make_release(pkg: str = "pkg", outputs: str = f"bb-out/{BIN}/a.whl", bazel_f
 
 
 def output(path: str, digest: str) -> Output:
-    return Output(label="//:a", path=path, digest=digest, size=1, output_group="default")
+    return Output(
+        label="//:a", path=path, uri="bytestream://h/blobs/x/1", digest=digest, size=1, output_group="default"
+    )
 
 
 def test_the_stream_reports_the_path_without_the_download_prefix() -> None:
