@@ -57,6 +57,7 @@ def settings() -> Settings:
     return Settings(
         DATABASE_URL="sqlite+aiosqlite://",
         WORKERS_LITELLM_MASTER_KEY="sk-master",
+        ANTHROPIC_BASE_URL="http://litellm.invalid:4000",
         ANTHROPIC_API_KEY="unused",
         HAKU_API_TOKEN="haku-token",
         RESULT_TOKEN_SECRET="hmac-secret",

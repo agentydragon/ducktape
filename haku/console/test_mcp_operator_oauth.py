@@ -54,6 +54,7 @@ async def oauth_store_for(
             token_states=PostgresOAuthTokenStateStore(
                 migrated_sessions, operator_identity_store=migrated_identity_store
             ),
+            token_timeout_seconds=30.0,
         )
         return store, operator_id
 

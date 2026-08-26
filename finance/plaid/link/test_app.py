@@ -136,6 +136,7 @@ def _client(
         client_id="client-id",
         client_secret="client-secret",
         DATABASE_URL="postgresql://example.invalid/plaid",
+        public_base_url="https://plaid-mcp.test",
         target_namespace="plaid-mcp",
     )
     return TestClient(

@@ -821,13 +821,13 @@ class McpServerDispatcher:
 
     def __init__(
         self,
-        in_process_servers: InProcessServers | None = None,
+        in_process_servers: InProcessServers,
         *,
-        # 0 still collapses concurrent reflections of one server; it disables only reuse across
-        # requests. See `mcp_reflection_cache`.
-        catalog_cache_ttl_seconds: float = 0.0,
+        # The deployment's reflection-reuse window. Required: it is `Settings`' to decide, and 0
+        # (reuse nothing across requests) is a legitimate value rather than a stand-in for unset.
+        catalog_cache_ttl_seconds: float,
     ) -> None:
-        self._in_process = in_process_servers or {}
+        self._in_process = in_process_servers
         self._catalogs = ReflectionCache(catalog_cache_ttl_seconds)
 
     async def execute(

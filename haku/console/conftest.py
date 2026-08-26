@@ -125,6 +125,7 @@ def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
     return Settings(
         **{
             "haku_ui_url": "https://haku-ui.test",
+            "auth_origin": "https://auth.test",
             "database_url": SecretStr(migrated_db_url),
             "public_base_url": "https://haku.test",
             "operator_oidc": TEST_OPERATOR_OIDC,

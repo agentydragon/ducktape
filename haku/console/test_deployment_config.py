@@ -35,6 +35,7 @@ def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest
     monkeypatch.setenv("HAKU_CONSOLE_CONFIG_FILE", str(config_path))
     settings = Settings(
         haku_ui_url="https://haku-ui.test",
+        auth_origin="https://auth.test",
         public_base_url="https://haku.test",
         database_url=SecretStr("postgresql+psycopg://db.test/haku"),
         operator_oidc=OperatorOidcConfig(

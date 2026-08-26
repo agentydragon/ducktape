@@ -41,6 +41,11 @@ spec:
                     configMapKeyRef:
                       name: plaid-mcp-config
                       key: PLAID_MCP_PLAID_ENV
+                - name: PLAID_MCP_PUBLIC_BASE_URL
+                  valueFrom:
+                    configMapKeyRef:
+                      name: plaid-mcp-config
+                      key: PLAID_MCP_PUBLIC_BASE_URL
                 - name: PLAID_MCP_TRANSACTION_DAYS
                   valueFrom:
                     configMapKeyRef:

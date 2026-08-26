@@ -42,7 +42,6 @@ class Settings(BaseSettings):
     )
     workers_litellm_master_key: str = Field(validation_alias="WORKERS_LITELLM_MASTER_KEY")
     anthropic_base_url: str = Field(
-        default="http://litellm.litellm.svc.cluster.local:4000",
         validation_alias="ANTHROPIC_BASE_URL",
         description="Classifier calls go through the main LiteLLM (Anthropic /v1/messages passthrough).",
     )

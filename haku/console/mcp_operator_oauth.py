@@ -240,7 +240,7 @@ class PostgresMcpOperatorOAuthStore:
         *,
         operator_identity_store: PostgresOperatorIdentityStore,
         token_states: PostgresOAuthTokenStateStore,
-        token_timeout_seconds: float = 30.0,
+        token_timeout_seconds: float,
     ) -> None:
         # Migrations run in the image-coupled release Job (haku.console.database_migrate.apply_migrations), not
         # here — constructing the store neither connects nor mutates schema. The engine/sessionmaker is

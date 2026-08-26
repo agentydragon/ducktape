@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 from openai import AsyncOpenAI
@@ -110,7 +110,9 @@ class AgentModelProto(ABC):
 @dataclass
 class ResponsesAgentModel(AgentModelProto):
     base: OpenAIModelProto
-    model: str = ""
+    # Not an init field: the wrapped model is the only authority for it, so accepting one here
+    # would let a caller pass a name this adapter then silently discards.
+    model: str = field(init=False)
     api_shape: LLMApiShape = LLMApiShape.RESPONSES
 
     def __post_init__(self) -> None:

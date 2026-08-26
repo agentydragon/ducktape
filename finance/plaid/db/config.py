@@ -21,7 +21,7 @@ class PlaidWebSettings(BaseSettings):
     client_id: str
     client_secret: str
     database_url: str = Field(validation_alias="DATABASE_URL")
-    public_base_url: str = "https://plaid-mcp.allegedly.works"
+    public_base_url: str
     target_namespace: str | None = None
     managed_by: str = "plaid-mcp"
     host: str = "0.0.0.0"

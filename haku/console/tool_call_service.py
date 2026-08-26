@@ -196,10 +196,6 @@ class AuthentikOperatorTokenStore(Protocol):
 GmailClientProvider = Callable[[UUID], Awaitable[GmailToolsClient | None]]
 
 
-async def _no_gmail_client(_operator_id: UUID) -> GmailToolsClient | None:
-    return None
-
-
 class OperatorActorRequiredError(PermissionError):
     """Raised when an AgentActor reaches an operator-only lifecycle operation."""
 
@@ -283,7 +279,7 @@ class ToolCallApplicationService:
         provider_store: ProviderConnectionTokenStore,
         authentik_token_store: AuthentikOperatorTokenStore,
         approval_notifier: PendingApprovalNotifier,
-        gmail_client_provider: GmailClientProvider = _no_gmail_client,
+        gmail_client_provider: GmailClientProvider,
         kubernetes_authorization: KubernetesAuthorizationService | None = None,
     ) -> None:
         self._settings = settings

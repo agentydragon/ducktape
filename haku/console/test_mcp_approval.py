@@ -1975,7 +1975,7 @@ async def test_executor_dispatches_to_registered_in_process_server() -> None:
     registration = InProcessServerRegistration(
         builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
     )
-    executor = McpServerDispatcher({"google": registration})
+    executor = McpServerDispatcher({"google": registration}, catalog_cache_ttl_seconds=0.0)
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
@@ -1992,7 +1992,7 @@ async def test_executor_injects_trusted_context_into_a_stable_in_process_server(
     registration = InProcessServerRegistration(
         builder=lambda _token: server_instance, credential_kind=InProcessCredentialKind.NONE
     )
-    executor = McpServerDispatcher({"internal": registration})
+    executor = McpServerDispatcher({"internal": registration}, catalog_cache_ttl_seconds=0.0)
     server = McpServerEntry(id="internal", backend=InProcessBackend(credential=NoCredential()))
     operator_id = UUID(int=42)
 
@@ -2010,7 +2010,7 @@ async def test_executor_injects_trusted_context_into_a_stable_in_process_server(
 
 
 async def test_executor_raises_when_in_process_backend_is_not_registered() -> None:
-    executor = McpServerDispatcher({})
+    executor = McpServerDispatcher({}, catalog_cache_ttl_seconds=0.0)
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
@@ -2031,7 +2031,7 @@ async def test_dispatcher_reflects_in_process_server_tools() -> None:
     registration = InProcessServerRegistration(
         builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
     )
-    dispatcher = McpServerDispatcher({"google": registration})
+    dispatcher = McpServerDispatcher({"google": registration}, catalog_cache_ttl_seconds=0.0)
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
@@ -2060,7 +2060,8 @@ async def test_operator_connection_reflection_checks_presence_without_resolving_
             "google": InProcessServerRegistration(
                 builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
             )
-        }
+        },
+        catalog_cache_ttl_seconds=0.0,
     )
     operator = UUID(int=42)
     server = McpServerEntry(
@@ -2133,7 +2134,7 @@ async def test_dispatcher_does_not_serve_one_credentials_catalog_to_another() ->
 
 
 async def test_dispatcher_degrades_when_in_process_backend_is_not_registered() -> None:
-    dispatcher = McpServerDispatcher({})
+    dispatcher = McpServerDispatcher({}, catalog_cache_ttl_seconds=0.0)
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )

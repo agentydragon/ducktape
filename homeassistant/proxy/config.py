@@ -6,7 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -49,25 +49,13 @@ class Policy(BaseModel):
 
 
 class TokenConfig(BaseModel):
-    secret: str = ""
+    secret: str = Field(min_length=1)
     policy: Policy
-
-    @model_validator(mode="after")
-    def _secret_not_empty(self) -> "TokenConfig":
-        if not self.secret:
-            raise ValueError("token secret must not be empty")
-        return self
 
 
 class HomeAssistantSettings(BaseModel):
     url: str
-    token: str = ""
-
-    @model_validator(mode="after")
-    def _token_not_empty(self) -> "HomeAssistantSettings":
-        if not self.token:
-            raise ValueError("homeassistant token must not be empty")
-        return self
+    token: str = Field(min_length=1)
 
 
 class Settings(BaseModel):

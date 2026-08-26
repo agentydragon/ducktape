@@ -13,7 +13,7 @@ from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActo
 class RecallIndexAccessPolicy:
     """Deployment-owned logical-index grants for Agents and the authenticated Operator."""
 
-    def __init__(self, profiles: tuple[AccessProfile, ...], *, configured_index_ids: Iterable[str] = ()) -> None:
+    def __init__(self, profiles: tuple[AccessProfile, ...], *, configured_index_ids: Iterable[str]) -> None:
         self._profile_indexes = {profile.id: frozenset(profile.recall_index_ids) for profile in profiles}
         # The browser Operator is trusted to inspect the whole reviewed Recall catalog. Keep this
         # separate from Agent grants: a configured index may intentionally be withheld from every

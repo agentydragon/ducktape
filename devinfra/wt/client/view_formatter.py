@@ -44,7 +44,7 @@ def format_sync_status(ahead: int, behind: int, *, compact: bool = False) -> str
 
 
 class ViewFormatter:
-    def __init__(self, daemon_log_path: Path | None = None, github_repo: str = ""):
+    def __init__(self, github_repo: str, daemon_log_path: Path | None = None):
         self.daemon_log_path = daemon_log_path
         self.github_repo = github_repo
 

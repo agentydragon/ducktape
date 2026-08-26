@@ -282,7 +282,7 @@ def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
     return app
 
 
-def default_deps(host: str = "127.0.0.1", port: int = 8000) -> BackendDeps:
+def default_deps(*, host: str, port: int) -> BackendDeps:
     config = load_config_from_env()
     return BackendDeps(
         config=config,

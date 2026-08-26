@@ -96,6 +96,7 @@ async def test_kubectl_passthrough_suppression_when_fully_covered(tmp_path: Path
         provider_store=AsyncMock(),
         authentik_token_store=AsyncMock(),
         approval_notifier=AsyncMock(),
+        gmail_client_provider=AsyncMock(return_value=None),
         kubernetes_authorization=authorization,
     )
 
@@ -164,6 +165,7 @@ async def test_kubectl_passthrough_falls_through_when_denied(tmp_path: Path) -> 
         provider_store=AsyncMock(),
         authentik_token_store=AsyncMock(),
         approval_notifier=AsyncMock(),
+        gmail_client_provider=AsyncMock(return_value=None),
         kubernetes_authorization=authorization,
     )
 

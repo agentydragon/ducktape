@@ -51,6 +51,7 @@ def _placeholder_settings(*, config_file: Path) -> Settings:
     # schema, and create_app never connects to the database.
     return Settings(
         haku_ui_url="about:blank",
+        auth_origin="https://auth.invalid",
         database_url=SecretStr("postgresql+asyncpg://placeholder/db"),
         public_base_url="https://haku-console.invalid",
         operator_oidc=OperatorOidcConfig(

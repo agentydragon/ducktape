@@ -1,6 +1,6 @@
 import functools
 from collections.abc import Awaitable, Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 import httpx
@@ -91,7 +91,9 @@ class RetryingOpenAIModel(OpenAIModelProto):
     """Retry-decorated wrapper around an OpenAIModel-like base implementing our protocol."""
 
     base: OpenAIModelProto
-    model: str = ""
+    # Not an init field: `base` is the only authority for it, so accepting one here would let a
+    # caller pass a name this wrapper then silently discards.
+    model: str = field(init=False)
 
     def __post_init__(self) -> None:
         self.model = self.base.model

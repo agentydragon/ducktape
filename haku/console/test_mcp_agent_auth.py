@@ -55,6 +55,7 @@ _TOKEN_FINGERPRINT = fingerprint_static_token(_TOKEN)
 def _settings(*, mcp_oauth: McpOAuthConfig | None = None) -> Settings:
     return Settings(
         haku_ui_url="https://haku-ui.test",
+        auth_origin="https://auth.test",
         public_base_url="https://haku.test",
         database_url=SecretStr(_DATABASE_URL),
         operator_oidc=OperatorOidcConfig(

@@ -549,7 +549,10 @@ class Settings(BaseSettings):
     # the console's whole job; set it to `about:blank` if there is genuinely no UI to frame.
     # The console never renders Haku's UI itself. See docs/containment.md.
     haku_ui_url: str
-    auth_origin: str = "https://auth.allegedly.works"
+    # The Authentik origin the CSP must allow framing. Required rather than defaulted: it is a
+    # deployment address, and a default would let a deployment that points at another Authentik
+    # silently keep framing this one's.
+    auth_origin: str
     # Canonical public console origin used for OAuth redirects, secure-cookie policy, and
     # WebSocket origin checks. Required: there is no unauthenticated runtime mode.
     public_base_url: str
