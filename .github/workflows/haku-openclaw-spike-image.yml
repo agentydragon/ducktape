@@ -1,7 +1,7 @@
 # Build and push Haku's Claude-backed OpenClaw spike with Nix. Same build
-# mechanism as the public-coder openclaw image: the gateway is built from
-# nix-openclaw (via a beta source override) and the repository's CLI surface is
-# layered declaratively.
+# mechanism as the public-coder openclaw image: the gateway comes from
+# nix-openclaw's npm-package build pinned to the 2026.8.1 beta, and the
+# repository's CLI surface is layered declaratively.
 name: Haku OpenClaw Spike Image
 
 on:

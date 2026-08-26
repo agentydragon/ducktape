@@ -15,10 +15,20 @@ layered from the repository's locked Nix package set — one controlled closure,
 one Node.
 
 Deviation: public-coder uses `nix-openclaw`'s stable gateway, but this spike
-needs a newer beta line for its Claude model metadata, and `nix-openclaw` only
-tracks stable. So it builds the gateway from a beta `sourceInfo` override
-(currently `v2026.8.1-beta.3`) — nix-openclaw's supported source-override path.
-Bump = update `betaSourceInfo` in the Nix file (tag/rev/hashes).
+needs a newer beta line (see [Version constraints](#version-constraints)), and
+`nix-openclaw` only tracks stable. `openclaw@2026.8.1-beta.3` is published on
+npm, so the build points `nix-openclaw`'s own npm-package gateway build at the
+beta: a beta-pinned wrapper lock (`haku/openclaw_spike/npm_wrapper/`) is spliced
+over `nix-openclaw`'s stable one (`nix/npm/openclaw/`), driving the identical
+`buildNpmPackage` path. Bump = regenerate `npm_wrapper/` (`npm install
+openclaw@<ver> --package-lock-only --omit=dev`), update `betaSourceInfo`
+(`releaseVersion`), and refresh `gatewayNpmDepsHash`.
+
+Use the npm-package path, **not** a from-source `sourceInfo` override:
+`nix-openclaw`'s own stable is npm-package too, so its from-source pnpm build is
+unexercised and is missing fetcherVersion-4 store steps (`index.db`
+reconstruction), which makes the gateway's offline install fail
+(`ERR_PNPM_NO_OFFLINE_TARBALL`).
 
 This replaced an earlier hybrid that pulled the upstream
 `ghcr.io/openclaw/openclaw` beta as a Docker base and layered Nix tools on top.
@@ -53,32 +63,15 @@ Why the gateway version and Node are pinned the way they are:
   `engines.node` allows `>=22.22.3 <23`, `>=24.15.0 <25`, or `>=25.9.0`, so Node
   24 is supported. nix-openclaw hardcodes `nodejs_22`, so the build overrides it
   to a WAL-safe Node.
-- **pnpm: the offline reader must match the store writer.** The beta's
-  `pnpm-lock.yaml` is authored by pnpm `11.15.1` (lockfileVersion `9.0`), and the
-  from-source build sees two different pnpm versions across its two stages. The
-  dependency-fetch FOD leaves pnpm's `manage-package-manager-versions` on, so
-  pnpm self-switches to the source's `packageManager` (`11.15.1`) and writes the
-  store in that format — regardless of the `11.2.2` nix-openclaw pins. The
-  gateway's offline `pnpm install` then runs _after_ `gateway-postpatch` strips
-  the `packageManager` field, so it uses nix-openclaw's pinned `11.2.2` directly;
-  that reader can't resolve a normally-locked dependency (`@clack/core`) out of
-  the `11.15.1`-written store and aborts with `ERR_PNPM_NO_OFFLINE_TARBALL`. The
-  build splices pnpm `11.15.1` into a copy of the nix-openclaw tree so the offline
-  reader matches the writer. This bites only the from-source (beta) path;
-  public-coder consumes the prebuilt stable gateway and runs no pnpm. Bumping the
-  beta may mean re-pinning this pnpm to whatever the new lock was authored with.
-- **The nix-store plugin-ownership patch is stable-only — and unneeded here.**
-  nix-openclaw's `allow-nix-store-plugin-ownership.patch` (lets the gateway trust
-  its read-only nix-store plugins) applies cleanly to stable but rejects hunks on
-  every beta — because `2026.8.1-beta.3` already carries the same behavior
-  upstream (`discovery.ts` trusts `IMMUTABLE_NIX_STORE` roots; `hardlink-policy.ts`
-  trusts nix-store roots in nix mode). So the build sets
-  `applyNixStorePluginOwnershipPatch = false` rather than porting the patch.
+- **Nix-store plugin trust is patched into the npm dist.** nix-openclaw's
+  `patch-openclaw-npm-dist.mjs` rewrites the bundled ownership/hardlink checks so
+  the gateway trusts its read-only nix-store plugins. It is idempotent and
+  applies cleanly to the beta dist. A future beta whose bundled dist diverges
+  could break this patch — a build-time `fail`, not a silent skip.
 
-TODO: upstream nix-openclaw changes so the gateway Node and (for from-source
-builds) pnpm are bumped or configurable, then drop the local `nodejs_24` and
-pnpm `11.15.1` overrides. The Node hardcode affects the public-coder image too;
-the pnpm pin only bites the from-source beta build.
+TODO: upstream a nix-openclaw change to bump the gateway Node (or make it
+configurable), then drop the local `nodejs_24` override — the Node hardcode
+affects the public-coder image too.
 
 ## Trust boundary
 
