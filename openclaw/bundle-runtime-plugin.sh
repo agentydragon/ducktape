@@ -50,6 +50,15 @@ if [[ ! -L "$host_dependency" ]]; then
 fi
 rm "$host_dependency"
 ln -s ../../../.. "$host_dependency"
+# Gotcha: this outward link is what trips the gateway's startup warning
+#   [channels] failed to load persistedAuthState checker for matrix:
+#   plugin module path escapes plugin root or fails alias checks
+# The loader's in-root path check rejects the channel plugin's tiny
+# persistedAuthState probe module because it resolves through this link back to
+# the gateway. Benign: the full channel plugin still loads and persists its own
+# auth/sync state; only the cheap pre-load auth fast-path (doctor/status/presence
+# probes) is skipped. Leave it — a fix means giving up this host-dependency link,
+# which the bundling relies on.
 
 # OpenClaw selects one of these bundled roots based on package layout. Populate
 # both, but hard-link the regular files so the plugin payload is stored once.
