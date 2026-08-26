@@ -10,21 +10,35 @@ from pathlib import Path
 
 def release_content_hash(artifacts: Sequence[Path]) -> str:
     """Return a stable digest that changes when any release asset changes."""
-    if not artifacts:
+    return _assets_hash([(artifact.name, _file_hash(artifact)) for artifact in artifacts])
+
+
+def release_content_hash_from_digests(assets: Sequence[tuple[str, str]]) -> str:
+    """The same identity, computed from each asset's sha256 instead of its bytes.
+
+    A build event stream already reports every output's content digest, so a
+    caller that only needs the identity can skip downloading the assets. Must
+    stay byte-identical to release_content_hash or every package republishes once.
+    """
+    return _assets_hash([(name, bytes.fromhex(digest)) for name, digest in assets])
+
+
+def _assets_hash(assets: Sequence[tuple[str, bytes]]) -> str:
+    if not assets:
         raise ValueError("at least one artifact is required")
 
-    if len(artifacts) == 1:
+    if len(assets) == 1:
         # Preserve existing tags for the common single-artifact release case.
-        return _file_hash(artifacts[0]).hex()
+        return assets[0][1].hex()
 
-    assets = sorted((artifact.name, _file_hash(artifact)) for artifact in artifacts)
-    names = [name for name, _ in assets]
+    ordered = sorted(assets)
+    names = [name for name, _ in ordered]
     if len(names) != len(set(names)):
         raise ValueError("release artifacts must have unique filenames")
 
     digest = hashlib.sha256()
     digest.update(b"ducktape-release-assets-v1\0")
-    for name, content_hash in assets:
+    for name, content_hash in ordered:
         encoded_name = name.encode()
         digest.update(len(encoded_name).to_bytes(8, "big"))
         digest.update(encoded_name)

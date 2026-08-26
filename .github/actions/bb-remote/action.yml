@@ -99,6 +99,12 @@ outputs:
   linkage_json_path:
     description: "Path to the emitted bb remote linkage JSON on the GitHub Actions runner"
     value: ${{ steps.bb-remote.outputs.linkage_json_path }}
+  bazel_invocation_ids:
+    description: >
+      Comma-separated BuildBuddy invocation ids of the Bazel builds this step ran.
+      A later job can read what those builds produced — output digests, per-target
+      test verdicts — instead of building the same targets again.
+    value: ${{ steps.bb-remote.outputs.bazel_invocation_ids }}
 
 runs:
   using: composite
