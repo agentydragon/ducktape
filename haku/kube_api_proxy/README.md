@@ -79,12 +79,17 @@ becomes a hard deadline; every decision is rechecked each
 `HAKU_KUBE_STREAM_REVALIDATION_INTERVAL`, so release, revocation or authority
 failure ends the stream within that interval plus the authorization timeout.
 
-Two limits are deliberately absent. A stream authorized by standing SAR policy
-carries no `valid_until` and therefore has no absolute lifetime; its authority is
-still bounded, because revalidation ends it once the standing decision stops
-allowing it. There is also no cap on concurrent streams per Agent. Both belong
-with the operational hardening in
-[#4562](https://github.com/agentydragon/ducktape/issues/4562) rather than here.
+Two limits are deliberately absent, for different reasons.
+
+A stream authorized by standing SAR policy carries no `valid_until` and therefore
+has no absolute lifetime. Its authority is still bounded, because revalidation ends
+it once the standing decision stops allowing it. Whether to bound its duration too
+is open, and belongs with the operational hardening in
+[#4562](https://github.com/agentydragon/ducktape/issues/4562).
+
+There is no cap on concurrent streams per Agent, and that one is settled rather than
+pending: leaving watches open is worth more on this cluster than the ceiling a cap
+would add. Add one only if real resource exhaustion argues for it.
 
 Ending a stream cancels the upstream request after the response headers have been
 sent, so the caller observes a truncated response rather than a status code:

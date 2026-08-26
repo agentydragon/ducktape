@@ -18,10 +18,10 @@ Agent-owned grant. This deliberately makes the inline Haku authorization path th
 policy boundary for this personal cluster; the Agent still has no standing cluster-admin authority
 or direct kube-apiserver credential.
 
-The proxy deliberately continues to reject long-running `watch`/log-follow and
-upgrades other than pod `exec` and `portforward`. The supported upgraded streams
-are reauthorized every five seconds and close within the revalidation interval
-plus the Console authorization timeout after a grant is released or revoked.
+The proxy serves `watch` and log-follow alongside pod `exec` and `portforward`, and
+rejects upgrades other than those two. Every long-running request is reauthorized
+every five seconds and closes within the revalidation interval plus the Console
+authorization timeout after a grant is released or revoked.
 The standing group has no login credential or ServiceAccount token; only Console may evaluate it
 through SubjectAccessReview.
 
