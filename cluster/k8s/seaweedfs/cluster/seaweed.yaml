@@ -110,6 +110,17 @@ spec:
       dataCenter: "hil"
       rack: "hil-ovh-h109b04"
       priorityClassName: stateful-infra
+      # Soft heap ceiling at ~90% of the memory limit below, same pattern as the
+      # filer and s3 gateway. Go's GC (GOGC=100) does not know the cgroup limit
+      # exists and lets the heap overshoot before the next cycle, so a hard limit
+      # with no soft ceiling is a kernel OOM-kill waiting for a busy enough
+      # moment -- which is what happened to volume-hdd-0 (OOMKilled 3x, most
+      # recently 2026-08-17T22:02:46Z). volume-hdd-1 has since reached 1345Mi
+      # against this 1536Mi limit (88%) over 30d. GOMEMLIMIT makes the runtime
+      # trade CPU to stay under the cap instead of dying at it.
+      env:
+        - name: GOMEMLIMIT
+          value: "1400MiB"
       requests:
         storage: 1800Gi
         cpu: 100m
@@ -157,6 +168,17 @@ spec:
       # 2 git copies across the 2 nodes in this rack.
       rack: "hil-ovh-h108b01"
       priorityClassName: stateful-infra
+      # Soft heap ceiling at ~90% of the memory limit below, same pattern as the
+      # filer and s3 gateway. Go's GC (GOGC=100) does not know the cgroup limit
+      # exists and lets the heap overshoot before the next cycle, so a hard limit
+      # with no soft ceiling is a kernel OOM-kill waiting for a busy enough
+      # moment -- which is what happened to volume-hdd-0 (OOMKilled 3x, most
+      # recently 2026-08-17T22:02:46Z). volume-hdd-1 has since reached 1345Mi
+      # against this 1536Mi limit (88%) over 30d. GOMEMLIMIT makes the runtime
+      # trade CPU to stay under the cap instead of dying at it.
+      env:
+        - name: GOMEMLIMIT
+          value: "1400MiB"
       requests:
         storage: 250Gi
         cpu: 100m
