@@ -1,0 +1,114 @@
+# Egress fence for the haku exec-target sandboxes' own iron listener.
+#
+# The host set is exactly `cnp-haku-cloud-api-egress.yaml`'s, because the boxes
+# reached the internet through that fence until they moved onto this listener —
+# so the move changes which proxy is in the path and nothing about where they
+# may go. Per-host rationale (why ghcr but not Docker Hub, why *.ankiweb.net is
+# a pattern, why the two *.allegedly.works entries record intent rather than
+# enforcement, why `toEntities: cluster` is the widest rule here) lives in that
+# file and is not repeated. `//cluster/validation:test_egress_allowlists` pins
+# both fences against one declared host set, so they cannot drift apart.
+#
+# Narrowing it is the obvious follow-up — the boxes are one consumer of a list
+# assembled for six, and haku-anki's AnkiWeb sync and the Managed Agents
+# worker's api.anthropic.com are on it for workloads that stayed behind the
+# mitmproxy. That needs measuring what the boxes actually reach, not guessing,
+# so it is deliberately not part of the swap.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-haku-sandbox-iron-proxy-egress
+  namespace: haku-egress-proxy
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-sandbox-iron-proxy
+  egress:
+    # Mirrors every toFQDNs entry below; the two halves are separate enforcement
+    # points and the test above is what keeps them equal.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "**.cluster.local"
+              - matchPattern: "*.ankiweb.net"
+              - matchName: alloy-otlp.allegedly.works
+              - matchName: api.anthropic.com
+              - matchName: api.coinbase.com
+              - matchName: bcr.bazel.build
+              - matchName: cache.nixos.org
+              - matchName: channels.nixos.org
+              - matchName: code.forgejo.org
+              - matchName: codeload.github.com
+              - matchName: data.forgejo.org
+              - matchName: files.pythonhosted.org
+              - matchName: ftp.gnu.org
+              - matchName: ghcr.io
+              - matchName: github.com
+              - matchName: gmail.googleapis.com
+              - matchName: haku-mailbox.allegedly.works
+              - matchName: nixos.org
+              - matchName: nodejs.org
+              - matchName: objects.githubusercontent.com
+              - matchName: pkg-containers.githubusercontent.com
+              - matchName: pypi.org
+              - matchName: raw.githubusercontent.com
+              - matchName: registry.npmjs.org
+              - matchName: release-assets.githubusercontent.com
+              - matchName: releases.bazel.build
+              - matchName: snapshot.debian.org
+              - matchName: tasks.googleapis.com
+              - matchName: www.googleapis.com
+    - toFQDNs:
+        - matchName: alloy-otlp.allegedly.works
+        - matchName: api.anthropic.com
+        - matchName: api.coinbase.com
+        - matchName: bcr.bazel.build
+        - matchName: cache.nixos.org
+        - matchName: channels.nixos.org
+        - matchName: code.forgejo.org
+        - matchName: codeload.github.com
+        - matchName: data.forgejo.org
+        - matchName: files.pythonhosted.org
+        - matchName: ftp.gnu.org
+        - matchName: ghcr.io
+        - matchName: github.com
+        - matchName: gmail.googleapis.com
+        - matchName: haku-mailbox.allegedly.works
+        - matchName: nixos.org
+        - matchName: nodejs.org
+        - matchName: objects.githubusercontent.com
+        - matchName: pkg-containers.githubusercontent.com
+        - matchName: pypi.org
+        - matchName: raw.githubusercontent.com
+        - matchName: registry.npmjs.org
+        - matchName: release-assets.githubusercontent.com
+        - matchName: releases.bazel.build
+        - matchName: snapshot.debian.org
+        - matchName: tasks.googleapis.com
+        - matchName: www.googleapis.com
+        - matchPattern: "*.ankiweb.net"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+            - port: "8000"
+              protocol: TCP
+            - port: "8080"
+              protocol: TCP
+            - port: "11434"
+              protocol: TCP

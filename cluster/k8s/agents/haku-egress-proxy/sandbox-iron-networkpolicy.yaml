@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-haku-sandbox-iron-proxy-ingress
+  namespace: haku-egress-proxy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-sandbox-iron-proxy
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: haku-sandbox
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: haku-sandbox
+      ports:
+        - port: 8182
+          protocol: TCP
+  policyTypes:
+    - Ingress

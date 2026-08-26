@@ -91,6 +91,7 @@ cluster/k8s/haku/console/config.yaml cluster-manifest-ignored=true
 # configMapGenerator — not a K8s manifest.
 cluster/k8s/agents/public-coder-agent/proxy/iron.yaml cluster-manifest-ignored=true
 cluster/k8s/agents/haku-egress-proxy/claude-iron.yaml cluster-manifest-ignored=true
+cluster/k8s/agents/haku-egress-proxy/sandbox-iron.yaml cluster-manifest-ignored=true
 
 # Dotfiles/dotdirs follow their own naming conventions
 .* filename-conventions-ignored=true

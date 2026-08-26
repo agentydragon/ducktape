@@ -1,0 +1,40 @@
+# iron-proxy configuration for the `haku` exec-target sandboxes — the boxes Haku
+# reaches through `exec_sandbox`, provisioned from the `haku` SandboxTemplate.
+# Mounted through configMapGenerator; not a Kubernetes manifest
+# (kubeconform-excluded, cluster-manifest-ignored).
+#
+# These boxes previously shared the `haku-egress-proxy` mitmproxy listener with
+# haku-ui, haku-jupyter, haku-anki, haku-managed-agent and haku-ci. They have
+# their own listener so they match the Claude runner pool, which already reaches
+# the internet through iron (`claude-iron.yaml`): one proxy implementation
+# across both sandbox kinds, which is what a Console-owned per-agent proxy
+# replaces later.
+#
+# No `secrets` transform yet, deliberately. The two real credentials the box
+# holds (`haku-forgejo-git`, `haku-console-agent-api`) are presented to
+# `forgejo-http.forgejo` and to `haku-kube-api-proxy…svc.cluster.local`, both of
+# which `NO_PROXY` bypasses — so no request carrying either reaches this
+# listener for a rule to fire on. Substitution needs `NO_PROXY` narrowed first;
+# what that costs is in README.md.
+#
+# No `allowlist` transform either: the host fence is
+# `cnp-haku-sandbox-iron-egress.yaml`, carrying exactly what the mitmproxy fence
+# admitted, so this swap changes the proxy and not the policy.
+dns:
+  enabled: false
+
+proxy:
+  tunnel_listen: ":8182"
+
+tls:
+  mode: "mitm"
+  # The shared interception root from certificate.yaml — the same CA the
+  # mitmproxy listener uses, so the trust bundle already in every haku-sandbox
+  # pod keeps verifying and no client needs a new one.
+  ca_cert: "/ca/tls.crt"
+  ca_key: "/ca/tls.key"
+
+transforms: []
+
+log:
+  level: "info"

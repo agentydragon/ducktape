@@ -2,6 +2,14 @@
 # dedicated haku-egress-proxy. Allows: DNS, cluster-internal traffic,
 # kube-apiserver, haku-egress-proxy port 8080. Blocks: direct external
 # internet access.
+#
+# Everything in the namespace EXCEPT the exec-target sandboxes: those carry
+# `app.kubernetes.io/name: haku-sandbox` (stamped by the `haku` SandboxTemplate)
+# and reach the internet through their own iron listener instead, admitted by
+# ccnp-haku-sandbox-box-egress.yaml. Excluding them here rather than admitting
+# them to both proxies keeps one fence per workload, so which proxy is in the
+# path is enforced and not merely conventional — HTTP_PROXY decides which one a
+# client dials, but only Cilium decides which one it may reach.
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy
 metadata:
@@ -11,6 +19,10 @@ spec:
     matchExpressions:
       - key: "k8s:io.kubernetes.pod.namespace"
         operator: In
+        values:
+          - haku-sandbox
+      - key: "k8s:app.kubernetes.io/name"
+        operator: NotIn
         values:
           - haku-sandbox
   egress:

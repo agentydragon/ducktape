@@ -283,6 +283,7 @@ repos:
             cluster/k8s/agents/public-coder-agent/proxy/codex-runner-iron\.yaml|
             cluster/k8s/agents/haku-egress-proxy/claude-iron\.yaml|
             cluster/k8s/agents/haku-egress-proxy/openclaw-spike-iron\.yaml|
+            cluster/k8s/agents/haku-egress-proxy/sandbox-iron\.yaml|
             cluster/k8s/litellm/app/(chatgpt-)?proxy-config\.yaml|
             cluster/k8s/litellm/tana/proxy-config\.yaml|
             cluster/k8s/x/haku/dispatch/litellm/workers-litellm-config\.yaml|

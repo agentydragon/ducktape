@@ -8,6 +8,9 @@ resources:
   - claude-iron-deployment.yaml
   - claude-iron-service.yaml
   - claude-networkpolicy.yaml
+  - sandbox-iron-deployment.yaml
+  - sandbox-iron-service.yaml
+  - sandbox-iron-networkpolicy.yaml
   - claude-code-oauth-token.sops.yaml
   - claude-github-token-eso.yaml
   - openclaw-spike-github-token-eso.yaml
@@ -29,7 +32,9 @@ resources:
   - networkpolicy.yaml
   - cnp-haku-cloud-api-egress.yaml
   - cnp-haku-claude-egress.yaml
+  - cnp-haku-sandbox-iron-egress.yaml
   - ccnp-haku-proxy-egress.yaml
+  - ccnp-haku-sandbox-box-egress.yaml
   - ccnp-haku-agent-egress.yaml
 
 configMapGenerator:
@@ -41,6 +46,10 @@ configMapGenerator:
     namespace: haku-egress-proxy
     files:
       - iron.yaml=openclaw-spike-iron.yaml
+  - name: haku-sandbox-iron-proxy-config
+    namespace: haku-egress-proxy
+    files:
+      - iron.yaml=sandbox-iron.yaml
 
 patches:
   # The encrypted object was moved byte-for-byte from the compatibility spike so no plaintext

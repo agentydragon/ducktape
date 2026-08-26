@@ -1,0 +1,52 @@
+# The other half of ccnp-haku-proxy-egress.yaml: the exec-target sandboxes,
+# which reach the internet through haku-sandbox-iron-proxy rather than the
+# mitmproxy the rest of the namespace uses.
+#
+# Same shape as its sibling — DNS, cluster-internal, kube-apiserver, one proxy
+# endpoint — and the same two known gaps: the kube-dns rule carries no
+# `rules.dns`, so these pods resolve anything (recorded in haku/docs/security.md
+# and in //cluster/validation:test_egress_allowlists), and `toEntities: cluster`
+# admits every in-cluster and node-IP service, which is where the credentials
+# the box still holds are spent.
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: haku-sandbox-box-force-iron-egress
+spec:
+  endpointSelector:
+    matchExpressions:
+      - key: "k8s:io.kubernetes.pod.namespace"
+        operator: In
+        values:
+          - haku-sandbox
+      - key: "k8s:app.kubernetes.io/name"
+        operator: In
+        values:
+          - haku-sandbox
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - cluster
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "6443"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-egress-proxy
+            k8s:app.kubernetes.io/name: haku-sandbox-iron-proxy
+      toPorts:
+        - ports:
+            - port: "8182"
+              protocol: TCP

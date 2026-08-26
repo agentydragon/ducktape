@@ -1,10 +1,11 @@
 """Exact pins over every egress allowlist in the cluster.
 
-Six proxies bound what agent workloads reach. Five enforce a host list — four
-Cilium `toFQDNs` policies plus the openclaw spike's app-level iron transform —
-and one (`public-coder`) is a deliberate, documented waiver that reaches the
-whole internet. Before this test they had drifted into near-but-not-quite-equal
-host sets, and nothing failed when one gained an entry.
+A set of proxies bounds what agent workloads reach — the dict below is the
+roster. All but one enforce a host list, as a Cilium `toFQDNs` policy or, for
+the openclaw spike, an app-level iron transform; `public-coder` is a
+deliberate, documented waiver that reaches the whole internet. Before this test
+they had drifted into near-but-not-quite-equal host sets, and nothing failed
+when one gained an entry.
 
 Each allowlist declares the exact set it may carry, as a union of named host
 groups. The assertion is equality, so no host can be added, removed or renamed
@@ -68,16 +69,21 @@ operator-facing version is in `haku/docs/security.md`.
   and the operator-data tier.
   `agents/public-coder-agent` is a waiver rather than a fence. Done when the
   dict below has one entry per policy, not one per proxy deployment.
-- TODO: converge on one proxy. mitmproxy (`agents/haku-egress-proxy`,
-  `agents/mitmproxy`) has no credential
-  placeholders, so `haku-sandbox` sends real unredacted tokens upstream where
-  iron would send a placeholder and substitute in a trusted pod. Moving those to
-  iron is blocked on three mitmproxy behaviours whose iron equivalents are
-  unverified: `--set stream_large_bodies=1m` (dind image layers were buffered
-  whole into memory and OOM-killed the pod), and two `--ignore-hosts` raw TLS
-  passthroughs — `api.anthropic.com`, because interception breaks the Managed
-  Agents HTTP/2 session stream, and `docker-ci.allegedly.works`, because docker
-  mTLS must reach the daemon end to end. Verify those first.
+- TODO: converge on one proxy. mitmproxy has no credential placeholders, so a
+  workload behind it sends real unredacted tokens upstream where iron would send
+  a placeholder and substitute in a trusted pod. Haku's exec-target sandboxes
+  moved to iron and are the model; what is left behind mitmproxy is the rest of
+  `haku-sandbox` plus `haku-ci` (`agents/haku-egress-proxy`), `claude-sandbox`
+  (`agents/mitmproxy`), and `haku-sandbox-zai`
+  (`x/agents/haku-zones-mitmproxy`). Each of the three remaining moves is
+  blocked on a mitmproxy behaviour whose iron equivalent is unverified:
+  `--set stream_large_bodies=1m`, which haku-ci's dind needs (image layers were
+  buffered whole into memory and OOM-killed the pod), and two `--ignore-hosts`
+  raw TLS passthroughs — `api.anthropic.com`, which haku-managed-agent needs
+  because interception breaks the Managed Agents HTTP/2 session stream, and
+  `docker-ci.allegedly.works`, which the claude-sandbox eval driver needs
+  because docker mTLS must reach the daemon end to end. Verify those first. The
+  sandbox move needed none of them, which is why it went first.
 - TODO: enforce at two layers, not one. Every fence today is single-layer.
   The mitmproxy fences confine only via Cilium `toFQDNs` — the mitmproxy
   container itself has no allowlist. The iron fences confine only in app config:
@@ -270,14 +276,26 @@ class Unconfined:
 # The fences the assertions below single out. They are the dict keys
 # themselves, so the assertion and the entry cannot drift apart.
 OPERATOR_DATA_FENCE = "agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml"
+HAKU_SANDBOX_BOX_FENCE = "agents/haku-egress-proxy/cnp-haku-sandbox-iron-egress.yaml"
 HAKU_CLAUDE_FENCE = "agents/haku-egress-proxy/cnp-haku-claude-egress.yaml"
 HAKU_OPENCLAW_FENCE = "agents/haku-egress-proxy/openclaw-spike-iron.yaml"
 
 # Keyed by manifest path: the file is the fence's only real identifier, so there
 # is no second name to keep in sync, and a failure names the file to open.
 ALLOWLISTS: dict[str, Confined | IronConfined | Unconfined] = {
-    # Haku's general sandbox — the only fence holding OPERATOR_DATA.
+    # Haku's general sandbox namespace, minus the exec-target boxes: haku-ui,
+    # haku-jupyter, haku-anki, haku-managed-agent, and haku-ci.
     OPERATOR_DATA_FENCE: Confined(
+        allows=BUILD_REGISTRIES | ANTHROPIC | OPERATOR_DATA | hosts("alloy-otlp.allegedly.works")
+    ),
+    # The exec-target sandboxes Haku reaches through `exec_sandbox`, on their own
+    # iron listener since they were split off the mitmproxy above. The host set is
+    # that fence's, unchanged — the split moved the boxes to a different proxy and
+    # deliberately not to a different policy, so a narrowing is visible as its own
+    # change rather than hidden inside the migration. Narrowing is the follow-up:
+    # AnkiWeb and api.anthropic.com are here for haku-anki and the Managed Agents
+    # worker, which stayed behind the mitmproxy.
+    HAKU_SANDBOX_BOX_FENCE: Confined(
         allows=BUILD_REGISTRIES | ANTHROPIC | OPERATOR_DATA | hosts("alloy-otlp.allegedly.works")
     ),
     # Haku's OpenClaw + Claude Code spike (namespace `haku-openclaw-spike`),
@@ -407,15 +425,16 @@ def test_build_registries_are_all_or_none() -> None:
 
 
 def test_operator_data_reaches_only_haku_sandbox() -> None:
-    """The tier that reads the operator's own accounts stays in one fence.
+    """The tier that reads the operator's own accounts stays in the haku-sandbox trust domain.
 
     A coding agent that gained these would turn each of its injection surfaces
-    into a path to the operator's mail and finances.
+    into a path to the operator's mail and finances. Two fences hold it because
+    that one namespace is fenced by two proxies, not because the tier widened —
+    so the holders are named, the way `api.github.com`'s are, and a third would
+    have to be argued for here.
     """
-    for path, allowlist in ALLOWLISTS.items():
-        if path == OPERATOR_DATA_FENCE:
-            continue
-        assert not (allowlist.allows & OPERATOR_DATA), path
+    holders = {path for path, entry in ALLOWLISTS.items() if entry.allows & OPERATOR_DATA}
+    assert holders == {OPERATOR_DATA_FENCE, HAKU_SANDBOX_BOX_FENCE}
 
 
 def test_github_api_reaches_only_declared_holders() -> None:

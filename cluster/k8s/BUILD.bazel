@@ -167,6 +167,7 @@ filegroup(
     srcs = [
         "agents/haku-egress-proxy/cnp-haku-claude-egress.yaml",
         "agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml",
+        "agents/haku-egress-proxy/cnp-haku-sandbox-iron-egress.yaml",
         # The spike's two layers live in two files: the iron allowlist and the
         # Cilium DNS rule pinned against it.
         "agents/haku-egress-proxy/openclaw-spike-cnp-egress.yaml",
@@ -184,6 +185,7 @@ filegroup(
     name = "proxy_injection_policy_files",
     srcs = [
         "kyverno/policies/inject-haku-egress-proxy.yaml",
+        "kyverno/policies/inject-haku-sandbox-iron-proxy.yaml",
         "kyverno/policies/inject-mitmproxy.yaml",
     ],
     visibility = ["//cluster/validation/kyverno:__pkg__"],

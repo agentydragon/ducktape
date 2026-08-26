@@ -1,9 +1,9 @@
 """One contract over every proxy-injection policy in the cluster.
 
-Three Kyverno policies inject proxy configuration into three sandbox namespaces.
-They are separate files because there are three proxies, not because the three
-sandboxes want different treatment — so the interesting property is the one
-nothing enforced before: **they inject the same set of variables**.
+Kyverno policies inject proxy configuration into the sandbox namespaces. They
+are separate files because there is one per proxy, not because the sandboxes
+want different treatment — so the interesting property is the one nothing
+enforced before: **they inject the same set of variables**.
 
 That set is not arbitrary. A pod told to use a proxy but not told where the
 proxy's CA lives fails TLS on its first request, and the four CA variables exist
@@ -22,8 +22,14 @@ copies equal.
 Values differ per policy and are declared per policy. `NO_PROXY` is declared as a
 union of named groups rather than a string, so that what the policies share and
 what they deliberately do not is legible instead of buried in a diff between long
-comma-separated strings. All three carry `CLUSTER_ADDRESSING`; the two groups
-that stay haku-only are named with the reason they cannot be unified.
+comma-separated strings. Every policy carries `CLUSTER_ADDRESSING`; the two
+groups that stay haku-only are named with the reason they cannot be unified.
+
+Two policies split one namespace: `haku-sandbox`'s exec-target boxes dial their
+own iron listener while the rest of the namespace keeps the mitmproxy, selected
+apart by the `app.kubernetes.io/name: haku-sandbox` label. So the probe pod
+carries each policy's declared labels — without them the label-selected policy
+matches nothing and every assertion below passes vacuously.
 
 Not covered here: the deployments and Jobs that set the same variables by hand
 (`haku-openclaw-spike`, `public-coder-agent`, `haku-ci`, the agent-sdk smoke
@@ -36,7 +42,8 @@ this contract to them once the injection-vs-hand-rolled split is settled.
 from __future__ import annotations
 
 import textwrap
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -84,6 +91,9 @@ class Injection:
     ca_bundle: str
     # `NO_PROXY`, as the union of the named groups above.
     bypasses: frozenset[str]
+    # Pod labels the policy's `match.selector` requires. Empty where it selects
+    # the whole namespace.
+    labels: Mapping[str, str] = field(default_factory=dict)
 
 
 POLICIES: dict[str, Injection] = {
@@ -92,6 +102,19 @@ POLICIES: dict[str, Injection] = {
         proxy="http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080",
         ca_bundle="/egress-proxy-ca/ca-certificates.crt",
         bypasses=LOOPBACK | CLUSTER_ADDRESSING | OWN_DOMAINS | FORGEJO,
+    ),
+    # The other half of that namespace: the exec-target sandboxes, on iron. Same
+    # CA bundle because both listeners intercept with the same root, and the same
+    # `NO_PROXY` — the split moved the boxes to a different proxy, not to a
+    # different policy. `*.forgejo` is the entry iron makes removable, and the one
+    # that has to go before either credential the box holds can become a
+    # placeholder.
+    "cluster/k8s/kyverno/policies/inject-haku-sandbox-iron-proxy.yaml": Injection(
+        namespace="haku-sandbox",
+        proxy="http://haku-sandbox-iron-proxy.haku-egress-proxy.svc.cluster.local:8182",
+        ca_bundle="/egress-proxy-ca/ca-certificates.crt",
+        bypasses=LOOPBACK | CLUSTER_ADDRESSING | OWN_DOMAINS | FORGEJO,
+        labels={"app.kubernetes.io/name": "haku-sandbox"},
     ),
     "cluster/k8s/kyverno/policies/inject-mitmproxy.yaml": Injection(
         namespace="claude-sandbox",
@@ -102,14 +125,17 @@ POLICIES: dict[str, Injection] = {
 }
 
 
-def _pod(namespace: str) -> str:
+def _pod(injection: Injection) -> str:
     """A pod with both container kinds, so both patch blocks are exercised."""
+    labels = "".join(f"\n            {key}: {value}" for key, value in injection.labels.items())
     return textwrap.dedent(f"""
         apiVersion: v1
         kind: Pod
         metadata:
           name: proxy-injection-probe
-          namespace: {namespace}
+          namespace: {injection.namespace}
+          labels:
+            probe: proxy-injection{labels}
         spec:
           initContainers:
             - name: setup
@@ -125,7 +151,7 @@ def mutated(request: pytest.FixtureRequest, tmp_path: Path) -> tuple[Injection, 
     """Every container of the probe pod, after the policy under test ran."""
     injection = POLICIES[request.param]
     resource = tmp_path / "pod.yaml"
-    resource.write_text(_pod(injection.namespace))
+    resource.write_text(_pod(injection))
     result = apply_policy(get_required_path(f"_main/{request.param}"), resource)
     assert result.ok, result.stdout
     pod = next(doc for doc in result.mutated_resources if doc["kind"] == "Pod")
@@ -144,7 +170,7 @@ def reinvoked(request: pytest.FixtureRequest, tmp_path: Path) -> dict:
     policy = get_required_path(f"_main/{request.param}")
 
     resource = tmp_path / "pod.yaml"
-    resource.write_text(_pod(injection.namespace))
+    resource.write_text(_pod(injection))
     _, second = apply_twice(policy, resource, tmp_path)
     return next(d for d in second.mutated_resources if d["kind"] == "Pod")
 

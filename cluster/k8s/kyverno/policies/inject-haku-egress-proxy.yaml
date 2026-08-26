@@ -111,6 +111,15 @@ spec:
               kinds: [Pod]
               namespaces: [haku-sandbox]
               operations: [CREATE]
+              # Everything in the namespace except the exec-target sandboxes, which
+              # dial their own iron listener (inject-haku-sandbox-iron-proxy.yaml).
+              # `NotIn` also matches a pod carrying no such label at all, so the
+              # namespace's unlabelled workloads keep this policy.
+              selector:
+                matchExpressions:
+                  - key: app.kubernetes.io/name
+                    operator: NotIn
+                    values: [haku-sandbox]
       preconditions:
         all:
           - key: "{{ (request.object.spec.volumes || `[]`)[?name=='haku-egress-proxy-ca-cert'] | length(@) }}"
@@ -132,6 +141,12 @@ spec:
               kinds: [Pod]
               namespaces: [haku-sandbox]
               operations: [CREATE]
+              # The namespace minus the exec-target sandboxes; see the first rule.
+              selector:
+                matchExpressions:
+                  - key: app.kubernetes.io/name
+                    operator: NotIn
+                    values: [haku-sandbox]
       mutate:
         foreach:
           - list: "request.object.spec.containers"
@@ -190,6 +205,12 @@ spec:
               kinds: [Pod]
               namespaces: [haku-sandbox]
               operations: [CREATE]
+              # The namespace minus the exec-target sandboxes; see the first rule.
+              selector:
+                matchExpressions:
+                  - key: app.kubernetes.io/name
+                    operator: NotIn
+                    values: [haku-sandbox]
       preconditions:
         any:
           - key: "{{ (request.object.spec.initContainers || `[]`) | length(@) }}"
