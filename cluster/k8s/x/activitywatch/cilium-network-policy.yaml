@@ -1,6 +1,6 @@
-# ActivityWatch query server, Syncthing receiver, and pull-only importer.
-# Ingress: kube-apiserver (health probes), Authentik proxy (readonly proxy).
-# Egress: DNS only.
+# ActivityWatch central query + write server.
+# Ingress: kube-apiserver (health probes), Authentik proxy (read-only proxy 5601),
+# the Gateway (bearer-gated write-proxy 5602). Egress: DNS only.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -27,14 +27,6 @@ spec:
         - ports:
             - port: "5601"
               protocol: TCP
-    # Write API for the pull-only importer only.
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: activitywatch-importer
-      toPorts:
-        - ports:
-            - port: "5600"
-              protocol: TCP
     # Public write route: the Gateway (Envoy, hostNetwork) reaches the bearer-gated
     # write-proxy sidecar on 5602. See docs/cilium_network_policy.md (fromEntities: ingress).
     - fromEntities:
@@ -54,70 +46,4 @@ spec:
             - port: "53"
               protocol: UDP
             - port: "53"
-              protocol: TCP
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: activitywatch-syncthing
-  namespace: activitywatch
-spec:
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: activitywatch-syncthing
-  egress:
-    # DNS
-    - toEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: kube-system
-            k8s-app: kube-dns
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: UDP
-            - port: "53"
-              protocol: TCP
-    # Syncthing global discovery, relays, and direct sync attempts.
-    - toEntities:
-        - world
-      toPorts:
-        - ports:
-            - port: "443"
-              protocol: TCP
-            - port: "22000"
-              protocol: TCP
-            - port: "22000"
-              protocol: UDP
-            - port: "22067"
-              protocol: TCP
-            - port: "21027"
-              protocol: UDP
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: activitywatch-importer
-  namespace: activitywatch
-spec:
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: activitywatch-importer
-  egress:
-    # DNS for the activitywatch-write Service name.
-    - toEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: kube-system
-            k8s-app: kube-dns
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: UDP
-            - port: "53"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: activitywatch
-      toPorts:
-        - ports:
-            - port: "5600"
               protocol: TCP

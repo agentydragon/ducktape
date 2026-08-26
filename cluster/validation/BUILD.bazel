@@ -242,20 +242,6 @@ py_test(
 )
 
 py_test(
-    name = "test_activitywatch_syncthing_config",
-    srcs = ["test_activitywatch_syncthing_config.py"],
-    data = [
-        "//cluster/k8s:cluster_all_files",
-        "//secrets/home:activitywatch_syncthing_files",
-    ],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
     name = "test_terraform_backends",
     srcs = ["test_terraform_backends.py"],
     deps = [

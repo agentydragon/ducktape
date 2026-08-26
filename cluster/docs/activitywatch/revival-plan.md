@@ -32,7 +32,9 @@ importer dedups any residue.
   write-proxy sidecar, reached at `https://activitywatch-write.allegedly.works`. The
   shared token is a dual-recipient SOPS secret (cluster-secrets + the synced
   desktops' user keys), so one value serves both the proxy and each desktop's
-  `AW_DEST_TOKEN`. aw-server itself and the Authentik read path are untouched.
+  `AW_DEST_TOKEN`. aw-server itself and the Authentik read path are untouched, and
+  the cluster Syncthing receiver and old aw-sync cronjob are removed rather than
+  revived.
 
 ## What's left
 
@@ -42,11 +44,11 @@ importer dedups any residue.
    `AW_DEST_TOKEN` decrypted from the shared SOPS secret. The importer needs a
    writable `XDG_CACHE_HOME`/`HOME` — `AwClient` takes a `SingleInstance` lock there.
 
-2. **Retire Syncthing.** With the importer talking to the server directly, the whole
-   file-transport layer goes: the cluster Syncthing receiver, the desktop send-only
-   folder, and the per-host Syncthing certs/keys — a deletion across
-   `cluster/k8s/x/activitywatch/`, `nix/home/services/activitywatch.nix`, and
-   `secrets/home/<host>/`. (The revival left them deployed but idle.)
+2. **Retire Syncthing (desktop side).** The cluster receiver, its certs, and the old
+   aw-sync cronjob are gone; what remains is the desktop send-only folder and the
+   per-host Syncthing certs/keys — a deletion across
+   `nix/home/services/activitywatch.nix` and `secrets/home/<host>/` (plus the now
+   unused `//secrets/home:activitywatch_syncthing_files` filegroup).
 
 3. **CI coverage.** Gate `@ducktape_activitywatch//importer:aw_importer_test`: the
    root `//...` sweep and the PR bazel-diff both skip this `.bazelignore`d module, so

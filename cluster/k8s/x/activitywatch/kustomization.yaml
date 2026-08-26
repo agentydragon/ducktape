@@ -4,14 +4,10 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - deployment.yaml
-  - syncthing-deployment.yaml
-  - importer-cronjob.yaml
   - pvc.yaml
   - service.yaml
   - write-httproute.yaml
   - cilium-network-policy.yaml
-  - syncthing-identity.yaml
-  - syncthing-key.sops.yaml
   - activitywatch-write-token.sops.yaml
 
 configMapGenerator:
@@ -23,7 +19,3 @@ configMapGenerator:
     namespace: activitywatch
     files:
       - default.conf.template=write-proxy.conf.template
-  - name: activitywatch-syncthing-config
-    namespace: activitywatch
-    files:
-      - config.xml=syncthing-config.xml
