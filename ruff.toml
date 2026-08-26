@@ -181,7 +181,6 @@ split-on-trailing-comma = false
 
 [lint.per-file-ignores]
 # Project-specific ignores (consolidated from individual pyproject.toml files)
-"x/gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
 # Test fixtures are intentionally bad code for detector testing
 "py_detectors/tests/fixtures/**" = ["ALL"]
 # sys.path manipulation must happen before imports in uv run scripts and pytest

@@ -281,12 +281,12 @@ func targetLogSubCmd() *cobra.Command {
 
 Uses the BES (Build Event Stream) artifacts to find and download the test.log
 for the given target. The second argument is matched as a substring against
-"label/name" (e.g., "test_handlers" matches "//x/gatelet/server/auth:test_handlers/test.log").
+"label/name" (e.g., "test_lifecycle" matches "//mcp_infra/compositor:test_lifecycle/test.log").
 
 Examples:
-  bbapi target log <invocation-id> test_handlers
-  bbapi target log <invocation-id> //x/gatelet/server/auth:test_handlers
-  bbapi target log <invocation-id> test_handlers --artifact test.xml`,
+  bbapi target log <invocation-id> test_lifecycle
+  bbapi target log <invocation-id> //mcp_infra/compositor:test_lifecycle
+  bbapi target log <invocation-id> test_lifecycle --artifact test.xml`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			c, err := newClient()

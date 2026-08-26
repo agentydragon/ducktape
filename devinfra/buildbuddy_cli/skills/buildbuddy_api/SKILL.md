@@ -159,8 +159,8 @@ invocation contains the actual `bazel test` results, targets, and artifacts.
 
 `bbapi artifact {cat,download}` and `bbapi target log` match against `"label/name"`:
 
-- `"test_handlers"` matches `//x/gatelet/server/auth:test_handlers/test.log`
-- `"test_handlers/test.xml"` matches the XML output specifically
+- `"test_lifecycle"` matches `//mcp_infra/compositor:test_lifecycle/test.log`
+- `"test_lifecycle/test.xml"` matches the XML output specifically
 - `"compositor/test_lifecycle"` matches `//mcp_infra/compositor:test_lifecycle/test.log`
 
 When no match is found, the CLI prints available labels as hints.
