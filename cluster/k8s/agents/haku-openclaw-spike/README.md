@@ -26,6 +26,35 @@ That shipped two Node runtimes; the base image's Node linked an unsafe system
 SQLite (3.51.2) that OpenClaw's WAL-safety guard rejects at startup, so the pod
 crash-looped.
 
+## Version constraints
+
+Why the gateway version and Node are pinned the way they are:
+
+- **Opus 5 metadata is beta-only.** OpenClaw's `anthropic` extension lists
+  `claude-opus-5` (1M context) in its model catalog only from the
+  `2026.7.2`/`2026.8.x` **beta** line; stable `2026.7.1-2` tops out at
+  `claude-opus-4-8`. The `claude-cli` runtime still _runs_ any model via the
+  bundled `claude` binary — the catalog is only metadata (picker label,
+  context-window display/limits).
+- **The beta refuses WAL-unsafe SQLite.** From `2026.7.2-beta` on, the gateway
+  aborts at startup unless Node's SQLite is WAL-safe (rejects `3.51.0`–`3.51.2`;
+  needs `≥3.51.3`, or `3.50.7+`/`3.44.6+` in those series). Stable `2026.7.1-2`
+  has no such check and runs on the unsafe SQLite silently — as public-coder-agent
+  currently does.
+- **Node / SQLite in nixpkgs.** `nodejs_22` = `22.23.2` → SQLite `3.51.2`
+  (unsafe); `nodejs_24` = `24.19.0` → SQLite `3.53.3` (safe). OpenClaw's
+  `engines.node` allows `>=22.22.3 <23`, `>=24.15.0 <25`, or `>=25.9.0`, so Node
+  24 is supported. nix-openclaw hardcodes `nodejs_22`, so the build overrides it
+  to a WAL-safe Node.
+- **The nix-store plugin-ownership patch is stable-only.** nix-openclaw's
+  `allow-nix-store-plugin-ownership.patch` (lets the gateway trust its read-only
+  nix-store plugins) applies cleanly to stable but rejects hunks on every beta,
+  so a beta gateway build must carry a ported copy.
+
+TODO: upstream a nix-openclaw change to bump the gateway Node (or make it
+configurable), then drop the local `nodejs_24` override — it affects the
+public-coder image too.
+
 ## Trust boundary
 
 - The OpenClaw pod contains no real Claude OAuth token, GitHub PAT, Haku
