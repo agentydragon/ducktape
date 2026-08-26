@@ -17,6 +17,7 @@ use std::sync::Once;
 use std::time::Duration;
 
 use aw_client_rust::AwClient;
+use aw_importer::connect;
 use aw_importer::import_device;
 use aw_models::Bucket;
 use aw_models::BucketMetadata;
@@ -86,9 +87,10 @@ impl Drop for ServerGuard {
     }
 }
 
-fn spawn_server(datadir: &Path, port: u16) -> ServerGuard {
+fn spawn_server(datadir: &Path, port: u16, api_key: Option<&str>) -> ServerGuard {
     fs::create_dir_all(datadir).unwrap();
-    let child = Command::new(aw_server_bin())
+    let mut command = Command::new(aw_server_bin());
+    command
         .arg("--testing")
         .arg("--host")
         .arg("127.0.0.1")
@@ -99,7 +101,15 @@ fn spawn_server(datadir: &Path, port: u16) -> ServerGuard {
         .env("HOME", datadir)
         .env("XDG_DATA_HOME", datadir.join("data"))
         .env("XDG_CONFIG_HOME", datadir.join("config"))
-        .env("XDG_CACHE_HOME", datadir.join("cache"))
+        .env("XDG_CACHE_HOME", datadir.join("cache"));
+    // The api_key is config-file-only (no flag/env in aw-server), so when the test
+    // wants a gated server it writes a minimal config and points --config at it.
+    if let Some(key) = api_key {
+        let config = datadir.join("aw-server.toml");
+        fs::write(&config, format!("[auth]\napi_key = \"{key}\"\n")).unwrap();
+        command.arg("--config").arg(config);
+    }
+    let child = command
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -122,10 +132,21 @@ async fn wait_ready(client: &AwClient) {
 /// also names the client's single-instance lock, so every server in one test needs
 /// a distinct name.
 async fn aw_server(root: &Path, name: &str) -> (ServerGuard, AwClient) {
+    aw_server_authed(root, name, None).await
+}
+
+/// Like `aw_server`, but the server requires `api_key` on every `/api/*` call
+/// (except `/api/0/info`) and the returned client carries it as a bearer.
+async fn aw_server_authed(
+    root: &Path,
+    name: &str,
+    api_key: Option<&str>,
+) -> (ServerGuard, AwClient) {
     client_env_setup();
     let port = free_port();
-    let guard = spawn_server(&root.join(name), port);
-    let client = AwClient::new("127.0.0.1", port, name).expect("client");
+    let guard = spawn_server(&root.join(name), port, api_key);
+    let url = format!("http://127.0.0.1:{port}");
+    let client = connect(&url, api_key.map(str::to_string), name).expect("client");
     wait_ready(&client).await;
     (guard, client)
 }
@@ -444,6 +465,54 @@ fn growing_source_imports_only_the_delta() {
                 .unwrap()
                 .total_inserted(),
             0
+        );
+    });
+}
+
+#[test]
+fn imports_into_a_key_gated_central() {
+    // The central will sit behind a bearer-gated route in production; prove the
+    // importer authenticates when its dest client carries the token.
+    runtime().block_on(async {
+        let root = temp_root("auth");
+        let (_source_server, source) = aw_server(&root, "source").await;
+        let (_dest_server, dest) = aw_server_authed(&root, "dest", Some("s3cr3t-key")).await;
+
+        seed_bucket(
+            &source,
+            "aw-watcher-afk_localhost",
+            "afkstatus",
+            "aw-watcher-afk",
+            "localhost",
+            vec![event(
+                1_000_000_000_000,
+                2_000_000_000_000,
+                r#"{"status":"afk"}"#,
+            )],
+        )
+        .await;
+
+        // The dest client carries the bearer, so writes are accepted.
+        assert_eq!(
+            import_device(&source, &dest, "rugged")
+                .await
+                .unwrap()
+                .total_inserted(),
+            1
+        );
+        assert_eq!(
+            events(&dest, "rugged::aw-watcher-afk_localhost")
+                .await
+                .len(),
+            1
+        );
+
+        // A client without the bearer is rejected -- so the import above passed
+        // because it authenticated, not because the gate was off.
+        let unauth = connect(&dest.baseurl.to_string(), None, "unauth").expect("client");
+        assert!(
+            unauth.get_buckets().await.is_err(),
+            "api_key gate is not enforced"
         );
     });
 }

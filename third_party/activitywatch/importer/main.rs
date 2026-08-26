@@ -1,26 +1,25 @@
 use std::process::ExitCode;
 
-use aw_client_rust::AwClient;
+use aw_importer::connect;
 use aw_importer::import_device;
 use clap::Parser;
 
 /// Idempotent one-way importer of one device's ActivityWatch data into a central
 /// aw-server. Reads the device's local aw-server over REST and writes the central
 /// one the same way; the source store is only ever read.
+///
+/// The destination bearer token is read from the `AW_DEST_TOKEN` environment
+/// variable, never a flag — a token on the command line would be visible in the
+/// process list.
 #[derive(Parser)]
 struct Args {
-    /// Host of the source aw-server (the device's own local server).
-    #[arg(long, default_value = "127.0.0.1")]
-    source_host: String,
-    /// Port of the source aw-server.
-    #[arg(long, default_value_t = 5600)]
-    source_port: u16,
-    /// Host of the destination (central) aw-server to import into.
+    /// URL of the source aw-server (the device's own local server).
+    #[arg(long, default_value = "http://127.0.0.1:5600")]
+    source_url: String,
+    /// URL of the destination (central) aw-server to import into, e.g.
+    /// `https://activitywatch-write.allegedly.works`.
     #[arg(long)]
-    dest_host: String,
-    /// Port of the destination aw-server.
-    #[arg(long, default_value_t = 5600)]
-    dest_port: u16,
+    dest_url: String,
     /// Device id stamped onto destination buckets as provenance, e.g. `rugged`.
     #[arg(long)]
     device: String,
@@ -28,30 +27,25 @@ struct Args {
 
 fn main() -> ExitCode {
     let args = Args::parse();
+    let dest_token = std::env::var("AW_DEST_TOKEN").ok();
+
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("build tokio runtime");
 
     runtime.block_on(async {
-        let source = match AwClient::new(&args.source_host, args.source_port, "aw-importer-source")
-        {
+        let source = match connect(&args.source_url, None, "aw-importer-source") {
             Ok(client) => client,
             Err(error) => {
-                eprintln!(
-                    "could not reach source aw-server at {}:{}: {error}",
-                    args.source_host, args.source_port
-                );
+                eprintln!("source: {error}");
                 return ExitCode::FAILURE;
             }
         };
-        let dest = match AwClient::new(&args.dest_host, args.dest_port, "aw-importer-dest") {
+        let dest = match connect(&args.dest_url, dest_token, "aw-importer-dest") {
             Ok(client) => client,
             Err(error) => {
-                eprintln!(
-                    "could not reach destination aw-server at {}:{}: {error}",
-                    args.dest_host, args.dest_port
-                );
+                eprintln!("destination: {error}");
                 return ExitCode::FAILURE;
             }
         };

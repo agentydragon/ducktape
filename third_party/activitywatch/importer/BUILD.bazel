@@ -36,7 +36,6 @@ rust_binary(
         ":aw_importer",
         "@aw_server_crates//:clap",
         "@aw_server_crates//:tokio",
-        "@aw_server_rust//:aw_client_rust",
     ],
 )
 

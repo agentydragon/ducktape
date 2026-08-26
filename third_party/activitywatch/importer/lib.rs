@@ -35,6 +35,7 @@ use aw_client_rust::AwClient;
 use aw_models::Bucket;
 use aw_models::BucketMetadata;
 use aw_models::Event;
+use reqwest::Url;
 use serde_json::Map;
 use serde_json::Value;
 
@@ -47,6 +48,28 @@ type EventKey = (i64, i64, String);
 pub enum ImportError {
     #[error("aw-server request failed: {0}")]
     Http(#[from] reqwest::Error),
+    #[error("could not connect to aw-server: {0}")]
+    Connect(String),
+}
+
+/// Build a client for the aw-server at `url`, sending `token` as a bearer on every
+/// request when set. aw-client's own constructor only ever builds an `http://host:port`
+/// base URL, so we take its bearer wiring via `new_with_api_key` and then point the
+/// (public) base URL at `url` — which may be `https` and carry a path — so the
+/// central server can sit behind a TLS-terminating, bearer-gated route.
+pub fn connect(url: &str, token: Option<String>, name: &str) -> Result<AwClient, ImportError> {
+    let parsed =
+        Url::parse(url).map_err(|error| ImportError::Connect(format!("{url}: {error}")))?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| ImportError::Connect(format!("no host in {url}")))?;
+    let port = parsed
+        .port_or_known_default()
+        .ok_or_else(|| ImportError::Connect(format!("no port in {url}")))?;
+    let mut client = AwClient::new_with_api_key(host, port, name, token)
+        .map_err(|error| ImportError::Connect(error.to_string()))?;
+    client.baseurl = parsed;
+    Ok(client)
 }
 
 /// Per-bucket outcome of an import.
