@@ -1141,6 +1141,181 @@ func TestFollowedPodLogClassificationMatchesKubernetesBooleanParameters(t *testi
 	}
 }
 
+func watchRequest(t *testing.T, proxy *httptest.Server, path string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, proxy.URL+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer caller-secret")
+	response, err := proxy.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	return response
+}
+
+const watchEvent = `{"type":"ADDED","object":{"kind":"Pod"}}` + "\n"
+
+func TestWatchIsAuthorizedAsWatchAndStreamed(t *testing.T) {
+	authority := &recordingAuthority{decision: allowedDecision()}
+	upstreamDisconnected := make(chan struct{})
+	proxy := newTestProxy(t, authority, streamingUpstream(t, "application/json", watchEvent, upstreamDisconnected), nil)
+
+	response := watchRequest(t, proxy, "/api/v1/namespaces/demo/pods?watch=true")
+	readStreamedChunk(t, response.Body, watchEvent)
+
+	authority.mu.Lock()
+	requests := append([]AuthorizationRequest(nil), authority.requests...)
+	authority.mu.Unlock()
+	if len(requests) != 1 {
+		t.Fatalf("authorization requests = %d", len(requests))
+	}
+	wantAttributes := RequestAttributes{
+		ResourceRequest: true,
+		Verb:            "watch",
+		APIVersion:      "v1",
+		Namespace:       "demo",
+		Resource:        "pods",
+		Path:            "/api/v1/namespaces/demo/pods",
+	}
+	if requests[0].Attributes != wantAttributes {
+		t.Errorf("attributes = %#v, want %#v", requests[0].Attributes, wantAttributes)
+	}
+	if requests[0].RequiredScope.Kind != grantScopeNamespaces || strings.Join(requests[0].RequiredScope.Namespaces, ",") != "demo" {
+		t.Errorf("scope = %#v", requests[0].RequiredScope)
+	}
+	rule := requests[0].RequiredRules[0]
+	if strings.Join(rule.Resources, ",") != "pods" || strings.Join(rule.Verbs, ",") != "watch" || len(rule.ResourceNames) != 0 {
+		t.Errorf("rule = %#v", rule)
+	}
+}
+
+// Kubernetes serves a watch both from ?watch=true and from the deprecated
+// /api/{version}/watch/ path prefix, and authorizes each as the watch verb.
+func TestDeprecatedWatchPathPrefixIsAuthorizedAsWatch(t *testing.T) {
+	authority := &recordingAuthority{decision: allowedDecision()}
+	upstreamDisconnected := make(chan struct{})
+	proxy := newTestProxy(t, authority, streamingUpstream(t, "application/json", watchEvent, upstreamDisconnected), nil)
+
+	response := watchRequest(t, proxy, "/api/v1/watch/namespaces/demo/pods")
+	readStreamedChunk(t, response.Body, watchEvent)
+
+	authority.mu.Lock()
+	defer authority.mu.Unlock()
+	got := authority.requests[0].Attributes
+	if got.Verb != "watch" || got.Namespace != "demo" || got.Resource != "pods" {
+		t.Errorf("attributes = %#v", got)
+	}
+}
+
+func TestWatchOutlivesTheOrdinaryRequestTimeout(t *testing.T) {
+	authority := &recordingAuthority{decision: allowedDecision()}
+	upstreamDisconnected := make(chan struct{})
+	proxy := newTestProxy(t, authority, streamingUpstream(t, "application/json", watchEvent, upstreamDisconnected), func(config *Config) {
+		config.RequestTimeout = 100 * time.Millisecond
+		config.StreamRevalidationInterval = time.Hour
+	})
+
+	response := watchRequest(t, proxy, "/api/v1/namespaces/demo/pods?watch=true")
+	readStreamedChunk(t, response.Body, watchEvent)
+	select {
+	case <-upstreamDisconnected:
+		t.Fatal("watch was cut short by the ordinary request timeout")
+	case <-time.After(400 * time.Millisecond):
+	}
+}
+
+func TestWatchEndsAtTemporaryDecisionExpiry(t *testing.T) {
+	validUntil := time.Now().Add(250 * time.Millisecond)
+	authority := &recordingAuthority{decision: AuthorizationResponse{
+		Allowed: true, DecisionID: "grant:watch", ValidUntil: &validUntil,
+	}}
+	upstreamDisconnected := make(chan struct{})
+	proxy := newTestProxy(t, authority, streamingUpstream(t, "application/json", watchEvent, upstreamDisconnected), func(config *Config) {
+		config.RequestTimeout = time.Hour
+		config.StreamRevalidationInterval = time.Hour
+	})
+
+	response := watchRequest(t, proxy, "/api/v1/namespaces/demo/pods?watch=true")
+	readStreamedChunk(t, response.Body, watchEvent)
+	waitForStreamEnd(t, response.Body, 2*time.Second)
+	select {
+	case <-upstreamDisconnected:
+	case <-time.After(time.Second):
+		t.Fatal("upstream watch survived temporary authorization expiry")
+	}
+}
+
+func TestWatchRevalidatesAndClosesFailClosed(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		revalidate func() (AuthorizationResponse, int)
+	}{
+		{
+			name: "revoked",
+			revalidate: func() (AuthorizationResponse, int) {
+				return AuthorizationResponse{Allowed: false, Reason: "grant revoked"}, http.StatusOK
+			},
+		},
+		{
+			name: "authority unavailable",
+			revalidate: func() (AuthorizationResponse, int) {
+				return AuthorizationResponse{}, http.StatusServiceUnavailable
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			validUntil := time.Now().Add(5 * time.Second)
+			authority := &recordingAuthority{decide: func(call int) (AuthorizationResponse, int) {
+				if call == 1 {
+					return AuthorizationResponse{Allowed: true, DecisionID: "grant:watch", ValidUntil: &validUntil}, http.StatusOK
+				}
+				return test.revalidate()
+			}}
+			upstreamDisconnected := make(chan struct{})
+			proxy := newTestProxy(t, authority, streamingUpstream(t, "application/json", watchEvent, upstreamDisconnected), func(config *Config) {
+				config.AuthorizationTimeout = 100 * time.Millisecond
+				config.StreamRevalidationInterval = 25 * time.Millisecond
+			})
+
+			response := watchRequest(t, proxy, "/api/v1/namespaces/demo/pods?watch=true")
+			readStreamedChunk(t, response.Body, watchEvent)
+			waitForStreamEnd(t, response.Body, 2*time.Second)
+			select {
+			case <-upstreamDisconnected:
+			case <-time.After(time.Second):
+				t.Fatal("upstream watch survived failed revalidation")
+			}
+
+			authority.mu.Lock()
+			defer authority.mu.Unlock()
+			if len(authority.requests) < 2 {
+				t.Fatalf("authorization requests = %d, want initial plus revalidation", len(authority.requests))
+			}
+			if !reflect.DeepEqual(authority.requests[0], authority.requests[1]) {
+				t.Errorf("revalidation request changed: first=%#v second=%#v", authority.requests[0], authority.requests[1])
+			}
+		})
+	}
+}
+
+func TestDeniedWatchIsNotForwarded(t *testing.T) {
+	authority := &recordingAuthority{decision: AuthorizationResponse{Allowed: false, Reason: "no matching grant"}}
+	proxy := newTestProxy(t, authority, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Error("upstream called")
+	}), nil)
+	response := request(t, proxy.Client(), http.MethodGet, proxy.URL+"/api/v1/namespaces/demo/pods?watch=true", "caller")
+	response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+}
+
 func TestUnsupportedLongLivedAndInteractiveRequests(t *testing.T) {
 	authority := &recordingAuthority{decision: allowedDecision()}
 	proxy := newTestProxy(t, authority, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
@@ -1151,10 +1326,6 @@ func TestUnsupportedLongLivedAndInteractiveRequests(t *testing.T) {
 		method string
 		path   string
 	}{
-		{http.MethodGet, "/api/v1/namespaces/demo/pods?watch=true"},
-		{http.MethodGet, "/api/v1/namespaces/demo/pods?watch="},
-		{http.MethodGet, "/api/v1/namespaces/demo/pods?watch=not-a-boolean"},
-		{http.MethodGet, "/api/v1/namespaces/demo/pods?watch=false&watch=true"},
 		{http.MethodGet, "/api/v1/namespaces/demo/pods/web/exec"},
 		{http.MethodGet, "/api/v1/namespaces/demo/pods/web/attach"},
 		{http.MethodPost, "/api/v1/namespaces/demo/pods/web/portforward?ports=5432"},

@@ -406,9 +406,6 @@ func unsupportedAttributes(attributes RequestAttributes, request *http.Request) 
 	if attributes.Verb == "" {
 		return "this HTTP method is not mapped to a Kubernetes authorization verb"
 	}
-	if attributes.Verb == "watch" || queryMayEnable(request.URL.Query()["watch"]) {
-		return "Kubernetes watch requests are not implemented"
-	}
 	if attributes.Verb == "proxy" || attributes.Subresource == "proxy" {
 		return "Kubernetes resource proxy requests are not implemented"
 	}
@@ -469,8 +466,16 @@ func isFollowLogRequest(attributes RequestAttributes, request *http.Request) boo
 
 // isStreamingRequest reports whether a request may stay open indefinitely and so
 // must be bounded by the authorization decision rather than by RequestTimeout.
+//
+// A watch needs no separate detection here. RequestInfoFactory resolves the verb
+// by decoding ListOptions with the same parameter codec kube-apiserver uses, and
+// resolves the deprecated /api/{version}/watch/ path prefix to the same verb, so
+// a request the proxy authorizes as watch is exactly a request kube-apiserver
+// will stream. A named object carries no watch verb because kube-apiserver
+// serves it through the bounded get handler regardless of the query parameter.
 func isStreamingRequest(attributes RequestAttributes, request *http.Request) bool {
-	return isExecRequest(attributes, request) ||
+	return attributes.Verb == "watch" ||
+		isExecRequest(attributes, request) ||
 		isPortForwardRequest(attributes, request) ||
 		isFollowLogRequest(attributes, request)
 }
@@ -535,27 +540,6 @@ func kubernetesBoolParameter(values []string) bool {
 		return true
 	}
 	return enabled
-}
-
-// queryMayEnable is intentionally conservative: Kubernetes' request parsers
-// accept several true spellings and, for watch, fall back to true for every
-// non-empty value except the explicit false forms when decoding fails. Rejecting
-// an invalid value is safe; forwarding a stream misclassified as ordinary is not.
-func queryMayEnable(values []string) bool {
-	if len(values) == 0 {
-		return false
-	}
-	// Duplicate values are ambiguous across decoders; reject them rather than
-	// authorize one interpretation and forward another.
-	if len(values) != 1 {
-		return true
-	}
-	switch strings.ToLower(strings.TrimSpace(values[0])) {
-	case "0", "false":
-		return false
-	default:
-		return true
-	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

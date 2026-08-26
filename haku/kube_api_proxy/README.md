@@ -55,7 +55,15 @@ choose the Kubernetes username or groups.
   semantics are not `strconv.ParseBool`: only an absent value, `0` or a
   case-insensitive `false` is false, every other value is true, whitespace is
   significant, and a repeated parameter is decided by its first value alone.
-- `watch`, resource proxying, `attach` and other upgrades return `501` before
+- A `watch` streams through under the same lifetime enforcement, authorized as
+  the `watch` verb on the watched resource. Which requests are watches comes
+  from `RequestInfoFactory`, which decodes `ListOptions` with the parameter
+  codec kube-apiserver itself uses and resolves the deprecated
+  `/api/{version}/watch/` path prefix to the same verb — so a request the proxy
+  authorizes as a watch is exactly one kube-apiserver will stream. A `watch`
+  query parameter on a named object is not a watch, because kube-apiserver
+  serves named objects through its bounded `get` handler.
+- Resource proxying, `attach` and other upgrades return `501` before
   authorization or forwarding.
 - Console exposes the typed endpoint contract at
   `POST /api/internal/kubernetes/authorize`. It remains unavailable (and thus
@@ -211,10 +219,11 @@ The first exec support and acceptance contract is noninteractive
 (`stdin=false`, `tty=false`); interactive behavior is not yet promised even
 where transparent forwarding happens to work.
 
+A client that watches a collection issues a `list` and then a `watch`, so a
+grant covering `kubectl get pods --watch` needs both verbs.
+
 Remaining work:
 
-- TODO(#4564): implement Kubernetes `watch`. It must preserve the
-  standing-policy fail-closed model.
 - TODO(#4562): revisit deeper metrics, alerts and failure hardening if operational experience
   justifies them.
 - TODO(#4428): consider discovery-response caching only if it preserves the
