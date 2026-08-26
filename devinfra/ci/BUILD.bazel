@@ -56,6 +56,17 @@ py_library(
 )
 
 py_library(
+    name = "plan_releases",
+    srcs = ["plan_releases.py"],
+    data = [
+        "artifact_targets.json",
+        "//skills:skills_registry.json",
+    ],
+    visibility = ["//:__subpackages__"],
+    deps = [":release_content_hash"],
+)
+
+py_library(
     name = "release_content_hash",
     srcs = ["release_content_hash.py"],
     visibility = ["//:__subpackages__"],
@@ -132,6 +143,16 @@ py_test(
     srcs = ["test_release_metadata.py"],
     deps = [
         ":release_metadata",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_plan_releases",
+    srcs = ["test_plan_releases.py"],
+    deps = [
+        ":plan_releases",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
