@@ -156,7 +156,7 @@ auto_approval_policies:
     server: github
     owner: agentydragon
     repository: ducktape
-    tools: &public_repo_read_tools
+    tools: &repo_read_tools
       - actions_get
       - actions_list
       - find_duplicate
@@ -192,7 +192,7 @@ auto_approval_policies:
     server: github
     owner: agentydragon-agent
     repository: ducktape
-    tools: *public_repo_read_tools
+    tools: *repo_read_tools
   # public-coder-agent may also inspect the private Gaffer repository. Keep this as a separate
   # repository-scoped atom so adding one private source does not widen the Ducktape boundary or
   # accidentally grant access to other repositories. Both search tools require their policy's
@@ -203,7 +203,7 @@ auto_approval_policies:
     server: github
     owner: agentydragon
     repository: gaffer-private
-    tools: *public_repo_read_tools
+    tools: *repo_read_tools
   - id: public_coder_github_reads
     type: any_of
     policies:

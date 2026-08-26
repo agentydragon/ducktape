@@ -271,6 +271,17 @@ remaining boundary is ordered work:
 Full trust design: <../plans/information_trust_tiers.md>. Current index operation and the RLS
 alternative: <../recall_index/README.md> § Read scoping.
 
+## Recall/server access should ride on access tier, not be hand-declared per agent
+
+`recall_index_ids` and `in_process_server_ids` are each spelled out independently per
+`access_profiles` entry in `config.yaml`. That let `public-coder` carry
+`recall_index_ids: [ducktape-public]` with no `haku_index` in its `in_process_server_ids` —
+the grant was structurally unreachable and nobody noticed until an approval-ledger audit
+(fixed in #4696). Distinct from "Scope conversation reads to the reader's trust tier" above
+(that's the room/session fence _within_ an index; this is _which_ indexes and servers a
+profile can reach at all) but the same shape of problem: two lists that are supposed to move
+together but can silently drift apart because nothing ties them to one tier concept.
+
 ## A second runner, and binding an agent to one
 
 Two wants on one axis: the console launches a runner that is not Claude Code, and it holds several
