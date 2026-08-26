@@ -9,6 +9,12 @@ repo-owned snapshot/export and idempotent importer. This preserves a future
 cluster-queryable, agent-readable activity-history effort without preserving an
 incorrect central dataset.
 
+**Revival in progress.** The repo-owned idempotent importer this retirement
+waited for now exists (`@ducktape_activitywatch//importer`, writing the central
+server over its REST API). The remaining wiring — desktop snapshot exporter, image,
+CronJob, CI, one end-to-end canary — is tracked in [revival-plan.md](revival-plan.md).
+The design below is still the historical/current wiring until those land.
+
 The remainder of this directory is historical design and incident evidence;
 it does not describe a running service.
 
