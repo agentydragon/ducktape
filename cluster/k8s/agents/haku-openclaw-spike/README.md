@@ -36,6 +36,13 @@ Why the gateway version and Node are pinned the way they are:
   `claude-opus-4-8`. The `claude-cli` runtime still _runs_ any model via the
   bundled `claude` binary — the catalog is only metadata (picker label,
   context-window display/limits).
+- **The beta fixes Tool Search core-tool visibility.** Stable `2026.7.1-2` can
+  drop core tools (`exec`/`process`) from a turn when Tool Search is active
+  (openclaw#126460); the fix — "keep core coding tools visible when tool search
+  is enabled", commit `65d58c4`, first in `v2026.7.2-beta.5` — plus the
+  synthetic-runtime-turn fix (`7fcdded`, `v2026.8.1-beta.2`) are both ancestors
+  of the pinned `v2026.8.1-beta.3`. (Upstream Tool Search repair is not fully
+  settled: openclaw#126618 is still open.)
 - **The beta refuses WAL-unsafe SQLite.** From `2026.7.2-beta` on, the gateway
   aborts at startup unless Node's SQLite is WAL-safe (rejects `3.51.0`–`3.51.2`;
   needs `≥3.51.3`, or `3.50.7+`/`3.44.6+` in those series). Stable `2026.7.1-2`
