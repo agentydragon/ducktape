@@ -143,9 +143,15 @@ jobs:
           echo "bazel_targets=$bazel_targets" >> "$GITHUB_OUTPUT"
           echo "nix_pkgs=$nix_pkgs" >> "$GITHUB_OUTPUT"
 
-      # --remote_download_outputs=toplevel keeps only the wheel/zip files
-      # (not Bazel action intermediates) coming back from RBE — same pattern
-      # as push-images.yml.
+      # Every one of these artifacts must come back, because "Assemble artifact
+      # overrides" below exits 1 on a missing file — this gate fails closed. It
+      # relies on `bb remote build`'s post-run download, which returns an
+      # arbitrary subset for a large enough request: measured on devel, 50 targets
+      # yielded 12 files while these 8 yielded 8. So it is sound at this size and
+      # degrades as more releases gain `nixPackage`. If it starts flaking on
+      # "missing artifact for pin", read the outputs from the build event stream
+      # instead (devinfra/ci/bes.py) rather than raising a retry count.
+      #
       # run_from_commit: actions/checkout in PR mode doesn't fetch a local
       # `devel` ref, so bb remote's default base-branch patch sync fails with
       # `git rev-parse devel: exit status 128`. On pull_request events,
@@ -155,7 +161,7 @@ jobs:
       - name: Build artifacts from source
         uses: ./.github/actions/bb-remote
         with:
-          args: build ${{ steps.inputs.outputs.bazel_targets }} --remote_download_outputs=toplevel
+          args: build ${{ steps.inputs.outputs.bazel_targets }}
           run_from_commit: ${{ steps.source.outputs.sha }}
 
       # Emit the JSON blob flake.nix's artifacts logic consumes. Every pin

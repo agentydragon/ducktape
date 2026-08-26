@@ -75,12 +75,10 @@ jobs:
           echo "targets=$(python3 -m devinfra.ci.plan_releases targets)" >> "$GITHUB_OUTPUT"
 
       # One invocation for every release built under the default Bazel config.
-      # `--remote_download_outputs=toplevel` brings back the release assets
-      # themselves, because the skip decision hashes their bytes.
       - name: bb remote build release artifacts
         uses: ./.github/actions/bb-remote
         with:
-          args: build ${{ steps.targets.outputs.targets }} --remote_download_outputs=toplevel
+          args: build ${{ steps.targets.outputs.targets }}
           rbe_image: ${{ inputs.rbe_image }}
 
       - name: Plan releases
