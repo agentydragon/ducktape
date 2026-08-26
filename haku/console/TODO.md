@@ -11,11 +11,10 @@ covers it, redirecting the Agent to its direct path instead of the operator's br
 credential. It's scoped to `public_coder_safe_reads` only. A hard auto-deny is only safe when the
 redirect target is reliably reachable — otherwise it's a denial with nowhere to go.
 
-`haku_v1` spans three runtime contexts that do not share one answer to that:
+`haku_v1` spans three runtime contexts, and their _local_ kubectl setups are not equivalent:
 
 - **`haku-sandbox`** (Haku's own pod): kubelet-projected ServiceAccount token, talks straight to
-  `kubernetes.default.svc` in-cluster. No proxy, no OIDC round-trip. Robust — a good fit for the
-  check as designed.
+  `kubernetes.default.svc` in-cluster. No proxy, no OIDC round-trip. Robust.
 - **Claude Code web sessions enrolled as Haku** (e.g. "Claude 2"): a _different_ mechanism, not a
   weaker copy of the sandbox's. `devinfra/k8s/kubeconfig.py` decrypts `secrets/haku-k8s-jwt.yaml`
   (SOPS) — a JWT the `authentik-jwt-rotation` CronJob's `haku-k8s` entry mints biweekly via
@@ -29,13 +28,31 @@ redirect target is reliably reachable — otherwise it's a denial with nowhere t
   (permissions match), but the transport can degrade independently. These sessions also pick
   `kubectl` vs `kubectl-passthrough-mcp` per call at will — a passthrough call is not itself
   evidence the direct path is down.
-- **`haku-runtime-sandbox`** (console-launched chat sessions): no RBAC objects of its own. No path.
+- **Console-launched `haku-runtime-sandbox` chat sessions**: per its namespace annotation, "no
+  ServiceAccount identity" — no local path at all.
 
-Turning the check on for `haku_v1` as one profile means all three get the same auto-deny, which is
-wrong for the second context and dead-wrong for the third. Doing better means either: split
-`haku_v1` by runtime context so only `haku-sandbox` gets the hard auto-deny; or make the check
-itself fail open — fall through to manual approval instead of denying — when it can't tell the
-redirect target is currently healthy, so a degraded direct path never turns into a dead end.
+But the redirect target doesn't have to be each runtime's own local kubectl. All three already
+share `sandbox_mcp.exec_sandbox` (policy `haku_sandbox_control`, unconditionally in `haku_v1`'s
+`any_of` — not something to add, already live). It runs bash inside a pod that uses the real
+`haku` ServiceAccount (`sandboxtemplate-haku.yaml`: `serviceAccountName: haku`, bound to
+`haku-sandbox-admin` — the same identity `haku-sandbox`'s own pod runs as), reached as an MCP call
+through the same `/mcp` connection every context already needs for anything else — so it doesn't
+depend on the caller's own local kubectl or JWT setup, and it's just as reachable for the
+runtime-sandbox context (no local path) as for the other two.
+
+What that path isn't is free. The first `exec_sandbox` call in a session provisions/adopts a
+`SandboxClaim` (`provisioning_timeout_seconds: 600` in the `haku-sandbox-mcp` app config), which
+can be slow or fail if the warm pool is exhausted — a heavier failure mode than "the redirect
+target is unreachable." And it grants arbitrary bash, not a kubectl-scoped
+surface: already reviewed and auto-approved for `haku_v1` as "≈ the direct `kubectl exec` Haku's
+SA can already run" (`config.yaml`, `sandbox-mcp` server comment), but the redirect trades a
+narrow SAR-scoped request for a broad one.
+
+Before extending the check to `haku_v1`: point its denial message at `exec_sandbox`, not "your own
+kubectl" (untrue for two of three contexts); and decide whether provisioning latency/failure is an
+acceptable cost for a hard auto-deny, or whether the check should confirm a live claim (or that one
+can be provisioned) before denying, rather than assuming reachability the way it can for a
+same-cluster ServiceAccount.
 
 ## The console as a channel, not a viewer
 
