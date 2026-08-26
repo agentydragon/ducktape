@@ -303,9 +303,9 @@ async def test_backfill_is_bounded_and_says_what_it_dropped(monkeypatch, caplog)
 def test_a_tag_is_ids_and_kinds_and_omits_what_it_has_none_of() -> None:
     """What goes under the console's own content key. Nothing reads one back, so what this pins is
     the wire, for the room's readers."""
-    tag = EventTag(kind=RoomEventKind.REPLY, session_id=UUID("11111111-2222-3333-4444-555555555555"))
+    tag = EventTag(kind=RoomEventKind.REPLY, conversation_id=UUID("11111111-2222-3333-4444-555555555555"))
 
-    assert tag.content() == {"kind": "reply", "session_id": "11111111-2222-3333-4444-555555555555"}
+    assert tag.content() == {"kind": "reply", "conversation_id": "11111111-2222-3333-4444-555555555555"}
     assert EventTag(kind=RoomEventKind.NARRATION).content() == {"kind": "narration"}
 
 
