@@ -28,7 +28,6 @@ manifest:
     aiofiles: aiofiles
     aiohappyeyeballs: aiohappyeyeballs
     aiohttp: aiohttp
-    aiohttp_client_cache: aiohttp_client_cache
     aiohttp_socks: aiohttp_socks
     aioitertools: aioitertools
     aioquic: aioquic
@@ -45,7 +44,6 @@ manifest:
     arch: arch
     argon2: argon2_cffi
     arrow: arrow
-    asgi_lifespan: asgi_lifespan
     asgiref: asgiref
     asttokens: asttokens
     asyncpg: asyncpg
@@ -54,11 +52,6 @@ manifest:
     attr: attrs
     attrs: attrs
     authlib: authlib
-    aw_client: aw_client
-    aw_core: aw_core
-    aw_datastore: aw_core
-    aw_query: aw_core
-    aw_transform: aw_core
     backoff: backoff
     bcrypt: bcrypt
     beancount: beancount
@@ -73,8 +66,6 @@ manifest:
     cachetools: cachetools
     caio: caio
     canonicaljson: canonicaljson
-    cattr: cattrs
-    cattrs: cattrs
     certifi: certifi
     cffi: cffi
     cfgv: cfgv
@@ -99,7 +90,6 @@ manifest:
     debugpy: debugpy
     decorator: decorator
     defusedxml: defusedxml
-    deprecation: deprecation
     dev.make-release-notes: vulture
     distlib: distlib
     distro: distro
@@ -118,10 +108,6 @@ manifest:
     ezdxf: ezdxf
     farama_notifications: farama_notifications
     fastapi: fastapi
-    fastapi_csrf_protect: fastapi_csrf_protect
-    fastapi_sessions: fastapi_sessions
-    fastapi_users: fastapi_users
-    fastapi_users_db_sqlalchemy: fastapi_users_db_sqlalchemy
     fastjsonschema: fastjsonschema
     fastmcp: fastmcp_slim
     fastuuid: fastuuid
@@ -223,7 +209,6 @@ manifest:
     hass_client: hass_client
     hcloud: hcloud
     hf_xet: hf_xet
-    homeassistant_api: homeassistant_api
     hpack: hpack
     http_ece: http_ece
     httpcore: httpcore
@@ -249,7 +234,6 @@ manifest:
     ipykernel: ipykernel
     ipykernel_launcher: ipykernel
     ipython_pygments_lexers: ipython_pygments_lexers
-    iso8601: iso8601
     isoduration: isoduration
     itsdangerous: itsdangerous
     jaraco.classes: jaraco.classes
@@ -339,7 +323,6 @@ manifest:
     litellm: litellm
     logfire_api: logfire_api
     lxml: lxml
-    makefun: makefun
     mako: mako
     markdown: markdown
     markdown_it: markdown_it_py
@@ -422,20 +405,16 @@ manifest:
     pandocfilters: pandocfilters
     paramiko: paramiko
     parso: parso
-    passlib: passlib
     pathable: pathable
     pathlib_abc: pathlib_abc
     pathspec: pathspec
     patsy: patsy
     pdfminer: pdfminer_six
     pdfplumber: pdfplumber
-    peewee: peewee
-    persistqueue: persist_queue
     pexpect: pexpect
     pint: pint
     plaid: plaid_python
     platformdirs: platformdirs
-    playhouse: peewee
     playwright: playwright
     plotnine: plotnine
     pluggy: pluggy
@@ -457,8 +436,6 @@ manifest:
     publicsuffix2: publicsuffix2
     punq: punq
     pure_eval: pure_eval
-    pwdlib: pwdlib
-    pwiz: peewee
     py: pytest
     py_vapid: py_vapid
     pyarrow: pyarrow
@@ -512,7 +489,6 @@ manifest:
     referencing: referencing
     regex: regex
     requests: requests
-    requests_cache: requests_cache
     requests_oauthlib: requests_oauthlib
     requests_toolbelt: requests_toolbelt
     respx: respx
@@ -534,7 +510,6 @@ manifest:
     setuptools: setuptools
     shellingham: shellingham
     shortuuid: shortuuid
-    simplejson: simplejson
     six: six
     slugify: python_slugify
     sniffio: sniffio
@@ -547,12 +522,10 @@ manifest:
     stack_data: stack_data
     starlette: starlette
     statsmodels: statsmodels
-    strict_rfc3339: strict_rfc3339
     structlog: structlog
     svg: svg_py
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: takethetime
     tenacity: tenacity
     terminado: terminado
     testcontainers.arangodb: testcontainers
@@ -619,7 +592,6 @@ manifest:
     textual: textual
     tiktoken: tiktoken
     tiktoken_ext.openai_public: tiktoken
-    timeslot: timeslot
     tinycss2: tinycss2
     tokenizers: tokenizers
     tomli: tomli
@@ -645,7 +617,6 @@ manifest:
     upath: universal_pathlib
     uri_template: uri_template
     uritemplate: uritemplate
-    url_normalize: url_normalize
     urllib3: urllib3
     urwid: urwid
     uuid_utils: uuid_utils
@@ -675,4 +646,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 32f62b871d48f4db5b8d351d5ac10fc814d01495c317dd6555d4e831d64a49e0
+integrity: c5a0741878c82bd17b446b76a2d3d63f909906aa1e7827ccb7396717d3639412

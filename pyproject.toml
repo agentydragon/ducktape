@@ -128,22 +128,14 @@ dependencies = [
     "reaktiv>=0.20",
     "tabulate>=0.9",
     "watchdog>=4.0",
-
-    # x/gatelet
     "cryptography>=41.0.0",
     "python-multipart>=0.0.9",
-    "passlib",
-    "fastapi-csrf-protect",
-    "fastapi-users",
-    "fastapi-users-db-sqlalchemy",
-    "fastapi-sessions",
-    "aw-client",
-    "aw-core",
+
+    # Google API clients
     "google-api-python-client>=2.0.0",
     "google-auth",
     "google-auth-oauthlib>=1.0.0",
     "google-auth-httplib2>=0.1.0",
-    "homeassistant-api",
 
     # gmail-archiver
     "python-dateutil>=2.8.0",
@@ -270,7 +262,6 @@ dependencies = [
     "pytest-bazel>=0.1.6",
     "testcontainers[postgres]>=4.14.1",
     "respx>=0.22",
-    "asgi-lifespan>=2.1",
     "syrupy>=4.0",
     "pypdf>=5.0",
     "PyHamcrest>=2.1",

@@ -61,5 +61,4 @@ Needs verification:
 
 ## Repository
 
-- [ ] Prune the Python dependencies orphaned by deleting `x/gatelet`: `passlib`, `fastapi-csrf-protect`, `fastapi-users`, `fastapi-users-db-sqlalchemy`, `fastapi-sessions`, `aw-client`, `aw-core`, `homeassistant-api`, `asgi-lifespan`. No BUILD file references any of them any more. Kept separate from the deletion because dropping them regenerates `requirements_bazel.txt` and the Gazelle manifest; follow <devinfra/docs/lockfiles.md>. The now-inaccurate `# x/gatelet` comment in <pyproject.toml> heads that group and goes with them (`cryptography`, `python-multipart`, and the `google-*` clients under it have other users and stay).
 - [ ] Add an AGPL-3.0 `LICENSE` file at the repo root and standardize AGPL-3.0 license headers across source files (`README.md` declares AGPL 3.0, but there is no `LICENSE` file and headers are inconsistent)
