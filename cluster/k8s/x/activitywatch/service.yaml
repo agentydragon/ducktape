@@ -17,11 +17,11 @@ metadata:
   name: activitywatch-write
   namespace: activitywatch
   annotations:
-    description: Internal write-capable ActivityWatch API endpoint for the aw-sync importer.
+    description: Bearer-gated ActivityWatch write endpoint (write-proxy sidecar), fronted by the public write HTTPRoute for desktop importers.
 spec:
   selector:
     app.kubernetes.io/name: activitywatch
   ports:
     - port: 5600
-      targetPort: 5600
+      targetPort: 5602
       name: http

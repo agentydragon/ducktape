@@ -1,0 +1,20 @@
+# Public write route for desktop importers. The read route is Authentik-gated, but
+# this client (Rust aw-client) only sends a static bearer and can't do the OAuth
+# exchange, so auth here is the write-proxy's bearer check and the route goes straight
+# to the bearer-gated write Service. TLS is the cluster-gateway wildcard for
+# *.allegedly.works. See cluster/docs/activitywatch/revival-plan.md.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: activitywatch-write
+  namespace: activitywatch
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "activitywatch-write.allegedly.works"
+  rules:
+    - backendRefs:
+        - name: activitywatch-write
+          port: 5600

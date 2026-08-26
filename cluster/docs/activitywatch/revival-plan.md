@@ -24,48 +24,44 @@ staging copy — is also what removes the heartbeat amplification that retired t
 design: the server has already coalesced heartbeats into stored events, and the
 importer dedups any residue.
 
+## Landed
+
+- **Importer auth** (#4742): the importer reaches an HTTPS, bearer-gated central via
+  `--dest-url` + `AW_DEST_TOKEN` (env only, never argv).
+- **Cluster write path**: the central aw-server is revived behind a bearer-checking
+  write-proxy sidecar, reached at `https://activitywatch-write.allegedly.works`. The
+  shared token is a dual-recipient SOPS secret (cluster-secrets + the synced
+  desktops' user keys), so one value serves both the proxy and each desktop's
+  `AW_DEST_TOKEN`. aw-server itself and the Authentik read path are untouched.
+
 ## What's left
 
 1. **Package + schedule on the desktop** (nix). Replace the `aw-sync … --mode push`
    timer in `nix/home/services/activitywatch.nix` with the importer on a timer:
-   `aw_importer_bin --source-host 127.0.0.1 --dest-host <central> --device <host>`.
-   The importer needs a writable `XDG_CACHE_HOME`/`HOME` — `AwClient` takes a
-   `SingleInstance` lock there.
+   `aw_importer_bin --dest-url https://activitywatch-write.allegedly.works --device <host>`,
+   `AW_DEST_TOKEN` decrypted from the shared SOPS secret. The importer needs a
+   writable `XDG_CACHE_HOME`/`HOME` — `AwClient` takes a `SingleInstance` lock there.
 
-2. **Give the desktop a path to the cluster write API.** The one open decision
-   (below). The central write service is admitted only from inside the cluster
-   today; a desktop-run importer needs either an authenticated write route or a mesh
-   route to reach it.
-
-3. **Retire Syncthing.** With the importer talking to the server directly, the whole
+2. **Retire Syncthing.** With the importer talking to the server directly, the whole
    file-transport layer goes: the cluster Syncthing receiver, the desktop send-only
    folder, and the per-host Syncthing certs/keys — a deletion across
    `cluster/k8s/x/activitywatch/`, `nix/home/services/activitywatch.nix`, and
-   `secrets/home/<host>/`.
+   `secrets/home/<host>/`. (The revival left them deployed but idle.)
 
-4. **CI coverage.** Gate `@ducktape_activitywatch//importer:aw_importer_test`: the
+3. **CI coverage.** Gate `@ducktape_activitywatch//importer:aw_importer_test`: the
    root `//...` sweep and the PR bazel-diff both skip this `.bazelignore`d module, so
    it regresses ungated otherwise.
 
-5. **Incremental sync** (efficiency). v1 reads the whole source bucket and whole
-   destination bucket each run; switch to a per-bucket high-water mark — read only
-   source events past the newest already in the destination.
+4. **Incremental sync, then make the write route ingest-only.** v1 reads the whole
+   source and whole destination bucket each run; switch to a per-bucket high-water
+   mark — read only source events past the newest already in the destination. Once
+   the importer no longer reads the destination, restrict the write route to write
+   methods: today it must allow GET, so a leaked token can read history, not just
+   ingest.
 
-6. **One end-to-end canary.** A single real pass — desktop importer → central server
+5. **One end-to-end canary.** A single real pass — desktop importer → central server
    → query — before enabling every device, then add devices back per the README's
    "Adding More Devices".
-
-## Open decision: how the desktop reaches the cluster
-
-The importer runs on the desktop and must reach the central aw-server's write API.
-Two ways, and this decides step 2:
-
-- **Authenticated write route** — expose a write-capable route (Authentik, mirroring
-  the existing read route) and hand each desktop a credential. In-pattern with the
-  existing per-host secrets, but it is a new write surface on the public edge.
-- **Nebula mesh** — join the central aw-server to the mesh and let desktops reach an
-  internal route. No public write surface; the cost is joining AW to Nebula, which
-  it deliberately is not on today.
 
 ## Not blocking
 

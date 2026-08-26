@@ -126,6 +126,21 @@ creation_rules:
           - *iguana-agentydragon
           - *gecko-agentydragon
 
+  # ActivityWatch central write token — Flux applies the Secret and the write-proxy
+  # sidecar checks it (cluster-secrets), AND the synced desktops read the same value
+  # as $AW_DEST_TOKEN for the importer (user keys). One value, both sides. More
+  # specific than the generic cluster/k8s/* rule below, so this match wins.
+  - path_regex: cluster/k8s/x/activitywatch/activitywatch-write-token\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+
   # tofu-state PG backend credentials — Flux applies the Secret, CNPG consumes it
   # in-cluster (cluster-secrets), AND tofu running on user machines needs to read
   # the password to set PG_CONN_STR (user keys). More specific than the generic

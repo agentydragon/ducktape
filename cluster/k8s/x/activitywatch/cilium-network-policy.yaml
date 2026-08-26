@@ -35,6 +35,14 @@ spec:
         - ports:
             - port: "5600"
               protocol: TCP
+    # Public write route: the Gateway (Envoy, hostNetwork) reaches the bearer-gated
+    # write-proxy sidecar on 5602. See docs/cilium_network_policy.md (fromEntities: ingress).
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "5602"
+              protocol: TCP
   egress:
     # DNS
     - toEndpoints:

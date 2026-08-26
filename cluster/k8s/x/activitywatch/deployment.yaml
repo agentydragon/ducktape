@@ -92,6 +92,45 @@ spec:
               port: 5601
             initialDelaySeconds: 2
             periodSeconds: 10
+        - name: write-proxy
+          image: nginx:alpine
+          # The gate on the public write route: only requests bearing the shared
+          # write token reach aw-server (which has no auth of its own). envsubst fills
+          # ${AW_WRITE_TOKEN} from the secret; NGINX_ENVSUBST_FILTER keeps it to that
+          # one variable so nginx's own $-variables survive.
+          env:
+            - name: AW_WRITE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: activitywatch-write-token
+                  key: token
+            - name: NGINX_ENVSUBST_FILTER
+              value: AW_WRITE_TOKEN
+          ports:
+            - containerPort: 5602
+              name: write
+          volumeMounts:
+            - name: write-proxy-config
+              mountPath: /etc/nginx/templates
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 5602
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 5602
+            initialDelaySeconds: 2
+            periodSeconds: 10
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -99,3 +138,6 @@ spec:
         - name: readonly-proxy-config
           configMap:
             name: activitywatch-readonly-proxy
+        - name: write-proxy-config
+          configMap:
+            name: activitywatch-write-proxy

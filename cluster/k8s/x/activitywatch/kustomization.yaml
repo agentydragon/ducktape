@@ -8,15 +8,21 @@ resources:
   - importer-cronjob.yaml
   - pvc.yaml
   - service.yaml
+  - write-httproute.yaml
   - cilium-network-policy.yaml
   - syncthing-identity.yaml
   - syncthing-key.sops.yaml
+  - activitywatch-write-token.sops.yaml
 
 configMapGenerator:
   - name: activitywatch-readonly-proxy
     namespace: activitywatch
     files:
       - default.conf=readonly-proxy.conf
+  - name: activitywatch-write-proxy
+    namespace: activitywatch
+    files:
+      - default.conf.template=write-proxy.conf.template
   - name: activitywatch-syncthing-config
     namespace: activitywatch
     files:

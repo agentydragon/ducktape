@@ -4,11 +4,11 @@ metadata:
   name: activitywatch
   namespace: ducktape-flux
 spec:
-  # Retired 2026-08-17: upstream aw-sync mutates the receive-only SQLite input
-  # and cannot provide an idempotent, provenance-preserving import. Retain the
-  # manifests for a future repo-owned snapshot/import design, but keep all
-  # cluster objects deleted while this Kustomization is suspended.
-  suspend: true
+  # Revived 2026-08-26: the central aw-server is fed by the repo-owned
+  # instance-to-instance importer (@ducktape_activitywatch//importer) over a
+  # bearer-gated write route, replacing aw-sync. The Syncthing receiver and the old
+  # aw-sync importer-cronjob are still deployed but idle; retiring them is the
+  # follow-up (cluster/docs/activitywatch/revival-plan.md).
   retryInterval: 1m
   interval: 10m
   timeout: 5m

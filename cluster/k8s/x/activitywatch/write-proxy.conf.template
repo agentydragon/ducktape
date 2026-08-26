@@ -1,0 +1,35 @@
+# Bearer-checking proxy for the ActivityWatch write path. The central aw-server has
+# no auth of its own, so this sidecar is the gate: only requests carrying the shared
+# write token reach it. The synced desktops send the same value as AW_DEST_TOKEN.
+#
+# nginx:alpine runs envsubst on templates; NGINX_ENVSUBST_FILTER pins it to
+# AW_WRITE_TOKEN so ${AW_WRITE_TOKEN} is filled from the secret while nginx's own
+# $-variables ($http_authorization, $host, ...) are left intact.
+#
+# CLEANUP: the importer reads the dest for dedup, so this must allow GET as well as
+#   POST -- a leaked token can therefore read history, not just ingest. Restrict to
+#   write methods once the importer syncs incrementally from a local high-water mark
+#   and no longer reads the destination (see cluster/docs/activitywatch/revival-plan.md).
+
+map $http_authorization $aw_write_ok {
+    default 0;
+    "Bearer ${AW_WRITE_TOKEN}" 1;
+}
+
+server {
+    listen 5602;
+
+    location = /healthz {
+        return 200 "ok";
+    }
+
+    location / {
+        if ($aw_write_ok = 0) {
+            return 401;
+        }
+        proxy_pass http://127.0.0.1:5600;
+        proxy_set_header Host $host;
+        # aw-server-rust CORS allow-lists localhost; drop Origin like the read proxy.
+        proxy_set_header Origin "";
+    }
+}
