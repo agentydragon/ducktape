@@ -18,12 +18,9 @@
 # unexercised and is missing fetcherVersion-4 store steps (index.db
 # reconstruction), which makes the gateway's offline install fail.
 #
-# History: this image used to `dockerTools.pullImage` the upstream
-# `ghcr.io/openclaw/openclaw` beta and layer Nix tools on top. That hybrid was
-# retired 2026-08 because it shipped two Node runtimes (the base image's Node
-# linked an unsafe system SQLite 3.51.2 that OpenClaw's WAL-safety guard rejects
-# at startup) and because building the image ourselves keeps the whole runtime
-# in one controlled Nix closure.
+# Not an upstream Docker base (the earlier approach): that shipped a second Node
+# whose system SQLite 3.51.2 the beta's WAL guard rejects -- the crashloop this
+# fixes. Building the image ourselves keeps one Node in one Nix closure.
 {
   pkgs,
   nix-openclaw,
