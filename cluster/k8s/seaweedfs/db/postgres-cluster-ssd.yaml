@@ -43,6 +43,24 @@ spec:
     storageClass: local-path-ovh-ssd
     size: 2Gi
 
+  # QoS / eviction protection. Without these the instance pods are BestEffort --
+  # the kubelet's first node-pressure eviction target and the OOM-killer's first
+  # victim -- which is backwards for the store holding all filer metadata: every
+  # SeaweedFS and git op goes through it (postgres2 backend, metadata lives here
+  # and not in the filer). Every other component in this namespace is explicitly
+  # protected; this one was the only BestEffort workload left.
+  #
+  # Sized on 30d observation: the primary sits at 372Mi p50 / 410Mi max, the
+  # replica at 185Mi p50. Request 512Mi is above the primary's peak so eviction
+  # ranks it last; limit 1Gi leaves room for a checkpoint or autovacuum burst
+  # without being a cap Postgres can trip over.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+
   monitoring:
     enablePodMonitor: true
 
