@@ -195,6 +195,16 @@ ANTHROPIC = hosts("api.anthropic.com")
 # fences the name — see the module docstring's node-IP carve-out.
 AIQUOTA = hosts("aiquota.allegedly.works")
 
+# The central ActivityWatch read API, reached only by the console Claude runner pool
+# so the agent can query the operator's own activity history. Same node-IP
+# `*.allegedly.works` case as aiquota: the `toFQDNs` half enforces nothing, the
+# `toEntities` rule admits, the DNS half fences. Read-only at the route (bearer-proxy
+# allows GET + query-POST only) with the bearer substituted at the proxy, so the
+# sandbox never holds it. Its own group, not OPERATOR_DATA: window/AFK/app history is
+# what makes the agent useful on this fence, deliberately kept apart from the mail /
+# calendar / finance tier that stays fenced to the general haku-sandbox.
+ACTIVITYWATCH = hosts("activitywatch-read.allegedly.works")
+
 # The cluster's own API server, through the terminate+re-encrypt Gateway route.
 # Its own group because reaching it is not like reaching a registry: what a
 # holder may actually do is decided by the RBAC bound to the identity in its
@@ -286,11 +296,14 @@ ALLOWLISTS: dict[str, Confined | IronConfined | Unconfined] = {
     # longer one host. It reaches GitHub as `agentydragon-agent`, with the PAT substituted
     # at the proxy so the sandbox never holds it — a write grant to every repo the account
     # can touch, narrowing to named repos tracked in `haku/TODO.md`. It also reaches
-    # aiquota's read API for its own usage quotas (bearer likewise substituted); that is a
-    # node-IP `*.allegedly.works` name, so — unlike the GitHub hosts, which `toFQDNs`
-    # genuinely fences — it is admitted by the `toEntities` rule and fenced by the DNS half.
+    # aiquota's read API for its own usage quotas and the ActivityWatch read API for the
+    # operator's activity history (both bearers likewise substituted); those are node-IP
+    # `*.allegedly.works` names, so — unlike the GitHub hosts, which `toFQDNs` genuinely
+    # fences — they are admitted by the `toEntities` rule and fenced by the DNS half.
     # It reaches nothing by cluster name, hence no cluster DNS.
-    HAKU_CLAUDE_FENCE: Confined(allows=ANTHROPIC | GITHUB_API | GITHUB_GIT | AIQUOTA, resolves_also=frozenset()),
+    HAKU_CLAUDE_FENCE: Confined(
+        allows=ANTHROPIC | GITHUB_API | GITHUB_GIT | AIQUOTA | ACTIVITYWATCH, resolves_also=frozenset()
+    ),
     # The `claude-sandbox` namespace, via the shared agents-mitmproxy.
     "agents/mitmproxy/cnp-cloud-api-egress.yaml": Confined(
         allows=BUILD_REGISTRIES

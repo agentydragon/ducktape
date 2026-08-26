@@ -1,6 +1,6 @@
 # ActivityWatch central query + write server.
 # Ingress: kube-apiserver (health probes), Authentik proxy (read-only proxy 5601),
-# the Gateway (bearer-gated write-proxy 5602). Egress: DNS only.
+# the Gateway (bearer-gated bearer-proxy: write 5602, read 5603). Egress: DNS only.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -27,13 +27,16 @@ spec:
         - ports:
             - port: "5601"
               protocol: TCP
-    # Public write route: the Gateway (Envoy, hostNetwork) reaches the bearer-gated
-    # write-proxy sidecar on 5602. See docs/cilium_network_policy.md (fromEntities: ingress).
+    # Public write + read routes: the Gateway (Envoy, hostNetwork) reaches the
+    # bearer-gated bearer-proxy sidecar on 5602 (write) and 5603 (read).
+    # See docs/cilium_network_policy.md (fromEntities: ingress).
     - fromEntities:
         - ingress
       toPorts:
         - ports:
             - port: "5602"
+              protocol: TCP
+            - port: "5603"
               protocol: TCP
   egress:
     # DNS
