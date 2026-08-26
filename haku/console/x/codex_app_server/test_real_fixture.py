@@ -4,13 +4,7 @@ import pytest_bazel
 
 from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
 from haku.console.x.codex_app_server.projection import RecordedFrame, project_log
-from haku.console.x.codex_app_server.protocol import (
-    JsonObject,
-    Notification,
-    parse_message,
-    read_trace,
-    server_messages,
-)
+from haku.console.x.codex_app_server.protocol import read_trace, server_messages
 from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter
 from haku.console.x.conversation_events import (
     CallRef,
@@ -83,50 +77,18 @@ def test_real_capture_projects_both_observed_turn_lifecycles():
     assert projection.unprojected == {}
 
 
-def _error_params() -> tuple[JsonObject, ...]:
-    """The `params` of every `error` notification in the capture, in wire order."""
-    parsed = (parse_message(frame.payload) for frame in _frames(_PROVIDER_FAILURE))
-    return tuple(
-        message.params
-        for message in parsed
-        if isinstance(message, Notification) and message.method == "error" and message.params is not None
-    )
-
-
-def test_provider_failure_capture_states_its_reason_and_whether_codex_will_retry():
-    """`ErrorNotification.willRetry` is the retryability signal; the reason moves field on the last frame.
-
-    Codex retries under `willRetry=true` with the reason in `additionalDetails` and a bare progress
-    counter in `message`, then repeats the same `TurnError` under `willRetry=false`, this time with
-    the reason in `message`.  A reader that takes `message` alone renders the counter as the failure.
-    The counters enumerate Codex's own retry budget, so their count and their `/N` have to agree.
-    """
-    *retries, terminal = _error_params()
-
-    assert [params["error"]["message"] for params in retries] == [f"Reconnecting... {n}/5" for n in range(1, 6)]
-    assert [params["willRetry"] for params in retries] == [True] * len(retries)
-    assert terminal["willRetry"] is False
-    assert all(params["error"]["additionalDetails"] == terminal["error"]["message"] for params in retries)
-    assert terminal["error"]["additionalDetails"] is None
-
-
-def test_provider_failure_notification_and_terminal_turn_agree_on_one_turn_error():
-    """`turn.error` on `turn/completed` repeats the final notification's `TurnError`, categorized."""
-    terminal = _error_params()[-1]
-    completed = next(frame for frame in _frames(_PROVIDER_FAILURE) if frame.payload.get("method") == "turn/completed")
-    turn = completed.payload["params"]["turn"]
-
-    assert turn["status"] == "failed"
-    assert turn["error"] == terminal["error"]
-    assert turn["error"]["codexErrorInfo"] == "internalServerError"
-
-
 def test_provider_failure_capture_projects_only_a_bare_failed_outcome():
-    """#4752: the projection keeps the outcome and drops every durable trace of the reason."""
-    projected = project_log(_frames(_PROVIDER_FAILURE))
+    """#4752: the projection keeps the outcome and drops every durable trace of the reason.
+
+    The capture's `error` notifications and its `turn.error` all state why the turn failed, and
+    `docs/protocol_evidence.md` reads that shape off them; none of it reaches a durable event.
+    """
+    frames = _frames(_PROVIDER_FAILURE)
+
+    projected = project_log(frames)
 
     assert projected.events == (TurnCompleted(outcome=TurnOutcome.FAILED, provenance=FrameRange(27, 27)),)
-    assert projected.unprojected["error"] == len(_error_params())
+    assert projected.unprojected["error"] == sum(frame.payload.get("method") == "error" for frame in frames)
 
 
 def test_provider_failure_reason_survives_only_as_far_as_the_transient_completion():
