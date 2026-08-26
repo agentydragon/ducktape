@@ -10,7 +10,9 @@ metadata:
   namespace: haku-openclaw-spike
 spec:
   trigger:
-    manual: restore-1
+    # restore-1 misfired at 08:35 against an empty repo (backup not yet done).
+    # restore-2 restores the clean ~1.8 GiB snapshot (3b44ec95) into state-v2.
+    manual: restore-2
   restic:
     repository: haku-openclaw-spike-volsync-restic
     destinationPVC: haku-openclaw-spike-state-v2
