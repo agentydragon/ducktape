@@ -401,19 +401,21 @@
         LD_LIBRARY_PATH = systemLibs.libraryPath;
       };
 
-      checks.${system}.claude-code-permissions = import ./nix/home/tests/claude-code-permissions.nix {
-        inherit pkgs;
-      };
+      # One binding, because `system` is dynamic: Nix merges repeated *static* attribute paths but
+      # rejects a repeated dynamic one, so a second `checks.${system}.…` is an eval error.
+      checks.${system} = {
+        claude-code-permissions = import ./nix/home/tests/claude-code-permissions.nix {
+          inherit pkgs;
+        };
 
-      checks.${system}.codex-execpolicy-evaluation =
-        import ./nix/home/tests/codex-execpolicy-evaluation.nix
-          {
-            inherit pkgs;
-            inherit (pkgsMaster) codex;
-          };
+        codex-execpolicy-evaluation = import ./nix/home/tests/codex-execpolicy-evaluation.nix {
+          inherit pkgs;
+          inherit (pkgsMaster) codex;
+        };
 
-      checks.${system}.gemini-cli-integration = import ./nix/home/tests/gemini-cli-integration.nix {
-        inherit pkgs;
+        gemini-cli-integration = import ./nix/home/tests/gemini-cli-integration.nix {
+          inherit pkgs;
+        };
       };
 
       packages.${system} =
