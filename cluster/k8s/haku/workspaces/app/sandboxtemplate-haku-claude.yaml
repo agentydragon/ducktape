@@ -71,16 +71,16 @@ spec:
             # `GITHUB_TOKEN` too, so API callers and `gh` find it where they look; the netrc
             # entry the bootstrap writes is what git uses.
             - name: HAKU_GITHUB_TOKEN
-              value: proxy-haku-claude-github-placeholder
+              value: github-token-placeholder
             - name: GITHUB_TOKEN
-              value: proxy-haku-claude-github-placeholder
+              value: github-token-placeholder
             # Inert placeholder the egress proxy swaps for aiquota's real shared
             # bearer, and only on aiquota.allegedly.works' two read paths
             # (claude-iron.yaml). Lets the agent read its own AI-usage quotas via
             # `curl -H "Authorization: Bearer $AIQUOTA_API_BEARER_TOKEN"
             # https://aiquota.allegedly.works/v1/quotas` without ever holding the key.
             - name: AIQUOTA_API_BEARER_TOKEN
-              value: proxy-haku-claude-aiquota-placeholder
+              value: aiquota-token-placeholder
             # ducktape is a read-only source Haku consults. github.com is reachable from the
             # agent's shell, which has the proxy in its environment, but not from the bootstrap,
             # which runs with pod env and deliberately has no proxy vars — so a clone here would

@@ -38,7 +38,7 @@ chat_runtimes:
     warm_pool: haku-claude
     cwd: /workspace
     session_ttl_seconds: 7200
-    oauth_placeholder: sk-ant-oat01-proxy-haku-claude-placeholder
+    oauth_placeholder: sk-ant-oat01-placeholder
     https_proxy: http://haku-claude-oauth-proxy.haku-egress-proxy.svc.cluster.local:8180
     ca_bundle: /egress-proxy-ca/ca-certificates.crt
     # forgejo-http.forgejo is spelled out because the bare service name does not end in `.svc`,
