@@ -354,3 +354,12 @@ needs its own adapter and deploy configuration. `ClaudeRuntimeConfig` remains si
 warm pool, OAuth placeholder, system-prompt template and MCP URL; a concrete need for multiple
 instances of one implementation kind would replace that with keyed runtime instances without
 changing session Agent identity.
+
+## Small cleanups
+
+- `CodexThread.approval_policy` and `.sandbox` (`x/codex_app_server/client.py`) are bare `str` over
+  vocabularies the app-server fixes. `sandbox` selects the containment posture: `danger-full-access`
+  is deliberate for the runtime pod, but a typo in it type-checks today. STYLE.md wants enums here.
+- The comment above `_operator_auth_requires_canonical_public_origin` (`config.py`) describes an
+  optional standing Kubernetes authorization policy field that is not on `Settings` —
+  `kubernetes_authorization` is on `ConsoleConfigFile` in `mcp_config.py`. Delete the comment.
