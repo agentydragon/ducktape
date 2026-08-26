@@ -164,6 +164,9 @@
       "haku-console": {
         "url": "https://haku.allegedly.works/mcp",
         "transport": "streamable-http",
+        // Haku fans out to many upstream MCP servers and each call is independent,
+        // so let the agent issue concurrent tool calls against it.
+        "supportsParallelToolCalls": true,
         // Haku can synchronously wait up to 60s for a terminal result. Keep this
         // client timeout above that so Haku returns a non-terminal stub instead
         // of OpenClaw surfacing an MCP protocol-level timeout.
