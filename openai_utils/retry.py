@@ -91,8 +91,6 @@ class RetryingOpenAIModel(OpenAIModelProto):
     """Retry-decorated wrapper around an OpenAIModel-like base implementing our protocol."""
 
     base: OpenAIModelProto
-    # Not an init field: `base` is the only authority for it, so accepting one here would let a
-    # caller pass a name this wrapper then silently discards.
     model: str = field(init=False)
 
     def __post_init__(self) -> None:

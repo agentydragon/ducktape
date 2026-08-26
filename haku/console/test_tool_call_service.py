@@ -301,8 +301,7 @@ def tokens(actors: dict[str, ToolCallActor]) -> _OperatorTokens:
     return _OperatorTokens({actors["oa"].operator_id: "token-a", actors["ob"].operator_id: "token-b"})
 
 
-async def _no_gmail_client(_operator_id: UUID) -> None:
-    """This suite exercises no Gmail tool, so its operators have no linked Gmail client."""
+async def _no_gmail_client(_operator_id: UUID) -> None: ...
 
 
 def _service(

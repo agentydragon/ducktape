@@ -110,8 +110,6 @@ class AgentModelProto(ABC):
 @dataclass
 class ResponsesAgentModel(AgentModelProto):
     base: OpenAIModelProto
-    # Not an init field: the wrapped model is the only authority for it, so accepting one here
-    # would let a caller pass a name this adapter then silently discards.
     model: str = field(init=False)
     api_shape: LLMApiShape = LLMApiShape.RESPONSES
 
