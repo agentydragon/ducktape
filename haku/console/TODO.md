@@ -8,14 +8,34 @@ actionable checklist. Remove entries once done.
 `kubectl_passthrough_redundancy_check` (`auto_approval_policies`, `type: kubernetes_passthrough`)
 auto-denies a `kubectl-passthrough-mcp` call when the caller's own Kubernetes SAR identity already
 covers it, redirecting the Agent to its direct path instead of the operator's broader passthrough
-credential. It's scoped to `public_coder_safe_reads` only.
+credential. It's scoped to `public_coder_safe_reads` only. A hard auto-deny is only safe when the
+redirect target is reliably reachable — otherwise it's a denial with nowhere to go.
 
-Before adding it to `haku_v1` (or any other profile), confirm that profile's runtime actually has a
-working direct path to reach for — a verified `kubectl` (or equivalent) in its own environment, and
-instructions that actually tell it to use that (or the haku sandbox's own `kube-api-proxy`) instead
-of `kubectl-passthrough-mcp` — otherwise the redirect is just a dead end: a denial with nowhere to
-go. This matters most for Claude Code web/claude.ai-hosted sessions, whose environment setup is not
-the same as Haku's own sandbox.
+`haku_v1` spans three runtime contexts that do not share one answer to that:
+
+- **`haku-sandbox`** (Haku's own pod): kubelet-projected ServiceAccount token, talks straight to
+  `kubernetes.default.svc` in-cluster. No proxy, no OIDC round-trip. Robust — a good fit for the
+  check as designed.
+- **Claude Code web sessions enrolled as Haku** (e.g. "Claude 2"): a _different_ mechanism, not a
+  weaker copy of the sandbox's. `devinfra/k8s/kubeconfig.py` decrypts `secrets/haku-k8s-jwt.yaml`
+  (SOPS) — a JWT the `authentik-jwt-rotation` CronJob's `haku-k8s` entry mints biweekly via
+  Authentik `kubectl-sandbox-client-credentials` (`expected_group: haku`) — into a bearer-token
+  kubeconfig against `https://kubeapi.allegedly.works`. That route exists specifically because
+  Claude Code web's egress goes through Anthropic's L7 TLS-terminating MITM proxy, which kills
+  client-cert auth (see `cluster/k8s/kube-api-proxy/README.md`). So this path carries real
+  dependencies `haku-sandbox` doesn't: the Gateway/HTTPRoute, the Anthropic proxy round-tripping
+  cleanly, and a JWT that's only as fresh as the last biweekly mint. It authenticates as the OIDC
+  group `oidc-ksbx-groups:haku`, co-subjected onto the same RoleBindings as the sandbox's SA
+  (permissions match), but the transport can degrade independently. These sessions also pick
+  `kubectl` vs `kubectl-passthrough-mcp` per call at will — a passthrough call is not itself
+  evidence the direct path is down.
+- **`haku-runtime-sandbox`** (console-launched chat sessions): no RBAC objects of its own. No path.
+
+Turning the check on for `haku_v1` as one profile means all three get the same auto-deny, which is
+wrong for the second context and dead-wrong for the third. Doing better means either: split
+`haku_v1` by runtime context so only `haku-sandbox` gets the hard auto-deny; or make the check
+itself fail open — fall through to manual approval instead of denying — when it can't tell the
+redirect target is currently healthy, so a degraded direct path never turns into a dead end.
 
 ## The console as a channel, not a viewer
 
