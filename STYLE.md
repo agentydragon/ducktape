@@ -306,6 +306,15 @@ That justifying register belongs in the commit message, the PR, or the reply han
 work — wherever someone is deciding whether to accept it. It does not survive into the file,
 because once the change has landed nobody is deciding any more.
 
+### Current Design and Reference Documents
+
+Rewrite current design/reference documents in place as one coherent statement of current truth;
+do not layer dated "update", "superseded", or "we used to think X but now Y" sections onto them.
+Use Git history, PRs, and issues for chronology. Keep historical facts only when they materially
+constrain future code or operations, and present them as rationale/evidence. Explicit changelogs,
+ADR logs, incident reports, and experiment logs are exceptions when their chronological format is
+intentional.
+
 **What ships is the artifact, not an account of building it.** A television leaves the factory
 with a service sticker inside, not a book about designing televisions. A reader arriving at a file
 wants the system as it works now, and every sentence about how it came to work that way is one
