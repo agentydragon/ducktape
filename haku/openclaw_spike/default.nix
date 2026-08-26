@@ -67,8 +67,7 @@ let
     rev = "a8c1973388fa2645fce83f0239b2356744a98045";
     hash = "sha256-BTrlg8Y88j50hS3EHDCGQhh0k9zSbZt58b2LmYMcq8w=";
     # npm dependency-cache hash for the beta-pinned wrapper lock (npm_wrapper/).
-    # PLACEHOLDER: the first CI build fails with the real `got:` hash, filled here.
-    gatewayNpmDepsHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    gatewayNpmDepsHash = "sha256-nsYhpaw1wsKZwuIx9KZmM5jYPd4zqX4klSah07LP2lk=";
   };
 
   # nix-openclaw's npm wrapper (nix/npm/openclaw/) pins openclaw to the *stable*
