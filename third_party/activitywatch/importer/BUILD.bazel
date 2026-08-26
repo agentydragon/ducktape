@@ -20,7 +20,7 @@ rust_library(
         "snapshot.rs",
     ],
     crate_root = "lib.rs",
-    edition = "2021",
+    edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
         "@aw_server_crates//:chrono",
@@ -35,7 +35,7 @@ rust_library(
 rust_binary(
     name = "aw_importer_bin",
     srcs = ["main.rs"],
-    edition = "2021",
+    edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
         ":aw_importer",
@@ -49,7 +49,7 @@ rust_test(
     size = "small",
     srcs = ["import_test.rs"],
     crate_root = "import_test.rs",
-    edition = "2021",
+    edition = "2024",
     deps = [
         ":aw_importer",
         "@aw_server_crates//:chrono",
