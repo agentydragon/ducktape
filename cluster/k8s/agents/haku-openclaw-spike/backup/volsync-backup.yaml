@@ -1,8 +1,11 @@
 # Encrypted, deduplicated Restic snapshots of the OpenClaw spike state to its
 # dedicated private SeaweedFS S3 bucket. Direct copies are crash-consistent.
 #
-# sourcePVC is the optiplex home worker PVC (state-v2, local-path-home-ssd); the
-# mover and cache are pinned to optiplex because that is where the volume lives.
+# sourcePVC is the optiplex home worker PVC (state-v2, local-path-home-ssd). The
+# Direct mover mounts that already-bound PVC, so the PV's own node affinity forces
+# the mover (and its WaitForFirstConsumer cache) onto optiplex -- no explicit
+# moverAffinity needed. (The restore side did pin its mover: its destination PVC
+# was unbound, so the mover's placement is what chose the node.)
 apiVersion: volsync.backube/v1alpha1
 kind: ReplicationSource
 metadata:
@@ -40,11 +43,3 @@ spec:
       fsGroup: 1000
       seccompProfile:
         type: RuntimeDefault
-    moverAffinity:
-      nodeAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          nodeSelectorTerms:
-            - matchExpressions:
-                - key: kubernetes.io/hostname
-                  operator: In
-                  values: [optiplex]
