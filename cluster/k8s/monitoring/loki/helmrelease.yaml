@@ -195,6 +195,41 @@ spec:
                 matchExpressions:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
+      # nginx's DNS resolver reuses one fixed UDP source port for every
+      # query; Kubernetes' conntrack-based Service NAT then pins that flow
+      # to whichever CoreDNS pod answered first and never re-evaluates it,
+      # so nginx keeps querying a dead pod IP forever once CoreDNS
+      # reschedules — only a gateway restart/reload re-triggers resolution.
+      # See ducktape#4750. dnsmasq opens a fresh UDP flow per query instead,
+      # so it never falls into this trap; it forwards via this pod's own
+      # /etc/resolv.conf (the kube-dns ClusterIP, kubelet-injected), so no
+      # DNS server address is hardcoded here.
+      nginxConfig:
+        resolver: "127.0.0.1:8053"
+      extraContainers:
+        - name: dnsmasq
+          image: 4km3/dnsmasq:2.90-r3-alpine-3.22.2
+          args:
+            - "-k"
+            - "--no-hosts"
+            - "--listen-address=127.0.0.1"
+            - "--port=8053"
+            - "--cache-size=150"
+          ports:
+            - name: dns
+              containerPort: 8053
+              protocol: UDP
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
 
     # Disable bundled monitoring (we have kube-prometheus-stack)
     monitoring:

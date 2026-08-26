@@ -46,10 +46,16 @@ spec:
             # exceptions retained from the original proxy policy.
             - name: NAMESPACE_ALLOWLIST
               value: "activitywatch,airlock,analytics,authentik,cert-manager,cli-proxy-api,cnpg-system,cpap-sync,csi-proxmox,docker-ci,flux-system,gatus,grocy-sf,grocy-vallejo,haku-ci,kube-system,litellm,local-path-storage,loki,monitoring,node-feature-discovery,nvidia-device-plugin,oci-cache,openebs,osm-mcp,plaid-mcp,proxmox-proxy,props,study-casino,tana-mcp"
+            # Points at loki-read directly, bypassing loki-gateway's nginx —
+            # matches how Grafana's own datasource reaches Loki. nginx's DNS
+            # resolver can get permanently pinned to a dead CoreDNS pod IP
+            # after CoreDNS reschedules (ducktape#4750); this proxy only
+            # ever queries, so it never needed gateway's read/write path
+            # routing in the first place.
             # Must stay in sync with the egress CiliumNetworkPolicy in this
-            # directory, which only allows the Loki gateway.
+            # directory, which only allows loki-read.
             - name: UPSTREAM_URL
-              value: "http://loki-gateway.loki.svc:80"
+              value: "http://loki-read.loki.svc:3100"
           resources:
             requests:
               cpu: "50m"
