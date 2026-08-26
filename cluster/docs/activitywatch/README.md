@@ -10,10 +10,12 @@ cluster-queryable, agent-readable activity-history effort without preserving an
 incorrect central dataset.
 
 **Revival in progress.** The repo-owned idempotent importer this retirement
-waited for now exists (`@ducktape_activitywatch//importer`, writing the central
-server over its REST API). The remaining wiring — desktop snapshot exporter, image,
-CronJob, CI, one end-to-end canary — is tracked in [revival-plan.md](revival-plan.md).
-The design below is still the historical/current wiring until those land.
+waited for now exists (`@ducktape_activitywatch//importer`): each device reads its
+own aw-server over REST and pushes into the central one, no snapshot files and no
+`aw-sync`. The remaining wiring — a desktop-side importer timer, the desktop's path
+to the cluster write API, retiring Syncthing, CI, and one end-to-end canary — is
+tracked in [revival-plan.md](revival-plan.md). The design below is the historical
+`aw-sync`/Syncthing wiring, retired and being replaced.
 
 The remainder of this directory is historical design and incident evidence;
 it does not describe a running service.

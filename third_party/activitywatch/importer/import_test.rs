@@ -1,11 +1,10 @@
-//! The importer's behavioral contract
-//! (`cluster/docs/activitywatch/importer-canary.md`), exercised against a real
-//! aw-server: a second import of the same frozen inputs adds zero events, the
-//! source bytes are never touched, and distinct devices whose watchers both
-//! report hostname `localhost` never merge. The central store is a real
-//! `aw_server` process the test starts and imports into over HTTP — the exact
-//! topology production runs — so the REST clipping/insert semantics are covered
-//! for real, not modelled.
+//! The importer's behavioral contract, exercised against two real aw-servers: it
+//! reads a source aw-server and folds its data into a destination aw-server, a
+//! second import of unchanged source data adds nothing, distinct devices whose
+//! watchers both report hostname `localhost` never merge, and the source server is
+//! only ever read. This is the exact topology production runs (a desktop aw-server
+//! synced into the central one), so the REST read/insert semantics are covered for
+//! real, not modelled.
 
 use std::fs;
 use std::net::TcpListener;
@@ -18,107 +17,16 @@ use std::sync::Once;
 use std::time::Duration;
 
 use aw_client_rust::AwClient;
-use aw_datastore::Datastore;
-use aw_importer::import_snapshots;
+use aw_importer::import_device;
 use aw_models::Bucket;
 use aw_models::BucketMetadata;
 use aw_models::Event;
 use chrono::DateTime;
-use chrono::Utc;
+use chrono::TimeDelta;
 use runfiles::Runfiles;
-use rusqlite::Connection;
-use rusqlite::params;
 use serde_json::Map;
+use serde_json::Value;
 use serde_json::json;
-
-struct BucketSpec {
-    name: String,
-    type_: String,
-    client: String,
-    hostname: String,
-    events: Vec<(i64, i64, String)>,
-}
-
-fn bucket(
-    name: &str,
-    type_: &str,
-    client: &str,
-    hostname: &str,
-    events: &[(i64, i64, &str)],
-) -> BucketSpec {
-    BucketSpec {
-        name: name.into(),
-        type_: type_.into(),
-        client: client.into(),
-        hostname: hostname.into(),
-        events: events
-            .iter()
-            .map(|(start, end, data)| (*start, *end, (*data).to_string()))
-            .collect(),
-    }
-}
-
-/// Write a frozen aw-server-rust snapshot. aw's own datastore lays down the real,
-/// fully-migrated schema and the bucket rows, so this fixture can't drift from the
-/// schema the importer actually reads -- real v5 also carries `buckets.data_deprecated`,
-/// a `key_value` table and a composite index that a hand-copied `CREATE TABLE` misses.
-/// Event rows are then inserted directly, on purpose: they carry amplified duplicate
-/// heartbeats that aw's own `insert_events` would coalesce, which is exactly what the
-/// importer must dedup. aw uses SQLite's default rollback journal, so the store closes
-/// to a single file with no `-wal`/`-shm` beside it.
-fn write_snapshot(path: &Path, buckets: &[BucketSpec]) {
-    let created: DateTime<Utc> = DateTime::from_timestamp(1_600_000_000, 0).unwrap();
-    {
-        let datastore = Datastore::new(path.to_string_lossy().into_owned(), false);
-        for spec in buckets {
-            datastore
-                .create_bucket(&Bucket {
-                    bid: None,
-                    id: spec.name.clone(),
-                    _type: spec.type_.clone(),
-                    client: spec.client.clone(),
-                    hostname: spec.hostname.clone(),
-                    created: Some(created),
-                    data: Map::new(),
-                    metadata: BucketMetadata::default(),
-                    events: None,
-                    last_updated: None,
-                })
-                .expect("create bucket");
-        }
-        datastore.close();
-    }
-    let conn = Connection::open(path).expect("reopen fixture");
-    for spec in buckets {
-        let bid: i64 = conn
-            .query_row(
-                "SELECT id FROM buckets WHERE name = ?1",
-                params![spec.name],
-                |row| row.get(0),
-            )
-            .expect("bucket row id");
-        for (start, end, data) in &spec.events {
-            conn.execute(
-                "INSERT INTO events (bucketrow, starttime, endtime, data)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![bid, start, end, data],
-            )
-            .expect("insert event");
-        }
-    }
-}
-
-fn temp_root(tag: &str) -> PathBuf {
-    let base = std::env::var("TEST_TMPDIR")
-        .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let dir = PathBuf::from(base).join(format!("aw-importer-{tag}-{}-{nanos}", std::process::id()));
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
 
 /// `AwClient::new` takes a `SingleInstance` lock under the client's XDG cache dir;
 /// point HOME/XDG_CACHE_HOME at a writable dir so it can't land on an unwritable
@@ -136,6 +44,18 @@ fn client_env_setup() {
             std::env::set_var("XDG_CACHE_HOME", &cache);
         }
     });
+}
+
+fn temp_root(tag: &str) -> PathBuf {
+    let base = std::env::var("TEST_TMPDIR")
+        .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir = PathBuf::from(base).join(format!("aw-importer-{tag}-{}-{nanos}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    dir
 }
 
 fn aw_server_bin() -> PathBuf {
@@ -175,7 +95,7 @@ fn spawn_server(datadir: &Path, port: u16) -> ServerGuard {
         .arg("--port")
         .arg(port.to_string())
         .arg("--dbpath")
-        .arg(datadir.join("central.sqlite"))
+        .arg(datadir.join("aw.sqlite"))
         .env("HOME", datadir)
         .env("XDG_DATA_HOME", datadir.join("data"))
         .env("XDG_CONFIG_HOME", datadir.join("config"))
@@ -197,15 +117,58 @@ async fn wait_ready(client: &AwClient) {
     panic!("aw-server did not become ready in time");
 }
 
-/// Start a fresh central aw-server under `root` and return it plus a client. Keep
-/// the guard in scope for the test's lifetime; dropping it stops the server.
-async fn central_server(root: &Path) -> (ServerGuard, AwClient) {
+/// Start a fresh aw-server under `root/name` and return it plus a client. Keep the
+/// guard in scope for the test's lifetime; dropping it stops the server. `name`
+/// also names the client's single-instance lock, so every server in one test needs
+/// a distinct name.
+async fn aw_server(root: &Path, name: &str) -> (ServerGuard, AwClient) {
     client_env_setup();
     let port = free_port();
-    let guard = spawn_server(&root.join("central"), port);
-    let client = AwClient::new("127.0.0.1", port, "aw-importer-test").expect("client");
+    let guard = spawn_server(&root.join(name), port);
+    let client = AwClient::new("127.0.0.1", port, name).expect("client");
     wait_ready(&client).await;
     (guard, client)
+}
+
+fn event(start_nanos: i64, end_nanos: i64, data: &str) -> Event {
+    let data: Map<String, Value> = serde_json::from_str(data).expect("event data json");
+    Event::new(
+        DateTime::from_timestamp_nanos(start_nanos),
+        TimeDelta::nanoseconds(end_nanos - start_nanos),
+        data,
+    )
+}
+
+/// Create a bucket on `client` and insert `events` into it. `insert_events` is a
+/// plain insert (only `heartbeat` coalesces), so duplicate rows are stored as-is --
+/// which is exactly the amplified state the importer must dedup.
+async fn seed_bucket(
+    client: &AwClient,
+    id: &str,
+    type_: &str,
+    watcher: &str,
+    hostname: &str,
+    events: Vec<Event>,
+) {
+    let created = DateTime::from_timestamp(1_600_000_000, 0).unwrap();
+    client
+        .create_bucket(&Bucket {
+            bid: None,
+            id: id.to_string(),
+            _type: type_.to_string(),
+            client: watcher.to_string(),
+            hostname: hostname.to_string(),
+            created: Some(created),
+            data: Map::new(),
+            metadata: BucketMetadata::default(),
+            events: None,
+            last_updated: None,
+        })
+        .await
+        .expect("create source bucket");
+    if !events.is_empty() {
+        client.insert_events(id, events).await.expect("seed events");
+    }
 }
 
 async fn events(client: &AwClient, bucket_id: &str) -> Vec<Event> {
@@ -223,114 +186,128 @@ fn runtime() -> tokio::runtime::Runtime {
 }
 
 #[test]
-fn reimport_adds_nothing_and_leaves_source_bytes_unchanged() {
+fn reimport_adds_nothing_and_leaves_source_untouched() {
     runtime().block_on(async {
         let root = temp_root("idem");
-        let device_dir = root.join("inbox").join("rugged");
-        fs::create_dir_all(&device_dir).unwrap();
-        let snapshot = device_dir.join("aw.db");
+        let (_source_server, source) = aw_server(&root, "source").await;
+        let (_dest_server, dest) = aw_server(&root, "dest").await;
 
         // AFK: repeated heartbeat rows for the same tuple (amplification); the store
         // must keep only the distinct tuples.
-        let afk = bucket(
+        seed_bucket(
+            &source,
             "aw-watcher-afk_localhost",
             "afkstatus",
             "aw-watcher-afk",
             "localhost",
-            &[
-                (
+            vec![
+                event(
                     1_000_000_000_000,
                     2_000_000_000_000,
                     r#"{"status":"not-afk"}"#,
                 ),
-                (
+                event(
                     1_000_000_000_000,
                     2_000_000_000_000,
                     r#"{"status":"not-afk"}"#,
                 ),
-                (
+                event(
                     1_000_000_000_000,
                     2_000_000_000_000,
                     r#"{"status":"not-afk"}"#,
                 ),
-                (2_000_000_000_000, 3_000_000_000_000, r#"{"status":"afk"}"#),
+                event(2_000_000_000_000, 3_000_000_000_000, r#"{"status":"afk"}"#),
             ],
-        );
+        )
+        .await;
         // Window: two rows with the same (start,end) whose data differs only in key
-        // order -- canonicalization must treat them as one tuple.
-        let window = bucket(
+        // order -- the servers store both, sorted-key, so they read back identical
+        // and collapse to one tuple.
+        seed_bucket(
+            &source,
             "aw-watcher-window_localhost",
             "currentwindow",
             "aw-watcher-window",
             "localhost",
-            &[
-                (
+            vec![
+                event(
                     1_000_000_000_000,
                     1_500_000_000_000,
                     r#"{"app":"code","title":"a"}"#,
                 ),
-                (
+                event(
                     1_000_000_000_000,
                     1_500_000_000_000,
                     r#"{"title":"a","app":"code"}"#,
                 ),
-                (
+                event(
                     1_500_000_000_000,
                     2_000_000_000_000,
                     r#"{"app":"firefox","title":"b"}"#,
                 ),
             ],
-        );
-        write_snapshot(&snapshot, &[afk, window]);
-        let before = fs::read(&snapshot).unwrap();
+        )
+        .await;
 
-        let (_server, client) = central_server(&root).await;
+        let afk_before = source
+            .get_event_count("aw-watcher-afk_localhost")
+            .await
+            .unwrap();
+        let window_before = source
+            .get_event_count("aw-watcher-window_localhost")
+            .await
+            .unwrap();
+        assert_eq!(afk_before, 4);
+        assert_eq!(window_before, 3);
 
-        let summary = import_snapshots(std::slice::from_ref(&snapshot), &client)
+        let summary = import_device(&source, &dest, "rugged")
             .await
             .expect("first import");
         assert_eq!(summary.total_inserted(), 4);
         assert_eq!(
-            events(&client, "rugged::aw-watcher-afk_localhost")
+            events(&dest, "rugged::aw-watcher-afk_localhost")
                 .await
                 .len(),
             2
         );
         assert_eq!(
-            events(&client, "rugged::aw-watcher-window_localhost")
+            events(&dest, "rugged::aw-watcher-window_localhost")
                 .await
                 .len(),
             2
         );
 
-        let second = import_snapshots(std::slice::from_ref(&snapshot), &client)
+        let second = import_device(&source, &dest, "rugged")
             .await
             .expect("second import");
         assert_eq!(second.total_inserted(), 0, "re-import must add nothing");
         assert_eq!(
-            events(&client, "rugged::aw-watcher-afk_localhost")
+            events(&dest, "rugged::aw-watcher-afk_localhost")
                 .await
                 .len(),
             2
         );
         assert_eq!(
-            events(&client, "rugged::aw-watcher-window_localhost")
+            events(&dest, "rugged::aw-watcher-window_localhost")
                 .await
                 .len(),
             2
         );
 
-        let after = fs::read(&snapshot).unwrap();
-        assert_eq!(before, after, "source snapshot bytes changed");
-        let mut side: Vec<String> = fs::read_dir(&device_dir)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        side.sort();
+        // Read-only source: the importer only ever GETs from the source server.
         assert_eq!(
-            side,
-            vec!["aw.db".to_string()],
-            "unexpected side files: {side:?}"
+            source
+                .get_event_count("aw-watcher-afk_localhost")
+                .await
+                .unwrap(),
+            afk_before
+        );
+        assert_eq!(
+            source
+                .get_event_count("aw-watcher-window_localhost")
+                .await
+                .unwrap(),
+            window_before
         );
     });
 }
@@ -339,64 +316,68 @@ fn reimport_adds_nothing_and_leaves_source_bytes_unchanged() {
 fn localhost_buckets_from_different_devices_stay_separate() {
     runtime().block_on(async {
         let root = temp_root("localhost");
-        let inbox = root.join("inbox");
+        let (_rugged_server, rugged) = aw_server(&root, "rugged-src").await;
+        let (_wyrm2_server, wyrm2) = aw_server(&root, "wyrm2-src").await;
+        let (_dest_server, dest) = aw_server(&root, "dest").await;
 
-        let rugged = inbox.join("rugged");
-        fs::create_dir_all(&rugged).unwrap();
-        write_snapshot(
-            &rugged.join("aw.db"),
-            &[bucket(
-                "aw-watcher-web-chrome_localhost",
-                "web.tab.current",
-                "aw-watcher-web",
-                "localhost",
-                &[(
-                    1_000_000_000_000,
-                    2_000_000_000_000,
-                    r#"{"url":"https://rugged.example"}"#,
-                )],
+        seed_bucket(
+            &rugged,
+            "aw-watcher-web-chrome_localhost",
+            "web.tab.current",
+            "aw-watcher-web",
+            "localhost",
+            vec![event(
+                1_000_000_000_000,
+                2_000_000_000_000,
+                r#"{"url":"https://rugged.example"}"#,
             )],
+        )
+        .await;
+        seed_bucket(
+            &wyrm2,
+            "aw-watcher-web-chrome_localhost",
+            "web.tab.current",
+            "aw-watcher-web",
+            "localhost",
+            vec![event(
+                1_000_000_000_000,
+                2_000_000_000_000,
+                r#"{"url":"https://wyrm2.example"}"#,
+            )],
+        )
+        .await;
+
+        assert_eq!(
+            import_device(&rugged, &dest, "rugged")
+                .await
+                .unwrap()
+                .total_inserted(),
+            1
+        );
+        assert_eq!(
+            import_device(&wyrm2, &dest, "wyrm2")
+                .await
+                .unwrap()
+                .total_inserted(),
+            1
         );
 
-        let wyrm2 = inbox.join("wyrm2");
-        fs::create_dir_all(&wyrm2).unwrap();
-        write_snapshot(
-            &wyrm2.join("aw.db"),
-            &[bucket(
-                "aw-watcher-web-chrome_localhost",
-                "web.tab.current",
-                "aw-watcher-web",
-                "localhost",
-                &[(
-                    1_000_000_000_000,
-                    2_000_000_000_000,
-                    r#"{"url":"https://wyrm2.example"}"#,
-                )],
-            )],
-        );
-
-        let (_server, client) = central_server(&root).await;
-        let summary = import_snapshots(&[rugged.join("aw.db"), wyrm2.join("aw.db")], &client)
-            .await
-            .expect("import");
-        assert_eq!(summary.total_inserted(), 2);
-
-        let buckets = client.get_buckets().await.unwrap();
+        let buckets = dest.get_buckets().await.unwrap();
         let rugged_id = "rugged::aw-watcher-web-chrome_localhost";
         let wyrm2_id = "wyrm2::aw-watcher-web-chrome_localhost";
         assert!(buckets.contains_key(rugged_id));
         assert!(buckets.contains_key(wyrm2_id));
-        // Provenance is the device directory, not the source `localhost` hostname.
+        // Provenance is the device id, not the source `localhost` hostname.
         assert_eq!(buckets[rugged_id].hostname, "rugged");
         assert_eq!(buckets[wyrm2_id].hostname, "wyrm2");
 
-        let rugged_events = events(&client, rugged_id).await;
+        let rugged_events = events(&dest, rugged_id).await;
         assert_eq!(rugged_events.len(), 1);
         assert_eq!(
             rugged_events[0].data.get("url").unwrap(),
             &json!("https://rugged.example")
         );
-        let wyrm2_events = events(&client, wyrm2_id).await;
+        let wyrm2_events = events(&dest, wyrm2_id).await;
         assert_eq!(wyrm2_events.len(), 1);
         assert_eq!(
             wyrm2_events[0].data.get("url").unwrap(),
@@ -406,88 +387,63 @@ fn localhost_buckets_from_different_devices_stay_separate() {
 }
 
 #[test]
-fn dedup_reads_only_the_source_time_window_yet_still_finds_collisions() {
-    // A bucket accumulates events far apart in time across imports. The dedup read
-    // must be scoped to each source batch's own time window (not the whole bucket),
-    // yet still catch a collision inside that window.
+fn growing_source_imports_only_the_delta() {
+    // The common production case: the desktop accumulates events between syncs, and
+    // each import inserts only what is new while the already-synced events dedup.
     runtime().block_on(async {
-        let root = temp_root("window");
-        let device_dir = root.join("inbox").join("rugged");
-        fs::create_dir_all(&device_dir).unwrap();
-        let snapshot = device_dir.join("aw.db");
-        let (_server, client) = central_server(&root).await;
-        let afk = |start: i64, end: i64, status: &str| {
-            bucket(
-                "aw-watcher-afk_localhost",
-                "afkstatus",
-                "aw-watcher-afk",
-                "localhost",
-                &[(start, end, status)],
-            )
-        };
+        let root = temp_root("growth");
+        let (_source_server, source) = aw_server(&root, "source").await;
+        let (_dest_server, dest) = aw_server(&root, "dest").await;
 
-        write_snapshot(
-            &snapshot,
-            &[afk(
+        seed_bucket(
+            &source,
+            "aw-watcher-afk_localhost",
+            "afkstatus",
+            "aw-watcher-afk",
+            "localhost",
+            vec![event(
                 1_000_000_000_000,
                 2_000_000_000_000,
                 r#"{"status":"afk"}"#,
             )],
-        );
+        )
+        .await;
         assert_eq!(
-            import_snapshots(std::slice::from_ref(&snapshot), &client)
+            import_device(&source, &dest, "rugged")
                 .await
-                .expect("import 1")
+                .unwrap()
                 .total_inserted(),
             1
         );
 
-        // A much later event in the same bucket. Its window sits far past the stored
-        // early event, so the dedup read finds nothing to compare against -- proving the
-        // read is scoped to the window, not the whole bucket.
-        fs::remove_file(&snapshot).unwrap();
-        write_snapshot(
-            &snapshot,
-            &[afk(
-                9_000_000_000_000,
-                9_500_000_000_000,
-                r#"{"status":"not-afk"}"#,
-            )],
-        );
-        let second = import_snapshots(std::slice::from_ref(&snapshot), &client)
+        // The source gains a later event; the next import inserts only that one.
+        source
+            .insert_events(
+                "aw-watcher-afk_localhost",
+                vec![event(
+                    9_000_000_000_000,
+                    9_500_000_000_000,
+                    r#"{"status":"not-afk"}"#,
+                )],
+            )
             .await
-            .expect("import 2");
-        assert_eq!(second.total_inserted(), 1);
+            .unwrap();
+        let second = import_device(&source, &dest, "rugged").await.unwrap();
+        assert_eq!(second.total_inserted(), 1, "only the new event imports");
         assert_eq!(
-            second.buckets[0].existing_in_window, 0,
-            "read was not windowed"
-        );
-
-        // Re-import the early batch: its window is around t=1e12, far from the stored
-        // 9e12 event, yet the 1e12 collision must still be found -> nothing inserted.
-        fs::remove_file(&snapshot).unwrap();
-        write_snapshot(
-            &snapshot,
-            &[afk(
-                1_000_000_000_000,
-                2_000_000_000_000,
-                r#"{"status":"afk"}"#,
-            )],
-        );
-        assert_eq!(
-            import_snapshots(std::slice::from_ref(&snapshot), &client)
-                .await
-                .expect("reimport 1")
-                .total_inserted(),
-            0,
-            "windowed dedup missed the stored collision"
-        );
-
-        assert_eq!(
-            events(&client, "rugged::aw-watcher-afk_localhost")
+            events(&dest, "rugged::aw-watcher-afk_localhost")
                 .await
                 .len(),
             2
+        );
+
+        // No further source change: a third import adds nothing.
+        assert_eq!(
+            import_device(&source, &dest, "rugged")
+                .await
+                .unwrap()
+                .total_inserted(),
+            0
         );
     });
 }

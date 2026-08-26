@@ -1,24 +1,29 @@
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 use aw_client_rust::AwClient;
-use aw_importer::import_snapshots;
+use aw_importer::import_device;
 use clap::Parser;
 
-/// Idempotent one-way importer of per-device ActivityWatch snapshots into a
-/// central aw-server over its REST API.
+/// Idempotent one-way importer of one device's ActivityWatch data into a central
+/// aw-server. Reads the device's local aw-server over REST and writes the central
+/// one the same way; the source store is only ever read.
 #[derive(Parser)]
 struct Args {
-    /// Host of the central aw-server to import into.
-    #[arg(long)]
-    host: String,
-    /// Port of the central aw-server.
+    /// Host of the source aw-server (the device's own local server).
+    #[arg(long, default_value = "127.0.0.1")]
+    source_host: String,
+    /// Port of the source aw-server.
     #[arg(long, default_value_t = 5600)]
-    port: u16,
-    /// Snapshot databases to import, e.g. a shell glob `inbox/*/aw.db`. Each
-    /// snapshot's device id is its immediate parent directory name.
-    #[arg(required = true)]
-    snapshots: Vec<PathBuf>,
+    source_port: u16,
+    /// Host of the destination (central) aw-server to import into.
+    #[arg(long)]
+    dest_host: String,
+    /// Port of the destination aw-server.
+    #[arg(long, default_value_t = 5600)]
+    dest_port: u16,
+    /// Device id stamped onto destination buckets as provenance, e.g. `rugged`.
+    #[arg(long)]
+    device: String,
 }
 
 fn main() -> ExitCode {
@@ -29,26 +34,38 @@ fn main() -> ExitCode {
         .expect("build tokio runtime");
 
     runtime.block_on(async {
-        let client = match AwClient::new(&args.host, args.port, "aw-importer") {
+        let source = match AwClient::new(&args.source_host, args.source_port, "aw-importer-source")
+        {
             Ok(client) => client,
             Err(error) => {
                 eprintln!(
-                    "could not reach aw-server at {}:{}: {error}",
-                    args.host, args.port
+                    "could not reach source aw-server at {}:{}: {error}",
+                    args.source_host, args.source_port
                 );
                 return ExitCode::FAILURE;
             }
         };
-        match import_snapshots(&args.snapshots, &client).await {
+        let dest = match AwClient::new(&args.dest_host, args.dest_port, "aw-importer-dest") {
+            Ok(client) => client,
+            Err(error) => {
+                eprintln!(
+                    "could not reach destination aw-server at {}:{}: {error}",
+                    args.dest_host, args.dest_port
+                );
+                return ExitCode::FAILURE;
+            }
+        };
+
+        match import_device(&source, &dest, &args.device).await {
             Ok(summary) => {
                 for bucket in &summary.buckets {
                     println!(
-                        "{} -> {}: {} rows, {} distinct, {} in-window, {} inserted",
+                        "{} -> {}: {} source, {} distinct, {} already in dest, {} inserted",
                         bucket.device,
                         bucket.dest_bucket,
                         bucket.source_events,
                         bucket.distinct_source,
-                        bucket.existing_in_window,
+                        bucket.dest_existing,
                         bucket.inserted,
                     );
                 }

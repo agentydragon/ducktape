@@ -7,80 +7,67 @@ done — and deleted — when the central store is being fed correctly again and
 
 ## Target
 
-One central `aw-server` is the sole writer of its own SQLite file. Devices export
-an immutable single-file snapshot; a CronJob folds those snapshots into the
-central server **over the REST API**, never by opening the file. Re-running the
-importer inserts nothing. This is what the retirement note demanded before
-reconsidering: repo-owned stable identity, read-only source snapshots, and an
-idempotency test over repeated import.
+One central aw-server is the sole writer of its own SQLite file. Each device runs a
+small importer that reads the device's own aw-server over the REST API and writes
+the central one the same way — the correct shape of what upstream `aw-sync`
+attempted: read-only at the source, provenance from the machine's identity,
+idempotent on insert. Re-running inserts nothing.
 
-The importer that meets it exists: `@ducktape_activitywatch//importer`. It reads
-each snapshot `immutable=1` read-only, takes device identity from the inbox
-directory name (so two `localhost` browsers never merge), dedups on
-`(device, bucket, starttime, endtime, canonical-data)`, and writes through
-`aw_client_rust::AwClient`. Its test starts a real `aw_server` and imports into it
-over HTTP. The dedup read is windowed to each source batch, so a re-import costs
-the overlap, not the whole bucket's history.
+The importer that meets it exists: `@ducktape_activitywatch//importer`. Given a
+source and a destination aw-server and a device id, it folds every source bucket
+into `<device>::<bucket>` on the destination, deduping on
+`(device, bucket, starttime, endtime, canonical-data)`, and only ever GETs from the
+source. Its test starts two real aw-servers and imports between them.
 
-What is left is everything around it: a snapshot exporter to replace
-`aw-sync push`, packaging, the cluster CronJob, CI, and one end-to-end pass before
-trusting it with every device.
+Reading the device's authoritative aw-server directly — instead of an `aw-sync`
+staging copy — is also what removes the heartbeat amplification that retired the old
+design: the server has already coalesced heartbeats into stored events, and the
+importer dedups any residue.
 
-## Open decision: the desktop export format
+## What's left
 
-The importer reads the **aw-server-rust** schema. Desktops today run the
-**Python** `aw-server` (`nix/home/services/activitywatch.nix` → `pkgs.activitywatch`),
-whose peewee SQLite schema the importer cannot read. The exporter has to bridge
-this, and which way decides the exporter PR:
+1. **Package + schedule on the desktop** (nix). Replace the `aw-sync … --mode push`
+   timer in `nix/home/services/activitywatch.nix` with the importer on a timer:
+   `aw_importer_bin --source-host 127.0.0.1 --dest-host <central> --device <host>`.
+   The importer needs a writable `XDG_CACHE_HOME`/`HOME` — `AwClient` takes a
+   `SingleInstance` lock there.
 
-- **Switch desktops to aw-server-rust** (we already build it). The desktop's own
-  store is then rust-schema, and export is an atomic snapshot of a consistent copy
-  (`VACUUM INTO`), no translation. Cost: a desktop server migration.
-- **Export through the REST API.** Read every bucket + event from the local
-  aw-server over HTTP (schema-independent) and write a fresh rust-schema snapshot.
-  Cost: a small writer tool; keeps the Python desktop server.
-- **Teach the importer the peewee schema too.** Most coupling, least attractive.
+2. **Give the desktop a path to the cluster write API.** The one open decision
+   (below). The central write service is admitted only from inside the cluster
+   today; a desktop-run importer needs either an authenticated write route or a mesh
+   route to reach it.
 
-Resolve this before writing the exporter. The rest of the plan is independent of
-the choice.
+3. **Retire Syncthing.** With the importer talking to the server directly, the whole
+   file-transport layer goes: the cluster Syncthing receiver, the desktop send-only
+   folder, and the per-host Syncthing certs/keys — a deletion across
+   `cluster/k8s/x/activitywatch/`, `nix/home/services/activitywatch.nix`, and
+   `secrets/home/<host>/`.
 
-## Steps
+4. **CI coverage.** Gate `@ducktape_activitywatch//importer:aw_importer_test`: the
+   root `//...` sweep and the PR bazel-diff both skip this `.bazelignore`d module, so
+   it regresses ungated otherwise.
 
-1. **Desktop snapshot exporter** (nix). Replace the 5-minute
-   `aw-sync … sync-advanced --mode push` timer in
-   `nix/home/services/activitywatch.nix` with one that writes an immutable,
-   consistent single-file snapshot to `~/.activitywatch-sync/<hostname>/aw.db`
-   (per-host subdir, so the shared Syncthing folder delivers the inbox layout
-   `/<device>/aw.db` the importer globs). No heartbeat amplification: a snapshot of
-   the distinct rows, not an appended staging DB. Satisfies canary requirement 1.
+5. **Incremental sync** (efficiency). v1 reads the whole source bucket and whole
+   destination bucket each run; switch to a per-bucket high-water mark — read only
+   source events past the newest already in the destination.
 
-2. **Package `aw_importer_bin` into an image.** Either add the binary to the
-   existing `@ducktape_activitywatch//:image` or a slimmer importer image. It needs
-   a writable `XDG_CACHE_HOME`/`HOME` in the pod — `AwClient` takes a
-   `SingleInstance` lock under the cache dir.
+6. **One end-to-end canary.** A single real pass — desktop importer → central server
+   → query — before enabling every device, then add devices back per the README's
+   "Adding More Devices".
 
-3. **Replace the importer CronJob.** In
-   `cluster/k8s/x/activitywatch/importer-cronjob.yaml`, swap the `aw-sync … --mode
-pull` command for
-   `aw_importer_bin --host activitywatch-write.activitywatch.svc.cluster.local --port 5600 /sync-inbox/*/aw.db`,
-   mount the inbox **read-only**, and drop the busybox conflict-guard initContainer
-   — the glob skips `*.sync-conflict-*` and the importer fails closed on any
-   ambiguous device dir. Then un-suspend the Flux `Kustomization` and keep the
-   read-only Authentik query route as-is.
+## Open decision: how the desktop reaches the cluster
 
-4. **CI coverage.** Wire `@ducktape_activitywatch//importer:aw_importer_test` into
-   a CI invocation. The root `//...` sweep skips this `.bazelignore`d module, so
-   without this the importer regresses ungated.
+The importer runs on the desktop and must reach the central aw-server's write API.
+Two ways, and this decides step 2:
 
-5. **One end-to-end canary.** Before enabling for every device: a single real pass
-   — desktop export → Syncthing → CronJob import → query the central server —
-   proving no source mutation, no provenance collision, and a zero-insert re-run,
-   the same gates the [importer canary](importer-canary.md) named. Only then add
-   devices back per the README's "Adding More Devices".
+- **Authenticated write route** — expose a write-capable route (Authentik, mirroring
+  the existing read route) and hand each desktop a credential. In-pattern with the
+  existing per-host secrets, but it is a new write surface on the public edge.
+- **Nebula mesh** — join the central aw-server to the mesh and let desktops reach an
+  internal route. No public write surface; the cost is joining AW to Nebula, which
+  it deliberately is not on today.
 
 ## Not blocking
 
-Agent credential hygiene (rotator-issued short-lived tokens instead of reflected
-Authentik client-credentials) and moving the central DB off `local-path-proxmox`
-are independent of ingestion correctness; they stay in the [README](README.md)'s
-debt list, not here.
+Agent credential hygiene (rotator-issued short-lived tokens) and moving the central
+DB off `local-path-proxmox` stay in the [README](README.md)'s debt list, not here.

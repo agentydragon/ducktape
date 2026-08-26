@@ -1,10 +1,9 @@
-"""Idempotent one-way importer of per-device ActivityWatch snapshots into a
-central aw-server over its REST API.
+"""Idempotent one-way importer of one device's ActivityWatch data into a central
+aw-server.
 
-The central store is written only through @aw_server_rust//:aw_client_rust (HTTP),
-so the running aw-server stays the sole writer of its SQLite file; source snapshots
-are read read-only via @aw_server_crates//:rusqlite. It shares nothing with
-aw-sync's push/pull machinery.
+It reads the device's local aw-server and writes the central one, both only through
+@aw_server_rust//:aw_client_rust (HTTP), so each running aw-server stays the sole
+writer of its own SQLite file. It shares nothing with aw-sync's push/pull machinery.
 
 Not reached by the root `bazel test //...` sweep -- this is a nested module
 (.bazelignore'd at the root). Build/test it by module label:
@@ -15,17 +14,12 @@ load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 
 rust_library(
     name = "aw_importer",
-    srcs = [
-        "lib.rs",
-        "snapshot.rs",
-    ],
+    srcs = ["lib.rs"],
     crate_root = "lib.rs",
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
-        "@aw_server_crates//:chrono",
         "@aw_server_crates//:reqwest",
-        "@aw_server_crates//:rusqlite",
         "@aw_server_crates//:serde_json",
         "@aw_server_crates//:thiserror",
         "@aw_server_rust//:aw_client_rust",
@@ -53,9 +47,10 @@ rust_test(
     crate_root = "import_test.rs",
     data = ["@aw_server_rust//:aw_server_bin"],
     edition = "2024",
-    # The test spins up the real aw-server binary and imports into it over HTTP.
-    # rlocationpath resolves the binary from the test's runfiles; single-threaded
-    # so the one-time XDG/HOME setup for the in-process AwClient can't race.
+    # The test spins up two real aw-servers (source + dest) and imports between them
+    # over HTTP. rlocationpath resolves the binary from the test's runfiles;
+    # single-threaded so the one-time XDG/HOME setup for the in-process AwClient
+    # can't race.
     env = {
         "AW_SERVER_BIN": "$(rlocationpath @aw_server_rust//:aw_server_bin)",
         "RUST_TEST_THREADS": "1",
@@ -63,11 +58,9 @@ rust_test(
     deps = [
         ":aw_importer",
         "@aw_server_crates//:chrono",
-        "@aw_server_crates//:rusqlite",
         "@aw_server_crates//:serde_json",
         "@aw_server_crates//:tokio",
         "@aw_server_rust//:aw_client_rust",
-        "@aw_server_rust//:aw_datastore",
         "@aw_server_rust//:aw_models",
         "@rules_rust//rust/runfiles",
     ],
