@@ -28,9 +28,18 @@ let
 
   # nixpkgs + nix-openclaw's overlay, matching how nix-openclaw builds its own
   # package set, so callPackage resolves the gateway's pnpm/fetch helpers.
+  #
+  # Plus a Node bump: nix-openclaw hardcodes nodejs_22 (22.23.2 -> SQLite 3.51.2),
+  # which the beta's WAL-safety guard rejects at startup. Node 24 (24.19.0 ->
+  # SQLite 3.53.3) is WAL-safe and within OpenClaw's engines range. Overriding
+  # nodejs_22 flows through the whole gateway build and the PATH Node below.
+  # TODO: upstream a configurable/bumped gateway Node to nix-openclaw, drop this.
   ocPkgs = import nix-openclaw.inputs.nixpkgs {
     inherit system;
-    overlays = [ nix-openclaw.overlays.default ];
+    overlays = [
+      nix-openclaw.overlays.default
+      (_final: prev: { nodejs_22 = prev.nodejs_24; })
+    ];
   };
 
   # Beta source override. Mirrors nix/sources/openclaw-source.nix from
@@ -43,7 +52,12 @@ let
     pnpmMajor = "11";
     applyPublicSurfaceHardlinksPatch = false;
     applySkipPluginAutoEnableNixModePatch = false;
-    applyNixStorePluginOwnershipPatch = true;
+    # nix-openclaw's nix-store-plugin-ownership patch is written against the
+    # stable source and does not apply to this beta -- because the beta already
+    # carries the same behavior upstream (discovery.ts trusts IMMUTABLE_NIX_STORE
+    # roots; hardlink-policy.ts trusts nix-store roots in nix mode). Disable it;
+    # the beta trusts its own nix-store plugins natively.
+    applyNixStorePluginOwnershipPatch = false;
     releaseTag = "v2026.8.1-beta.3";
     releaseVersion = "2026.8.1-beta.3";
     runtimePluginVersion = "2026.8.1";
@@ -61,10 +75,9 @@ let
       sourceInfo = betaSourceInfo;
     }).openclaw-gateway;
 
-  # The single Node runtime: the gateway's own (already in its closure). Using
-  # it on PATH too means one Node in the image, not two -- the whole reason for
-  # dropping the upstream-Docker base.
-  nodejs = ocPkgs.nodejs_22;
+  # The single Node runtime (Node 24, per the overlay above) on PATH -- the same
+  # Node the gateway build uses, so there is one Node in the image, not two.
+  nodejs = ocPkgs.nodejs_24;
 
   # The old Dockerfile installed Bazelisk as `bazel`; keep that command name for
   # the haku-state tooling while using the upstream Bazelisk version selection.

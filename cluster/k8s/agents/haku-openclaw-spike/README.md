@@ -53,10 +53,13 @@ Why the gateway version and Node are pinned the way they are:
   `engines.node` allows `>=22.22.3 <23`, `>=24.15.0 <25`, or `>=25.9.0`, so Node
   24 is supported. nix-openclaw hardcodes `nodejs_22`, so the build overrides it
   to a WAL-safe Node.
-- **The nix-store plugin-ownership patch is stable-only.** nix-openclaw's
-  `allow-nix-store-plugin-ownership.patch` (lets the gateway trust its read-only
-  nix-store plugins) applies cleanly to stable but rejects hunks on every beta,
-  so a beta gateway build must carry a ported copy.
+- **The nix-store plugin-ownership patch is stable-only — and unneeded here.**
+  nix-openclaw's `allow-nix-store-plugin-ownership.patch` (lets the gateway trust
+  its read-only nix-store plugins) applies cleanly to stable but rejects hunks on
+  every beta — because `2026.8.1-beta.3` already carries the same behavior
+  upstream (`discovery.ts` trusts `IMMUTABLE_NIX_STORE` roots; `hardlink-policy.ts`
+  trusts nix-store roots in nix mode). So the build sets
+  `applyNixStorePluginOwnershipPatch = false` rather than porting the patch.
 
 TODO: upstream a nix-openclaw change to bump the gateway Node (or make it
 configurable), then drop the local `nodejs_24` override — it affects the
