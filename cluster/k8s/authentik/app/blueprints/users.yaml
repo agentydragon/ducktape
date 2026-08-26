@@ -3,19 +3,20 @@ metadata:
   name: SSO - Default authentication customizations
   labels:
     blueprints.goauthentik.io/description: >
-      Patches two built-in Authentik stages so every app using
+      Patches built-in Authentik stages so every app using
       default-authentication-flow (which is all of them) gets the
-      "Sign in with Google" button and doesn't require MFA for users
-      who haven't enrolled.
+      "Sign in with Google" button, doesn't require MFA for users
+      who haven't enrolled, and keeps the resulting session for 30
+      days instead of only until the browser session ends.
 
 # The custom-authentication-flow that this directory used to define
 # (together with a no-MFA binding set and a brand flow_authentication
 # override) was removed in 2026-04. The simpler equivalent: use
 # Authentik's built-in default-authentication-flow for everything, and
-# patch its two relevant stages below.
+# patch its relevant stages below.
 #
-# Both entries are upserts on Authentik-owned built-ins: they patch only
-# the relevant fields and leave the other fields alone, which is exactly
+# Every entry is an upsert on an Authentik-owned built-in: it patches only
+# the relevant fields and leaves the other fields alone, which is exactly
 # what the blueprint `state: present` semantic provides. TF can't express
 # that cleanly without taking full ownership of every field — fragile
 # across Authentik upgrades that tweak built-in defaults.
@@ -49,3 +50,32 @@ entries:
       name: default-authentication-mfa-validation
     attrs:
       not_configured_action: skip
+
+  # User-login stage for the Google source-authentication flow
+  # (default-source-authentication). This is the stage that actually runs
+  # on every real login here: clicking the Google source button on the
+  # identification stage above abandons default-authentication-flow
+  # entirely and switches to default-source-authentication, whose only
+  # stage is this one -- confirmed via default-authentication-flow's own
+  # bindings (identification -> password -> mfa-validation ->
+  # default-authentication-login) never executing past identification for
+  # a source-based login. Default session_duration is Authentik's
+  # "seconds=0" sentinel: keep the session only until the browser session
+  # ends, not a fixed timer -- which on mobile means "until the OS
+  # backgrounds/kills the browser", causing frequent unwanted re-logins.
+  - model: authentik_stages_user_login.userloginstage
+    state: present
+    identifiers:
+      name: default-source-authentication-login
+    attrs:
+      session_duration: "days=30"
+
+  # Same fix for default-authentication-flow's own login stage (the
+  # native username/password path). Unused today -- every observed login
+  # goes through Google -- kept in sync in case that ever changes.
+  - model: authentik_stages_user_login.userloginstage
+    state: present
+    identifiers:
+      name: default-authentication-login
+    attrs:
+      session_duration: "days=30"

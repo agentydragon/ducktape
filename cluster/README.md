@@ -127,11 +127,14 @@ Applications use Authentik through Terraform-managed OIDC/proxy providers and a
 shrinking set of blueprint-managed proxy providers. See <docs/sso.md> for the ownership
 split, secret flow, NetworkPolicy template, and tombstone rules.
 
-## ActivityWatch (retired)
+## ActivityWatch
 
-The local capture, Syncthing transport, and in-cluster query service are suspended because
-upstream `aw-sync` cannot safely produce a canonical central dataset. Historical architecture
-and the replacement requirements: <docs/activitywatch/README.md>.
+Revived 2026-08-26. Each device runs a small importer that reads its own aw-server over
+REST and pushes into the central one over a bearer-gated write route — the repo-owned,
+idempotent replacement for the `aw-sync`/Syncthing transport that could not produce a
+canonical central dataset. The central store and write route are live; rugged and wyrm2
+feed it. Design and remaining rollout: <docs/activitywatch/README.md> and
+<docs/activitywatch/revival-plan.md>.
 
 ## Repository Structure
 

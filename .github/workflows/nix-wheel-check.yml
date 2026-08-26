@@ -109,6 +109,13 @@ jobs:
         with:
           package: citools
 
+      - name: Check generated command policies
+        run: |
+          nix build --no-link --print-out-paths \
+            .#checks.x86_64-linux.claude-code-permissions \
+            .#checks.x86_64-linux.codex-execpolicy-evaluation \
+            .#checks.x86_64-linux.gemini-cli-integration
+
       # Derive the Bazel target list + nix package list from the SSOT.
       # A release is in-gate when its `nixPackage: true`; every pin in an
       # in-gate release gets its target built and its output overridden.

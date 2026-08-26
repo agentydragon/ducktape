@@ -40,30 +40,31 @@ importer dedups any residue.
   module's only CI coverage (the PR `//...` sweep skips this `.bazelignore`d module).
 - **Desktop scheduling (rugged canary)**: `nix/home/services/activitywatch.nix` runs
   the importer on a timer against the central write route, `AW_DEST_TOKEN` from the
-  shared Secret, replacing the aw-sync push. rugged is importer-only; the other synced
-  hosts stay dormant until the canary proves out.
+  shared Secret, replacing the aw-sync push. rugged is importer-only.
+- **Canary proven + second device**: rugged imports end-to-end — window/afk/web/tmux land
+  under `rugged::…` on the central, deduped and idempotent (a re-run inserts only genuinely
+  new events). wyrm2 is enabled as a second device (`wyrm2::…`) to exercise multi-device
+  separation. The write-proxy needed a raised `client_max_body_size` (#4756): the importer
+  POSTs a whole bucket per request and the ~10 MB backfill blew past nginx's 1 MB default.
 
 ## What's left
 
-1. **Prove the rugged canary, then roll out.** Do one real end-to-end pass — importer
-   → central → query it back — before enabling the other synced hosts (iguana, atlas,
-   wyrm2 still sit at `sync.enable = false`); each gets `sync.enable = true` and its own
-   `dest.device`, per the README's "Adding More Devices". First-run gotcha to watch:
-   the importer's `AwClient` takes a `SingleInstance` lock under `dirs::cache_dir()`, so
-   the systemd user service needs a writable `HOME`/`XDG_CACHE_HOME`.
+1. **Roll out to the remaining hosts.** rugged and wyrm2 feed the central now; iguana and
+   atlas still sit at `sync.enable = false`. Enable each with its own `dest.device`, per the
+   README's "Adding More Devices". (First-run note: the importer's `AwClient` takes a
+   `SingleInstance` lock under `dirs::cache_dir()`, so the systemd user service needs a
+   writable `HOME`/`XDG_CACHE_HOME` — satisfied by default.)
 
-2. **Retire Syncthing (desktop side).** The cluster receiver, its certs, and the old
-   aw-sync cronjob are gone, and rugged is already importer-only. What remains is the
-   send-only folder and per-host Syncthing certs/keys on iguana/atlas/wyrm2 — a
-   deletion across `nix/home/services/activitywatch.nix` and `secrets/home/<host>/`
-   (plus the now unused `//secrets/home:activitywatch_syncthing_files` filegroup).
+2. **Bound the importer's write batches.** It POSTs a whole bucket's insert set in one
+   request — ~10 MB on first backfill — which is the only reason the write-proxy needs a
+   256 MB body cap. Chunk the inserts into small fixed-size POSTs so no single request is
+   large and the cap becomes a ceiling, not a dependency.
 
-3. **Incremental sync, then make the write route ingest-only.** v1 reads the whole
-   source and whole destination bucket each run; switch to a per-bucket high-water
-   mark — read only source events past the newest already in the destination. Once
-   the importer no longer reads the destination, restrict the write route to write
-   methods: today it must allow GET, so a leaked token can read history, not just
-   ingest.
+3. **Incremental sync, then make the write route ingest-only.** v1 reads the whole source
+   and whole destination bucket each run; switch to a per-bucket high-water mark — read only
+   source events past the newest already in the destination. Once the importer no longer
+   reads the destination, restrict the write route to write methods: today it must allow GET,
+   so a leaked token can read history, not just ingest.
 
 ## Not blocking
 

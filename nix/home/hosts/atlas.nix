@@ -29,16 +29,6 @@ in
     sopsFile = ../../../secrets/hosts/atlas-attic.yaml;
   };
 
-  ducktape.activitywatch.sync = {
-    # Retired with the cluster receiver; retain config material for a future
-    # snapshot-based replacement of the aw-sync transport.
-    enable = false;
-    syncthing = {
-      certFile = ../../../secrets/home/atlas/activitywatch-syncthing.cert.pem;
-      keySopsFile = ../../../secrets/home/atlas/activitywatch-syncthing.sops.key;
-    };
-  };
-
   # Atlas runs on Proxmox VE (Debian-based), not NixOS — no users.users.*.openssh module.
   # home-manager has no authorized_keys option (nix-community/home-manager#4327).
   # home.file creates as 0444 which satisfies sshd (requires not group/world-writable).
