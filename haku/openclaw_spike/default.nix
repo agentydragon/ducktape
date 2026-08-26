@@ -67,21 +67,29 @@ let
     rev = "a8c1973388fa2645fce83f0239b2356744a98045";
     # fetchFromGitHub tree hash for the release rev.
     hash = "sha256-BTrlg8Y88j50hS3EHDCGQhh0k9zSbZt58b2LmYMcq8w=";
-    # pnpm dependency FOD hash for this release, built with the pnpm 11.15.1
-    # override below. PLACEHOLDER: the FOD output only exists after a build, so
-    # the first CI run fails with the real `got:` hash, which is filled in here.
-    pnpmDepsHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    # pnpm dependency FOD hash for this release. Independent of the pnpm 11.15.1
+    # override below: nixpkgs' fetcherVersion-4 fetch leaves pnpm's
+    # `manage-package-manager-versions` on, so it self-switches to the source's
+    # `packageManager` (11.15.1) regardless of the override -- the override only
+    # changes the gateway's *offline* install reader (see the splice comment).
+    pnpmDepsHash = "sha256-v/iNnAuMAvIsTRJXIvB29iKAH3hb5qExytr0ADQLWLE=";
   };
 
   # nix-openclaw hardcodes pnpm 11.2.2 (nix/packages/pnpm-11.nix), but the beta's
-  # pnpm-lock.yaml is authored by pnpm 11.15.1 (lockfileVersion 9.0, and a
-  # pnpm-workspace.yaml `minimumReleaseAge` guard the older pnpm handles
-  # differently). Populating the frozen store with 11.2.2 silently omits a
-  # normally-locked registry dependency (@clack/core), so the gateway's offline
-  # `pnpm install` aborts with ERR_PNPM_NO_OFFLINE_TARBALL. Splice pnpm 11.15.1
-  # into a copy of the nix-openclaw tree and build the gateway from that. The
-  # `--replace-fail`s make an upstream pnpm bump fail loudly here rather than
-  # silently reverting the override.
+  # pnpm-lock.yaml is authored by pnpm 11.15.1 (lockfileVersion 9.0). The two
+  # stages of the from-source build see different pnpm versions, and that split
+  # is the bug:
+  #   * The dependency FOD fetch keeps pnpm's `manage-package-manager-versions`
+  #     on, so pnpm self-switches to the source's `packageManager` (11.15.1) and
+  #     writes the store in 11.15.1's format -- whatever nix-openclaw pins.
+  #   * The gateway's offline `pnpm install` runs after gateway-postpatch strips
+  #     the `packageManager` field, so it uses nix-openclaw's pinned pnpm (11.2.2)
+  #     directly. That 11.2.2 reader cannot resolve a normally-locked dependency
+  #     (@clack/core) out of the 11.15.1-written store and aborts with
+  #     ERR_PNPM_NO_OFFLINE_TARBALL.
+  # Splicing pnpm 11.15.1 into a copy of the nix-openclaw tree makes the offline
+  # reader match the store writer. The `--replace-fail`s make an upstream pnpm
+  # bump fail loudly here rather than silently reverting the override.
   # TODO: upstream a configurable/bumped gateway pnpm to nix-openclaw, drop this.
   patchedNixOpenclaw = ocPkgs.runCommand "nix-openclaw-pnpm-11.15.1" { } ''
     cp -r ${nix-openclaw} "$out"

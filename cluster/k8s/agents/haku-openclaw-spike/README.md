@@ -53,16 +53,20 @@ Why the gateway version and Node are pinned the way they are:
   `engines.node` allows `>=22.22.3 <23`, `>=24.15.0 <25`, or `>=25.9.0`, so Node
   24 is supported. nix-openclaw hardcodes `nodejs_22`, so the build overrides it
   to a WAL-safe Node.
-- **pnpm must match the lockfile author.** The beta's `pnpm-lock.yaml` is written
-  by pnpm `11.15.1` (lockfileVersion `9.0`, plus a `pnpm-workspace.yaml`
-  `minimumReleaseAge` guard). nix-openclaw hardcodes pnpm `11.2.2`, which
-  populates the from-source build's frozen offline store incompletely — it
-  silently omits a normally-locked registry dependency (`@clack/core`), so the
-  gateway's offline `pnpm install` aborts with `ERR_PNPM_NO_OFFLINE_TARBALL`. The
-  build splices pnpm `11.15.1` into a copy of the nix-openclaw tree. This bites
-  only the from-source (beta) path; public-coder consumes the prebuilt stable
-  gateway and runs no pnpm. Bumping the beta may mean re-pinning this pnpm to
-  whatever the new lock was authored with.
+- **pnpm: the offline reader must match the store writer.** The beta's
+  `pnpm-lock.yaml` is authored by pnpm `11.15.1` (lockfileVersion `9.0`), and the
+  from-source build sees two different pnpm versions across its two stages. The
+  dependency-fetch FOD leaves pnpm's `manage-package-manager-versions` on, so
+  pnpm self-switches to the source's `packageManager` (`11.15.1`) and writes the
+  store in that format — regardless of the `11.2.2` nix-openclaw pins. The
+  gateway's offline `pnpm install` then runs _after_ `gateway-postpatch` strips
+  the `packageManager` field, so it uses nix-openclaw's pinned `11.2.2` directly;
+  that reader can't resolve a normally-locked dependency (`@clack/core`) out of
+  the `11.15.1`-written store and aborts with `ERR_PNPM_NO_OFFLINE_TARBALL`. The
+  build splices pnpm `11.15.1` into a copy of the nix-openclaw tree so the offline
+  reader matches the writer. This bites only the from-source (beta) path;
+  public-coder consumes the prebuilt stable gateway and runs no pnpm. Bumping the
+  beta may mean re-pinning this pnpm to whatever the new lock was authored with.
 - **The nix-store plugin-ownership patch is stable-only — and unneeded here.**
   nix-openclaw's `allow-nix-store-plugin-ownership.patch` (lets the gateway trust
   its read-only nix-store plugins) applies cleanly to stable but rejects hunks on
