@@ -46,6 +46,19 @@ spec:
                 secretKeyRef:
                   name: haku-claude-github-token
                   key: GITHUB_TOKEN
+            # The same bearer aiquota-api authenticates with, reflected here from
+            # cli-proxy-api solely for iron-proxy to substitute into the sandbox's
+            # placeholder on the two read endpoints; the runtime never receives it.
+            # Optional like the openclaw spike's kube token: this proxy is the ONLY
+            # egress path for haku-runtime-sandbox, so a late-reflecting secret must
+            # not take Anthropic and GitHub down with it. Unset simply means no
+            # substitution — aiquota 401s, everything else is untouched.
+            - name: AIQUOTA_API_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: aiquota-api-bearer-haku-claude
+                  key: bearer-token
+                  optional: true
           ports:
             - name: proxy
               containerPort: 8180

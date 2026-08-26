@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - aiquota-api-bearer.sops.yaml
   - public-coder-bearer-eso.yaml
+  - haku-claude-bearer-eso.yaml
   - deployment.yaml
   - httproute.yaml
   - service.yaml

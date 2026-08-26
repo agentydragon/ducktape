@@ -38,6 +38,24 @@ transforms:
             - host: "api.github.com"
             - host: "github.com"
             - host: "codeload.github.com"
+        - source:
+            type: env
+            var: AIQUOTA_API_BEARER_TOKEN
+          replace:
+            # The API deliberately has one bearer for its normalized and raw
+            # read responses. Restrict its proxy replacement to the two GET
+            # paths rather than turning this into general authenticated access
+            # to aiquota.allegedly.works. Mirrors the public-coder proxy rule.
+            proxy_value: "proxy-haku-claude-aiquota-placeholder"
+            match_headers: ["Authorization"]
+          rules:
+            # Explicit HTTPS proxy clients perform this header-less CONNECT
+            # preflight before the inner GET request is visible to Iron.
+            - host: "aiquota.allegedly.works"
+              methods: ["CONNECT"]
+            - host: "aiquota.allegedly.works"
+              methods: ["GET"]
+              paths: ["/v1/quotas", "/v1/providers/*/raw"]
 
 log:
   level: "info"

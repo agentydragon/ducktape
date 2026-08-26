@@ -30,6 +30,9 @@ spec:
               - matchName: objects.githubusercontent.com
               - matchName: raw.githubusercontent.com
               - matchName: release-assets.githubusercontent.com
+              # aiquota's read API, for which a substitution rule is defined below
+              # (claude-iron.yaml). Its bearer is held here, never in the sandbox.
+              - matchName: aiquota.allegedly.works
     - toFQDNs:
         - matchName: api.anthropic.com
         - matchName: api.github.com
@@ -38,6 +41,21 @@ spec:
         - matchName: objects.githubusercontent.com
         - matchName: raw.githubusercontent.com
         - matchName: release-assets.githubusercontent.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # aiquota.allegedly.works resolves to the OVH nodes' ExternalIPs (Envoy binds
+    # 443 there in hostNetwork mode), which carry reserved:remote-node — or
+    # reserved:host when this pod happens to share a node, since it has no
+    # nodeSelector. A toFQDNs rule cannot reach them: policy-cidr-match-mode is
+    # unset cluster-wide, so its CIDR-derived selectors never match node IPs. The
+    # DNS allowlist above still bounds which names resolve; this reaches the
+    # in-cluster public gateway the resolved name points at. See
+    # ../../../docs/cilium_network_policy.md and the public-coder proxy cnp-egress.
+    - toEntities:
+        - remote-node
+        - host
       toPorts:
         - ports:
             - port: "443"

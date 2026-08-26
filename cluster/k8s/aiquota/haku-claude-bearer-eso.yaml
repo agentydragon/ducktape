@@ -1,0 +1,34 @@
+# Copy the one AIQuota API bearer into a reflector-owned Secret. The source is
+# the SOPS-managed API Secret above; this does not mint a second credential.
+#
+# The narrower mirror avoids granting the haku-egress-proxy namespace access to
+# the broad Kubernetes SecretStore for the cli-proxy-api namespace. Only the
+# trusted haku-claude-oauth-proxy consumes this Secret; the haku-runtime sandbox
+# receives a non-secret placeholder instead. Sibling of the public-coder mirror.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: aiquota-api-bearer-haku-claude
+  namespace: cli-proxy-api
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-cli-proxy-api-secret-store
+  target:
+    name: aiquota-api-bearer-haku-claude
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    template:
+      metadata:
+        annotations:
+          description: Shared AIQuota API bearer mirrored only to the haku-claude-oauth-proxy egress proxy.
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-egress-proxy
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-egress-proxy
+  data:
+    - secretKey: bearer-token
+      remoteRef:
+        key: aiquota-api-bearer
+        property: bearer-token
