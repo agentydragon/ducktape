@@ -60,13 +60,7 @@ importer dedups any residue.
    256 MB body cap. Chunk the inserts into small fixed-size POSTs so no single request is
    large and the cap becomes a ceiling, not a dependency.
 
-3. **Retire Syncthing (desktop side).** The cluster receiver, its certs, and the old
-   aw-sync cronjob are gone; rugged and wyrm2 are already importer-only. What remains is the
-   send-only folder and per-host Syncthing certs/keys on iguana/atlas — a deletion across
-   `nix/home/services/activitywatch.nix` and `secrets/home/<host>/` (plus the now unused
-   `//secrets/home:activitywatch_syncthing_files` filegroup).
-
-4. **Incremental sync, then make the write route ingest-only.** v1 reads the whole source
+3. **Incremental sync, then make the write route ingest-only.** v1 reads the whole source
    and whole destination bucket each run; switch to a per-bucket high-water mark — read only
    source events past the newest already in the destination. Once the importer no longer
    reads the destination, restrict the write route to write methods: today it must allow GET,
