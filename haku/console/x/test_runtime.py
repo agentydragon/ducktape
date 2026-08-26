@@ -80,9 +80,11 @@ def test_runtime_adapter_keeps_claude_projection_behavior_unchanged() -> None:
     adapter = projection_registry()[RuntimeKind.CLAUDE_CODE]
 
     through_adapter = adapter.turn_handler().apply(frame_seq=7, frame=HarnessFrame(frame=payload)).events
-    through_native = projection.project(
-        projection.ProjectionState(), [recorded(7, payload)], delta_source=projection.DeltaSource.STREAM_EVENTS
-    )[1].events
+    through_native = (
+        projection.ProjectionState()
+        .advance([recorded(7, payload)], delta_source=projection.DeltaSource.STREAM_EVENTS)[1]
+        .events
+    )
 
     assert through_adapter == through_native
 

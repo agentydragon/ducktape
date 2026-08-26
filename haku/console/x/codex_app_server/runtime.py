@@ -111,9 +111,7 @@ class CodexTurnHandler:
     state: projection.ProjectionState
 
     def apply(self, *, frame_seq: int, frame: HarnessFrame) -> FrameEffects:
-        self.state, result = projection.project(
-            self.state, [projection.RecordedFrame(frame_seq=frame_seq, payload=frame.frame)]
-        )
+        self.state, result = self.state.advance([projection.RecordedFrame(frame_seq=frame_seq, payload=frame.frame)])
         terminal = next((event for event in result.events if isinstance(event, TurnCompleted)), None)
         return FrameEffects(events=result.events, completion=None if terminal is None else _completion(frame, terminal))
 

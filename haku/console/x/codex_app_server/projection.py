@@ -67,6 +67,26 @@ class ProjectionState:
     seen_call_ids: frozenset[str] = frozenset()
     completed_call_ids: frozenset[str] = frozenset()
 
+    def advance(self, frames: Iterable[RecordedFrame]) -> tuple[ProjectionState, Projection]:
+        """Fold server messages into neutral events, preserving state across arbitrary batches."""
+        projector = _Projector(
+            open_message=self.open_message,
+            open_reasoning=self.open_reasoning,
+            seen_call_ids=set(self.seen_call_ids),
+            completed_call_ids=set(self.completed_call_ids),
+        )
+        for frame in frames:
+            projector.fold(frame)
+        return (
+            ProjectionState(
+                open_message=projector.open_message,
+                open_reasoning=projector.open_reasoning,
+                seen_call_ids=frozenset(projector.seen_call_ids),
+                completed_call_ids=frozenset(projector.completed_call_ids),
+            ),
+            projector.projected(),
+        )
+
 
 _IGNORED_METHODS = frozenset(
     {
@@ -90,27 +110,6 @@ class RecordedFrame:
 
     frame_seq: int
     payload: dict[str, Any]
-
-
-def project(state: ProjectionState, frames: Iterable[RecordedFrame]) -> tuple[ProjectionState, Projection]:
-    """Fold server messages into neutral events, preserving state across arbitrary batches."""
-    projector = _Projector(
-        open_message=state.open_message,
-        open_reasoning=state.open_reasoning,
-        seen_call_ids=set(state.seen_call_ids),
-        completed_call_ids=set(state.completed_call_ids),
-    )
-    for frame in frames:
-        projector.fold(frame)
-    return (
-        ProjectionState(
-            open_message=projector.open_message,
-            open_reasoning=projector.open_reasoning,
-            seen_call_ids=frozenset(projector.seen_call_ids),
-            completed_call_ids=frozenset(projector.completed_call_ids),
-        ),
-        projector.projected(),
-    )
 
 
 @dataclass(slots=True)

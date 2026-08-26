@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest_bazel
 
 from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
-from haku.console.x.codex_app_server.projection import OpenItem, ProjectionState, RecordedFrame, project
+from haku.console.x.codex_app_server.projection import OpenItem, ProjectionState, RecordedFrame
 from haku.console.x.codex_app_server.protocol import read_trace, server_messages
 from haku.console.x.codex_app_server.testing.fold import in_batches, whole_capture
 from haku.console.x.conversation_events import (
@@ -153,14 +153,13 @@ def test_duplicate_tool_completion_stays_a_duplicate_across_batches():
         "status": "completed",
         "exitCode": 0,
     }
-    state, first = project(
-        ProjectionState(),
+    state, first = ProjectionState().advance(
         (
             RecordedFrame(1, {"method": "item/started", "params": {"item": item}}),
             RecordedFrame(2, {"method": "item/completed", "params": {"item": item}}),
-        ),
+        )
     )
-    state, second = project(state, (RecordedFrame(3, {"method": "item/completed", "params": {"item": item}}),))
+    state, second = state.advance((RecordedFrame(3, {"method": "item/completed", "params": {"item": item}}),))
 
     assert [type(event) for event in first.events] == [ToolCallStarted, ToolCallCompleted]
     assert second.events == ()
@@ -169,8 +168,7 @@ def test_duplicate_tool_completion_stays_a_duplicate_across_batches():
 
 
 def test_adopted_message_without_a_persisted_native_id_continues_the_existing_item():
-    state, projected = project(
-        ProjectionState(open_message=OpenItem(4, 6, None, "half")),
+    state, projected = ProjectionState(open_message=OpenItem(4, 6, None, "half")).advance(
         (
             RecordedFrame(
                 7,
@@ -179,7 +177,7 @@ def test_adopted_message_without_a_persisted_native_id_continues_the_existing_it
                     "params": {"item": {"type": "agentMessage", "id": "m1", "text": "half done"}},
                 },
             ),
-        ),
+        )
     )
 
     assert projected.events == (
@@ -190,8 +188,7 @@ def test_adopted_message_without_a_persisted_native_id_continues_the_existing_it
 
 
 def test_adopted_reasoning_without_a_persisted_native_id_continues_the_existing_item():
-    state, projected = project(
-        ProjectionState(open_reasoning=OpenItem(4, 6, None, "half")),
+    state, projected = ProjectionState(open_reasoning=OpenItem(4, 6, None, "half")).advance(
         (
             RecordedFrame(
                 7,
@@ -200,7 +197,7 @@ def test_adopted_reasoning_without_a_persisted_native_id_continues_the_existing_
                     "params": {"item": {"type": "reasoning", "id": "r1", "summary": ["half done"]}},
                 },
             ),
-        ),
+        )
     )
 
     assert projected.events == (
@@ -211,17 +208,15 @@ def test_adopted_reasoning_without_a_persisted_native_id_continues_the_existing_
 
 
 def test_open_reasoning_state_carries_delivered_text_across_batches():
-    state, first = project(
-        ProjectionState(),
+    state, first = ProjectionState().advance(
         (
             RecordedFrame(1, {"method": "item/started", "params": {"item": {"type": "reasoning", "id": "r1"}}}),
             RecordedFrame(
                 2, {"method": "item/reasoning/summaryTextDelta", "params": {"itemId": "r1", "delta": "half"}}
             ),
-        ),
+        )
     )
-    state, second = project(
-        state,
+    state, second = state.advance(
         (
             RecordedFrame(
                 3,
@@ -230,7 +225,7 @@ def test_open_reasoning_state_carries_delivered_text_across_batches():
                     "params": {"item": {"type": "reasoning", "id": "r1", "summary": ["half done"]}},
                 },
             ),
-        ),
+        )
     )
 
     assert first.events == (

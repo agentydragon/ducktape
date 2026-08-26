@@ -21,7 +21,7 @@ from collections import Counter
 from collections.abc import Iterable, Sequence
 from types import MappingProxyType
 
-from haku.console.x.claude_code.projection import DeltaSource, ProjectionState, RecordedFrame, project
+from haku.console.x.claude_code.projection import DeltaSource, ProjectionState, RecordedFrame
 from haku.console.x.conversation_events import ConversationEvent, Projection
 
 
@@ -37,7 +37,7 @@ def in_batches(
     events: list[ConversationEvent] = []
     unprojected: Counter[str] = Counter()
     for batch in batches:
-        state, projected = project(state, batch, delta_source=delta_source)
+        state, projected = state.advance(batch, delta_source=delta_source)
         events.extend(projected.events)
         unprojected.update(projected.unprojected)
     return Projection(events=tuple(events), unprojected=MappingProxyType(dict(unprojected)))

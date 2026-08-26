@@ -108,8 +108,7 @@ class ClaudeTurnHandler:
     state: projection.ProjectionState
 
     def apply(self, *, frame_seq: int, frame: HarnessFrame) -> FrameEffects:
-        self.state, result = projection.project(
-            self.state,
+        self.state, result = self.state.advance(
             [projection.RecordedFrame(frame_seq=frame_seq, payload=frame.frame)],
             delta_source=projection.DeltaSource.STREAM_EVENTS,
         )

@@ -1,6 +1,6 @@
 """Claude CLI frames into neutral conversation events.
 
-A **reducer**: `project(state, frames)` returns the state after those frames and what they
+A **reducer**: `state.advance(frames)` returns the state after those frames and what they
 produced. Both the state and frames are Claude's; only the emitted conversation events are neutral.
 It is resumable from a cursor: a position
 in the frame log is the whole of what a fold needs to carry on from.
@@ -91,6 +91,25 @@ class OpenToolCall:
     partial_json: str = ""
 
 
+class DeltaSource(StrEnum):
+    """Which frames a projection cuts its `ItemSegment`s from.
+
+    Granularity, not content: an item's whole text is the same prose whichever is chosen, and the
+    vocabulary already says how finely a backend cuts an increment is the adapter's business.
+
+    `STREAM_EVENTS` is what the console drives, and the only one it drives: it takes the increments
+    as they arrive and skips the completed block's own text, which those increments already
+    delivered. `COMPLETED_BLOCKS` reads the completed blocks alone and ignores every delta; it was
+    what a whole-log read of *stored* frames used, since a log truncated mid-block re-projects to
+    different text than the completed block that follows it. Nothing reads stored frames now — a
+    transcript is folded from `conversation_event` — so its remaining callers are the fixtures that
+    assert against it.
+    """
+
+    COMPLETED_BLOCKS = "completed_blocks"
+    STREAM_EVENTS = "stream_events"
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectionState:
     """Claude-private state carried between native frame batches."""
@@ -99,6 +118,34 @@ class ProjectionState:
     open_reasoning: OpenItem | None = None
     open_tool_call: OpenToolCall | None = None
     seen_call_ids: frozenset[str] = frozenset()
+
+    def advance(
+        self, frames: Iterable[RecordedFrame], *, delta_source: DeltaSource = DeltaSource.COMPLETED_BLOCKS
+    ) -> tuple[ProjectionState, Projection]:
+        """Fold frames into the state: the state after them, and what they produced.
+
+        Pure and order-dependent — the events are a function of the sequence, not of any one frame —
+        and the state holds everything that order-dependence needs, which is why a batch boundary is
+        not an event. Unknown envelopes are counted as unprojected native evidence rather than making
+        a forensic read fail.
+        """
+        projector = _Projector(
+            delta_source=delta_source,
+            open_message=self.open_message,
+            open_tool_call=self.open_tool_call,
+            seen_call_ids=set(self.seen_call_ids),
+        )
+        for frame in frames:
+            projector.fold(frame)
+        return (
+            ProjectionState(
+                open_message=projector.open_message,
+                open_reasoning=self.open_reasoning,
+                open_tool_call=projector.open_tool_call,
+                seen_call_ids=frozenset(projector.seen_call_ids),
+            ),
+            projector.projected(),
+        )
 
 
 # Frame classes that say nothing about the conversation, listed rather than discovered so that a
@@ -121,25 +168,6 @@ _IGNORED_KINDS = frozenset({"command_lifecycle", "control_request", "control_res
 _IGNORED_SYSTEM_SUBTYPES = frozenset({"thinking_tokens", "status", "init"})
 
 
-class DeltaSource(StrEnum):
-    """Which frames a projection cuts its `ItemSegment`s from.
-
-    Granularity, not content: an item's whole text is the same prose whichever is chosen, and the
-    vocabulary already says how finely a backend cuts an increment is the adapter's business.
-
-    `STREAM_EVENTS` is what the console drives, and the only one it drives: it takes the increments
-    as they arrive and skips the completed block's own text, which those increments already
-    delivered. `COMPLETED_BLOCKS` reads the completed blocks alone and ignores every delta; it was
-    what a whole-log read of *stored* frames used, since a log truncated mid-block re-projects to
-    different text than the completed block that follows it. Nothing reads stored frames now — a
-    transcript is folded from `conversation_event` — so its remaining callers are the fixtures that
-    assert against it.
-    """
-
-    COMPLETED_BLOCKS = "completed_blocks"
-    STREAM_EVENTS = "stream_events"
-
-
 @dataclass(frozen=True, slots=True)
 class RecordedFrame:
     """One row of the frame log: a CLI protocol frame and where it sits in the session.
@@ -151,35 +179,6 @@ class RecordedFrame:
 
     frame_seq: int
     payload: dict[str, Any]
-
-
-def project(
-    state: ProjectionState, frames: Iterable[RecordedFrame], *, delta_source: DeltaSource = DeltaSource.COMPLETED_BLOCKS
-) -> tuple[ProjectionState, Projection]:
-    """Fold frames into the state: the state after them, and what they produced.
-
-    Pure and order-dependent — the events are a function of the sequence, not of any one frame —
-    and the state holds everything that order-dependence needs, which is why a batch boundary is
-    not an event. Unknown envelopes are counted as unprojected native evidence rather than making
-    a forensic read fail.
-    """
-    projector = _Projector(
-        delta_source=delta_source,
-        open_message=state.open_message,
-        open_tool_call=state.open_tool_call,
-        seen_call_ids=set(state.seen_call_ids),
-    )
-    for frame in frames:
-        projector.fold(frame)
-    return (
-        ProjectionState(
-            open_message=projector.open_message,
-            open_reasoning=state.open_reasoning,
-            open_tool_call=projector.open_tool_call,
-            seen_call_ids=frozenset(projector.seen_call_ids),
-        ),
-        projector.projected(),
-    )
 
 
 def undelivered(text: str, delivered: str) -> str:

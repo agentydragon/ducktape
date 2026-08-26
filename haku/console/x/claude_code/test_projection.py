@@ -16,14 +16,7 @@ import pytest
 import pytest_bazel
 
 from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
-from haku.console.x.claude_code.projection import (
-    DeltaSource,
-    OpenItem,
-    ProjectionState,
-    RecordedFrame,
-    project,
-    undelivered,
-)
+from haku.console.x.claude_code.projection import DeltaSource, OpenItem, ProjectionState, RecordedFrame, undelivered
 from haku.console.x.claude_code.testing.fold import in_batches, whole_capture
 from haku.console.x.claude_code.testing.wire import (
     assistant,
@@ -498,7 +491,7 @@ def test_reprojection_reproduces_the_same_events():
 def test_a_batch_running_out_is_not_a_message_ending():
     """The difference between a reducer and a fold over a whole log: the next batch may continue
     the message, so only a caller saying the stream is over may close it."""
-    state, first = project(ProjectionState(), [recorded(1, assistant(text_block("Looking at "), message_id="msg_A"))])
+    state, first = ProjectionState().advance([recorded(1, assistant(text_block("Looking at "), message_id="msg_A"))])
 
     assert [type(event) for event in first.events] == [MessageStarted, ItemSegment]
     # The message is in the state rather than in the events, and it holds no prose: the segments
@@ -507,7 +500,7 @@ def test_a_batch_running_out_is_not_a_message_ending():
         open_message=OpenItem(opened_at_frame_seq=1, last_frame_seq=1, backend_item_id="msg_A")
     )
 
-    state, second = project(state, [recorded(2, assistant(text_block("the migration."), message_id="msg_A"))])
+    state, second = state.advance([recorded(2, assistant(text_block("the migration."), message_id="msg_A"))])
 
     assert [type(event) for event in second.events] == [ItemSegment]
     # And nothing closes it: an item the frames left open stays open, here and in the log, and a

@@ -11,7 +11,7 @@ from collections import Counter
 from collections.abc import Iterable, Sequence
 from types import MappingProxyType
 
-from haku.console.x.codex_app_server.projection import ProjectionState, RecordedFrame, project
+from haku.console.x.codex_app_server.projection import ProjectionState, RecordedFrame
 from haku.console.x.conversation_events import ConversationEvent, Projection
 
 
@@ -21,7 +21,7 @@ def in_batches(batches: Iterable[Sequence[RecordedFrame]]) -> Projection:
     events: list[ConversationEvent] = []
     unprojected: Counter[str] = Counter()
     for batch in batches:
-        state, projected = project(state, batch)
+        state, projected = state.advance(batch)
         events.extend(projected.events)
         unprojected.update(projected.unprojected)
     return Projection(events=tuple(events), unprojected=MappingProxyType(dict(unprojected)))
