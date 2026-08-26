@@ -154,10 +154,16 @@ jobs:
           args: test ${{ matrix.test_target }}
           rbe_image: ${{ inputs.rbe_image }}
 
+      # Both targets, deliberately. The image gives the OCI layout `crane push`
+      # uploads; its `.digest` sibling gives the `<name>.json.sha256` beside it,
+      # which is the only thing that produces that file — building the image
+      # alone does not. `Resolve image output path` below locates the layout by
+      # finding that sha256 and stripping the suffix, so dropping the sibling
+      # fails every push with "found 0" (devel 45e4c188, 28 jobs).
       - name: bb remote build OCI layout
         uses: ./.github/actions/bb-remote
         with:
-          args: build ${{ matrix.image }} --remote_download_outputs=toplevel
+          args: build ${{ matrix.image }} ${{ matrix.image }}.digest --remote_download_outputs=toplevel
           rbe_image: ${{ inputs.rbe_image }}
 
       - uses: imjasonh/setup-crane@v0.7
