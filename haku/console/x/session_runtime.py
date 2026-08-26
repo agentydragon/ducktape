@@ -28,10 +28,9 @@ from haku.console.chat_models import (
     PromptOrigin,
     RuntimeKind,
     SessionStatus,
-    TurnOutcome,
 )
 from haku.console.operator_auth import OperatorActorDep
-from haku.console.x.conversation_events import ConversationEvent
+from haku.console.x.conversation_events import ConversationEvent, TurnAborted, TurnAnswered, TurnEnd, TurnFailed
 from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.launch_identity import LaunchAgentRejectedError, LaunchAuthorizer
 from haku.console.x.runtime import (
@@ -44,12 +43,14 @@ from haku.console.x.runtime import (
     RuntimeMcpServer,
     RuntimeNotConfiguredError,
     RuntimeRegistry,
+    RuntimeUnusable,
     RuntimeWakeWatcher,
     TurnCompletion,
     TurnProjectionSeed,
     UnsupportedRuntimeError,
 )
 from haku.console.x.sandbox_claims import SandboxProvisioningView
+from haku.console.x.session_events import TurnAbortedBody, TurnAnsweredBody, TurnEndedBody, TurnFailedBody
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.session_store import (
     LEASE_RENEW_INTERVAL,
@@ -856,6 +857,7 @@ class SessionService:
         completion: TurnCompletion | None = None
         completion_frame_seq: int | None = None
         terminal_events: tuple[ConversationEvent, ...] = ()
+        unusable: RuntimeUnusable | None = None
         aborted = asyncio.ensure_future(abort_event.wait())
         # Set once the abort has been seen and the harness interrupted, from which point this loop
         # stops racing the abort event and drains what is left of the turn to its terminal frame.
@@ -886,6 +888,7 @@ class SessionService:
                 received = await next_frame
                 frame_seq = received.frame_seq
                 effects = handler.apply(frame_seq=frame_seq, frame=received.envelope)
+                unusable = unusable or effects.unusable
                 # The frame that ends the turn goes no further: what is left of the exchange is
                 # written below and `end_turn` is the transaction that closes it and carries the
                 # cursor past this frame, so projecting it into `apply_frame` would advance the
@@ -901,7 +904,8 @@ class SessionService:
                 else:
                     await self._store.apply_frame(session_id, turn_id, frame_seq, effects.events)
             assert completion_frame_seq is not None
-            failed = completion.failure is not None and not abort_event.is_set()
+            # An abort is the operator's, so it outranks whatever the provider called the turn.
+            ended = TurnAbortedBody() if abort_event.is_set() else _ended(completion.end)
             # The terminal frame can carry ordinary durable effects as well as completion. They,
             # the answer close, the turn outcome and the cursor belong to one transaction: a split
             # would either lose terminal effects or let the cursor outrun the close on replica
@@ -912,12 +916,18 @@ class SessionService:
                 turn_id,
                 completion_frame_seq,
                 terminal_events,
-                outcome=TurnOutcome.ABORTED if abort_event.is_set() else completion.outcome,
-                final_text="" if failed else completion.final_text,
+                ended=ended,
+                final_text="" if isinstance(ended, TurnFailedBody) else completion.final_text,
             )
-            if failed:
-                assert completion.failure is not None
-                raise RuntimeError(completion.failure)
+            # **A failed turn is not a failed session.** The exchange is closed and carries its own
+            # reason, so the operator can read it and send another prompt. Only the runtime saying
+            # it can serve no other ends the session, and it says that separately from the turn.
+            if unusable is not None:
+                raise RuntimeError(
+                    f"the agent's turn failed: {ended.failure}"
+                    if isinstance(ended, TurnFailedBody)
+                    else unusable.reason
+                )
         except Exception as error:
             if _transient_database_error(error):
                 # The transaction never committed, so the turn is still open and its cursor still
@@ -927,7 +937,7 @@ class SessionService:
                 raise
             # Bounded only where the failure was diagnosed from a terminal frame; otherwise this
             # turn ended on no frame of its own and `end_turn` bounds it by what it recorded.
-            await self._store.end_turn(turn_id, TurnOutcome.FAILED, last_frame_seq=completion_frame_seq)
+            await self._store.end_turn(turn_id, TurnFailedBody(failure=str(error)), last_frame_seq=completion_frame_seq)
             await self._store.fail(session_id, str(error))
             raise
         finally:
@@ -943,6 +953,17 @@ class SessionService:
         if released:
             logger.info("Released %d held session lease(s) on shutdown", released)
         await self._runtimes.aclose()
+
+
+def _ended(end: TurnEnd) -> TurnEndedBody:
+    """The turn's own end as the row that records it."""
+    match end:
+        case TurnAnswered():
+            return TurnAnsweredBody()
+        case TurnAborted():
+            return TurnAbortedBody()
+        case TurnFailed():
+            return TurnFailedBody(failure=end.reason)
 
 
 async def _replaying(

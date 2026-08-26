@@ -131,7 +131,17 @@ def _entry(
                 outcome=conversation_records.Outcome(event.outcome),
             )
         case conversation_events.TurnCompleted():
-            return conversation_records.TurnEndEntry(index=index, provenance=provenance, outcome=event.outcome)
+            return conversation_records.TurnEndEntry(index=index, provenance=provenance, end=_end(event.end))
+
+
+def _end(end: conversation_events.TurnEnd) -> conversation_records.TurnEnd:
+    match end:
+        case conversation_events.TurnAnswered():
+            return conversation_records.TurnAnsweredEnd()
+        case conversation_events.TurnAborted():
+            return conversation_records.TurnAbortedEnd()
+        case conversation_events.TurnFailed():
+            return conversation_records.TurnFailedEnd(failure=end.reason)
 
 
 def _provenance(provenance: conversation_events.Provenance) -> conversation_records.EntryProvenance:

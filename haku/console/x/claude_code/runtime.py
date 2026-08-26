@@ -16,7 +16,7 @@ from haku.console.chat_models import RuntimeKind
 from haku.console.x.claude_code import frames, projection
 from haku.console.x.claude_code.client import cli_over_websocket
 from haku.console.x.claude_code.wake import ClaudeWakeWatcher
-from haku.console.x.conversation_events import Projection, TurnCompleted
+from haku.console.x.conversation_events import Projection, TurnCompleted, TurnFailed
 from haku.console.x.runtime import (
     EMPTY_TURN_PROJECTION_SEED,
     Checkpoint,
@@ -128,11 +128,9 @@ class ClaudeTurnHandler:
 
 
 def _completion(frame: HarnessFrame, terminal: TurnCompleted) -> TurnCompletion:
+    """The projection read the result's `subtype` and `stop_reason`; only the answer's own prose is
+    still on the frame."""
+    if isinstance(terminal.end, TurnFailed):
+        return TurnCompletion(end=terminal.end, final_text="")
     result = frames.ResultFrame.model_validate(frame.frame)
-    if result.subtype == "success":
-        return TurnCompletion(outcome=terminal.outcome, final_text=str(result.result or "").strip())
-    return TurnCompletion(
-        outcome=terminal.outcome,
-        final_text="",
-        failure=f"the agent's turn failed: {result.subtype}: {result.stop_reason or 'unknown error'}",
-    )
+    return TurnCompletion(end=terminal.end, final_text=str(result.result or "").strip())

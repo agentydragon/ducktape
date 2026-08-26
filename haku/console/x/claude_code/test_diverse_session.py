@@ -27,7 +27,7 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
-from haku.console.chat_models import ToolOutcome, TurnOutcome
+from haku.console.chat_models import ToolOutcome
 from haku.console.tools.conversations import MAX_PAGE_BYTES
 from haku.console.x.claude_code.projection import RecordedFrame, project_log
 from haku.console.x.conversation_events import (
@@ -40,6 +40,7 @@ from haku.console.x.conversation_events import (
     ReasoningStarted,
     ToolCallCompleted,
     ToolCallStarted,
+    TurnAnswered,
     TurnCompleted,
 )
 from util.bazel.runfiles import get_required_path
@@ -90,7 +91,7 @@ def test_the_capture_folds_to_the_session_it_recorded(projection: Projection):
 
     # The turn ran a command that failed on purpose, and the CLI still called the turn a success —
     # which is why `TurnCompleted` is read off `subtype` and a failing call is not a failing turn.
-    assert one(event for event in projection.events if isinstance(event, TurnCompleted)).outcome is TurnOutcome.ANSWERED
+    assert one(event for event in projection.events if isinstance(event, TurnCompleted)).end == TurnAnswered()
 
 
 def test_a_message_outlives_the_tool_results_inside_it(projection: Projection):

@@ -27,7 +27,9 @@ from haku.console.x.session_events import (
     SessionProvisioningBody,
     ToolCallCompletedBody,
     ToolCallStartedBody,
-    TurnEndedBody,
+    TurnAbortedBody,
+    TurnAnsweredBody,
+    TurnFailedBody,
     TurnStartedBody,
 )
 from haku.console.x.subscription import StreamedEvent
@@ -157,7 +159,7 @@ class LiveStatus:
     def _end(self, events: Sequence[StreamedEvent]) -> None:
         for event in events:
             match event.body:
-                case TurnEndedBody() if event.turn_id == self._turn_id:
+                case TurnAnsweredBody() | TurnAbortedBody() | TurnFailedBody() if event.turn_id == self._turn_id:
                     self._turn_id = None
                     self._turn_started_at = None
                     self._state = None

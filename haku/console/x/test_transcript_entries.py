@@ -123,7 +123,7 @@ def test_a_result_frame_reaches_the_read_surface_as_the_turn_ending() -> None:
     entry = one(transcript_entries.entries(projection))
 
     assert isinstance(entry, conversation_records.TurnEndEntry)
-    assert entry.outcome == "answered"
+    assert entry.end == conversation_records.TurnAnsweredEnd()
 
 
 def test_frame_classes_this_release_cannot_read_are_reported_rather_than_dropped() -> None:

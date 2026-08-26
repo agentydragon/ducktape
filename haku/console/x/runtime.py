@@ -13,8 +13,8 @@ from enum import StrEnum
 from typing import Any, Protocol
 from uuid import UUID
 
-from haku.console.chat_models import RuntimeKind, TurnOutcome
-from haku.console.x.conversation_events import ConversationEvent, Projection
+from haku.console.chat_models import RuntimeKind
+from haku.console.x.conversation_events import ConversationEvent, Projection, TurnEnd
 from haku.console.x.sandbox_claims import SandboxClaims
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.runtime.x.bridge.client import FrameSink, ReceivedFrame, SentPrompt
@@ -75,11 +75,14 @@ class RuntimeKey:
 
 @dataclass(frozen=True, slots=True)
 class TurnCompletion:
-    """Provider-neutral interpretation of the native frame that ended a turn."""
+    """Provider-neutral interpretation of the native frame that ended a turn.
 
-    outcome: TurnOutcome
+    `end` rather than an outcome beside an optional reason, so an answered turn cannot carry a
+    failure and a failed one cannot arrive without saying what failed.
+    """
+
+    end: TurnEnd
     final_text: str
-    failure: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +115,18 @@ class Checkpoint(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeUnusable:
+    """The runtime says it can serve no further exchange on this session.
+
+    **A failed turn does not imply this and must not be read as it.** Codex states it separately,
+    as a `systemError` thread status; Claude never states it, and its CLI answers the next prompt
+    after a failure like any other. Only this ends the session.
+    """
+
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
 class FrameEffects:
     """One native frame's neutral effects, produced by its harness integration.
 
@@ -125,6 +140,7 @@ class FrameEffects:
     events: tuple[ConversationEvent, ...] = ()
     completion: TurnCompletion | None = None
     checkpoint: Checkpoint = Checkpoint.ADVANCE
+    unusable: RuntimeUnusable | None = None
 
     def __post_init__(self) -> None:
         if self.checkpoint is Checkpoint.HOLD and self.events:

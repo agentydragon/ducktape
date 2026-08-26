@@ -55,7 +55,7 @@ from haku.console.database_schema import (
     Session,
     SessionFrame,
 )
-from haku.console.x import conversation_log, session_events, transcript_entries
+from haku.console.x import conversation_log, conversation_records, session_events, transcript_entries
 from haku.console.x.conversation_events import (
     ConversationEvent,
     FrameRange,
@@ -977,7 +977,7 @@ class SessionStore:
                 items=view.items,
                 turns=[
                     ConversationTurnView(
-                        turn_id=turn.turn_id, started_at=turn.started_at, ended_at=turn.ended_at, outcome=turn.outcome
+                        turn_id=turn.turn_id, started_at=turn.started_at, ended_at=turn.ended_at, end=turn.end
                     )
                     for turn in turns
                 ],
@@ -1214,7 +1214,13 @@ class SessionStore:
         # Two ways to arrive here, one outcome. A turn that never asked its prompt has nothing to
         # finish, and a turn whose cursor sits before it has no position to resume from — so
         # neither has an outcome but failure.
-        await self.end_turn(turn_id, TurnOutcome.FAILED)
+        await self.end_turn(
+            turn_id,
+            session_events.TurnFailedBody(
+                failure="the console could not resume this exchange: its prompt was never asked, "
+                "or its projection cursor no longer reaches it"
+            ),
+        )
         return None
 
     async def claim_cleanup_candidates(self) -> list[UUID]:
@@ -1439,7 +1445,7 @@ class SessionStore:
     async def end_turn(
         self,
         turn_id: UUID,
-        outcome: TurnOutcome,
+        ended: session_events.TurnEndedBody,
         *,
         last_frame_seq: int | None = None,
         projected_frame_seq: int | None = None,
@@ -1490,8 +1496,9 @@ class SessionStore:
             turn.last_seq = writer.conversation.next_event_seq
             turn.last_frame_seq = bound
             turn.ended_at = now
-            turn.outcome = outcome
-            writer.authored(session_events.TurnEndedBody(outcome=outcome), turn_id=turn_id)
+            turn.outcome = ended.outcome
+            turn.failure = ended.failure if isinstance(ended, session_events.TurnFailedBody) else None
+            writer.authored(ended, turn_id=turn_id)
             chat = await db.get(Session, turn.session_id)
             if chat is not None:
                 # `responding` is derived from this turn being open, so closing it retires the
@@ -1527,7 +1534,7 @@ class SessionStore:
                 last_frame_seq=row.last_frame_seq,
                 started_at=row.started_at,
                 ended_at=row.ended_at,
-                outcome=row.outcome,
+                end=_turn_end(row),
             )
             for row in rows
         ]
@@ -1854,7 +1861,7 @@ class SessionStore:
         frame_seq: int,
         events: Sequence[ConversationEvent],
         *,
-        outcome: TurnOutcome,
+        ended: session_events.TurnEndedBody,
         final_text: str,
     ) -> bool:
         """Commit a terminal frame's neutral effects, answer close and turn close together.
@@ -1905,8 +1912,9 @@ class SessionStore:
             turn.last_seq = writer.conversation.next_event_seq
             turn.last_frame_seq = frame_seq
             turn.ended_at = now
-            turn.outcome = outcome
-            writer.authored(session_events.TurnEndedBody(outcome=outcome), turn_id=turn_id)
+            turn.outcome = ended.outcome
+            turn.failure = ended.failure if isinstance(ended, session_events.TurnFailedBody) else None
+            writer.authored(ended, turn_id=turn_id)
             _advance_cursor(chat, frame_seq)
             chat.updated_at = now
             await notify(db, SessionEventKind.UPDATE, session_id)
@@ -2228,6 +2236,23 @@ def _expiry_detail(reason: LeaseExpiryReason, holder: str | None) -> str:
             return "a runner never attached"
 
 
+def _turn_end(turn: ConversationTurn) -> conversation_records.TurnEnd | None:
+    """How *turn* ended, or None while it is still running.
+
+    `ck_conversation_turn_failure` is what makes the failed arm's reason always present.
+    """
+    match turn.outcome:
+        case None:
+            return None
+        case TurnOutcome.ANSWERED:
+            return conversation_records.TurnAnsweredEnd()
+        case TurnOutcome.ABORTED:
+            return conversation_records.TurnAbortedEnd()
+        case TurnOutcome.FAILED:
+            assert turn.failure is not None, "ck_conversation_turn_failure"
+            return conversation_records.TurnFailedEnd(failure=turn.failure)
+
+
 def _advance_cursor(chat: Session, frame_seq: int | None) -> None:
     """Move the session's projection cursor to *frame_seq*, never backwards.
 
@@ -2410,7 +2435,7 @@ async def _moved_rows(db: AsyncSession, record: Session, *, after: int, limit: i
         items=[item_view(item) for item in items],
         turns=[
             ConversationTurnView(
-                turn_id=turn.turn_id, started_at=turn.started_at, ended_at=turn.ended_at, outcome=turn.outcome
+                turn_id=turn.turn_id, started_at=turn.started_at, ended_at=turn.ended_at, end=_turn_end(turn)
             )
             for turn in turns
         ],

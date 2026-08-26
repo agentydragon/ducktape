@@ -1371,6 +1371,9 @@ class ConversationTurn(Base):
     started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     outcome: Mapped[TurnOutcome | None] = mapped_column(TextBackedStrEnumColumn(TurnOutcome), nullable=True)
+    # Set exactly when `outcome` is `failed`, and the check below is what makes that true rather
+    # than hoped: a failed turn that states no reason is the state #4752 was filed about.
+    failure: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         CheckConstraint(
@@ -1379,6 +1382,7 @@ class ConversationTurn(Base):
         # A turn is ended exactly when it says how it went, so "is this exchange running" cannot be
         # read two ways.
         CheckConstraint("(ended_at IS NULL) = (outcome IS NULL)", name="ck_conversation_turn_ended"),
+        CheckConstraint("(failure IS NULL) = (outcome IS DISTINCT FROM 'failed')", name="ck_conversation_turn_failure"),
         CheckConstraint("(ended_at IS NULL) = (last_seq IS NULL)", name="ck_conversation_turn_last_seq"),
         CheckConstraint("last_seq IS NULL OR last_seq >= first_seq", name="ck_conversation_turn_seq_order"),
         Index(

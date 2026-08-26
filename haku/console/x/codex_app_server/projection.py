@@ -27,7 +27,7 @@ from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any
 
-from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
+from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome
 from haku.console.x.codex_app_server import frames
 from haku.console.x.codex_app_server.protocol import Notification, Request, Response, UnknownMessage, parse_message
 from haku.console.x.conversation_events import (
@@ -44,7 +44,11 @@ from haku.console.x.conversation_events import (
     ReasoningStarted,
     ToolCallCompleted,
     ToolCallStarted,
+    TurnAborted,
+    TurnAnswered,
     TurnCompleted,
+    TurnEnd,
+    TurnFailed,
 )
 
 
@@ -416,15 +420,21 @@ class _Projector:
         )
 
     def _turn_completed(self, frame_seq: int, params: Mapping[str, Any]) -> None:
-        turn = params.get("turn")
-        status = turn.get("status") if isinstance(turn, dict) else None
-        outcomes = {"completed": TurnOutcome.ANSWERED, "interrupted": TurnOutcome.ABORTED, "failed": TurnOutcome.FAILED}
-        if status not in outcomes:
-            self._unprojected("turn/completed/status")
-            return
+        turn = params.get("turn") if isinstance(params.get("turn"), dict) else None
+        match turn and turn.get("status"):
+            case "completed":
+                end: TurnEnd = TurnAnswered()
+            case "interrupted":
+                end = TurnAborted()
+            case "failed":
+                assert turn is not None
+                end = TurnFailed(reason=_failure(turn))
+            case _:
+                self._unprojected("turn/completed/status")
+                return
         self._close_message()
         self._close_reasoning()
-        self.events.append(TurnCompleted(outcome=outcomes[status], provenance=FrameRange(frame_seq, frame_seq)))
+        self.events.append(TurnCompleted(end=end, provenance=FrameRange(frame_seq, frame_seq)))
         self.seen_call_ids.clear()
         self.completed_call_ids.clear()
 
@@ -444,6 +454,20 @@ class _Projector:
 
     def _unprojected(self, kind: str) -> None:
         self.unprojected[kind] = self.unprojected.get(kind, 0) + 1
+
+
+def _failure(turn: Mapping[str, Any]) -> str:
+    """Why the turn failed, from `TurnError.message` on the terminal frame.
+
+    `additionalDetails` holds the reason instead on the retry notifications Codex sends while it is
+    still trying, and is null here; see `docs/protocol_evidence.md` § Turn failures.
+    """
+    error = turn.get("error")
+    if error is None:
+        return "unknown error"
+    if isinstance(error, dict) and isinstance(message := error.get("message"), str):
+        return message
+    return str(error)
 
 
 def _item(params: Mapping[str, Any]) -> dict[str, Any] | None:

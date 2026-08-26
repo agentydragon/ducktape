@@ -125,7 +125,10 @@ class TurnRecord(BaseModel):
     )
     started_at: datetime.datetime
     ended_at: datetime.datetime | None = Field(description="Absent while the exchange is still running.")
-    outcome: str | None = Field(description="`answered`, `aborted` or `failed`; absent while it is still running.")
+    end: TurnAnsweredEnd | TurnAbortedEnd | TurnFailedEnd | None = Field(
+        discriminator="outcome",
+        description="How the exchange ended, and on a failure why. Absent while it is still running.",
+    )
 
 
 class TurnCursor(BaseModel):
@@ -255,10 +258,30 @@ class ToolResultEntry(_EntryBase):
     outcome: Outcome
 
 
+class TurnAnsweredEnd(BaseModel):
+    outcome: Literal["answered"] = "answered"
+
+
+class TurnAbortedEnd(BaseModel):
+    outcome: Literal["aborted"] = "aborted"
+
+
+class TurnFailedEnd(BaseModel):
+    outcome: Literal["failed"] = "failed"
+    failure: str = Field(
+        description="Why the runtime could not finish, in the words it used. Present on every failed "
+        "turn and on no other, so a reader never has to ask why a failure states no reason."
+    )
+
+
 class TurnEndEntry(_EntryBase):
     kind: Literal["turn_end"] = "turn_end"
-    outcome: str = Field(description="`answered`, `aborted` or `failed`, as `list_turns` also reports it.")
+    end: TurnAnsweredEnd | TurnAbortedEnd | TurnFailedEnd = Field(
+        discriminator="outcome", description="How the exchange ended. `outcome` is the same value `list_turns` reports."
+    )
 
+
+type TurnEnd = TurnAnsweredEnd | TurnAbortedEnd | TurnFailedEnd
 
 type TranscriptEntry = Annotated[
     MessageEntry | ReasoningEntry | ToolCallEntry | ToolResultEntry | TurnEndEntry, Field(discriminator="kind")

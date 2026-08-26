@@ -16,7 +16,7 @@ from itertools import product
 import pytest
 import pytest_bazel
 
-from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
+from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome
 from haku.console.x.claude_code.projection import (
     DeltaSource,
     OpenItem,
@@ -57,7 +57,9 @@ from haku.console.x.conversation_events import (
     ReasoningStarted,
     ToolCallCompleted,
     ToolCallStarted,
+    TurnAnswered,
     TurnCompleted,
+    TurnFailed,
 )
 
 BASH_RESULT: Json = {"interrupted": False, "isImage": False, "noOutputExpected": False, "stderr": "", "stdout": "3\n"}
@@ -86,7 +88,7 @@ def test_a_message_with_no_prose_in_it_is_not_a_message():
         ItemSegment(item=_REASONING, text="The fixture says the fold is wrong here.", provenance=FrameRange(1, 1)),
         ReasoningCompleted(disclosure=ReasoningDisclosure.SUMMARY, provenance=FrameRange(1, 1)),
         ToolCallStarted(call_id="toolu_1", tool_name="Bash", arguments={"command": "ls"}, provenance=FrameRange(2, 2)),
-        TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=FrameRange(3, 3)),
+        TurnCompleted(end=TurnAnswered(), provenance=FrameRange(3, 3)),
     )
 
 
@@ -211,7 +213,11 @@ def test_every_did_this_go_wrong_field_is_uninformative():
         ToolOutcome.SUCCEEDED,
         ToolOutcome.FAILED,
     ]
-    assert [event.outcome for event in events if isinstance(event, TurnCompleted)] == [TurnOutcome.FAILED]
+    # The reason is the two fields the CLI states about a result, in order: `subtype`, then the
+    # `stop_reason` every production result carries.
+    assert [event.end for event in events if isinstance(event, TurnCompleted)] == [
+        TurnFailed(reason="error_during_execution: end_turn")
+    ]
 
 
 def test_most_of_the_wire_is_system_and_projects_to_nothing():
@@ -332,7 +338,7 @@ def test_text_arrives_as_segments_and_the_completion_carries_none():
         ItemSegment(item=_MESSAGE, text="Looking at ", provenance=FrameRange(1, 1)),
         ItemSegment(item=_MESSAGE, text="the migration.", provenance=FrameRange(2, 2)),
         MessageCompleted(backend_item_id="msg_A", provenance=FrameRange(1, 2)),
-        TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=FrameRange(3, 3)),
+        TurnCompleted(end=TurnAnswered(), provenance=FrameRange(3, 3)),
     )
 
 

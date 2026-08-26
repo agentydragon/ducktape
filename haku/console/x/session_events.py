@@ -180,14 +180,33 @@ class TurnStartedBody(BaseModel):
     """
 
 
-class TurnEndedBody(BaseModel):
-    """How the exchange this row names came out.
+class TurnAnsweredBody(BaseModel):
+    """The agent finished the exchange."""
 
-    The outcome and nothing else, which now includes the operator's stop: an abort is a turn's
-    outcome, which is where every backend protocol puts it.
+    outcome: Literal[TurnOutcome.ANSWERED] = TurnOutcome.ANSWERED
+
+
+class TurnAbortedBody(BaseModel):
+    """Someone stopped it — an abort is a turn's outcome, which is where every backend protocol
+    puts it. It carries no reason because nothing went wrong."""
+
+    outcome: Literal[TurnOutcome.ABORTED] = TurnOutcome.ABORTED
+
+
+class TurnFailedBody(BaseModel):
+    """The exchange could not finish, and why.
+
+    **`failure` is required**, so a failed turn cannot be stored without saying what failed. Three
+    bodies rather than one with an optional reason, because that one would also spell an answered
+    turn carrying a failure and a failed turn carrying none — the second being exactly the state
+    this replaced.
     """
 
-    outcome: TurnOutcome
+    outcome: Literal[TurnOutcome.FAILED] = TurnOutcome.FAILED
+    failure: str = Field(description="Bounded prose for an operator, in the words the runtime used.")
+
+
+type TurnEndedBody = TurnAnsweredBody | TurnAbortedBody | TurnFailedBody
 
 
 class SessionProvisioningBody(BaseModel):
@@ -280,7 +299,7 @@ def _authored_kind(body: AuthoredBody) -> AuthoredEventKind:
             return AuthoredEventKind.SETUP_NARRATION
         case TurnStartedBody():
             return AuthoredEventKind.TURN_STARTED
-        case TurnEndedBody():
+        case TurnAnsweredBody() | TurnAbortedBody() | TurnFailedBody():
             return AuthoredEventKind.TURN_ENDED
 
 
@@ -348,13 +367,26 @@ def body_of(row: ConversationEventRow) -> StoredBody:
         case AuthoredEventKind.TURN_STARTED:
             return TurnStartedBody.model_validate(row.body)
         case AuthoredEventKind.TURN_ENDED:
-            return TurnEndedBody.model_validate(row.body)
+            return _turn_ended_body(row.body)
         case AuthoredEventKind.SESSION_PROVISIONING:
             return SessionProvisioningBody.model_validate(row.body)
         case AuthoredEventKind.SESSION_ENDED:
             return SessionEndedBody.model_validate(row.body)
         case AuthoredEventKind.SETUP_NARRATION:
             return SetupNarrationBody.model_validate(row.body)
+
+
+def _turn_ended_body(body: dict[str, Any]) -> TurnEndedBody:
+    """Dispatched on the body's own `outcome`, as `_started_body` dispatches on `item_type`."""
+    match body.get("outcome"):
+        case TurnOutcome.ANSWERED:
+            return TurnAnsweredBody.model_validate(body)
+        case TurnOutcome.ABORTED:
+            return TurnAbortedBody.model_validate(body)
+        case TurnOutcome.FAILED:
+            return TurnFailedBody.model_validate(body)
+        case other:
+            raise ValueError(f"turn_ended names no known outcome: {other=}")
 
 
 def _started_body(body: dict[str, Any]) -> ItemStartedBody:

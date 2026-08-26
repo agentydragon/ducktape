@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
+from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome
 from haku.console.x.codex_app_server.projection import OpenItem, ProjectionState, RecordedFrame, project, project_log
 from haku.console.x.codex_app_server.protocol import read_trace, server_messages
 from haku.console.x.conversation_events import (
@@ -16,6 +16,7 @@ from haku.console.x.conversation_events import (
     ReasoningStarted,
     ToolCallCompleted,
     ToolCallStarted,
+    TurnAnswered,
     TurnCompleted,
 )
 from util.bazel.runfiles import get_required_path
@@ -88,7 +89,7 @@ def test_schema_derived_fixture_projects_the_supported_surface():
             outcome=ToolOutcome.SUCCEEDED,
             provenance=FrameRange(22, 22),
         ),
-        TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=FrameRange(25, 25)),
+        TurnCompleted(end=TurnAnswered(), provenance=FrameRange(25, 25)),
     )
     assert projection.unprojected == {"item/started/futureThing": 1, "future/notification": 1}
 

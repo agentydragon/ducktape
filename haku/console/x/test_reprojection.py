@@ -14,20 +14,14 @@ import pytest_bazel
 from more_itertools import one
 from sqlalchemy import delete, update
 
-from haku.console.chat_models import (
-    SPA_ORIGIN,
-    BridgeFrameKind,
-    ConversationEventKind,
-    FrameDirection,
-    ItemType,
-    TurnOutcome,
-)
+from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, ConversationEventKind, FrameDirection, ItemType
 from haku.console.database_schema import ConversationEvent, ConversationItem, Session
 from haku.console.x import reprojection
 from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.claude_code.testing.wire import content_block_stop, input_json_delta, tool_use_start
 from haku.console.x.runtime import Checkpoint
 from haku.console.x.runtime_catalog import projection_registry
+from haku.console.x.session_events import TurnAbortedBody
 from haku.console.x.session_store import BridgeAuthentication
 from haku.runtime.x.bridge.protocol import HarnessFrame
 
@@ -126,7 +120,7 @@ async def test_an_aborted_turn_still_agrees_with_its_frames(chat_store, migrated
     session_id, turn_id = await _turn_through_the_write_path(
         chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
     )
-    await chat_store.end_turn(turn_id, TurnOutcome.ABORTED)
+    await chat_store.end_turn(turn_id, TurnAbortedBody())
 
     async with migrated_sessions() as db:
         report = await reprojection.check_session(db, session_id, runtimes=RUNTIMES)

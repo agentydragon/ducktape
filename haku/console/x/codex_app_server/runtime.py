@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from haku.console.chat_models import RuntimeKind, TurnOutcome
+from haku.console.chat_models import RuntimeKind
 from haku.console.x.codex_app_server import frames, projection
 from haku.console.x.codex_app_server.client import CodexClientFactory, CodexThread, app_server_over_websocket
 from haku.console.x.conversation_events import Projection, TurnCompleted
@@ -22,6 +22,7 @@ from haku.console.x.runtime import (
     RuntimeClient,
     RuntimeLaunch,
     RuntimeTurnHandler,
+    RuntimeUnusable,
     TurnCompletion,
     TurnProjectionSeed,
 )
@@ -120,7 +121,14 @@ class CodexTurnHandler:
             self.state, [projection.RecordedFrame(frame_seq=frame_seq, payload=frame.frame)]
         )
         terminal = next((event for event in result.events if isinstance(event, TurnCompleted)), None)
-        return FrameEffects(events=result.events, completion=None if terminal is None else _completion(frame, terminal))
+        completion = None if terminal is None else TurnCompletion(end=terminal.end, final_text="")
+        # Arrives before the terminal frame, so the loop carries it to the turn's close.
+        unusable = (
+            RuntimeUnusable(reason="the Codex thread reported a system error")
+            if frames.system_error(frame.frame)
+            else None
+        )
+        return FrameEffects(events=result.events, completion=completion, unusable=unusable)
 
 
 def _open_item(seed: OpenItemSeed | None) -> projection.OpenItem | None:
@@ -132,20 +140,3 @@ def _open_item(seed: OpenItemSeed | None) -> projection.OpenItem | None:
         backend_item_id=None,
         delivered=seed.text,
     )
-
-
-def _completion(frame: HarnessFrame, terminal: TurnCompleted) -> TurnCompletion:
-    turn = frames.terminal_turn(frame.frame)
-    if turn is None:
-        raise ValueError("Codex terminal event did not come from turn/completed")
-    if terminal.outcome is not TurnOutcome.FAILED:
-        return TurnCompletion(outcome=terminal.outcome, final_text="")
-    error = turn.get("error")
-    if isinstance(error, dict):
-        message = error.get("message")
-        detail = message if isinstance(message, str) else str(error)
-    elif error is None:
-        detail = "unknown error"
-    else:
-        detail = str(error)
-    return TurnCompletion(outcome=terminal.outcome, final_text="", failure=f"the agent's turn failed: {detail}")

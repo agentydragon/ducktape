@@ -200,11 +200,51 @@ class ToolCallCompleted:
 
 
 @dataclass(frozen=True, slots=True)
-class TurnCompleted:
-    """The exchange ended. `TurnOutcome` is the console's own durable vocabulary."""
+class TurnAnswered:
+    """The agent finished the exchange."""
 
-    outcome: TurnOutcome
+
+@dataclass(frozen=True, slots=True)
+class TurnAborted:
+    """Someone stopped it. It carries no reason because nothing went wrong."""
+
+
+@dataclass(frozen=True, slots=True)
+class TurnFailed:
+    """The runtime could not finish, and why.
+
+    The reason is required, so that a failure cannot be recorded without saying what failed. It is
+    bounded prose for an operator to read, in whatever words the provider used; nothing dispatches
+    on it, which is why there is no category beside it.
+    """
+
+    reason: str
+
+
+type TurnEnd = TurnAnswered | TurnAborted | TurnFailed
+
+
+@dataclass(frozen=True, slots=True)
+class TurnCompleted:
+    """The exchange ended, and how.
+
+    One event rather than three, because every consumer that cares which frame ended a turn cares
+    about all three ways it can end; `end` is what they dispatch on.
+    """
+
+    end: TurnEnd
     provenance: Provenance
+
+
+def outcome_of(end: TurnEnd) -> TurnOutcome:
+    """`end` in the console's own durable vocabulary, which keeps no reason."""
+    match end:
+        case TurnAnswered():
+            return TurnOutcome.ANSWERED
+        case TurnAborted():
+            return TurnOutcome.ABORTED
+        case TurnFailed():
+            return TurnOutcome.FAILED
 
 
 type ItemStarted = MessageStarted | ReasoningStarted | ToolCallStarted

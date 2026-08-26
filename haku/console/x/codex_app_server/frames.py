@@ -18,6 +18,7 @@ THREAD_START: Final = "thread/start"
 TURN_START: Final = "turn/start"
 TURN_INTERRUPT: Final = "turn/interrupt"
 TURN_COMPLETED: Final = "turn/completed"
+THREAD_STATUS_CHANGED: Final = "thread/status/changed"
 
 
 def method(frame: Mapping[str, Any]) -> str | None:
@@ -35,6 +36,20 @@ def terminal_turn(frame: Mapping[str, Any]) -> Mapping[str, Any] | None:
     params = frame.get("params")
     turn = params.get("turn") if isinstance(params, dict) else None
     return turn if isinstance(turn, dict) else None
+
+
+def system_error(frame: Mapping[str, Any]) -> bool:
+    """Whether *frame* is Codex declaring the thread unusable.
+
+    `ThreadStatus` is `notLoaded | idle | systemError | active`, and Codex sends `systemError` when
+    it gives up on the thread rather than on one turn — in the captured production failure, one
+    frame before the terminal error (`docs/protocol_evidence.md` § Turn failures).
+    """
+    if method(frame) != THREAD_STATUS_CHANGED:
+        return False
+    params = frame.get("params")
+    status = params.get("status") if isinstance(params, dict) else None
+    return isinstance(status, dict) and status.get("type") == "systemError"
 
 
 def nested_string(value: Mapping[str, Any], *path: str) -> str:

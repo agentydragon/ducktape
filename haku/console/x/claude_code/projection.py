@@ -49,7 +49,7 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Any
 
-from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
+from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome
 from haku.console.x.claude_code import frames
 from haku.console.x.conversation_events import (
     CallRef,
@@ -65,7 +65,9 @@ from haku.console.x.conversation_events import (
     ReasoningStarted,
     ToolCallCompleted,
     ToolCallStarted,
+    TurnAnswered,
     TurnCompleted,
+    TurnFailed,
 )
 
 
@@ -528,13 +530,14 @@ class _Projector:
         # From `subtype` alone. `is_error` is false on every production result, including those
         # from sessions the console records as failed, so reading it would report every turn as
         # fine and one field disagreeing with another as a contradiction.
+        #
+        # Claude states no abort here: an operator's stop arrives as a `result` like any other and
+        # the loop, which is the side that knows it asked, records the abort.
         subtype = frame.payload.get("subtype")
-        self.events.append(
-            TurnCompleted(
-                outcome=TurnOutcome.ANSWERED if subtype == "success" else TurnOutcome.FAILED,
-                provenance=FrameRange(frame.frame_seq, frame.frame_seq),
-            )
-        )
+        stop_reason = frame.payload.get("stop_reason")
+        stated = stop_reason if isinstance(stop_reason, str) and stop_reason else "unknown error"
+        end = TurnAnswered() if subtype == "success" else TurnFailed(reason=f"{subtype}: {stated}")
+        self.events.append(TurnCompleted(end=end, provenance=FrameRange(frame.frame_seq, frame.frame_seq)))
 
     def _system(self, frame: RecordedFrame) -> None:
         subtype = frame.payload.get("subtype")

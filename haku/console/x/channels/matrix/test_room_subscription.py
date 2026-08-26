@@ -14,7 +14,7 @@ import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import LeaseExpiryReason, MatrixOrigin, PromptRejection, SpaOrigin, TurnOutcome
+from haku.console.chat_models import LeaseExpiryReason, MatrixOrigin, PromptRejection, SpaOrigin
 from haku.console.database_schema import ChannelCursor
 from haku.console.x import conversation_log, session_events
 from haku.console.x.channels.matrix.client import RoomEventKind
@@ -29,6 +29,7 @@ from haku.console.x.channels.matrix.room_subscription import (
     RoomNotices,
     project_notice,
 )
+from haku.console.x.session_events import TurnAbortedBody, TurnAnsweredBody
 from haku.console.x.session_store import SessionStore
 from haku.console.x.subscription import START, ConversationStream, StreamedEvent, StreamPosition
 
@@ -126,7 +127,7 @@ async def abort_a_turn(chat_store: SessionStore, operator_id: UUID, session_id: 
     )
     turn = await chat_store.next_prompt(session_id)
     assert turn is not None
-    await chat_store.end_turn(turn.turn_id, TurnOutcome.ABORTED)
+    await chat_store.end_turn(turn.turn_id, TurnAbortedBody())
 
 
 async def stored_position(sessions: async_sessionmaker[AsyncSession]) -> StreamPosition | None:
@@ -169,7 +170,7 @@ async def test_an_answered_turn_without_a_message_becomes_a_silence_notice(
     )
     turn = await chat_store.next_prompt(served)
     assert turn is not None
-    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
+    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody())
 
     await notices.reconcile_once()
 
@@ -187,7 +188,7 @@ async def test_an_answered_turn_with_a_message_needs_no_silence_notice(
     turn = await chat_store.next_prompt(served)
     assert turn is not None
     await chat_store.close_answer(served, turn.turn_id, final_text="done", frame_seq=1)
-    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED, last_frame_seq=1, projected_frame_seq=1)
+    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody(), last_frame_seq=1, projected_frame_seq=1)
 
     await notices.reconcile_once()
 
@@ -205,7 +206,7 @@ async def test_turn_typing_is_derived_by_the_room_subscriber(chat_store, operato
     await notices.reconcile_once()
     assert room.typing[-1] is True
 
-    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
+    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody())
     await notices.reconcile_once()
     assert room.typing[-1] is False
 
@@ -507,7 +508,7 @@ async def test_a_failed_projection_is_replayed_with_the_same_source_identity(
             RoomEventKind.UNREADABLE,
         ),
         (session_events.SetupNarrationBody(text="cloning haku-state"), "cloning haku-state", RoomEventKind.NARRATION),
-        (session_events.TurnEndedBody(outcome=TurnOutcome.ABORTED), ABORTED_BY_OPERATOR, RoomEventKind.LIFECYCLE),
+        (session_events.TurnAbortedBody(), ABORTED_BY_OPERATOR, RoomEventKind.LIFECYCLE),
     ],
 )
 def test_sealed_notices_are_pure_projections_of_their_source_event(body, expected, kind) -> None:
