@@ -19,7 +19,7 @@
 # Typically nothing changed and the push matrix is empty, so a merge costs one job
 # instead of forty-three. Previously every image got its own runner to rediscover
 # that its digest was unchanged: measured over 96 such jobs, exactly one pushed
-# anything. See debug/ci_queue_saturation.md.
+# anything. See devinfra/ci/debug/ci_queue_saturation.md.
 #
 # Credentials live exactly where they should: registry auth happens on the GitHub
 # runner, not through the BB runner VM.

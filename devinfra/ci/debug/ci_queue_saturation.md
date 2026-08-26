@@ -11,7 +11,7 @@ green results** (18 cancelled, 5 failed, 4 still queued).
 
 ## Where the time goes
 
-Run [32972301158](https://github.com/agentydragon/ducktape/actions/runs/32967283495)
+Run [32967283495](https://github.com/agentydragon/ducktape/actions/runs/32967283495)
 (`devel` push, representative), 90 of 94 jobs sampled:
 
 | Measure                        | Value                      |
