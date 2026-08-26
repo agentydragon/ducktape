@@ -229,6 +229,10 @@ grant covering `kubectl get pods --watch` needs both verbs.
 
 Remaining work:
 
+- TODO(#4729): consider a Console push channel for grant lifecycle events, so an ended
+  grant closes its streams sooner than the revalidation interval. Only if the
+  fail-closed guarantee survives it: silence on a channel must not read as continued
+  authority the way a failed poll cannot.
 - TODO(#4562): revisit deeper metrics, alerts and failure hardening if operational experience
   justifies them.
 - TODO(#4428): consider discovery-response caching only if it preserves the
