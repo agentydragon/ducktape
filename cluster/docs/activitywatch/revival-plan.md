@@ -46,21 +46,18 @@ importer dedups any residue.
   new events). wyrm2 is enabled as a second device (`wyrm2::…`) to exercise multi-device
   separation. The write-proxy needed a raised `client_max_body_size` (#4756): the importer
   POSTs a whole bucket per request and the ~10 MB backfill blew past nginx's 1 MB default.
+- **All desktops enabled**: iguana and atlas join rugged and wyrm2 as importer devices
+  (`iguana::…` / `atlas::…`). Config-only — the shared write token already reaches both
+  hosts' user keys — so each starts feeding the central on its next `switch`.
 
 ## What's left
 
-1. **Roll out to the remaining hosts.** rugged and wyrm2 feed the central now; iguana and
-   atlas still sit at `sync.enable = false`. Enable each with its own `dest.device`, per the
-   README's "Adding More Devices". (First-run note: the importer's `AwClient` takes a
-   `SingleInstance` lock under `dirs::cache_dir()`, so the systemd user service needs a
-   writable `HOME`/`XDG_CACHE_HOME` — satisfied by default.)
-
-2. **Bound the importer's write batches.** It POSTs a whole bucket's insert set in one
+1. **Bound the importer's write batches.** It POSTs a whole bucket's insert set in one
    request — ~10 MB on first backfill — which is the only reason the write-proxy needs a
    256 MB body cap. Chunk the inserts into small fixed-size POSTs so no single request is
    large and the cap becomes a ceiling, not a dependency.
 
-3. **Incremental sync, then make the write route ingest-only.** v1 reads the whole source
+2. **Incremental sync, then make the write route ingest-only.** v1 reads the whole source
    and whole destination bucket each run; switch to a per-bucket high-water mark — read only
    source events past the newest already in the destination. Once the importer no longer
    reads the destination, restrict the write route to write methods: today it must allow GET,

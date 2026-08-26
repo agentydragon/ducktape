@@ -41,6 +41,18 @@ in
   ducktape.aiquota.enable = true;
   ducktape.aiquota.remoteApi.enable = true;
 
+  # ActivityWatch capture + import into the central server. The importer folds this
+  # host's buckets into atlas::<bucket> over the bearer-gated write route, using the
+  # shared dual-recipient write token the cluster write-proxy checks.
+  ducktape.activitywatch.sync = {
+    enable = true;
+    dest = {
+      url = "https://activitywatch-write.allegedly.works";
+      device = "atlas";
+      tokenSopsFile = ../../../cluster/k8s/x/activitywatch/activitywatch-write-token.sops.yaml;
+    };
+  };
+
   # Atlas-specific configuration (Proxmox host with GUI)
   home.stateVersion = "24.05";
 
