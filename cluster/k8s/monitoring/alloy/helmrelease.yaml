@@ -31,6 +31,10 @@ spec:
 
     controller:
       type: deployment
+      # Single replica is load-bearing, not just sizing: config.alloy's
+      # `loki.source.kubernetes_events` watches events cluster-wide, so a second
+      # replica ingests every event a second time. Scaling this up means scoping
+      # or removing that component first.
       replicas: 1
 
     serviceMonitor:
