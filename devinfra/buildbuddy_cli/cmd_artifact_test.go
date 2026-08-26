@@ -17,6 +17,12 @@ const besStream = `[
  {"id":{"namedSet":{"id":"lint"}},
   "namedSetOfFiles":{"files":[
     {"name":"skills/backtrace/report.txt","uri":"bytestream://host/blobs/ccc/5","digest":"ccc","length":"5"}]}},
+ {"id":{"namedSet":{"id":"transitioned"}},
+  "namedSetOfFiles":{"files":[
+    {"pathPrefix":["bazel-out","k8-fastbuild-ST-abc","bin"],"name":"util/testing/frozen-clock.js","uri":"bytestream://host/blobs/eee/9","digest":"eee","length":"9"},
+    {"name":"util/testing/frozen-clock.js","uri":"bytestream://host/blobs/fff/9","digest":"fff","length":"9"}]}},
+ {"id":{"targetCompleted":{"label":"//util/testing:clock"}},
+  "completed":{"success":true,"outputGroup":[{"name":"default","fileSets":[{"id":"transitioned"}]}]}},
  {"id":{"targetCompleted":{"label":"//skills/backtrace:backtrace_skill"}},
   "completed":{"success":true,"outputGroup":[
     {"name":"default","fileSets":[{"id":"outer"}]},
@@ -97,6 +103,25 @@ func TestParseArtifactsDoesNotRepeatSharedFiles(t *testing.T) {
 		if n > 1 {
 			t.Errorf("artifact repeated %d times: %+v", n, a)
 		}
+	}
+}
+
+func TestParseArtifactsKeepsFilesDistinctByPathPrefix(t *testing.T) {
+	// A source file and the generated file of the same name differ only by prefix
+	// (as do outputs of a configuration transition), so dropping the prefix would
+	// silently collapse them into one and hand callers the wrong bytes.
+	var got []artifact
+	for _, a := range parseOrFail(t, besStream) {
+		if a.Name == "util/testing/frozen-clock.js" {
+			got = append(got, a)
+		}
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 same-named files, got %d: %+v", len(got), got)
+	}
+	prefixes := map[string]string{got[0].PathPrefix: got[0].Digest, got[1].PathPrefix: got[1].Digest}
+	if prefixes["bazel-out/k8-fastbuild-ST-abc/bin"] != "eee" || prefixes[""] != "fff" {
+		t.Errorf("prefix/digest pairing wrong: %+v", prefixes)
 	}
 }
 

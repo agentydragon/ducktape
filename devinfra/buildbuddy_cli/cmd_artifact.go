@@ -65,6 +65,12 @@ type artifact struct {
 	// rustfmt_checks), so the group is what separates a target's real outputs
 	// from its lint reports.
 	OutputGroup string `json:"outputGroup,omitempty"`
+	// Directory prefix BES reports separately from Name, e.g.
+	// "bazel-out/k8-fastbuild/bin". Name alone is ambiguous: a source file has an
+	// empty prefix while the generated file of the same name sits under bazel-out,
+	// and a configuration transition puts its outputs under a distinct prefix
+	// ("bazel-out/k8-fastbuild-ST-<hash>/bin"). Only Prefix+Name identifies a file.
+	PathPrefix string `json:"pathPrefix,omitempty"`
 	// Content digest and size as BES reports them. For a single-file release the
 	// digest is the published content identity, so callers can compare against a
 	// registry or release tag without fetching the bytes at all.
@@ -425,12 +431,13 @@ func parseArtifacts(data []byte) ([]artifact, error) {
 			label := ev.GetId().GetTestResult().GetLabel()
 			for _, f := range tr.GetTestActionOutput() {
 				add(artifact{
-					Label:  label,
-					Name:   f.GetName(),
-					URI:    f.GetUri(),
-					Kind:   kindTest,
-					Digest: f.GetDigest(),
-					Size:   f.GetLength(),
+					Label:      label,
+					Name:       f.GetName(),
+					URI:        f.GetUri(),
+					Kind:       kindTest,
+					PathPrefix: strings.Join(f.GetPathPrefix(), "/"),
+					Digest:     f.GetDigest(),
+					Size:       f.GetLength(),
 				})
 			}
 			continue
@@ -448,6 +455,7 @@ func parseArtifacts(data []byte) ([]artifact, error) {
 					URI:         f.GetUri(),
 					Kind:        kindBuild,
 					OutputGroup: group.GetName(),
+					PathPrefix:  strings.Join(f.GetPathPrefix(), "/"),
 					Digest:      f.GetDigest(),
 					Size:        f.GetLength(),
 				})

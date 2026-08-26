@@ -194,6 +194,12 @@ only. Build outputs reach the BES stream as `TargetComplete` â†’ output group â†
 single-file release the digest is the content identity, so a caller can compare
 against a published tag without fetching the bytes.
 
+**Gotcha:** identify a file by `pathPrefix` + `name`, never `name` alone. A
+source file has an empty prefix while the generated file of the same name lives
+under `bazel-out/k8-fastbuild/bin`, and a configuration transition writes to
+`bazel-out/k8-fastbuild-ST-<hash>/bin`. On devel's `//...` sweep four names
+collide across prefixes.
+
 For CI phase profiling, start with:
 
 ```bash
