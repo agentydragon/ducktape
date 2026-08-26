@@ -16,6 +16,77 @@ from haku.console.tool_call_actor import AgentActor
 from haku.console.tool_call_service import ToolCallApplicationService
 from haku.console.tool_calls import SubmitToolCallRequest, ToolCallStatus
 
+_SERVER_ID = "kubectl-passthrough-mcp"
+
+_AGENT = AgentActor(
+    agent_id=UUID("10000000-0000-4000-8000-000000000001"),
+    operator_id=UUID("20000000-0000-4000-8000-000000000002"),
+    binding_id=UUID("30000000-0000-4000-8000-000000000003"),
+    access_profile_id="public-coder",
+)
+
+_PODS_LIST = SubmitToolCallRequest(
+    server_id=_SERVER_ID, tool_name="pods_list", arguments={"namespace": "default"}, wait_for_ms=0
+)
+
+
+def _repository(status: ToolCallStatus) -> AsyncMock:
+    """A ledger whose submitted record comes back in *status*."""
+    repository = AsyncMock()
+    record = AsyncMock()
+    record.tool_call_id = "tc_123"
+    record.status = status
+    repository.submit.return_value = record
+    repository.get.return_value = record
+    return repository
+
+
+def _authorization(*, allowed: bool, reason: str) -> AsyncMock:
+    authorization = AsyncMock()
+    authorization.evaluate.return_value = AuthorizationResponse(
+        allowed=allowed, reason=reason, source=KubernetesAuthorizationSource.SAR, decision_id="sar:1"
+    )
+    return authorization
+
+
+def _service(tmp_path: Path, *, repository: AsyncMock, authorization: AsyncMock) -> ToolCallApplicationService:
+    """The service under test: one passthrough server governed by a kubernetes_passthrough policy."""
+    config_file = write_config(
+        tmp_path / "config.yaml",
+        {
+            "auto_approval_policies": [
+                {"id": "k8s-passthrough", "type": "kubernetes_passthrough", "server": _SERVER_ID}
+            ],
+            "access_profiles": [{"id": "public-coder", "auto_approval_policy": "k8s-passthrough"}],
+            "default_access_profile_id": "public-coder",
+            "mcp": {
+                "servers": [
+                    {
+                        "id": _SERVER_ID,
+                        "backend": {
+                            "kind": "remote_mcp",
+                            "url": "https://kubectl-passthrough.test/mcp",
+                            "auth": {"kind": "none"},
+                        },
+                    }
+                ]
+            },
+        },
+    )
+    return ToolCallApplicationService(
+        settings=console_settings("postgresql://...", config_file=config_file),
+        repository=repository,
+        invalidation_publisher=AsyncMock(),
+        executor=AsyncMock(),
+        oauth_store=AsyncMock(),
+        in_process_servers={},
+        provider_store=AsyncMock(),
+        authentik_token_store=AsyncMock(),
+        approval_notifier=AsyncMock(),
+        gmail_client_provider=AsyncMock(return_value=None),
+        kubernetes_authorization=authorization,
+    )
+
 
 def test_map_pods_list() -> None:
     reqs = map_kubectl_passthrough_request("pods_list", {"namespace": "default"})
@@ -53,137 +124,32 @@ def test_map_unknown_tool() -> None:
 
 @pytest.mark.asyncio
 async def test_kubectl_passthrough_suppression_when_fully_covered(tmp_path: Path) -> None:
-    repo = AsyncMock()
-    submitted_record = AsyncMock()
-    submitted_record.tool_call_id = "tc_123"
-    submitted_record.status = ToolCallStatus.DENIED
-    repo.submit.return_value = submitted_record
-
-    authorization = AsyncMock()
-    authorization.evaluate.return_value = AuthorizationResponse(
-        allowed=True, reason="covered by SAR", source=KubernetesAuthorizationSource.SAR, decision_id="sar:1"
+    repository = _repository(ToolCallStatus.DENIED)
+    service = _service(
+        tmp_path, repository=repository, authorization=_authorization(allowed=True, reason="covered by SAR")
     )
 
-    config_file = write_config(
-        tmp_path / "config.yaml",
-        {
-            "auto_approval_policies": [
-                {"id": "k8s-passthrough", "type": "kubernetes_passthrough", "server": "kubectl-passthrough-mcp"}
-            ],
-            "access_profiles": [{"id": "public-coder", "auto_approval_policy": "k8s-passthrough"}],
-            "default_access_profile_id": "public-coder",
-            "mcp": {
-                "servers": [
-                    {
-                        "id": "kubectl-passthrough-mcp",
-                        "backend": {
-                            "kind": "remote_mcp",
-                            "url": "https://kubectl-passthrough.test/mcp",
-                            "auth": {"kind": "none"},
-                        },
-                    }
-                ]
-            },
-        },
-    )
-    service = ToolCallApplicationService(
-        settings=console_settings("postgresql://...", config_file=config_file),
-        repository=repo,
-        invalidation_publisher=AsyncMock(),
-        executor=AsyncMock(),
-        oauth_store=AsyncMock(),
-        in_process_servers={},
-        provider_store=AsyncMock(),
-        authentik_token_store=AsyncMock(),
-        approval_notifier=AsyncMock(),
-        gmail_client_provider=AsyncMock(return_value=None),
-        kubernetes_authorization=authorization,
-    )
+    record = await service.submit_and_wait(req=_PODS_LIST, actor=_AGENT)
 
-    agent = AgentActor(
-        agent_id=UUID("10000000-0000-4000-8000-000000000001"),
-        operator_id=UUID("20000000-0000-4000-8000-000000000002"),
-        binding_id=UUID("30000000-0000-4000-8000-000000000003"),
-        access_profile_id="public-coder",
-    )
-
-    req = SubmitToolCallRequest(
-        server_id="kubectl-passthrough-mcp", tool_name="pods_list", arguments={"namespace": "default"}, wait_for_ms=0
-    )
-
-    record = await service.submit_and_wait(req=req, actor=agent)
     assert record.status == ToolCallStatus.DENIED
-    repo.submit.assert_awaited_once()
-    kwargs = repo.submit.call_args.kwargs
+    repository.submit.assert_awaited_once()
+    kwargs = repository.submit.call_args.kwargs
     assert "covered by direct agent access" in kwargs["auto_approval_evaluation"]
     assert "Use your direct Haku Kubernetes proxy" in kwargs["auto_denial_reason"]
 
 
 @pytest.mark.asyncio
 async def test_kubectl_passthrough_falls_through_when_denied(tmp_path: Path) -> None:
-    repo = AsyncMock()
-    submitted_record = AsyncMock()
-    submitted_record.tool_call_id = "tc_123"
-    submitted_record.status = ToolCallStatus.PENDING_APPROVAL
-    repo.submit.return_value = submitted_record
-    repo.get.return_value = submitted_record
-
-    authorization = AsyncMock()
-    authorization.evaluate.return_value = AuthorizationResponse(
-        allowed=False, reason="not permitted", source=KubernetesAuthorizationSource.SAR, decision_id="sar:1"
+    repository = _repository(ToolCallStatus.PENDING_APPROVAL)
+    service = _service(
+        tmp_path, repository=repository, authorization=_authorization(allowed=False, reason="not permitted")
     )
 
-    config_file = write_config(
-        tmp_path / "config.yaml",
-        {
-            "auto_approval_policies": [
-                {"id": "k8s-passthrough", "type": "kubernetes_passthrough", "server": "kubectl-passthrough-mcp"}
-            ],
-            "access_profiles": [{"id": "public-coder", "auto_approval_policy": "k8s-passthrough"}],
-            "default_access_profile_id": "public-coder",
-            "mcp": {
-                "servers": [
-                    {
-                        "id": "kubectl-passthrough-mcp",
-                        "backend": {
-                            "kind": "remote_mcp",
-                            "url": "https://kubectl-passthrough.test/mcp",
-                            "auth": {"kind": "none"},
-                        },
-                    }
-                ]
-            },
-        },
-    )
-    service = ToolCallApplicationService(
-        settings=console_settings("postgresql://...", config_file=config_file),
-        repository=repo,
-        invalidation_publisher=AsyncMock(),
-        executor=AsyncMock(),
-        oauth_store=AsyncMock(),
-        in_process_servers={},
-        provider_store=AsyncMock(),
-        authentik_token_store=AsyncMock(),
-        approval_notifier=AsyncMock(),
-        gmail_client_provider=AsyncMock(return_value=None),
-        kubernetes_authorization=authorization,
-    )
+    record = await service.submit_and_wait(req=_PODS_LIST, actor=_AGENT)
 
-    agent = AgentActor(
-        agent_id=UUID("10000000-0000-4000-8000-000000000001"),
-        operator_id=UUID("20000000-0000-4000-8000-000000000002"),
-        binding_id=UUID("30000000-0000-4000-8000-000000000003"),
-        access_profile_id="public-coder",
-    )
-
-    req = SubmitToolCallRequest(
-        server_id="kubectl-passthrough-mcp", tool_name="pods_list", arguments={"namespace": "default"}, wait_for_ms=0
-    )
-
-    record = await service.submit_and_wait(req=req, actor=agent)
     assert record.status == ToolCallStatus.PENDING_APPROVAL
-    repo.submit.assert_awaited_once()
-    kwargs = repo.submit.call_args.kwargs
+    repository.submit.assert_awaited_once()
+    kwargs = repository.submit.call_args.kwargs
     assert kwargs.get("auto_denial_reason") is None
 
 
