@@ -17,9 +17,8 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
-import yaml
 
-from cluster.validation.kyverno.apply import apply_policy
+from cluster.validation.kyverno.apply import apply_policy, apply_twice, assert_not_mutated
 from cluster.validation.kyverno.paths import manifest, policy
 
 
@@ -28,71 +27,62 @@ def seaweedfs_policy() -> Path:
     return policy("pin-seaweedfs-ovh-consumers.yaml")
 
 
-class TestPinSeaweedfsOvhConsumers:
-    """Tests for the pin-seaweedfs-ovh-consumers ClusterPolicy."""
+@pytest.mark.parametrize("storage_class", ["seaweedfs-ovh", "seaweedfs-ovh-ssd"])
+def test_seaweedfs_ovh_pvc_gets_pinned(seaweedfs_policy: Path, storage_class: str):
+    """Either seaweedfs-ovh* class adds the hil-ovh zone selector."""
+    result = apply_policy(
+        seaweedfs_policy, manifest("seaweedfs_pod_with_pvc.yaml"), set_vars={"storageClassName": storage_class}
+    )
+    assert result.ok, result.stdout
+    pod = result.mutated_resources[0]
+    assert pod["spec"]["nodeSelector"] == {"topology.kubernetes.io/zone": "hil-ovh"}
 
-    @pytest.mark.parametrize("storage_class", ["seaweedfs-ovh", "seaweedfs-ovh-ssd"])
-    def test_seaweedfs_ovh_pvc_gets_pinned(self, seaweedfs_policy: Path, storage_class: str):
-        """Either seaweedfs-ovh* class adds the hil-ovh zone selector."""
-        result = apply_policy(
-            seaweedfs_policy, manifest("seaweedfs_pod_with_pvc.yaml"), set_vars={"storageClassName": storage_class}
-        )
-        assert result.ok, result.stdout
-        pod = result.mutated_resources[0]
-        assert pod["spec"]["nodeSelector"] == {"topology.kubernetes.io/zone": "hil-ovh"}
 
-    def test_unrelated_storage_class_untouched(self, seaweedfs_policy: Path):
-        result = apply_policy(
-            seaweedfs_policy, manifest("seaweedfs_pod_with_pvc.yaml"), set_vars={"storageClassName": "local-path-ovh"}
-        )
-        assert result.ok, result.stdout
-        assert result.skipped == 1, f"Precondition should reject a non-seaweedfs-ovh* class\n{result.stdout}"
-        assert "nodeSelector" not in result.mutated_resources[0]["spec"]
+def test_unrelated_storage_class_untouched(seaweedfs_policy: Path):
+    """Precondition should reject a non-seaweedfs-ovh* class."""
+    assert_not_mutated(
+        seaweedfs_policy, manifest("seaweedfs_pod_with_pvc.yaml"), set_vars={"storageClassName": "local-path-ovh"}
+    )
 
-    def test_pod_without_any_pvc_volume_untouched(self, seaweedfs_policy: Path):
-        """Regression test: `request.object.spec.volumes` is absent entirely (not just
-        empty) here. Filtering it with `[?persistentVolumeClaim!=null]` directly -- without
-        the `(... || `[]`)` guard the policy actually uses -- still runs the foreach body
-        once and hits the disabled apiCall, failing with 'Unknown key "storageClassName"'
-        instead of cleanly skipping.
-        """
-        result = apply_policy(seaweedfs_policy, manifest("seaweedfs_pod_no_volumes.yaml"))
-        assert result.ok, result.stdout
-        assert result.skipped == 1, f"No PVC volumes to iterate; rule should just skip\n{result.stdout}"
 
-    def test_existing_node_selector_is_merged_not_clobbered(self, seaweedfs_policy: Path):
-        """codex/public-coder-agent hand-add topology.kubernetes.io/region: hil; this
-        policy's zone key must land alongside it, not replace it.
-        """
-        result = apply_policy(
-            seaweedfs_policy,
-            manifest("seaweedfs_pod_existing_node_selector.yaml"),
-            set_vars={"storageClassName": "seaweedfs-ovh"},
-        )
-        assert result.ok, result.stdout
-        assert result.mutated_resources[0]["spec"]["nodeSelector"] == {
-            "topology.kubernetes.io/region": "hil",
-            "topology.kubernetes.io/zone": "hil-ovh",
-        }
+def test_pod_without_any_pvc_volume_untouched(seaweedfs_policy: Path):
+    """Regression test: `request.object.spec.volumes` is absent entirely (not just
+    empty) here. Filtering it with `[?persistentVolumeClaim!=null]` directly -- without
+    the `(... || `[]`)` guard the policy actually uses -- still runs the foreach body
+    once and hits the disabled apiCall, failing with 'Unknown key "storageClassName"'
+    instead of cleanly skipping.
+    """
+    assert_not_mutated(seaweedfs_policy, manifest("seaweedfs_pod_no_volumes.yaml"))
 
-    def test_idempotent_under_reinvocation(self, seaweedfs_policy: Path, tmp_path: Path):
-        """Kyverno's reinvocationPolicy: IfNeeded can re-run this policy within the same
-        CREATE if a later-ordered webhook mutates the pod first (see inject-mitmproxy.yaml's
-        header for the real outage this caused via RFC 6902 list appends). This policy uses
-        patchStrategicMerge on a map instead, which a second pass should find already
-        satisfied rather than duplicating or erroring.
-        """
-        first = apply_policy(
-            seaweedfs_policy, manifest("seaweedfs_pod_with_pvc.yaml"), set_vars={"storageClassName": "seaweedfs-ovh"}
-        )
-        assert first.ok, first.stdout
 
-        once = tmp_path / "pod-once.yaml"
-        once.write_text(yaml.safe_dump(first.mutated_resources[0]))
-        second = apply_policy(seaweedfs_policy, once, set_vars={"storageClassName": "seaweedfs-ovh"})
+def test_existing_node_selector_is_merged_not_clobbered(seaweedfs_policy: Path):
+    """codex/public-coder-agent hand-add topology.kubernetes.io/region: hil; this
+    policy's zone key must land alongside it, not replace it.
+    """
+    result = apply_policy(
+        seaweedfs_policy,
+        manifest("seaweedfs_pod_existing_node_selector.yaml"),
+        set_vars={"storageClassName": "seaweedfs-ovh"},
+    )
+    assert result.ok, result.stdout
+    assert result.mutated_resources[0]["spec"]["nodeSelector"] == {
+        "topology.kubernetes.io/region": "hil",
+        "topology.kubernetes.io/zone": "hil-ovh",
+    }
 
-        assert second.ok, second.stdout
-        assert second.mutated_resources[0]["spec"]["nodeSelector"] == first.mutated_resources[0]["spec"]["nodeSelector"]
+
+def test_idempotent_under_reinvocation(seaweedfs_policy: Path, tmp_path: Path):
+    """patchStrategicMerge on a map (unlike the sibling inject-* policies' RFC 6902 list
+    appends) means a second pass finds the key already satisfied instead of duplicating
+    or erroring: the nodeSelector must come out identical, not merely present.
+    """
+    first, second = apply_twice(
+        seaweedfs_policy,
+        manifest("seaweedfs_pod_with_pvc.yaml"),
+        tmp_path,
+        set_vars={"storageClassName": "seaweedfs-ovh"},
+    )
+    assert second.mutated_resources[0]["spec"]["nodeSelector"] == first.mutated_resources[0]["spec"]["nodeSelector"]
 
 
 if __name__ == "__main__":

@@ -41,9 +41,8 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
-import yaml
 
-from cluster.validation.kyverno.apply import apply_policy
+from cluster.validation.kyverno.apply import apply_policy, apply_twice
 from util.bazel.runfiles import get_required_path
 
 # What every proxy-injection policy must inject. Split into the two halves it is
@@ -146,13 +145,7 @@ def reinvoked(request: pytest.FixtureRequest, tmp_path: Path) -> dict:
 
     resource = tmp_path / "pod.yaml"
     resource.write_text(_pod(injection.namespace))
-    first = apply_policy(policy, resource)
-    assert first.ok, first.stdout
-
-    once = tmp_path / "pod-once.yaml"
-    once.write_text(yaml.safe_dump(next(d for d in first.mutated_resources if d["kind"] == "Pod")))
-    second = apply_policy(policy, once)
-    assert second.ok, second.stdout
+    _, second = apply_twice(policy, resource, tmp_path)
     return next(d for d in second.mutated_resources if d["kind"] == "Pod")
 
 

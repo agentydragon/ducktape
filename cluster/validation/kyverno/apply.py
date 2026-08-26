@@ -77,3 +77,36 @@ def apply_policy(policy_path: Path, resource_path: Path, set_vars: dict[str, str
             stdout=stdout,
             mutated_resources=mutated,
         )
+
+
+def apply_twice(
+    policy_path: Path, resource_path: Path, tmp_path: Path, set_vars: dict[str, str] | None = None, kind: str = "Pod"
+) -> tuple[KyvernoApplyResult, KyvernoApplyResult]:
+    """Simulate Kyverno reinvoking a mutating policy within the same admission request.
+
+    Kyverno's mutating webhook is registered `reinvocationPolicy: IfNeeded`, so when a
+    later-ordered webhook mutates the resource first, Kyverno runs again on the same
+    CREATE and sees its own output as input. Feeds the first pass's output back through
+    the same policy and returns both results; what "idempotent" means for the specific
+    mutation (no duplicate list entries for an RFC 6902 append, an unchanged field for a
+    map merge, ...) is for the caller to assert.
+    """
+    first = apply_policy(policy_path, resource_path, set_vars)
+    assert first.ok, first.stdout
+    reapplied = tmp_path / "reinvoked.yaml"
+    reapplied.write_text(yaml.safe_dump(next(d for d in first.mutated_resources if d["kind"] == kind)))
+    second = apply_policy(policy_path, reapplied, set_vars)
+    assert second.ok, second.stdout
+    return first, second
+
+
+def assert_not_mutated(policy_path: Path, resource_path: Path, set_vars: dict[str, str] | None = None) -> None:
+    """A rule that doesn't match must skip cleanly and leave the resource untouched --
+    not just missing the one field a caller happens to check for, which would miss an
+    unrelated accidental mutation.
+    """
+    original = yaml.safe_load(resource_path.read_text())
+    result = apply_policy(policy_path, resource_path, set_vars)
+    assert result.ok, result.stdout
+    assert result.skipped >= 1, f"expected the rule to skip\n{result.stdout}"
+    assert result.mutated_resources == [original], result.stdout
