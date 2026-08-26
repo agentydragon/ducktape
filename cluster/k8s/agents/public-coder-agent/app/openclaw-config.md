@@ -60,6 +60,14 @@ per-model, so Gemini sessions run at 50,000 too instead of their tier's
 100,000: sizing the floor for the 1,048,576-token window would spend 27% of
 the default Codex window on headroom Codex sessions never use.
 
+That knob is version-bound. OpenClaw retired both `compaction.reserveTokens`
+and `compaction.reserveTokensFloor` in the 2026.8 line
+(`RETIRED_AGENT_TUNING_PATHS`), where a config migration deletes them and the
+floor reverts to a hardcoded 20,000 -- silently, since stripping is a
+migration rather than a rejection. When this gateway's pin reaches 2026.8 the
+setting has no reader and should be deleted. It is also why
+haku-openclaw-spike, pinned to `2026.8.1-beta.3`, does not carry it.
+
 `bind` is an enum -- `loopback`, `lan`, `tailnet`, `auto`, `custom`. `"all"` is
 not a member and the gateway exits with
 `Invalid --bind. Use "loopback", "lan", "tailnet", "auto", or "custom".`
