@@ -377,7 +377,10 @@ const conversationSession = {
       turn_id: "71000000-0000-4000-8000-000000000002",
       started_at: "2026-08-01T03:00:20.4Z",
       ended_at: "2026-08-01T03:00:24Z",
-      end: { outcome: "failed", failure: "the agent's turn failed: the model provider returned an error" },
+      end: {
+        outcome: "failed",
+        failure: "We're currently experiencing high demand, which may cause temporary errors.",
+      },
     },
     {
       turn_id: "71000000-0000-4000-8000-000000000001",
