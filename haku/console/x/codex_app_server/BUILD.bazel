@@ -168,13 +168,18 @@ py_test(
 py_test(
     name = "test_real_fixture",
     srcs = ["test_real_fixture.py"],
-    data = ["testdata/real_text_command.sanitized.jsonl"],
+    data = [
+        "testdata/real_provider_failure.sanitized.jsonl",
+        "testdata/real_text_command.sanitized.jsonl",
+    ],
     deps = [
         ":projection",
         ":protocol",
+        ":runtime",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console/x:conversation_events",
+        "//haku/runtime/x/bridge:protocol",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
