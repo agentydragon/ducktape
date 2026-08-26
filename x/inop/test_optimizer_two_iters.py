@@ -40,10 +40,11 @@ from x.inop.runners.base import AgentRunner
 class FakeModelLayer(OpenAIModelProto):
     """Protocol-level fake model used via DI factory (make_model)."""
 
+    model = "fake-model"
+
     def __init__(self, responses_factory) -> None:
         self.context_window_tokens = 200000
         self._responses_factory = responses_factory
-        self.model = "fake-model"
 
     async def responses_create(self, req: ResponsesRequest):
         # Access typed fields directly (no getattr duck-typing)

@@ -97,8 +97,11 @@ class AgentModelResult:
 
 
 class AgentModelProto(ABC):
-    model: str
     api_shape: LLMApiShape
+
+    @property
+    @abstractmethod
+    def model(self) -> str: ...
 
     @abstractmethod
     def prepare(self, request: AgentModelRequest) -> PreparedAgentModelRequest: ...
@@ -110,11 +113,11 @@ class AgentModelProto(ABC):
 @dataclass
 class ResponsesAgentModel(AgentModelProto):
     base: OpenAIModelProto
-    model: str = ""
     api_shape: LLMApiShape = LLMApiShape.RESPONSES
 
-    def __post_init__(self) -> None:
-        self.model = self.base.model
+    @property
+    def model(self) -> str:
+        return self.base.model
 
     def prepare(self, request: AgentModelRequest) -> PreparedAgentModelRequest:
         responses_request = request.to_responses_request()
@@ -126,11 +129,16 @@ class ResponsesAgentModel(AgentModelProto):
         return _agent_result_from_responses(result)
 
 
-@dataclass
 class ChatCompletionsAgentModel(AgentModelProto):
-    client: AsyncOpenAI
-    model: str
-    api_shape: LLMApiShape = LLMApiShape.CHAT_COMPLETIONS
+    api_shape = LLMApiShape.CHAT_COMPLETIONS
+
+    def __init__(self, *, client: AsyncOpenAI, model: str) -> None:
+        self._client = client
+        self._model = model
+
+    @property
+    def model(self) -> str:
+        return self._model
 
     def prepare(self, request: AgentModelRequest) -> PreparedAgentModelRequest:
         body: CompletionCreateParamsNonStreaming = {
@@ -150,7 +158,7 @@ class ChatCompletionsAgentModel(AgentModelProto):
 
     async def sample(self, request: PreparedAgentModelRequest) -> AgentModelResult:
         response = await chat_create_with_retries(
-            self.client, cast(CompletionCreateParamsNonStreaming, request.wire_body)
+            self._client, cast(CompletionCreateParamsNonStreaming, request.wire_body)
         )
         choice = response.choices[0]
         message = choice.message

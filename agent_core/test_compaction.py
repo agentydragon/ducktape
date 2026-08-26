@@ -25,8 +25,9 @@ from openai_utils.model import (
 class SummarizingClient(OpenAIModelProto):
     """Test client that returns a configurable summary response."""
 
+    model = "gpt-4o-mini-test"
+
     def __init__(self, summary_text: str):
-        self.model = "gpt-4o-mini-test"
         self.summary_text = summary_text
         self.call_count = 0
 

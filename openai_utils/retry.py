@@ -91,10 +91,10 @@ class RetryingOpenAIModel(OpenAIModelProto):
     """Retry-decorated wrapper around an OpenAIModel-like base implementing our protocol."""
 
     base: OpenAIModelProto
-    model: str = ""
 
-    def __post_init__(self) -> None:
-        self.model = self.base.model
+    @property
+    def model(self) -> str:
+        return self.base.model
 
     @retry_decorator()
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:

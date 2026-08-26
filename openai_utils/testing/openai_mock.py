@@ -30,9 +30,12 @@ class CapturingOpenAIModel(OpenAIModelProto):
 
     def __init__(self, inner: OpenAIModelProto) -> None:
         self._inner = inner
-        self.model = inner.model
         self.captured: list[ResponsesRequest] = []
         self.calls = 0
+
+    @property
+    def model(self) -> str:
+        return self._inner.model
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         self.captured.append(req)
@@ -53,10 +56,11 @@ class FakeOpenAIModel(OpenAIModelProto):
     Wrap with CapturingOpenAIModel if you need to inspect requests.
     """
 
+    model = "fake-model"
+
     def __init__(self, outputs: list[ResponsesResult] | tuple[ResponsesResult, ...]) -> None:
         self._outputs: list[ResponsesResult] = list(outputs)
         self.calls = 0
-        self.model = "fake-model"
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         if not isinstance(req, ResponsesRequest):
@@ -93,8 +97,7 @@ def make_mock(responses_create_fn: ResponsesCreateFn) -> CapturingOpenAIModel:
     """Construct a capturing mock client that delegates to the provided behavior."""
 
     class _MockClient(OpenAIModelProto):
-        def __init__(self) -> None:
-            self.model = "test-model"
+        model = "test-model"
 
         async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
             return await responses_create_fn(req)
@@ -105,8 +108,7 @@ def make_mock(responses_create_fn: ResponsesCreateFn) -> CapturingOpenAIModel:
 class NoopOpenAIClient(OpenAIModelProto):
     """No-op OpenAI client for tests that bypass sampling via SyntheticAction."""
 
-    def __init__(self) -> None:
-        self.model = "noop-model"
+    model = "noop-model"
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         raise NotImplementedError("NoopOpenAIClient should not be called in SyntheticAction path")

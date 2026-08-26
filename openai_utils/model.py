@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from functools import singledispatch
 from typing import Annotated, Any, Literal, Self, cast
 
@@ -400,28 +399,34 @@ class ResponsesResult(BaseModel):
 class OpenAIModelProto(ABC):
     """Abstract base class for AsyncOpenAI adapters with bound model."""
 
-    model: str
+    @property
+    @abstractmethod
+    def model(self) -> str: ...
 
     @abstractmethod
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult: ...
 
 
-@dataclass
 class BoundOpenAIModel(OpenAIModelProto):
     """AsyncOpenAI adapter that binds a specific model and returns Pydantic results."""
 
-    client: AsyncOpenAI
-    model: str
-    reasoning_effort: ReasoningEffort | None = None
+    def __init__(self, *, client: AsyncOpenAI, model: str, reasoning_effort: ReasoningEffort | None = None) -> None:
+        self._client = client
+        self._model = model
+        self._reasoning_effort = reasoning_effort
+
+    @property
+    def model(self) -> str:
+        return self._model
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         kwargs = req.model_dump()
-        kwargs["model"] = self.model
-        if self.reasoning_effort and "reasoning" not in kwargs:
-            kwargs["reasoning"] = build_reasoning_params(effort=self.reasoning_effort)
+        kwargs["model"] = self._model
+        if self._reasoning_effort and "reasoning" not in kwargs:
+            kwargs["reasoning"] = build_reasoning_params(effort=self._reasoning_effort)
 
         create: Callable[..., Awaitable[Response]] = cast(
-            Callable[..., Awaitable[Response]], self.client.responses.create
+            Callable[..., Awaitable[Response]], self._client.responses.create
         )
         sdk_resp: Response = await translate_context_length(create, **kwargs)
         return ResponsesResult.from_sdk(sdk_resp)

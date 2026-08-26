@@ -101,13 +101,14 @@ class GeneratorRunner(OpenAIModelProto):
         agent = await Agent.create(client=mock, ...)
     """
 
+    model = "test-model"
+
     def __init__(self, gen: MockScriptGen, factory: ResponsesFactory) -> None:
         self._factory = factory
         self._gen = gen
         # Prime: advance to first yield. next() is equivalent to send(None)
         # but avoids type issues with Generator's send signature
         next(self._gen)
-        self.model = "test-model"
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         """Send request to generator, return wrapped response."""
@@ -192,12 +193,13 @@ class GeneratorMock(ItemFactory, OpenAIModelProto):
     use MCPDecoratorMock from agent_core.testing.mcp.responses.
     """
 
+    model = "test-model"
+
     _check_consumed: bool = True
 
     def __init__(self) -> None:
         super().__init__(call_id_prefix="test")
         self._consumed = False
-        self.model = "test-model"
         self._gen = self._wrapped_play()
         next(self._gen)  # Prime to first yield
 
