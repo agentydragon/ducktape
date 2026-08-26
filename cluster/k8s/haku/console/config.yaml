@@ -204,12 +204,28 @@ auto_approval_policies:
     owner: agentydragon
     repository: gaffer-private
     tools: *repo_read_tools
+  # Any repository confirmed genuinely public — not bounded to a fixed owner/repo allowlist.
+  # `type: github_public_repository` positively confirms the target repository's visibility with a
+  # live, unauthenticated GitHub API call before approving (see
+  # haku/console/auto_approval/github.py) rather than inferring "public" from the absence
+  # of a restriction: the operator's GitHub OAuth token behind this connection can also reach
+  # private repos it can see (agentydragon/gaffer-private included), so a bare owner/repo match
+  # here would let a call read any of those just by naming it. The target repository is derived
+  # the same way as the fixed-repo policies above (owner/repo arguments and no query-level `repo:`
+  # qualifier for search_pull_requests; one unquoted `repo:owner/repo` qualifier for search_code),
+  # then checked for public visibility instead of compared against a configured pair. Same tool
+  # list as the fixed-repo policies (*repo_read_tools) — get_job_logs included.
+  - id: public_github_reads
+    type: github_public_repository
+    server: github
+    tools: *repo_read_tools
   - id: public_coder_github_reads
     type: any_of
     policies:
       - public_ducktape_reads
       - public_ducktape_fork_reads
       - public_gaffer_private_reads
+      - public_github_reads
   # Kubernetes access inspection and grant reads are side-effect-free. Grant creation and release
   # remain manual because they change the Agent's temporary authority or its lifecycle.
   - id: kubernetes_reads
