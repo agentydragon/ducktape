@@ -24,7 +24,22 @@ description: Run a Bazel command via bb remote with RBE enabled
 
 inputs:
   args:
-    description: "Bazel subcommand and arguments (e.g. 'build //...' or 'run //target'). Mutually exclusive with `script`."
+    description: >
+      Bazel subcommand and arguments (e.g. 'build //...' or 'run //target').
+      Mutually exclusive with `script`.
+
+      GOTCHA: these are placed BEFORE `--config=rbe --config=ci`, and Bazel's
+      last-one-wins ordering means anything those configs set silently overrides
+      what you pass here. `--remote_download_outputs=toplevel` used to be passed
+      by two callers and never took effect once — the build log says so:
+      "option '--remote_download_minimal' (source expanded from --config=rbe) was
+      expanded and now overrides the explicit option
+      --remote_download_outputs=toplevel". Use `script` when you need a flag to win.
+
+      Note also that this flag would not have controlled what reaches the GitHub
+      runner even if it had applied: `bb`'s post-run download resolves outputs
+      from the invocation's build events and fetches them from CAS, independently
+      of what Bazel materialized on the runner VM.
     required: false
     default: ""
   script:

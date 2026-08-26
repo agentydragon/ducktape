@@ -124,8 +124,8 @@ def _entry(
                 _unopened(row)
                 return None
             return _finished(opened, body, index=index, provenance=_provenance(row))
-        case session_events.TurnEndedBody():
-            return conversation_records.TurnEndEntry(index=index, provenance=_provenance(row), outcome=body.outcome)
+        case session_events.TurnAnsweredBody() | session_events.TurnAbortedBody() | session_events.TurnFailedBody():
+            return conversation_records.TurnEndEntry(index=index, provenance=_provenance(row), end=_end(body))
         case (
             session_events.TurnStartedBody()
             | session_events.PromptRejectedBody()
@@ -175,6 +175,16 @@ def _finished(
             )
         case _:
             raise ValueError(f"an item's two ends name different types: {body=} {opened.started=}")
+
+
+def _end(body: session_events.TurnEndedBody) -> conversation_records.TurnEnd:
+    match body:
+        case session_events.TurnAnsweredBody():
+            return conversation_records.TurnAnsweredEnd()
+        case session_events.TurnAbortedBody():
+            return conversation_records.TurnAbortedEnd()
+        case session_events.TurnFailedBody():
+            return conversation_records.TurnFailedEnd(failure=body.failure)
 
 
 def _unopened(row: ConversationEventRow) -> None:

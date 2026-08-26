@@ -21,7 +21,7 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
-from haku.console.chat_models import ToolOutcome, TurnOutcome
+from haku.console.chat_models import ToolOutcome
 from haku.console.x.claude_code.projection import RecordedFrame
 from haku.console.x.claude_code.testing.fold import whole_capture
 from haku.console.x.conversation_events import (
@@ -34,6 +34,7 @@ from haku.console.x.conversation_events import (
     ReasoningStarted,
     ToolCallCompleted,
     ToolCallStarted,
+    TurnAnswered,
     TurnCompleted,
 )
 from util.bazel.runfiles import get_required_path
@@ -77,9 +78,9 @@ def test_the_capture_folds_to_two_turns(projection: Projection):
         ToolCallCompleted: 4,
         TurnCompleted: 2,
     }
-    assert [event.outcome for event in projection.events if isinstance(event, TurnCompleted)] == [
-        TurnOutcome.ANSWERED,
-        TurnOutcome.ANSWERED,
+    assert [event.end for event in projection.events if isinstance(event, TurnCompleted)] == [
+        TurnAnswered(),
+        TurnAnswered(),
     ]
 
 

@@ -47,6 +47,9 @@ go_binary(
 
 go_test(
     name = "bbapi_test",
-    srcs = ["helpers_test.go"],
+    srcs = [
+        "cmd_artifact_test.go",
+        "helpers_test.go",
+    ],
     embed = [":bbapi_lib"],
 )

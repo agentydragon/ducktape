@@ -23,7 +23,6 @@ from haku.console.chat_models import (
     PromptOriginKind,
     ReasoningDisclosure,
     ToolOutcome,
-    TurnOutcome,
 )
 from haku.console.database_schema import ConversationEvent as ConversationEventRow
 from haku.console.x import conversation_records, session_events, transcript_entries
@@ -145,7 +144,7 @@ def test_an_entry_is_numbered_by_its_position_among_the_entries() -> None:
         frames=FrameRange(2, 2),
     )
     _message(log, "and here", first=3)
-    log.authored(session_events.TurnEndedBody(outcome=TurnOutcome.ANSWERED))
+    log.authored(session_events.TurnAnsweredBody())
 
     assert [(entry.index, entry.kind) for entry in transcript_entries.fold(log.rows).entries] == [
         (0, "message"),
@@ -336,12 +335,12 @@ def test_a_turn_ending_reaches_the_read_surface_with_no_frames_to_appeal_to() ->
     """A turn opens before anything crosses the wire and can close on no frame at all, so its ends
     are the console's own statement rather than a reading of one."""
     log = _Log()
-    log.authored(session_events.TurnEndedBody(outcome=TurnOutcome.ABORTED))
+    log.authored(session_events.TurnAbortedBody())
 
     entry = one(transcript_entries.fold(log.rows).entries)
 
     assert isinstance(entry, conversation_records.TurnEndEntry)
-    assert entry.outcome == "aborted"
+    assert entry.end == conversation_records.TurnAbortedEnd()
     assert entry.provenance == conversation_records.ConsoleAuthored()
 
 

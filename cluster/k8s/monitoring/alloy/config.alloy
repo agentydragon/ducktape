@@ -79,3 +79,23 @@ otelcol.exporter.otlp "tempo" {
     }
   }
 }
+
+// --- Kubernetes events ---
+
+// Events live ~1h in the apiserver; this is the only durable copy. It is also
+// the only channel for HelmRelease drift: helm-controller reports drift solely
+// as an info-severity `DriftDetected` Event, with no corresponding metric, so
+// `driftDetection: mode: warn` is unobservable without this.
+//
+// Must run on exactly one Alloy instance -- the watch is cluster-wide, so a
+// second replica (or a DaemonSet conversion) ingests every event twice. The
+// `controller.type: deployment` / `replicas: 1` in helmrelease.yaml is
+// load-bearing here.
+//
+// json over the logfmt default: event messages are free text with spaces and
+// quotes, and `| json | reason="DriftDetected"` is the query shape wanted.
+loki.source.kubernetes_events "cluster" {
+  job_name   = "kubernetes-events"
+  log_format = "json"
+  forward_to = [loki.write.monitoring.receiver]
+}

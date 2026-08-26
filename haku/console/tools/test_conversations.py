@@ -42,6 +42,7 @@ from haku.console.x.conversation_records import (
     TranscriptCursor,
     TranscriptEntry,
     TranscriptSlice,
+    TurnAnsweredEnd,
     TurnCursor,
     TurnRecord,
 )
@@ -173,7 +174,7 @@ class _Reader:
         self.queries.append({"session_id": session_id, "cursor": cursor, "limit": limit})
         return [
             TurnRecord(
-                turn_id=TURN, first_frame_seq=1, last_frame_seq=4, started_at=NOW, ended_at=NOW, outcome="answered"
+                turn_id=TURN, first_frame_seq=1, last_frame_seq=4, started_at=NOW, ended_at=NOW, end=TurnAnsweredEnd()
             )
         ][:limit]
 
@@ -435,7 +436,7 @@ async def test_a_turn_carries_the_range_to_read() -> None:
 
     [turn] = result.data.items
     assert (turn.first_frame_seq, turn.last_frame_seq) == (1, 4)
-    assert turn.outcome == "answered"
+    assert turn.end == {"outcome": "answered"}
 
 
 async def test_a_transcript_entry_reads_as_the_conversation_rather_than_the_protocol() -> None:

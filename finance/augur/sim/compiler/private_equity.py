@@ -86,6 +86,7 @@ def compile_private_equity_tenders(
     lot_agent_codes: Int64[np.ndarray, " lot"],
     lot_asset_codes: Int64[np.ndarray, " lot"],
     cash_agent_codes: Int64[np.ndarray, " cash"],
+    cash_account_codes: Int64[np.ndarray, " cash"],
 ) -> tuple[PEIssuerCompileOutput, PEPolicyCompileOutput]:
     """Compile per-(issuer, policy) arrays driving the PE tender-sale path.
 
@@ -146,10 +147,15 @@ def compile_private_equity_tenders(
         pe_policy_owner_agent_codes[policy_idx] = owner_code
         # Proceeds cash slot: the (owner_agent, proceeds_account_id) pair.
         proceeds_account_code = strings.require(policy.proceeds_account_id)
-        del proceeds_account_code  # unused for now; rely on owner-cash mask for proceeds
-        owner_cash_slots = np.flatnonzero(cash_agent_codes == owner_code)
-        if owner_cash_slots.size > 0:
-            pe_policy_proceeds_cash_slot[policy_idx] = int(owner_cash_slots[0])
+        proceeds_cash_slots = np.flatnonzero(
+            (cash_agent_codes == owner_code) & (cash_account_codes == proceeds_account_code)
+        )
+        if proceeds_cash_slots.size != 1:
+            raise ValueError(
+                "private-equity tender policy must resolve exactly one proceeds account "
+                f"for {policy.owner_agent_id}/{policy.proceeds_account_id}; found {proceeds_cash_slots.size}"
+            )
+        pe_policy_proceeds_cash_slot[policy_idx] = int(proceeds_cash_slots[0])
         kind, fixed, base, series, base_month, period = amount_arrays_quanta(
             policy.liquid_net_worth_floor, series_index_by_id, currency_quantum=scenario.currency.quantum
         )

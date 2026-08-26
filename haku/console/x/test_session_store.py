@@ -69,10 +69,11 @@ from haku.console.x.conversation_records import (
     PromptEntry,
     SessionCursor,
     TranscriptCursor,
+    TurnAnsweredEnd,
     TurnCursor,
 )
 from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
-from haku.console.x.session_events import PromptStartedBody
+from haku.console.x.session_events import PromptStartedBody, TurnAbortedBody, TurnAnsweredBody, TurnFailedBody
 from haku.console.x.session_notifications import SessionEventKind
 from haku.console.x.session_store import (
     ADOPTION_GRACE,
@@ -642,7 +643,7 @@ async def test_a_prompt_records_the_channel_events_it_was_folded_from(
     )
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
-    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
+    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody())
     await chat_store.enqueue_prompt(operator_id, view.session_id, "do the thing", SPA_ORIGIN)
 
     asked = [
@@ -663,7 +664,7 @@ async def test_exchanges_page_by_their_own_keyset(chat_store, operator_id) -> No
         await chat_store.enqueue_prompt(operator_id, view.session_id, f"prompt {index}", SPA_ORIGIN)
         turn = await chat_store.next_prompt(view.session_id)
         assert turn is not None
-        await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
+        await chat_store.end_turn(turn.turn_id, TurnAnsweredBody())
 
     # One row past the page, exactly as the tool asks: the cursor names the first row not returned.
     *page, resume = await chat_store.list_turns(view.session_id, cursor=None, limit=3)
@@ -689,7 +690,7 @@ async def test_a_turn_ends_at_the_frame_it_names_rather_than_at_the_head_of_the_
         view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "command_lifecycle"}
     )
 
-    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED, last_frame_seq=ending.frame_seq)
+    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody(), last_frame_seq=ending.frame_seq)
 
     [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=5)
     assert record.last_frame_seq == ending.frame_seq
@@ -707,7 +708,7 @@ async def test_a_turn_that_ended_on_no_frame_is_bounded_by_the_ones_it_recorded(
     await chat_store.enqueue_prompt(operator_id, view.session_id, "first", SPA_ORIGIN)
     silent = await chat_store.next_prompt(view.session_id)
     assert silent is not None
-    await chat_store.end_turn(silent.turn_id, TurnOutcome.FAILED)
+    await chat_store.end_turn(silent.turn_id, TurnFailedBody(failure="the runtime went away"))
     await chat_store.enqueue_prompt(operator_id, view.session_id, "second", SPA_ORIGIN)
     spoke = await chat_store.next_prompt(view.session_id)
     assert spoke is not None
@@ -718,7 +719,7 @@ async def test_a_turn_that_ended_on_no_frame_is_bounded_by_the_ones_it_recorded(
         assistant(text_block("half an answer")),
     )
 
-    await chat_store.end_turn(spoke.turn_id, TurnOutcome.FAILED)
+    await chat_store.end_turn(spoke.turn_id, TurnFailedBody(failure="the runtime went away"))
 
     brackets = {
         record.turn_id: (record.first_frame_seq, record.last_frame_seq)
@@ -752,7 +753,7 @@ async def test_the_transcript_reads_the_conversation_rather_than_the_protocol(ch
             MessageCompleted(backend_item_id="msg_1", provenance=where),
         ],
     )
-    await chat_store.end_turn(started.turn_id, TurnOutcome.ANSWERED, last_frame_seq=spoke.frame_seq)
+    await chat_store.end_turn(started.turn_id, TurnAnsweredBody(), last_frame_seq=spoke.frame_seq)
 
     transcript = await chat_store.read_transcript(view.session_id, cursor=None, limit=10)
 
@@ -978,7 +979,7 @@ async def test_a_second_prompt_is_refused_while_a_turn_is_open(chat_store, opera
         await chat_store.enqueue_prompt(operator_id, view.session_id, "second", SPA_ORIGIN)
     assert refusal.value.reason is PromptRejection.TURN_IN_FLIGHT
 
-    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
+    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody())
     await chat_store.enqueue_prompt(operator_id, view.session_id, "second", SPA_ORIGIN)
 
 
@@ -1089,7 +1090,7 @@ async def test_the_view_says_responding_for_as_long_as_the_turn_is_open(chat_sto
         "the column itself no longer carries turn state"
     )
 
-    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
+    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody())
     assert (await chat_store.get(operator_id, view.session_id)).status == SessionStatus.READY
 
 
@@ -1132,7 +1133,7 @@ async def test_abort_is_refused_until_a_turn_is_actually_running(chat_store, ope
     assert turn is not None
     assert await chat_store.request_abort(view.session_id) is True
 
-    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
+    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody())
     assert await chat_store.request_abort(view.session_id) is False
 
 
@@ -1375,7 +1376,7 @@ async def test_an_aborted_turn_is_a_row_in_the_stream_and_names_its_turn(
     turn = await chat_store.next_prompt(session_id)
     assert turn is not None
 
-    await chat_store.end_turn(turn.turn_id, TurnOutcome.ABORTED)
+    await chat_store.end_turn(turn.turn_id, TurnAbortedBody())
 
     stopped = one(
         event
@@ -1394,8 +1395,8 @@ async def test_a_turn_that_ended_any_other_way_leaves_no_abort_row(
     turn = await chat_store.next_prompt(session_id)
     assert turn is not None
 
-    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
-    await chat_store.end_turn(turn.turn_id, TurnOutcome.ABORTED)
+    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody())
+    await chat_store.end_turn(turn.turn_id, TurnAbortedBody())
 
     outcomes = [
         event.body["outcome"]
@@ -1715,7 +1716,7 @@ async def _exchange(chat_store, operator_id, session_id: UUID, prompt: str, answ
             MessageCompleted(backend_item_id=None, provenance=FrameRange(spoke.frame_seq, spoke.frame_seq)),
         ],
     )
-    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED, last_frame_seq=spoke.frame_seq)
+    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody(), last_frame_seq=spoke.frame_seq)
 
 
 async def test_an_update_carries_the_rows_the_events_after_a_position_name(chat_store, operator_id) -> None:
@@ -1735,7 +1736,7 @@ async def test_an_update_carries_the_rows_the_events_after_a_position_name(chat_
     changes = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=held, limit=50)
 
     assert [item.text for item in changes.items] == ["second", "two"]
-    assert [turn.outcome for turn in changes.turns] == [TurnOutcome.ANSWERED]
+    assert [turn.end for turn in changes.turns] == [TurnAnsweredEnd()]
     assert changes.position > held
     # Re-reading the same position is the same answer: the merge is keyed on `item_id`, so a
     # duplicate costs nothing and nothing about delivery has to be exactly-once.

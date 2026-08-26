@@ -19,7 +19,7 @@ function turn(id: string, startedAt: string): ConversationTurn {
     turn_id: id,
     started_at: startedAt,
     ended_at: null,
-    outcome: "answered",
+    end: { outcome: "answered" },
   };
 }
 

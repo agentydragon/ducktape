@@ -27,6 +27,9 @@ The claims implemented here were checked against that tag, in these vendored/gen
 - `codex-rs/cli/src/mcp_cmd.rs` and its tests: streamable-HTTP MCP configuration uses `url` and
   `bearer_token_env_var`, so Codex can read the claim-owned exact-session bearer without placing its
   value in argv or Console launch material.
+- `schema/typescript/ServerNotification.ts`, `schema/typescript/v2/ErrorNotification.ts`,
+  `TurnError.ts`, and `CodexErrorInfo.ts`: the `error` notification and the failure payload it
+  shares with `Turn.error`, described under "Turn failures" below.
 - `codex-rs/tui/src/thread_transcript.rs`: completed reasoning summary parts render joined with two
   newlines, matching `item/reasoning/summaryPartAdded` in the live TUI.
 
@@ -64,3 +67,39 @@ turns on 2026-08-19 UTC: text deltas/completion, then reasoning item completion,
 start/completion, and a second text answer. `testdata/schema_derived_turn.synthetic.jsonl` remains
 synthetic and exists only to cover schema-supported MCP, output-delta, and future-item cases that
 the safe capture did not exercise.
+
+## Turn failures
+
+`Turn.error` is documented upstream as "only populated when the Turn's status is failed", and it
+holds the same `TurnError` that the standalone `error` notification carries:
+
+```typescript
+type ErrorNotification = { error: TurnError; willRetry: boolean; threadId: string; turnId: string };
+type TurnError = { message: string; codexErrorInfo: CodexErrorInfo | null; additionalDetails: string | null };
+```
+
+Three properties of that pair decide how a reader has to treat it:
+
+- **`willRetry` is Codex's own retryability verdict**, per turn, and the retries are Codex's, not
+  the client's: it emits one `error` notification per attempt while it is still trying, then repeats
+  the same failure with `willRetry: false` when it gives up.
+- **`message` and `additionalDetails` swap roles between those two.** While retrying, `message` is a
+  bare progress counter (`Reconnecting... 3/5`) and `additionalDetails` holds the provider's reason;
+  on the terminal notification and on `turn.error`, `message` holds the reason and
+  `additionalDetails` is null. Reading `message` alone renders the counter as the failure.
+- **`CodexErrorInfo` is an externally tagged enum**, so a variant is either a bare string
+  (`serverOverloaded`, `usageLimitExceeded`, `contextWindowExceeded`, `internalServerError`,
+  `unauthorized`, `sandboxError`, `other`, …) or a single-key object carrying an upstream HTTP status
+  (`{"responseStreamDisconnected": {"httpStatusCode": null}}`). It is the stable category; the
+  message is prose. 0.144.1 declares sixteen variants and the set grows, so a reader decodes an
+  unrecognized one to a named unknown variant rather than raising or guessing a neighbor.
+
+`testdata/real_provider_failure.sanitized.jsonl` is the captured production failure these claims are
+read off. It also shows the thread going to `thread/status/changed → {"type": "systemError"}` one
+frame before the terminal error, which is the protocol's own statement that the failure was not
+turn-local. Whether `turn/start` on such a thread is accepted is not settled by the capture: no
+follow-up turn was submitted.
+
+The adapter currently extracts only `turn.error.message`, into the transient
+`TurnCompletion.failure`; `TurnCompleted` carries an outcome and no reason, so nothing durable
+survives, and all six `error` notifications land in `unprojected`. Issue #4752 tracks closing that.

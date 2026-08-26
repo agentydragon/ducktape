@@ -451,7 +451,7 @@ class _Operands(NamedTuple):
     # Device arrays the bodies + de-`plan`-ed cores read directly.
     capital_gain_agent_codes: Int64[Array, " capital_gain_profile"]
     cg_rep_profile: Int64[Array, " capital_gain_profile"]
-    property_owner_profile_index: Int64[Array, " property"]
+    property_owner_ordinary_row: Int64[Array, " property"]
     liability_owner_profile_index: Int64[Array, " liability"]
     salt_contributing_mask: Int64[Array, " tax_link other_tax_link"]
     lot_asset_series_index: Int64[Array, " lot"]
@@ -1410,7 +1410,7 @@ def _build_program(
         salt_cap_table=salt_cap_table,
         capital_gain_agent_codes=jnp.asarray(plan.capital_gain_agent_codes),
         cg_rep_profile=jnp.asarray(cg_rep_profile),
-        property_owner_profile_index=jnp.asarray(plan.property_owner_profile_index),
+        property_owner_ordinary_row=jnp.asarray(plan.property_owner_ordinary_row),
         liability_owner_profile_index=jnp.asarray(plan.liability_owner_profile_index),
         salt_contributing_mask=salt_contributing_mask,
         lot_asset_series_index=jnp.asarray(plan.lot_asset_series_index),
@@ -1555,7 +1555,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
     tax_slot_table = baked.tax_slot_table
     salt_cap_table = baked.salt_cap_table
     cg_rep_profile = baked.cg_rep_profile
-    property_owner_profile_index = baked.property_owner_profile_index
+    property_owner_ordinary_row = baked.property_owner_ordinary_row
     liability_owner_profile_index = baked.liability_owner_profile_index
     salt_contributing_mask = baked.salt_contributing_mask
     lot_asset_series_index = baked.lot_asset_series_index
@@ -1653,7 +1653,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         # to `_scatter_rows`'s dump row and contribute nothing.
         dec_col = dec[None, :]
         ordinary = ordinary + _scatter_rows(
-            jnp.zeros_like(ordinary), property_owner_profile_index, -jnp.where(dec_col, property_dep_ytd, 0)
+            jnp.zeros_like(ordinary), property_owner_ordinary_row, -jnp.where(dec_col, property_dep_ytd, 0)
         )
         ordinary = ordinary + _scatter_rows(
             jnp.zeros_like(ordinary), liability_owner_profile_index, -jnp.where(dec_col, liab_rental_ytd, 0)
@@ -2446,7 +2446,10 @@ def _program_impl(program: _SimulationProgram) -> tuple:
             state = book(
                 jnp.where(forced_active, forced_target, 0), mark_quanta, PrivateEquityDispositionKind.FORCED_SALE, state
             )
-            cash, lot_remaining = state[0], state[1]
+            # Forced recovery / forced sale can both precede the discretionary tender in
+            # this issuer-month. Carry their capital-gain and TLH mutations forward too;
+            # retaining only cash + lots silently discarded forced-disposition tax facts.
+            cash, lot_remaining, cg_active, cg_ytd, tlh = state[0], state[1], state[2], state[3], state[4]
             # LNW-floor tender: sell to lift liquid net worth to the floor, capped at sellable units.
             floor = _amount_values(
                 amount_kind=fpe.floor_kind,

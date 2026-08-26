@@ -87,9 +87,12 @@ from haku.console.x.conversation_events import (
     ReasoningStarted,
     ToolCallCompleted,
     ToolCallStarted,
+    TurnAnswered,
     TurnCompleted,
+    TurnFailed,
 )
 from haku.console.x.conversation_history import ConversationHistory
+from haku.console.x.conversation_records import TurnAnsweredEnd, TurnFailedEnd
 from haku.console.x.launch_identity import ChatLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity
 from haku.console.x.runtime import (
     EMPTY_TURN_PROJECTION_SEED,
@@ -98,6 +101,7 @@ from haku.console.x.runtime import (
     OpenItemSeed,
     RuntimeKey,
     RuntimeRegistry,
+    RuntimeUnusable,
     TurnCompletion,
     TurnProjectionSeed,
 )
@@ -573,12 +577,10 @@ class _UnrelatedTurnHandler:
                 )
             if self._opened_at is not None or payload.get("正文"):
                 final_events.append(MessageCompleted(backend_item_id=None, provenance=provenance))
-            final_events.append(TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=provenance))
+            final_events.append(TurnCompleted(end=TurnAnswered(), provenance=provenance))
             return FrameEffects(
                 events=tuple(final_events),
-                completion=TurnCompletion(
-                    outcome=TurnOutcome.ANSWERED, final_text=str(payload.get("正文") or "").strip()
-                ),
+                completion=TurnCompletion(end=TurnAnswered(), final_text=str(payload.get("正文") or "").strip()),
             )
         return FrameEffects()
 
@@ -598,6 +600,62 @@ class _UnrelatedRuntimeAdapter:
 
     def client(self, websocket, launch, progress, frames_to):
         raise AssertionError("this projection-only test must not construct a runner client")
+
+
+class _GivingUpTurnHandler:
+    """Fails its turn, and says whether the runtime can still serve another."""
+
+    def __init__(self, *, unusable: bool) -> None:
+        self._unusable = unusable
+
+    def apply(self, *, frame_seq: int, frame: HarnessFrame) -> FrameEffects:
+        end = TurnFailed(reason="the provider gave up")
+        return FrameEffects(
+            events=(TurnCompleted(end=end, provenance=FrameRange(frame_seq, frame_seq)),),
+            completion=TurnCompletion(end=end, final_text=""),
+            unusable=RuntimeUnusable(reason="the thread reported a system error") if self._unusable else None,
+        )
+
+
+class _GivingUpRuntimeAdapter(_UnrelatedRuntimeAdapter):
+    def __init__(self, *, unusable: bool) -> None:
+        self._unusable = unusable
+
+    def turn_handler(self, seed: TurnProjectionSeed = EMPTY_TURN_PROJECTION_SEED) -> Any:
+        return _GivingUpTurnHandler(unusable=self._unusable)
+
+
+async def _one_failed_turn(chat_store, notifications, operator_id, *, unusable: bool) -> UUID:
+    view, token = await chat_store.create(operator_id)
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "go", SPA_ORIGIN)
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
+    runtimes = RuntimeRegistry({RuntimeKind.CLAUDE_CODE: _GivingUpRuntimeAdapter(unusable=unusable)})
+    service = SessionService(runtimes, chat_store, notifications)
+    client = _FakeCli([{"done": True}])
+    await service._run_turn(client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event())
+    session_id: UUID = view.session_id
+    return session_id
+
+
+async def test_a_failed_turn_alone_leaves_the_session_usable(chat_store, notifications, operator_id) -> None:
+    """#4752: the exchange failing is not the session failing.
+
+    The turn closes with its reason, so the operator can read it and send another prompt. Only the
+    runtime saying it can serve no other ends the session, which it says separately.
+    """
+    session_id = await _one_failed_turn(chat_store, notifications, operator_id, unusable=False)
+
+    [record] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
+    assert record.end == TurnFailedEnd(failure="the provider gave up")
+    assert await chat_store.status(session_id) != SessionStatus.FAILED
+
+
+async def test_a_runtime_that_declares_itself_unusable_ends_the_session(chat_store, notifications, operator_id) -> None:
+    """The other half: when the runtime does say so, the session ends carrying the turn's reason."""
+    with pytest.raises(RuntimeError, match="the provider gave up"):
+        await _one_failed_turn(chat_store, notifications, operator_id, unusable=True)
 
 
 async def test_generic_turn_loop_is_opaque_to_a_discriminator_free_harness(
@@ -1287,7 +1345,7 @@ async def test_adoption_closes_a_turn_whose_result_nobody_projected(
         )
 
     [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
-    assert turn.outcome == TurnOutcome.ANSWERED
+    assert turn.end == TurnAnsweredEnd()
 
 
 async def test_adoption_reads_a_failed_result_as_a_failed_turn(
@@ -1314,18 +1372,20 @@ async def test_adoption_reads_a_failed_result_as_a_failed_turn(
     resumed = await chat_store.adopt_open_turn(session_id)
     assert resumed is not None
     client = _FakeCli()
-    with pytest.raises(RuntimeError, match="error_during_execution"):
-        async with asyncio.timeout(30):
-            await chat_service._run_turn(
-                cast(Any, client),
-                _replaying(resumed.replay, client.frames().__aiter__()),
-                session_id,
-                resumed,
-                abort_event=asyncio.Event(),
-            )
+    async with asyncio.timeout(30):
+        await chat_service._run_turn(
+            cast(Any, client),
+            _replaying(resumed.replay, client.frames().__aiter__()),
+            session_id,
+            resumed,
+            abort_event=asyncio.Event(),
+        )
 
     [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
-    assert turn.outcome == TurnOutcome.FAILED
+    assert isinstance(turn.end, TurnFailedEnd)
+    # Claude states nothing about the session on a failed result, and its CLI answers the next
+    # prompt like any other, so the exchange failing leaves the session usable.
+    assert await chat_store.status(session_id) != SessionStatus.FAILED
 
 
 async def test_a_turn_whose_cursor_is_behind_it_is_failed_rather_than_resumed(
@@ -1357,7 +1417,7 @@ async def test_a_turn_whose_cursor_is_behind_it_is_failed_rather_than_resumed(
     assert await chat_store.adopt_open_turn(session_id) is None
 
     [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
-    assert turn.outcome == TurnOutcome.FAILED
+    assert isinstance(turn.end, TurnFailedEnd)
 
 
 async def test_a_turn_that_never_asked_its_prompt_gives_it_back(
@@ -1643,7 +1703,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     ]
     assert [item.item_id for item in said] == [half_answered], "continued, rather than forked into a second"
     [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
-    assert (turn.turn_id, turn.outcome) == (started.turn_id, TurnOutcome.ANSWERED)
+    assert (turn.turn_id, turn.end) == (started.turn_id, TurnAnsweredEnd())
 
 
 async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
@@ -1722,7 +1782,7 @@ async def test_the_last_message_is_not_repeated_by_the_result_frame(
 async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
     chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
-    """The drop that needs neither a reconnection nor a roll: a turn that raised after producing
+    """The drop that needs neither a reconnection nor a roll: a turn that failed after producing
     text. The ending frame's own events are never applied, so the
     message the turn was mid-way through is closed by `close_answer` or by nothing at all — and a
     message left open is prose no channel is owed.
@@ -1736,11 +1796,8 @@ async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
     assert turn is not None
     client = _FakeCli([*_NARRATED_TURN[:-1], result(subtype="error_during_execution", is_error=True)])
 
-    with pytest.raises(RuntimeError):
-        async with asyncio.timeout(30):
-            await service._run_turn(
-                client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
-            )
+    async with asyncio.timeout(30):
+        await service._run_turn(client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event())
 
     assert await answers(migrated_sessions, view.session_id) == ["Looking at the logs now.", "Found it: a bad config."]
 
@@ -1759,13 +1816,13 @@ async def test_a_turn_the_cli_ended_badly_fails_even_though_is_error_says_it_did
     assert turn is not None
     client = _FakeCli([result(subtype="error_max_turns")])
 
-    with pytest.raises(RuntimeError, match="error_max_turns"):
-        await chat_service._run_turn(
-            client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
-        )
+    await chat_service._run_turn(
+        client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
+    )
 
     [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=5)
-    assert record.outcome == TurnOutcome.FAILED
+    assert record.end == TurnFailedEnd(failure="error_max_turns: end_turn")
+    assert await chat_store.status(view.session_id) != SessionStatus.FAILED
 
 
 async def test_a_turn_whose_answer_arrived_only_on_the_result_is_still_spoken(
@@ -1896,7 +1953,7 @@ async def test_a_turn_brackets_the_frames_it_produced(chat_store, chat_service, 
     )
 
     [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=10)
-    assert record.outcome == TurnOutcome.ANSWERED
+    assert record.end == TurnAnsweredEnd()
     assert (record.first_frame_seq, record.last_frame_seq) == (recorded_answer.frame_seq, recorded_ending.frame_seq)
     assert record.ended_at is not None
 
@@ -2012,7 +2069,7 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, 
                     break
                 await asyncio.sleep(0.2)
             [turn] = await chat_store.list_turns(str(view.session_id), cursor=None, limit=2)
-            assert turn.outcome == TurnOutcome.ANSWERED, "the turn never completed"
+            assert turn.end == TurnAnsweredEnd(), "the turn never completed"
         finally:
             runner.cancel()
             with contextlib.suppress(asyncio.CancelledError):

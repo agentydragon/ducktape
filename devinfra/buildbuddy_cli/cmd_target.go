@@ -297,9 +297,14 @@ Examples:
 			if err != nil {
 				return err
 			}
-			// Filter to matching target and artifact name
+			// Filter to matching target and artifact name. Test artifacts only:
+			// a build output of a target named like a test must not shadow the
+			// test log this command exists to print.
 			var matches []artifact
 			for _, a := range artifacts {
+				if a.Kind != kindTest {
+					continue
+				}
 				combined := a.Label + "/" + a.Name
 				if strings.Contains(combined, args[1]) && strings.Contains(a.Name, artifactName) {
 					matches = append(matches, a)

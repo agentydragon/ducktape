@@ -12,8 +12,9 @@ from uuid import UUID
 import pytest
 import pytest_bazel
 
-from haku.console.chat_models import MatrixOrigin, TurnOutcome
+from haku.console.chat_models import MatrixOrigin
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
+from haku.console.x.session_events import TurnAnsweredBody
 from haku.console.x.session_store import BridgeAuthentication, PromptRefusedError, SessionStore
 
 ROOM = "!room:allegedly.works"
@@ -92,7 +93,7 @@ async def test_re_recording_an_event_moves_it_to_the_prompt_now_answering_for_it
     await chat_store.enqueue_prompt(operator_id, session_id, "hi", _from_room("$a"), ledger.carrying(("$a",)))
     started = await chat_store.next_prompt(session_id)
     assert started is not None
-    await chat_store.end_turn(started.turn_id, TurnOutcome.ANSWERED)
+    await chat_store.end_turn(started.turn_id, TurnAnsweredBody())
     await chat_store.enqueue_prompt(operator_id, session_id, "hi again", _from_room("$a"), ledger.carrying(("$a",)))
 
     assert await ledger.carried(["$a"]) == frozenset({"$a"})

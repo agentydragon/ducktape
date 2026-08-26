@@ -101,13 +101,12 @@ jobs:
           set -euo pipefail
           echo "targets=$(python3 devinfra/ci/plan_image_pushes.py targets)" >> "$GITHUB_OUTPUT"
 
-      # One invocation for every image's digest. `--remote_download_outputs=toplevel`
-      # ships back only the sha256 files, so this is a cache hit and a few kilobytes.
+      # One invocation for every image's digest.
       - name: bb remote build digests
         if: env.PUBLISH == 'true'
         uses: ./.github/actions/bb-remote
         with:
-          args: build ${{ steps.targets.outputs.targets }} --remote_download_outputs=toplevel
+          args: build ${{ steps.targets.outputs.targets }}
           rbe_image: ${{ inputs.rbe_image }}
 
       - uses: imjasonh/setup-crane@v0.7
@@ -176,7 +175,7 @@ jobs:
       - name: bb remote build OCI layout
         uses: ./.github/actions/bb-remote
         with:
-          args: build ${{ matrix.image }} ${{ matrix.image }}.digest --remote_download_outputs=toplevel
+          args: build ${{ matrix.image }} ${{ matrix.image }}.digest
           rbe_image: ${{ inputs.rbe_image }}
 
       - uses: imjasonh/setup-crane@v0.7

@@ -26,9 +26,11 @@ from fastapi import FastAPI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from haku.console.chat_models import OPEN_SESSION_STATUSES, SPA_ORIGIN, ItemType, SessionStatus, TurnOutcome
+from haku.console.chat_models import OPEN_SESSION_STATUSES, SPA_ORIGIN, ItemType, SessionStatus
 from haku.console.database_schema import SessionFrame
+from haku.console.x import conversation_records
 from haku.console.x.conftest import configured_runtimes, runtime_config
+from haku.console.x.conversation_records import TurnAnsweredEnd
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService, internal_router
 from haku.console.x.session_store import SessionStore
@@ -137,9 +139,9 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
         },
     )
 
-    async def finished_turns() -> list[str | None]:
+    async def finished_turns() -> list[conversation_records.TurnEnd | None]:
         turns = await chat_store.list_turns(session_id, cursor=None, limit=10)
-        return [turn.outcome for turn in sorted(turns, key=lambda turn: turn.started_at) if turn.ended_at]
+        return [turn.end for turn in sorted(turns, key=lambda turn: turn.started_at) if turn.ended_at]
 
     async def bridge_connected() -> bool:
         return await chat_store.status(session_id) == SessionStatus.READY
@@ -179,7 +181,7 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
         async with asyncio.timeout(30):
             await runner.wait()
 
-    assert await finished_turns() == [TurnOutcome.ANSWERED, TurnOutcome.ANSWERED]
+    assert await finished_turns() == [TurnAnsweredEnd(), TurnAnsweredEnd()]
     turns = sorted(await chat_store.list_turns(session_id, cursor=None, limit=10), key=lambda turn: turn.started_at)
     assert turns[1].turn_id == in_flight.turn_id, "the second console finished that turn rather than opening its own"
     conversation = await chat_store.get(operator_id, session_id)

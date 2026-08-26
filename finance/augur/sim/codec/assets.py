@@ -41,6 +41,7 @@ def decode_sched_dispositions(plan: CompiledSimulation, output: DenseSimulationO
         source_account_codes=plan.sales.source_account[sales],
         asset_codes=plan.sales.asset[sales],
         lots=lots,
+        purchase_months=output.state.lot_purchase_month[lots, rollouts],
         units=output.scheduled_dispositions.units[sales, lots, rollouts],
         basis=output.scheduled_dispositions.basis[sales, lots, rollouts],
         proceeds=output.scheduled_dispositions.proceeds[sales, lots, rollouts],
@@ -76,6 +77,7 @@ def decode_target_allocation_dispositions(plan: CompiledSimulation, output: Dens
         source_account_codes=plan.lot_account_codes[lots],
         asset_codes=asset_codes,
         lots=lots,
+        purchase_months=output.state.lot_purchase_month[lots, rollouts],
         units=output.target_allocation.dispositions.units[months, policies, sleeve_idxs, lots, rollouts],
         basis=output.target_allocation.dispositions.basis[months, policies, sleeve_idxs, lots, rollouts],
         proceeds=output.target_allocation.dispositions.proceeds[months, policies, sleeve_idxs, lots, rollouts],
@@ -104,13 +106,16 @@ def decode_pe_dispositions(plan: CompiledSimulation, output: DenseSimulationOutp
         months=months,
         cause_ids=cause_ids,
         agent_codes=plan.pe_policies.owner_agent[policy_idxs],
-        source_account_codes=plan.pe_policies.proceeds_cash_slot[policy_idxs],
+        # PE compatibility rows use the owner id as their synthetic source-account id;
+        # proceeds_cash_slot is a CASH AXIS index, not a string-table code.
+        source_account_codes=plan.pe_policies.owner_agent[policy_idxs],
         asset_codes=asset_codes,
         lots=lots,
+        purchase_months=output.state.lot_purchase_month[lots, rollouts],
         units=output.private_equity.dispositions.units[months, issuers, kinds, lots, rollouts],
         basis=output.private_equity.dispositions.basis[months, issuers, kinds, lots, rollouts],
         proceeds=output.private_equity.dispositions.proceeds[months, issuers, kinds, lots, rollouts],
-        proceeds_account_codes=plan.pe_policies.proceeds_cash_slot[policy_idxs],
+        proceeds_account_codes=plan.cash_account_codes[plan.pe_policies.proceeds_cash_slot[policy_idxs]],
     )
 
 
@@ -231,6 +236,7 @@ def _lot_disposition_frame(
     source_account_codes: np.ndarray,
     asset_codes: np.ndarray,
     lots: np.ndarray,
+    purchase_months: np.ndarray,
     units: np.ndarray,
     basis: np.ndarray,
     proceeds: np.ndarray,
@@ -245,7 +251,10 @@ def _lot_disposition_frame(
         source_account_id=codes_to_strings(plan, source_account_codes),
         asset_id=codes_to_asset_wire_ids(plan, asset_codes),
         lot_id=codes_to_strings(plan, plan.lot_id_codes)[lots],
-        purchase_month_index=plan.lot_purchase_month.astype(np.int64)[lots],
+        # Purchase slots start with a static placeholder in the plan and are filled by
+        # target-allocation buys at runtime. Slots are single-use, so the final runtime
+        # purchase month is also the purchase month for every disposition from that slot.
+        purchase_month_index=purchase_months.astype(np.int64),
         units_sold=lot_quantity_column(plan, lots, units),
         cost_basis_consumed_quanta=currency_quanta_column(basis),
         proceeds_quanta=currency_quanta_column(proceeds),

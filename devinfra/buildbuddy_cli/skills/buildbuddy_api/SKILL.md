@@ -63,8 +63,12 @@ bbapi target stats [--repo URL]
 # Show flake samples for a specific target
 bbapi target flakes <target-label> [--repo URL]
 
-# List artifacts for an invocation
+# List artifacts for an invocation (test outputs and build outputs)
 bbapi artifact list <invocation-id>
+
+# Narrow to one kind: "build" is a completed target's output files, "test" is
+# test.log / test.xml / undeclared outputs
+bbapi artifact list <invocation-id> --kind build
 
 # Stream a matching artifact to stdout
 bbapi artifact cat <invocation-id> <name-substring>
@@ -165,14 +169,36 @@ invocation contains the actual `bazel test` results, targets, and artifacts.
 
 When no match is found, the CLI prints available labels as hints.
 
-### Build Tool Logs vs Test Artifacts
+### Three kinds of file, three commands
 
 Bazel files attached to the invocation itself, such as `command.profile.gz`, are BES
-`BuildToolLogs`, not test artifacts. Use `bbapi tool-log {list,cat,download}` for these
-files. Use `bbapi artifact` only for test outputs like `test.log`, `test.xml`, and files
-under `test.outputs/`. Build tool logs can be inline (`elapsed time`, `critical path`,
-`process stats`) or bytestream-backed (`command.profile.gz`); `bbapi tool-log cat` handles
-both.
+`BuildToolLogs` — use `bbapi tool-log {list,cat,download}`. They can be inline
+(`elapsed time`, `critical path`, `process stats`) or bytestream-backed
+(`command.profile.gz`); `bbapi tool-log cat` handles both.
+
+Everything a target produced is `bbapi artifact`, in two kinds:
+
+- `--kind test` — outputs of a test action: `test.log`, `test.xml`, files under
+  `test.outputs/`.
+- `--kind build` — files in a completed target's output groups: a wheel, a
+  `.skill`, an `oci_image`'s `.json.sha256`. Lint aspects contribute their own
+  groups, so filter on the `GROUP` column (`default` for a target's real
+  outputs, `rules_lint_report` / `mypy` / `clippy_checks` / `rustfmt_checks` for
+  the aspects).
+
+**Deviation from what BuildBuddy's web UI shows:** the UI surfaces test artifacts
+only. Build outputs reach the BES stream as `TargetComplete` → output group →
+`NamedSetOfFiles`, and `bbapi` walks that graph.
+
+`--json` carries each file's `digest` and `size` as BES reports them. For a
+single-file release the digest is the content identity, so a caller can compare
+against a published tag without fetching the bytes.
+
+**Gotcha:** identify a file by `pathPrefix` + `name`, never `name` alone. A
+source file has an empty prefix while the generated file of the same name lives
+under `bazel-out/k8-fastbuild/bin`, and a configuration transition writes to
+`bazel-out/k8-fastbuild-ST-<hash>/bin`. On devel's `//...` sweep four names
+collide across prefixes.
 
 For CI phase profiling, start with:
 

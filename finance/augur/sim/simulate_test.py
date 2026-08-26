@@ -4594,6 +4594,93 @@ def test_pe_forced_sale_fraction_sells_without_tender_or_floor_shortfall() -> No
     assert row["cause_id"] == "pe_forced_sale_m5_acme"
 
 
+def test_pe_forced_sale_preserves_capital_gain_state() -> None:
+    """A forced sale updates tax state even when no discretionary tender follows it."""
+
+    horizon = 12
+    scenario = _pe_tender_scenario(
+        initial_cash=0,
+        monthly_spend=0,
+        pe_units=100.0,
+        pe_cost_basis_per_unit=10,
+        pe_holding_period_months=36,
+        horizon_months=horizon,
+        lnw_floor=0,
+    ).model_copy(
+        update={
+            "tax_profiles": [
+                TaxProfile(
+                    agent_id="alice",
+                    filing_status=FilingStatus.SINGLE,
+                    jurisdiction_ids=["federal_us"],
+                    tax_authority_agent_id="spend_sink",
+                )
+            ]
+        }
+    )
+    external = _pe_external_series(
+        initial_mark_usd=100.0,
+        tender_month=None,
+        tender_mark_usd=None,
+        horizon_months=horizon,
+        forced_sale_fraction=_pe_single_month_matrix(horizon_months=horizon, month=5, value=0.3),
+    )
+
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
+
+    [gain] = (
+        capital_gains_ytd(result)
+        .filter((pl.col("month_index") == 6) & (pl.col("agent_id") == "alice") & (pl.col("classification") == "ltcg"))
+        .iter_rows(named=True)
+    )
+    assert gain["gain_quanta"] / 100 == pytest.approx(2_700.0)
+
+
+def test_pe_proceeds_use_the_policy_account_for_multi_account_owner() -> None:
+    """The policy names an exact account; another account for the owner must not intercept proceeds."""
+
+    horizon = 12
+    scenario = _pe_tender_scenario(
+        initial_cash=0,
+        monthly_spend=0,
+        pe_units=100.0,
+        pe_cost_basis_per_unit=10,
+        pe_holding_period_months=36,
+        horizon_months=horizon,
+        lnw_floor=0,
+    ).model_copy(
+        update={
+            "initial_cash": [
+                InitialAccountBalance(agent_id="alice", account_id="savings", balance=123),
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="spend_sink", account_id="checking", balance=0),
+            ]
+        }
+    )
+    external = _pe_external_series(
+        initial_mark_usd=100.0,
+        tender_month=None,
+        tender_mark_usd=None,
+        horizon_months=horizon,
+        forced_sale_fraction=_pe_single_month_matrix(horizon_months=horizon, month=5, value=0.3),
+    )
+
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
+
+    balances = {
+        row["account_id"]: row["balance_quanta"]
+        for row in cash_balances(result)
+        .filter((pl.col("month_index") == 6) & (pl.col("agent_id") == "alice"))
+        .iter_rows(named=True)
+    }
+    assert balances == {"checking": 300_000, "savings": 12_300}
+    [row] = result.events_log.lot_dispositions.filter(pl.col("cause_id") == "pe_forced_sale_m5_acme").iter_rows(
+        named=True
+    )
+    assert row["source_account_id"] == "alice"
+    assert row["proceeds_account_id"] == "checking"
+
+
 def test_pe_forced_recovery_cashout_sells_remaining_units_for_recovery_amount() -> None:
     horizon = 12
     scenario = _pe_tender_scenario(

@@ -269,7 +269,8 @@ def compile_obligation_slots(
             amount_base_month[month, slot] = base_month
             amount_period[month, slot] = period
             if config.deduction_category == ORDINARY_DEDUCTION_CATEGORY:
-                deduction_profile[month, slot] = agent_to_profile_index.get(strings.require(config.agent_id), NO_CODE)
+                owner_profile = agent_to_profile_index.get(strings.require(config.agent_id), NO_CODE)
+                deduction_profile[month, slot] = tax.buckets.ordinary_bucket(owner_profile)
                 deductible_fraction[month, slot] = float(config.deductible_fraction)
             if config.property_id is not None:
                 if config.property_id not in property_slot_by_id:
@@ -340,7 +341,7 @@ def compile_obligation_slots(
                     property_tax_profile[month, slot] = owner_profile
                     property_slot_matrix[month, slot] = property_slot
                     if owner_profile >= 0:
-                        deduction_profile[month, slot] = owner_profile
+                        deduction_profile[month, slot] = tax.buckets.ordinary_bucket(owner_profile)
                         deductible_fraction[month, slot] = float(purchase.rented_fraction)
             slot += 1
 

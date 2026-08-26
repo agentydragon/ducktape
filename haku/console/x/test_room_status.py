@@ -7,7 +7,7 @@ from uuid import UUID
 
 import pytest_bazel
 
-from haku.console.chat_models import SessionStatus, ToolOutcome, TurnOutcome
+from haku.console.chat_models import SessionStatus, ToolOutcome
 from haku.console.x.room_status import (
     PROVISIONING_STATUS,
     STATUS_AFTER,
@@ -24,7 +24,7 @@ from haku.console.x.session_events import (
     SessionProvisioningBody,
     ToolCallCompletedBody,
     ToolCallStartedBody,
-    TurnEndedBody,
+    TurnAnsweredBody,
     TurnStartedBody,
 )
 from haku.console.x.subscription import StreamedEvent, StreamPosition
@@ -115,7 +115,7 @@ async def test_a_short_turn_types_but_never_creates_a_status_line() -> None:
     await status.reconcile(frontend, now=STARTED + STATUS_AFTER - timedelta(seconds=1))
     assert (frontend.typed, frontend.shown) == ([True], [])
 
-    status.apply((_event(TurnEndedBody(outcome=TurnOutcome.ANSWERED), seq=3, at=STARTED + STATUS_AFTER),))
+    status.apply((_event(TurnAnsweredBody(), seq=3, at=STARTED + STATUS_AFTER),))
     await status.reconcile(frontend, now=STARTED + STATUS_AFTER)
 
     assert frontend.typed == [True, False]

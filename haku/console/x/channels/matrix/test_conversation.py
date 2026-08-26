@@ -25,7 +25,6 @@ from haku.console.chat_models import (
     MatrixOrigin,
     PromptRejection,
     RuntimeKind,
-    TurnOutcome,
 )
 from haku.console.conftest import console_sessions
 from haku.console.database_schema import Conversation, ConversationEvent, ConversationItem, Session
@@ -51,7 +50,7 @@ from haku.console.x.conversation_events import (
 from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.launch_identity import ChatLaunchAuthorizer, LaunchIdentity
 from haku.console.x.runtime import RuntimeKey
-from haku.console.x.session_events import PromptStartedBody
+from haku.console.x.session_events import PromptStartedBody, TurnAnsweredBody
 from haku.console.x.session_store import BridgeAuthentication, SessionStore
 
 
@@ -164,7 +163,7 @@ async def exchange(chat_store: SessionStore, operator_id: UUID, session_id: UUID
     await say(chat_store, session_id, start.turn_id, answered)
     # Ended, because admission asks about the turn: a session left mid-turn refuses the next
     # prompt, and these tests are conversations rather than one exchange each.
-    await chat_store.end_turn(start.turn_id, TurnOutcome.ANSWERED)
+    await chat_store.end_turn(start.turn_id, TurnAnsweredBody())
 
 
 async def say(

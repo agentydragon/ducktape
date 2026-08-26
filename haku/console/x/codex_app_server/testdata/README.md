@@ -20,6 +20,25 @@ as a real capture.
   the capture workflow before staging. The provenance notes in `.openclaw/codex-trace-4431/README.md`
   are the source record for this fixture.
 
+- `real_provider_failure.sanitized.jsonl` is a **real** production session, excerpted from the
+  haku-console frame log on 2026-08-26 UTC: a Web-launched `public-coder-agent` Codex conversation
+  whose single turn failed after five provider retries (issue #4752). The capture program cannot
+  produce it — it cannot induce a provider outage — so the source is the durable frame log rather
+  than a staged run, and every frame of that session is present, in order.
+
+  Sanitization ran `capture.py`'s own `Sanitizer` over each frame, then replaced the two identities
+  it has no rule for: the console session ID inside `remoteControl/status/changed`'s `serverName`,
+  and that notification's `installationId`. Wall-clock epochs were normalized to the same
+  `1700000001` base as the fixture above, preserving the turn's real 189-second span. Two artifacts
+  of the reviewed sanitizer are visible and deliberate: the `configWarning` summary's
+  `https://developers.openai.com/...` URL is rewritten to `<ABSOLUTE_PATH>`, because the path regex
+  cannot tell a URL from a filesystem path; and the operator's prompt, the two-letter `hi`, was
+  lifted to a sentinel before sanitizing, since substring replacement of `hi` would otherwise have
+  eaten the `hi` inside `high` and `which` in the provider's own error text.
+
+  Two further sessions that day failed identically, frame for frame apart from IDs and timings, so
+  this shape is the repeatable one rather than a single anomaly.
+
 The capture program writes sanitized records only. Before committing a real capture, review every
 line for all of the following:
 

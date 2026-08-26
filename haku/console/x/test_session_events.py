@@ -20,7 +20,6 @@ from haku.console.chat_models import (
     ReasoningDisclosure,
     StoredEventKind,
     ToolOutcome,
-    TurnOutcome,
 )
 from haku.console.database_schema import ConversationEvent as ConversationEventRow
 from haku.console.x import session_events
@@ -34,6 +33,7 @@ from haku.console.x.conversation_events import (
     ReasoningStarted,
     ToolCallCompleted,
     ToolCallStarted,
+    TurnAnswered,
     TurnCompleted,
 )
 from util.sqlalchemy_types import UnknownValue
@@ -323,7 +323,7 @@ def test_a_body_carrying_a_field_this_release_does_not_know_still_reads() -> Non
 def test_the_one_event_with_a_durable_home_elsewhere_gets_no_row() -> None:
     """A turn's ending is the `conversation_turn` row, plus the two authored rows `end_turn` writes
     to state it in the stream."""
-    assert session_events.stored(TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=WHERE)) is None
+    assert session_events.stored(TurnCompleted(end=TurnAnswered(), provenance=WHERE)) is None
 
 
 if __name__ == "__main__":

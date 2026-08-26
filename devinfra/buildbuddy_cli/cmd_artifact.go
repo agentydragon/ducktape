@@ -43,10 +43,39 @@ func matchGlob(pattern, s string) bool {
 	}
 }
 
+// Artifact kinds. A test artifact is an output of a test action (test.log,
+// test.xml, undeclared outputs); a build artifact is a file in a completed
+// target's output group — the wheel, the .skill, an image's .json.sha256.
+const (
+	kindTest  = "test"
+	kindBuild = "build"
+)
+
+// artifactKind is the --kind filter; empty means both. Package-level to match
+// jsonOutput, so every artifact subcommand honours it.
+var artifactKind string
+
 type artifact struct {
 	Label string `json:"label"`
 	Name  string `json:"name"`
 	URI   string `json:"uri"`
+	Kind  string `json:"kind"`
+	// Bazel output group, for build artifacts only. Aspects contribute their own
+	// groups (this repo adds rules_lint_report, mypy, clippy_checks,
+	// rustfmt_checks), so the group is what separates a target's real outputs
+	// from its lint reports.
+	OutputGroup string `json:"outputGroup,omitempty"`
+	// Directory prefix BES reports separately from Name, e.g.
+	// "bazel-out/k8-fastbuild/bin". Name alone is ambiguous: a source file has an
+	// empty prefix while the generated file of the same name sits under bazel-out,
+	// and a configuration transition puts its outputs under a distinct prefix
+	// ("bazel-out/k8-fastbuild-ST-<hash>/bin"). Only Prefix+Name identifies a file.
+	PathPrefix string `json:"pathPrefix,omitempty"`
+	// Content digest and size as BES reports them. For a single-file release the
+	// digest is the published content identity, so callers can compare against a
+	// registry or release tag without fetching the bytes at all.
+	Digest string `json:"digest,omitempty"`
+	Size   int64  `json:"size,omitempty"`
 }
 
 func artifactCmd() *cobra.Command {
@@ -78,6 +107,8 @@ Prefer the explicit subcommands:
 			return catArtifact(c, artifacts, args[1])
 		},
 	}
+	cmd.PersistentFlags().StringVar(&artifactKind, "kind", "",
+		fmt.Sprintf("only %q or %q artifacts (default: both)", kindTest, kindBuild))
 	cmd.AddCommand(artifactListCmd())
 	cmd.AddCommand(artifactCatCmd())
 	cmd.AddCommand(artifactDownloadCmd())
@@ -183,12 +214,31 @@ func printArtifacts(artifacts []artifact) error {
 		return nil
 	}
 	t := newTable()
-	t.header("LABEL", "NAME")
+	t.header("KIND", "GROUP", "LABEL", "NAME")
 	for _, a := range artifacts {
-		t.row(a.Label, a.Name)
+		t.row(a.Kind, a.OutputGroup, a.Label, a.Name)
 	}
 	t.flush()
 	return nil
+}
+
+// filterKind narrows artifacts to one kind. An empty kind keeps everything; an
+// unrecognised one is a user error rather than an empty result.
+func filterKind(artifacts []artifact, kind string) ([]artifact, error) {
+	switch kind {
+	case "":
+		return artifacts, nil
+	case kindTest, kindBuild:
+	default:
+		return nil, fmt.Errorf("unknown artifact kind %q: want %q or %q", kind, kindTest, kindBuild)
+	}
+	var kept []artifact
+	for _, a := range artifacts {
+		if a.Kind == kind {
+			kept = append(kept, a)
+		}
+	}
+	return kept, nil
 }
 
 // matchKey returns the string matched against: "label/name".
@@ -330,7 +380,7 @@ func listArtifactsResolved(c *client, invocationID string) ([]artifact, error) {
 		}
 		all = append(all, arts...)
 	}
-	return all, nil
+	return filterKind(all, artifactKind)
 }
 
 func listArtifacts(c *client, invocationID string) ([]artifact, error) {
@@ -340,27 +390,104 @@ func listArtifacts(c *client, invocationID string) ([]artifact, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fetch BES event stream: %w", err)
 	}
+	return parseArtifacts(data)
+}
+
+// parseArtifacts extracts both test and build artifacts from a raw BES stream.
+//
+// Build outputs are reached indirectly: a TargetComplete event names output
+// groups, each group names NamedSetOfFiles ids, and those sets hold the files —
+// and may reference further sets, since Bazel shares subsets between targets
+// rather than repeating them. So the sets are indexed first, then walked
+// transitively per target.
+func parseArtifacts(data []byte) ([]artifact, error) {
 	var rawEvents []json.RawMessage
 	if err := json.Unmarshal(data, &rawEvents); err != nil {
 		return nil, fmt.Errorf("parse BES event stream: %w", err)
 	}
-	var result []artifact
+	events := make([]*bespb.BuildEvent, 0, len(rawEvents))
+	fileSets := map[string]*bespb.NamedSetOfFiles{}
 	for _, raw := range rawEvents {
 		var ev bespb.BuildEvent
 		if err := unmarshalJSON(raw, &ev); err != nil {
 			return nil, fmt.Errorf("parse BES event: %w", err)
 		}
-		tr := ev.GetTestResult()
-		if tr == nil {
+		events = append(events, &ev)
+		if ns := ev.GetNamedSetOfFiles(); ns != nil {
+			fileSets[ev.GetId().GetNamedSet().GetId()] = ns
+		}
+	}
+
+	var result []artifact
+	seen := map[artifact]bool{}
+	add := func(a artifact) {
+		if !seen[a] {
+			seen[a] = true
+			result = append(result, a)
+		}
+	}
+	for _, ev := range events {
+		if tr := ev.GetTestResult(); tr != nil {
+			label := ev.GetId().GetTestResult().GetLabel()
+			for _, f := range tr.GetTestActionOutput() {
+				add(artifact{
+					Label:      label,
+					Name:       f.GetName(),
+					URI:        f.GetUri(),
+					Kind:       kindTest,
+					PathPrefix: strings.Join(f.GetPathPrefix(), "/"),
+					Digest:     f.GetDigest(),
+					Size:       f.GetLength(),
+				})
+			}
 			continue
 		}
-		label := ""
-		if tid := ev.GetId().GetTestResult(); tid != nil {
-			label = tid.GetLabel()
+		completed := ev.GetCompleted()
+		if completed == nil {
+			continue
 		}
-		for _, f := range tr.GetTestActionOutput() {
-			result = append(result, artifact{Label: label, Name: f.GetName(), URI: f.GetUri()})
+		label := ev.GetId().GetTargetCompleted().GetLabel()
+		for _, group := range completed.GetOutputGroup() {
+			for _, f := range filesInSets(fileSets, group.GetFileSets()) {
+				add(artifact{
+					Label:       label,
+					Name:        f.GetName(),
+					URI:         f.GetUri(),
+					Kind:        kindBuild,
+					OutputGroup: group.GetName(),
+					PathPrefix:  strings.Join(f.GetPathPrefix(), "/"),
+					Digest:      f.GetDigest(),
+					Size:        f.GetLength(),
+				})
+			}
 		}
 	}
 	return result, nil
+}
+
+// filesInSets flattens the named file sets reachable from ids. Sets form a DAG
+// that a large build shares aggressively, so visited guards against walking the
+// same subtree once per referring target (and against a malformed cycle).
+func filesInSets(byID map[string]*bespb.NamedSetOfFiles, ids []*bespb.BuildEventId_NamedSetOfFilesId) []*bespb.File {
+	var files []*bespb.File
+	visited := map[string]bool{}
+	var walk func(id string)
+	walk = func(id string) {
+		if id == "" || visited[id] {
+			return
+		}
+		visited[id] = true
+		set := byID[id]
+		if set == nil {
+			return
+		}
+		files = append(files, set.GetFiles()...)
+		for _, child := range set.GetFileSets() {
+			walk(child.GetId())
+		}
+	}
+	for _, id := range ids {
+		walk(id.GetId())
+	}
+	return files
 }

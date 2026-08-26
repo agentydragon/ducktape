@@ -51,7 +51,6 @@ from haku.console.chat_models import (
     PromptOrigin,
     PromptRejection,
     SpaOrigin,
-    TurnOutcome,
 )
 from haku.console.database_schema import ChannelCursor, ConversationItem
 from haku.console.x.channels.matrix.client import RoomEventKind
@@ -74,7 +73,9 @@ from haku.console.x.session_events import (
     SetupNarrationBody,
     ToolCallCompletedBody,
     ToolCallStartedBody,
-    TurnEndedBody,
+    TurnAbortedBody,
+    TurnAnsweredBody,
+    TurnFailedBody,
     TurnStartedBody,
     UnknownEventBody,
     UnreadableInputBody,
@@ -272,7 +273,7 @@ def project_notice(event: StreamedEvent, *, conversation_id: UUID, room_id: str)
             # that follow, so the relay is said at the item's completion, where the whole of it is
             # readable — `reconcile_once`, beside the answer it is the mirror image of.
             return None
-        case TurnEndedBody(outcome=TurnOutcome.ABORTED):
+        case TurnAbortedBody():
             # An abort is a turn outcome now rather than an event of its own, so the room's line for
             # it is said here — on the one outcome of three that the operator caused.
             body = ABORTED_BY_OPERATOR
@@ -287,7 +288,8 @@ def project_notice(event: StreamedEvent, *, conversation_id: UUID, room_id: str)
             | ToolCallCompletedBody()
             | PromptCompletedBody()
             | TurnStartedBody()
-            | TurnEndedBody()
+            | TurnAnsweredBody()
+            | TurnFailedBody()
             | SessionProvisioningBody()
             | SessionEndedBody()
             | UnknownEventBody()
@@ -373,7 +375,7 @@ class RoomNotices:
                     assert event.item_id is not None, "an item lifecycle row names its item"
                     if (relayed := await self._relayed(event.item_id, room_id)) is not None:
                         await self._announce(relayed, RoomEventKind.NARRATION)
-                case TurnEndedBody(outcome=TurnOutcome.ANSWERED):
+                case TurnAnsweredBody():
                     assert event.turn_id is not None, "a turn lifecycle row names its turn"
                     if await self._silent(event.turn_id):
                         await self._announce(NOTHING_SAID, RoomEventKind.NARRATION)

@@ -6,11 +6,11 @@ from typing import Any, cast
 
 import pytest_bazel
 
-from haku.console.chat_models import RuntimeKind, TurnOutcome
+from haku.console.chat_models import RuntimeKind
 from haku.console.x.codex_app_server import projection
 from haku.console.x.codex_app_server.client import CodexThread
 from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter, CodexTurnHandler
-from haku.console.x.conversation_events import FrameRange, ItemSegment, TurnCompleted
+from haku.console.x.conversation_events import FrameRange, ItemSegment, TurnAnswered, TurnCompleted, TurnFailed
 from haku.console.x.runtime import OpenItemSeed, RuntimeLaunch, RuntimeMcpServer, TurnProjectionSeed
 from haku.runtime.x.bridge.client import FrameSink
 from haku.runtime.x.bridge.codex_options import CodexModelProvider
@@ -123,11 +123,10 @@ def test_live_turn_handler_emits_neutral_events_and_terminal_completion() -> Non
     effects = [handler.apply(frame_seq=index, frame=HarnessFrame(frame=frame)) for index, frame in enumerate(frames, 1)]
 
     assert any(isinstance(event, ItemSegment) for effect in effects for event in effect.events)
-    assert effects[-1].events[-1] == TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=FrameRange(4, 4))
+    assert effects[-1].events[-1] == TurnCompleted(end=TurnAnswered(), provenance=FrameRange(4, 4))
     assert effects[-1].completion is not None
-    assert effects[-1].completion.outcome is TurnOutcome.ANSWERED
+    assert effects[-1].completion.end == TurnAnswered()
     assert effects[-1].completion.final_text == ""
-    assert effects[-1].completion.failure is None
 
 
 def test_failed_native_turn_becomes_a_neutral_failure() -> None:
@@ -146,8 +145,7 @@ def test_failed_native_turn_becomes_a_neutral_failure() -> None:
     )
 
     assert effects.completion is not None
-    assert effects.completion.outcome is TurnOutcome.FAILED
-    assert effects.completion.failure == "the agent's turn failed: boom"
+    assert effects.completion.end == TurnFailed(reason="boom")
 
 
 def test_adapter_identity_is_codex_without_making_it_a_configured_runtime() -> None:

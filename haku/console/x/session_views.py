@@ -27,10 +27,9 @@ from haku.console.chat_models import (
     RuntimeKind,
     SessionStatus,
     ToolOutcome,
-    TurnOutcome,
 )
 from haku.console.database_schema import ConversationItem, Session, SessionFrame
-from haku.console.x.conversation_records import ChannelAttachment
+from haku.console.x.conversation_records import ChannelAttachment, TurnAbortedEnd, TurnAnsweredEnd, TurnFailedEnd
 from haku.console.x.sandbox_claims import SandboxProvisioningView
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 
@@ -177,7 +176,9 @@ class ConversationTurnView(BaseModel):
     turn_id: UUID
     started_at: datetime
     ended_at: datetime | None
-    outcome: TurnOutcome | None
+    end: TurnAnsweredEnd | TurnAbortedEnd | TurnFailedEnd | None = Field(
+        discriminator="outcome", description="How it ended, and on a failure why. Absent while it is still running."
+    )
 
 
 class ConversationSessionView(BaseModel):

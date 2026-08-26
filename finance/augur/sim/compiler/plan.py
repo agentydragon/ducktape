@@ -175,8 +175,12 @@ class CompiledSimulation:
     # building portion. Capitalized closing costs add to the depreciable basis.
     property_building_basis: Int64[np.ndarray, " property"]
     # Profile index of each property's owner (buyer_agent_id → tax profile). NO_CODE if the
-    # owner has no tax profile. Used to route Schedule E depreciation deductions.
+    # owner has no tax profile. Used by lifecycle tax-policy lookups.
     property_owner_profile_index: Int64[np.ndarray, " property"]
+    # Ordinary-income bucket row for each property's owner. This is deliberately distinct
+    # from the profile index: one profile can own multiple jurisdiction/source rows, and the
+    # engine scatters Schedule E depreciation into the ordinary-income bucket axis.
+    property_owner_ordinary_row: Int64[np.ndarray, " property"]
     # Agent slot of each property's owner/buyer. Used to resolve the agent's current
     # primary-residence assignment for Section 121 qualifying-use accrual.
     property_owner_agent_index: Int64[np.ndarray, " property"]
@@ -542,6 +546,7 @@ def compile_simulation(
     # real row with no scenario entry, and rebuilding from the config would drop it and leave
     # this array one shorter than the cash tensor.
     cash_agent_codes_arr = np.asarray(cash_agent_codes, dtype=np.int64)
+    cash_account_codes_arr = np.asarray(cash_account_codes, dtype=np.int64)
     pe_issuers, pe_policies = compile_private_equity_tenders(
         scenario,
         strings,
@@ -550,6 +555,7 @@ def compile_simulation(
         lot_agent_codes=lot_table.agent_codes,
         lot_asset_codes=lot_table.asset_codes,
         cash_agent_codes=cash_agent_codes_arr,
+        cash_account_codes=cash_account_codes_arr,
     )
     pe_channels = compile_pe_channels(
         pe_issuers,
@@ -609,7 +615,7 @@ def compile_simulation(
         external_money_values=external_money_values,
         agent_codes=np.asarray(agent_codes, dtype=np.int64),
         cash_agent_codes=np.asarray(cash_agent_codes, dtype=np.int64),
-        cash_account_codes=np.asarray(cash_account_codes, dtype=np.int64),
+        cash_account_codes=cash_account_codes_arr,
         cash_initial_balance=np.asarray(cash_initial_balance, dtype=np.int64),
         lot_id_codes=lot_table.lot_id_codes,
         lot_agent_codes=lot_table.agent_codes,
@@ -639,7 +645,8 @@ def compile_simulation(
         liability_owner_profile_index=tax.buckets.ordinary_rows(liability_owner_profile_index),
         property_rented_fraction=property_rented_fraction,
         property_building_basis=property_building_basis,
-        property_owner_profile_index=tax.buckets.ordinary_rows(property_owner_profile_index),
+        property_owner_profile_index=property_owner_profile_index,
+        property_owner_ordinary_row=tax.buckets.ordinary_rows(property_owner_profile_index),
         property_owner_agent_index=property_owner_agent_index,
         property_home_value_series_index=property_home_value_series_index,
         initial_primary_residence_property_index=initial_primary_residence_property_index,

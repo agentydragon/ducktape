@@ -93,9 +93,14 @@ function TurnBoundary({ turn, number }: { turn: ConversationTurn; number: number
           <Text fw={600} size="xs">
             Turn {number}
           </Text>
-          <Badge size="xs" color={turn.outcome === "failed" ? "red" : "teal"} variant="light">
-            {turn.outcome ?? "running"}
+          <Badge size="xs" color={turn.end?.outcome === "failed" ? "red" : "teal"} variant="light">
+            {turn.end?.outcome ?? "running"}
           </Badge>
+          {turn.end?.outcome === "failed" && (
+            <Text size="xs" c="red" style={{ whiteSpace: "pre-wrap" }}>
+              {turn.end.failure}
+            </Text>
+          )}
         </Group>
       }
     />

@@ -17,18 +17,12 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import (
-    SPA_ORIGIN,
-    BridgeFrameKind,
-    FrameDirection,
-    ItemStatus,
-    ItemType,
-    SessionStatus,
-    TurnOutcome,
-)
+from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection, ItemStatus, ItemType, SessionStatus
 from haku.console.x.conftest import attach_channel
 from haku.console.x.conversation_events import FrameRange, ItemSegment, MessageCompleted, MessageStarted, OpenRef
 from haku.console.x.conversation_follow import ConversationFollow
+from haku.console.x.conversation_records import TurnAnsweredEnd
+from haku.console.x.session_events import TurnAnsweredBody
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import SessionStore
@@ -96,7 +90,7 @@ async def _exchange(chat_store: SessionStore, operator_id: UUID, session_id: UUI
             MessageCompleted(backend_item_id=None, provenance=where),
         ],
     )
-    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED, last_frame_seq=spoke.frame_seq)
+    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody(), last_frame_seq=spoke.frame_seq)
 
 
 async def test_a_follow_opens_with_the_conversation_whole(
@@ -128,7 +122,7 @@ async def test_what_moves_after_the_snapshot_arrives_as_an_update(
 
     assert isinstance(update, ConversationUpdate)
     assert [item.text for item in update.items] == ["second", "two"]
-    assert [turn.outcome for turn in update.turns] == [TurnOutcome.ANSWERED]
+    assert [turn.end for turn in update.turns] == [TurnAnsweredEnd()]
     await messages.aclose()
 
 

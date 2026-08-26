@@ -377,13 +377,16 @@ const conversationSession = {
       turn_id: "71000000-0000-4000-8000-000000000002",
       started_at: "2026-08-01T03:00:20.4Z",
       ended_at: "2026-08-01T03:00:24Z",
-      outcome: "failed",
+      end: {
+        outcome: "failed",
+        failure: "We're currently experiencing high demand, which may cause temporary errors.",
+      },
     },
     {
       turn_id: "71000000-0000-4000-8000-000000000001",
       started_at: "2026-08-01T03:00:10.4Z",
       ended_at: "2026-08-01T03:00:13Z",
-      outcome: "answered",
+      end: { outcome: "answered" },
     },
   ],
 } satisfies Conversation["session"];

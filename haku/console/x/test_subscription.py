@@ -18,8 +18,14 @@ import pytest_bazel
 from more_itertools import one
 from sqlalchemy import text
 
-from haku.console.chat_models import SPA_ORIGIN, TurnOutcome
-from haku.console.x.session_events import PromptStartedBody, SegmentBody, SessionProvisioningBody, UnknownEventBody
+from haku.console.chat_models import SPA_ORIGIN
+from haku.console.x.session_events import (
+    PromptStartedBody,
+    SegmentBody,
+    SessionProvisioningBody,
+    TurnAnsweredBody,
+    UnknownEventBody,
+)
 from haku.console.x.session_store import SessionStore
 from haku.console.x.subscription import (
     START,
@@ -64,7 +70,7 @@ async def say(chat_store: SessionStore, operator_id: UUID, thread: Thread, promp
     await chat_store.enqueue_prompt(operator_id, thread.session_id, prompt, SPA_ORIGIN)
     turn = await chat_store.next_prompt(thread.session_id)
     assert turn is not None
-    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
+    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody())
 
 
 def prompts(read: Read) -> list[str]:

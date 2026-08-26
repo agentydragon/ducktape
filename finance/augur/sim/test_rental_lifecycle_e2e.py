@@ -38,6 +38,7 @@ from finance.augur.sim.scenario import (
     FederalSaltDeductionPolicy,
     FilingStatus,
     InitialAccountBalance,
+    InterestIncome,
     MortgageFinancing,
     MortgageInterestDeductionPolicy,
     PrimaryResidenceAssignment,
@@ -1237,6 +1238,7 @@ class TestRentalIncomeTaxation:
                 Agent(agent_id="lender"),
                 Agent(agent_id="tax_authority"),
                 Agent(agent_id="irs"),
+                Agent(agent_id="bond_issuer"),
             ],
             initial_cash=[
                 InitialAccountBalance(agent_id="alice", account_id="checking", balance=800000),
@@ -1246,6 +1248,19 @@ class TestRentalIncomeTaxation:
                 InitialAccountBalance(agent_id="lender", account_id="checking", balance=0),
                 InitialAccountBalance(agent_id="tax_authority", account_id="checking", balance=0),
                 InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="bond_issuer", account_id="checking", balance=100),
+            ],
+            scheduled_transfers=[
+                ScheduledTransfer(
+                    month=0,
+                    cause_id="california_muni_interest",
+                    from_agent_id="bond_issuer",
+                    from_account_id="checking",
+                    to_agent_id="bob",
+                    to_account_id="checking",
+                    amount=100,
+                    income_category=InterestIncome(issuer_jurisdiction_id="california"),
+                )
             ],
             recurring_property_cashflows=[
                 RecurringPropertyCashflow(
@@ -1338,13 +1353,13 @@ class TestRentalIncomeTaxation:
             ],
             tax_profiles=[
                 TaxProfile(
-                    agent_id="alice",
+                    agent_id="bob",
                     filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=["federal_us"],
                     tax_authority_agent_id="irs",
                 ),
                 TaxProfile(
-                    agent_id="bob",
+                    agent_id="alice",
                     filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=["federal_us"],
                     tax_authority_agent_id="irs",

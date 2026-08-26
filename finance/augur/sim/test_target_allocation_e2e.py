@@ -372,6 +372,42 @@ def test_successive_purchases_fill_successive_slots() -> None:
     assert [int(row["purchase_month_index"]) for row in lots] == [2, 3]
 
 
+def test_a_runtime_purchase_keeps_its_month_when_later_sold() -> None:
+    """Disposition metadata comes from runtime lot state, not the slot's compile-time placeholder."""
+
+    base = _scenario(
+        opening_cash=0, floor=0, ceiling=1_000, stock_units=0, bond_units=0, income=30_000, purchase_slots=1
+    )
+    [income] = base.recurring_obligations
+    scenario = base.model_copy(
+        update={
+            "recurring_obligations": [
+                income.model_copy(update={"end_month": 1}),
+                RecurringObligation(
+                    start_month=3,
+                    end_month=3,
+                    obligation_id="one_time_rent",
+                    obligation_type="rent",
+                    agent_id="alice",
+                    from_account_id="checking",
+                    to_agent_id="landlord",
+                    to_account_id="checking",
+                    amount_due=FixedAmount(amount=10_000),
+                ),
+            ]
+        }
+    )
+
+    rows = (
+        _run(scenario)
+        .events_log.lot_dispositions.filter(pl.col("lot_id").str.starts_with("allocation_sale_buy_"))
+        .to_dicts()
+    )
+
+    assert rows
+    assert {int(row["purchase_month_index"]) for row in rows} == {2}
+
+
 def test_running_out_of_purchase_slots_aborts_the_run() -> None:
     """Aborting, not dropping the surplus purchase — and aborting the RUN, not failing the
     rollouts that hit the wall. Dropping it is a policy that silently stops investing partway
