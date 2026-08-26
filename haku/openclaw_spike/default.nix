@@ -50,9 +50,9 @@ let
     rev = "a8c1973388fa2645fce83f0239b2356744a98045";
     # fetchFromGitHub tree hash for the release rev.
     hash = "sha256-BTrlg8Y88j50hS3EHDCGQhh0k9zSbZt58b2LmYMcq8w=";
-    # pnpm dependency FOD hash for this release. Resolve by building: on a hash
-    # mismatch Nix prints the correct `got:` value; copy it here.
-    pnpmDepsHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    # pnpm dependency FOD hash for this release (from the nix-openclaw
+    # from-source gateway build).
+    pnpmDepsHash = "sha256-v/iNnAuMAvIsTRJXIvB29iKAH3hb5qExytr0ADQLWLE=";
   };
 
   gateway =
