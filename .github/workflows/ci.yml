@@ -42,8 +42,6 @@ jobs:
     uses: ./.github/workflows/release.yml
     secrets: inherit
 
-  # push-images also pushes the props agent images (props-agents job) to the
-  # props registry, gated on props tests — see push-images.yml.
   push-images:
     needs: [bazel-ci]
     if: always() && !cancelled() && github.event_name == 'push'

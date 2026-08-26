@@ -37,11 +37,9 @@ inputs:
   env_overrides:
     description: >
       Newline-separated KEY=VALUE pairs forwarded to the runner via
-      x-buildbuddy-platform.env-overrides. Only still used by the
-      props-agents job in .github/workflows/push-images.yml, which pushes
-      to the private props registry from inside the BB runner VM. The GHCR
-      push path (the matrix in the same workflow) downloads OCI layouts to
-      the runner and calls `crane push` directly, so it doesn't need this.
+      x-buildbuddy-platform.env-overrides. The GHCR push path downloads OCI
+      layouts to the runner and calls `crane push` directly, so it does not
+      need this input.
     required: false
     default: ""
   rbe_image:

@@ -47,11 +47,13 @@ runs:
         # now use the workflow-scoped secrets.GITHUB_TOKEN plumbed directly
         # through bb remote env_overrides (see push-images.yml).
         for var in ATTIC_TOKEN \
-                   PROPS_REGISTRY_PASSWORD FORGEJO_IMAGES_PASSWORD GH_RELEASE_PAT; do
+                   FORGEJO_IMAGES_PASSWORD GH_RELEASE_PAT; do
           val="${!var:-}"
           if [ -n "$val" ]; then
             echo "::add-mask::$val"
           fi
         done
-        # Export to GITHUB_ENV for subsequent steps
-        env | grep -E '^(ATTIC_TOKEN|PROPS_REGISTRY_USERNAME|PROPS_REGISTRY_PASSWORD|FORGEJO_IMAGES_USERNAME|FORGEJO_IMAGES_PASSWORD|GH_RELEASE_PAT)=' >> "$GITHUB_ENV"
+        # Export only credentials consumed by active CI jobs. Props GitOps is
+        # temporarily suspended, so its registry credential stays in SOPS but
+        # is not made available to every job that uses this action.
+        env | grep -E '^(ATTIC_TOKEN|FORGEJO_IMAGES_USERNAME|FORGEJO_IMAGES_PASSWORD|GH_RELEASE_PAT)=' >> "$GITHUB_ENV"
