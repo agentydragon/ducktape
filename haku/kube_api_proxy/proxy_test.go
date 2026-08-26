@@ -177,6 +177,76 @@ func waitForConnectionClose(t *testing.T, connection net.Conn, reader *bufio.Rea
 	}
 }
 
+// streamingUpstream writes one chunk and then holds the response open until its
+// request context is cancelled, so a test observes exactly when the proxy ends a
+// stream. Writing without a Content-Length is what makes the response chunked,
+// which is also what makes ReverseProxy relay it without buffering.
+func streamingUpstream(t *testing.T, contentType string, chunk string, disconnected chan<- struct{}) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		w.Header().Set("Content-Type", contentType)
+		if _, err := io.WriteString(w, chunk); err != nil {
+			t.Error(err)
+			return
+		}
+		w.(http.Flusher).Flush()
+		<-request.Context().Done()
+		close(disconnected)
+	})
+}
+
+// readStreamedChunk fails unless the chunk reaches the caller while the upstream
+// response is still open, which is what distinguishes a relayed stream from a
+// response buffered until upstream completion.
+func readStreamedChunk(t *testing.T, body io.Reader, want string) {
+	t.Helper()
+	buffer := make([]byte, len(want))
+	if _, err := io.ReadFull(body, buffer); err != nil {
+		t.Fatalf("read streamed chunk: %v", err)
+	}
+	if string(buffer) != want {
+		t.Fatalf("streamed chunk = %q, want %q", buffer, want)
+	}
+}
+
+// waitForStreamEnd requires the stream to end within timeout and to end
+// truncated. Cancellation happens after the response headers are sent, so a
+// caller cannot receive a status code — an intact chunked body would mean the
+// proxy ended the stream in an orderly way it has no way to perform.
+func waitForStreamEnd(t *testing.T, body io.Reader, timeout time.Duration) {
+	t.Helper()
+	result := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(io.Discard, body)
+		result <- err
+	}()
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("streamed response ended intact rather than truncated")
+		}
+	case <-time.After(timeout):
+		t.Fatal("streamed response remained open past its cancellation bound")
+	}
+}
+
+func followedLogRequest(t *testing.T, proxy *httptest.Server, query string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, proxy.URL+"/api/v1/namespaces/demo/pods/web/log?"+query, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer caller-secret")
+	response, err := proxy.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	return response
+}
+
 func upgradeUpstream(t *testing.T, disconnected chan<- struct{}, expectedMethod string, expectedUpgrade string, expectedStreamProtocol string, expectedRequestHeaders http.Header, responseHeaders http.Header) http.Handler {
 	t.Helper()
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
@@ -900,6 +970,177 @@ func TestPortForwardWebSocketHeadersAreForwarded(t *testing.T) {
 	}
 }
 
+func TestFollowedPodLogIsAuthorizedAsAnOrdinaryLogReadAndStreamed(t *testing.T) {
+	decision := allowedDecision()
+	authority := &recordingAuthority{decision: decision}
+	upstreamDisconnected := make(chan struct{})
+	proxy := newTestProxy(t, authority, streamingUpstream(t, "text/plain", "first line\n", upstreamDisconnected), nil)
+
+	response := followedLogRequest(t, proxy, "follow=true&tailLines=25")
+	readStreamedChunk(t, response.Body, "first line\n")
+	if got := response.Header.Get("X-Haku-Kubernetes-Decision-ID"); got != decision.DecisionID {
+		t.Errorf("decision header = %q, want %q", got, decision.DecisionID)
+	}
+
+	authority.mu.Lock()
+	requests := append([]AuthorizationRequest(nil), authority.requests...)
+	authority.mu.Unlock()
+	if len(requests) != 1 {
+		t.Fatalf("authorization requests = %d", len(requests))
+	}
+	// Following is not a distinct Kubernetes RBAC attribute, so a followed log
+	// must be authorized as exactly the same request as a bounded one.
+	wantAttributes := RequestAttributes{
+		ResourceRequest: true,
+		Verb:            "get",
+		APIVersion:      "v1",
+		Namespace:       "demo",
+		Resource:        "pods",
+		Subresource:     "log",
+		Name:            "web",
+		Path:            "/api/v1/namespaces/demo/pods/web/log",
+	}
+	if requests[0].Attributes != wantAttributes {
+		t.Errorf("attributes = %#v, want %#v", requests[0].Attributes, wantAttributes)
+	}
+	if requests[0].RequiredScope.Kind != grantScopeNamespaces || strings.Join(requests[0].RequiredScope.Namespaces, ",") != "demo" {
+		t.Errorf("scope = %#v", requests[0].RequiredScope)
+	}
+	rule := requests[0].RequiredRules[0]
+	if strings.Join(rule.Resources, ",") != "pods/log" || strings.Join(rule.Verbs, ",") != "get" || strings.Join(rule.ResourceNames, ",") != "web" {
+		t.Errorf("rule = %#v", rule)
+	}
+}
+
+func TestFollowedPodLogOutlivesTheOrdinaryRequestTimeout(t *testing.T) {
+	authority := &recordingAuthority{decision: allowedDecision()}
+	upstreamDisconnected := make(chan struct{})
+	proxy := newTestProxy(t, authority, streamingUpstream(t, "text/plain", "line\n", upstreamDisconnected), func(config *Config) {
+		config.RequestTimeout = 100 * time.Millisecond
+		config.StreamRevalidationInterval = time.Hour
+	})
+
+	response := followedLogRequest(t, proxy, "follow=true")
+	readStreamedChunk(t, response.Body, "line\n")
+	// A standing decision carries no valid_until, so nothing bounds this stream
+	// but revalidation. The ordinary request timeout must not apply to it.
+	select {
+	case <-upstreamDisconnected:
+		t.Fatal("followed log was cut short by the ordinary request timeout")
+	case <-time.After(400 * time.Millisecond):
+	}
+}
+
+func TestFollowedPodLogEndsAtTemporaryDecisionExpiry(t *testing.T) {
+	validUntil := time.Now().Add(250 * time.Millisecond)
+	authority := &recordingAuthority{decision: AuthorizationResponse{
+		Allowed: true, DecisionID: "grant:log", ValidUntil: &validUntil,
+	}}
+	upstreamDisconnected := make(chan struct{})
+	proxy := newTestProxy(t, authority, streamingUpstream(t, "text/plain", "line\n", upstreamDisconnected), func(config *Config) {
+		config.RequestTimeout = time.Hour
+		config.StreamRevalidationInterval = time.Hour
+	})
+
+	response := followedLogRequest(t, proxy, "follow=true")
+	readStreamedChunk(t, response.Body, "line\n")
+	waitForStreamEnd(t, response.Body, 2*time.Second)
+	select {
+	case <-upstreamDisconnected:
+	case <-time.After(time.Second):
+		t.Fatal("upstream log stream survived temporary authorization expiry")
+	}
+}
+
+func TestFollowedPodLogRevalidatesAndClosesFailClosed(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		revalidate func() (AuthorizationResponse, int)
+	}{
+		{
+			name: "revoked",
+			revalidate: func() (AuthorizationResponse, int) {
+				return AuthorizationResponse{Allowed: false, Reason: "grant revoked"}, http.StatusOK
+			},
+		},
+		{
+			name: "authority unavailable",
+			revalidate: func() (AuthorizationResponse, int) {
+				return AuthorizationResponse{}, http.StatusServiceUnavailable
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			validUntil := time.Now().Add(5 * time.Second)
+			authority := &recordingAuthority{decide: func(call int) (AuthorizationResponse, int) {
+				if call == 1 {
+					return AuthorizationResponse{Allowed: true, DecisionID: "grant:log", ValidUntil: &validUntil}, http.StatusOK
+				}
+				return test.revalidate()
+			}}
+			upstreamDisconnected := make(chan struct{})
+			proxy := newTestProxy(t, authority, streamingUpstream(t, "text/plain", "line\n", upstreamDisconnected), func(config *Config) {
+				config.AuthorizationTimeout = 100 * time.Millisecond
+				config.StreamRevalidationInterval = 25 * time.Millisecond
+			})
+
+			response := followedLogRequest(t, proxy, "follow=true")
+			readStreamedChunk(t, response.Body, "line\n")
+			waitForStreamEnd(t, response.Body, 2*time.Second)
+			select {
+			case <-upstreamDisconnected:
+			case <-time.After(time.Second):
+				t.Fatal("upstream log stream survived failed revalidation")
+			}
+
+			authority.mu.Lock()
+			defer authority.mu.Unlock()
+			if len(authority.requests) < 2 {
+				t.Fatalf("authorization requests = %d, want initial plus revalidation", len(authority.requests))
+			}
+			if !reflect.DeepEqual(authority.requests[0], authority.requests[1]) {
+				t.Errorf("revalidation request changed: first=%#v second=%#v", authority.requests[0], authority.requests[1])
+			}
+		})
+	}
+}
+
+// A followed log is classified by apimachinery's boolean conversion, so the
+// proxy cannot decide a request is bounded that kube-apiserver will stream.
+func TestFollowedPodLogClassificationMatchesKubernetesBooleanParameters(t *testing.T) {
+	for _, test := range []struct {
+		query  string
+		follow bool
+	}{
+		{query: "", follow: false},
+		{query: "follow=false", follow: false},
+		{query: "follow=FALSE", follow: false},
+		{query: "follow=0", follow: false},
+		{query: "follow=true", follow: true},
+		{query: "follow=1", follow: true},
+		{query: "follow=T", follow: true},
+		// An empty or unparseable value is true, not an error and not false.
+		{query: "follow=", follow: true},
+		{query: "follow=not-a-boolean", follow: true},
+		// Whitespace is significant, so a padded "false" is true.
+		{query: "follow=%20false", follow: true},
+		// A repeated parameter is decided by its first value alone.
+		{query: "follow=false&follow=true", follow: false},
+		{query: "follow=true&follow=false", follow: true},
+	} {
+		t.Run(test.query, func(t *testing.T) {
+			request, err := http.NewRequest(http.MethodGet, "https://kubernetes/api/v1/namespaces/demo/pods/web/log?"+test.query, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			attributes := RequestAttributes{Resource: "pods", Subresource: "log", Name: "web", Verb: "get"}
+			if got := isFollowLogRequest(attributes, request); got != test.follow {
+				t.Errorf("isFollowLogRequest = %t, want %t", got, test.follow)
+			}
+		})
+	}
+}
+
 func TestUnsupportedLongLivedAndInteractiveRequests(t *testing.T) {
 	authority := &recordingAuthority{decision: allowedDecision()}
 	proxy := newTestProxy(t, authority, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
@@ -914,10 +1155,6 @@ func TestUnsupportedLongLivedAndInteractiveRequests(t *testing.T) {
 		{http.MethodGet, "/api/v1/namespaces/demo/pods?watch="},
 		{http.MethodGet, "/api/v1/namespaces/demo/pods?watch=not-a-boolean"},
 		{http.MethodGet, "/api/v1/namespaces/demo/pods?watch=false&watch=true"},
-		{http.MethodGet, "/api/v1/namespaces/demo/pods/web/log?follow=1"},
-		{http.MethodGet, "/api/v1/namespaces/demo/pods/web/log?follow="},
-		{http.MethodGet, "/api/v1/namespaces/demo/pods/web/log?follow=T"},
-		{http.MethodGet, "/api/v1/namespaces/demo/pods/web/log?follow=not-a-boolean"},
 		{http.MethodGet, "/api/v1/namespaces/demo/pods/web/exec"},
 		{http.MethodGet, "/api/v1/namespaces/demo/pods/web/attach"},
 		{http.MethodPost, "/api/v1/namespaces/demo/pods/web/portforward?ports=5432"},

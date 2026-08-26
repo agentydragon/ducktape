@@ -17,6 +17,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 const (
@@ -410,7 +412,7 @@ func unsupportedAttributes(attributes RequestAttributes, request *http.Request) 
 	if attributes.Verb == "proxy" || attributes.Subresource == "proxy" {
 		return "Kubernetes resource proxy requests are not implemented"
 	}
-	if isUpgradeRequest(request) && !isStreamingRequest(attributes, request) {
+	if isUpgradeRequest(request) && !isExecRequest(attributes, request) && !isPortForwardRequest(attributes, request) {
 		return "upgraded connections other than pod exec and port-forward are not implemented"
 	}
 	if attributes.Resource == "pods" {
@@ -421,10 +423,6 @@ func unsupportedAttributes(attributes RequestAttributes, request *http.Request) 
 			}
 		case "attach":
 			return "pod attach is not implemented"
-		case "log":
-			if queryMayEnable(request.URL.Query()["follow"]) {
-				return "following pod logs is not implemented"
-			}
 		}
 	}
 	return ""
@@ -458,8 +456,23 @@ func isWebSocketUpgradeRequest(request *http.Request) bool {
 	return isUpgradeRequest(request) && strings.EqualFold(strings.TrimSpace(request.Header.Get("Upgrade")), "websocket") && request.Header.Get("Sec-Websocket-Protocol") != ""
 }
 
+// isFollowLogRequest reports whether kube-apiserver will stream this pod log
+// rather than return a bounded one. Kubernetes does not distinguish following
+// from reading in RBAC — both are get on pods/log — so an Haku grant cannot
+// either; the difference is only that a followed log gets stream lifetime
+// enforcement instead of the ordinary request timeout.
+func isFollowLogRequest(attributes RequestAttributes, request *http.Request) bool {
+	return attributes.Resource == "pods" &&
+		attributes.Subresource == "log" &&
+		kubernetesBoolParameter(request.URL.Query()["follow"])
+}
+
+// isStreamingRequest reports whether a request may stay open indefinitely and so
+// must be bounded by the authorization decision rather than by RequestTimeout.
 func isStreamingRequest(attributes RequestAttributes, request *http.Request) bool {
-	return isExecRequest(attributes, request) || isPortForwardRequest(attributes, request)
+	return isExecRequest(attributes, request) ||
+		isPortForwardRequest(attributes, request) ||
+		isFollowLogRequest(attributes, request)
 }
 
 var forwardedRequestHeaders = map[string]bool{
@@ -504,6 +517,24 @@ func headerContainsToken(header http.Header, name string, token string) bool {
 		}
 	}
 	return false
+}
+
+// kubernetesBoolParameter decodes a boolean Kubernetes query parameter with
+// apimachinery's own conversion, so the proxy's streaming classification cannot
+// disagree with what kube-apiserver will actually serve. Its semantics are not
+// strconv.ParseBool: only an absent value, "0", or a case-insensitive "false" is
+// false, every other value is true (an empty string and unparseable text
+// included), whitespace is significant, and a repeated parameter is decided by
+// its first value alone.
+func kubernetesBoolParameter(values []string) bool {
+	var enabled bool
+	if err := runtime.Convert_Slice_string_To_bool(&values, &enabled, nil); err != nil {
+		// The conversion has no failure path today. Should it gain one, an
+		// undecodable value must classify as a stream rather than escape stream
+		// lifetime enforcement.
+		return true
+	}
+	return enabled
 }
 
 // queryMayEnable is intentionally conservative: Kubernetes' request parsers

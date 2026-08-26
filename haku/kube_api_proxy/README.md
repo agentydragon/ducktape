@@ -47,12 +47,42 @@ choose the Kubernetes username or groups.
   timeout—eight seconds with the deployed defaults. Port-forward therefore
   does not outlive its grant: after a grant is withdrawn, its connections close
   within that bound.
-- `watch`, log following, resource proxying, `attach` and other upgrades return
-  `501` before authorization or forwarding.
+- Following a pod log streams the chunked response through without buffering it,
+  under the same stream lifetime enforcement as exec and port-forward.
+  Kubernetes RBAC does not distinguish following a log from reading one — both
+  are `get` on `pods/log` — so an Haku grant cannot either. Whether a request
+  follows is decided by apimachinery's own boolean parameter conversion, whose
+  semantics are not `strconv.ParseBool`: only an absent value, `0` or a
+  case-insensitive `false` is false, every other value is true, whitespace is
+  significant, and a repeated parameter is decided by its first value alone.
+- `watch`, resource proxying, `attach` and other upgrades return `501` before
+  authorization or forwarding.
 - Console exposes the typed endpoint contract at
   `POST /api/internal/kubernetes/authorize`. It remains unavailable (and thus
   fail-closed) until standing SAR subjects are explicitly mapped to Agent access
   profiles.
+
+## Stream lifetime and limits
+
+A long-lived request — exec, port-forward and a followed pod log — is bounded by
+its authorization decision rather than by `HAKU_KUBE_REQUEST_TIMEOUT`, which
+applies only to ordinary bounded requests. A decision carrying `valid_until`
+becomes a hard deadline; every decision is rechecked each
+`HAKU_KUBE_STREAM_REVALIDATION_INTERVAL`, so release, revocation or authority
+failure ends the stream within that interval plus the authorization timeout.
+
+Two limits are deliberately absent. A stream authorized by standing SAR policy
+carries no `valid_until` and therefore has no absolute lifetime; its authority is
+still bounded, because revalidation ends it once the standing decision stops
+allowing it. There is also no cap on concurrent streams per Agent. Both belong
+with the operational hardening in
+[#4562](https://github.com/agentydragon/ducktape/issues/4562) rather than here.
+
+Ending a stream cancels the upstream request after the response headers have been
+sent, so the caller observes a truncated response rather than a status code:
+`ErrorHandler` cannot run once a body has begun. This is how kube-apiserver
+itself ends a watch, and an ordinary Kubernetes client re-lists and receives the
+new denial.
 
 ## Console authorization contract
 
@@ -183,8 +213,8 @@ where transparent forwarding happens to work.
 
 Remaining work:
 
-- TODO(#4564): decide whether to implement Kubernetes `watch` and following
-  logs. Any implementation must preserve the standing-policy fail-closed model.
+- TODO(#4564): implement Kubernetes `watch`. It must preserve the
+  standing-policy fail-closed model.
 - TODO(#4562): revisit deeper metrics, alerts and failure hardening if operational experience
   justifies them.
 - TODO(#4428): consider discovery-response caching only if it preserves the
