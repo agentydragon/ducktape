@@ -9,8 +9,7 @@ are easy to omit when composing cases by hand.
 """
 
 import json
-from collections.abc import Iterable, Iterator, Sequence
-from functools import reduce
+from collections.abc import Iterator, Sequence
 from itertools import product
 
 import pytest
@@ -22,11 +21,10 @@ from haku.console.x.claude_code.projection import (
     OpenItem,
     ProjectionState,
     RecordedFrame,
-    finish,
     project,
-    project_log,
     undelivered,
 )
+from haku.console.x.claude_code.testing.fold import in_batches, whole_capture
 from haku.console.x.claude_code.testing.wire import (
     assistant,
     command_lifecycle,
@@ -73,7 +71,7 @@ def test_a_message_with_no_prose_in_it_is_not_a_message():
     holds means they open no message: what happened was a thought and a call, which are their own
     items and say so.
     """
-    events = project_log(
+    events = whole_capture(
         [
             recorded(1, assistant(thinking_block("The fixture says the fold is wrong here."), message_id="msg_A")),
             recorded(2, assistant(tool_use_block("toolu_1", "Bash", {"command": "ls"}), message_id="msg_A")),
@@ -92,7 +90,7 @@ def test_a_message_with_no_prose_in_it_is_not_a_message():
 
 def test_thinking_the_backend_will_not_show_you_is_an_item_with_no_prose():
     """`redacted_thinking`, which an empty summary string could not tell apart from silence."""
-    events = project_log(
+    events = whole_capture(
         [recorded(1, assistant({"type": "redacted_thinking", "data": "…"}, message_id="msg_A"))]
     ).events
 
@@ -112,7 +110,7 @@ def test_the_frames_of_one_message_are_not_always_contiguous():
     operator appealing the folded text to the raw JSON needs. The calls are sibling items with spans
     of their own, so a frame that contributed no words to the message does not widen it.
     """
-    events = project_log(
+    events = whole_capture(
         [
             recorded(1, assistant(text_block("reading both"), message_id="msg_A")),
             recorded(2, assistant(tool_use_block("toolu_1", "Read", {"file_path": "/a"}), message_id="msg_A")),
@@ -120,6 +118,8 @@ def test_the_frames_of_one_message_are_not_always_contiguous():
                 3, tool_result("toolu_1", "1\tcontents\n", structured={"file": {"filePath": "/a"}, "type": "text"})
             ),
             recorded(4, assistant(tool_use_block("toolu_2", "Read", {"file_path": "/b"}), message_id="msg_A")),
+            # A frame has to close the message: nothing may declare a stream over.
+            recorded(5, result()),
         ]
     ).events
 
@@ -131,8 +131,9 @@ def test_the_frames_of_one_message_are_not_always_contiguous():
         ToolCallCompleted,
         ToolCallStarted,
         MessageCompleted,
+        TurnCompleted,
     ]
-    completed = events[-1]
+    completed = events[-2]
     assert isinstance(completed, MessageCompleted)
     assert completed.provenance == FrameRange(1, 1)
     assert completed.backend_item_id == "msg_A"
@@ -141,7 +142,7 @@ def test_the_frames_of_one_message_are_not_always_contiguous():
 def test_the_tool_result_you_can_render_is_not_the_tool_result():
     """The showable half is segments like any other prose; the exit code and the MCP payload are not."""
     deferred_search = {"matches": [{"name": "Bash"}], "query": "shell", "total_deferred_tools": 112}
-    events = project_log(
+    events = whole_capture(
         [
             recorded(1, assistant(tool_use_block("toolu_1", "Bash", {"command": "ls | wc -l"}), message_id="msg_A")),
             recorded(2, tool_result("toolu_1", "3\n", structured=BASH_RESULT)),
@@ -178,7 +179,7 @@ def test_the_tool_result_you_can_render_is_not_the_tool_result():
 
 def test_a_result_that_is_a_list_of_text_blocks_is_still_prose():
     """The shape an MCP tool's result arrives in, and the one list shape that is not JSON here."""
-    events = project_log(
+    events = whole_capture(
         [recorded(1, tool_result("toolu_1", [{"type": "text", "text": "one "}, {"type": "text", "text": "two"}]))]
     ).events
 
@@ -187,14 +188,14 @@ def test_a_result_that_is_a_list_of_text_blocks_is_still_prose():
 
 def test_a_result_with_nothing_to_show_produces_no_segment():
     """An item's text is its segments, so a call that printed nothing must not carry an empty one."""
-    events = project_log([recorded(1, tool_result("toolu_1", "", structured=BASH_RESULT))]).events
+    events = whole_capture([recorded(1, tool_result("toolu_1", "", structured=BASH_RESULT))]).events
 
     assert [type(event) for event in events] == [ToolCallCompleted]
 
 
 def test_every_did_this_go_wrong_field_is_uninformative():
     """Absent `is_error` is not `is_error: false`, and a turn's outcome is not read off one at all."""
-    events = project_log(
+    events = whole_capture(
         [
             recorded(1, assistant(tool_use_block("toolu_1", "Bash", {"command": "true"}), message_id="msg_A")),
             recorded(2, tool_result("toolu_1", "ok", structured=BASH_RESULT)),
@@ -216,7 +217,7 @@ def test_every_did_this_go_wrong_field_is_uninformative():
 
 def test_most_of_the_wire_is_system_and_projects_to_nothing():
     """73% of frames are `system` and 15% of those carry one constant. They cost a set lookup."""
-    projection = project_log(
+    projection = whole_capture(
         [recorded(seq, heartbeat()) for seq in range(1, 40)]
         + [recorded(seq, system("status", status="working")) for seq in range(40, 80)]
         + [recorded(80, assistant(text_block("done"), message_id="msg_A")), recorded(81, result())]
@@ -234,7 +235,7 @@ def test_most_of_the_wire_is_system_and_projects_to_nothing():
 
 def test_the_default_branch_is_counted_rather_than_dropped_or_fatal():
     """Three frame classes and five `system` subtypes are undocumented, and the branch is routine."""
-    projection = project_log(
+    projection = whole_capture(
         [
             RecordedFrame(1, {"type": "tool_progress", "tool_use_id": "toolu_1", "elapsed_time_seconds": 31}),
             RecordedFrame(2, {"type": "tool_progress", "tool_use_id": "toolu_1", "elapsed_time_seconds": 62}),
@@ -279,8 +280,8 @@ def test_command_lifecycle_is_not_a_clean_triple():
         recorded(7, command_lifecycle("cmd_never_sent", "queued")),  # and one that never completes
     ]
 
-    with_lifecycle = project_log(sorted(conversation + lifecycle, key=lambda frame: frame.frame_seq))
-    assert with_lifecycle.events == project_log(conversation).events
+    with_lifecycle = whole_capture(sorted(conversation + lifecycle, key=lambda frame: frame.frame_seq))
+    assert with_lifecycle.events == whole_capture(conversation).events
     assert with_lifecycle.unprojected == {}
 
 
@@ -288,7 +289,7 @@ def test_a_background_task_says_nothing_to_the_neutral_vocabulary():
     """`task_started` and its terminal report are Claude's own concept — the harness's prose for a
     step in flight, keyed by identifiers no other backend has — so they are counted rather than
     projected. The frames stay in `session_frames` for anyone who wants them back."""
-    projection = project_log(
+    projection = whole_capture(
         [
             recorded(
                 1,
@@ -319,7 +320,7 @@ def test_a_background_task_says_nothing_to_the_neutral_vocabulary():
 
 def test_text_arrives_as_segments_and_the_completion_carries_none():
     """The invariant the whole vocabulary rests on: an item's text is exactly its segments."""
-    events = project_log(
+    events = whole_capture(
         [
             recorded(1, assistant(text_block("Looking at "), message_id="msg_A")),
             recorded(2, assistant(text_block("the migration."), message_id="msg_A")),
@@ -339,14 +340,20 @@ def test_text_arrives_as_segments_and_the_completion_carries_none():
 def test_deltas_are_not_what_text_is_projected_from():
     """`stream_event` occurs in 4 of 28 sessions and is mostly tool arguments, so a consumer built
     on it would render nothing on the other 24."""
-    projection = project_log(
+    projection = whole_capture(
         [
             recorded(1, text_delta("Look")),
             recorded(2, assistant(text_block("Looking at the migration."), message_id="msg_A")),
+            recorded(3, result()),
         ]
     )
 
-    assert [type(event) for event in projection.events] == [MessageStarted, ItemSegment, MessageCompleted]
+    assert [type(event) for event in projection.events] == [
+        MessageStarted,
+        ItemSegment,
+        MessageCompleted,
+        TurnCompleted,
+    ]
     assert projection.unprojected == {}
     # The one segment is the completed block's, not the delta's — the delta's frame projects to
     # nothing under this `DeltaSource`.
@@ -362,9 +369,10 @@ def test_a_live_consumer_cuts_the_same_prose_where_the_wire_cut_it():
         recorded(1, text_delta("Looking at ")),
         recorded(2, text_delta("the migration.")),
         recorded(3, assistant(text_block("Looking at the migration."), message_id="msg_A")),
+        recorded(4, result()),
     ]
 
-    live = project_log(frames, delta_source=DeltaSource.STREAM_EVENTS).events
+    live = whole_capture(frames, delta_source=DeltaSource.STREAM_EVENTS).events
 
     assert live == (
         MessageStarted(provenance=FrameRange(1, 1)),
@@ -374,10 +382,11 @@ def test_a_live_consumer_cuts_the_same_prose_where_the_wire_cut_it():
         # which under this `DeltaSource` would be an empty one, since the deltas already delivered
         # every word — and gives it the id the wire had not supplied yet.
         MessageCompleted(backend_item_id="msg_A", provenance=FrameRange(1, 3)),
+        TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=FrameRange(4, 4)),
     )
     # Granularity is the only difference: the prose a transcript keeps is the same either way.
     assert "".join(event.text for event in live if isinstance(event, ItemSegment)) == "".join(
-        event.text for event in project_log(frames).events if isinstance(event, ItemSegment)
+        event.text for event in whole_capture(frames).events if isinstance(event, ItemSegment)
     )
 
 
@@ -406,7 +415,7 @@ def test_a_live_consumer_is_not_shown_tool_arguments_as_prose():
     read them as an answer would render a half-typed JSON blob into the room."""
     arguments = recorded(1, input_json_delta('{"fi'))
 
-    assert project_log([arguments], delta_source=DeltaSource.STREAM_EVENTS).events == ()
+    assert whole_capture([arguments], delta_source=DeltaSource.STREAM_EVENTS).events == ()
 
 
 def test_a_streamed_tool_call_can_be_answered_before_a_completed_assistant_block():
@@ -431,14 +440,14 @@ def test_a_streamed_tool_call_can_be_answered_before_a_completed_assistant_block
         ),
     )
 
-    assert project_log(frames).events == expected
-    assert project_log(frames, delta_source=DeltaSource.STREAM_EVENTS).events == expected
-    assert all(_in_batches(batches) == Projection(events=expected, unprojected={}) for batches in _splits(frames))
+    assert whole_capture(frames).events == expected
+    assert whole_capture(frames, delta_source=DeltaSource.STREAM_EVENTS).events == expected
+    assert all(in_batches(batches) == Projection(events=expected, unprojected={}) for batches in _splits(frames))
 
 
 def test_a_completed_tool_block_does_not_repeat_the_streamed_call():
     """Older Claude builds emit both shapes; whichever arrives second is a compatibility copy."""
-    events = project_log(
+    events = whole_capture(
         [
             recorded(1, tool_use_start("toolu_1", "Bash", index=1)),
             recorded(2, input_json_delta('{"command": "true"}', index=1)),
@@ -480,10 +489,10 @@ def test_reprojection_reproduces_the_same_events():
     that detects drift is itself the thing drifting."""
     session = census_session()
 
-    first, second = project_log(session), project_log(session)
+    first, second = whole_capture(session), whole_capture(session)
     assert first == second
     # And a projection of the same frames read again, not the same objects folded twice.
-    assert project_log([RecordedFrame(frame.frame_seq, dict(frame.payload)) for frame in session]) == first
+    assert whole_capture([RecordedFrame(frame.frame_seq, dict(frame.payload)) for frame in session]) == first
 
 
 def test_a_batch_running_out_is_not_a_message_ending():
@@ -501,17 +510,9 @@ def test_a_batch_running_out_is_not_a_message_ending():
     state, second = project(state, [recorded(2, assistant(text_block("the migration."), message_id="msg_A"))])
 
     assert [type(event) for event in second.events] == [ItemSegment]
-    assert finish(state).events == (MessageCompleted(backend_item_id="msg_A", provenance=FrameRange(1, 2)),)
-
-
-def _in_batches(batches: Iterable[Sequence[RecordedFrame]]) -> Projection:
-    state = ProjectionState()
-    projected = []
-    for batch in batches:
-        state, batch_projection = project(state, batch)
-        projected.append(batch_projection)
-    projected.append(finish(state))
-    return reduce(Projection.then, projected)
+    # And nothing closes it: an item the frames left open stays open, here and in the log, and a
+    # transcript does not print one (<../transcript_entries.py>).
+    assert state.open_message == OpenItem(opened_at_frame_seq=1, last_frame_seq=2, backend_item_id="msg_A")
 
 
 def _splits(frames: Sequence[RecordedFrame]) -> Iterator[list[Sequence[RecordedFrame]]]:
@@ -532,12 +533,12 @@ def test_one_batch_and_any_split_of_batches_project_alike():
     happens to be behind" the same code path — checked over every split rather than a chosen one,
     since a live consumer's batches are whatever the socket handed it."""
     session = census_session()
-    whole = project_log(session)
+    # One frame at a time is what a live consumer does, so it is the answer every other cut of the
+    # same frames has to agree with — including one batch of everything, at the far end.
+    whole = whole_capture(session)
 
-    assert all(_in_batches(batches) == whole for batches in _splits(session))
-    # And the extreme the property exists for: one frame at a time, which is what a live
-    # consumer does.
-    assert _in_batches([[frame] for frame in session]) == whole
+    assert all(in_batches(batches) == whole for batches in _splits(session))
+    assert in_batches([session]) == whole
 
 
 if __name__ == "__main__":

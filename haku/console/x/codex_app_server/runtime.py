@@ -14,7 +14,7 @@ from pathlib import Path
 from haku.console.chat_models import RuntimeKind, TurnOutcome
 from haku.console.x.codex_app_server import frames, projection
 from haku.console.x.codex_app_server.client import CodexClientFactory, CodexThread, app_server_over_websocket
-from haku.console.x.conversation_events import Projection, TurnCompleted
+from haku.console.x.conversation_events import TurnCompleted
 from haku.console.x.runtime import (
     EMPTY_TURN_PROJECTION_SEED,
     FrameEffects,
@@ -81,11 +81,6 @@ class CodexRuntimeAdapter:
     def wake_watcher(self) -> None:
         # Codex's idle-time frames are unclassified, so the stream is only consumed inside a turn.
         return None
-
-    def project_log(self, frames_: Iterable[tuple[int, HarnessFrame]]) -> Projection:
-        return projection.project_log(
-            projection.RecordedFrame(frame_seq=seq, payload=envelope.frame) for seq, envelope in frames_
-        )
 
     def prompt_submitted(self, outbound: Iterable[HarnessFrame]) -> bool:
         return any(frames.is_prompt(envelope.frame) for envelope in outbound)

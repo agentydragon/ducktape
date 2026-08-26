@@ -21,6 +21,7 @@ from haku.console.chat_models import (
 from haku.console.database_schema import ConversationItem, SessionFrame
 from haku.console.x import session_views
 from haku.console.x.claude_code import projection
+from haku.console.x.claude_code.testing.fold import whole_capture
 from haku.console.x.claude_code.testing.wire import assistant, tool_result, tool_use_block
 from haku.console.x.session_store import BridgeAuthentication
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
@@ -98,7 +99,7 @@ async def test_a_calls_output_reads_back_as_the_items_text(chat_store, operator_
             view.session_id,
             started.turn_id,
             frame_seq,
-            projection.project_log(
+            whole_capture(
                 [
                     projection.RecordedFrame(
                         frame_seq=frame_seq, payload=assistant(tool_use_block(call_id, "Bash", {}))

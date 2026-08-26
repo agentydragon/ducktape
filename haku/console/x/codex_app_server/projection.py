@@ -3,8 +3,8 @@
 Pinned protocol evidence: ``@openai/codex@0.144.1`` / upstream tag ``rust-v0.144.1``.  The exact
 schema and source references are recorded in ``docs/protocol_evidence.md``.
 
-The provider runtime wraps this reducer for live frames and complete-log reprojection. Native
-methods and item shapes remain private to this package; only neutral conversation events leave it.
+The provider runtime wraps this reducer for the live turn loop. Native methods and item shapes
+remain private to this package; only neutral conversation events leave it.
 
 Only facts represented by the existing conversation vocabulary are projected:
 
@@ -111,26 +111,6 @@ def project(state: ProjectionState, frames: Iterable[RecordedFrame]) -> tuple[Pr
         ),
         projector.projected(),
     )
-
-
-def finish(state: ProjectionState) -> Projection:
-    """Close prose items when a caller knows no more native frames can arrive."""
-    events: list[ConversationEvent] = []
-    if state.open_message is not None:
-        events.append(
-            MessageCompleted(backend_item_id=state.open_message.backend_item_id, provenance=_span(state.open_message))
-        )
-    if state.open_reasoning is not None:
-        events.append(
-            ReasoningCompleted(disclosure=ReasoningDisclosure.SUMMARY, provenance=_span(state.open_reasoning))
-        )
-    return Projection(events=tuple(events), unprojected=MappingProxyType({}))
-
-
-def project_log(frames: Iterable[RecordedFrame]) -> Projection:
-    """Project a complete native message log; repeated calls on the same log are identical."""
-    state, projected = project(ProjectionState(), frames)
-    return projected.then(finish(state))
 
 
 @dataclass(slots=True)

@@ -32,10 +32,8 @@ measurements belong in protocol fixtures, not in this record model.
 
 from __future__ import annotations
 
-from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
-from types import MappingProxyType
 
 from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
 
@@ -224,14 +222,3 @@ class Projection:
 
     events: tuple[ConversationEvent, ...]
     unprojected: Mapping[str, int]
-
-    def then(self, later: Projection) -> Projection:
-        """This stretch of frames followed by the next one, as a single projection.
-
-        Frames read in one batch and the same frames read in any split, combined this way, are
-        equal. Counts sum because `unprojected` tallies frames read, not a set of what exists.
-        """
-        return Projection(
-            events=self.events + later.events,
-            unprojected=MappingProxyType(dict(Counter(self.unprojected) + Counter(later.unprojected))),
-        )

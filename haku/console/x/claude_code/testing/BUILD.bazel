@@ -8,6 +8,15 @@ package(
 )
 
 py_library(
+    name = "fold",
+    srcs = ["fold.py"],
+    deps = [
+        "//haku/console/x:conversation_events",
+        "//haku/console/x/claude_code:projection",
+    ],
+)
+
+py_library(
     name = "wire",
     srcs = ["wire.py"],
     deps = ["//haku/console/x/claude_code:projection"],

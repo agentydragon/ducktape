@@ -3,8 +3,9 @@ from pathlib import Path
 import pytest_bazel
 
 from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
-from haku.console.x.codex_app_server.projection import RecordedFrame, project_log
+from haku.console.x.codex_app_server.projection import RecordedFrame
 from haku.console.x.codex_app_server.protocol import read_trace, server_messages
+from haku.console.x.codex_app_server.testing.fold import whole_capture
 from haku.console.x.conversation_events import (
     CallRef,
     FrameRange,
@@ -31,7 +32,7 @@ def _frames() -> tuple[RecordedFrame, ...]:
 
 
 def test_real_capture_projects_both_observed_turn_lifecycles():
-    projection = project_log(_frames())
+    projection = whole_capture(_frames())
 
     assert projection.events == (
         MessageStarted(provenance=FrameRange(12, 12)),

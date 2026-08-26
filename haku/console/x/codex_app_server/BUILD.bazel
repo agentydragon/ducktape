@@ -30,6 +30,10 @@ py_library(
 py_library(
     name = "projection",
     srcs = ["projection.py"],
+    visibility = [
+        "//haku/console/x:__pkg__",
+        "//haku/console/x/codex_app_server/testing:__pkg__",
+    ],
     deps = [
         ":frames",
         ":protocol",
@@ -160,6 +164,7 @@ py_test(
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console/x:conversation_events",
+        "//haku/console/x/codex_app_server/testing:fold",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
@@ -175,6 +180,7 @@ py_test(
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console/x:conversation_events",
+        "//haku/console/x/codex_app_server/testing:fold",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],

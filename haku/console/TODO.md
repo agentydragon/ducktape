@@ -412,20 +412,6 @@ warm pool, OAuth placeholder, system-prompt template and MCP URL; a concrete nee
 instances of one implementation kind would replace that with keyed runtime instances without
 changing session Agent identity.
 
-## Decide what `RuntimeAdapter.project_log` is for, now that no read calls it
-
-`read_transcript` folds `conversation_event` rather than re-projecting a session's frames, so the
-whole-log projection has no production caller left: the protocol method, both adapters'
-implementations, and `Projection.unprojected` are reached only from the adapters' own tests. That
-coverage is not incidental — `x/claude_code/test_diverse_session.py` names every frame class a
-138-frame production capture holds that the adapter has no rule for, and that is the only place the
-signal is asserted at all.
-
-So it is a choice rather than a deletion. Either keep `project_log` as the adapters' whole-log
-contract and say in `x/runtime.py` that its callers are tests, or re-express those fixtures through
-`turn_handler` — the reducer the live path, adoption and reprojection all drive — and drop the
-second entry point. Deleting it together with the coverage is the one option to refuse.
-
 ## Small cleanups
 
 - `CodexThread.approval_policy` and `.sandbox` (`x/codex_app_server/client.py`) are bare `str` over

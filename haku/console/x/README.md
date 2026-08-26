@@ -245,16 +245,18 @@ are, so it lives under the harness directory beside `claude_code/frames.py`, whi
 names are spelled. A second backend adds a sibling adapter and touches neither the vocabulary nor
 its readers.
 
-**The reducer's own contract is in `claude_code/projection.py`** — what `project`, `finish` and
-`project_log` each mean, why a batch boundary is not an ending, and the wire facts every rule in
-it answers. It is not restated here; what follows is who reads it and what is not yet on it.
+**The reducer's own contract is in `claude_code/projection.py`** — what `project` means, why a
+batch boundary is not an ending, and the wire facts every rule in it answers. It is not restated
+here; what follows is who reads it and what is not yet on it.
 
-**The live path is what reads them.** A stored session is read from the log instead:
-`SessionStore.read_transcript` selects the session's `conversation_event` rows and
+**The live turn loop is the only thing that folds frames.** A stored session is read from the log
+instead: `SessionStore.read_transcript` selects the session's `conversation_event` rows and
 `transcript_entries.py` folds them onto the read models in `conversation_records.py`, so
 `haku_conversations` needs neither an adapter nor the session's `runtime_kind` to answer what was
-said. `RuntimeAdapter.project_log` has no production caller left; the adapters' own tests are what
-still exercise it.
+said. There is no whole-log projection any more — no `project_log` on the adapter, and no `finish`
+that declares a stream over — so an item the frames left open stays open, and only a frame closes
+one. A capture is still folded in tests, through the same reducer one frame at a time
+(`claude_code/testing/fold.py`).
 
 **One typed integration boundary.** `_run_turn` gives each exact native frame to the selected
 runtime's stateful `RuntimeTurnHandler` and acts only on its neutral `FrameEffects`. The integration
@@ -342,13 +344,14 @@ Four properties hold the design up, each stated where it is kept — break one a
 meaning anything:
 
 - `project` is pure and deterministic (`projection.py`).
-- One batch and any split of batches project alike (`Projection.then`).
+- One batch and any split of batches project alike (`claude_code/test_projection.py`).
 - Every event carries provenance, and it is a union, so a rebuild cannot delete an authored event
   (`conversation_events.Authored`).
-- The default branch is counted, not dropped (`Projection.unprojected`). Nothing on a read path
-  surfaces that count any more: `read_transcript`'s `unreadable` counts log rows of a kind this
-  release cannot read, which is the same warning about a different record. The raw-frame inspector
-  itself presents exact JSON and does not classify native frames.
+- The default branch is counted, not dropped (`Projection.unprojected`). No surface carries that
+  count any more — `read_transcript`'s `unreadable` is the same warning about the log rather than
+  the wire — so what asserts it is the adapters' own capture tests, which name every frame class
+  a recorded session reached the default branch with. The raw-frame inspector itself presents exact
+  JSON and does not classify native frames.
 
 Before changing the adapter, read `../../cli_protocol/protocol.md` and the adjacent fixtures:
 the wire is version-pinned, and tests preserve the shapes the projection must tolerate.

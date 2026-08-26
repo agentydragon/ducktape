@@ -85,7 +85,6 @@ from haku.console.x.conversation_events import (
     MessageCompleted,
     MessageStarted,
     OpenRef,
-    Projection,
     ReasoningStarted,
     ToolCallCompleted,
     ToolCallStarted,
@@ -633,13 +632,6 @@ class _UnrelatedRuntimeAdapter:
 
     def turn_handler(self, seed: TurnProjectionSeed = EMPTY_TURN_PROJECTION_SEED) -> _UnrelatedTurnHandler:
         return _UnrelatedTurnHandler(seed)
-
-    def project_log(self, frames: Iterable[tuple[int, HarnessFrame]]) -> Projection:
-        handler = self.turn_handler()
-        events: list[NeutralConversationEvent] = []
-        for frame_seq, frame in frames:
-            events.extend(handler.apply(frame_seq=frame_seq, frame=frame).events)
-        return Projection(events=tuple(events), unprojected={})
 
     def prompt_submitted(self, frames: Iterable[HarnessFrame]) -> bool:
         return any(frame.frame.get("动作") == "输入" for frame in frames)

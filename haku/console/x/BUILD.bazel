@@ -51,6 +51,7 @@ py_test(
         ":runtime_catalog",
         "//:conftest",
         "//haku/console/x/claude_code:projection",
+        "//haku/console/x/claude_code/testing:fold",
         "//haku/console/x/claude_code/testing:wire",
         "//haku/console/x/codex_app_server:runtime",
         "@pypi//pytest",
@@ -485,6 +486,7 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console/x/claude_code:projection",
         "//haku/console/x/claude_code:runtime",
+        "//haku/console/x/claude_code/testing:fold",
         "//haku/console/x/claude_code/testing:wire",
         "//haku/runtime/x/bridge:protocol",
         "//util:sqlalchemy_types",
@@ -624,6 +626,7 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console/x/claude_code:projection",
+        "//haku/console/x/claude_code/testing:fold",
         "//haku/console/x/claude_code/testing:wire",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",

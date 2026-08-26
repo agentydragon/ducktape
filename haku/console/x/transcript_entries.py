@@ -7,10 +7,9 @@ a change to either shows up here rather than as a surface quietly drifting from 
 claims to expose.
 
 **The log is what is folded, not the frames behind it.** `conversation_event` is the record, written
-once as each frame arrived, so a transcript says what the console recorded rather than what
-re-reading the frames through today's adapter would make of them. Two things follow: this fold names
-no harness and needs no adapter to run, and a session that ran before a projection fix keeps the
-history it actually had. <reprojection.py> is what says where the two disagree.
+once as each frame arrived, so a transcript says what the console recorded rather than what today's
+adapter would now make of the same frames. This fold therefore names no harness, and a session that
+ran before a projection fix keeps the history it had — <reprojection.py> says where the two differ.
 
 **Segments are folded here rather than handed on.** The vocabulary emits prose as increments so a
 live channel can print them as they arrive; a transcript is read after the fact and wants the item,
@@ -43,9 +42,9 @@ logger = logging.getLogger(__name__)
 class _Open:
     """An item the fold has seen the start of: what opening it said, and the prose since.
 
-    The opening body is kept because a completion does not repeat it — a call's `call_id` and a
-    prompt's origin are written once, on the row that opens the item, and the log pairs an item's
-    two ends by `item_id` rather than by copying either onto the other.
+    The opening body is kept because a completion does not repeat it: a call's `call_id` and a
+    prompt's origin are written once, where the item opens, and the log pairs an item's two ends by
+    `item_id`.
     """
 
     started: session_events.ItemStartedBody
@@ -104,10 +103,9 @@ def _entry(
             | session_events.ReasoningStartedBody()
             | session_events.PromptStartedBody()
         ):
-            # **Never reopens an item that is already open.** A fold resuming mid-message writes a
-            # second opening row about the message its predecessor left open
-            # (<conversation_log.py> `_item_for`), and starting fresh here would drop the prose
-            # already folded into it.
+            # Never reopens: a fold resuming mid-message writes a second opening row about the
+            # message its predecessor left open (<conversation_log.py> `_item_for`), and starting
+            # fresh here would drop the prose already folded into it.
             open_items.setdefault(_item(row), _Open(started=body))
             return None
         case session_events.SegmentBody():
@@ -138,9 +136,9 @@ def _entry(
             | session_events.SessionEndedBody()
             | session_events.SetupNarrationBody()
         ):
-            # The session's own story rather than the conversation's: which replica held the lease,
-            # what the sandbox printed coming up, a prompt that was refused and never delivered.
-            # The console's session views are where those are read.
+            # The session's own story rather than the conversation's — which replica held the
+            # lease, what the sandbox printed, a prompt refused and never delivered. The console's
+            # session views are where those are read.
             return None
 
 
@@ -180,14 +178,12 @@ def _finished(
 
 
 def _unopened(row: ConversationEventRow) -> None:
-    """A row about an item the fold does not have open: a repeat, or a log that contradicts itself.
+    """A row about an item the fold does not have open.
 
-    The adapters address a tool call by the id its protocol supplies and do not deduplicate, so a
-    `tool_result` block the wire repeated reaches the log as a second close of an item already
-    reported — and the first close is the one that happened, exactly as it is for a turn. A row that
-    is not a repeat means the log disagrees with itself, which `conversation_log` refuses to write.
-    Neither is worth losing the rest of the conversation over, so both are said out loud and passed
-    over.
+    A `tool_result` block the wire repeated reaches the log as a second close, because the adapters
+    address a call by its protocol id and do not deduplicate; the first close is the one that
+    happened, as it is for a turn. Anything else means the log contradicts itself, which
+    `conversation_log` refuses to write. Neither is worth losing the conversation over.
     """
     logger.warning("a transcript fold has no open item for a row about one: %s/%s", row.conversation_id, row.event_seq)
 

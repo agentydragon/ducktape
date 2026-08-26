@@ -652,7 +652,7 @@ count an agent receives changes name on its way out — `Transcript.unreadable`,
 `TranscriptSlice.unreadable`, `TranscriptPage.unreadable` — so grepping any one spelling finds
 tests and little else. `unprojected` itself now reaches none of them: the transcript is folded from
 the log, so it counts log kinds it cannot read, and the adapter's count of frame classes it could
-not map is left with no reader outside the adapters' own tests.
+not map is asserted by the capture tests and shown to nobody.
 
 **The runtime seam now enforces the rule.** `RuntimeAdapter.turn_handler()` returns a provider-owned,
 typed stateful reducer, and each native frame crosses back into generic Console code only as neutral

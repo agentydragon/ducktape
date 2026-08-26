@@ -3,8 +3,9 @@ from pathlib import Path
 import pytest_bazel
 
 from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
-from haku.console.x.codex_app_server.projection import OpenItem, ProjectionState, RecordedFrame, project, project_log
+from haku.console.x.codex_app_server.projection import OpenItem, ProjectionState, RecordedFrame, project
 from haku.console.x.codex_app_server.protocol import read_trace, server_messages
+from haku.console.x.codex_app_server.testing.fold import in_batches, whole_capture
 from haku.console.x.conversation_events import (
     CallRef,
     FrameRange,
@@ -32,7 +33,7 @@ def frames() -> tuple[RecordedFrame, ...]:
 
 
 def test_schema_derived_fixture_projects_the_supported_surface():
-    projection = project_log(frames())
+    projection = whole_capture(frames())
 
     assert projection.events == (
         ReasoningStarted(provenance=FrameRange(10, 10)),
@@ -95,19 +96,15 @@ def test_schema_derived_fixture_projects_the_supported_surface():
 
 def test_every_batching_and_reprojection_of_the_fixture_is_identical():
     native = frames()
-    expected = project_log(native)
-    assert project_log(native) == expected
-    assert project_log(native) == expected
+    expected = whole_capture(native)
+    assert whole_capture(native) == expected
 
     for split in range(len(native) + 1):
-        state, first = project(ProjectionState(), native[:split])
-        state, second = project(state, native[split:])
-        assert state == ProjectionState()
-        assert first.then(second) == expected
+        assert in_batches([native[:split], native[split:]]) == expected
 
 
 def test_malformed_and_unknown_notifications_fail_softly():
-    projection = project_log(
+    projection = whole_capture(
         (
             RecordedFrame(1, {"method": "item/started", "params": {"item": {"type": "agentMessage"}}}),
             RecordedFrame(2, {"method": "item/agentMessage/delta", "params": []}),
@@ -131,7 +128,7 @@ def test_nonterminal_and_duplicate_tool_completions_fail_softly():
         "exitCode": 0,
         "durationMs": 5,
     }
-    projection = project_log(
+    projection = whole_capture(
         (
             RecordedFrame(1, {"method": "item/started", "params": {"item": {**item, "status": "inProgress"}}}),
             RecordedFrame(2, {"method": "item/completed", "params": {"item": {**item, "status": "inProgress"}}}),

@@ -11,14 +11,13 @@ hypothesis — the forwarded subagent frame above all — the test says so, and
 <claude_code/testdata/> is where the capture that settles it will land
 (<README.md> § Recording a session as a fixture).
 
-**Both folds are asserted, because they answer different questions.** `project_log` reads a whole
-session and declares it over; the runtime's turn handler is the write path's own stateful fold, and
-what it emits is what the log gets a row for.
+**The fold under test is the write path's.** `RuntimeTurnHandler.apply` is what `_run_turn`
+drives frame by frame, and what it emits is what the log gets a row for; <claude_code/testing/fold.py>
+is that same reducer over a whole capture, for a test holding a session rather than a turn.
 """
 
 from __future__ import annotations
 
-from collections import Counter
 from collections.abc import Sequence
 
 import pytest_bazel
@@ -26,11 +25,13 @@ from more_itertools import one
 
 from haku.console.chat_models import ConversationEventKind, ToolOutcome
 from haku.console.x import session_events
-from haku.console.x.claude_code.projection import RecordedFrame, project_log
+from haku.console.x.claude_code.projection import RecordedFrame
 from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
+from haku.console.x.claude_code.testing.fold import whole_capture
 from haku.console.x.claude_code.testing.wire import (
     assistant,
     recorded,
+    result,
     system,
     text_block,
     tool_progress,
@@ -99,6 +100,9 @@ def _subagent_frames(*, nested: bool) -> list[RecordedFrame]:
         recorded(4, tool_result("toolu_inner", "3 matches", parent_tool_use_id=parent)),
         recorded(5, tool_result("toolu_task", "the subagent's report")),
         recorded(6, assistant(text_block("three test files"), message_id="msg_B")),
+        # The turn's own end. Without it the last message stays open, because no reader may declare
+        # a stream over: only a frame closes an item.
+        recorded(7, result()),
     ]
 
 
@@ -109,7 +113,7 @@ def test_a_subagents_frames_project_exactly_as_the_sessions_own():
     attributed to the session with nothing saying whose work it was, and a transcript renders the
     subagent's inner turns inline.
     """
-    assert project_log(_subagent_frames(nested=True)) == project_log(_subagent_frames(nested=False))
+    assert whole_capture(_subagent_frames(nested=True)) == whole_capture(_subagent_frames(nested=False))
 
 
 def test_the_call_that_spawned_the_subagent_belongs_to_no_message_at_all():
@@ -120,7 +124,7 @@ def test_the_call_that_spawned_the_subagent_belongs_to_no_message_at_all():
     that actually happened, and the answer arriving five frames later is paired by `call_id` rather
     than by which message's span contains it.
     """
-    events = project_log(_subagent_frames(nested=True)).events
+    events = whole_capture(_subagent_frames(nested=True)).events
     said = {event.backend_item_id: event.provenance for event in events if isinstance(event, MessageCompleted)}
 
     assert said == {"msg_SUB": FrameRange(2, 2), "msg_B": FrameRange(6, 6)}
@@ -134,7 +138,7 @@ def test_the_only_nested_frame_class_production_sends_is_unprojected():
     """`tool_progress` is absent from `protocol.md`, but the fold must still count it as
     unprojected. Routing on `parent_tool_use_id` would route heartbeats into a subagent
     view; this one has no case for the class, so it lands in the default branch and is counted."""
-    projection = project_log(
+    projection = whole_capture(
         [
             recorded(1, assistant(tool_use_block("toolu_task", "Task", {"prompt": "find the tests"}))),
             recorded(2, tool_progress("toolu_inner", "Grep", parent_tool_use_id="toolu_task", elapsed_time_seconds=30)),
@@ -183,7 +187,7 @@ def test_a_backgrounded_call_completes_while_its_command_is_still_running():
     completed call as a finished command reports this one done a minute early, and the shell id that
     would let it know better is only inside `structured`.
     """
-    events = project_log(_background_bash_frames()).events
+    events = whole_capture(_background_bash_frames()).events
 
     started = one(event for event in events if isinstance(event, ToolCallStarted))
     assert started.arguments["run_in_background"] is True
@@ -203,7 +207,7 @@ def test_the_background_tasks_own_frames_say_nothing_to_the_fold():
     That is the deliberate loss: a task's identifiers and the harness's prose about it are Claude's
     concepts, and the neutral vocabulary carries none. The frames stay in `session_frames`.
     """
-    projection = project_log(_background_bash_frames())
+    projection = whole_capture(_background_bash_frames())
 
     assert projection.unprojected == {"system/task_started": 1, "system/task_notification": 1}
     assert not [event for event in projection.events if event.provenance in (FrameRange(3, 3), FrameRange(5, 5))]
@@ -280,20 +284,18 @@ def test_the_write_path_no_longer_splits_a_message_across_its_frames():
     ]
 
 
-def test_the_read_path_closes_the_message_the_write_path_leaves_open():
-    """The one difference left between the two folds, and it is the honest one.
-
-    `project_log` reads a whole session and declares it over, so it closes the message at the end;
-    the write path is still mid-turn and has nothing to say about an item still being written into.
-    What closes it there is `session_store.close_answer`, in the transaction that ends the turn.
+def test_folding_a_capture_and_writing_a_turn_are_one_fold():
+    """They used to differ by one event: a whole-log read declared the stream over and closed the
+    message the write path left open. Nothing declares that now — a transcript is folded from the
+    stored log, so an item the frames left open stays open in both, and what closes it is a frame
+    that says so or `session_store.close_answer` in the transaction that ends the turn.
     """
     frames = _interleaved_frames()
-    read, write = project_log(frames).events, _write_path(frames)
 
-    assert [event.provenance for event in read if isinstance(event, MessageCompleted)] == [FrameRange(1, 3)]
-    assert [event for event in write if isinstance(event, MessageCompleted)] == []
-    # And up to that point they are the same fold: same events, same order.
-    assert Counter(type(event) for event in write) == Counter(type(event) for event in read[:-1])
+    read, write = whole_capture(frames).events, _write_path(frames)
+
+    assert read == write
+    assert not [event for event in read if isinstance(event, MessageCompleted)]
 
 
 def test_a_foreground_message_spans_the_background_frames_the_fold_ignores():
@@ -319,7 +321,7 @@ def test_a_foreground_message_spans_the_background_frames_the_fold_ignores():
         recorded(5, system("task_notification", task_id="task_1", status="completed", summary="ok")),
         recorded(6, assistant(text_block("and it passed"), message_id="msg_B")),
     ]
-    events = project_log(frames).events
+    events = whole_capture(frames).events
 
     foreground = one(
         event for event in events if isinstance(event, MessageCompleted) and event.backend_item_id == "msg_A"
