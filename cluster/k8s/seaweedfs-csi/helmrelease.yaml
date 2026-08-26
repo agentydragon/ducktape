@@ -37,6 +37,39 @@ spec:
     storageClassName: seaweedfs-ovh
     storageClassVolumeBindingMode: WaitForFirstConsumer
 
+    # Bound the per-mount in-memory write buffer. `weed mount` accumulates dirty
+    # pages as chunks of -chunkSizeLimitMB (2MB) and allocates a new in-memory one
+    # only while `memChunkCounter < 4*writableChunkLimit`
+    # (weed/mount/page_writer/upload_pipeline.go), where writableChunkLimit is
+    # exactly this value; past that, chunks spill to the on-disk swap file under
+    # -cacheDir. So the ceiling is 4 x concurrentWriters x 2MB *per weed-mount
+    # process*, and the mount pod runs one such process per PVC on the node --
+    # at the default 128 that is 1GiB each, unbounded in aggregate.
+    #
+    # 64 -> 512MiB/process. The busiest mount observed held ~245Mi of Go heap
+    # (~122 chunks); 64 allows 256 chunks, ~2x that. Dropping to 32 would cap at
+    # 128 chunks, i.e. right at the observed working set, pushing a normally-loaded
+    # mount onto the disk swap path for no benefit.
+    #
+    # The knob that would bound this properly is `weed mount -writeBufferSizeMB`
+    # (a real accountant with a disk evictor, weed/mount/weedfs.go). The CSI driver
+    # does not pass it -- it is absent from buildMountArgs' argsMap on v1.4.14,
+    # v1.4.15 and master -- so it is unreachable without an upstream change.
+    #
+    # NOTE: GOMEMLIMIT is not an alternative here. The env var is inherited by every
+    # forked weed-mount child and applied per process, so a pod-level budget divided
+    # by a child count that varies with PVC scheduling has no correct static value.
+    #
+    # Rollout: this is a top-level chart value and lands as --concurrentWriters on
+    # the *node* DaemonSet (templates/daemonset.yaml), which is RollingUpdate -- so
+    # it rolls on apply. That is safe: the node plugin serves CSI RPCs and holds no
+    # FUSE mounts (those are in the mount DaemonSet), so the only window is a few
+    # seconds per node where NodeStage/NodePublish is unavailable and a starting pod
+    # retries. The node plugin builds the mount args and sends them to the mount
+    # service per volume, so the new value applies to newly staged volumes; volumes
+    # already mounted keep 128 until their weed-mount process restarts.
+    concurrentWriters: 64
+
     # Chart appVersion (v1.4.15) doesn't exist on Docker Hub yet; pin both
     # plugin and mount-service images to the latest published tag.
     seaweedfsCsiPlugin:
@@ -58,17 +91,28 @@ spec:
       # catastrophic and silent -- consumers keep a dead mount ("transport
       # endpoint is not connected") while their own readiness stays green. That
       # is exactly how it died on 2026-08-23, breaking ~half of all git for
-      # ~14.5h (agentydragon/ducktape#4616). Request sized above observed
-      # working set (~300Mi peak aggregate across a node's volumes); generous
-      # memory limit as a safety cap; no CPU limit (never throttle the live data
-      # path). priorityClassName (system-node-critical, chart default) already
-      # shields from preemption and defers eviction in the priority sort.
+      # ~14.5h (agentydragon/ducktape#4616). No CPU limit (never throttle the
+      # live data path). priorityClassName (system-node-critical, chart default)
+      # already shields from preemption and defers eviction in the priority sort.
+      #
+      # Sized on measured usage, not estimate. A pod's footprint scales with the
+      # number of PVCs the scheduler put on its node (one weed-mount process
+      # each), so the busiest node is the one that matters -- 6 mounts on
+      # ovh-ns104952, over 30d: p50 434Mi, p90 607Mi, p99 705Mi, max 1728Mi.
+      #   - request 640Mi: above that p90, so kubelet node-pressure eviction
+      #     ranks it last. (The previous 384Mi predates this measurement and was
+      #     below the busiest node's *median*.)
+      #   - limit 2Gi: the observed 1728Mi peak was taken under the old
+      #     concurrentWriters=128 ceiling, so halving that should keep a 6-mount
+      #     node near ~1.2GiB -- but that is an estimate, and a limit reserves
+      #     nothing. For a pod whose death silently breaks every volume on the
+      #     node, headroom is the right trade.
       resources:
         requests:
           cpu: 100m
-          memory: 384Mi
+          memory: 640Mi
         limits:
-          memory: 1536Mi
+          memory: 2Gi
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
