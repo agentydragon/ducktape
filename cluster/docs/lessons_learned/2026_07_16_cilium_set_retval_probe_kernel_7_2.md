@@ -1,6 +1,13 @@
 # Cilium agent fatals on kernel ≥ 7.2-rc1: `bpf_set_retval` feature probe
 
-**Date**: 2026-07-16. **Status**: open — upstream fix pending, `rugged` CNI down.
+**Date**: 2026-07-16. **Status**: resolved for `rugged` 2026-08-26 (remediation
+3B below: the Xe/TTM fix this host needed the RC kernel for, `ba7fd1634228`,
+is confirmed present in `linuxPackages_latest` 7.1.8, so `rugged` now runs
+that stable kernel directly with no override — see
+`nix/nixos/hosts/rugged/default.nix`). Upstream `cilium/ebpf` probe fix
+(remediation 1) still not shipped as of that date; the general "every kernel ≥
+7.2-rc1, every released Cilium" blast radius remains open for anyone actually
+needing a ≥ 7.2 kernel.
 
 ## Symptom
 

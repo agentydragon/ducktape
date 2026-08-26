@@ -434,3 +434,17 @@ future swap activity prefer compressed RAM and reducing eager disk swap-out of
 cold desktop pages. It does not fix the USB HID reset path; if pointer-only
 lag continues after the memory change, test the same mouse/dongle through a
 different port/hub or swap the device to isolate hardware/cable/dock flapping.
+
+## 2026-08-26: Xe/TTM fix confirmed backported to stable, RC kernel dropped
+
+The `linuxPackages_testing` (nixpkgs-master, 7.2-rc) pin taken for the Xe/TTM
+fix (`ba7fd1634228`, "drm/xe: Set TTM device beneficial_order to 9 (2M)")
+broke `cilium-agent` on `rugged` for unrelated reasons (kernel BPF verifier
+hardening in the same RC tree; see
+`cluster/docs/lessons_learned/2026_07_16_cilium_set_retval_probe_kernel_7_2.md`).
+Building the actual `linux-7.1.8` derivation (`pkgs.linuxPackages_latest` at
+the current nixpkgs-26.05 pin) and attempting to apply that same commit as a
+local patch confirmed it via `patch`'s own "reversed (or previously applied)
+patch detected" — the fix is already in stable 7.1.8. `default.nix` now runs
+`linuxPackages_latest` directly (via `./ipu7-camera.nix`) with no override and
+no local patch.
