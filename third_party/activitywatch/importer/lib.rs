@@ -41,10 +41,12 @@ use aw_models::BucketMetadata;
 use aw_models::Event;
 use chrono::DateTime;
 use chrono::Duration;
+use chrono::Utc;
 use serde_json::Map;
 use serde_json::Value;
 
 use crate::snapshot::SourceBucket;
+use crate::snapshot::SourceEvent;
 
 const NANOS_PER_SEC: i64 = 1_000_000_000;
 
@@ -95,7 +97,7 @@ pub struct BucketImport {
     pub dest_bucket: String,
     pub source_events: usize,
     pub distinct_source: usize,
-    pub existing_before: usize,
+    pub existing_in_window: usize,
     pub inserted: usize,
 }
 
@@ -150,11 +152,21 @@ fn import_snapshot(
         let dest_bucket = format!("{device}::{}", bucket.name);
         ensure_bucket(datastore, &dest_bucket, device, &bucket)?;
 
-        let existing = datastore.get_events_unclipped(&dest_bucket, None, None, None)?;
-        let existing_before = existing.len();
+        let source_events = snapshot::read_events(&conn, path, bucket.bid)?;
+
+        // Dedup only needs existing events that could share a source event's exact
+        // (start, end) -- all within the source's own time span -- so read that
+        // window (see `dedup_window`) instead of the whole bucket, keeping a
+        // re-import proportional to the overlap rather than the accumulated history.
+        let existing = match dedup_window(&source_events) {
+            Some((start, end)) => {
+                datastore.get_events_unclipped(&dest_bucket, Some(start), Some(end), None)?
+            }
+            None => Vec::new(),
+        };
+        let existing_in_window = existing.len();
         let mut seen: HashSet<EventKey> = existing.iter().map(dest_event_key).collect();
 
-        let source_events = snapshot::read_events(&conn, path, bucket.bid)?;
         let mut distinct = HashSet::new();
         let mut to_insert = Vec::new();
         for raw in &source_events {
@@ -180,7 +192,7 @@ fn import_snapshot(
             dest_bucket,
             source_events: source_events.len(),
             distinct_source: distinct.len(),
-            existing_before,
+            existing_in_window,
             inserted: to_insert.len(),
         });
     }
@@ -220,14 +232,31 @@ fn ensure_bucket(
 }
 
 fn build_event(start_nanos: i64, end_nanos: i64, data: Map<String, Value>) -> Event {
-    let secs = start_nanos.div_euclid(NANOS_PER_SEC);
-    let subsec = start_nanos.rem_euclid(NANOS_PER_SEC) as u32;
-    let timestamp = DateTime::from_timestamp(secs, subsec).expect("source timestamp within range");
     Event::new(
-        timestamp,
+        nanos_to_datetime(start_nanos),
         Duration::nanoseconds(end_nanos - start_nanos),
         data,
     )
+}
+
+fn nanos_to_datetime(nanos: i64) -> DateTime<Utc> {
+    let secs = nanos.div_euclid(NANOS_PER_SEC);
+    let subsec = nanos.rem_euclid(NANOS_PER_SEC) as u32;
+    DateTime::from_timestamp(secs, subsec).expect("source timestamp within representable range")
+}
+
+/// The window of stored events to dedup a source batch against: the batch's
+/// `[min start, max end]` span, widened 1ns each side. A stored event can only
+/// collide with a source event by sharing its exact `(start, end)`, so it always
+/// overlaps this span -- reading the window is enough, and costs the overlap rather
+/// than the bucket's whole history. `None` when the batch is empty.
+fn dedup_window(events: &[SourceEvent]) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
+    let min_start = events.iter().map(|event| event.start_nanos).min()?;
+    let max_end = events.iter().map(|event| event.end_nanos).max()?;
+    Some((
+        nanos_to_datetime(min_start.saturating_sub(1)),
+        nanos_to_datetime(max_end.saturating_add(1)),
+    ))
 }
 
 fn dest_event_key(event: &Event) -> EventKey {

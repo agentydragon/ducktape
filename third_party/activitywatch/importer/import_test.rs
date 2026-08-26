@@ -291,3 +291,83 @@ fn localhost_buckets_from_different_devices_stay_separate() {
 
     datastore.close();
 }
+
+#[test]
+fn dedup_reads_only_the_source_time_window_yet_still_finds_collisions() {
+    // A bucket accumulates events far apart in time across imports. The dedup read
+    // must be scoped to each source batch's own time window (not the whole bucket),
+    // yet still catch a collision inside that window.
+    let root = temp_root("window");
+    let device_dir = root.join("inbox").join("rugged");
+    fs::create_dir_all(&device_dir).unwrap();
+    let snapshot = device_dir.join("aw.db");
+    let datastore = central(&root);
+    let afk = |start: i64, end: i64, status: &str| {
+        bucket(
+            "aw-watcher-afk_localhost",
+            "afkstatus",
+            "aw-watcher-afk",
+            "localhost",
+            &[(start, end, status)],
+        )
+    };
+
+    write_snapshot(
+        &snapshot,
+        &[afk(
+            1_000_000_000_000,
+            2_000_000_000_000,
+            r#"{"status":"afk"}"#,
+        )],
+    );
+    assert_eq!(
+        import_snapshots(std::slice::from_ref(&snapshot), &datastore)
+            .expect("import 1")
+            .total_inserted(),
+        1
+    );
+
+    // A much later event in the same bucket. Its window sits far past the stored
+    // early event, so the dedup read finds nothing to compare against — proving the
+    // read is scoped to the window, not the whole bucket.
+    fs::remove_file(&snapshot).unwrap();
+    write_snapshot(
+        &snapshot,
+        &[afk(
+            9_000_000_000_000,
+            9_500_000_000_000,
+            r#"{"status":"not-afk"}"#,
+        )],
+    );
+    let second = import_snapshots(std::slice::from_ref(&snapshot), &datastore).expect("import 2");
+    assert_eq!(second.total_inserted(), 1);
+    assert_eq!(
+        second.buckets[0].existing_in_window, 0,
+        "read was not windowed"
+    );
+
+    // Re-import the early batch: its window is around t=1e12, far from the stored
+    // 9e12 event, yet the 1e12 collision must still be found → nothing inserted.
+    fs::remove_file(&snapshot).unwrap();
+    write_snapshot(
+        &snapshot,
+        &[afk(
+            1_000_000_000_000,
+            2_000_000_000_000,
+            r#"{"status":"afk"}"#,
+        )],
+    );
+    assert_eq!(
+        import_snapshots(std::slice::from_ref(&snapshot), &datastore)
+            .expect("reimport 1")
+            .total_inserted(),
+        0,
+        "windowed dedup missed the stored collision"
+    );
+
+    assert_eq!(
+        events(&datastore, "rugged::aw-watcher-afk_localhost").len(),
+        2
+    );
+    datastore.close();
+}

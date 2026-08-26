@@ -28,12 +28,12 @@ fn main() -> ExitCode {
         Ok(summary) => {
             for bucket in &summary.buckets {
                 println!(
-                    "{} -> {}: {} rows, {} distinct, {} existing, {} inserted",
+                    "{} -> {}: {} rows, {} distinct, {} in-window, {} inserted",
                     bucket.device,
                     bucket.dest_bucket,
                     bucket.source_events,
                     bucket.distinct_source,
-                    bucket.existing_before,
+                    bucket.existing_in_window,
                     bucket.inserted,
                 );
             }
