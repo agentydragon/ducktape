@@ -21,7 +21,7 @@ def real_env_with_post_script(real_temp_repo, config_factory, tmp_path):
     )
     script.chmod(0o755)
     factory = config_factory(real_temp_repo)
-    config = factory.integration(github_enabled=False, post_creation_script=str(script))
+    config = factory.integration(github_repo=None, post_creation_script=str(script))
     env = os.environ.copy()
     env["WT_DIR"] = str(config.wt_dir)
     # Ensure clean daemon for this WT_DIR

@@ -48,10 +48,10 @@ main_repo: /path/to/repo # Required
 worktrees_dir: /path/to/worktrees # Required
 branch_prefix: feature/ # Required
 upstream_branch: main # Required
-github_repo: owner/repo # Required when github_enabled=true
+github_repo: owner/repo # Optional; omit to disable GitHub integration
 ```
 
-Optional: `log_operations`, `cow_method` (auto|reflink|copy|rsync), `hydrate_worktrees`, `github_enabled`, `gitstatusd_path`, `post_creation_script`, `post_creation_timeout`.
+Optional: `log_operations`, `cow_method` (auto|reflink|copy|rsync), `hydrate_worktrees`, `github_repo`, `gitstatusd_path`, `post_creation_script`, `post_creation_timeout`.
 
 ### Post-creation hook FD behavior
 

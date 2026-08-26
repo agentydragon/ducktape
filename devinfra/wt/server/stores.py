@@ -43,7 +43,6 @@ class DaemonStore:
 
         # Daemon config
         self._gitstatusd_config: Signal[GitstatusdConfig] = Signal(GitstatusdUnavailable(error="not initialized"))
-        self._github_enabled: Signal[bool] = Signal(value=True)
 
         # Computed: all branches currently checked out across worktrees
         # Reads branch from GitstatusdData
@@ -88,14 +87,6 @@ class DaemonStore:
     def set_gitstatusd_config(self, config: GitstatusdConfig) -> None:
         """Set gitstatusd configuration."""
         self._gitstatusd_config.set(config)
-
-    def github_enabled(self) -> bool:
-        """Get whether GitHub is enabled."""
-        return cast(bool, self._github_enabled())
-
-    def set_github_enabled(self, enabled: bool) -> None:
-        """Set whether GitHub is enabled."""
-        self._github_enabled.set(enabled)
 
     # Worktree path management (owned by store)
 

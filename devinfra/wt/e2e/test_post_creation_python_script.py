@@ -49,7 +49,7 @@ print("py post-create: hello from stderr", file=sys.stderr)
 
     # Configure environment (WT_DIR) with this post-creation script
     factory = config_factory(real_temp_repo)
-    config = factory.integration(github_enabled=False, post_creation_script=str(script))
+    config = factory.integration(github_repo=None, post_creation_script=str(script))
     env = os.environ.copy()
     env["WT_DIR"] = str(config.wt_dir)
 

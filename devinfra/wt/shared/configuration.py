@@ -47,8 +47,7 @@ class Configuration:
     worktrees_dir: Path
     branch_prefix: str
     upstream_branch: str
-    github_repo: str
-    github_enabled: bool
+    github_repo: str | None
     log_operations: bool
     cow_method: CowMethod
     gitstatusd_path: Path | None
@@ -137,7 +136,6 @@ class Configuration:
             branch_prefix=config_file.branch_prefix,
             upstream_branch=config_file.upstream_branch,
             github_repo=config_file.github_repo,
-            github_enabled=config_file.github_enabled,
             log_operations=config_file.log_operations,
             cow_method=CowMethod(config_file.cow_method),
             gitstatusd_path=gitstatusd_path,

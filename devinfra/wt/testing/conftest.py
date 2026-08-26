@@ -314,8 +314,7 @@ def create_integration_test_config_file(repo_path: Path) -> Path:
         upstream_branch="HEAD",
         log_operations=False,
         cow_method="copy",
-        github_enabled=False,
-        github_repo="test/test",
+        github_repo=None,
     )
 
     return wt_dir / "config.yaml"
@@ -354,7 +353,7 @@ def real_config(real_temp_repo, config_factory) -> Configuration:
     that need to access config properties like worktrees_dir, main_repo, etc.
     """
     factory = config_factory(real_temp_repo)
-    config: Configuration = factory.integration(github_enabled=False)
+    config: Configuration = factory.integration(github_repo=None)
     return config
 
 
@@ -438,7 +437,7 @@ def real_env_with_existing_worktrees(real_temp_repo, config_factory):
     """Set up real environment with pre-created worktrees for complex tests."""
     # Create config using factory pattern
     factory = config_factory(real_temp_repo)
-    config = factory.integration(github_enabled=False)
+    config = factory.integration(github_repo=None)
 
     # Ensure clean daemon state for this WT_DIR before creating worktrees
     kill_daemon_at_wt_dir(config.wt_dir)
@@ -490,8 +489,7 @@ def build_test_configuration(repo_path: Path, wt_dir: Path | None = None, **conf
         "worktrees_dir": str(repo_path / "worktrees"),
         "branch_prefix": "test/",
         "upstream_branch": "main",
-        "github_repo": "test-user/test-repo",
-        "github_enabled": False,
+        "github_repo": None,
         "log_operations": True,
         "cache_expiration": 3600,
         "cache_refresh_age": 300,

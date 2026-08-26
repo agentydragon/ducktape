@@ -37,9 +37,8 @@ class ConfigFile(BaseModel):
     cow_method: Literal["auto", "reflink", "copy", "rsync"] = "auto"
     hydrate_worktrees: bool = True
 
-    # GitHub integration
-    github_enabled: bool = True
-    github_repo: str = ""  # Format: "owner/repo"
+    # GitHub integration; None disables it. Format: "owner/repo"
+    github_repo: str | None = None
 
     # Tool paths
     gitstatusd_path: str | None = None

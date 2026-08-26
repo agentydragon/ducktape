@@ -44,13 +44,21 @@ def format_sync_status(ahead: int, behind: int, *, compact: bool = False) -> str
 
 
 class ViewFormatter:
-    def __init__(self, github_repo: str, daemon_log_path: Path | None = None):
+    def __init__(self, github_repo: str | None, daemon_log_path: Path | None = None):
         self.daemon_log_path = daemon_log_path
         self.github_repo = github_repo
 
-    def _pr_url(self, pr_number: int) -> str:
-        """GitHub PR URL for the configured repo."""
+    def _pr_url(self, pr_number: int) -> str | None:
+        """GitHub PR URL, or None when this checkout has no configured repo."""
+        if self.github_repo is None:
+            return None
         return f"https://github.com/{self.github_repo}/pull/{pr_number}"
+
+    def _pr_reference(self, pr_number: int) -> str:
+        """`#N`, hyperlinked when a repo is configured to link it to."""
+        url = self._pr_url(pr_number)
+        label = f"#{pr_number}"
+        return label if url is None else self.make_hyperlink(url, label)
 
     def make_hyperlink(self, url: str, text: str) -> str:
         if os.getenv("TERM_PROGRAM") in ("iTerm.app", "vscode") or os.getenv("COLORTERM"):
@@ -103,7 +111,7 @@ class ViewFormatter:
             pr_number = d.pr_number
             pr_state = d.pr_state
 
-            clickable_link = self.make_hyperlink(self._pr_url(pr_number), f"#{pr_number}")
+            clickable_link = self._pr_reference(pr_number)
 
             # Add lines changed info if available
             lines_info = ""
@@ -150,7 +158,7 @@ class ViewFormatter:
         if not isinstance(status.pr_info, PRInfoOk):
             return ""
         pr_number = status.pr_info.pr_data.pr_number
-        return self.make_hyperlink(self._pr_url(pr_number), f"#{pr_number}")
+        return self._pr_reference(pr_number)
 
     def _get_pr_status_column(self, status: StatusResult) -> str:
         """Get PR status text column."""
@@ -280,7 +288,10 @@ class ViewFormatter:
             pr_state = d.pr_state
 
             pr_url = self._pr_url(pr_number)
-            click.echo(f"🔗 PR #{pr_number} ({self.make_hyperlink(pr_url, pr_url)})")
+            if pr_url is None:
+                click.echo(f"🔗 PR #{pr_number}")
+            else:
+                click.echo(f"🔗 PR #{pr_number} ({self.make_hyperlink(pr_url, pr_url)})")
 
             # Format detailed PR status
             status_text = self.get_pr_status_text(
