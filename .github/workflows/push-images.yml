@@ -1,29 +1,28 @@
-# Push OCI images via bb remote build + runner-side `crane push`.
+# Publish OCI images, fanning out only over the ones whose content actually moved.
 #
-# For each image in the matrix:
+# The image roster lives in devinfra/ci/image_targets.json, not in this file.
 #
-#   1. Optionally run tests (`test_target`). A failing test fails this
-#      matrix job loudly and skips the push for this image. Other matrix
-#      entries are unaffected (`fail-fast: false`).
+# Two phases:
 #
-#   2. `bb remote build <image>.digest --remote_download_outputs=toplevel`
-#      downloads only the ~70-byte sibling `.json.sha256` digest file that
-#      `rules_oci`'s `oci_image` macro auto-generates. The digest is
-#      reproducible across rebuilds, so when nothing changed this is a
-#      Bazel cache hit that ships back a single tiny file.
+#   plan  — one `bb remote build` materializes every image's `.digest` sibling (the
+#           ~70-byte `<name>.json.sha256` that `rules_oci`'s `oci_image` macro
+#           generates, reproducible across rebuilds), then one pass over the
+#           registries compares each against the newest `devel-*` tag — the tag Flux
+#           ImagePolicy currently picks. Emits a `matrix.include` of just the images
+#           that differ. See devinfra/ci/plan_image_pushes.py.
 #
-#   3. `crane ls` + `crane digest` against the newest `devel-*` tag (the
-#      one Flux ImagePolicy currently picks). If the local digest equals
-#      the remote digest, skip the push entirely — no new tag, no Flux
-#      churn. Otherwise mark `push=true` and continue.
+#   push  — per changed image: run its tests, `bb remote build` the OCI layout,
+#           `crane push` a new pinned tag and move `latest`. A failing test fails
+#           that image loudly and skips its push; other images are unaffected
+#           (`fail-fast: false`).
 #
-#   4. Only when push is needed:
-#        a) `bb remote build <image> --remote_download_outputs=toplevel`
-#           downloads the OCI layout directory.
-#        b) `crane push` + `crane tag <pinned> latest`.
+# Typically nothing changed and the push matrix is empty, so a merge costs one job
+# instead of forty-three. Previously every image got its own runner to rediscover
+# that its digest was unchanged: measured over 96 such jobs, exactly one pushed
+# anything. See devinfra/ci/debug/ci_queue_saturation.md.
 #
-# Credentials live exactly where they should: registry auth happens on the
-# GitHub runner, not through the BB runner VM.
+# Credentials live exactly where they should: registry auth happens on the GitHub
+# runner, not through the BB runner VM.
 #
 # Also pushes the props *agent* images to the props registry (not GHCR) via the
 # `props-agents` job below — folded in from the former props-images.yml.
@@ -47,151 +46,93 @@ env:
   GIT_REPO_DEFAULT_BRANCH: devel
 
 jobs:
+  plan:
+    name: Plan image pushes
+    # Deliberately no job-level `if`. `push` interpolates this job's `matrix` output
+    # into `strategy.matrix`, and a skipped job leaves that output empty — where
+    # `fromJSON('')` is a workflow-level error rather than an empty matrix. So the
+    # job always runs and always emits a valid matrix; the devel gate below decides
+    # whether it has anything in it. Same shape as release.yml's matrix job.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+      # Only publish from devel. `workflow_dispatch` can be triggered from any
+      # branch, but Flux ImagePolicy filters on `devel-YYYYMMDDHHMMSS-shortsha` and
+      # picks newest-alphabetical — so pushing that tag shape from a feature branch
+      # would immediately deploy unmerged code.
+      PUBLISH: ${{ github.ref_name == 'devel' }}
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      count: ${{ steps.plan.outputs.count }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-nix-devtools
+        if: env.PUBLISH == 'true'
+        with:
+          package: citools
+
+      - uses: ./.github/actions/setup-ci-secrets
+        if: env.PUBLISH == 'true'
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Resolve digest targets
+        id: targets
+        if: env.PUBLISH == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "targets=$(python3 devinfra/ci/plan_image_pushes.py targets)" >> "$GITHUB_OUTPUT"
+
+      # One invocation for every image's digest. `--remote_download_outputs=toplevel`
+      # ships back only the sha256 files, so this is a cache hit and a few kilobytes.
+      - name: bb remote build digests
+        if: env.PUBLISH == 'true'
+        uses: ./.github/actions/bb-remote
+        with:
+          args: build ${{ steps.targets.outputs.targets }} --remote_download_outputs=toplevel
+          rbe_image: ${{ inputs.rbe_image }}
+
+      - uses: imjasonh/setup-crane@v0.7
+        if: env.PUBLISH == 'true'
+
+      - name: Authenticate to Forgejo registry
+        if: env.PUBLISH == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          crane auth login git.allegedly.works \
+            -u "$FORGEJO_IMAGES_USERNAME" \
+            -p "$FORGEJO_IMAGES_PASSWORD"
+
+      - name: Plan pushes
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$PUBLISH" != "true" ]; then
+            echo "Not on devel — nothing to publish."
+            { echo 'matrix={"include":[]}'; echo "count=0"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python3 devinfra/ci/plan_image_pushes.py plan
+
   push:
+    needs: [plan]
+    # Skips cleanly when nothing moved; `plan` always emits a count.
+    if: needs.plan.outputs.count != '0'
     name: Push ${{ matrix.image_name }}
-    # Only push from devel. `workflow_dispatch` can be triggered from any
-    # branch, but Flux ImagePolicy filters on `devel-YYYYMMDDHHMMSS-shortsha`
-    # and picks newest-alphabetical — so pushing that tag shape from a
-    # feature branch would immediately deploy unmerged code. Gate at the
-    # job level rather than on individual steps so the whole matrix
-    # short-circuits off-devel with a clear "skipped" status.
-    if: github.ref_name == 'devel'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # Test-gated images: push only if their tests pass.
-          - { image: "//airlock:image", image_name: airlock, test_target: "//airlock/..." }
-          - { image: "//aiquota:api_image", image_name: aiquota-api, test_target: "//aiquota:all" }
-          - { image: "//finance/augur/api:image", image_name: augur, test_target: "//finance/augur/api/..." }
-          - {
-              image: "//finance/augur/frontend:image",
-              image_name: augur-frontend,
-              test_target: "//finance/augur/frontend:image_build_test",
-            }
-          - { image: "//finance/scraper:image", image_name: augur-evidence, test_target: "//finance/scraper/..." }
-          - {
-              image: "//haku/runtime/x/bridge:runner_image",
-              image_name: haku-harness-runner,
-              test_target: "//haku/runtime/x/bridge/...",
-            }
-          - {
-              image: "//haku/kube_api_proxy:image",
-              image_name: haku-kube-api-proxy,
-              test_target: "//haku/kube_api_proxy/...",
-            }
-          - {
-              image: "//cluster/proxies/loki_read_proxy:image",
-              image_name: loki-read-proxy,
-              test_target: "//cluster/proxies/loki_read_proxy/...",
-            }
-          - { image: "//mcp_infra/exec:direct_image", image_name: exec-backend, test_target: "//mcp_infra/exec/..." }
-          - { image: "//props/backend:image", image_name: props-backend, test_target: "//props/backend/..." }
-          - { image: "//props/llm_proxy:image", image_name: props-llm-proxy, test_target: "//props/llm_proxy/..." }
-          - {
-              image: "//props/registry_proxy:image",
-              image_name: props-registry-proxy,
-              test_target: "//props/registry_proxy/...",
-            }
-          - { image: "//tana/firebase_resigner:image", image_name: tana-firebase-resigner, test_target: "" }
-          - {
-              image: "//tana/litellm_proxy:image",
-              image_name: tana-litellm-proxy,
-              test_target: "//tana/litellm_proxy/...",
-            }
-          - {
-              image: "//x/mcp_oauth_facade:image",
-              image_name: mcp-oauth-facade,
-              test_target: "//mcp_infra/oauth_facade/... //x/mcp_oauth_facade/...",
-            }
-          - { image: "@ducktape_manifold_mcp_server//:image", image_name: manifold-mcp-server, test_target: "" }
-          - { image: "//third_party/osmmcp:image", image_name: osm-mcp, registry: forgejo, test_target: "" }
-          - {
-              image: "//x/postscanmail_mcp_server:image",
-              image_name: postscanmail-mcp-server,
-              test_target: "//x/postscanmail_mcp_server/...",
-            }
-          - {
-              image: "//x/authentik_mcp_poc:server_image",
-              image_name: authentik-mcp-poc-server,
-              test_target: "//x/authentik_mcp_poc/...",
-            }
-          - {
-              image: "//x/authentik_mcp_poc:backend_image",
-              image_name: authentik-mcp-poc-backend,
-              test_target: "//x/authentik_mcp_poc/...",
-            }
-          - { image: "//grocy_mcp:server_image", image_name: grocy-mcp, test_target: "//grocy_mcp/..." }
-          - { image: "//haku/console:server_image", image_name: haku-console, test_target: "//haku/console/..." }
-          - { image: "//haku/console:static_image", image_name: haku-console-static, test_target: "//haku/console/..." }
-          - {
-              image: "//finance/plaid/link:server_image",
-              image_name: plaid-mcp-server,
-              test_target: "//finance/plaid/...",
-            }
-          - { image: "//finance/plaid/sync:sync_image", image_name: plaid-mcp-sync, test_target: "//finance/plaid/..." }
-          - {
-              image: "//finance/beancount_export:image",
-              image_name: budget-exporter,
-              test_target: "//finance/beancount_export/...",
-            }
-          - { image: "//x/study_casino:image", image_name: study-casino, test_target: "//x/study_casino/..." }
-          - { image: "//loom/gym:eval_image", image_name: loom-gym-eval, test_target: "//loom/gym/..." }
-          # Wayback MITM proxy sidecar: the in-cluster eval driver pulls this from
-          # GHCR and tags it wayback-proxy:latest into the docker-ci daemon.
-          - { image: "//loom/wayback/proxy:image", image_name: wayback-proxy, test_target: "//loom/wayback/proxy/..." }
-          - {
-              image: "//loom/wayback/cache:image",
-              image_name: wayback-archive,
-              test_target: "//loom/wayback/cache:wayback_cache_test",
-            }
-          # Untested images: always-push if content changed. Explicit
-          # `test_target: ""` so the `matrix.test_target != ''` check on
-          # the test step evaluates the same as on test-gated rows —
-          # GitHub Actions treats a missing matrix key as null, which
-          # compares != "" truthy, so we'd accidentally run an empty
-          # `bb remote test` on these rows otherwise.
-          - {
-              image: "//cluster/rotators/authentik_jwt_rotation:image",
-              image_name: authentik-jwt-rotation,
-              test_target: "//cluster/rotators/authentik_jwt_rotation/...",
-            }
-          - {
-              image: "//cluster/rotators/forgejo_token_rotation:image",
-              image_name: forgejo-token-rotation,
-              test_target: "//cluster/rotators/forgejo_token_rotation/...",
-            }
-          - { image: "//cluster/rotators/attic_jwt_rotation:image", image_name: attic-jwt-rotation, test_target: "" }
-          - {
-              image: "//cluster/provisioners/inventree_token_provisioner:image",
-              image_name: inventree-token-provisioner,
-              test_target: "",
-            }
-          - {
-              image: "//cluster/provisioners/ha_mcp_token_provisioner:image",
-              image_name: ha-mcp-token-provisioner,
-              test_target: "//cluster/provisioners/ha_mcp_token_provisioner/...",
-            }
-          - {
-              image: "//cluster/provisioners/grocy_user_perms:image",
-              image_name: grocy-user-perms-provisioner,
-              registry: forgejo,
-              test_target: "//cluster/provisioners/grocy_user_perms/...",
-            }
-          - {
-              image: "//cluster/provisioners/matrix_user_provisioner:image",
-              image_name: matrix-user-provisioner,
-              test_target: "//cluster/provisioners/matrix_user_provisioner/...",
-            }
-          - { image: "//devinfra/firecracker/manager:image", image_name: firecracker-manager, test_target: "" }
-          - { image: "//devinfra/firecracker/vm_pod:image", image_name: fc-vm-pod, test_target: "" }
-          - { image: "//inventree_utils/rai_plugin:image", image_name: inventree, test_target: "" }
-          - { image: "//cluster/k8s/haku/mailbox/image:image", image_name: stalwart, test_target: "" }
-          - { image: "//cpap:image", image_name: cpap-sync, test_target: "" }
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -213,47 +154,16 @@ jobs:
           args: test ${{ matrix.test_target }}
           rbe_image: ${{ inputs.rbe_image }}
 
-      # Phase 1 — download just the .digest sibling target (~70 bytes).
-      - name: bb remote build digest
-        if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
+      - name: bb remote build OCI layout
         uses: ./.github/actions/bb-remote
         with:
-          args: build ${{ matrix.image }}.digest --remote_download_outputs=toplevel
+          args: build ${{ matrix.image }} --remote_download_outputs=toplevel
           rbe_image: ${{ inputs.rbe_image }}
 
-      - name: Resolve image output paths
-        if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
-        id: paths
-        shell: bash
-        env:
-          IMAGE: ${{ matrix.image }}
-        run: |
-          NAME="${IMAGE##*:}"
-          # `bb remote build` downloads artifacts into
-          # `bb-out/bazel-out/<config>/bin/...`. The `<config>` is
-          # `k8-fastbuild` for the Linux x86_64 fastbuild we always use
-          # here (via --config=rbe --config=ci in the bb-remote action).
-          # External repos land below `external/<canonical-repo>/`, so derive
-          # the paths from the downloaded digest artifact rather than parsing
-          # Bazel label syntax.
-          BIN="bb-out/bazel-out/k8-fastbuild/bin"
-          mapfile -t DIGEST_FILES < <(find "$BIN" -path "*/${NAME}.json.sha256" -type f)
-          if [[ "${#DIGEST_FILES[@]}" -ne 1 ]]; then
-            printf 'Expected exactly one digest file for %s, found %s:\n' "$IMAGE" "${#DIGEST_FILES[@]}" >&2
-            printf '  %s\n' "${DIGEST_FILES[@]}" >&2
-            exit 1
-          fi
-          DIGEST_FILE="${DIGEST_FILES[0]}"
-          {
-            echo "oci_dir=${DIGEST_FILE%.json.sha256}"
-            echo "digest_file=${DIGEST_FILE}"
-          } >> "$GITHUB_OUTPUT"
-
       - uses: imjasonh/setup-crane@v0.7
-        if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
 
       - name: Authenticate to Forgejo registry
-        if: (steps.test.outcome == 'success' || steps.test.outcome == 'skipped') && matrix.registry == 'forgejo'
+        if: matrix.registry == 'forgejo'
         shell: bash
         run: |
           set -euo pipefail
@@ -261,14 +171,15 @@ jobs:
             -u "$FORGEJO_IMAGES_USERNAME" \
             -p "$FORGEJO_IMAGES_PASSWORD"
 
-      - name: Check whether digest already published
-        if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
-        id: dedup
+      # The planner already resolved oci_dir from the Bazel label and read the digest;
+      # the path is the same under this job's bb-out because the Bazel config is.
+      - name: Push image
         shell: bash
         env:
-          DIGEST_FILE: ${{ steps.paths.outputs.digest_file }}
+          OCI_DIR: ${{ matrix.oci_dir }}
           IMAGE_NAME: ${{ matrix.image_name }}
           REGISTRY: ${{ matrix.registry }}
+          LOCAL_DIGEST: ${{ matrix.local_digest }}
         run: |
           set -euo pipefail
 
@@ -277,78 +188,17 @@ jobs:
           else
             REPO="ghcr.io/agentydragon/$IMAGE_NAME"
           fi
-          LOCAL_DIGEST=$(cat "$DIGEST_FILE")
 
-          # Newest devel-* tag = the one Flux ImagePolicy currently picks
-          # (filters on `^devel-\d{14}-[0-9a-f]{7}$`, alphabetical: asc).
-          #
-          # `crane ls` on a brand-new GHCR package exits non-zero with
-          # `NAME_UNKNOWN: repository name not known to registry` — that's
-          # an expected first-push case, treat it as "no existing tag".
-          # Any OTHER failure (auth, transport, 5xx) must fail loudly; we
-          # don't want to silently fall into "push a new tag" on e.g. an
-          # auth glitch, because that would churn Flux ImagePolicy.
-          #
-          # Using a temp file + explicit exit code capture so a failure
-          # inside the command substitution doesn't get swallowed by
-          # bash's errexit-in-subshell semantics.
-          ls_stderr=$(mktemp)
-          ls_rc=0
-          crane_ls_out=$(crane ls "$REPO" 2>"$ls_stderr") || ls_rc=$?
-          if [ $ls_rc -ne 0 ]; then
-            if grep -q NAME_UNKNOWN "$ls_stderr"; then
-              echo "$REPO: new package, no existing tags"
-              LATEST=""
-            else
-              echo "crane ls $REPO failed (exit $ls_rc):" >&2
-              cat "$ls_stderr" >&2
-              rm -f "$ls_stderr"
-              exit 1
-            fi
-          else
-            LATEST=$(echo "$crane_ls_out" \
-              | { grep -E '^devel-[0-9]{14}-[0-9a-f]{7}$' || true; } \
-              | sort | tail -1)
-          fi
-          rm -f "$ls_stderr"
-
-          PUSH=true
-          if [ -n "$LATEST" ]; then
-            REMOTE_DIGEST=$(crane digest "$REPO:$LATEST")
-            if [ "$LOCAL_DIGEST" = "$REMOTE_DIGEST" ]; then
-              echo "$REPO: digest unchanged ($LOCAL_DIGEST), latest devel tag still $LATEST — skipping push"
-              PUSH=false
-            fi
+          # Re-read the digest Bazel just produced rather than trusting the planner's:
+          # the two builds are separate invocations, and a mismatch means the tree
+          # moved under us — push the tag whose content we actually hold.
+          BUILT_DIGEST=$(cat "${OCI_DIR}.json.sha256")
+          if [ "$BUILT_DIGEST" != "$LOCAL_DIGEST" ]; then
+            echo "::notice::$IMAGE_NAME digest changed between plan and push ($LOCAL_DIGEST -> $BUILT_DIGEST); pushing the rebuilt content"
           fi
 
-          {
-            echo "push=$PUSH"
-            echo "local_digest=$LOCAL_DIGEST"
-            echo "latest=${LATEST:-<none>}"
-            echo "repo=$REPO"
-          } >> "$GITHUB_OUTPUT"
-
-      # Phase 2 — only when content actually changed: download the OCI
-      # layout directory and crane push it.
-      - name: bb remote build OCI layout
-        if: steps.dedup.outputs.push == 'true'
-        uses: ./.github/actions/bb-remote
-        with:
-          args: build ${{ matrix.image }} --remote_download_outputs=toplevel
-          rbe_image: ${{ inputs.rbe_image }}
-
-      - name: Push image
-        if: steps.dedup.outputs.push == 'true'
-        shell: bash
-        env:
-          OCI_DIR: ${{ steps.paths.outputs.oci_dir }}
-          REPO: ${{ steps.dedup.outputs.repo }}
-          LOCAL_DIGEST: ${{ steps.dedup.outputs.local_digest }}
-          LATEST: ${{ steps.dedup.outputs.latest }}
-        run: |
-          set -euo pipefail
           PINNED="devel-$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
-          echo "$REPO: pushing $LOCAL_DIGEST as :$PINNED (was :$LATEST)"
+          echo "$REPO: pushing $BUILT_DIGEST as :$PINNED"
           crane push "$OCI_DIR" "$REPO:$PINNED"
           crane tag "$REPO:$PINNED" latest
 

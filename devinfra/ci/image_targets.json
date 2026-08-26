@@ -1,0 +1,164 @@
+{
+  "images": {
+    "airlock": {
+      "target": "//airlock:image",
+      "test": "//airlock/..."
+    },
+    "aiquota-api": {
+      "target": "//aiquota:api_image",
+      "test": "//aiquota:all"
+    },
+    "augur": {
+      "target": "//finance/augur/api:image",
+      "test": "//finance/augur/api/..."
+    },
+    "augur-frontend": {
+      "target": "//finance/augur/frontend:image",
+      "test": "//finance/augur/frontend:image_build_test"
+    },
+    "augur-evidence": {
+      "target": "//finance/scraper:image",
+      "test": "//finance/scraper/..."
+    },
+    "haku-harness-runner": {
+      "target": "//haku/runtime/x/bridge:runner_image",
+      "test": "//haku/runtime/x/bridge/..."
+    },
+    "haku-kube-api-proxy": {
+      "target": "//haku/kube_api_proxy:image",
+      "test": "//haku/kube_api_proxy/..."
+    },
+    "loki-read-proxy": {
+      "target": "//cluster/proxies/loki_read_proxy:image",
+      "test": "//cluster/proxies/loki_read_proxy/..."
+    },
+    "exec-backend": {
+      "target": "//mcp_infra/exec:direct_image",
+      "test": "//mcp_infra/exec/..."
+    },
+    "props-backend": {
+      "target": "//props/backend:image",
+      "test": "//props/backend/..."
+    },
+    "props-llm-proxy": {
+      "target": "//props/llm_proxy:image",
+      "test": "//props/llm_proxy/..."
+    },
+    "props-registry-proxy": {
+      "target": "//props/registry_proxy:image",
+      "test": "//props/registry_proxy/..."
+    },
+    "tana-firebase-resigner": {
+      "target": "//tana/firebase_resigner:image"
+    },
+    "tana-litellm-proxy": {
+      "target": "//tana/litellm_proxy:image",
+      "test": "//tana/litellm_proxy/..."
+    },
+    "mcp-oauth-facade": {
+      "target": "//x/mcp_oauth_facade:image",
+      "test": "//mcp_infra/oauth_facade/... //x/mcp_oauth_facade/..."
+    },
+    "manifold-mcp-server": {
+      "target": "@ducktape_manifold_mcp_server//:image"
+    },
+    "osm-mcp": {
+      "target": "//third_party/osmmcp:image",
+      "registry": "forgejo"
+    },
+    "postscanmail-mcp-server": {
+      "target": "//x/postscanmail_mcp_server:image",
+      "test": "//x/postscanmail_mcp_server/..."
+    },
+    "authentik-mcp-poc-server": {
+      "target": "//x/authentik_mcp_poc:server_image",
+      "test": "//x/authentik_mcp_poc/..."
+    },
+    "authentik-mcp-poc-backend": {
+      "target": "//x/authentik_mcp_poc:backend_image",
+      "test": "//x/authentik_mcp_poc/..."
+    },
+    "grocy-mcp": {
+      "target": "//grocy_mcp:server_image",
+      "test": "//grocy_mcp/..."
+    },
+    "haku-console": {
+      "target": "//haku/console:server_image",
+      "test": "//haku/console/..."
+    },
+    "haku-console-static": {
+      "target": "//haku/console:static_image",
+      "test": "//haku/console/..."
+    },
+    "plaid-mcp-server": {
+      "target": "//finance/plaid/link:server_image",
+      "test": "//finance/plaid/..."
+    },
+    "plaid-mcp-sync": {
+      "target": "//finance/plaid/sync:sync_image",
+      "test": "//finance/plaid/..."
+    },
+    "budget-exporter": {
+      "target": "//finance/beancount_export:image",
+      "test": "//finance/beancount_export/..."
+    },
+    "study-casino": {
+      "target": "//x/study_casino:image",
+      "test": "//x/study_casino/..."
+    },
+    "loom-gym-eval": {
+      "target": "//loom/gym:eval_image",
+      "test": "//loom/gym/..."
+    },
+    "wayback-proxy": {
+      "target": "//loom/wayback/proxy:image",
+      "test": "//loom/wayback/proxy/..."
+    },
+    "wayback-archive": {
+      "target": "//loom/wayback/cache:image",
+      "test": "//loom/wayback/cache:wayback_cache_test"
+    },
+    "authentik-jwt-rotation": {
+      "target": "//cluster/rotators/authentik_jwt_rotation:image",
+      "test": "//cluster/rotators/authentik_jwt_rotation/..."
+    },
+    "forgejo-token-rotation": {
+      "target": "//cluster/rotators/forgejo_token_rotation:image",
+      "test": "//cluster/rotators/forgejo_token_rotation/..."
+    },
+    "attic-jwt-rotation": {
+      "target": "//cluster/rotators/attic_jwt_rotation:image"
+    },
+    "inventree-token-provisioner": {
+      "target": "//cluster/provisioners/inventree_token_provisioner:image"
+    },
+    "ha-mcp-token-provisioner": {
+      "target": "//cluster/provisioners/ha_mcp_token_provisioner:image",
+      "test": "//cluster/provisioners/ha_mcp_token_provisioner/..."
+    },
+    "grocy-user-perms-provisioner": {
+      "target": "//cluster/provisioners/grocy_user_perms:image",
+      "test": "//cluster/provisioners/grocy_user_perms/...",
+      "registry": "forgejo"
+    },
+    "matrix-user-provisioner": {
+      "target": "//cluster/provisioners/matrix_user_provisioner:image",
+      "test": "//cluster/provisioners/matrix_user_provisioner/..."
+    },
+    "firecracker-manager": {
+      "target": "//devinfra/firecracker/manager:image"
+    },
+    "fc-vm-pod": {
+      "target": "//devinfra/firecracker/vm_pod:image"
+    },
+    "inventree": {
+      "target": "//inventree_utils/rai_plugin:image"
+    },
+    "stalwart": {
+      "target": "//cluster/k8s/haku/mailbox/image:image"
+    },
+    "cpap-sync": {
+      "target": "//cpap:image"
+    }
+  }
+}

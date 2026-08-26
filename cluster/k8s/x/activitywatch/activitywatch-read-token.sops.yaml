@@ -1,0 +1,45 @@
+# Read-only bearer for the central ActivityWatch read route. The bearer-proxy
+# sidecar (5603) checks it; the emberstack reflector mirrors this Secret into
+# haku-egress-proxy so the iron proxy can substitute it for the Haku sandbox's
+# placeholder (cluster/k8s/agents/haku-egress-proxy/claude-iron.yaml). Distinct from
+# the write token so read and write are separate credentials -- and unlike the write
+# token, no desktop reads it, so it is encrypted only to Flux (cluster-secrets) +
+# admin via the generic cluster/k8s rule. Rotate by re-minting and re-encrypting.
+apiVersion: v1
+kind: Secret
+metadata:
+    name: activitywatch-read-token
+    namespace: activitywatch
+    annotations:
+        description: Read-only ActivityWatch bearer; checked by the bearer-proxy read route (5603) and mirrored to haku-egress-proxy for the iron proxy's placeholder substitution.
+        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-egress-proxy
+        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-egress-proxy
+type: Opaque
+stringData:
+    token: ENC[AES256_GCM,data:wHhM7SxWvYQMx8dPO2h/GJI8dpOCIWud+w2fjt64LozhBHkI6FIuers5uNXAeepRKXiNomDKEgg6cn5Jj4zOwg==,iv:adC9d/TlvlBb90s09I2G0y2jW1cyTjQk8WSIIJeN6qI=,tag:ljigWeUTtV2TAm510HJZiw==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBwMFl1TEJ4N21WWEkrU0dx
+            SVRpdENobktrYkhHNU1EVmR5QmNjOWxvU1JjCmdCV1BqSE5qT2Q2Zk05dEpMSERO
+            VVc4WHNIZzgyVitVZVphM0k2M09hdGcKLS0tIDZaQXhLVGJ5UitqUExZeHFONTlh
+            aHZnK2dxOXVNSEFnTXdpOTh1QWhtNEEK9EFdxcKBX9CsPq3dW5mUyI+aS6WGeovj
+            LERpDhF8QQhl0rlx+27PVYDs/BQKkaLP6hRg2lekkfU9u3Odz7/rvg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBLOFhtaWV3ZndrWE43NmND
+            Q0taZlVRV1hEd3Y0ayt1MVVUTEV3cGFvSWkwCnJ0aDJoR3RQa25jS3Z1dzRRdjZv
+            czlXWjc3UDNtOEZRam90TzdFdlNzeVUKLS0tIHpZUG5ZektVL2Z1ejRFL0M2aFNS
+            Wi9lY3dXTDgxUjBjM3FsRnYzU1MwTmMK+LWSpxjsQqRdjk/faG07Tf0Icwbryxsm
+            ysMntyq/7Rog33WGv7n88n9zUptaHViZ6ikPjNdLaENLvtXtdtp68w==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-08-26T15:42:40Z"
+    mac: ENC[AES256_GCM,data:Z98aClNNyN+iVQqz4k2EeLviLRF9BbiwvK4cL0FDdENo9Y+djqVav9QbsXfMTX4loL5XhqqovthrFNFV3+iEunZ514Po4uOeZIxA2y0/7S2Fv9EXDlIieYaFpvGgQorFpjFC3gv8Ns7iYaw98jddkY4daaPEGUtRkyrAxswdQc8=,iv:iB6ndzx6VcePnRSJ+JZaMUnMWLIxgZGGxdQNeZDbujk=,tag:vnUaQTO5EVu+f6k0C1qLXw==,type:str]
+    version: 3.13.3

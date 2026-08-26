@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from uuid import UUID
 
 from haku.console.chat_models import RuntimeKind
 from haku.console.config import (
     ClaudeCodeImplementationConfig,
-    ClaudeRuntimeConfig,
     CodexAppServerImplementationConfig,
     RuntimeRegistrationConfig,
 )
@@ -56,29 +54,6 @@ def execution_registry(*registrations: RuntimeRegistration) -> RuntimeRegistry:
     if len(resources) != len(registrations):
         raise ValueError("duplicate configured Agent/runtime resource")
     return RuntimeRegistry(adapters, resources)
-
-
-def claude_registration(
-    config: ClaudeRuntimeConfig,
-    claims: SandboxClaims,
-    *,
-    system_prompt: SystemPromptTemplate,
-    client_factory: RuntimeClientFactory = cli_over_websocket,
-    agent_id: UUID | None = None,
-    access_profile_id: str | None = None,
-    execution_environment: Mapping[str, str] | None = None,
-) -> RuntimeRegistration:
-    """Adapt the rolling-compatible Claude shape to the shared registration path."""
-    if not isinstance(config, ClaudeRuntimeConfig):
-        raise TypeError("claude_registration requires ClaudeRuntimeConfig")
-    return runtime_registration(
-        config.registration_config(agent_id=agent_id),
-        claims,
-        system_prompt=system_prompt,
-        client_factory=client_factory,
-        access_profile_id=access_profile_id,
-        execution_environment=execution_environment,
-    )
 
 
 def runtime_registration(

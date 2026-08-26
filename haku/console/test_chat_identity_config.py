@@ -14,6 +14,24 @@ from haku.console.mcp_config import ConsoleConfigFile
 _AGENT = UUID("00000000-0000-4000-8000-000000000001")
 
 
+def _runtime() -> dict[str, object]:
+    return {
+        "agent_id": str(_AGENT),
+        "namespace": "sandbox",
+        "warm_pool": "pool",
+        "claim_prefix": "claude",
+        "runtime_label": "claude-chat",
+        "cwd": "/workspace",
+        "session_ttl_seconds": 300,
+        "https_proxy": "https://proxy.example",
+        "ca_bundle": "/ca.pem",
+        "no_proxy": "localhost",
+        "mcp_url": "https://console.example/mcp",
+        "system_prompt_template": "/prompt",
+        "implementation": {"kind": "claude_code", "oauth_placeholder": "placeholder"},
+    }
+
+
 def _config(**overrides: object) -> dict[str, object]:
     value: dict[str, object] = {
         "auto_approval_policies": [{"id": "manual", "type": "never"}],
@@ -69,22 +87,10 @@ def test_launchable_agent_must_be_a_configured_static_agent() -> None:
 
 
 def test_configured_runtime_requires_a_launchable_default_and_runtime_enabled_profiles() -> None:
-    runtime = {
-        "namespace": "sandbox",
-        "warm_pool": "pool",
-        "cwd": "/workspace",
-        "session_ttl_seconds": 300,
-        "oauth_placeholder": "placeholder",
-        "https_proxy": "https://proxy.example",
-        "ca_bundle": "/ca.pem",
-        "no_proxy": "localhost",
-        "mcp_url": "https://console.example/mcp",
-        "mcp_static_agent_id": str(_AGENT),
-        "system_prompt_template": "/prompt",
-    }
+    runtime = _runtime()
     with pytest.raises(ValidationError, match="default chat Agent must be launchable"):
         ConsoleConfigFile.model_validate(_config(chat_runtimes={"claude_code": runtime}, launchable_agents=[]))
-    with pytest.raises(ValidationError, match="allows no configured chat runtime"):
+    with pytest.raises(ValidationError, match="profile disallows claude_code"):
         ConsoleConfigFile.model_validate(
             _config(
                 chat_runtimes={"claude_code": runtime},
@@ -93,40 +99,28 @@ def test_configured_runtime_requires_a_launchable_default_and_runtime_enabled_pr
         )
 
 
-def test_multiple_agents_may_share_one_runtime_when_each_profile_allows_it() -> None:
+def test_launchable_agent_requires_its_own_runtime_registration() -> None:
     second = UUID("00000000-0000-4000-8000-000000000002")
     static_agents = _config()["static_agents"]
     assert isinstance(static_agents, list)
-    runtime = {
-        "namespace": "sandbox",
-        "warm_pool": "pool",
-        "cwd": "/workspace",
-        "session_ttl_seconds": 300,
-        "oauth_placeholder": "placeholder",
-        "https_proxy": "https://proxy.example",
-        "ca_bundle": "/ca.pem",
-        "no_proxy": "localhost",
-        "mcp_url": "https://console.example/mcp",
-        "mcp_static_agent_id": str(_AGENT),
-        "system_prompt_template": "/prompt",
-    }
-    config = ConsoleConfigFile.model_validate(
-        _config(
-            chat_runtimes={"claude_code": runtime},
-            static_agents=[
-                *static_agents,
-                {
-                    "agent_id": str(second),
-                    "display_name": "Second Console Agent",
-                    "token_env_var": "SECOND_TOKEN",
-                    "operator_subject_env": "OPERATOR",
-                    "access_profile_id": "chat",
-                },
-            ],
-            launchable_agents=[{"agent_id": str(_AGENT)}, {"agent_id": str(second)}],
+    runtime = _runtime()
+    with pytest.raises(ValidationError, match="has no configured chat runtime registration"):
+        ConsoleConfigFile.model_validate(
+            _config(
+                chat_runtimes={"claude_code": runtime},
+                static_agents=[
+                    *static_agents,
+                    {
+                        "agent_id": str(second),
+                        "display_name": "Second Console Agent",
+                        "token_env_var": "SECOND_TOKEN",
+                        "operator_subject_env": "OPERATOR",
+                        "access_profile_id": "chat",
+                    },
+                ],
+                launchable_agents=[{"agent_id": str(_AGENT)}, {"agent_id": str(second)}],
+            )
         )
-    )
-    assert {entry.agent_id for entry in config.launchable_agents} == {_AGENT, second}
 
 
 if __name__ == "__main__":

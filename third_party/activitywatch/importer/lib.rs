@@ -44,6 +44,12 @@ use serde_json::Value;
 /// by the destination bucket id, so this key identifies an event within one bucket.
 type EventKey = (i64, i64, String);
 
+/// Events per insert request. A bucket's new events are POSTed in batches of this
+/// size, so a first backfill — a whole busy bucket is ~10 MB — never becomes one
+/// oversized request; each batch is a few hundred KB. The steady-state delta is
+/// usually a single batch.
+pub const INSERT_BATCH_SIZE: usize = 1000;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ImportError {
     #[error("aw-server request failed: {0}")]
@@ -160,8 +166,10 @@ async fn import_bucket(
         }
     }
     let inserted = to_insert.len();
-    if !to_insert.is_empty() {
-        dest.insert_events(&dest_bucket, to_insert).await?;
+    // Batch the inserts so one bucket's backfill is many bounded POSTs, not a
+    // single multi-megabyte request. chunks() over an empty vec is a no-op.
+    for batch in to_insert.chunks(INSERT_BATCH_SIZE) {
+        dest.insert_events(&dest_bucket, batch.to_vec()).await?;
     }
 
     summary.buckets.push(BucketImport {

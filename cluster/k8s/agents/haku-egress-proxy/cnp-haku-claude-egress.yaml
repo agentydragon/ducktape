@@ -33,6 +33,9 @@ spec:
               # aiquota's read API, for which a substitution rule is defined below
               # (claude-iron.yaml). Its bearer is held here, never in the sandbox.
               - matchName: aiquota.allegedly.works
+              # ActivityWatch read API, likewise substitution-ruled below. Read-only
+              # bearer held here, never in the sandbox.
+              - matchName: activitywatch-read.allegedly.works
     - toFQDNs:
         - matchName: api.anthropic.com
         - matchName: api.github.com
@@ -47,6 +50,9 @@ spec:
         # toEntities rule below admits the connection and the DNS rule above fences
         # the name, exactly as alloy-otlp / haku-mailbox are handled elsewhere.
         - matchName: aiquota.allegedly.works
+        # activitywatch-read: same node-IP *.allegedly.works case as aiquota — listed
+        # for the pin convention; the toEntities rule admits and the DNS rule fences.
+        - matchName: activitywatch-read.allegedly.works
       toPorts:
         - ports:
             - port: "443"

@@ -49,13 +49,15 @@
     };
   };
 
+  # ActivityWatch capture + import into the central server. Second device after
+  # rugged, so wyrm2::<bucket> vs rugged::<bucket> exercises multi-device sync.
+  # Importer-only over the bearer-gated write route; token from the shared Secret.
   ducktape.activitywatch.sync = {
-    # Retired with the cluster receiver: aw-sync's receive-only import is not
-    # correct or idempotent. Keep the inactive connection material for revival.
-    enable = false;
-    syncthing = {
-      certFile = ../../../secrets/home/wyrm2/activitywatch-syncthing.cert.pem;
-      keySopsFile = ../../../secrets/home/wyrm2/activitywatch-syncthing.sops.key;
+    enable = true;
+    dest = {
+      url = "https://activitywatch-write.allegedly.works";
+      device = "wyrm2";
+      tokenSopsFile = ../../../cluster/k8s/x/activitywatch/activitywatch-write-token.sops.yaml;
     };
   };
 

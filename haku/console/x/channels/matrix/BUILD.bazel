@@ -227,6 +227,7 @@ py_test(
         "//haku/console/x:conftest",
         "//haku/console/x:conversation_history",
         "//haku/console/x:launch_identity",
+        "//haku/console/x:runtime",
         "//haku/console/x:session_events",
         "//haku/console/x:session_notifications",
         "//haku/console/x:session_runtime",

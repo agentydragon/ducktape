@@ -81,6 +81,14 @@ spec:
             # https://aiquota.allegedly.works/v1/quotas` without ever holding the key.
             - name: AIQUOTA_API_BEARER_TOKEN
               value: aiquota-token-placeholder
+            # Inert placeholder the egress proxy swaps for the central ActivityWatch
+            # read-only bearer, and only on activitywatch-read.allegedly.works' read
+            # methods (claude-iron.yaml). Lets the agent read the operator's own
+            # activity history via `curl -H "Authorization: Bearer $AW_READ_TOKEN"
+            # https://activitywatch-read.allegedly.works/api/0/buckets/` without ever
+            # holding the key.
+            - name: AW_READ_TOKEN
+              value: activitywatch-read-token-placeholder
             # ducktape is a read-only source Haku consults. github.com is reachable from the
             # agent's shell, which has the proxy in its environment, but not from the bootstrap,
             # which runs with pod env and deliberately has no proxy vars — so a clone here would

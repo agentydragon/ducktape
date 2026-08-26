@@ -40,7 +40,7 @@ spec:
         fsGroup: 100
       containers:
         - name: worker
-          image: ghcr.io/agentydragon/haku-managed-agent:devel-20260826142700-d0781b2 # {"$imagepolicy": "flux-system:haku-managed-agent"}
+          image: ghcr.io/agentydragon/haku-managed-agent:devel-20260826152531-f363331 # {"$imagepolicy": "flux-system:haku-managed-agent"}
           imagePullPolicy: Always
           command: ["/sw/bin/haku-managed-agent-run"] # run the worker closure directly (no systemd)
           securityContext:

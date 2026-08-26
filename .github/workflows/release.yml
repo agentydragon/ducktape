@@ -1,8 +1,20 @@
-# Release artifacts to GitHub via per-artifact build + gh release.
-# Each matrix entry builds its artifacts on RBE, computes their identity, and creates
-# a GitHub Release if the content changed.
+# Release artifacts to GitHub, fanning out only over the ones whose content moved.
 #
-# The matrix is derived from devinfra/ci/artifact_targets.json — the same SSOT
+# Two phases:
+#
+#   matrix  — one `bb remote build` materializes every default-config release's
+#             artifacts, then their content hashes are diffed against the published
+#             release tags. Emits a `matrix.include` of just the releases that
+#             changed. See devinfra/ci/plan_releases.py.
+#
+#   release — per changed release: run its tests, rebuild stamped, `gh release
+#             create`. Unchanged; the planner is purely a filter in front of it, and
+#             .github/actions/release-artifact still makes the same check itself.
+#
+# Typically nothing changed and the matrix is empty, so a merge costs one job instead
+# of fifty-one. See devinfra/ci/debug/ci_queue_saturation.md.
+#
+# The rows still come from devinfra/ci/artifact_targets.json — the same SSOT
 # .github/workflows/nix-wheel-check.yml reads. See the schema note at the top
 # of that file for field semantics (pins ↔ releases, etc.).
 # Per-skill rows are appended from skills/skills_registry.json (one release per
@@ -29,53 +41,53 @@ jobs:
   matrix:
     name: Compute release matrix
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
+    env:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
     outputs:
-      matrix: ${{ steps.gen.outputs.matrix }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      count: ${{ steps.plan.outputs.count }}
     steps:
       - uses: actions/checkout@v7
-      # jq is preinstalled on ubuntu-latest runners; no nix bootstrap needed
-      # here (the matrix job just parses JSON and emits a matrix.include).
-      - id: gen
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Resolve default-config targets
+        id: targets
         shell: bash
         run: |
           set -euo pipefail
-          # One matrix row per release. Every pin whose `.release == <name>`
-          # contributes an equal-standing Bazel target and output asset.
-          base=$(jq -c '
-            . as $doc |
-            [ $doc.releases | to_entries[] |
-              .key as $rname |
-              ([$doc.pins | to_entries[] | select(.value.release == $rname)]) as $ps |
-              {
-                pkg: $rname,
-                targets: ([$ps[] | .value.target] | join(" ")),
-                outputs: ([$ps[] | .value.output] | join(" ")),
-                tests: (.value.tests // ""),
-                bazel_flags: (.value.bazelFlags // ""),
-                release_metadata: ((.value.releaseMetadata // false) | tostring),
-                metadata_platform: (.value.metadataPlatform // "")
-              }
-            ]' devinfra/ci/artifact_targets.json)
-          # One row per deployable skill (skills/skills_registry.json is the SSOT).
-          # Each releases independently as `skill-<name>-<hash>`; content-addressing
-          # means only the skills that actually changed publish a new release. The
-          # `<name>_frontmatter_test` already runs in bazel-ci, so tests="" here.
-          skills=$(jq -c '
-            [ .skills[] | {
-                pkg: .pkg,
-                targets: .target,
-                outputs: .output,
-                tests: "",
-                bazel_flags: "",
-                release_metadata: "false",
-                metadata_platform: ""
-              } ]' skills/skills_registry.json)
-          matrix=$(jq -cn --argjson a "$base" --argjson b "$skills" '{include: ($a + $b)}')
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "targets=$(python3 -m devinfra.ci.plan_releases targets)" >> "$GITHUB_OUTPUT"
+
+      # One invocation for every release built under the default Bazel config.
+      # `--remote_download_outputs=toplevel` brings back the release assets
+      # themselves, because the skip decision hashes their bytes.
+      - name: bb remote build release artifacts
+        uses: ./.github/actions/bb-remote
+        with:
+          args: build ${{ steps.targets.outputs.targets }} --remote_download_outputs=toplevel
+          rbe_image: ${{ inputs.rbe_image }}
+
+      - name: Plan releases
+        id: plan
+        shell: bash
+        env:
+          GH_TOKEN: ${{ env.GH_RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          python3 -m devinfra.ci.plan_releases plan \
+            --commit-subject "$(git log -1 --format=%s)"
 
   release:
     needs: [matrix]
+    # Skips cleanly when nothing moved; `matrix` always emits a count.
+    if: needs.matrix.outputs.count != '0'
     name: Release ${{ matrix.pkg }}
     runs-on: ubuntu-latest
     timeout-minutes: 30

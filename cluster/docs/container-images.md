@@ -57,8 +57,8 @@ provisioned in code), host it in Forgejo. Reference implementation: `codex-pod`.
    `flux-system` (Flux scan `secretRef`) and consuming namespaces (kubelet
    `imagePullSecrets`). CI reads the same creds from
    `secrets/ci/forgejo-images-registry.sops.yaml` (via `setup-ci-secrets`).
-2. **Push** — for Bazel-built images in `.github/workflows/push-images.yml`, set
-   `registry: forgejo` on the matrix row; the workflow pushes
+2. **Push** — for Bazel-built images, set `"registry": "forgejo"` on the image's
+   entry in <../../devinfra/ci/image_targets.json>; the workflow pushes
    `git.allegedly.works/ducktape-ci/<image>:<tag>` with the same
    `{branch}-{timestamp}-{sha7}` tag. For bespoke workflows, use
    `skopeo copy … docker://git.allegedly.works/ducktape-ci/<image>:<tag>

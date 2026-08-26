@@ -59,6 +59,19 @@ spec:
                   name: aiquota-api-bearer-haku-claude
                   key: bearer-token
                   optional: true
+            # The central ActivityWatch read-only bearer, reflected here from the
+            # activitywatch namespace solely for iron-proxy to substitute into the
+            # sandbox's placeholder on the read route; the runtime never receives it.
+            # Optional for the same reason as the tokens above: this proxy is the only
+            # egress path for haku-runtime-sandbox, so a late-reflecting secret must not
+            # take Anthropic and GitHub down with it. Unset means no substitution --
+            # activitywatch-read 401s, everything else is untouched.
+            - name: AW_READ_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: activitywatch-read-token
+                  key: token
+                  optional: true
           ports:
             - name: proxy
               containerPort: 8180

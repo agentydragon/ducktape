@@ -43,7 +43,6 @@ from haku.console.chat_models import (
 from haku.console.config import (
     ChatRuntimesConfig,
     ClaudeCodeImplementationConfig,
-    ClaudeRuntimeConfig,
     CodexAppServerImplementationConfig,
     RuntimeRegistrationConfig,
 )
@@ -101,12 +100,12 @@ from haku.console.x.runtime import (
     Checkpoint,
     FrameEffects,
     OpenItemSeed,
+    RuntimeKey,
     RuntimeRegistry,
     RuntimeUnusable,
     TurnCompletion,
     TurnProjectionSeed,
 )
-from haku.console.x.runtime_catalog import claude_registration
 from haku.console.x.sandbox_claims import ProvisioningStep, provisioning_view
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import (
@@ -127,8 +126,9 @@ from haku.runtime.x.bridge.protocol import NOT_ADMITTED_CODE, HarnessFrame
 
 
 def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
-    assert all(field.is_required() for field in ClaudeRuntimeConfig.model_fields.values())
+    assert all(field.is_required() for field in RuntimeRegistrationConfig.model_fields.values())
     assert ChatRuntimesConfig.model_fields["claude_code"].is_required()
+    assert not ChatRuntimesConfig.model_fields["codex_app_server"].is_required()
     assert not ConsoleConfigFile.model_fields["chat_runtimes"].is_required()
 
 
@@ -214,7 +214,7 @@ async def test_replacement_pins_identity_after_agent_profile_change_and_shares_s
         ChatLaunchAuthorizer(
             authority,
             launchable_agent_ids={agent_id},
-            registered_runtime_kinds={RuntimeKind.CLAUDE_CODE},
+            registered_runtime_identities={RuntimeKey(agent_id, RuntimeKind.CLAUDE_CODE)},
             profile_runtime_kinds={"pinned": {RuntimeKind.CLAUDE_CODE}, "current": {RuntimeKind.CLAUDE_CODE}},
         )
     )
@@ -280,27 +280,20 @@ def test_chat_runtime_config_is_closed_and_rejects_the_retired_shape() -> None:
     old_shared_config = _console_config()
     old_shared_config.pop("launchable_agents")
     old_shared_config.pop("default_chat_agent_id")
-    profiles = old_shared_config["access_profiles"]
-    assert isinstance(profiles, list)
-    for profile in profiles:
-        assert isinstance(profile, dict)
-        profile.pop("allowed_chat_runtimes", None)
-    transitional = ConsoleConfigFile.model_validate(old_shared_config)
-    legacy_agent = UUID("00000000-0000-4000-8000-000000000001")
-    assert transitional.effective_launchable_agent_ids == {legacy_agent}
-    assert transitional.effective_default_chat_agent_id == legacy_agent
+    with pytest.raises(ValidationError, match="default chat Agent"):
+        ConsoleConfigFile.model_validate(old_shared_config)
 
     with pytest.raises(ValidationError, match="extra_forbidden"):
         ConsoleConfigFile.model_validate(
             _console_config(
                 chat_runtimes={
                     "claude_code": runtime_config().model_dump(mode="json"),
-                    "codex_app_server": runtime_config().model_dump(mode="json"),
+                    "future_runtime": runtime_config().model_dump(mode="json"),
                 }
             )
         )
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="claude_code must select the claude_code implementation"):
         ConsoleConfigFile.model_validate(
             _console_config(chat_runtimes={"claude_code": _codex_runtime_config().model_dump(mode="json")})
         )
@@ -322,11 +315,19 @@ def test_chat_runtime_config_fails_closed_when_malformed() -> None:
     with pytest.raises(ValidationError, match="mcp_url"):
         ConsoleConfigFile.model_validate(_console_config(chat_runtimes={"claude_code": credentialed}))
 
+    flat = runtime_config().model_dump(mode="json")
+    flat["oauth_placeholder"] = flat.pop("implementation")["oauth_placeholder"]
+    flat["mcp_static_agent_id"] = flat.pop("agent_id")
+    flat.pop("claim_prefix")
+    flat.pop("runtime_label")
+    with pytest.raises(ValidationError, match="implementation"):
+        ConsoleConfigFile.model_validate(_console_config(chat_runtimes={"claude_code": flat}))
+
 
 def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:
     config = runtime_config(ca_bundle="/ca/bundle.pem")
 
-    assert config.claude_environment() == {
+    assert config.environment() == {
         "CLAUDE_CODE_OAUTH_TOKEN": "not-a-secret",
         "HTTP_PROXY": "http://proxy.test:8180",
         "HTTPS_PROXY": "http://proxy.test:8180",
@@ -391,69 +392,34 @@ def test_codex_environment_keeps_provider_auth_in_the_sandbox_template() -> None
     assert "OPENAI_API_KEY" not in config.environment()
 
 
-def test_legacy_claude_shape_adapts_without_changing_its_wire_contract() -> None:
+def test_claude_registration_uses_the_shared_discriminated_model() -> None:
     config = runtime_config(ca_bundle="/ca/bundle.pem")
     wire = config.model_dump(mode="json")
 
-    assert ClaudeRuntimeConfig is not RuntimeRegistrationConfig
     assert set(wire) == {
+        "agent_id",
         "namespace",
         "warm_pool",
+        "claim_prefix",
+        "runtime_label",
         "cwd",
         "session_ttl_seconds",
-        "oauth_placeholder",
         "https_proxy",
         "ca_bundle",
         "no_proxy",
         "mcp_url",
-        "mcp_static_agent_id",
         "system_prompt_template",
+        "implementation",
     }
-    assert wire["oauth_placeholder"] == "not-a-secret"
-    assert wire["mcp_static_agent_id"] == "00000000-0000-4000-8000-000000000001"
-    assert ClaudeRuntimeConfig(**wire) == config
-    with pytest.raises(ValidationError):
-        RuntimeRegistrationConfig.model_validate(wire)
-
-    registration = config.registration_config()
-    assert isinstance(registration.implementation, ClaudeCodeImplementationConfig)
-    assert registration.kind is RuntimeKind.CLAUDE_CODE
-    assert (registration.agent_id, registration.claim_prefix, registration.runtime_label) == (
-        config.mcp_static_agent_id,
+    assert wire["implementation"] == {"kind": "claude_code", "oauth_placeholder": "not-a-secret"}
+    assert RuntimeRegistrationConfig.model_validate(wire) == config
+    assert isinstance(config.implementation, ClaudeCodeImplementationConfig)
+    assert config.kind is RuntimeKind.CLAUDE_CODE
+    assert (config.agent_id, config.claim_prefix, config.runtime_label) == (
+        UUID("00000000-0000-4000-8000-000000000001"),
         "claude",
         "claude-chat",
     )
-    for field in (
-        "namespace",
-        "warm_pool",
-        "cwd",
-        "session_ttl_seconds",
-        "https_proxy",
-        "ca_bundle",
-        "no_proxy",
-        "mcp_url",
-        "system_prompt_template",
-    ):
-        assert getattr(registration, field) == getattr(config, field)
-    assert registration.environment() == config.claude_environment()
-    override_agent_id = UUID("00000000-0000-4000-8000-000000000099")
-    assert config.registration_config(agent_id=override_agent_id).agent_id == override_agent_id
-
-
-def test_explicit_nested_claude_registration_uses_the_shared_model() -> None:
-    registration = runtime_config(ca_bundle="/ca/bundle.pem").registration_config()
-    parsed = RuntimeRegistrationConfig.model_validate(registration.model_dump(mode="json"))
-
-    assert isinstance(parsed.implementation, ClaudeCodeImplementationConfig)
-    assert parsed.kind is RuntimeKind.CLAUDE_CODE
-    assert parsed.environment() == registration.environment()
-
-
-def test_codex_registration_has_no_legacy_claude_compatibility_surface() -> None:
-    config = _codex_runtime_config()
-
-    assert not hasattr(config, "mcp_static_agent_id")
-    assert not hasattr(config, "claude_environment")
 
 
 def test_runtime_registration_requires_an_explicit_implementation_discriminator() -> None:
@@ -480,15 +446,6 @@ def test_runtime_registration_schema_exposes_the_implementation_discriminator() 
         },
     }
     assert len(implementation["oneOf"]) == 2
-
-
-def test_claude_registration_rejects_a_codex_implementation() -> None:
-    with pytest.raises(TypeError, match="requires ClaudeRuntimeConfig"):
-        claude_registration(
-            cast(ClaudeRuntimeConfig, _codex_runtime_config()),
-            RecordingClaims(),
-            system_prompt=SystemPromptTemplate(""),
-        )
 
 
 @pytest.mark.parametrize("api_key_env_var", ["HAKU_MCP_BEARER_TOKEN", "HAKU_AGENT_SDK_RUNNER_TOKEN"])

@@ -6,6 +6,7 @@ py_library(
     name = "launch_identity",
     srcs = ["launch_identity.py"],
     deps = [
+        ":runtime",
         "//haku/console:chat_models",
         "@pypi//sqlalchemy",
     ],
@@ -298,6 +299,7 @@ py_test(
         ":conftest",
         ":conversation_runtime",
         ":launch_identity",
+        ":runtime",
         ":session_runtime",
         ":session_store",
         "//:conftest",

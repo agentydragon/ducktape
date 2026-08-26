@@ -9,9 +9,6 @@
 let
   cfg = config.ducktape.activitywatch;
   toTOML = (pkgs.formats.toml { }).generate;
-  syncRoot = cfg.sync.root;
-  syncthingCfg = cfg.sync.syncthing;
-  syncthingConfigured = syncthingCfg.certFile != null && syncthingCfg.keySopsFile != null;
   serverReadyScript = pkgs.writeShellScript "activitywatch-server-ready" ''
     set -eu
 
@@ -29,13 +26,7 @@ in
 {
   options.ducktape.activitywatch = {
     sync = {
-      enable = lib.mkEnableOption "local ActivityWatch capture, plus an importer or Syncthing transport to the central server";
-
-      root = lib.mkOption {
-        type = lib.types.str;
-        default = "${config.home.homeDirectory}/.activitywatch-sync";
-        description = "Hidden root for the (legacy) Syncthing send-only folder.";
-      };
+      enable = lib.mkEnableOption "local ActivityWatch capture plus an importer that pushes to the central server";
 
       interval = lib.mkOption {
         type = lib.types.str;
@@ -76,32 +67,6 @@ in
             Secret (cluster + desktops) is
             cluster/k8s/x/activitywatch/activitywatch-write-token.sops.yaml.
           '';
-        };
-      };
-
-      syncthing = {
-        certFile = lib.mkOption {
-          type = lib.types.nullOr lib.types.path;
-          default = null;
-          description = "Public Syncthing certificate for this host's ActivityWatch device.";
-        };
-
-        keySopsFile = lib.mkOption {
-          type = lib.types.nullOr lib.types.path;
-          default = null;
-          description = "SOPS binary-encrypted Syncthing private key for this host's ActivityWatch device.";
-        };
-
-        clusterDeviceName = lib.mkOption {
-          type = lib.types.str;
-          default = "activitywatch-cluster";
-          description = "Syncthing device name for the cluster ActivityWatch receiver.";
-        };
-
-        clusterDeviceId = lib.mkOption {
-          type = lib.types.str;
-          default = "CXD63NS-6NVOEFY-AISQIJR-JOBNTDZ-3SCQPWP-K6PN3RN-KMHAIT4-RXYOBAR";
-          description = "Syncthing device ID for the cluster ActivityWatch receiver.";
         };
       };
     };
@@ -174,13 +139,6 @@ in
           };
           Install.WantedBy = [ "default.target" ];
         };
-
-        assertions = [
-          {
-            assertion = (syncthingCfg.certFile == null) == (syncthingCfg.keySopsFile == null);
-            message = "ducktape.activitywatch.sync.syncthing.certFile and keySopsFile must be set together.";
-          }
-        ];
 
         xdg.configFile."activitywatch/aw-client/aw-client.toml".source = toTOML "aw-client.toml" {
           server = {
@@ -255,50 +213,6 @@ in
           };
         }
       ))
-
-      (lib.mkIf (cfg.sync.enable && syncthingConfigured) {
-        sops.secrets.activitywatch_syncthing_key = {
-          sopsFile = syncthingCfg.keySopsFile;
-          format = "binary";
-          mode = "0600";
-        };
-
-        home.activation.activitywatchSyncDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-          mkdir -p '${syncRoot}'
-        '';
-
-        services.syncthing = {
-          enable = true;
-          cert = toString syncthingCfg.certFile;
-          key = config.sops.secrets.activitywatch_syncthing_key.path;
-          # This is the ActivityWatch-only Syncthing topology. Keep its config
-          # and database separate from any older general-purpose Syncthing
-          # state in ~/.config/syncthing; the Home Manager module also uses this
-          # path when it reconciles the managed folders and devices.
-          extraOptions = [ "--home=${config.xdg.stateHome}/syncthing" ];
-          overrideDevices = true;
-          overrideFolders = true;
-          settings = {
-            devices.${syncthingCfg.clusterDeviceName} = {
-              id = syncthingCfg.clusterDeviceId;
-              name = syncthingCfg.clusterDeviceName;
-            };
-            folders.${syncRoot} = {
-              id = "activitywatch";
-              label = "ActivityWatch";
-              path = syncRoot;
-              type = "sendonly";
-              devices = [ syncthingCfg.clusterDeviceName ];
-              rescanIntervalS = 60;
-              fsWatcherEnabled = true;
-            };
-            options = {
-              relaysEnabled = true;
-              urAccepted = -1;
-            };
-          };
-        };
-      })
     ]
   );
 }

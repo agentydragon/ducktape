@@ -1,0 +1,20 @@
+# Public read route for the Haku agent. Reaches the bearer-gated read Service; the
+# Haku sandbox sends a placeholder bearer that the iron egress proxy substitutes for
+# the real read token (cluster/k8s/agents/haku-egress-proxy/claude-iron.yaml). The
+# bearer-proxy allows read methods only, so even a leaked read token can't write. TLS
+# is the cluster-gateway wildcard for *.allegedly.works.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: activitywatch-read
+  namespace: activitywatch
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "activitywatch-read.allegedly.works"
+  rules:
+    - backendRefs:
+        - name: activitywatch-read
+          port: 5600

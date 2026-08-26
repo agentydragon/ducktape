@@ -17,6 +17,7 @@ from haku.console.database_schema import ConversationItem, Session
 from haku.console.x.conftest import configured_runtimes
 from haku.console.x.conversation_runtime import ConversationRuntime
 from haku.console.x.launch_identity import ChatLaunchAuthorizer, LaunchIdentity
+from haku.console.x.runtime import RuntimeKey
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, SessionStore
 
@@ -90,7 +91,7 @@ async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_tra
     production = ChatLaunchAuthorizer(
         authority,
         launchable_agent_ids={expected_agent_id},
-        registered_runtime_kinds={RuntimeKind.CLAUDE_CODE},
+        registered_runtime_identities={RuntimeKey(expected_agent_id, RuntimeKind.CLAUDE_CODE)},
         profile_runtime_kinds={"pinned": {RuntimeKind.CLAUDE_CODE}},
     )
     calls: list[tuple[UUID, str | None, bool]] = []

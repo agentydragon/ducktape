@@ -5,7 +5,13 @@ import pytest_bazel
 import yaml
 from pydantic import SecretStr
 
-from haku.console.config import CodexAppServerImplementationConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
+from haku.console.config import (
+    ClaudeCodeImplementationConfig,
+    CodexAppServerImplementationConfig,
+    OperatorIdentityConfig,
+    OperatorOidcConfig,
+    Settings,
+)
 from haku.console.mcp_config import ConsoleConfigFile
 from util.bazel.runfiles import get_required_path
 
@@ -14,10 +20,17 @@ def test_deployed_console_config_is_valid() -> None:
     raw = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
     config = ConsoleConfigFile.model_validate(raw)
 
-    # Keep the shared wire shape readable by previous replicas until the schema cutover.
-    claude = raw["chat_runtimes"]["claude_code"]
-    assert "implementation" not in claude
-    assert {"oauth_placeholder", "mcp_static_agent_id"} <= claude.keys()
+    assert config.chat_runtimes is not None
+    claude = config.chat_runtimes.claude_code
+    assert claude.claim_prefix == "claude"
+    assert claude.runtime_label == "claude-chat"
+    assert isinstance(claude.implementation, ClaudeCodeImplementationConfig)
+    codex = config.chat_runtimes.codex_app_server
+    assert codex is not None
+    assert codex.claim_prefix == "codex"
+    assert codex.runtime_label == "codex-chat"
+    assert isinstance(codex.implementation, CodexAppServerImplementationConfig)
+    assert "codex_runtime" not in raw["settings"]
 
     profiles = {profile.id: profile for profile in config.access_profiles}
     assert profiles["haku"].in_process_server_ids == {"haku_conversations", "kubernetes", "sandbox"}
@@ -76,17 +89,17 @@ def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest
     assert settings.max_wait_for_result_ms == int(max_wait_for_result_ms)
     assert settings.runner_kubernetes_proxy_url == "http://haku-kube-api-proxy.haku-console.svc.cluster.local:8080"
     assert str(settings.haku_agent_workspace_setup) == "/usr/local/bin/haku-sandbox-setup.sh"
-    assert settings.codex_runtime is not None
-    assert settings.codex_runtime.claim_prefix == "codex"
-    assert settings.codex_runtime.runtime_label == "codex-chat"
-    implementation = settings.codex_runtime.implementation
+    raw = yaml.safe_load(config_path.read_text())
+    config = ConsoleConfigFile.model_validate(raw)
+    assert config.chat_runtimes is not None
+    codex = config.chat_runtimes.codex_app_server
+    assert codex is not None
+    implementation = codex.implementation
     assert isinstance(implementation, CodexAppServerImplementationConfig)
     assert implementation.api_base_url == "http://litellm.litellm.svc.cluster.local:4000/v1"
-    assert settings.codex_runtime.mcp_url == "http://haku-console.haku-console.svc.cluster.local:9090/mcp"
-    assert settings.codex_runtime.https_proxy == (
-        "http://public-coder-codex-runner-proxy.public-coder-agent.svc.cluster.local:8080"
-    )
-    assert "litellm.litellm.svc.cluster.local" not in settings.codex_runtime.no_proxy
+    assert codex.mcp_url == "http://haku-console.haku-console.svc.cluster.local:9090/mcp"
+    assert codex.https_proxy == ("http://public-coder-codex-runner-proxy.public-coder-agent.svc.cluster.local:8080")
+    assert "litellm.litellm.svc.cluster.local" not in codex.no_proxy
 
 
 if __name__ == "__main__":

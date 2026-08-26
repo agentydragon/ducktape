@@ -63,12 +63,12 @@ redundant application.
 ### Container Images
 
 Container images are built with Bazel (`rules_oci`, `rules_distroless`), not Dockerfiles.
-The `.github/workflows/push-images.yml` matrix builds each `oci_image` on RBE,
-downloads the layout to the GHA runner, and pushes via `crane`. Pushes are
-content-deduped against the newest `devel-*` tag in the registry so unchanged images
-don't trigger Flux deployment rolls. The RBE worker image and a few upstream-derived
+`.github/workflows/push-images.yml` first content-dedupes every image against the
+newest `devel-*` tag in the registry, then builds and `crane`-pushes only the ones
+that moved, so unchanged images don't trigger Flux deployment rolls. The image roster
+is <devinfra/ci/image_targets.json>. The RBE worker image and a few upstream-derived
 images (OpenClaw, Tana MCP) still use Dockerfiles with GitHub Actions workflows, but
-all new images should use `oci_image` + a row in `push-images.yml`'s matrix.
+all new images should use `oci_image` + an entry in `image_targets.json`.
 
 ## Verification (Required)
 

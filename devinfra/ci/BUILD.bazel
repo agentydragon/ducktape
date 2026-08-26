@@ -56,6 +56,17 @@ py_library(
 )
 
 py_library(
+    name = "plan_releases",
+    srcs = ["plan_releases.py"],
+    data = [
+        "artifact_targets.json",
+        "//skills:skills_registry.json",
+    ],
+    visibility = ["//:__subpackages__"],
+    deps = [":release_content_hash"],
+)
+
+py_library(
     name = "release_content_hash",
     srcs = ["release_content_hash.py"],
     visibility = ["//:__subpackages__"],
@@ -70,6 +81,13 @@ py_library(
 py_library(
     name = "collect_bazel_ci_profiles",
     srcs = ["collect_bazel_ci_profiles.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "plan_image_pushes",
+    srcs = ["plan_image_pushes.py"],
+    data = ["image_targets.json"],
     visibility = ["//:__subpackages__"],
 )
 
@@ -130,6 +148,16 @@ py_test(
 )
 
 py_test(
+    name = "test_plan_releases",
+    srcs = ["test_plan_releases.py"],
+    deps = [
+        ":plan_releases",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_release_content_hash",
     srcs = ["test_release_content_hash.py"],
     deps = [
@@ -162,6 +190,16 @@ py_test(
     srcs = ["test_collect_bazel_ci_profiles.py"],
     deps = [
         ":collect_bazel_ci_profiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_plan_image_pushes",
+    srcs = ["test_plan_image_pushes.py"],
+    deps = [
+        ":plan_image_pushes",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

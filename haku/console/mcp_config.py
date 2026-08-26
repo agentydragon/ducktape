@@ -372,9 +372,8 @@ class ConsoleConfigFile(BaseModel):
     # libgit2 does not inherit Python/OpenSSL environment variables. Configure its process-wide
     # trust store explicitly before any HTTPS recall source is cloned or fetched.
     git_ca_bundle: Path = Path("/etc/ssl/certs/ca-certificates.crt")
-    # Closed implementation kinds, not deploy-chosen runtime instance ids. The deployment names
-    # Claude under this catalog; absent config preserves the existing console-without-chat mode.
-    # The real Claude OAuth bearer remains solely in the dedicated iron-proxy.
+    # Closed implementation kinds, not deploy-chosen runtime instance ids. Absent config preserves
+    # the existing console-without-chat mode. Real provider credentials remain outside sandboxes.
     chat_runtimes: ChatRuntimesConfig | None = None
     auto_approval_policies: list[AutoApprovalPolicy] = Field(min_length=1)
     access_profiles: list[AccessProfile] = Field(min_length=1)
@@ -410,27 +409,12 @@ class ConsoleConfigFile(BaseModel):
     # is reported in its `warnings` rather than refused (see haku/sandbox/README.md).
     agent_sandbox: SandboxEnvironmentConfig | None = None
 
-    @property
-    def effective_launchable_agent_ids(self) -> frozenset[UUID]:
-        """Launch allowlist across the old/new shared ConfigMap schema transition."""
-        if "launchable_agents" in self.model_fields_set:
-            return frozenset(entry.agent_id for entry in self.launchable_agents)
-        if self.chat_runtimes is not None:
-            return frozenset({self.chat_runtimes.claude_code.mcp_static_agent_id})
-        return frozenset()
-
-    @property
-    def effective_default_chat_agent_id(self) -> UUID | None:
-        """Launch default across the old/new shared ConfigMap schema transition."""
-        if self.default_chat_agent_id is not None:
-            return self.default_chat_agent_id
-        if self.chat_runtimes is not None:
-            return self.chat_runtimes.claude_code.mcp_static_agent_id
-        return None
-
     @model_validator(mode="before")
     @classmethod
     def _reject_retired_runtime_shape(cls, value: object) -> object:
+        # This model intentionally ignores the independent top-level `settings` section in the
+        # shared YAML, so it cannot globally forbid extras. Reject this retired sibling explicitly
+        # rather than silently accepting stale deployment wiring.
         if isinstance(value, dict) and "claude_runtime" in value:
             raise ValueError("claude_runtime was replaced by chat_runtimes.claude_code")
         return value
@@ -593,30 +577,35 @@ class ConsoleConfigFile(BaseModel):
         configured_launchable_ids = {entry.agent_id for entry in self.launchable_agents}
         if len(configured_launchable_ids) != len(self.launchable_agents):
             raise ValueError("duplicate launchable Agent id")
-        launchable_ids = self.effective_launchable_agent_ids
+        launchable_ids = frozenset(entry.agent_id for entry in self.launchable_agents)
         static_ids = {agent.agent_id for agent in self.static_agents}
         unknown_launchable = launchable_ids - static_ids
         if unknown_launchable:
             raise ValueError(f"launchable Agents are not configured static Agents: {sorted(unknown_launchable)!r}")
-        default_chat_agent_id = self.effective_default_chat_agent_id
+        default_chat_agent_id = self.default_chat_agent_id
         if default_chat_agent_id is not None and default_chat_agent_id not in launchable_ids:
             raise ValueError("default chat Agent must be launchable")
         if self.chat_runtimes is not None:
             if default_chat_agent_id is None:
                 raise ValueError("configured chat runtimes require a default chat Agent")
-            configured_runtime_kinds = self.chat_runtimes.kinds
             static_by_id = {agent.agent_id: agent for agent in self.static_agents}
-            legacy_catalog = "launchable_agents" not in self.model_fields_set
+            configured_identities = {(runtime.agent_id, runtime.kind) for runtime in self.chat_runtimes.registrations}
+            runtime_agent_ids = {agent_id for agent_id, _kind in configured_identities}
+            unknown_runtime_agents = runtime_agent_ids - static_ids
+            if unknown_runtime_agents:
+                raise ValueError(
+                    f"chat runtimes reference Agents that are not configured: {sorted(unknown_runtime_agents)!r}"
+                )
+            unlaunchable_runtime_agents = runtime_agent_ids - launchable_ids
+            if unlaunchable_runtime_agents:
+                raise ValueError(f"chat runtime Agents are not launchable: {sorted(unlaunchable_runtime_agents)!r}")
+            for runtime in self.chat_runtimes.registrations:
+                profile = profiles[static_by_id[runtime.agent_id].access_profile_id]
+                if runtime.kind not in profile.allowed_chat_runtimes:
+                    raise ValueError(f"chat runtime Agent {runtime.agent_id} profile disallows {runtime.kind.value}")
             for agent_id in launchable_ids:
-                profile = profiles[static_by_id[agent_id].access_profile_id]
-                allowed_runtime_kinds = profile.allowed_chat_runtimes
-                if legacy_catalog and "allowed_chat_runtimes" not in profile.model_fields_set:
-                    # Old config bound this one Agent to Claude through `mcp_static_agent_id`; keep
-                    # that exact meaning while old/new replicas share the file. Explicit new fields
-                    # never receive this fallback.
-                    allowed_runtime_kinds = set(configured_runtime_kinds)
-                if not configured_runtime_kinds.intersection(allowed_runtime_kinds):
-                    raise ValueError(f"launchable Agent {agent_id} profile allows no configured chat runtime")
+                if not any(identity_agent_id == agent_id for identity_agent_id, _kind in configured_identities):
+                    raise ValueError(f"launchable Agent {agent_id} has no configured chat runtime registration")
         for profile in profiles.values():
             unknown_read_profiles = profile.can_read_profiles - profiles.keys()
             if unknown_read_profiles:

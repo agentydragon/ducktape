@@ -25,17 +25,19 @@
     sopsFile = ../../../secrets/hosts/iguana-attic.yaml;
   };
 
+  home.packages = [ ducktapePackages.claude-desktop ];
+
+  # ActivityWatch capture + import into the central server. The importer folds this
+  # host's buckets into iguana::<bucket> over the bearer-gated write route, using the
+  # shared dual-recipient write token the cluster write-proxy checks.
   ducktape.activitywatch.sync = {
-    # Retired with the cluster receiver; retain config material for a future
-    # snapshot-based replacement of the aw-sync transport.
-    enable = false;
-    syncthing = {
-      certFile = ../../../secrets/home/iguana/activitywatch-syncthing.cert.pem;
-      keySopsFile = ../../../secrets/home/iguana/activitywatch-syncthing.sops.key;
+    enable = true;
+    dest = {
+      url = "https://activitywatch-write.allegedly.works";
+      device = "iguana";
+      tokenSopsFile = ../../../cluster/k8s/x/activitywatch/activitywatch-write-token.sops.yaml;
     };
   };
-
-  home.packages = [ ducktapePackages.claude-desktop ];
 
   home.stateVersion = "24.11";
 }

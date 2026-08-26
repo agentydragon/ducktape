@@ -1,0 +1,97 @@
+# Bearer-checking proxy for ActivityWatch's two token-gated routes. The central
+# aw-server has no auth of its own, so this one nginx is the gate for both, as
+# separate server blocks on separate ports:
+#   - 5602 write route (activitywatch-write.allegedly.works): the shared write
+#     token; the synced desktops send the same value as AW_DEST_TOKEN. All methods,
+#     because the importer reads the dest to dedup (see CLEANUP below).
+#   - 5603 read route (activitywatch-read.allegedly.works): a distinct read token,
+#     read methods only (GET plus POST for /api/0/query), so even a leaked read
+#     token cannot write. The Haku agent reaches it through the iron egress proxy,
+#     which substitutes the real token for the sandbox's placeholder
+#     (cluster/k8s/agents/haku-egress-proxy/claude-iron.yaml).
+# Distinct ports keep the routes' hostnames, Services, and tokens separate; only the
+# nginx process is shared. The unauthenticated readonly path (5601, readonly-proxy.conf)
+# stays its own sidecar -- Authentik is its auth boundary.
+#
+# nginx:alpine runs envsubst on templates; NGINX_ENVSUBST_FILTER pins it to ^AW_ so
+# ${AW_WRITE_TOKEN}/${AW_READ_TOKEN} are filled from the secrets while nginx's own
+# $-variables ($http_authorization, $host, ...) are left intact.
+#
+# CLEANUP: the importer reads the dest for dedup, so the write route must allow GET
+#   as well as POST -- a leaked write token can therefore read history, not just
+#   ingest. Restrict it to write methods once the importer syncs incrementally from a
+#   local high-water mark and no longer reads the destination (see
+#   cluster/docs/activitywatch/revival-plan.md).
+
+# The map key "Bearer <64-hex token>" is 71 bytes, past nginx's default 64-byte
+# bucket -- without this bump nginx dies at startup with "could not build map_hash".
+map_hash_bucket_size 128;
+
+map $http_authorization $aw_write_ok {
+    default 0;
+    "Bearer ${AW_WRITE_TOKEN}" 1;
+}
+
+map $http_authorization $aw_read_ok {
+    default 0;
+    "Bearer ${AW_READ_TOKEN}" 1;
+}
+
+# Write route: bearer-gated, all methods (importer reads dest to dedup).
+server {
+    listen 5602;
+
+    # The importer POSTs a whole bucket's events in one request, so a busy
+    # history bucket far exceeds nginx's 1m default. Cap generously (nginx spills
+    # bodies past client_body_buffer_size to a disk temp, not the 64Mi RAM limit);
+    # the incremental-sync follow-up will shrink these bodies to per-run deltas.
+    client_max_body_size 256m;
+
+    location = /healthz {
+        return 200 "ok";
+    }
+
+    location / {
+        if ($aw_write_ok = 0) {
+            return 401;
+        }
+        proxy_pass http://127.0.0.1:5600;
+        proxy_set_header Host $host;
+        # aw-server-rust CORS allow-lists localhost; drop Origin like the read proxy.
+        proxy_set_header Origin "";
+    }
+}
+
+# Read route: bearer-gated, read methods only -- GET anything, plus POST for
+# /api/0/query's large query bodies, so even the read token cannot write.
+server {
+    listen 5603;
+
+    location = /healthz {
+        return 200 "ok";
+    }
+
+    location / {
+        if ($aw_read_ok = 0) {
+            return 401;
+        }
+        limit_except GET {
+            deny all;
+        }
+        proxy_pass http://127.0.0.1:5600;
+        proxy_set_header Host $host;
+        proxy_set_header Origin "";
+    }
+
+    location /api/0/query/ {
+        if ($aw_read_ok = 0) {
+            return 401;
+        }
+        limit_except GET POST {
+            deny all;
+        }
+        proxy_pass http://127.0.0.1:5600;
+        proxy_set_header Host $host;
+        proxy_set_header Origin "";
+    }
+}
