@@ -305,6 +305,15 @@ auto_approval_policies:
         - ha_list_floors_areas
         - ha_list_services
         - ha_search
+  - id: haku_sandbox_control
+    type: exact_tools
+    tools:
+      sandbox:
+        - provision_sandbox
+        - exec_sandbox
+        - get_sandbox_info
+        - list_sandboxes
+        - dispose_sandbox
   - id: managed_gmail_labels
     type: gmail_label_namespace
     server: gmail
@@ -338,6 +347,7 @@ auto_approval_policies:
       - tana_safe_tools
       - postscanmail_reads
       - home_assistant_reads
+      - haku_sandbox_control
       - managed_gmail_labels
       - kubernetes_reads
   - id: manual_review
@@ -360,6 +370,7 @@ access_profiles:
     in_process_server_ids:
       - haku_conversations
       - kubernetes
+      - sandbox
   - id: public-coder
     auto_approval_policy: public_coder_safe_reads
     # This deploy allowlists public-coder-agent as a Console-launched chat Agent too. It shares the
@@ -400,11 +411,35 @@ kubernetes_authorization:
 # client constructs a wider duration than the tool schema recommends.
 kubernetes_grant_max_lifetime_seconds: 3600
 #
-# CLEANUP(added 2026-08-26): the `sandbox` in-process mcp.servers entry, `agent_sandbox` config,
-#   its in_process_server_ids reference, and the haku_sandbox_control policy are pulled from this
-#   file because Flux applied #4727's config ahead of an image that registers the implementation,
-#   crash-looping haku-console. Re-add all four (prior shape: git log -p this file around #4727)
-#   once a devel-built haku-console image is live.
+# The one Agent Sandbox environment the `sandbox` server hands out: the Haku pool in
+# cluster/k8s/haku/workspaces/ and the reviewed bootstrap each claim runs. Each claim records the
+# pod-describing fields it was created for, so editing one of those leaves live claims usable and
+# flags them in `warnings`; the budgets below are read live and are never recorded
+# (haku/sandbox/README.md).
+agent_sandbox:
+  sandbox:
+    namespace: haku-sandbox
+    warm_pool: haku
+    container: workspace
+    default_cwd: /workspace/haku-state
+    # initial_ttl must exceed provisioning_timeout + bootstrap.timeout; exec
+    # extension must be >= max_exec_timeout (validated at startup).
+    initial_ttl_seconds: 28800
+    exec_ttl_extension_seconds: 7200
+    provisioning_timeout_seconds: 600
+    max_exec_timeout_seconds: 300
+    max_output_bytes: 100000
+  bootstrap:
+    cwd: /workspace
+    timeout_seconds: 300
+    # The reviewed per-claim bootstrap is one baked script — egress CA trust, git identity,
+    # git credentials, and the haku-state checkout — kept in its native file
+    # (cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh) rather than inlined here, so
+    # shfmt/shellcheck lint it. Read that file for what each step does and why. Changing
+    # bootstrap behavior therefore means an image rebuild + rollout, not a ConfigMap edit.
+    script: |
+      set -euo pipefail
+      /usr/local/bin/haku-sandbox-setup.sh
 #
 # Static machine Agents: each has a fixed durable Agent UUID, globally reserved display name, and
 # bearer bound to one Operator. The bearer and controller-fed Authentik user id are named env vars,
@@ -498,6 +533,21 @@ mcp:
         auth:
           kind: static_bearer
           bearer_token_secret: tana-account-pat
+    # `sandbox` (haku/console/tools/sandbox.py): claim a warm Haku sandbox from the `agent_sandbox`
+    # pool above, bootstrap it, run bounded bash via pods/exec, dispose it. Credential-free —
+    # Console's own ServiceAccount holds the claim/exec RBAC (cluster/k8s/haku/workspaces/app/
+    # haku-console-sandbox-role.yaml), so there is no bearer to reflect and no second process to
+    # keep alive. By operator directive the whole named surface in `haku_sandbox_control`
+    # auto-approves so Haku drives its own box tap-free — exec_sandbox = arbitrary bash, but
+    # ≈ the direct `kubectl exec` Haku's SA can already run in haku-sandbox, and dispose_sandbox
+    # only releases the ephemeral claim Haku itself created (re-clonable checkout, rebuildable
+    # cache). The `haku_sandbox_control` exact-tools policy above records that reviewed authority;
+    # `in_process_server_ids` on the profile is what grants access to the server at all.
+    - id: sandbox
+      backend:
+        kind: in_process
+        credential:
+          kind: none
     # postscanmail-mcp (x/postscanmail_mcp_server): the PostScan Mail Developer API behind the
     # shared mcp-oauth-facade OIDCProxy — same facade shape as tana-mcp-facade, so
     # haku-console reaches it via operator OAuth (DCR against the facade's own OAuth surface,
