@@ -23,8 +23,9 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  # Only local-path-proxmox (activitywatch-data) is used now that Syncthing and its
+  # seaweedfs sync-inbox are gone -- so no seaweedfs-csi dependency, which otherwise
+  # blocks the revive whenever seaweedfs-csi is degraded.
   dependsOn:
     - name: local-path-provisioner
-      namespace: ducktape-flux
-    - name: seaweedfs-csi
       namespace: ducktape-flux
