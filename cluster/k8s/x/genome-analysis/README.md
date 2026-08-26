@@ -21,9 +21,12 @@ Both PVCs use `local-path-ovh-ssd`, `ReadWriteOnce`:
   whatever #4788 settles on). Written once, read many times by every future analysis run.
 - `genome-analysis-data` (100Gi) — the operator's own VCF/CRAM/indices and analysis outputs.
 
-SSD over the SeaweedFS RWX CSI class deliberately: this is a single-pod, single-writer workload
-(one job or one GUI pod at a time), so there's no need for SeaweedFS's cross-node RWX mounts —
-which also sidesteps their known reliability issue
+`local-path-*` over `seaweedfs-ovh` (the cluster's normal default — see `cluster/AGENTS.md` §
+Storage Selection) deliberately, on two grounds: **the data is replaceable** — the WGS file's
+source of truth is the operator's own Google Drive, and the reference databases are re-downloads
+from public sources, so a node failure stranding this PVC costs re-download time, not data — and
+this is a single-pod, single-writer workload (one job or one GUI pod at a time) with no real need
+for SeaweedFS's cross-node RWX mounts, which also sidesteps their known reliability issue
 ([ducktape#4616](https://github.com/agentydragon/ducktape/issues/4616), a mount-service death with
 no automatic recovery). `local-path-ovh-ssd` binds to nodes labeled `storage.allegedly.works/tier:
 ssd` in the `hil-ovh` zone via the StorageClass's own `allowedTopologies` — no manual node
@@ -34,6 +37,6 @@ share one root filesystem across everything on the node — SeaweedFS's own volu
 Forgejo's DB, and this — not a dedicated SSD partition. Verified free space before provisioning
 (~300GB free per node as of 2026-08-26); worth re-checking before requesting significantly more.
 
-Both Kustomizations use `deletionPolicy: Orphan` — sequencing data and downloaded reference
-databases are expensive to reproduce, so removing the Flux controller must never implicitly
-delete them.
+Both Kustomizations use `deletionPolicy: Orphan` — the data is replaceable (see above) but slow
+to re-download (a multi-hour WGS transfer, a couple-dozen-GB database fetch), so removing the Flux
+controller must never implicitly delete them.
