@@ -33,13 +33,13 @@ spec:
       # reached through the standalone props-registry-proxy service.
       containers:
         - name: props
-          image: ghcr.io/agentydragon/props-backend:devel-20260824083634-9e3afbb # {"$imagepolicy": "flux-system:props-backend"}
+          image: ghcr.io/agentydragon/props-backend:devel-20260826083604-d260378 # {"$imagepolicy": "flux-system:props-backend"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
           env:
             - name: PROPS_IMAGE_TAG
-              value: devel-20260824083634-9e3afbb # {"$imagepolicy": "flux-system:props-backend:tag"}
+              value: devel-20260826083604-d260378 # {"$imagepolicy": "flux-system:props-backend:tag"}
             - name: PROPS_CONFIG_FILE
               value: /etc/props/config.toml
             - name: PGHOST

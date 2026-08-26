@@ -80,18 +80,18 @@ class TestData:
 class ConfigPresets:
     """Configuration presets for different test scenarios."""
 
-    MINIMAL: ClassVar[dict] = {"github_enabled": False, "log_operations": False, "cow_method": "copy"}
+    MINIMAL: ClassVar[dict] = {"github_repo": None, "log_operations": False, "cow_method": "copy"}
 
-    INTEGRATION: ClassVar[dict] = {"github_enabled": True, "log_operations": True, "cow_method": "copy"}
+    INTEGRATION: ClassVar[dict] = {"log_operations": True, "cow_method": "copy"}
 
     E2E: ClassVar[dict] = {
-        "github_enabled": False,
+        "github_repo": None,
         "log_operations": True,
         "cache_expiration": 3600,
         "cache_refresh_age": 300,
     }
 
-    GITHUB_ENABLED: ClassVar[dict] = {"github_enabled": True, "github_repo": "test-user/test-repo"}
+    GITHUB_ENABLED: ClassVar[dict] = {"github_repo": "test-user/test-repo"}
 
 
 class MockBehaviors:

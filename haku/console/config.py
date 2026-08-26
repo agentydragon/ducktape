@@ -33,6 +33,10 @@ MCP_PATH = "/mcp"
 # pages live under it; every other path belongs to the framed haku-ui.
 _CONSOLE_ROOT_PATH = "/_console"
 
+# Claim-owned exact-session authority. Keep these names local to the deploy-config layer rather
+# than making schema/export binaries depend on the separately packaged runner implementation.
+_RESERVED_SESSION_CREDENTIAL_ENV_VARS = frozenset({"HAKU_AGENT_SDK_RUNNER_TOKEN", "HAKU_MCP_BEARER_TOKEN"})
+
 
 def _proxy_environment(*, proxy_url: str, no_proxy: str, ca_bundle: str, pip: bool = False) -> dict[str, str]:
     """Build the common explicit-proxy and CA environment without alias drift."""
@@ -45,6 +49,19 @@ def _proxy_environment(*, proxy_url: str, no_proxy: str, ca_bundle: str, pip: bo
     if pip:
         environment["PIP_CERT"] = ca_bundle
     return environment
+
+
+def _uncredentialed_http_url(value: str, *, field_name: str) -> str:
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        raise ValueError(f"{field_name} must be an HTTP(S) URL without credentials or a fragment")
+    return value
 
 
 def tool_call_console_url(console_base_url: str, tool_call_id: str) -> str:
@@ -355,8 +372,8 @@ class MatrixConfig(BaseModel):
     )
 
 
-class ClaudeRuntimeConfig(BaseModel):
-    """Explicit deploy-time wiring for the Console-owned Claude chat runtime."""
+class RuntimeExecutionConfig(BaseModel):
+    """Provider-neutral placement, session, network, and prompt wiring."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -364,40 +381,116 @@ class ClaudeRuntimeConfig(BaseModel):
     warm_pool: str
     cwd: str
     session_ttl_seconds: int = Field(ge=300, le=86400)
-    oauth_placeholder: str
     https_proxy: str
     ca_bundle: str
     no_proxy: str
     mcp_url: str
-    # Kept as a required compatibility field while old Console replicas still parse this shared
-    # ConfigMap. New replicas use it only as the default launch Agent id; they never load or pass
-    # that Agent's static credential to the runtime. Remove/rename only in a coordinated config
-    # schema cutover after the old image can no longer be rolled back.
-    mcp_static_agent_id: UUID
-    # Absolute, like every other path here: mounted beside this config file in the console's
-    # ConfigMap. Rendered by `haku.console.x.system_prompt`, which says why it is deploy
-    # config rather than code or haku-state.
     system_prompt_template: Path
 
     @field_validator("mcp_url")
     @classmethod
     def _uncredentialed_mcp_url(cls, value: str) -> str:
-        parsed = urlsplit(value)
-        if (
-            parsed.scheme not in {"http", "https"}
-            or not parsed.netloc
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.fragment
-        ):
-            raise ValueError("mcp_url must be an HTTP(S) URL without credentials or a fragment")
+        return _uncredentialed_http_url(value, field_name="mcp_url")
+
+    def proxy_environment(self, *, pip: bool = False) -> dict[str, str]:
+        return _proxy_environment(proxy_url=self.https_proxy, no_proxy=self.no_proxy, ca_bundle=self.ca_bundle, pip=pip)
+
+
+class ClaudeCodeImplementationConfig(BaseModel):
+    """The settings that belong specifically to the Claude CLI implementation."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[RuntimeKind.CLAUDE_CODE] = RuntimeKind.CLAUDE_CODE
+    oauth_placeholder: str
+
+
+class CodexAppServerImplementationConfig(BaseModel):
+    """The settings that belong specifically to the Codex app-server implementation."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[RuntimeKind.CODEX_APP_SERVER] = RuntimeKind.CODEX_APP_SERVER
+    model: str
+    provider_id: str = Field(min_length=1)
+    provider_name: str = Field(min_length=1)
+    api_base_url: str
+    api_key_env_var: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
+    github_token_placeholder: str
+
+    @field_validator("api_key_env_var")
+    @classmethod
+    def _provider_key_must_not_alias_session_authority(cls, value: str) -> str:
+        if value in _RESERVED_SESSION_CREDENTIAL_ENV_VARS:
+            raise ValueError("provider key variable must not alias an exact-session credential")
         return value
 
-    def claude_environment(self) -> dict[str, str]:
+    @field_validator("api_base_url")
+    @classmethod
+    def _uncredentialed_api_base_url(cls, value: str) -> str:
+        return _uncredentialed_http_url(value, field_name="api_base_url")
+
+
+type RuntimeImplementationConfig = Annotated[
+    ClaudeCodeImplementationConfig | CodexAppServerImplementationConfig, Field(discriminator="kind")
+]
+
+
+class RuntimeRegistrationConfig(RuntimeExecutionConfig):
+    """One Agent's shared execution wiring plus its native runtime implementation."""
+
+    agent_id: UUID
+    claim_prefix: str = Field(min_length=1)
+    runtime_label: str = Field(min_length=1)
+    implementation: RuntimeImplementationConfig
+
+    @property
+    def kind(self) -> RuntimeKind:
+        return RuntimeKind(self.implementation.kind)
+
+    def environment(self) -> dict[str, str]:
+        implementation = self.implementation
+        if isinstance(implementation, ClaudeCodeImplementationConfig):
+            provider_environment = {"CLAUDE_CODE_OAUTH_TOKEN": implementation.oauth_placeholder}
+        else:
+            provider_environment = {
+                "GH_PAT": implementation.github_token_placeholder,
+                "GITHUB_TOKEN": implementation.github_token_placeholder,
+            }
         return {
-            "CLAUDE_CODE_OAUTH_TOKEN": self.oauth_placeholder,
-            **_proxy_environment(proxy_url=self.https_proxy, no_proxy=self.no_proxy, ca_bundle=self.ca_bundle),
+            **self.proxy_environment(pip=isinstance(implementation, CodexAppServerImplementationConfig)),
+            **provider_environment,
         }
+
+
+class ClaudeRuntimeConfig(RuntimeExecutionConfig):
+    """Rolling-compatible flat wiring for the deployed Claude runtime."""
+
+    oauth_placeholder: str
+    # Required while old Console replicas share this ConfigMap. New replicas use it only as the
+    # launch Agent id; they never load or pass that Agent's static credential to the runtime.
+    mcp_static_agent_id: UUID
+
+    def claude_environment(self) -> dict[str, str]:
+        return {"CLAUDE_CODE_OAUTH_TOKEN": self.oauth_placeholder, **self.proxy_environment()}
+
+    def registration_config(self, *, agent_id: UUID | None = None) -> RuntimeRegistrationConfig:
+        """Adapt the legacy wire model to the provider-neutral registration model."""
+        return RuntimeRegistrationConfig(
+            agent_id=agent_id or self.mcp_static_agent_id,
+            namespace=self.namespace,
+            warm_pool=self.warm_pool,
+            claim_prefix="claude",
+            runtime_label="claude-chat",
+            cwd=self.cwd,
+            session_ttl_seconds=self.session_ttl_seconds,
+            https_proxy=self.https_proxy,
+            ca_bundle=self.ca_bundle,
+            no_proxy=self.no_proxy,
+            mcp_url=self.mcp_url,
+            system_prompt_template=self.system_prompt_template,
+            implementation=ClaudeCodeImplementationConfig(oauth_placeholder=self.oauth_placeholder),
+        )
 
 
 class ChatRuntimesConfig(BaseModel):
@@ -410,6 +503,8 @@ class ChatRuntimesConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    # Keep this legacy-flat until the old Console image can no longer share or roll back to the
+    # same ConfigMap. New runtime implementations use RuntimeRegistrationConfig directly.
     claude_code: ClaudeRuntimeConfig
 
     @property
@@ -560,6 +655,20 @@ class Settings(BaseSettings):
     # policies, static machine `agents` (id + env-referenced bearer + operator subject + policy),
     # Claude runtime wiring, and the `hostexec` host map (in-scope machines + exec URLs/audiences).
     config_file: Path
+
+    # Transitional Settings-owned execution registration for Codex. It lives in the top-level
+    # ``settings`` section of the shared YAML, which old ConsoleConfigFile parsers ignore, rather
+    # than under the closed ``chat_runtimes`` schema they would reject during a rolling update.
+    codex_runtime: RuntimeRegistrationConfig | None = None
+
+    @field_validator("codex_runtime")
+    @classmethod
+    def _transitional_codex_slot_accepts_only_codex(
+        cls, value: RuntimeRegistrationConfig | None
+    ) -> RuntimeRegistrationConfig | None:
+        if value is not None and value.kind is not RuntimeKind.CODEX_APP_SERVER:
+            raise ValueError("codex_runtime must select the codex_app_server implementation")
+        return value
 
     # Non-secret runner topology selected by Console for every launched Agent. The runner turns
     # this into an ephemeral tokenFile kubeconfig backed by the exact-session bearer.

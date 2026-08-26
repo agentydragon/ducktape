@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from haku.console.chat_models import RuntimeKind
-from haku.console.config import ClaudeRuntimeConfig
+from haku.console.config import (
+    ClaudeCodeImplementationConfig,
+    ClaudeRuntimeConfig,
+    CodexAppServerImplementationConfig,
+    RuntimeRegistrationConfig,
+)
 from haku.console.x.claude_code.client import cli_over_websocket
 from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter
@@ -20,6 +25,7 @@ from haku.console.x.runtime import (
 )
 from haku.console.x.sandbox_claims import SandboxClaims
 from haku.console.x.system_prompt import SystemPromptTemplate
+from haku.runtime.x.bridge.codex_options import CodexModelProvider
 
 
 def projection_registry() -> RuntimeRegistry:
@@ -62,18 +68,54 @@ def claude_registration(
     access_profile_id: str | None = None,
     execution_environment: Mapping[str, str] | None = None,
 ) -> RuntimeRegistration:
-    """Create the production Haku Claude registration."""
-    adapter = ClaudeRuntimeAdapter(client_factory=client_factory)
+    """Adapt the rolling-compatible Claude shape to the shared registration path."""
+    if not isinstance(config, ClaudeRuntimeConfig):
+        raise TypeError("claude_registration requires ClaudeRuntimeConfig")
+    return runtime_registration(
+        config.registration_config(agent_id=agent_id),
+        claims,
+        system_prompt=system_prompt,
+        client_factory=client_factory,
+        access_profile_id=access_profile_id,
+        execution_environment=execution_environment,
+    )
+
+
+def runtime_registration(
+    config: RuntimeRegistrationConfig,
+    claims: SandboxClaims,
+    *,
+    system_prompt: SystemPromptTemplate,
+    client_factory: RuntimeClientFactory = cli_over_websocket,
+    access_profile_id: str | None = None,
+    execution_environment: Mapping[str, str] | None = None,
+) -> RuntimeRegistration:
+    """Build one runtime from shared resources and its discriminated implementation."""
+    implementation = config.implementation
+    if isinstance(implementation, ClaudeCodeImplementationConfig):
+        adapter: RuntimeAdapter = ClaudeRuntimeAdapter(client_factory=client_factory)
+    elif isinstance(implementation, CodexAppServerImplementationConfig):
+        adapter = CodexRuntimeAdapter(
+            model=implementation.model,
+            model_provider=CodexModelProvider(
+                provider_id=implementation.provider_id,
+                name=implementation.provider_name,
+                base_url=implementation.api_base_url,
+                api_key_env_var=implementation.api_key_env_var,
+            ),
+        )
+    else:
+        raise AssertionError(f"unhandled runtime implementation: {type(implementation).__name__}")
     return RuntimeRegistration(
         adapter=adapter,
         resources=AgentRuntimeResources(
             claims=claims,
             session_ttl_seconds=config.session_ttl_seconds,
             cwd=config.cwd,
-            environment={**config.claude_environment(), **(execution_environment or {})},
+            environment={**config.environment(), **(execution_environment or {})},
             mcp_server_urls={"haku-console": config.mcp_url},
             system_prompt=system_prompt,
-            agent_id=agent_id or config.mcp_static_agent_id,
+            agent_id=config.agent_id,
             access_profile_id=access_profile_id,
         ),
     )

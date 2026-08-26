@@ -98,6 +98,19 @@ jobs:
             # path, not /app as on the old upstream-base image); confirm it exists.
             preload="${NODE_OPTIONS#--import=file://}"
             test -f "$preload"
+            # openclaw --version does not import the gateway runtime modules, so
+            # it passes even when the gateway is missing runtime deps. Actually
+            # load the gateway: the npm-path install copies openclaw deps from
+            # node_modules/openclaw/node_modules, and a hoisted (non-nested) beta
+            # lock left the gateway with zero deps, crashing at its first import
+            # (tslog). Run the real gateway briefly and reject a module-resolution
+            # failure; a config/network failure after modules load is expected.
+            gw_out="$(timeout 15 openclaw gateway 2>&1 || true)"
+            if printf %s "$gw_out" | grep -qE "ERR_MODULE_NOT_FOUND|Cannot find package"; then
+              echo "FATAL: gateway is missing runtime deps:" >&2
+              printf %s "$gw_out" | tail -8 >&2
+              exit 1
+            fi
           '
 
       - name: Compute tag

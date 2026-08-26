@@ -13,6 +13,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/haku/kube_api_proxy",
     visibility = ["//visibility:public"],
     deps = [
+        "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/util/sets",
         "@io_k8s_apiserver//pkg/endpoints/request",
     ],

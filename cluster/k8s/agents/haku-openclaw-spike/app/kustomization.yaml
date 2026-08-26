@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - gateway-password-eso.yaml
   - pvc.yaml
+  - pvc-v2.yaml
   - deployment.yaml
   - service.yaml
   - networkpolicy-ingress.yaml

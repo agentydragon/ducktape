@@ -1,14 +1,20 @@
-"""Unit tests for haku-console's reviewed auto-approval decision."""
+"""Tests for the auto-approval policy graph: registry composition and each policy kind's outcomes.
+
+The config here spans every policy kind on purpose -- several tests (e.g. the multi-actor GitHub
+searches) exist specifically to verify a policy composes correctly through `any_of` from more than
+one access profile, which a per-evaluator unit test wouldn't cover."""
 
 from unittest.mock import Mock
 from uuid import UUID
 
+import httpx
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
 from gmail_api.labels import GmailLabel, LabelType
-from haku.console.auto_approval import (
+from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
+from haku.console.auto_approval.registry import (
     AGENT_AUTO_APPROVAL_ID,
     AutoApprovalPolicyRegistry,
     PolicyDenial,
@@ -74,69 +80,69 @@ _MANUAL_AUTHORITY_CONFIG = {
     "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
     "default_access_profile_id": "manual",
 }
-_POLICIES = AutoApprovalPolicyRegistry(
-    ConsoleConfigFile.model_validate(
-        {
-            "mcp": {"servers": _SERVER_CONFIGS},
-            "auto_approval_policies": [
-                {"id": "safe_tools", "type": "exact_tools", "tools": _EXACT_TOOLS},
-                {
-                    "id": "managed_gmail_labels",
-                    "type": "gmail_label_namespace",
-                    "server": "gmail",
-                    "label_prefix": "haku/",
-                },
-                {
-                    "id": "public_ducktape_reads",
-                    "type": "github_repository",
-                    "server": "github",
-                    "owner": "agentydragon",
-                    "repository": "ducktape",
-                    "tools": _GITHUB_TOOLS,
-                },
-                {
-                    "id": "public_gaffer_private_reads",
-                    "type": "github_repository",
-                    "server": "github",
-                    "owner": "agentydragon",
-                    "repository": "gaffer-private",
-                    "tools": _GITHUB_TOOLS,
-                },
-                {
-                    "id": "haku_v1",
-                    "type": "any_of",
-                    "policies": [
-                        "safe_tools",
-                        "managed_gmail_labels",
-                        "public_ducktape_reads",
-                        "public_gaffer_private_reads",
-                    ],
-                },
-                {
-                    "id": "public_coder_github_reads",
-                    "type": "any_of",
-                    "policies": ["public_ducktape_reads", "public_gaffer_private_reads"],
-                },
-                {"id": "none", "type": "never"},
-            ],
-            "access_profiles": [
-                {"id": "haku", "auto_approval_policy": "haku_v1"},
-                {"id": "public-coder", "auto_approval_policy": "public_coder_github_reads"},
-                {"id": "manual", "auto_approval_policy": "none"},
-            ],
-            "default_access_profile_id": "manual",
-            "static_agents": [
-                {
-                    "agent_id": str(AGENT_ACTOR.agent_id),
-                    "display_name": "Test Agent",
-                    "token_env_var": "TEST_AGENT_TOKEN",
-                    "operator_subject_env": "TEST_AGENT_OPERATOR",
-                    "access_profile_id": "haku",
-                }
-            ],
-        }
-    )
+_CONFIG = ConsoleConfigFile.model_validate(
+    {
+        "mcp": {"servers": _SERVER_CONFIGS},
+        "auto_approval_policies": [
+            {"id": "safe_tools", "type": "exact_tools", "tools": _EXACT_TOOLS},
+            {"id": "managed_gmail_labels", "type": "gmail_label_namespace", "server": "gmail", "label_prefix": "haku/"},
+            {
+                "id": "public_ducktape_reads",
+                "type": "github_repository",
+                "server": "github",
+                "owner": "agentydragon",
+                "repository": "ducktape",
+                "tools": _GITHUB_TOOLS,
+            },
+            {
+                "id": "public_gaffer_private_reads",
+                "type": "github_repository",
+                "server": "github",
+                "owner": "agentydragon",
+                "repository": "gaffer-private",
+                "tools": _GITHUB_TOOLS,
+            },
+            {
+                "id": "haku_v1",
+                "type": "any_of",
+                "policies": [
+                    "safe_tools",
+                    "managed_gmail_labels",
+                    "public_ducktape_reads",
+                    "public_gaffer_private_reads",
+                ],
+            },
+            {
+                "id": "public_github_reads",
+                "type": "github_public_repository",
+                "server": "github",
+                "tools": _GITHUB_TOOLS,
+            },
+            {
+                "id": "public_coder_github_reads",
+                "type": "any_of",
+                "policies": ["public_ducktape_reads", "public_gaffer_private_reads", "public_github_reads"],
+            },
+            {"id": "none", "type": "never"},
+        ],
+        "access_profiles": [
+            {"id": "haku", "auto_approval_policy": "haku_v1"},
+            {"id": "public-coder", "auto_approval_policy": "public_coder_github_reads"},
+            {"id": "manual", "auto_approval_policy": "none"},
+        ],
+        "default_access_profile_id": "manual",
+        "static_agents": [
+            {
+                "agent_id": str(AGENT_ACTOR.agent_id),
+                "display_name": "Test Agent",
+                "token_env_var": "TEST_AGENT_TOKEN",
+                "operator_subject_env": "TEST_AGENT_OPERATOR",
+                "access_profile_id": "haku",
+            }
+        ],
+    }
 )
+_POLICIES = AutoApprovalPolicyRegistry(_CONFIG)
 
 
 async def _decision(tool_name: str, arguments: dict, *, gmail=None, actor: ToolCallActor = AGENT_ACTOR):
@@ -575,6 +581,109 @@ async def test_github_write_stays_manual() -> None:
     assert await _remote_decision(
         "github", "create_issue", {"owner": "agentydragon", "repo": "ducktape", "title": "No"}
     ) == (None, "manual: Agent policy 'haku_v1' did not auto-approve github/create_issue")
+
+
+def _github_visibility_handler(*public_repositories: tuple[str, str], unavailable: bool = False):
+    """A MockTransport handler standing in for GitHub's unauthenticated repo-visibility endpoint."""
+    confirmed_public = {(owner.casefold(), repo.casefold()) for owner, repo in public_repositories}
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if unavailable:
+            return httpx.Response(500)
+        _, _, owner, repository = request.url.path.split("/", 3)
+        if (owner.casefold(), repository.casefold()) in confirmed_public:
+            return httpx.Response(200, json={"private": False})
+        return httpx.Response(404)
+
+    return handle
+
+
+def _policies_with_visibility(handler) -> AutoApprovalPolicyRegistry:
+    http_client = httpx.AsyncClient(base_url="https://api.github.com", transport=httpx.MockTransport(handler))
+    return AutoApprovalPolicyRegistry(
+        _CONFIG, github_repository_visibility=GitHubRepositoryVisibilityService(http_client, ttl_seconds=3600.0)
+    )
+
+
+async def _public_repo_decision(
+    tool_name: str, arguments: dict, *, handler, actor: ToolCallActor = PUBLIC_CODER_ACTOR
+) -> tuple[str | None, str | None]:
+    return _approval(
+        await auto_approve_tool_call(
+            policies=_policies_with_visibility(handler),
+            actor=actor,
+            server_id="github",
+            tool_name=tool_name,
+            arguments=arguments,
+            gmail=None,
+            mcp=None,
+        )
+    )
+
+
+async def test_confirmed_public_third_party_repo_auto_approves() -> None:
+    handler = _github_visibility_handler(("redpanda-data", "ducktape"))
+
+    policy_id, evaluation = await _public_repo_decision(
+        "get_file_contents", {"owner": "redpanda-data", "repo": "ducktape", "path": "README.md"}, handler=handler
+    )
+
+    assert policy_id == AGENT_AUTO_APPROVAL_ID
+    assert evaluation is not None
+    assert "confirmed-public repository redpanda-data/ducktape" in evaluation
+
+
+async def test_unconfirmed_repo_stays_manual() -> None:
+    handler = _github_visibility_handler()  # nothing is confirmed public
+
+    policy_id, evaluation = await _public_repo_decision(
+        "issue_read", {"owner": "someone", "repo": "private-thing", "issue_number": 1}, handler=handler
+    )
+
+    assert policy_id is None
+    assert evaluation is not None
+    assert "not confirmed public" in evaluation
+
+
+async def test_visibility_check_failure_stays_manual() -> None:
+    """A GitHub-side outage must fail closed, never silently approve."""
+    handler = _github_visibility_handler(("redpanda-data", "ducktape"), unavailable=True)
+
+    policy_id, evaluation = await _public_repo_decision(
+        "get_file_contents", {"owner": "redpanda-data", "repo": "ducktape", "path": "README.md"}, handler=handler
+    )
+
+    assert policy_id is None
+    assert evaluation is not None
+    assert "could not confirm" in evaluation
+
+
+async def test_public_repo_code_search_confirms_the_qualifier_repository() -> None:
+    handler = _github_visibility_handler(("redpanda-data", "ducktape"))
+
+    policy_id, evaluation = await _public_repo_decision(
+        "search_code", {"query": "repo:redpanda-data/ducktape language:python"}, handler=handler
+    )
+
+    assert policy_id == AGENT_AUTO_APPROVAL_ID
+    assert evaluation is not None
+    assert "confirmed-public repository redpanda-data/ducktape" in evaluation
+
+
+async def test_public_repo_pull_request_search_still_rejects_a_smuggled_qualifier() -> None:
+    """The same anti-smuggling boundary as the fixed-repo policies: owner/repo names a confirmed-
+    public repository, but the query's own repo: qualifier would actually target a different one."""
+    handler = _github_visibility_handler(("redpanda-data", "ducktape"))
+
+    policy_id, evaluation = await _public_repo_decision(
+        "search_pull_requests",
+        {"owner": "redpanda-data", "repo": "ducktape", "query": "repo:someone/private-thing is:open"},
+        handler=handler,
+    )
+
+    assert policy_id is None
+    assert evaluation is not None
+    assert "repository qualifier" in evaluation
 
 
 async def test_grocy_reads_auto_approve() -> None:

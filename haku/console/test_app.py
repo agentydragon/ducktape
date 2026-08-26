@@ -6,9 +6,11 @@ test_capabilities.py). There is no git-write path left to exercise here.
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 from typing import Any
 
+import pytest
 import pytest_bazel
 
 from haku.console.conftest import write_config
@@ -56,13 +58,20 @@ def test_config_haku_ui_url_surfaced_and_csp_allows_framing_it(make_operator_cli
         assert resp.headers["permissions-policy"] == "geolocation=(self), display-capture=(self)"
 
 
-def test_config_advertises_the_authorized_claude_launch_pair(make_operator_client, monkeypatch, tmp_path: Path) -> None:
-    agent_id = "00000000-0000-4000-8000-000000000001"
+def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isolation(
+    make_operator_client, monkeypatch, tmp_path: Path
+) -> None:
+    haku_id = "00000000-0000-4000-8000-000000000001"
+    coder_id = "00000000-0000-4000-8000-000000000002"
     monkeypatch.setenv("TEST_HAKU_TOKEN", "haku-token")
+    monkeypatch.setenv("TEST_CODER_TOKEN", "coder-token")
     monkeypatch.setenv("TEST_HAKU_OPERATOR", "operator-sub")
-    prompt = tmp_path / "claude.md.j2"
-    prompt.write_text("Haku session {{ session_id }} in {{ workspace }}", encoding="utf-8")
-    config: dict[str, Any] = {
+    monkeypatch.setenv("TEST_CODER_OPERATOR", "operator-sub")
+    claude_prompt = tmp_path / "claude.md.j2"
+    coder_prompt = tmp_path / "coder.md.j2"
+    claude_prompt.write_text("Haku session {{ session_id }} in {{ workspace }}", encoding="utf-8")
+    coder_prompt.write_text("Public coder session {{ session_id }} in {{ workspace }}", encoding="utf-8")
+    shared_config: dict[str, Any] = {
         "chat_runtimes": {
             "claude_code": {
                 "namespace": "claude",
@@ -74,44 +83,143 @@ def test_config_advertises_the_authorized_claude_launch_pair(make_operator_clien
                 "ca_bundle": "/claude-ca.pem",
                 "no_proxy": "localhost",
                 "mcp_url": "https://console.test/mcp",
-                "mcp_static_agent_id": agent_id,
-                "system_prompt_template": str(prompt),
+                "mcp_static_agent_id": haku_id,
+                "system_prompt_template": str(claude_prompt),
             }
         },
         "auto_approval_policies": [{"id": "manual", "type": "never"}],
-        "access_profiles": [{"id": "haku", "auto_approval_policy": "manual", "allowed_chat_runtimes": ["claude_code"]}],
+        "access_profiles": [
+            {"id": "haku", "auto_approval_policy": "manual", "allowed_chat_runtimes": ["claude_code"]},
+            {
+                "id": "public-coder",
+                "auto_approval_policy": "manual",
+                # Claude remains parseable for the previous image, but the new composition
+                # narrows this dedicated Agent to Codex at the actual launch boundary.
+                "allowed_chat_runtimes": ["claude_code", "codex_app_server"],
+            },
+        ],
         "default_access_profile_id": "haku",
         "static_agents": [
             {
-                "agent_id": agent_id,
+                "agent_id": haku_id,
                 "display_name": "Haku",
                 "token_env_var": "TEST_HAKU_TOKEN",
                 "operator_subject_env": "TEST_HAKU_OPERATOR",
                 "access_profile_id": "haku",
-            }
-        ],
-        "launchable_agents": [{"agent_id": agent_id}],
-        "default_chat_agent_id": agent_id,
-    }
-    config_file = write_config(tmp_path / "console.yaml", config)
-
-    with make_operator_client(config_file=config_file) as client:
-        assert client.get("/api/config").json()["chat_launch_options"] == [
+            },
             {
-                "agent_id": agent_id,
-                "agent_display_name": "Haku",
-                "runtime": "claude_code",
-                "runtime_display_name": "Claude",
-                "is_default": True,
-            }
+                "agent_id": coder_id,
+                "display_name": "public-coder-agent",
+                "token_env_var": "TEST_CODER_TOKEN",
+                "operator_subject_env": "TEST_CODER_OPERATOR",
+                "access_profile_id": "public-coder",
+            },
+        ],
+        # The shared file exposes only the Agent every rolling replica can launch. The new
+        # image adds the Codex runtime's pinned Agent after registering that backend.
+        "launchable_agents": [{"agent_id": haku_id}],
+        "default_chat_agent_id": haku_id,
+    }
+    config_file = write_config(tmp_path / "console.yaml", shared_config)
+    codex_runtime = {
+        "agent_id": coder_id,
+        "namespace": "codex",
+        "warm_pool": "codex",
+        "claim_prefix": "codex",
+        "runtime_label": "codex-chat",
+        "cwd": "/workspace",
+        "session_ttl_seconds": 300,
+        "https_proxy": "http://coder-proxy.test:8080",
+        "ca_bundle": "/coder-ca.pem",
+        "no_proxy": "localhost",
+        "mcp_url": "https://console.test/mcp",
+        "system_prompt_template": coder_prompt,
+        "implementation": {
+            "kind": "codex_app_server",
+            "model": "codex-test",
+            "provider_id": "haku",
+            "provider_name": "Haku OpenAI-compatible",
+            "api_base_url": "http://litellm.test/v1",
+            "api_key_env_var": "OPENAI_API_KEY",
+            "github_token_placeholder": "proxy-placeholder",
+        },
+    }
+
+    # A previous replica parses the same shared file but cannot launch public-coder through its
+    # Claude backend (or advertise the not-yet-registered Codex backend).
+    with make_operator_client(config_file=config_file) as old_client:
+        assert [option["agent_id"] for option in old_client.get("/api/config").json()["chat_launch_options"]] == [
+            haku_id
         ]
-        created = client.post("/api/conversations", json={"agent_id": agent_id, "runtime": "claude_code"})
-        assert created.status_code == 201
-        assert created.json()["agent_id"] == agent_id
-        assert created.json()["runtime_kind"] == "claude_code"
+        assert (
+            old_client.post("/api/conversations", json={"agent_id": coder_id, "runtime": "claude_code"}).status_code
+            == 403
+        )
+
+    with make_operator_client(config_file=config_file, codex_runtime=codex_runtime) as client:
+        options = client.get("/api/config").json()["chat_launch_options"]
+        assert [(option["agent_id"], option["runtime"], option["is_default"]) for option in options] == [
+            (haku_id, "claude_code", True),
+            (coder_id, "codex_app_server", False),
+        ]
+        assert [(option["agent_display_name"], option["runtime_display_name"]) for option in options] == [
+            ("Haku", "Claude"),
+            ("public-coder-agent", "Codex"),
+        ]
+
+        codex = client.post("/api/conversations", json={"agent_id": coder_id, "runtime": "codex_app_server"})
+        assert codex.status_code == 201
+        assert codex.json()["agent_id"] == coder_id
+        assert codex.json()["runtime_kind"] == "codex_app_server"
+
+        forbidden = client.post("/api/conversations", json={"agent_id": coder_id, "runtime": "claude_code"})
+        assert forbidden.status_code == 403
+
         assert client.post("/api/conversations").status_code == 422
-        assert client.post("/api/conversations", json={"agent_id": agent_id}).status_code == 422
+        assert client.post("/api/conversations", json={"agent_id": haku_id}).status_code == 422
         assert client.post("/api/conversations", json={"runtime": "claude_code"}).status_code == 422
+
+    codex_default_config = copy.deepcopy(shared_config)
+    codex_default_config["launchable_agents"].append({"agent_id": coder_id})
+    codex_default_config["default_chat_agent_id"] = coder_id
+    codex_default_file = write_config(tmp_path / "console-codex-default.yaml", codex_default_config)
+    with make_operator_client(config_file=codex_default_file, codex_runtime=codex_runtime) as client:
+        options = client.get("/api/config").json()["chat_launch_options"]
+        assert [(option["agent_id"], option["runtime"], option["is_default"]) for option in options] == [
+            (coder_id, "codex_app_server", True),
+            (haku_id, "claude_code", False),
+        ]
+        selected_default = client.post("/api/conversations", json={"agent_id": coder_id, "runtime": "codex_app_server"})
+        assert selected_default.status_code == 201
+        assert selected_default.json()["agent_id"] == coder_id
+        assert selected_default.json()["runtime_kind"] == "codex_app_server"
+
+    wrong_transitional_runtime = copy.deepcopy(codex_runtime)
+    wrong_transitional_runtime["implementation"] = {"kind": "claude_code", "oauth_placeholder": "placeholder"}
+    with (
+        pytest.raises(ValueError, match="codex_runtime must select the codex_app_server implementation"),
+        make_operator_client(config_file=config_file, codex_runtime=wrong_transitional_runtime),
+    ):
+        pass
+
+    monkeypatch.setenv("TEST_OTHER_TOKEN", "other-token")
+    monkeypatch.setenv("TEST_OTHER_OPERATOR", "operator-sub")
+    shared_profile_config = copy.deepcopy(shared_config)
+    shared_profile_config["static_agents"].append(
+        {
+            "agent_id": "00000000-0000-4000-8000-000000000003",
+            "display_name": "other-public-coder-shell",
+            "token_env_var": "TEST_OTHER_TOKEN",
+            "operator_subject_env": "TEST_OTHER_OPERATOR",
+            "access_profile_id": "public-coder",
+        }
+    )
+    shared_profile_file = write_config(tmp_path / "console-shared-codex-profile.yaml", shared_profile_config)
+    with (
+        pytest.raises(ValueError, match="dedicated access profile"),
+        make_operator_client(config_file=shared_profile_file, codex_runtime=codex_runtime),
+    ):
+        pass
 
 
 def test_deployment_metadata_comes_from_runtime_image_tags(make_operator_client, monkeypatch) -> None:

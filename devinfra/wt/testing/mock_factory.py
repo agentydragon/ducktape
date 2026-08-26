@@ -165,6 +165,8 @@ class ServiceBuilder:
             git_manager = self.mocks.get("git", MockFactory.git_manager())
 
         if "github" in self._use_real:
+            if self.config.github_repo is None:
+                raise ValueError("use_real('github') requires a configured github_repo")
             github_client = GitHubInterface(self.config.github_repo)
         else:
             github_client = self.mocks.get("github", MockFactory.github_client())

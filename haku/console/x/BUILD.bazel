@@ -38,6 +38,7 @@ py_library(
         "//haku/console/x/claude_code:client",
         "//haku/console/x/claude_code:runtime",
         "//haku/console/x/codex_app_server:runtime",
+        "//haku/runtime/x/bridge:codex_options",
         "@pypi//pydantic",
     ],
 )

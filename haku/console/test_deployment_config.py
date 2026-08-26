@@ -14,6 +14,11 @@ def test_deployed_console_config_is_valid() -> None:
     raw = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
     config = ConsoleConfigFile.model_validate(raw)
 
+    # Keep the shared wire shape readable by previous replicas until the schema cutover.
+    claude = raw["chat_runtimes"]["claude_code"]
+    assert "implementation" not in claude
+    assert {"oauth_placeholder", "mcp_static_agent_id"} <= claude.keys()
+
     profiles = {profile.id: profile for profile in config.access_profiles}
     assert profiles["haku"].in_process_server_ids == {"haku_conversations", "kubernetes", "sandbox"}
 

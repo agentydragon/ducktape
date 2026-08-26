@@ -36,13 +36,12 @@ class ConfigFactory:
             wt_dir = self.temp_base_dir / TestData.Paths.TEST_WT_DIR_PARENT / TestData.Paths.WT_DIR_NAME
 
         # Create default configuration
-        default_config = {
+        default_config: dict[str, Any] = {
             "main_repo": str(self.repo_path),
             "worktrees_dir": str(self.repo_path / TestData.Paths.WORKTREES_DIR_NAME),
             "branch_prefix": TestData.Branches.TEST_PREFIX,
             "upstream_branch": TestData.Branches.MAIN,
-            "github_repo": "test-user/test-repo",
-            "github_enabled": False,
+            "github_repo": None,
             "log_operations": True,
             "cache_expiration": 3600,
             "cache_refresh_age": 300,
@@ -126,9 +125,9 @@ class ConfigBuilder:
         self._preset = preset
         return self
 
-    def with_github(self, repo: str = "test-user/test-repo", *, enabled: bool = True):
-        """Configure GitHub integration."""
-        self._overrides.update({"github_enabled": enabled, "github_repo": repo})
+    def with_github(self, repo: str | None = "test-user/test-repo"):
+        """Configure GitHub integration; None disables it."""
+        self._overrides.update({"github_repo": repo})
         return self
 
     def with_worktrees_dir(self, path: str | Path):

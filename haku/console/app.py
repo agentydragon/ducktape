@@ -58,6 +58,7 @@ from haku.console import (
 from haku.console.agents import enrollment_routes
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
+from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.chat_models import RuntimeKind
 from haku.console.config import MCP_PATH, EmbedderConfig, GitRecallIndexDefinition, Settings
 from haku.console.database_migrate import main as migration_main, verify_schema
@@ -227,6 +228,8 @@ def create_app(
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     claude_runtime = console_config.chat_runtimes.claude_code if console_config.chat_runtimes is not None else None
+    claude_registration_config = claude_runtime.registration_config() if claude_runtime is not None else None
+    codex_runtime = settings.codex_runtime
     static_by_id = {agent.agent_id: agent for agent in console_config.static_agents}
     profile_runtime_kinds = {
         profile.id: set(profile.allowed_chat_runtimes) for profile in console_config.access_profiles
@@ -320,26 +323,26 @@ def create_app(
         else {KUBERNETES_PROXY_URL_ENV: settings.runner_kubernetes_proxy_url}
     )
     if claude_runtime is not None:
+        assert claude_registration_config is not None
         try:
-            claude_profile_id = static_by_id[claude_runtime.mcp_static_agent_id].access_profile_id
+            claude_profile_id = static_by_id[claude_registration_config.agent_id].access_profile_id
         except KeyError as error:
             raise ValueError("configured Claude Agent must be a static Agent") from error
         registrations.append(
-            runtime_catalog.claude_registration(
-                claude_runtime,
+            runtime_catalog.runtime_registration(
+                claude_registration_config,
                 sandbox_claims.KubernetesSandboxClaims(
                     sandbox_claims.SandboxClaimSpec(
-                        namespace=claude_runtime.namespace,
-                        warm_pool=claude_runtime.warm_pool,
-                        claim_prefix="claude",
-                        runtime_label="claude-chat",
+                        namespace=claude_registration_config.namespace,
+                        warm_pool=claude_registration_config.warm_pool,
+                        claim_prefix=claude_registration_config.claim_prefix,
+                        runtime_label=claude_registration_config.runtime_label,
                         runner_environment={},
                     )
                 ),
                 # Parsed at construction, so a broken deploy template prevents readiness rather than
                 # failing the first attached chat session hours later.
                 system_prompt=SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
-                agent_id=claude_runtime.mcp_static_agent_id,
                 access_profile_id=claude_profile_id,
                 execution_environment={
                     **runner_environment,
@@ -351,12 +354,47 @@ def create_app(
                 },
             )
         )
+    if codex_runtime is not None:
+        try:
+            codex_profile_id = static_by_id[codex_runtime.agent_id].access_profile_id
+        except KeyError as error:
+            raise ValueError("configured Codex Agent must be a static Agent") from error
+        registrations.append(
+            runtime_catalog.runtime_registration(
+                codex_runtime,
+                sandbox_claims.KubernetesSandboxClaims(
+                    sandbox_claims.SandboxClaimSpec(
+                        namespace=codex_runtime.namespace,
+                        warm_pool=codex_runtime.warm_pool,
+                        claim_prefix=codex_runtime.claim_prefix,
+                        runtime_label=codex_runtime.runtime_label,
+                        runner_environment={},
+                    )
+                ),
+                system_prompt=SystemPromptTemplate.from_path(codex_runtime.system_prompt_template),
+                access_profile_id=codex_profile_id,
+                # The public-coder SandboxTemplate already owns the explicit empty-workspace
+                # setup policy. Registration contributes only Console-selected shared topology.
+                execution_environment=runner_environment,
+            )
+        )
     if registrations:
         runtime_registry = runtime_catalog.execution_registry(*registrations)
     else:
         # Runtime-disabled replicas can still inspect every linked durable runtime kind. This
         # registry has projection only: no claims, credentials, or launcher.
         runtime_registry = runtime_catalog.projection_registry()
+    if codex_runtime is not None:
+        codex_profile_id = static_by_id[codex_runtime.agent_id].access_profile_id
+        profile_agents = {
+            agent_id for agent_id, agent in static_by_id.items() if agent.access_profile_id == codex_profile_id
+        }
+        if profile_agents != {codex_runtime.agent_id}:
+            raise ValueError("configured Codex Agent must have a dedicated access profile")
+        # Keep Claude in the shared profile schema only so the previous image can parse the same
+        # ConfigMap. This replica narrows the actual public-coder launch boundary to Codex.
+        profile_runtime_kinds[codex_profile_id] = {codex_runtime.kind}
+        launchable_agent_ids.add(codex_runtime.agent_id)
     # All read and write paths share one registry. Projection-only composition may link dormant
     # adapters, while launch-capable production composition includes only deliberately supported
     # adapters and resources; no hidden Claude fallback can reinterpret another runtime's rows.
@@ -516,6 +554,7 @@ def create_app(
         if console_config.kubernetes_authorization is not None
         else None
     )
+    github_repository_visibility = GitHubRepositoryVisibilityService()
 
     # The gmail/google_calendar in-process servers are built per call from the acting Operator's
     # Google access token, resolved from the provider-connection store. Auto-approval label lookups
@@ -642,6 +681,7 @@ def create_app(
         authentik_token_store=authentik_operator_token_store,
         approval_notifier=approval_notifier,
         kubernetes_authorization=kubernetes_authorization,
+        github_repository_visibility=github_repository_visibility,
     )
 
     # The console's own Agent-and-Operator MCP server, mounted at /mcp — its reason to run.
@@ -719,6 +759,7 @@ def create_app(
                     await kubernetes_authorization.aclose()
                 if sandbox_server is not None:
                     await sandbox_server.client.aclose()
+                await github_repository_visibility.aclose()
                 if session_service is not None:
                     await session_service.aclose()
                 await session_notifications.aclose()

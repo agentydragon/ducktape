@@ -41,7 +41,7 @@ def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict[str, Any])
 def test_github_pr_display_with_mocked_pygithub(real_temp_repo, config_factory, tmp_path, write_pr_fixtures, wt_cli):
     # Prepare config with GitHub enabled
     factory = config_factory(real_temp_repo)
-    config = factory.integration(github_enabled=True, github_repo="test/test")
+    config = factory.integration(github_repo="test/test")
 
     # Build environment inheriting system env to ensure click, etc. are available
     env = os.environ.copy()

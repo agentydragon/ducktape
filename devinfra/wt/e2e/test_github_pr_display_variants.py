@@ -123,7 +123,7 @@ def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict[str, Any])
 def test_github_pr_variants(variant, expects, github_pr_env: "GithubPrEnv"):
     env = github_pr_env
     factory = env.config_factory(env.repo_path)
-    config = factory.integration(github_enabled=True, github_repo="test/test")
+    config = factory.integration(github_repo="test/test")
     wt_cli = env.wt_cli
     write_pr_fixtures = env.write_pr_fixtures
 

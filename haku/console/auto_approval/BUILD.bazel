@@ -1,0 +1,89 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//haku/console:__subpackages__"])
+
+py_library(
+    name = "decision",
+    srcs = ["decision.py"],
+)
+
+py_library(
+    name = "github",
+    srcs = ["github.py"],
+    deps = [
+        ":decision",
+        "@pypi//httpx",
+    ],
+)
+
+py_test(
+    name = "test_github",
+    srcs = ["test_github.py"],
+    deps = [
+        ":github",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        # Pytest async auto mode is configured by the root conftest hooks.
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_library(
+    name = "gmail",
+    srcs = ["gmail.py"],
+    deps = [
+        ":decision",
+        "//haku/console/tools:gmail_client",
+    ],
+)
+
+py_library(
+    name = "kubernetes",
+    srcs = ["kubernetes.py"],
+    deps = [
+        ":decision",
+        "//haku/console:kubectl_passthrough_policy",
+        "//haku/console:kubernetes_authorization",
+        "//haku/console:tool_call_actor",
+    ],
+)
+
+py_library(
+    name = "registry",
+    srcs = ["registry.py"],
+    deps = [
+        ":decision",
+        ":github",
+        ":gmail",
+        ":kubernetes",
+        "//haku/console:kubernetes_authorization",
+        "//haku/console:mcp_config",
+        "//haku/console:tool_call_actor",
+        "//haku/console/tools:gmail_client",
+        "@pypi//fastmcp_slim",
+        "@pypi//jsonschema",
+    ],
+)
+
+py_test(
+    name = "test_registry",
+    srcs = ["test_registry.py"],
+    deps = [
+        ":github",
+        ":registry",
+        "//:conftest",
+        "//gmail_api:labels",
+        "//haku/console:mcp_config",
+        "//haku/console:tool_call_actor",
+        "//haku/console/tools:gmail",
+        "//haku/console/tools:google_calendar",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        # Pytest async auto mode is configured by the root conftest hooks.
+        "@pypi//pytest_asyncio",
+    ],
+)

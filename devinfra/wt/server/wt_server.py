@@ -124,7 +124,7 @@ class WtDaemon:
 
         # Initialize GitHub interface
         self.github_interface = None
-        if self.config.github_enabled and self.config.github_repo:
+        if self.config.github_repo is not None:
             try:
                 self.github_interface = GitHubInterface(self.config.github_repo)
                 logger.info("GitHub interface initialized for repo: %s", self.config.github_repo)
@@ -136,7 +136,6 @@ class WtDaemon:
 
         # Reactive state store
         self.store = DaemonStore()
-        self.store.set_github_enabled(self.config.github_enabled)
         self._worktree_observer = None  # Filesystem watcher for worktrees dir
 
         # Managed state
@@ -269,10 +268,6 @@ class WtDaemon:
             errors.append(f"Cannot create daemon directory (permission denied): {self.config.wt_dir}")
         except OSError as e:
             errors.append(f"Cannot create daemon directory: {self.config.wt_dir} ({e})")
-
-        # Validate GitHub configuration if enabled
-        if self.config.github_enabled and not self.config.github_repo:
-            errors.append("GitHub is enabled but github_repo is not configured")
 
         if errors:
             return "Configuration validation failed:\n" + "\n".join(f"  - {error}" for error in errors)

@@ -1,0 +1,15 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: haku-openclaw-spike-backups
+  namespace: seaweedfs
+spec:
+  name: haku-openclaw-spike-backups
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  # Restic retention/pruning is managed by VolSync, not by Bucket deletion.
+  reclaimPolicy: Retain
+  access:
+    - user: haku-openclaw-spike-backups
+      actions: [Read, Write, List, Tagging]

@@ -17,6 +17,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 const (
@@ -404,13 +406,10 @@ func unsupportedAttributes(attributes RequestAttributes, request *http.Request) 
 	if attributes.Verb == "" {
 		return "this HTTP method is not mapped to a Kubernetes authorization verb"
 	}
-	if attributes.Verb == "watch" || queryMayEnable(request.URL.Query()["watch"]) {
-		return "Kubernetes watch requests are not implemented"
-	}
 	if attributes.Verb == "proxy" || attributes.Subresource == "proxy" {
 		return "Kubernetes resource proxy requests are not implemented"
 	}
-	if isUpgradeRequest(request) && !isStreamingRequest(attributes, request) {
+	if isUpgradeRequest(request) && !isExecRequest(attributes, request) && !isPortForwardRequest(attributes, request) {
 		return "upgraded connections other than pod exec and port-forward are not implemented"
 	}
 	if attributes.Resource == "pods" {
@@ -421,10 +420,6 @@ func unsupportedAttributes(attributes RequestAttributes, request *http.Request) 
 			}
 		case "attach":
 			return "pod attach is not implemented"
-		case "log":
-			if queryMayEnable(request.URL.Query()["follow"]) {
-				return "following pod logs is not implemented"
-			}
 		}
 	}
 	return ""
@@ -458,8 +453,31 @@ func isWebSocketUpgradeRequest(request *http.Request) bool {
 	return isUpgradeRequest(request) && strings.EqualFold(strings.TrimSpace(request.Header.Get("Upgrade")), "websocket") && request.Header.Get("Sec-Websocket-Protocol") != ""
 }
 
+// isFollowLogRequest reports whether kube-apiserver will stream this pod log
+// rather than return a bounded one. Kubernetes does not distinguish following
+// from reading in RBAC — both are get on pods/log — so an Haku grant cannot
+// either; the difference is only that a followed log gets stream lifetime
+// enforcement instead of the ordinary request timeout.
+func isFollowLogRequest(attributes RequestAttributes, request *http.Request) bool {
+	return attributes.Resource == "pods" &&
+		attributes.Subresource == "log" &&
+		kubernetesBoolParameter(request.URL.Query()["follow"])
+}
+
+// isStreamingRequest reports whether a request may stay open indefinitely and so
+// must be bounded by the authorization decision rather than by RequestTimeout.
+//
+// A watch needs no separate detection here. RequestInfoFactory resolves the verb
+// by decoding ListOptions with the same parameter codec kube-apiserver uses, and
+// resolves the deprecated /api/{version}/watch/ path prefix to the same verb, so
+// a request the proxy authorizes as watch is exactly a request kube-apiserver
+// will stream. A named object carries no watch verb because kube-apiserver
+// serves it through the bounded get handler regardless of the query parameter.
 func isStreamingRequest(attributes RequestAttributes, request *http.Request) bool {
-	return isExecRequest(attributes, request) || isPortForwardRequest(attributes, request)
+	return attributes.Verb == "watch" ||
+		isExecRequest(attributes, request) ||
+		isPortForwardRequest(attributes, request) ||
+		isFollowLogRequest(attributes, request)
 }
 
 var forwardedRequestHeaders = map[string]bool{
@@ -506,25 +524,22 @@ func headerContainsToken(header http.Header, name string, token string) bool {
 	return false
 }
 
-// queryMayEnable is intentionally conservative: Kubernetes' request parsers
-// accept several true spellings and, for watch, fall back to true for every
-// non-empty value except the explicit false forms when decoding fails. Rejecting
-// an invalid value is safe; forwarding a stream misclassified as ordinary is not.
-func queryMayEnable(values []string) bool {
-	if len(values) == 0 {
-		return false
-	}
-	// Duplicate values are ambiguous across decoders; reject them rather than
-	// authorize one interpretation and forward another.
-	if len(values) != 1 {
+// kubernetesBoolParameter decodes a boolean Kubernetes query parameter with
+// apimachinery's own conversion, so the proxy's streaming classification cannot
+// disagree with what kube-apiserver will actually serve. Its semantics are not
+// strconv.ParseBool: only an absent value, "0", or a case-insensitive "false" is
+// false, every other value is true (an empty string and unparseable text
+// included), whitespace is significant, and a repeated parameter is decided by
+// its first value alone.
+func kubernetesBoolParameter(values []string) bool {
+	var enabled bool
+	if err := runtime.Convert_Slice_string_To_bool(&values, &enabled, nil); err != nil {
+		// The conversion has no failure path today. Should it gain one, an
+		// undecodable value must classify as a stream rather than escape stream
+		// lifetime enforcement.
 		return true
 	}
-	switch strings.ToLower(strings.TrimSpace(values[0])) {
-	case "0", "false":
-		return false
-	default:
-		return true
-	}
+	return enabled
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

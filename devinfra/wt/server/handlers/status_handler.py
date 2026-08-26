@@ -236,7 +236,7 @@ async def get_status(deps: ServiceDependencies, params: StatusParams) -> StatusR
     )
     # Derive github_state from the centralized watcher's pr_cache
     github_state = ComponentState.DISABLED
-    if config.github_enabled and github_watcher:
+    if config.github_repo is not None and github_watcher:
         pr_cache_state = github_watcher.pr_cache()
         if pr_cache_state.last_ok is not None:
             github_state = ComponentState.OK

@@ -67,14 +67,23 @@ let
     rev = "a8c1973388fa2645fce83f0239b2356744a98045";
     hash = "sha256-BTrlg8Y88j50hS3EHDCGQhh0k9zSbZt58b2LmYMcq8w=";
     # npm dependency-cache hash for the beta-pinned wrapper lock (npm_wrapper/).
-    gatewayNpmDepsHash = "sha256-FaKDOhuqW7vU/3M2gUqveRMWyJ9622PsdpIdHiapL/M=";
+    gatewayNpmDepsHash = "sha256-nsYhpaw1wsKZwuIx9KZmM5jYPd4zqX4klSah07LP2lk=";
   };
 
   # nix-openclaw's npm wrapper (nix/npm/openclaw/) pins openclaw to the *stable*
   # release, and openclaw-gateway-npm.nix asserts the lock version equals
   # `sourceInfo.releaseVersion`. Splice our beta-pinned wrapper (npm_wrapper/)
-  # over it so the same buildNpmPackage path installs 2026.8.1-beta.3. Regenerate
-  # npm_wrapper/ with `npm install openclaw@<ver> --package-lock-only --omit=dev`.
+  # over it so the same buildNpmPackage path installs 2026.8.1-beta.3.
+  #
+  # Regenerate npm_wrapper/ with:
+  #   npm install openclaw@<ver> --package-lock-only --omit=dev --install-strategy=nested
+  # `--install-strategy=nested` is load-bearing: the beta ships no
+  # npm-shrinkwrap.json, so a default (hoisted) install lifts all of openclaw's
+  # runtime deps to the wrapper's top-level node_modules -- but nix-openclaw's
+  # install script copies only node_modules/openclaw/., so the gateway would ship
+  # with ZERO runtime deps and crash at its first import (tslog / undici). Nesting
+  # mirrors what stable's shrinkwrap does, so the deps sit under
+  # node_modules/openclaw and get copied into the gateway.
   patchedNixOpenclaw = ocPkgs.runCommand "nix-openclaw-openclaw-beta-wrapper" { } ''
     cp -r ${nix-openclaw} "$out"
     chmod -R u+w "$out"

@@ -59,15 +59,44 @@ func TestRequestInfoTreatsDiscoveryAsNonResource(t *testing.T) {
 	}
 }
 
-func TestAmbiguousWatchValuesFailConservatively(t *testing.T) {
-	for _, query := range []string{"watch=", "watch=garbage", "watch=on", "watch=false&watch=true"} {
-		request, _ := http.NewRequest(http.MethodGet, "https://proxy.test/api/v1/pods?"+query, nil)
-		got, err := newRequestInfoResolver().NewRequestInfo(request)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if reason := unsupportedAttributes(attributesFrom(got), request); reason == "" {
-			t.Errorf("%s: request was not rejected (classified verb %q)", query, got.Verb)
-		}
+// The verb decides both the rule sent for authorization and whether the request
+// gets stream lifetime enforcement, so it must be exactly kube-apiserver's own.
+func TestWatchVerbFollowsKubernetesRequestClassification(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		path string
+		verb string
+	}{
+		{name: "watch true", path: "/api/v1/namespaces/demo/pods?watch=true", verb: "watch"},
+		{name: "watch absent", path: "/api/v1/namespaces/demo/pods", verb: "list"},
+		{name: "watch false", path: "/api/v1/namespaces/demo/pods?watch=false", verb: "list"},
+		{name: "watch 0", path: "/api/v1/namespaces/demo/pods?watch=0", verb: "list"},
+		// An unparseable value is true, matching apimachinery's conversion.
+		{name: "watch unparseable", path: "/api/v1/namespaces/demo/pods?watch=not-a-boolean", verb: "watch"},
+		// A repeated parameter is decided by its first value alone.
+		{name: "watch repeated false first", path: "/api/v1/namespaces/demo/pods?watch=false&watch=true", verb: "list"},
+		{name: "deprecated path prefix", path: "/api/v1/watch/namespaces/demo/pods", verb: "watch"},
+		// kube-apiserver serves a named object through its bounded get handler,
+		// so the query parameter does not make one a watch.
+		{name: "named object", path: "/api/v1/namespaces/demo/pods/web?watch=true", verb: "get"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			resolver := newRequestInfoResolver()
+			req, err := http.NewRequest(http.MethodGet, "https://kubernetes"+test.path, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			info, err := resolver.NewRequestInfo(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			attributes := attributesFrom(info)
+			if attributes.Verb != test.verb {
+				t.Fatalf("verb = %q, want %q", attributes.Verb, test.verb)
+			}
+			if got := isStreamingRequest(attributes, req); got != (test.verb == "watch") {
+				t.Errorf("isStreamingRequest = %t, want %t", got, test.verb == "watch")
+			}
+		})
 	}
 }

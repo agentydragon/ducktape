@@ -1,0 +1,61 @@
+"""Idempotent one-way importer of per-device ActivityWatch snapshots into a
+central aw-server-rust datastore.
+
+Reuses the vendored aw-server-rust crates (@aw_server_rust//:aw_datastore for the
+central store, //:aw_models for the event/bucket types) and reads source snapshots
+read-only via @aw_server_crates//:rusqlite. It shares nothing with aw-sync's
+push/pull machinery.
+
+Not reached by the root `bazel test //...` sweep — this is a nested module
+(.bazelignore'd at the root). Build/test it by module label:
+  bbr test @ducktape_activitywatch//importer:aw_importer_test
+"""
+
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+
+rust_library(
+    name = "aw_importer",
+    srcs = [
+        "lib.rs",
+        "snapshot.rs",
+    ],
+    crate_root = "lib.rs",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@aw_server_crates//:chrono",
+        "@aw_server_crates//:rusqlite",
+        "@aw_server_crates//:serde_json",
+        "@aw_server_crates//:thiserror",
+        "@aw_server_rust//:aw_datastore",
+        "@aw_server_rust//:aw_models",
+    ],
+)
+
+rust_binary(
+    name = "aw_importer_bin",
+    srcs = ["main.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aw_importer",
+        "@aw_server_crates//:clap",
+        "@aw_server_rust//:aw_datastore",
+    ],
+)
+
+rust_test(
+    name = "aw_importer_test",
+    size = "small",
+    srcs = ["import_test.rs"],
+    crate_root = "import_test.rs",
+    edition = "2024",
+    deps = [
+        ":aw_importer",
+        "@aw_server_crates//:chrono",
+        "@aw_server_crates//:rusqlite",
+        "@aw_server_crates//:serde_json",
+        "@aw_server_rust//:aw_datastore",
+        "@aw_server_rust//:aw_models",
+    ],
+)

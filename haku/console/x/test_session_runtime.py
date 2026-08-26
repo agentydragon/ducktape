@@ -40,7 +40,13 @@ from haku.console.chat_models import (
     ToolOutcome,
     TurnOutcome,
 )
-from haku.console.config import ChatRuntimesConfig, ClaudeRuntimeConfig
+from haku.console.config import (
+    ChatRuntimesConfig,
+    ClaudeCodeImplementationConfig,
+    ClaudeRuntimeConfig,
+    CodexAppServerImplementationConfig,
+    RuntimeRegistrationConfig,
+)
 from haku.console.conftest import console_sessions
 from haku.console.database_schema import (
     Agent,
@@ -96,6 +102,7 @@ from haku.console.x.runtime import (
     TurnCompletion,
     TurnProjectionSeed,
 )
+from haku.console.x.runtime_catalog import claude_registration
 from haku.console.x.sandbox_claims import ProvisioningStep, provisioning_view
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import (
@@ -289,6 +296,11 @@ def test_chat_runtime_config_is_closed_and_rejects_the_retired_shape() -> None:
             )
         )
 
+    with pytest.raises(ValidationError):
+        ConsoleConfigFile.model_validate(
+            _console_config(chat_runtimes={"claude_code": _codex_runtime_config().model_dump(mode="json")})
+        )
+
     with pytest.raises(ValidationError, match="claude_runtime was replaced"):
         ConsoleConfigFile.model_validate(_console_config(claude_runtime=runtime_config().model_dump(mode="json")))
 
@@ -321,6 +333,170 @@ def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:
         "CURL_CA_BUNDLE": "/ca/bundle.pem",
         "REQUESTS_CA_BUNDLE": "/ca/bundle.pem",
     }
+
+
+def _codex_runtime_config(**overrides: Any) -> RuntimeRegistrationConfig:
+    implementation: dict[str, Any] = {
+        "kind": "codex_app_server",
+        "model": "codex-gpt-5.6-sol",
+        "provider_id": "haku",
+        "provider_name": "Haku OpenAI-compatible",
+        "api_base_url": "http://litellm.litellm.svc.cluster.local:4000/v1",
+        "api_key_env_var": "OPENAI_API_KEY",
+        "github_token_placeholder": "proxy-github-placeholder",
+    }
+    for field in tuple(overrides):
+        if field in implementation:
+            implementation[field] = overrides.pop(field)
+    values: dict[str, Any] = {
+        "agent_id": "00000000-0000-4000-8000-000000000002",
+        "namespace": "haku-runtime-sandbox",
+        "warm_pool": "haku-public-coder-codex",
+        "claim_prefix": "codex",
+        "runtime_label": "codex-chat",
+        "cwd": "/workspace",
+        "session_ttl_seconds": 7200,
+        "https_proxy": "http://public-coder-codex-runner-proxy:8080",
+        "ca_bundle": "/ca/bundle.pem",
+        "no_proxy": ".svc,.svc.cluster.local",
+        "mcp_url": "http://haku-console:9090/mcp",
+        "system_prompt_template": "/config/public-coder.md.j2",
+        "implementation": implementation,
+    }
+    values.update(overrides)
+    return RuntimeRegistrationConfig(**values)
+
+
+def test_codex_environment_keeps_provider_auth_in_the_sandbox_template() -> None:
+    config = _codex_runtime_config()
+
+    assert isinstance(config.implementation, CodexAppServerImplementationConfig)
+    assert config.environment() == {
+        "HTTP_PROXY": "http://public-coder-codex-runner-proxy:8080",
+        "HTTPS_PROXY": "http://public-coder-codex-runner-proxy:8080",
+        "NO_PROXY": ".svc,.svc.cluster.local",
+        "NODE_USE_ENV_PROXY": "1",
+        "NODE_EXTRA_CA_CERTS": "/ca/bundle.pem",
+        "SSL_CERT_FILE": "/ca/bundle.pem",
+        "CURL_CA_BUNDLE": "/ca/bundle.pem",
+        "REQUESTS_CA_BUNDLE": "/ca/bundle.pem",
+        "PIP_CERT": "/ca/bundle.pem",
+        "GH_PAT": "proxy-github-placeholder",
+        "GITHUB_TOKEN": "proxy-github-placeholder",
+    }
+    assert "OPENAI_API_KEY" not in config.environment()
+
+
+def test_legacy_claude_shape_adapts_without_changing_its_wire_contract() -> None:
+    config = runtime_config(ca_bundle="/ca/bundle.pem")
+    wire = config.model_dump(mode="json")
+
+    assert ClaudeRuntimeConfig is not RuntimeRegistrationConfig
+    assert set(wire) == {
+        "namespace",
+        "warm_pool",
+        "cwd",
+        "session_ttl_seconds",
+        "oauth_placeholder",
+        "https_proxy",
+        "ca_bundle",
+        "no_proxy",
+        "mcp_url",
+        "mcp_static_agent_id",
+        "system_prompt_template",
+    }
+    assert wire["oauth_placeholder"] == "not-a-secret"
+    assert wire["mcp_static_agent_id"] == "00000000-0000-4000-8000-000000000001"
+    assert ClaudeRuntimeConfig(**wire) == config
+    with pytest.raises(ValidationError):
+        RuntimeRegistrationConfig.model_validate(wire)
+
+    registration = config.registration_config()
+    assert isinstance(registration.implementation, ClaudeCodeImplementationConfig)
+    assert registration.kind is RuntimeKind.CLAUDE_CODE
+    assert (registration.agent_id, registration.claim_prefix, registration.runtime_label) == (
+        config.mcp_static_agent_id,
+        "claude",
+        "claude-chat",
+    )
+    for field in (
+        "namespace",
+        "warm_pool",
+        "cwd",
+        "session_ttl_seconds",
+        "https_proxy",
+        "ca_bundle",
+        "no_proxy",
+        "mcp_url",
+        "system_prompt_template",
+    ):
+        assert getattr(registration, field) == getattr(config, field)
+    assert registration.environment() == config.claude_environment()
+    override_agent_id = UUID("00000000-0000-4000-8000-000000000099")
+    assert config.registration_config(agent_id=override_agent_id).agent_id == override_agent_id
+
+
+def test_explicit_nested_claude_registration_uses_the_shared_model() -> None:
+    registration = runtime_config(ca_bundle="/ca/bundle.pem").registration_config()
+    parsed = RuntimeRegistrationConfig.model_validate(registration.model_dump(mode="json"))
+
+    assert isinstance(parsed.implementation, ClaudeCodeImplementationConfig)
+    assert parsed.kind is RuntimeKind.CLAUDE_CODE
+    assert parsed.environment() == registration.environment()
+
+
+def test_codex_registration_has_no_legacy_claude_compatibility_surface() -> None:
+    config = _codex_runtime_config()
+
+    assert not hasattr(config, "mcp_static_agent_id")
+    assert not hasattr(config, "claude_environment")
+
+
+def test_runtime_registration_requires_an_explicit_implementation_discriminator() -> None:
+    raw = _codex_runtime_config().model_dump(mode="json")
+    implementation = raw["implementation"]
+    assert isinstance(implementation, dict)
+    implementation.pop("kind")
+
+    with pytest.raises(ValidationError, match="union_tag_not_found"):
+        RuntimeRegistrationConfig.model_validate(raw)
+
+
+def test_runtime_registration_schema_exposes_the_implementation_discriminator() -> None:
+    schema = RuntimeRegistrationConfig.model_json_schema()
+    implementation = schema["properties"]["implementation"]
+    if reference := implementation.get("$ref"):
+        implementation = schema["$defs"][reference.rsplit("/", 1)[-1]]
+
+    assert implementation["discriminator"] == {
+        "propertyName": "kind",
+        "mapping": {
+            "claude_code": "#/$defs/ClaudeCodeImplementationConfig",
+            "codex_app_server": "#/$defs/CodexAppServerImplementationConfig",
+        },
+    }
+    assert len(implementation["oneOf"]) == 2
+
+
+def test_claude_registration_rejects_a_codex_implementation() -> None:
+    with pytest.raises(TypeError, match="requires ClaudeRuntimeConfig"):
+        claude_registration(
+            cast(ClaudeRuntimeConfig, _codex_runtime_config()),
+            RecordingClaims(),
+            system_prompt=SystemPromptTemplate(""),
+        )
+
+
+@pytest.mark.parametrize("api_key_env_var", ["HAKU_MCP_BEARER_TOKEN", "HAKU_AGENT_SDK_RUNNER_TOKEN"])
+def test_codex_runtime_rejects_session_authority_as_the_provider_key(api_key_env_var: str) -> None:
+    with pytest.raises(ValidationError, match="exact-session credential"):
+        _codex_runtime_config(api_key_env_var=api_key_env_var)
+
+
+@pytest.mark.parametrize("field", ["api_base_url", "mcp_url"])
+def test_runtime_registration_rejects_credentials_in_control_plane_urls(field: str) -> None:
+    with pytest.raises(ValidationError, match=field):
+        _codex_runtime_config(**{field: "http://durable-secret@example.test/path"})
 
 
 # The gap this double leaves between one frame's number and the next. Deliberately not 1:

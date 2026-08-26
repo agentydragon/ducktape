@@ -230,12 +230,26 @@ auto_approval_policies:
       haku_index:
         - search
         - index_status
+  # Never grants standing authority: it only checks whether the calling Agent's own Kubernetes SAR
+  # identity already covers a kubectl-passthrough-mcp call, and if so auto-*denies* it with a
+  # message to use that direct path instead of the operator's broader passthrough credential. A
+  # denial here always falls back to manual for anything not already covered — this narrows toward
+  # what the Agent could already do unattended, never widens it.
+  #
+  # public-coder only for now. Haku's Claude Code runtime (and any other claude.ai-hosted variant)
+  # would need verified kubectl access in its own environment, and instructions to actually reach
+  # for it (or for the haku sandbox's own kube-api-proxy) instead of kubectl-passthrough-mcp, before
+  # a redirect here is actionable there rather than a dead end. See TODO.md.
+  - id: kubectl_passthrough_redundancy_check
+    type: kubernetes_passthrough
+    server: kubectl-passthrough-mcp
   - id: public_coder_safe_reads
     type: any_of
     policies:
       - public_coder_github_reads
       - kubernetes_reads
       - public_coder_recall_reads
+      - kubectl_passthrough_redundancy_check
   - id: tana_safe_tools
     type: exact_tools
     tools:

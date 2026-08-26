@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: haku-openclaw-spike-volsync-restic-password
+    namespace: haku-openclaw-spike
+type: Opaque
+stringData:
+    RESTIC_PASSWORD: ENC[AES256_GCM,data:KOfvl9C13k/lbHBeNg78mAP6m9fnmdcV0xrbcLlYImdQiqmjrIV4P8Io/9fM7SD6u6gY4xbqnXU+WA+hoibMUA==,iv:yxORR76wxpqbjP3Ac+dE/aEWgx8yk0iGfO9FvmwdRMo=,tag:VlalDoUmJVW5LAhMkbPXSQ==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB0TFhjNEpsc1BoM1BVK2FL
+            a3padVhrR0N0clBuUjJuaGhDZjY2YkNNMERJCnZuNTQwSW9KM2tlclJCeUZtL3Zy
+            ZHArQVNBYmQyUEpJb2NGL0kvRXQ4RlkKLS0tIFBHWXoydWhFaDVDSUQyRUVnbzc4
+            bGZYVi9GbnliL3BEWlVBSmxnOEtKRG8KCRYK7L86QkpsNRwj2xLxCuA9SU6Nk+L/
+            H98WYT7oISshdrHlRi2xGRI1YeXziXD/mWF+uV3Dyd7gnpdsz1EwpA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBYRXJiWnhZRE5lWnZDcXB2
+            K0NxYWg0c1lqbEpJRk5KUnZaNjVKa1pJU2dBCjBMU0tpR3NZM1gxQWZPcllvR3li
+            QkFCTXQ4RFJoR3dtaWx3RFJoUjhNeUkKLS0tIDFKY0tzQkpnaFdlWHJKTVI3VFlG
+            ZnZ3enp3MVRScThIc0NNSGd6RXQ4VDQKAys5LRoRpZPJ/p1lHtVNMswi+uF1aXCQ
+            aGxoPFeTkO2LqT8GlHoAknjn+P19iY77CRqIrjBvdi4dGaJr8SGCYA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-08-26T08:20:19Z"
+    mac: ENC[AES256_GCM,data:f+lPxe87JrUE0R+ds3KKtuLqGDg1B96BwpITungZg1/zDzrpNaqzZ7EirXfeGq7N/o48FO/ldFreAer6rfKv7Rvdhpaf+jNPPSpVr0Ju0cHJIXXL4BwqCagb3I1/rQgmNd+POLplZJ8L+/gHzZEgvUBgdTbvmwic0NIPtDJ72pA=,iv:v/lEGpugEQkjuv/0hcYotlIdnPZavAxaOA3J27lNSvk=,tag:dk/aFbWDoEAjhiEandU9Pg==,type:str]
+    version: 3.13.3

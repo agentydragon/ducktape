@@ -15,11 +15,7 @@ class TestWorktreeService:
     def service(self, repo_factory, config_factory, service_builder):
         repo_path = repo_factory.create_repo()
         config = config_factory(repo_path).minimal(
-            branch_prefix="test/",
-            upstream_branch="main",
-            github_repo="test-user/test-repo",
-            github_enabled=False,
-            log_operations=True,
+            branch_prefix="test/", upstream_branch="main", github_repo="test-user/test-repo", log_operations=True
         )
 
         service = service_builder(config).with_real_git().with_mock_github().build_worktree_service()

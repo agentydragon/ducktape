@@ -294,20 +294,6 @@ class Collector[T](BaseModel):
 
 
 # Domain data types
-class WorktreeGitInfo(BaseModel):
-    """Git metadata for a worktree, assembled at query time.
-
-    ahead/behind are computed via pygit2 against config.upstream_branch,
-    NOT the remote tracking branch. See repo_status.py.
-    """
-
-    model_config = {"frozen": True}
-    branch: str | None  # None = detached HEAD
-    commit: str | None  # None = not available
-    ahead: int | None  # None = no upstream configured
-    behind: int | None
-
-
 class GitstatusdData(BaseModel):
     """All data from gitstatusd for a worktree.
 
@@ -349,17 +335,6 @@ class BranchAheadBehind(BaseModel):
 
 
 # Aggregated worktree (wire format = internal format)
-class WorktreeStatus(BaseModel):
-    """Complete status for one worktree - used both internally and in API responses."""
-
-    model_config = {"frozen": True}
-    path: Path
-    name: str
-    git: Collector[WorktreeGitInfo] = Field(default_factory=Collector)
-    gitstatusd: Collector[GitstatusdData] = Field(default_factory=Collector)
-    pr: Collector[PRData | None] = Field(default_factory=Collector)  # inner None = "no PR exists"
-
-
 # Daemon config (discriminated unions)
 class GitstatusdAvailable(BaseModel):
     """gitstatusd binary found and working."""
@@ -460,15 +435,6 @@ class StatusResponse(BaseModel):
     components: ComponentsStatus | None = Field(
         default=None, description="Top-level component states (discovery/github/gitstatusd)"
     )
-
-
-class StatusResponseV2(BaseModel):
-    """API response for status query - new format."""
-
-    model_config = {"frozen": True}
-    worktrees: dict[str, WorktreeStatus] = Field(..., description="Worktrees keyed by name")
-    gitstatusd: GitstatusdConfig = Field(..., description="gitstatusd configuration status")
-    github_enabled: bool = Field(..., description="Whether GitHub integration is enabled")
 
 
 class PingResult(BaseModel):

@@ -54,7 +54,7 @@ def runtime_config(**overrides: object) -> ClaudeRuntimeConfig:
         "system_prompt_template": "cluster/k8s/haku/console/chat_system_prompt.md.j2",
     }
     values.update(overrides)
-    return ClaudeRuntimeConfig.model_validate(values)
+    return ClaudeRuntimeConfig(**values)
 
 
 def configured_runtimes(
