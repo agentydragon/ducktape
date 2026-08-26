@@ -58,6 +58,18 @@ def map_kubectl_passthrough_request(tool_name: str, arguments: dict[str, Any]) -
                 namespace = arguments.get("namespace", "")
                 return [_make_req("list", "", "v1", "pods", namespace=namespace)]
 
+            case "pods_list_in_namespace":
+                namespace = arguments.get("namespace")
+                if not namespace:
+                    return None
+                return [_make_req("list", "", "v1", "pods", namespace=namespace)]
+
+            case "events_list":
+                namespace = arguments.get("namespace")
+                if not namespace:
+                    return None
+                return [_make_req("list", "", "v1", "events", namespace=namespace)]
+
             case "pods_get" | "pods_delete" | "pods_log":
                 name = arguments.get("name")
                 if not name:

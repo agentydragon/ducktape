@@ -97,6 +97,32 @@ def test_map_pods_list() -> None:
     assert reqs[0].attributes.namespace == "default"
 
 
+def test_map_pods_list_in_namespace() -> None:
+    reqs = map_kubectl_passthrough_request("pods_list_in_namespace", {"namespace": "demo"})
+    assert reqs is not None
+    assert len(reqs) == 1
+    assert reqs[0].attributes.verb == "list"
+    assert reqs[0].attributes.resource == "pods"
+    assert reqs[0].attributes.namespace == "demo"
+
+
+def test_map_pods_list_in_namespace_without_namespace() -> None:
+    assert map_kubectl_passthrough_request("pods_list_in_namespace", {}) is None
+
+
+def test_map_events_list() -> None:
+    reqs = map_kubectl_passthrough_request("events_list", {"namespace": "demo", "fieldSelector": "reason=Foo"})
+    assert reqs is not None
+    assert len(reqs) == 1
+    assert reqs[0].attributes.verb == "list"
+    assert reqs[0].attributes.resource == "events"
+    assert reqs[0].attributes.namespace == "demo"
+
+
+def test_map_events_list_without_namespace() -> None:
+    assert map_kubectl_passthrough_request("events_list", {}) is None
+
+
 def test_map_pods_log() -> None:
     reqs = map_kubectl_passthrough_request("pods_log", {"name": "my-pod", "namespace": "demo"})
     assert reqs is not None
