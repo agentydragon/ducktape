@@ -509,12 +509,14 @@
             # an image-specific duplicate of its tool list.
             devtools = self.packages.${system}.devtools;
           };
-          # Haku's Claude-backed OpenClaw spike. It keeps its upstream beta
-          # gateway pin for Claude Opus 5 compatibility, while its additional
-          # runtime tooling is packaged declaratively with Nix.
+          # Haku's Claude-backed OpenClaw spike. Same Nix build mechanism as
+          # openclaw-image; the gateway is built from a 2026.8.1 beta source
+          # override (nix-openclaw only tracks stable) -- see the file for why.
           # Build: nix build .#haku-openclaw-spike-image
           # Load:  docker load < result
-          haku-openclaw-spike-image = import ./haku/openclaw_spike { inherit pkgs; };
+          haku-openclaw-spike-image = import ./haku/openclaw_spike {
+            inherit nix-openclaw pkgs;
+          };
           # NixOS-based RBE worker (systemd, envfs, nix-ld).
           # Build: nix build .#nix-rbe-nixos
           # Load:  docker import result/tarball/*.tar.xz nix-rbe-nixos

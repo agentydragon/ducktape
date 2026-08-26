@@ -8,14 +8,23 @@ tools.
 
 ## Image build
 
-`haku/openclaw_spike/default.nix` replaces the former apt/npm/curl Dockerfile.
-It pins the exact upstream `2026.7.2-beta.7` OpenClaw image as a fixed Nix
-input, then layers Claude Code and the spike's authoring/runtime tools from the
-repository's locked Nix package set. The separate upstream base is deliberate:
-the shared `nix-openclaw` input currently packages `2026.7.1-2`, while this
-spike needs the beta's Claude Opus 5 context-window support. The Nix build
-therefore preserves that behavior without keeping a second imperative image
-provisioning path.
+`haku/openclaw_spike/default.nix` builds the image entirely with Nix, the same
+mechanism as the public-coder `openclaw` image. The OpenClaw gateway comes from
+`nix-openclaw`, and Claude Code plus the spike's authoring/runtime tools are
+layered from the repository's locked Nix package set — one controlled closure,
+one Node.
+
+Deviation: public-coder uses `nix-openclaw`'s stable gateway, but this spike
+needs a newer beta line for its Claude model metadata, and `nix-openclaw` only
+tracks stable. So it builds the gateway from a beta `sourceInfo` override
+(currently `v2026.8.1-beta.3`) — nix-openclaw's supported source-override path.
+Bump = update `betaSourceInfo` in the Nix file (tag/rev/hashes).
+
+This replaced an earlier hybrid that pulled the upstream
+`ghcr.io/openclaw/openclaw` beta as a Docker base and layered Nix tools on top.
+That shipped two Node runtimes; the base image's Node linked an unsafe system
+SQLite (3.51.2) that OpenClaw's WAL-safety guard rejects at startup, so the pod
+crash-looped.
 
 ## Trust boundary
 

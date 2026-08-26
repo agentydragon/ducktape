@@ -1,101 +1,178 @@
 # Nix-built OCI image for Haku's isolated OpenClaw + Claude Code spike.
 #
-# Keep the upstream beta as the base rather than reusing the public-coder
-# gateway package: nix-openclaw is currently pinned to 2026.7.1-2, while this
-# spike deliberately needs 2026.7.2-beta.7's Claude Opus 5 context-window
-# metadata. Everything added by this repository is a Nix package, replacing
-# the old apt/npm/curl Dockerfile provisioning with a reviewable closure.
-{ pkgs }:
+# Same build mechanism as openclaw/default.nix (public-coder): the gateway and
+# its Node dependency closure come from nix-openclaw, and this file adds the
+# proxy preload plus the spike's command-line tooling. Everything is a Nix
+# package in one reviewable closure -- no second Node, no upstream Docker base.
+#
+# Deviation from public-coder: that image consumes nix-openclaw's *stable*
+# prebuilt gateway (2026.7.1-2). This spike needs the newer 2026.8.1 beta line
+# for its Claude model metadata, and nix-openclaw only tracks stable releases,
+# so we build the gateway ourselves from a beta `sourceInfo` override (a
+# first-class nix-openclaw path -- it ships a `source-override-render` check).
+# Bumping the beta = update `betaSourceInfo` below (tag/rev/hashes).
+#
+# History: this image used to `dockerTools.pullImage` the upstream
+# `ghcr.io/openclaw/openclaw` beta and layer Nix tools on top. That hybrid was
+# retired 2026-08 because it shipped two Node runtimes (the base image's Node
+# linked an unsafe system SQLite 3.51.2 that OpenClaw's WAL-safety guard rejects
+# at startup) and because building the gateway ourselves keeps the whole runtime
+# in one controlled Nix closure.
+{
+  pkgs,
+  nix-openclaw,
+}:
 
 let
-  # The old Dockerfile installed Bazelisk as `/usr/local/bin/bazel`; retain the
-  # command name haku-state tooling uses while keeping the upstream Bazelisk
-  # package and its version-selection behavior.
+  system = pkgs.stdenv.hostPlatform.system;
+
+  # nixpkgs + nix-openclaw's overlay, matching how nix-openclaw builds its own
+  # package set, so callPackage resolves the gateway's pnpm/fetch helpers.
+  ocPkgs = import nix-openclaw.inputs.nixpkgs {
+    inherit system;
+    overlays = [ nix-openclaw.overlays.default ];
+  };
+
+  # Beta source override. Mirrors nix/sources/openclaw-source.nix from
+  # nix-openclaw but pinned to the 2026.8.1-beta.3 release. Omitting
+  # `gatewayNpmDepsHash` selects nix-openclaw's from-source gateway build, which
+  # uses `pnpmDepsHash` for its pnpm dependency FOD.
+  betaSourceInfo = {
+    owner = "openclaw";
+    repo = "openclaw";
+    pnpmMajor = "11";
+    applyPublicSurfaceHardlinksPatch = false;
+    applySkipPluginAutoEnableNixModePatch = false;
+    applyNixStorePluginOwnershipPatch = true;
+    releaseTag = "v2026.8.1-beta.3";
+    releaseVersion = "2026.8.1-beta.3";
+    runtimePluginVersion = "2026.8.1";
+    rev = "a8c1973388fa2645fce83f0239b2356744a98045";
+    # fetchFromGitHub tree hash for the release rev.
+    hash = "sha256-BTrlg8Y88j50hS3EHDCGQhh0k9zSbZt58b2LmYMcq8w=";
+    # pnpm dependency FOD hash for this release. Resolve by building: on a hash
+    # mismatch Nix prints the correct `got:` value; copy it here.
+    pnpmDepsHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+  };
+
+  gateway =
+    (import "${nix-openclaw}/nix/packages" {
+      pkgs = ocPkgs;
+      sourceInfo = betaSourceInfo;
+    }).openclaw-gateway;
+
+  # The single Node runtime: the gateway's own (already in its closure). Using
+  # it on PATH too means one Node in the image, not two -- the whole reason for
+  # dropping the upstream-Docker base.
+  nodejs = ocPkgs.nodejs_22;
+
+  # The old Dockerfile installed Bazelisk as `bazel`; keep that command name for
+  # the haku-state tooling while using the upstream Bazelisk version selection.
   bazel = pkgs.writeShellScriptBin "bazel" ''
     exec ${pkgs.bazelisk}/bin/bazelisk "$@"
   '';
 
-  upstreamOpenClaw = pkgs.dockerTools.pullImage {
-    imageName = "ghcr.io/openclaw/openclaw";
-    # The tag resolves to a multi-platform OCI index. dockerTools selects the
-    # host architecture while copying it; pinning the index prevents a mutable
-    # tag from silently changing the deployed OpenClaw runtime.
-    imageDigest = "sha256:d41807ff1e5c925ff75e71ed2b755cdea59da1431d1f4fde5051a16a3337e9ce";
-    # Hash of dockerTools' skopeo-generated OCI archive for that immutable
-    # index. It makes the upstream base a fixed Nix input as well.
-    hash = "sha256-mtB/8YxZxg5qhVJIn5WSeMhSeSx/Vp+UpwrU6EHm5Ps=";
-    finalImageName = "ghcr.io/openclaw/openclaw";
-    finalImageTag = "2026.7.2-beta.7";
-  };
+  # Mirrors the old runtime tool surface, each pinned by flake.lock / nixpkgs.
+  # Claude Code is the Nix package (no image-build-time npm install). `nodejs`
+  # (the gateway's own Node, appended below) goes on PATH now that there is no
+  # upstream base image to provide one.
+  tools =
+    with pkgs;
+    [
+      bashInteractive
+      bazel
+      binutils
+      cacert
+      claude-code
+      coreutils
+      curl
+      gcc
+      git
+      gnumake
+      jdk_headless
+      jq
+      kubectl
+      less
+      openssl
+      procps
+      python3
+      ripgrep
+      ruff
+      tea
+    ]
+    ++ [ nodejs ];
 
-  # Mirrors the old Dockerfile's runtime surface, but each tool is now pinned
-  # by flake.lock / nixpkgs rather than an apt repository or an ad-hoc curl
-  # download. Claude Code is the Nix package, so it also avoids an
-  # image-build-time npm install.
-  tools = with pkgs; [
-    bashInteractive
-    bazel
-    binutils
-    cacert
-    claude-code
-    coreutils
-    curl
-    gcc
-    git
-    gnumake
-    jdk_headless
-    jq
-    kubectl
-    less
-    openssl
-    procps
-    python3
-    ripgrep
-    ruff
-    tea
-  ];
+  # The preload imports undici. Put it beside the gateway's node_modules so
+  # Node's ESM resolver finds the dependency exactly as it did in /app on the
+  # old image. The symlink keeps the dependency closure shared.
+  proxySetup = pkgs.runCommand "openclaw-spike-proxy-setup" { } ''
+    mkdir -p "$out/lib/openclaw"
+    cp ${../../openclaw/proxy-setup.mjs} "$out/lib/openclaw/proxy-setup.mjs"
+    ln -s ${gateway}/lib/openclaw/node_modules "$out/lib/openclaw/node_modules"
+  '';
 
-  toolPath = pkgs.lib.makeBinPath tools;
+  path = pkgs.lib.makeBinPath ([ gateway ] ++ tools);
 in
 pkgs.dockerTools.buildLayeredImage {
   name = "git.allegedly.works/ducktape-ci/haku-openclaw-spike";
   # CI supplies the sortable devel-* tag selected by Flux.
   tag = null;
-  fromImage = upstreamOpenClaw;
-  contents = tools;
+
+  contents = [
+    gateway
+    proxySetup
+  ]
+  ++ tools;
   maxLayers = 100;
 
-  # The upstream CLI launcher uses `#!/usr/bin/env node`, but its otherwise
-  # minimal beta base does not contain coreutils' `env`. The old Dockerfile
-  # happened to add it through apt; make that FHS compatibility path explicit
-  # now that coreutils comes from Nix. Put the proxy preload in the layer too:
-  # it must be a real /app file, not a symlink into /nix/store, so Node resolves
-  # `undici` from the upstream gateway's adjacent node_modules directory.
   fakeRootCommands = ''
-    mkdir -p app usr/bin
-    cp ${../../openclaw/proxy-setup.mjs} app/proxy-setup.mjs
+    mkdir -p home/openclaw tmp etc/ssl/certs usr/bin
+    chmod 1777 tmp
+    chown -R 1000:1000 home/openclaw
+
+    cat > etc/passwd <<'PASSWD'
+    root:x:0:0:root:/root:/bin/sh
+    openclaw:x:1000:1000:OpenClaw:/home/openclaw:/bin/sh
+    nobody:x:65534:65534:Nobody:/:/bin/false
+    PASSWD
+    cat > etc/group <<'GROUP'
+    root:x:0:
+    openclaw:x:1000:
+    nogroup:x:65534:
+    GROUP
+    cat > etc/nsswitch.conf <<'NSS'
+    passwd: files
+    group: files
+    hosts: files dns
+    NSS
+
+    # Default trust store. The k8s deployment mounts the interception CA over
+    # this path at runtime (see cluster/k8s/agents/haku-openclaw-spike README).
+    ln -sf ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt etc/ssl/certs/ca-certificates.crt
     ln -sf ${pkgs.coreutils}/bin/env usr/bin/env
   '';
 
   config = {
     User = "1000:1000";
-    WorkingDir = "/app";
+    WorkingDir = "/home/openclaw";
     Env = [
-      # The pinned upstream beta supplies the Node/OpenClaw runtime; the Nix
-      # tools below it provide the supporting CLI surface.
-      "PATH=${toolPath}:/home/node/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      "PATH=${path}"
       "HOME=/home/openclaw"
       "USER=openclaw"
       "NODE_ENV=production"
-      "NODE_OPTIONS=--import=file:///app/proxy-setup.mjs"
+      "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs"
       "NPM_CONFIG_PREFIX=/home/openclaw/.local"
       "NPM_CONFIG_CACHE=/home/openclaw/.cache/npm"
       "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
     ];
     Labels."org.opencontainers.image.source" = "https://github.com/agentydragon/ducktape";
+    Entrypoint = [
+      "${pkgs.tini}/bin/tini"
+      "-s"
+      "--"
+    ];
     Cmd = [
-      "node"
-      "openclaw.mjs"
+      "${gateway}/bin/openclaw"
       "gateway"
     ];
   };
