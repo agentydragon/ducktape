@@ -36,6 +36,14 @@ An image is different. Its identity is the _contents_ of its
 `<name>.json.sha256` file, not that file's own digest, so those ~70 bytes are
 fetched. That is the only download in either planner.
 
+The digest that decides is the **unstamped** one. `release-artifact` builds each
+release twice: unstamped first, whose hash becomes the tag and the skip
+decision, then stamped only if that tag is new, because stamping embeds the
+commit and would make every build's bytes differ. `bazel-ci` does not pass
+`--stamp` either, so the stream the planner reads reports exactly the digests
+build 1 would have produced. That correspondence is what lets the planner skip
+the build at all.
+
 Outputs are located **by label** (`//pkg:image.digest`), never by deriving a
 path. An external repository's directory name is mangled by bzlmod and cannot be
 reconstructed, and most image targets here are literally named `image` — a path
@@ -123,3 +131,8 @@ a recycled Firecracker VM.
 - **Stream size.** 33 MB per read, twice (bazel-ci reports a test and a build
   invocation). Fine at this repo's size; worth re-measuring if `//...` grows
   much larger.
+- **`bazel-ci` staying unstamped.** Stamping it, or moving `release-artifact`'s
+  hash onto its stamped build, breaks the correspondence above. Neither
+  mis-publishes — every tag would simply stop matching and every release would
+  be republished once per commit — but that is this document's whole subject
+  undone, and silently.
