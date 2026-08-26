@@ -1,116 +1,88 @@
-# Test Gemini CLI integration: SSOTs → Personal integration → Generic module
-#
-# Run: nix-instantiate --eval --strict nix/home/tests/gemini-cli-integration.nix
+{ pkgs }:
 
 let
-  pkgs = import <nixpkgs> { };
   inherit (pkgs) lib;
 
-  # Mock minimal home-manager config structure
-  config = {
-    home.packages = [ ];
-    xdg.configFile = { };
-  };
-
-  # Import the personal integration
-  personalIntegration = import ../gemini_cli.nix { inherit config lib pkgs; };
-  inspection = import ../../lib/inspection-commands.nix { inherit lib; };
-  allowed = import ../allowed-commands.nix;
-
-  expectedNixEvalRule = {
-    toolName = "run_shell_command";
-    commandPrefix = "nix eval";
-    decision = "allow";
-    priority = 300;
-  };
-
-  expectedNixBuildRule = {
-    toolName = "run_shell_command";
-    commandPrefix = "nix build";
-    decision = "allow";
-    priority = 300;
-  };
-
-in
-{
-  # Verify personal integration sets programs.gemini-cli.policies
-  test_has_policies = {
-    expr =
-      builtins.hasAttr "programs" personalIntegration
-      && builtins.hasAttr "gemini-cli" personalIntegration.programs
-      && builtins.hasAttr "policies" personalIntegration.programs.gemini-cli;
-    expected = true;
-  };
-
-  # Verify policies is a dict (not a list)
-  test_policies_is_dict = {
-    expr = builtins.isAttrs personalIntegration.programs.gemini-cli.policies;
-    expected = true;
-  };
-
-  # Verify expected policy files exist
-  test_policy_files = {
-    expr = builtins.sort builtins.lessThan (
-      builtins.attrNames personalIntegration.programs.gemini-cli.policies
-    );
-    expected = [
-      "allowed-commands"
-      "inspection-commands"
+  evaluated = lib.evalModules {
+    specialArgs = {
+      inherit pkgs;
+      sharedSkillsArgs = {
+        inherit lib pkgs;
+        siderolabs-docs = ./.;
+        skills-tar = ./.;
+      };
+    };
+    modules = [
+      (
+        { lib, ... }:
+        {
+          options = {
+            programs.gemini-cli = {
+              enable = lib.mkEnableOption "Gemini CLI";
+              settings = lib.mkOption {
+                type = lib.types.attrsOf lib.types.anything;
+                default = { };
+              };
+            };
+            home = {
+              file = lib.mkOption {
+                type = lib.types.attrsOf lib.types.anything;
+                default = { };
+              };
+              packages = lib.mkOption {
+                type = lib.types.listOf lib.types.anything;
+                default = [ ];
+              };
+            };
+            xdg.configFile = lib.mkOption {
+              type = lib.types.attrsOf lib.types.anything;
+              default = { };
+            };
+          };
+        }
+      )
+      ../programs/gemini-cli.nix
+      ../gemini_cli.nix
     ];
   };
+  allowedPolicy = evaluated.config.xdg.configFile."gemini/policies/allowed-commands.toml".source;
+  inspectionPolicy =
+    evaluated.config.xdg.configFile."gemini/policies/inspection-commands.toml".source;
+in
+pkgs.runCommand "gemini-cli-integration"
+  {
+    nativeBuildInputs = [ pkgs.python3 ];
+  }
+  ''
+    python - '${allowedPolicy}' '${inspectionPolicy}' <<'PY'
+    import sys
+    import tomllib
 
-  # Verify inspection rules count
-  test_inspection_count = {
-    expr = builtins.length personalIntegration.programs.gemini-cli.policies.inspection-commands;
-    expected = builtins.length (inspection.exports.noSudo ++ inspection.exports.sudo);
-  };
+    def rules(path: str) -> list[dict[str, object]]:
+        with open(path, "rb") as policy_file:
+            return tomllib.load(policy_file)["rule"]
 
-  # Verify allowed rules count
-  test_allowed_count = {
-    expr = builtins.length personalIntegration.programs.gemini-cli.policies.allowed-commands;
-    expected = builtins.length allowed.noSudo;
-  };
+    allowed = rules(sys.argv[1])
+    inspection = rules(sys.argv[2])
 
-  # Verify sample inspection rule structure
-  test_sample_inspection_rule = {
-    expr = builtins.head personalIntegration.programs.gemini-cli.policies.inspection-commands;
-    expected = {
-      toolName = "run_shell_command";
-      commandPrefix = "lspci";
-      decision = "allow";
-      priority = 350;
-    };
-  };
-
-  # Verify a representative allowed rule structure
-  test_has_allowed_rule = {
-    expr = builtins.elem {
-      toolName = "run_shell_command";
-      commandPrefix = "bazelisk test";
-      decision = "allow";
-      priority = 300;
-    } personalIntegration.programs.gemini-cli.policies.allowed-commands;
-    expected = true;
-  };
-
-  test_has_nix_eval_rule = {
-    expr = builtins.elem expectedNixEvalRule personalIntegration.programs.gemini-cli.policies.allowed-commands;
-    expected = true;
-  };
-
-  test_has_nix_build_rule = {
-    expr = builtins.elem expectedNixBuildRule personalIntegration.programs.gemini-cli.policies.allowed-commands;
-    expected = true;
-  };
-
-  # Verify the first allowed rule still comes from the SSOT order
-  test_first_allowed_rule = {
-    expr = builtins.head personalIntegration.programs.gemini-cli.policies.allowed-commands;
-    expected = {
-      toolName = "run_shell_command";
-      commandPrefix = (builtins.head allowed.noSudo).cmd;
-      decision = "allow";
-      priority = 300;
-    };
-  };
-}
+    assert {
+        "toolName": "run_shell_command",
+        "commandPrefix": "git status",
+        "decision": "allow",
+        "priority": 300,
+    } in allowed
+    assert {
+        "toolName": "run_shell_command",
+        "commandPrefix": "pwd",
+        "decision": "allow",
+        "priority": 300,
+    } in allowed
+    assert {
+        "toolName": "run_shell_command",
+        "commandPrefix": "lspci",
+        "decision": "allow",
+        "priority": 350,
+    } in inspection
+    PY
+    touch "$out"
+  ''

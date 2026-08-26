@@ -68,7 +68,7 @@ spec:
         # Reproduction, the verified fix, and the upstream operator's identical
         # exposure: plans/personal_agents/findings/harness_behaviour.md F19.
         - name: seed-config
-          image: ghcr.io/agentydragon/openclaw:devel-20260826092834-060f656 # {"$imagepolicy": "flux-system:openclaw"}
+          image: ghcr.io/agentydragon/openclaw:devel-20260826144448-9868079 # {"$imagepolicy": "flux-system:openclaw"}
           command:
             - sh
             - -c
@@ -82,7 +82,7 @@ spec:
               mountPath: /state
       containers:
         - name: openclaw
-          image: ghcr.io/agentydragon/openclaw:devel-20260826092834-060f656 # {"$imagepolicy": "flux-system:openclaw"}
+          image: ghcr.io/agentydragon/openclaw:devel-20260826144448-9868079 # {"$imagepolicy": "flux-system:openclaw"}
           env:
             # The image does not set HOME to the state dir; without it the
             # gateway looks for openclaw.json elsewhere and exits "Missing config".

@@ -203,6 +203,10 @@
     "skill-verify_docs": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-verify_docs-13266cad693f/verify_docs.skill",
       "sha256": "EyZsrWk/MnlTXUt5ZpzEdP2Bop1Jx4Efh9M5rnDwoP0="
+    },
+    "aw-importer": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aw-importer-1ca900d2b95f/aw_importer_bin",
+      "sha256": "HKkA0rlf9L1TkpqgdpIyvCocWV0R3t5mhHNKQGXwCV0="
     }
   }
 }

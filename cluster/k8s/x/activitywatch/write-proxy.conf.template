@@ -23,6 +23,12 @@ map $http_authorization $aw_write_ok {
 server {
     listen 5602;
 
+    # The importer POSTs a whole bucket's events in one request, so a busy
+    # history bucket far exceeds nginx's 1m default. Cap generously (nginx spills
+    # bodies past client_body_buffer_size to a disk temp, not the 64Mi RAM limit);
+    # the incremental-sync follow-up will shrink these bodies to per-run deltas.
+    client_max_body_size 256m;
+
     location = /healthz {
         return 200 "ok";
     }

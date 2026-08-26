@@ -32,9 +32,15 @@ pkgs.runCommand "codex-execpolicy-evaluation"
       fi
     }
 
+    # Exercise a real multi-token prefix generated from allowed-commands.nix.
     check_policy \
       '.decision == "allow" and (.matchedRules | length) > 0' \
-      bbapi target log example-invocation example-target
+      git status --short
+
+    # Exact entries are deliberately omitted rather than widened to prefixes.
+    check_policy \
+      '.matchedRules == []' \
+      pwd
 
     check_policy \
       '(.decision == null) and (.matchedRules == [])' \
