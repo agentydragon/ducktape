@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, cast
 
 from openai import AsyncOpenAI
@@ -110,7 +110,7 @@ class AgentModelProto(ABC):
 @dataclass
 class ResponsesAgentModel(AgentModelProto):
     base: OpenAIModelProto
-    model: str = field(init=False)
+    model: str = ""
     api_shape: LLMApiShape = LLMApiShape.RESPONSES
 
     def __post_init__(self) -> None:
