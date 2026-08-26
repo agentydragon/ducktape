@@ -74,6 +74,13 @@ py_library(
 )
 
 py_library(
+    name = "plan_image_pushes",
+    srcs = ["plan_image_pushes.py"],
+    data = ["image_targets.json"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
     name = "emit_bb_remote_linkage",
     srcs = ["emit_bb_remote_linkage.py"],
     visibility = ["//:__subpackages__"],
@@ -162,6 +169,16 @@ py_test(
     srcs = ["test_collect_bazel_ci_profiles.py"],
     deps = [
         ":collect_bazel_ci_profiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_plan_image_pushes",
+    srcs = ["test_plan_image_pushes.py"],
+    deps = [
+        ":plan_image_pushes",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

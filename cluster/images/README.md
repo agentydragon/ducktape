@@ -10,8 +10,8 @@ the repo: <../docs/container-images.md>.
 
 Not here:
 
-- **Bazel-built images** (`oci_image` + a `push-images.yml` matrix row) — those
-  live in the package that owns the code.
+- **Bazel-built images** (`oci_image` + an entry in <../../devinfra/ci/image_targets.json>)
+  — those live in the package that owns the code.
 - **Bazel external-dependency overlays** (`BUILD.bazel` fragments, `MODULE.bazel`
   fragments, patches) — <../../third_party/>, which is Bazel machinery only and
   holds no Dockerfiles.
