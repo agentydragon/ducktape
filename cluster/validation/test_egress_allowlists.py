@@ -49,11 +49,11 @@ alone:
   reachability is not where that boundary is drawn.
 - *A `*.allegedly.works` entry in a `toFQDNs` block enforces nothing.* Those
   names resolve to the hostNetwork Gateway node IPs, and `toFQDNs` cannot select
-  node identities (`cluster/docs/cilium_network_policy.md`). The three such
-  entries pinned below (`alloy-otlp`, `haku-mailbox`, `docker-ci`) record intent
-  at that layer; the first two are admitted by the `toEntities` rule instead, and
-  the third appears to be a dead rule. What makes them load-bearing anyway is the
-  DNS half of the pin, which does fence them.
+  node identities (`cluster/docs/cilium_network_policy.md`). The entries pinned
+  below that hit this — `alloy-otlp`, `haku-mailbox`, `aiquota`, `docker-ci` —
+  record intent at that layer; all but `docker-ci` are admitted by a `toEntities`
+  rule instead, while `docker-ci` appears to be a dead rule. What makes them
+  load-bearing anyway is the DNS half of the pin, which does fence them.
 
 Known gaps
 ----------
@@ -189,6 +189,12 @@ GITHUB_API = hosts("api.github.com")
 
 ANTHROPIC = hosts("api.anthropic.com")
 
+# aiquota's read API, reached only by the console Claude runner pool for its own
+# AI-usage quotas. A `*.allegedly.works` name, so its `toFQDNs` half enforces
+# nothing (node IPs); the `toEntities` rule admits the connection and the DNS half
+# fences the name — see the module docstring's node-IP carve-out.
+AIQUOTA = hosts("aiquota.allegedly.works")
+
 # The cluster's own API server, through the terminate+re-encrypt Gateway route.
 # Its own group because reaching it is not like reaching a registry: what a
 # holder may actually do is decided by the RBAC bound to the identity in its
@@ -277,11 +283,14 @@ ALLOWLISTS: dict[str, Confined | IronConfined | Unconfined] = {
     ),
     # The console-owned Claude runner pool (`haku-runtime-sandbox`). Still among the
     # tightest fences in the cluster — no registries, because it builds nothing — but no
-    # longer one host: it reaches GitHub as `agentydragon-agent`, with the PAT substituted
-    # at the proxy so the sandbox never holds it. That is a write grant to every repo the
-    # account can touch; narrowing it to named repos is tracked in `haku/TODO.md`.
-    # It reaches nothing in-cluster, hence no cluster DNS.
-    HAKU_CLAUDE_FENCE: Confined(allows=ANTHROPIC | GITHUB_API | GITHUB_GIT, resolves_also=frozenset()),
+    # longer one host. It reaches GitHub as `agentydragon-agent`, with the PAT substituted
+    # at the proxy so the sandbox never holds it — a write grant to every repo the account
+    # can touch, narrowing to named repos tracked in `haku/TODO.md`. It also reaches
+    # aiquota's read API for its own usage quotas (bearer likewise substituted); that is a
+    # node-IP `*.allegedly.works` name, so — unlike the GitHub hosts, which `toFQDNs`
+    # genuinely fences — it is admitted by the `toEntities` rule and fenced by the DNS half.
+    # It reaches nothing by cluster name, hence no cluster DNS.
+    HAKU_CLAUDE_FENCE: Confined(allows=ANTHROPIC | GITHUB_API | GITHUB_GIT | AIQUOTA, resolves_also=frozenset()),
     # The `claude-sandbox` namespace, via the shared agents-mitmproxy.
     "agents/mitmproxy/cnp-cloud-api-egress.yaml": Confined(
         allows=BUILD_REGISTRIES

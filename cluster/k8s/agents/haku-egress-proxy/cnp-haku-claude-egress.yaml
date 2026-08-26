@@ -41,6 +41,12 @@ spec:
         - matchName: objects.githubusercontent.com
         - matchName: raw.githubusercontent.com
         - matchName: release-assets.githubusercontent.com
+        # aiquota: listed to match the egress-allowlist pin convention
+        # (cluster/validation/test_egress_allowlists.py). The toFQDNs entry itself
+        # enforces nothing — aiquota resolves to node IPs toFQDNs can't select — the
+        # toEntities rule below admits the connection and the DNS rule above fences
+        # the name, exactly as alloy-otlp / haku-mailbox are handled elsewhere.
+        - matchName: aiquota.allegedly.works
       toPorts:
         - ports:
             - port: "443"
