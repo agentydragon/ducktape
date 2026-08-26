@@ -156,7 +156,7 @@ auto_approval_policies:
     server: github
     owner: agentydragon
     repository: ducktape
-    tools:
+    tools: &public_repo_read_tools
       - actions_get
       - actions_list
       - find_duplicate
@@ -172,14 +172,27 @@ auto_approval_policies:
       - issue_read
       - list_branches
       - list_commits
+      - list_issue_fields
+      - list_issue_types
       - list_issues
       - list_pull_requests
       - list_releases
       - list_repository_collaborators
       - list_tags
       - pull_request_read
+      - search_issues
       - search_pull_requests
       - search_code
+  # The coder Agent's own fork, used to stage branches before opening PRs into
+  # agentydragon/ducktape. It already has write access here (that's how it opens PRs), so a
+  # read grant on its own fork's content adds no exposure beyond what it can already write.
+  # Same tool list/boundary as public_ducktape_reads — only the trusted owner differs.
+  - id: public_ducktape_fork_reads
+    type: github_repository
+    server: github
+    owner: agentydragon-agent
+    repository: ducktape
+    tools: *public_repo_read_tools
   # public-coder-agent may also inspect the private Gaffer repository. Keep this as a separate
   # repository-scoped atom so adding one private source does not widen the Ducktape boundary or
   # accidentally grant access to other repositories. Both search tools require their policy's
@@ -190,34 +203,12 @@ auto_approval_policies:
     server: github
     owner: agentydragon
     repository: gaffer-private
-    tools:
-      - actions_get
-      - actions_list
-      - find_duplicate
-      - get_commit
-      - get_file_blame
-      - get_file_contents
-      - get_job_logs
-      - get_label
-      - get_latest_release
-      - get_release_by_tag
-      - get_tag
-      - issue_dependency_read
-      - issue_read
-      - list_branches
-      - list_commits
-      - list_issues
-      - list_pull_requests
-      - list_releases
-      - list_repository_collaborators
-      - list_tags
-      - pull_request_read
-      - search_pull_requests
-      - search_code
+    tools: *public_repo_read_tools
   - id: public_coder_github_reads
     type: any_of
     policies:
       - public_ducktape_reads
+      - public_ducktape_fork_reads
       - public_gaffer_private_reads
   # Kubernetes access inspection and grant reads are side-effect-free. Grant creation and release
   # remain manual because they change the Agent's temporary authority or its lifecycle.
@@ -228,11 +219,23 @@ auto_approval_policies:
         - can_i
         - list_grants
         - get_grant
+  # public-coder's profile already declares recall_index_ids: [ducktape-public] below, but that
+  # grant was dead without server access — haku_index wasn't in its in_process_server_ids. This is
+  # narrower than haku_recall_reads: haku_index enforces per-call index scoping against the caller's
+  # granted recall_index_ids server-side, so this can never reach haku-state/haku-conversations; it
+  # deliberately omits haku_conversations, which reads Haku's own session transcripts.
+  - id: public_coder_recall_reads
+    type: exact_tools
+    tools:
+      haku_index:
+        - search
+        - index_status
   - id: public_coder_safe_reads
     type: any_of
     policies:
       - public_coder_github_reads
       - kubernetes_reads
+      - public_coder_recall_reads
   - id: tana_safe_tools
     type: exact_tools
     tools:
@@ -365,6 +368,7 @@ access_profiles:
       - ducktape-public
     in_process_server_ids:
       - kubernetes
+      - haku_index
   - id: manual-review
     auto_approval_policy: manual_review
     allowed_chat_runtimes: []
