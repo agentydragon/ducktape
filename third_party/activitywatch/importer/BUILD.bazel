@@ -16,10 +16,10 @@ load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 rust_library(
     name = "aw_importer",
     srcs = [
-        "src/lib.rs",
-        "src/snapshot.rs",
+        "lib.rs",
+        "snapshot.rs",
     ],
-    crate_root = "src/lib.rs",
+    crate_root = "lib.rs",
     edition = "2021",
     visibility = ["//visibility:public"],
     deps = [
@@ -34,7 +34,7 @@ rust_library(
 
 rust_binary(
     name = "aw_importer_bin",
-    srcs = ["src/main.rs"],
+    srcs = ["main.rs"],
     edition = "2021",
     visibility = ["//visibility:public"],
     deps = [
@@ -47,8 +47,8 @@ rust_binary(
 rust_test(
     name = "aw_importer_test",
     size = "small",
-    srcs = ["tests/idempotency.rs"],
-    crate_root = "tests/idempotency.rs",
+    srcs = ["idempotency_test.rs"],
+    crate_root = "idempotency_test.rs",
     edition = "2021",
     deps = [
         ":aw_importer",

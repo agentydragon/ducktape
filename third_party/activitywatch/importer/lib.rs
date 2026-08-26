@@ -287,44 +287,13 @@ fn dest_event_key(event: &Event) -> EventKey {
     (start, start + duration, canonical_object(&event.data))
 }
 
-/// Serialize a JSON object to a canonical string: object keys sorted recursively,
-/// so semantically equal `data` maps always produce the same key.
+/// Canonical string for a `data` map. This crate builds `serde_json` without the
+/// `preserve_order` feature, so `Value::Object` is a `BTreeMap` and `to_string`
+/// already emits object keys in sorted order, recursively — two maps that differ
+/// only in key order serialize identically. The window key-reorder case in the
+/// idempotency test guards that assumption.
 fn canonical_object(map: &Map<String, Value>) -> String {
-    let mut out = String::new();
-    write_object(map, &mut out);
-    out
-}
-
-fn write_object(map: &Map<String, Value>, out: &mut String) {
-    let mut keys: Vec<&String> = map.keys().collect();
-    keys.sort_unstable();
-    out.push('{');
-    for (i, key) in keys.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
-        }
-        out.push_str(&serde_json::to_string(key.as_str()).expect("string key serializes"));
-        out.push(':');
-        write_value(map.get(key.as_str()).expect("key from this map"), out);
-    }
-    out.push('}');
-}
-
-fn write_value(value: &Value, out: &mut String) {
-    match value {
-        Value::Object(map) => write_object(map, out),
-        Value::Array(items) => {
-            out.push('[');
-            for (i, item) in items.iter().enumerate() {
-                if i > 0 {
-                    out.push(',');
-                }
-                write_value(item, out);
-            }
-            out.push(']');
-        }
-        scalar => out.push_str(&serde_json::to_string(scalar).expect("scalar serializes")),
-    }
+    serde_json::to_string(map).expect("json object serializes")
 }
 
 fn read_dir_sorted(dir: &Path) -> Result<Vec<PathBuf>, ImportError> {

@@ -11,10 +11,13 @@ use std::path::PathBuf;
 use aw_datastore::Datastore;
 use aw_importer::ImportError;
 use aw_importer::import_inbox;
+use aw_models::Bucket;
+use aw_models::BucketMetadata;
 use chrono::DateTime;
 use chrono::Utc;
 use rusqlite::Connection;
 use rusqlite::params;
+use serde_json::Map;
 use serde_json::json;
 
 struct BucketSpec {
@@ -44,41 +47,45 @@ fn bucket(
     }
 }
 
-/// Write a frozen aw-server-rust snapshot (schema v5) as a single clean SQLite
-/// file: rollback-journal mode, so no `-wal`/`-shm` remains beside it.
+/// Write a frozen aw-server-rust snapshot. aw's own datastore lays down the real,
+/// fully-migrated schema and the bucket rows, so this fixture can't drift from the
+/// schema the importer actually reads — real v5 also carries `buckets.data_deprecated`,
+/// a `key_value` table and a composite index that a hand-copied `CREATE TABLE` misses.
+/// Event rows are then inserted directly, on purpose: they carry amplified duplicate
+/// heartbeats that aw's own `insert_events` would coalesce, which is exactly what the
+/// importer must dedup. aw uses SQLite's default rollback journal, so the store closes
+/// to a single file with no `-wal`/`-shm` beside it.
 fn write_snapshot(path: &Path, buckets: &[BucketSpec]) {
-    let conn = Connection::open(path).expect("open fixture");
-    conn.execute_batch(
-        "PRAGMA journal_mode=DELETE;
-         PRAGMA user_version=5;
-         CREATE TABLE buckets (
-             id INTEGER PRIMARY KEY AUTOINCREMENT,
-             name TEXT UNIQUE NOT NULL,
-             type TEXT NOT NULL,
-             client TEXT NOT NULL,
-             hostname TEXT NOT NULL,
-             created TEXT NOT NULL,
-             data TEXT NOT NULL DEFAULT '{}'
-         );
-         CREATE TABLE events (
-             id INTEGER PRIMARY KEY AUTOINCREMENT,
-             bucketrow INTEGER NOT NULL,
-             starttime INTEGER NOT NULL,
-             endtime INTEGER NOT NULL,
-             data TEXT NOT NULL,
-             FOREIGN KEY (bucketrow) REFERENCES buckets(id)
-         );",
-    )
-    .expect("create schema");
     let created: DateTime<Utc> = DateTime::from_timestamp(1_600_000_000, 0).unwrap();
+    {
+        let datastore = Datastore::new(path.to_string_lossy().into_owned(), false);
+        for spec in buckets {
+            datastore
+                .create_bucket(&Bucket {
+                    bid: None,
+                    id: spec.name.clone(),
+                    _type: spec.type_.clone(),
+                    client: spec.client.clone(),
+                    hostname: spec.hostname.clone(),
+                    created: Some(created),
+                    data: Map::new(),
+                    metadata: BucketMetadata::default(),
+                    events: None,
+                    last_updated: None,
+                })
+                .expect("create bucket");
+        }
+        datastore.close();
+    }
+    let conn = Connection::open(path).expect("reopen fixture");
     for spec in buckets {
-        conn.execute(
-            "INSERT INTO buckets (name, type, client, hostname, created, data)
-             VALUES (?1, ?2, ?3, ?4, ?5, '{}')",
-            params![spec.name, spec.type_, spec.client, spec.hostname, created],
-        )
-        .expect("insert bucket");
-        let bid = conn.last_insert_rowid();
+        let bid: i64 = conn
+            .query_row(
+                "SELECT id FROM buckets WHERE name = ?1",
+                params![spec.name],
+                |row| row.get(0),
+            )
+            .expect("bucket row id");
         for (start, end, data) in &spec.events {
             conn.execute(
                 "INSERT INTO events (bucketrow, starttime, endtime, data)
