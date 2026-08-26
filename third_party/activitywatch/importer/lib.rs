@@ -1,9 +1,18 @@
 //! One-way importer that folds per-device ActivityWatch snapshots into a single
 //! central aw-server-rust datastore.
 //!
+//! # What it imports
+//! Exactly the snapshot databases it is handed — typically a shell/CronJob glob
+//! like `inbox/*/aw.db`. Discovery and filtering are the caller's job: which files
+//! count as snapshots, and skipping transport artifacts, are decided by the glob,
+//! so no code here knows the transport exists. Syncthing, for one, keeps the
+//! winning copy at the clean name and renames the loser to `*.sync-conflict-*`,
+//! which `*/aw.db` simply does not match; a device with only a conflict copy is
+//! not imported that run rather than importing a diverged file.
+//!
 //! # Device identity
-//! Provenance comes from the inbox layout, never from bucket metadata. The inbox
-//! holds one subdirectory per device and that directory name is the device id.
+//! Each snapshot's device id is its immediate parent directory name — the inbox
+//! layout's one carrier of provenance, never the source bucket's own hostname.
 //! Two devices whose watchers both report hostname `localhost` therefore land in
 //! distinct destination buckets (`<device>::<source-bucket>`) instead of one
 //! silently overwriting the other.
@@ -18,11 +27,6 @@
 //! # Read-only sources
 //! Snapshots are opened `immutable=1` read-only: no schema migration, no
 //! WAL/journal side files, and the source bytes are never touched.
-//!
-//! # Fail closed
-//! A Syncthing conflict copy, an ambiguous set of snapshot candidates, or any
-//! other unexpected entry in a device directory aborts the run before anything is
-//! written to the central store.
 
 mod snapshot;
 
@@ -73,27 +77,14 @@ pub enum ImportError {
         path: PathBuf,
         source: serde_json::Error,
     },
-    #[error("Syncthing conflict file present, refusing to import: {}", .0.display())]
-    ConflictFile(PathBuf),
-    #[error("device {device} has multiple snapshot candidates, expected one: {candidates:?}")]
-    AmbiguousSnapshot {
-        device: String,
-        candidates: Vec<PathBuf>,
-    },
-    #[error("unexpected entry in device inbox, refusing to import: {}", .0.display())]
-    UnexpectedEntry(PathBuf),
+    #[error("snapshot path has no parent directory to name its device: {}", .0.display())]
+    BadSnapshotPath(PathBuf),
 }
 
 impl From<DatastoreError> for ImportError {
     fn from(source: DatastoreError) -> Self {
         ImportError::Datastore(source)
     }
-}
-
-/// One device's immutable snapshot, located by inbox layout.
-pub struct DeviceSnapshot {
-    pub device: String,
-    pub path: PathBuf,
 }
 
 /// Per-bucket outcome of an import.
@@ -119,87 +110,51 @@ impl ImportSummary {
     }
 }
 
-/// Import every device snapshot found under `inbox` into `datastore`.
+/// Import each given snapshot database into `datastore`. A snapshot's device id is
+/// its immediate parent directory name, so a glob like `inbox/*/aw.db` yields
+/// `rugged`, `wyrm2`, … — the caller's glob is what decides which files are
+/// snapshots at all.
 ///
-/// The inbox is fully validated up front: any conflict, ambiguity, or unexpected
-/// entry aborts before the first write, so a failed run leaves the central store
-/// untouched.
-pub fn import_inbox(inbox: &Path, datastore: &Datastore) -> Result<ImportSummary, ImportError> {
-    let snapshots = scan_inbox(inbox)?;
+/// Idempotent: re-importing the same snapshot inserts nothing. A failure on one
+/// snapshot aborts the run, but because every insert dedups, a re-run after the
+/// cause is fixed converges with no double-counting.
+pub fn import_snapshots(
+    snapshots: &[PathBuf],
+    datastore: &Datastore,
+) -> Result<ImportSummary, ImportError> {
     let mut summary = ImportSummary::default();
-    for snapshot in &snapshots {
-        import_snapshot(snapshot, datastore, &mut summary)?;
+    for path in snapshots {
+        let device = device_of(path)?;
+        import_snapshot(&device, path, datastore, &mut summary)?;
     }
     Ok(summary)
 }
 
-/// Resolve the inbox to one snapshot per device, failing closed on anything the
-/// layout does not permit.
-pub fn scan_inbox(inbox: &Path) -> Result<Vec<DeviceSnapshot>, ImportError> {
-    let mut snapshots = Vec::new();
-    for device_dir in read_dir_sorted(inbox)? {
-        if !device_dir.is_dir() {
-            continue;
-        }
-        let device = file_name(&device_dir);
-        if device.starts_with('.') {
-            continue;
-        }
-        if let Some(path) = device_snapshot(&device_dir)? {
-            snapshots.push(DeviceSnapshot { device, path });
-        }
-    }
-    Ok(snapshots)
-}
-
-/// The single snapshot file in one device directory, or `None` if the device has
-/// not exported yet. Dotfiles (Syncthing's `.stfolder`, `.stignore`, ...) are
-/// ignored; everything else must be exactly one snapshot database.
-fn device_snapshot(dir: &Path) -> Result<Option<PathBuf>, ImportError> {
-    let mut candidates = Vec::new();
-    for entry in read_dir_sorted(dir)? {
-        let name = file_name(&entry);
-        if name.starts_with('.') {
-            continue;
-        }
-        if name.contains(".sync-conflict-") {
-            return Err(ImportError::ConflictFile(entry));
-        }
-        if entry.is_dir() || !is_snapshot_db(&name) {
-            return Err(ImportError::UnexpectedEntry(entry));
-        }
-        candidates.push(entry);
-    }
-    match candidates.len() {
-        0 => Ok(None),
-        1 => Ok(Some(candidates.pop().unwrap())),
-        _ => Err(ImportError::AmbiguousSnapshot {
-            device: file_name(dir),
-            candidates,
-        }),
-    }
-}
-
-fn is_snapshot_db(name: &str) -> bool {
-    let lower = name.to_ascii_lowercase();
-    lower.ends_with(".db") || lower.ends_with(".sqlite") || lower.ends_with(".sqlite3")
+/// A snapshot's device id: the name of its immediate parent directory.
+fn device_of(path: &Path) -> Result<String, ImportError> {
+    path.parent()
+        .and_then(Path::file_name)
+        .map(|name| name.to_string_lossy().into_owned())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| ImportError::BadSnapshotPath(path.to_path_buf()))
 }
 
 fn import_snapshot(
-    snapshot: &DeviceSnapshot,
+    device: &str,
+    path: &Path,
     datastore: &Datastore,
     summary: &mut ImportSummary,
 ) -> Result<(), ImportError> {
-    let conn = snapshot::open_readonly(&snapshot.path)?;
-    for bucket in snapshot::read_buckets(&conn, &snapshot.path)? {
-        let dest_bucket = format!("{}::{}", snapshot.device, bucket.name);
-        ensure_bucket(datastore, &dest_bucket, &snapshot.device, &bucket)?;
+    let conn = snapshot::open_readonly(path)?;
+    for bucket in snapshot::read_buckets(&conn, path)? {
+        let dest_bucket = format!("{device}::{}", bucket.name);
+        ensure_bucket(datastore, &dest_bucket, device, &bucket)?;
 
         let existing = datastore.get_events_unclipped(&dest_bucket, None, None, None)?;
         let existing_before = existing.len();
         let mut seen: HashSet<EventKey> = existing.iter().map(dest_event_key).collect();
 
-        let source_events = snapshot::read_events(&conn, &snapshot.path, bucket.bid)?;
+        let source_events = snapshot::read_events(&conn, path, bucket.bid)?;
         let mut distinct = HashSet::new();
         let mut to_insert = Vec::new();
         for raw in &source_events {
@@ -220,7 +175,7 @@ fn import_snapshot(
         }
 
         summary.buckets.push(BucketImport {
-            device: snapshot.device.clone(),
+            device: device.to_string(),
             source_bucket: bucket.name,
             dest_bucket,
             source_events: source_events.len(),
@@ -291,30 +246,7 @@ fn dest_event_key(event: &Event) -> EventKey {
 /// `preserve_order` feature, so `Value::Object` is a `BTreeMap` and `to_string`
 /// already emits object keys in sorted order, recursively — two maps that differ
 /// only in key order serialize identically. The window key-reorder case in the
-/// idempotency test guards that assumption.
+/// import test guards that assumption.
 fn canonical_object(map: &Map<String, Value>) -> String {
     serde_json::to_string(map).expect("json object serializes")
-}
-
-fn read_dir_sorted(dir: &Path) -> Result<Vec<PathBuf>, ImportError> {
-    let mut paths = Vec::new();
-    let entries = std::fs::read_dir(dir).map_err(|source| ImportError::Io {
-        path: dir.to_path_buf(),
-        source,
-    })?;
-    for entry in entries {
-        let entry = entry.map_err(|source| ImportError::Io {
-            path: dir.to_path_buf(),
-            source,
-        })?;
-        paths.push(entry.path());
-    }
-    paths.sort();
-    Ok(paths)
-}
-
-fn file_name(path: &Path) -> String {
-    path.file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default()
 }

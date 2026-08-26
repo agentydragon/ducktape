@@ -1,16 +1,14 @@
-//! Encodes the importer-canary requirements
+//! The importer's behavioral contract
 //! (`cluster/docs/activitywatch/importer-canary.md`): a second import of the same
-//! frozen inputs adds zero events, the source bytes are unchanged, distinct
-//! `localhost` devices never merge, and conflict/unexpected inbox files fail
-//! closed.
+//! frozen inputs adds zero events, the source bytes are never touched, and distinct
+//! devices whose watchers both report hostname `localhost` never merge.
 
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 
 use aw_datastore::Datastore;
-use aw_importer::ImportError;
-use aw_importer::import_inbox;
+use aw_importer::import_snapshots;
 use aw_models::Bucket;
 use aw_models::BucketMetadata;
 use chrono::DateTime;
@@ -183,10 +181,10 @@ fn reimport_adds_nothing_and_leaves_source_bytes_unchanged() {
     write_snapshot(&snapshot, &[afk, window]);
     let before = fs::read(&snapshot).unwrap();
 
-    let inbox = root.join("inbox");
     let datastore = central(&root);
 
-    let summary = import_inbox(&inbox, &datastore).expect("first import");
+    let summary =
+        import_snapshots(std::slice::from_ref(&snapshot), &datastore).expect("first import");
     assert_eq!(summary.total_inserted(), 4);
     assert_eq!(
         events(&datastore, "rugged::aw-watcher-afk_localhost").len(),
@@ -197,7 +195,8 @@ fn reimport_adds_nothing_and_leaves_source_bytes_unchanged() {
         2
     );
 
-    let second = import_inbox(&inbox, &datastore).expect("second import");
+    let second =
+        import_snapshots(std::slice::from_ref(&snapshot), &datastore).expect("second import");
     assert_eq!(second.total_inserted(), 0, "re-import must add nothing");
     assert_eq!(
         events(&datastore, "rugged::aw-watcher-afk_localhost").len(),
@@ -264,7 +263,8 @@ fn localhost_buckets_from_different_devices_stay_separate() {
     );
 
     let datastore = central(&root);
-    let summary = import_inbox(&inbox, &datastore).expect("import");
+    let summary =
+        import_snapshots(&[rugged.join("aw.db"), wyrm2.join("aw.db")], &datastore).expect("import");
     assert_eq!(summary.total_inserted(), 2);
 
     let buckets = datastore.get_buckets().unwrap();
@@ -289,98 +289,5 @@ fn localhost_buckets_from_different_devices_stay_separate() {
         &json!("https://wyrm2.example")
     );
 
-    datastore.close();
-}
-
-#[test]
-fn conflict_file_fails_closed() {
-    let root = temp_root("conflict");
-    let device_dir = root.join("inbox").join("rugged");
-    fs::create_dir_all(&device_dir).unwrap();
-    let afk = || {
-        bucket(
-            "aw-watcher-afk_localhost",
-            "afkstatus",
-            "aw-watcher-afk",
-            "localhost",
-            &[(1_000_000_000_000, 2_000_000_000_000, r#"{"status":"afk"}"#)],
-        )
-    };
-    write_snapshot(&device_dir.join("aw.db"), &[afk()]);
-    write_snapshot(
-        &device_dir.join("aw.sync-conflict-20260721-035404-PATWINW.db"),
-        &[afk()],
-    );
-
-    let datastore = central(&root);
-    let error = import_inbox(&root.join("inbox"), &datastore).expect_err("must fail closed");
-    assert!(
-        matches!(error, ImportError::ConflictFile(_)),
-        "got {error:?}"
-    );
-    assert!(
-        datastore.get_buckets().unwrap().is_empty(),
-        "nothing must be imported"
-    );
-    datastore.close();
-}
-
-#[test]
-fn ambiguous_snapshot_fails_closed() {
-    let root = temp_root("ambiguous");
-    let device_dir = root.join("inbox").join("rugged");
-    fs::create_dir_all(&device_dir).unwrap();
-    let afk = || {
-        bucket(
-            "aw-watcher-afk_localhost",
-            "afkstatus",
-            "aw-watcher-afk",
-            "localhost",
-            &[(1_000_000_000_000, 2_000_000_000_000, r#"{"status":"afk"}"#)],
-        )
-    };
-    write_snapshot(&device_dir.join("aw.db"), &[afk()]);
-    write_snapshot(&device_dir.join("aw-2.db"), &[afk()]);
-
-    let datastore = central(&root);
-    let error = import_inbox(&root.join("inbox"), &datastore).expect_err("must fail closed");
-    assert!(
-        matches!(error, ImportError::AmbiguousSnapshot { .. }),
-        "got {error:?}"
-    );
-    assert!(
-        datastore.get_buckets().unwrap().is_empty(),
-        "nothing must be imported"
-    );
-    datastore.close();
-}
-
-#[test]
-fn unexpected_file_fails_closed() {
-    let root = temp_root("unexpected");
-    let device_dir = root.join("inbox").join("rugged");
-    fs::create_dir_all(&device_dir).unwrap();
-    write_snapshot(
-        &device_dir.join("aw.db"),
-        &[bucket(
-            "aw-watcher-afk_localhost",
-            "afkstatus",
-            "aw-watcher-afk",
-            "localhost",
-            &[(1_000_000_000_000, 2_000_000_000_000, r#"{"status":"afk"}"#)],
-        )],
-    );
-    fs::write(device_dir.join("notes.txt"), b"stray file").unwrap();
-
-    let datastore = central(&root);
-    let error = import_inbox(&root.join("inbox"), &datastore).expect_err("must fail closed");
-    assert!(
-        matches!(error, ImportError::UnexpectedEntry(_)),
-        "got {error:?}"
-    );
-    assert!(
-        datastore.get_buckets().unwrap().is_empty(),
-        "nothing must be imported"
-    );
     datastore.close();
 }

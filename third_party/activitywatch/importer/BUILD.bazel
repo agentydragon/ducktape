@@ -47,8 +47,8 @@ rust_binary(
 rust_test(
     name = "aw_importer_test",
     size = "small",
-    srcs = ["idempotency_test.rs"],
-    crate_root = "idempotency_test.rs",
+    srcs = ["import_test.rs"],
+    crate_root = "import_test.rs",
     edition = "2021",
     deps = [
         ":aw_importer",
