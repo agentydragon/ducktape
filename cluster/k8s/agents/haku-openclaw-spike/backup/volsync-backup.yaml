@@ -13,8 +13,10 @@ metadata:
 spec:
   sourcePVC: haku-openclaw-spike-state
   trigger:
-    # 03:23 UTC, away from interactive use and staggered from public-coder's 09:17.
-    schedule: "23 03 * * *"
+    # One-time manual backup of the cleaned (~2.1G) state to migrate it to
+    # optiplex. The cutover change repoints this source at state-v2 and restores
+    # the daily schedule.
+    manual: migrate-1
   restic:
     repository: haku-openclaw-spike-volsync-restic
     copyMethod: Direct
