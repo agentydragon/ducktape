@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Per-claim setup for a Haku sandbox: egress CA trust, git identity + credentials, and the
 # haku-state checkout. Invoked (post-adoption, once per claim) by the sandbox-provisioning
-# MCP's bootstrap.script, which is just a call to this file — the whole reviewed bootstrap
-# lives here rather than as a bash blob inside the MCP's config YAML, so shfmt/shellcheck
+# Console's configured bootstrap.script, which is just a call to this file — the whole reviewed
+# bootstrap lives here rather than as a bash blob inside config YAML, so shfmt/shellcheck
 # see it. Deviation: changing any of it now needs an image rebuild + rollout, where the
-# in-YAML version was a ConfigMap edit picked up on the next claim. Accepted — the MCP's
-# environment contract hash never covered the image tag either way
-# (haku/sandbox_mcp/config.py), so no drift detection is lost.
+# in-YAML version was a ConfigMap edit picked up on the next claim. Accepted — the
+# environment provenance never covered the image tag either way
+# (haku/sandbox/config.py), so no drift detection is lost.
 #
 # TWO IMAGES RUN THIS, and a change here lands in both:
-#   - the haku-sandbox exec target (this directory's Dockerfile), via the MCP bootstrap;
+#   - the haku-sandbox exec target (this directory's Dockerfile), via Console's bootstrap;
 #   - the Console-owned Claude runner (//haku/runtime/x/bridge:runner_image),
 #     which runs it itself before launching Claude Code, so that session comes up with
 #     Haku's manual and its git credential rather than an empty /workspace.
@@ -107,6 +107,42 @@ machine github.com
 login x-access-token
 password ${HAKU_GITHUB_TOKEN}
 NETRC
+fi
+
+# ── 3b. Kubernetes through Console's proxy ───────────────────────────────────
+# This box mounts no ServiceAccount token, so `kubectl` reaches Kubernetes only through
+# haku-kube-api-proxy, which authorizes every request against Console before forwarding it
+# under the proxy's own in-cluster credential. Standing authority is unchanged: Console SARs
+# the haku access-profile group, which cluster/k8s/haku/rbac/rolebinding-haku.yaml binds to
+# the same haku-sandbox-admin Role the mounted token used to carry. What the box loses is a
+# credential it could exfiltrate, and `kubectl attach` / `kubectl proxy`, which the proxy
+# answers 501 (exec, port-forward, logs -f and watch all stream).
+#
+# The bearer goes in a mode-0600 tokenFile rather than inline, mirroring the Claude runner's
+# _materialize_proxy_kubeconfig (haku/runtime/x/bridge/runner.py). Both conditions must hold,
+# which is also what keeps the two writers apart: the runner Pod has the proxy URL from its
+# claim env but no HAKU_CONSOLE_TOKEN, so it skips this and materializes its own kubeconfig
+# from the exact-session bearer instead.
+if [ -n "${HAKU_KUBERNETES_PROXY_URL:-}" ] && [ -n "${HAKU_CONSOLE_TOKEN:-}" ]; then
+  kube_dir="$HOME/.kube"
+  mkdir -p "$kube_dir"
+  chmod 700 "$kube_dir"
+  umask 077
+  printf '%s' "${HAKU_CONSOLE_TOKEN}" >"$kube_dir/haku-agent-token"
+  # JSON is valid kubeconfig YAML, so the URL is carried as a JSON string rather than as
+  # bytes a YAML parser would reinterpret.
+  cat >"$kube_dir/config" <<KUBECONFIG
+{
+  "apiVersion": "v1",
+  "kind": "Config",
+  "clusters": [{"name": "haku-console-proxy", "cluster": {"server": "${HAKU_KUBERNETES_PROXY_URL}"}}],
+  "users": [{"name": "haku-agent", "user": {"tokenFile": "$kube_dir/haku-agent-token"}}],
+  "contexts": [{"name": "haku-agent", "context": {"cluster": "haku-console-proxy", "user": "haku-agent"}}],
+  "current-context": "haku-agent"
+}
+KUBECONFIG
+else
+  echo "haku-sandbox-setup: no Console Kubernetes proxy configured — leaving kubectl unconfigured"
 fi
 
 # ── 4. haku-state checkout ───────────────────────────────────────────────────

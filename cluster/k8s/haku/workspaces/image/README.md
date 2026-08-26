@@ -1,6 +1,6 @@
 # Haku sandbox image
 
-The toolchain the sandbox-provisioning MCP (<../../../../../haku/sandbox/>) hands out:
+The toolchain haku-console's `sandbox` server (<../../../../../haku/sandbox/>) hands out:
 an in-cluster **exec target** where an agent runs `bazel run //cli:…` / `bazel test //…`
 against a git-synced `haku-state` checkout. Not an agent-loop runtime — the agent loop lives
 in the harness and drives this box through `exec_sandbox`.
@@ -103,7 +103,7 @@ name, and repoint the SandboxTemplate.
 
 ## What the bootstrap does
 
-`haku-sandbox-setup.sh` runs once per claim (the MCP's `bootstrap.script` is just a call to
+`haku-sandbox-setup.sh` runs once per claim (Console's configured `bootstrap.script` is just a call to
 it). In order: the egress CA into a JVM truststore for Bazel's downloader, the `haku` git
 identity, `http.sslCAInfo` so plain `git` trusts the bumped proxy, a two-machine `.netrc`
 for both Forgejo hostnames, the `haku-state` clone, and a partial `ducktape` clone so the

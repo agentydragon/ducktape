@@ -1,6 +1,6 @@
-# The Haku sandbox: an in-cluster EXEC TARGET the sandbox-provisioning MCP hands
-# out. The agent (Claude Code web / claude.ai / a managed agent) execs
-# `bazel run //cli:...` / `bazel test //...` in here THROUGH the MCP, against a
+# The Haku sandbox: an in-cluster EXEC TARGET haku-console hands out through its
+# in-process `sandbox` server. The agent (Claude Code web / claude.ai / a managed agent)
+# execs `bazel run //cli:...` / `bazel test //...` in here THROUGH Console, against a
 # git-synced haku-state checkout. It does NOT run the agent loop. haku-state
 # builds locally (no BuildBuddy/RBE — source never leaves the cluster), so the
 # image is the local toolchain (../image/).
@@ -14,9 +14,9 @@
 # hostNetwork/hostPort/host*), both OUTSIDE Haku's RBAC (its haku-sandbox-admin Role has
 # no cilium/networkpolicy/PSS verbs). Every pod in haku-sandbox is force-proxied and
 # baseline-confined regardless of who wrote it, so Haku can't craft an un-fenced pod; and
-# a Haku direct-exec ≈ the arbitrary bash exec_sandbox already grants. The MCP approval
+# a Haku direct-exec ≈ the arbitrary bash exec_sandbox already grants. Console's approval
 # gate still governs the one party it must — the kubeconfig-less external harness (a plain
-# claude.ai chat), which can only reach the box THROUGH the MCP.
+# claude.ai chat), which can only reach the box THROUGH Console.
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
@@ -46,12 +46,14 @@ spec:
       # Node Types), so scheduling a sandbox there needs more thought (claim durability
       # across a node going away mid-session, re-provisioning UX) before adding the
       # toleration that would let a claim land on one. Not done as part of this change.
-      # Haku's own k8s identity so `kubectl` works out of the box — Haku operates its
-      # normal compute in haku-sandbox from here. The shared `haku` SA
-      # (cluster/k8s/haku/rbac/serviceaccount-haku.yaml) is bound to haku-sandbox-admin
-      # and is the same identity the managed-agent worker runs as.
-      serviceAccountName: haku
-      automountServiceAccountToken: true
+      # No Kubernetes credential is mounted. `kubectl` reaches the API only through
+      # haku-kube-api-proxy, which asks Console about every request before forwarding it under
+      # the proxy's own in-cluster credential. Standing authority is unchanged — Console SARs
+      # the haku access-profile group, bound to the same haku-sandbox-admin Role the mounted
+      # token carried (cluster/k8s/haku/rbac/rolebinding-haku.yaml) — so this removes an
+      # exfiltratable credential rather than access. The per-claim setup script writes the
+      # kubeconfig from the two env vars below.
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -97,6 +99,11 @@ spec:
                 secretKeyRef:
                   name: haku-console-agent-api
                   key: token
+            # Where `kubectl` sends everything, now that nothing is mounted. Console
+            # authorizes each request against the bearer above; haku-sandbox-setup.sh turns the
+            # pair into ~/.kube/config with the bearer in a mode-0600 tokenFile.
+            - name: HAKU_KUBERNETES_PROXY_URL
+              value: http://haku-kube-api-proxy.haku-console.svc.cluster.local:8080
           resources:
             requests:
               cpu: "1"

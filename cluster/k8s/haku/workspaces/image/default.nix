@@ -1,7 +1,7 @@
 # Nix-built OCI image for the Haku sandbox — the Nix replacement for the Dockerfile
 # beside it. Same job (see that file's header): an in-cluster EXEC TARGET where an agent
 # runs `bazel run //cli:...` / `bazel test //...` against a git-synced haku-state checkout,
-# driven through haku/sandbox_mcp.
+# driven through haku/sandbox.
 #
 # Why Nix: the Dockerfile's tool set is an `apt-get install` line nobody revisits, and it
 # has now produced the same class of bug three times — a missing `kubectl`, then a

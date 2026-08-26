@@ -197,23 +197,32 @@ def test_claude_sandbox_can_reach_the_forgejo_the_bootstrap_clones_from(k8s_dir:
 
 
 def test_haku_runtimes_and_access_profile_share_one_grant(k8s_dir: Path) -> None:
-    """Direct Haku pods and proxied runner sessions must have one Kubernetes authority."""
+    """Both sandboxes reach Kubernetes only through Console, under one shared grant."""
     binding = yaml.safe_load((k8s_dir / "haku/rbac/rolebinding-haku.yaml").read_text())
     role = yaml.safe_load((k8s_dir / "haku/rbac/role.yaml").read_text())
     assert binding["roleRef"]["name"] == role["metadata"]["name"]
     subjects = {(s["kind"], s["name"], s.get("namespace")) for s in binding["subjects"]}
+    # The ServiceAccount subject stays: ordinary pods that do carry a credential — the
+    # managed-agent worker — run as it. What must hold is that the group Console SARs for a
+    # proxied request resolves to that same Role, so mediating access never widens or narrows it.
     assert subjects == {("ServiceAccount", "haku", "haku-sandbox"), ("Group", "haku:access-profile:haku", None)}
 
-    direct_template = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku.yaml").read_text())
-    direct_pod = direct_template["spec"]["podTemplate"]["spec"]
-    assert direct_pod["automountServiceAccountToken"] is True
-    assert ("ServiceAccount", direct_pod["serviceAccountName"], "haku-sandbox") in subjects
-
+    exec_target = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku.yaml").read_text())
     runner_template = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-claude.yaml").read_text())
-    runner_pod = runner_template["spec"]["podTemplate"]["spec"]
     assert runner_template["metadata"]["namespace"] == "haku-runtime-sandbox"
-    assert runner_pod["automountServiceAccountToken"] is False
-    assert "serviceAccountName" not in runner_pod
+
+    for template in (exec_target, runner_template):
+        pod = template["spec"]["podTemplate"]["spec"]
+        assert pod["automountServiceAccountToken"] is False, template["metadata"]["name"]
+        assert "serviceAccountName" not in pod, template["metadata"]["name"]
+
+    # Removing the mount and supplying the proxy are one decision: a box with neither has no
+    # path to the API at all, and would fail at `kubectl` rather than at deploy.
+    exec_env = {
+        entry["name"]: entry.get("value")
+        for entry in exec_target["spec"]["podTemplate"]["spec"]["containers"][0]["env"]
+    }
+    assert "haku-kube-api-proxy" in exec_env["HAKU_KUBERNETES_PROXY_URL"]
 
     # No grant inside the runtime namespace itself: full CRUD there would let a session create
     # further pods behind a credential-mediating proxy, which is what its isolation is for.

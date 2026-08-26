@@ -1,7 +1,7 @@
-# Haku sandbox image — the toolchain the sandbox-provisioning MCP hands out.
+# Haku sandbox image — the toolchain haku-console's `sandbox` server hands out.
 #
 # This is an in-cluster EXEC TARGET, not an agent-loop runtime: the agent execs
-# `bazel run //cli:...` / `bazel test //...` in here (through the MCP) against a
+# `bazel run //cli:...` / `bazel test //...` in here (through Console) against a
 # git-synced haku-state checkout. haku-state builds LOCALLY (its .bazelrc is
 # --spawn_strategy=local, no BuildBuddy/RBE — the source must never leave the
 # cluster), so this image bakes the full local toolchain, not an RBE client.
@@ -83,7 +83,7 @@ RUN curl -fsSL "https://github.com/astral-sh/ruff/releases/download/${RUFF_VERSI
     && ruff --version
 
 # The whole reviewed per-claim bootstrap (egress CA, git identity + credentials, the
-# haku-state checkout). The sandbox-provisioning MCP's bootstrap.script is just a call
+# haku-state checkout). Console's configured bootstrap.script is just a call
 # to this, so the logic stays in a lintable file instead of a bash blob in config YAML.
 COPY haku-sandbox-setup.sh /usr/local/bin/haku-sandbox-setup.sh
 RUN chmod +x /usr/local/bin/haku-sandbox-setup.sh
