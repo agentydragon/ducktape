@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.chat_models import RuntimeKind
+from haku.console.x.runtime import RuntimeKey
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,12 +63,12 @@ class ChatLaunchAuthorizer:
         authority: LaunchAuthority,
         *,
         launchable_agent_ids: Collection[UUID],
-        registered_runtime_kinds: Collection[RuntimeKind],
+        registered_runtime_identities: Collection[RuntimeKey],
         profile_runtime_kinds: Mapping[str, Collection[RuntimeKind]],
     ) -> None:
         self._authority = authority
         self._launchable_agent_ids = frozenset(launchable_agent_ids)
-        self._registered_runtime_kinds = frozenset(registered_runtime_kinds)
+        self._registered_runtime_identities = frozenset(registered_runtime_identities)
         self._profile_runtime_kinds = {
             profile_id: frozenset(runtime_kinds) for profile_id, runtime_kinds in profile_runtime_kinds.items()
         }
@@ -83,8 +84,8 @@ class ChatLaunchAuthorizer:
     ) -> LaunchIdentity:
         if agent_id not in self._launchable_agent_ids:
             raise LaunchAgentRejectedError("selected Agent is not launchable")
-        if runtime_kind not in self._registered_runtime_kinds:
-            raise LaunchAgentRejectedError("selected chat runtime is not registered")
+        if RuntimeKey(agent_id, runtime_kind) not in self._registered_runtime_identities:
+            raise LaunchAgentRejectedError("selected Agent/runtime pair is not registered")
         authorization = await self._authority.launch_authorization(
             db, operator_id=operator_id, agent_id=agent_id, access_profile_id=expected_profile_id
         )

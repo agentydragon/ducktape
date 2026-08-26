@@ -149,6 +149,34 @@ Gotchas (bite every consumer): `POST /api/0/query` requires the **trailing slash
 TLS connection resets occur (~1/20 calls) — retry once; bucket `last_updated` is always
 `null` on this server — derive recency from each bucket's newest event.
 
+### Console agent read route (iron-substituted bearer)
+
+The console-owned Claude runner pool (`haku-runtime-sandbox`, the sandbox behind Haku's
+egress proxy) reads the central store over a **separate** bearer-gated route,
+`https://activitywatch-read.allegedly.works` — not the Authentik path above. It can't do
+the OAuth exchange, so the mechanism mirrors aiquota's: a static bearer the sandbox never
+actually holds.
+
+- The read route is a distinct `server` block on the `bearer-proxy` sidecar (port 5603),
+  gated on its own read token and allowing read methods only — GET plus POST to
+  `/api/0/query/` — so even a leaked read token can't write. The token is minted and
+  SOPS-encrypted at `cluster/k8s/x/activitywatch/activitywatch-read-token.sops.yaml`, and
+  the emberstack reflector mirrors it into `haku-egress-proxy`.
+- The sandbox template sets only the inert placeholder
+  (`AW_READ_TOKEN: activitywatch-read-token-placeholder`). The iron egress proxy
+  substitutes the real read token on `activitywatch-read.allegedly.works` read requests
+  (`cluster/k8s/agents/haku-egress-proxy/claude-iron.yaml`); the runtime never receives it.
+- The host is pinned in the Haku-Claude egress fence
+  (`cluster/k8s/agents/haku-egress-proxy/cnp-haku-claude-egress.yaml`) and the
+  `ACTIVITYWATCH` group of `cluster/validation/test_egress_allowlists.py`.
+
+So the agent queries with the placeholder in its environment:
+
+```bash
+curl -H "Authorization: Bearer $AW_READ_TOKEN" \
+  https://activitywatch-read.allegedly.works/api/0/buckets/
+```
+
 ## Storage Debt
 
 The Syncthing inbox is intentionally on SeaweedFS (`activitywatch-sync-inbox`,

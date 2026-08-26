@@ -50,6 +50,24 @@ the catalog to the roster and these figures. The agent's default model is
 unchanged (still a Codex 5.6 model) -- Gemini is added as a selectable
 option, not a new default.
 
+`agents.defaults.compaction.reserveTokensFloor` is 50,000 rather than
+OpenClaw's 20,000 default, which is sized for small local models. OpenClaw
+derives the floor it recommends from the active context window
+(`computeContextAwareReserveTokensFloor`: >=1M -> 100,000, >=200,000 ->
+50,000, >=100,000 -> 35,000), and the measured 372,000-token Codex window
+falls in the 50,000 tier. The reserve is one agent-wide value rather than
+per-model, so Gemini sessions run at 50,000 too instead of their tier's
+100,000: sizing the floor for the 1,048,576-token window would spend 27% of
+the default Codex window on headroom Codex sessions never use.
+
+That knob is version-bound. OpenClaw retired both `compaction.reserveTokens`
+and `compaction.reserveTokensFloor` in the 2026.8 line
+(`RETIRED_AGENT_TUNING_PATHS`), where a config migration deletes them and the
+floor reverts to a hardcoded 20,000 -- silently, since stripping is a
+migration rather than a rejection. When this gateway's pin reaches 2026.8 the
+setting has no reader and should be deleted. It is also why
+haku-openclaw-spike, pinned to `2026.8.1-beta.3`, does not carry it.
+
 `bind` is an enum -- `loopback`, `lan`, `tailnet`, `auto`, `custom`. `"all"` is
 not a member and the gateway exits with
 `Invalid --bind. Use "loopback", "lan", "tailnet", "auto", or "custom".`

@@ -50,6 +50,7 @@ from haku.console.x.conversation_events import (
 )
 from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.launch_identity import ChatLaunchAuthorizer, LaunchIdentity
+from haku.console.x.runtime import RuntimeKey
 from haku.console.x.session_events import PromptStartedBody
 from haku.console.x.session_store import BridgeAuthentication, SessionStore
 
@@ -80,7 +81,7 @@ async def test_first_matrix_bind_pins_complete_identity_with_production_authoriz
     production = ChatLaunchAuthorizer(
         authority,
         launchable_agent_ids={agent_id},
-        registered_runtime_kinds={RuntimeKind.CLAUDE_CODE},
+        registered_runtime_identities={RuntimeKey(agent_id, RuntimeKind.CLAUDE_CODE)},
         profile_runtime_kinds={"chat": {RuntimeKind.CLAUDE_CODE}},
     )
     calls: list[bool] = []

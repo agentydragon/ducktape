@@ -4,33 +4,6 @@
 # wiring; the application deliberately has no topology/path/proxy defaults. The
 # placeholder is non-secret—the real OAuth bearer exists only in iron-proxy.
 settings:
-  # New BaseSettings replicas load this section from HAKU_CONSOLE_CONFIG_FILE. Old
-  # ConsoleConfigFile parsers ignore the independent top-level section during rolling deployment.
-  codex_runtime:
-    agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e
-    namespace: haku-runtime-sandbox
-    warm_pool: haku-public-coder-codex
-    claim_prefix: codex
-    runtime_label: codex-chat
-    cwd: /workspace
-    session_ttl_seconds: 7200
-    https_proxy: http://public-coder-codex-runner-proxy.public-coder-agent.svc.cluster.local:8080
-    ca_bundle: /etc/ssl/certs/ca-certificates.crt
-    # Control-plane traffic stays direct while LiteLLM provider authentication traverses the
-    # least-credential runner proxy.
-    no_proxy: 127.0.0.1,localhost,haku-console.haku-console.svc.cluster.local,haku-kube-api-proxy.haku-console.svc.cluster.local
-    mcp_url: http://haku-console.haku-console.svc.cluster.local:9090/mcp
-    system_prompt_template: /etc/haku-console/config/public_coder_system_prompt.md.j2
-    implementation:
-      kind: codex_app_server
-      model: codex-gpt-5.6-sol
-      provider_id: haku
-      provider_name: Haku OpenAI-compatible
-      # The sandbox has no direct LiteLLM egress. Its inert OPENAI_API_KEY placeholder reaches this
-      # endpoint only through the runner-specific proxy, which substitutes the real virtual key.
-      api_base_url: http://litellm.litellm.svc.cluster.local:4000/v1
-      api_key_env_var: OPENAI_API_KEY
-      github_token_placeholder: proxy-github-placeholder
   runner_kubernetes_proxy_url: http://haku-kube-api-proxy.haku-console.svc.cluster.local:8080
   haku_agent_workspace_setup: /usr/local/bin/haku-sandbox-setup.sh
 
@@ -59,11 +32,13 @@ recall_indexes:
 
 chat_runtimes:
   claude_code:
+    agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
     namespace: haku-runtime-sandbox
     warm_pool: haku-claude
+    claim_prefix: claude
+    runtime_label: claude-chat
     cwd: /workspace
     session_ttl_seconds: 7200
-    oauth_placeholder: sk-ant-oat01-placeholder
     https_proxy: http://haku-claude-oauth-proxy.haku-egress-proxy.svc.cluster.local:8180
     ca_bundle: /egress-proxy-ca/ca-certificates.crt
     # forgejo-http.forgejo is spelled out because the bare service name does not end in `.svc`,
@@ -77,14 +52,38 @@ chat_runtimes:
     # immutable Agent/profile identity, so the runtime is not bound to one static Agent and the Agent
     # may use the same token through curl or another MCP client.
     mcp_url: http://haku-console.haku-console.svc.cluster.local:9090/mcp
-    # Compatibility/default selector, not a runtime credential binding. Old Console replicas still
-    # require this key from the shared ConfigMap; new replicas use only the id as the default Agent
-    # when a caller did not select one, and never load its static bearer into the runtime.
-    mcp_static_agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
     # Temporarily runtime-owned until the later Agent prompt migration in #4431. Mounted from this
     # same ConfigMap: Haku's identity and the attached-chat contract; the craft it authors for
     # itself lives in haku-state, which it can write and this it cannot.
     system_prompt_template: /etc/haku-console/config/chat_system_prompt.md.j2
+    implementation:
+      kind: claude_code
+      oauth_placeholder: sk-ant-oat01-placeholder
+  codex_app_server:
+    agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e
+    namespace: haku-runtime-sandbox
+    warm_pool: haku-public-coder-codex
+    claim_prefix: codex
+    runtime_label: codex-chat
+    cwd: /workspace
+    session_ttl_seconds: 7200
+    https_proxy: http://public-coder-codex-runner-proxy.public-coder-agent.svc.cluster.local:8080
+    ca_bundle: /etc/ssl/certs/ca-certificates.crt
+    # Control-plane traffic stays direct while LiteLLM provider authentication traverses the
+    # least-credential runner proxy.
+    no_proxy: 127.0.0.1,localhost,haku-console.haku-console.svc.cluster.local,haku-kube-api-proxy.haku-console.svc.cluster.local
+    mcp_url: http://haku-console.haku-console.svc.cluster.local:9090/mcp
+    system_prompt_template: /etc/haku-console/config/public_coder_system_prompt.md.j2
+    implementation:
+      kind: codex_app_server
+      model: codex-gpt-5.6-sol
+      provider_id: haku
+      provider_name: Haku OpenAI-compatible
+      # The sandbox has no direct LiteLLM egress. Its inert OPENAI_API_KEY placeholder reaches this
+      # endpoint only through the runner-specific proxy, which substitutes the real virtual key.
+      api_base_url: http://litellm.litellm.svc.cluster.local:4000/v1
+      api_key_env_var: OPENAI_API_KEY
+      github_token_placeholder: proxy-github-placeholder
 
 # Auto-approval is an explicit per-Agent policy graph. Exact-tool atoms grant standing authority
 # only to the named tools; newly reflected tools remain manual-approval by default. Conditional
@@ -414,10 +413,7 @@ access_profiles:
       - sandbox
   - id: public-coder
     auto_approval_policy: public_coder_safe_reads
-    # Claude remains in the shared schema only for rollback compatibility with the previous image.
-    # New replicas narrow this dedicated profile to its configured Codex runtime at launch.
     allowed_chat_runtimes:
-      - claude_code
       - codex_app_server
     can_read_profiles: []
     recall_index_ids:
@@ -504,8 +500,8 @@ static_agents:
     access_profile_id: public-coder
 launchable_agents:
   - agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
-# public-coder is added only by replicas that successfully register its Codex runtime. Previous
-# replicas therefore cannot reinterpret this Agent through the existing Claude registration.
+  - agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e
+default_chat_agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
 operator_connection_providers:
   google_mail:
     kind: google

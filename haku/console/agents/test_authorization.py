@@ -70,6 +70,7 @@ from haku.console.operator_identity import (
 )
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.launch_identity import ChatLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity
+from haku.console.x.runtime import RuntimeKey
 from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
 from third_party.containers.rlocations import PGVECTOR_PG18
 from util.testing.postgres import create_database_sync, force_drop_database_sync
@@ -820,7 +821,7 @@ def _launch_authorizer(
     return ChatLaunchAuthorizer(
         harness.authority,
         launchable_agent_ids={agent_id} if launchable else set(),
-        registered_runtime_kinds=registered,
+        registered_runtime_identities={RuntimeKey(agent_id, kind) for kind in registered},
         profile_runtime_kinds=profile_runtime_kinds
         or {
             "no_auto_approval": (RuntimeKind.CLAUDE_CODE,),
@@ -1000,7 +1001,7 @@ async def test_chat_launch_authorizer_fails_closed_for_unregistered_runtime(harn
         )
 
 
-async def test_chat_launch_authorizer_does_not_bind_a_runtime_to_one_agent(harness: Harness) -> None:
+async def test_chat_launch_authorizer_rejects_an_unregistered_agent_runtime_pair(harness: Harness) -> None:
     first = await _launch_definition(harness)
     second = StaticAgentDefinition(
         agent_id=uuid4(),
@@ -1014,12 +1015,13 @@ async def test_chat_launch_authorizer_does_not_bind_a_runtime_to_one_agent(harne
     authorizer = ChatLaunchAuthorizer(
         harness.authority,
         launchable_agent_ids={first.agent_id, second.agent_id},
-        registered_runtime_kinds={RuntimeKind.CLAUDE_CODE},
+        registered_runtime_identities={RuntimeKey(first.agent_id, RuntimeKind.CLAUDE_CODE)},
         profile_runtime_kinds={"no_auto_approval": {RuntimeKind.CLAUDE_CODE}},
     )
 
     assert (await _authorize_launch(harness, authorizer, first.agent_id)).agent_id == first.agent_id
-    assert (await _authorize_launch(harness, authorizer, second.agent_id)).agent_id == second.agent_id
+    with pytest.raises(LaunchAgentRejectedError, match="pair is not registered"):
+        await _authorize_launch(harness, authorizer, second.agent_id)
 
 
 async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: str, harness: Harness) -> None:

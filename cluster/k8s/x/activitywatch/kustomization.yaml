@@ -7,15 +7,17 @@ resources:
   - pvc.yaml
   - service.yaml
   - write-httproute.yaml
+  - read-httproute.yaml
   - cilium-network-policy.yaml
   - activitywatch-write-token.sops.yaml
+  - activitywatch-read-token.sops.yaml
 
 configMapGenerator:
   - name: activitywatch-readonly-proxy
     namespace: activitywatch
     files:
       - default.conf=readonly-proxy.conf
-  - name: activitywatch-write-proxy
+  - name: activitywatch-bearer-proxy
     namespace: activitywatch
     files:
-      - default.conf.template=write-proxy.conf.template
+      - default.conf.template=bearer-proxy.conf.template

@@ -38,7 +38,7 @@ from fastapi import FastAPI
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
+from haku.console.config import MatrixConfig, RuntimeRegistrationConfig
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.channels.matrix.client import MatrixError
@@ -50,7 +50,7 @@ from haku.console.x.channels.matrix.room_subscription import RoomNotices
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.conversation_runtime import ConversationRuntime
-from haku.console.x.runtime_catalog import claude_registration, execution_registry
+from haku.console.x.runtime_catalog import execution_registry, runtime_registration
 from haku.console.x.sandbox_allocation import SandboxAllocator
 from haku.console.x.sandbox_claims import SandboxProvisioningView
 from haku.console.x.session_notifications import SessionNotifications
@@ -140,18 +140,20 @@ async def _serve() -> None:
         operator_subject="matrix-operator",
         password=password,
     )
-    runtime = ClaudeRuntimeConfig(
+    runtime = RuntimeRegistrationConfig(
+        agent_id=UUID("00000000-0000-4000-8000-000000000001"),
         namespace="haku-claude-sandbox",
         warm_pool="haku-claude",
+        claim_prefix="claude",
+        runtime_label="claude-chat",
         cwd=_environment("HAKU_E2E_WORKSPACE"),
         session_ttl_seconds=7200,
-        oauth_placeholder="not-a-secret",
         https_proxy="http://proxy.test:8180",
         ca_bundle="/egress-proxy-ca/ca-certificates.crt",
         no_proxy="127.0.0.1,localhost",
         mcp_url="http://haku-console.test:9090/mcp",
-        mcp_static_agent_id=UUID("00000000-0000-4000-8000-000000000001"),
         system_prompt_template=Path(_environment("HAKU_E2E_SYSTEM_PROMPT_TEMPLATE")),
+        implementation={"kind": "claude_code", "oauth_placeholder": "not-a-secret"},
     )
 
     engine = create_async_engine(database_url, pool_pre_ping=True)
@@ -160,7 +162,7 @@ async def _serve() -> None:
     await notifications.start()
     claims = FileSandboxClaims(Path(_environment("HAKU_E2E_CLAIMS_DIR")))
     runtimes = execution_registry(
-        claude_registration(
+        runtime_registration(
             runtime, claims, system_prompt=SystemPromptTemplate.from_path(runtime.system_prompt_template)
         )
     )

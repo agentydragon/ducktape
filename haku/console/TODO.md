@@ -242,8 +242,8 @@ The browser login flow is fixed in #3516/#3519 except for:
 
 ## The chat runtime's timings are module constants, not configuration
 
-`ClaudeRuntimeConfig` carries the deploy wiring (namespace, warm pool, proxy, MCP URL) and exactly
-one timing — `session_ttl_seconds`. Every other number the runtime's behaviour depends on is a
+`RuntimeRegistrationConfig` carries the deploy wiring (namespace, warm pool, proxy, MCP URL) and
+exactly one timing — `session_ttl_seconds`. Every other number the runtime's behaviour depends on is a
 module-level constant, so changing one is a code edit, a CI build and a roll. The ones that are
 genuinely operational knobs should move onto the config model:
 
@@ -399,16 +399,16 @@ each session pins the credential binding that authorized that sandbox. Allocatio
 exact-session bearer for the runner websocket and direct `/mcp` calls. It arrives through the
 SandboxClaim environment and is intentionally available to the provider CLI and its child commands;
 Console resolves it back to that specific session and pinned identity. Runtime configuration
-therefore holds an MCP endpoint, not a static Agent credential, and several launchable Agents whose
-profiles allow `claude_code` can share the same Claude runtime.
+therefore holds an MCP endpoint, not a static Agent credential. Each configured runtime pins the
+Agent/profile whose sandbox pool, prompt, environment, and MCP endpoint it owns.
 
 The claim carries that same bearer under the runner variable and an MCP alias. This is rollout
 compatibility, not a second credential: the previous runner strips the runner-named variable from
 Claude but passes the unknown alias, while the new runner preserves both.
 
 **The remaining runner half is independently extensible.** A new frame-speaking implementation still
-needs its own adapter and deploy configuration. `ClaudeRuntimeConfig` remains singular in namespace,
-warm pool, OAuth placeholder, system-prompt template and MCP URL; a concrete need for multiple
+needs its own adapter and deploy configuration. Each implementation remains singular in namespace,
+warm pool, provider placeholder, system-prompt template and MCP URL; a concrete need for multiple
 instances of one implementation kind would replace that with keyed runtime instances without
 changing session Agent identity.
 

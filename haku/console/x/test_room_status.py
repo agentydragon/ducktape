@@ -38,12 +38,12 @@ STARTED = datetime(2026, 8, 19, tzinfo=UTC)
 
 class _RecordingFrontend:
     def __init__(self) -> None:
-        self.shown: list[tuple[str, UUID | None]] = []
+        self.shown: list[str] = []
         self.cleared = 0
         self.typed: list[bool] = []
 
-    async def show_status(self, text: str, session_id: UUID | None = None) -> None:
-        self.shown.append((text, session_id))
+    async def show_status(self, text: str) -> None:
+        self.shown.append(text)
 
     async def clear_status(self) -> None:
         self.cleared += 1
@@ -97,7 +97,7 @@ async def test_provisioning_is_present_tense_state_and_adoption_retires_it() -> 
     status.apply((_event(SessionProvisioningBody(), seq=1, turn_id=None),))
 
     await status.reconcile(frontend, now=STARTED)
-    assert frontend.shown == [(PROVISIONING_STATUS, SESSION)]
+    assert frontend.shown == [PROVISIONING_STATUS]
     assert frontend.typed == [False]
 
     status.apply((_event(SessionAdoptedBody(previous_holder=None, holder="console-1"), seq=2, turn_id=None),))
@@ -129,7 +129,7 @@ async def test_a_slow_turn_shows_the_latest_coarse_state() -> None:
 
     await status.reconcile(frontend, now=STARTED + STATUS_AFTER)
 
-    assert frontend.shown == [("running Bash", SESSION)]
+    assert frontend.shown == ["running Bash"]
     assert status.tick_seconds == 1.0
 
 
@@ -149,10 +149,10 @@ async def test_a_change_inside_the_edit_floor_is_deferred_not_lost() -> None:
         )
     )
     await status.reconcile(frontend, now=changed_at)
-    assert frontend.shown == [("running Read", SESSION)]
+    assert frontend.shown == ["running Read"]
 
     await status.reconcile(frontend, now=STARTED + STATUS_AFTER + STATUS_EDIT_INTERVAL)
-    assert frontend.shown == [("running Read", SESSION), ("running Bash", SESSION)]
+    assert frontend.shown == ["running Read", "running Bash"]
 
 
 async def test_a_terminal_session_clears_state_rebuilt_from_the_stream() -> None:

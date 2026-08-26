@@ -66,6 +66,7 @@ py_test(
         "//haku/console:operator_identity",
         "//haku/console:operator_identity_store",
         "//haku/console/mcp_auth:fastmcp_adapter",
+        "//haku/console/x:runtime",
         "//mcp_infra/authentik_auth:oidc_principal",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",

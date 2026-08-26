@@ -21,13 +21,13 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ChatSurface, ItemStatus, ItemType, RuntimeKind
-from haku.console.config import ClaudeRuntimeConfig
+from haku.console.config import RuntimeRegistrationConfig
 from haku.console.database_schema import ChatAttachment, ConversationItem, Session
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.claude_code.client import cli_over_websocket
 from haku.console.x.launch_identity import LaunchAuthorizer
 from haku.console.x.runtime import RuntimeClientFactory, RuntimeRegistry
-from haku.console.x.runtime_catalog import claude_registration, execution_registry, projection_registry
+from haku.console.x.runtime_catalog import execution_registry, projection_registry, runtime_registration
 from haku.console.x.sandbox_allocation import SandboxAllocator
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
@@ -39,33 +39,35 @@ from haku.console.x.testing.recording_claims import RecordingClaims
 OPERATOR_SUBJECT = "authentik-user-id"
 
 
-def runtime_config(**overrides: object) -> ClaudeRuntimeConfig:
+def runtime_config(**overrides: object) -> RuntimeRegistrationConfig:
     values: dict[str, object] = {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
         "namespace": "haku-claude-sandbox",
         "warm_pool": "haku-claude",
+        "claim_prefix": "claude",
+        "runtime_label": "claude-chat",
         "cwd": "/workspace",
         "session_ttl_seconds": 7200,
-        "oauth_placeholder": "not-a-secret",
         "https_proxy": "http://proxy.test:8180",
         "ca_bundle": "/egress-proxy-ca/ca-certificates.crt",
         "no_proxy": "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8",
         "mcp_url": "http://haku-console.test:9090/mcp",
-        "mcp_static_agent_id": "00000000-0000-4000-8000-000000000001",
         "system_prompt_template": "cluster/k8s/haku/console/chat_system_prompt.md.j2",
+        "implementation": {"kind": "claude_code", "oauth_placeholder": "not-a-secret"},
     }
     values.update(overrides)
-    return ClaudeRuntimeConfig(**values)
+    return RuntimeRegistrationConfig(**values)
 
 
 def configured_runtimes(
     claims: RecordingClaims,
     *,
-    config: ClaudeRuntimeConfig | None = None,
+    config: RuntimeRegistrationConfig | None = None,
     system_prompt: SystemPromptTemplate | None = None,
     client_factory: RuntimeClientFactory = cli_over_websocket,
 ) -> RuntimeRegistry:
     return execution_registry(
-        claude_registration(
+        runtime_registration(
             config or runtime_config(),
             claims,
             system_prompt=system_prompt or SystemPromptTemplate(""),

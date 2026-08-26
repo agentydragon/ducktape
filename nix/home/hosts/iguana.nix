@@ -27,5 +27,17 @@
 
   home.packages = [ ducktapePackages.claude-desktop ];
 
+  # ActivityWatch capture + import into the central server. The importer folds this
+  # host's buckets into iguana::<bucket> over the bearer-gated write route, using the
+  # shared dual-recipient write token the cluster write-proxy checks.
+  ducktape.activitywatch.sync = {
+    enable = true;
+    dest = {
+      url = "https://activitywatch-write.allegedly.works";
+      device = "iguana";
+      tokenSopsFile = ../../../cluster/k8s/x/activitywatch/activitywatch-write-token.sops.yaml;
+    };
+  };
+
   home.stateVersion = "24.11";
 }

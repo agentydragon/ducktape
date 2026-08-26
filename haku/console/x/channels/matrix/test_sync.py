@@ -760,7 +760,7 @@ async def test_a_reply_says_what_it_is(service, matrix, sync_store, bound_room) 
     await service.post_reply(_queued("the answer"))
 
     [tag] = matrix.tags
-    assert (tag.kind, tag.session_id) == (RoomEventKind.REPLY, None)
+    assert (tag.kind, tag.conversation_id) == (RoomEventKind.REPLY, None)
 
 
 async def test_a_redriven_reply_is_the_same_transaction(service, matrix, sync_store, bound_room) -> None:
@@ -778,11 +778,26 @@ async def test_a_redriven_reply_is_the_same_transaction(service, matrix, sync_st
 async def test_a_status_edit_is_a_new_transaction_every_time(service, matrix, bound_room) -> None:
     """The other half of the rule: a line with no row to name is a genuinely new event each time,
     and deriving its transaction would be a way to lose the edit rather than a way to dedupe."""
-    await service.show_status("running Bash", SESSION)
-    await service.show_status("reading a file", SESSION)
+    await service.show_status("running Bash")
+    await service.show_status("reading a file")
     await settled(service)
 
     assert len(set(matrix.transactions)) == len(matrix.transactions) == 2
+
+
+async def test_a_status_line_names_the_conversation_and_not_a_session(
+    service, matrix, bound_room, conversations
+) -> None:
+    """A room event is permanent and federated, so what its tag names has to outlive every session
+    that could have produced it — which is the conversation the room holds a copy of."""
+    binding = await conversations.bound_room()
+    assert binding is not None
+
+    await service.show_status("running Bash")
+    await settled(service)
+
+    [tag] = [tag for tag in matrix.tags if tag.kind is RoomEventKind.STATUS]
+    assert tag.conversation_id == binding.conversation_id
 
 
 async def test_each_kind_of_notice_says_which_it_is(service, matrix, bound_room) -> None:
@@ -793,7 +808,7 @@ async def test_each_kind_of_notice_says_which_it_is(service, matrix, bound_room)
     """
     await service.announce("provisioning a sandbox")
     await service.announce("cloning haku-state", RoomEventKind.NARRATION)
-    await service.show_status("running Bash", SESSION)
+    await service.show_status("running Bash")
     await settled(service)
 
     assert [tag.kind for tag in matrix.tags] == [RoomEventKind.LIFECYCLE, RoomEventKind.NARRATION, RoomEventKind.STATUS]

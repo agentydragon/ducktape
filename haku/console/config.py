@@ -463,36 +463,6 @@ class RuntimeRegistrationConfig(RuntimeExecutionConfig):
         }
 
 
-class ClaudeRuntimeConfig(RuntimeExecutionConfig):
-    """Rolling-compatible flat wiring for the deployed Claude runtime."""
-
-    oauth_placeholder: str
-    # Required while old Console replicas share this ConfigMap. New replicas use it only as the
-    # launch Agent id; they never load or pass that Agent's static credential to the runtime.
-    mcp_static_agent_id: UUID
-
-    def claude_environment(self) -> dict[str, str]:
-        return {"CLAUDE_CODE_OAUTH_TOKEN": self.oauth_placeholder, **self.proxy_environment()}
-
-    def registration_config(self, *, agent_id: UUID | None = None) -> RuntimeRegistrationConfig:
-        """Adapt the legacy wire model to the provider-neutral registration model."""
-        return RuntimeRegistrationConfig(
-            agent_id=agent_id or self.mcp_static_agent_id,
-            namespace=self.namespace,
-            warm_pool=self.warm_pool,
-            claim_prefix="claude",
-            runtime_label="claude-chat",
-            cwd=self.cwd,
-            session_ttl_seconds=self.session_ttl_seconds,
-            https_proxy=self.https_proxy,
-            ca_bundle=self.ca_bundle,
-            no_proxy=self.no_proxy,
-            mcp_url=self.mcp_url,
-            system_prompt_template=self.system_prompt_template,
-            implementation=ClaudeCodeImplementationConfig(oauth_placeholder=self.oauth_placeholder),
-        )
-
-
 class ChatRuntimesConfig(BaseModel):
     """The closed catalog of chat-runtime implementations this deployment can launch.
 
@@ -503,14 +473,29 @@ class ChatRuntimesConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    # Keep this legacy-flat until the old Console image can no longer share or roll back to the
-    # same ConfigMap. New runtime implementations use RuntimeRegistrationConfig directly.
-    claude_code: ClaudeRuntimeConfig
+    claude_code: RuntimeRegistrationConfig
+    codex_app_server: RuntimeRegistrationConfig | None = None
+
+    @field_validator("claude_code")
+    @classmethod
+    def _claude_slot_accepts_only_claude(cls, value: RuntimeRegistrationConfig) -> RuntimeRegistrationConfig:
+        if value.kind is not RuntimeKind.CLAUDE_CODE:
+            raise ValueError("chat_runtimes.claude_code must select the claude_code implementation")
+        return value
+
+    @field_validator("codex_app_server")
+    @classmethod
+    def _codex_slot_accepts_only_codex(
+        cls, value: RuntimeRegistrationConfig | None
+    ) -> RuntimeRegistrationConfig | None:
+        if value is not None and value.kind is not RuntimeKind.CODEX_APP_SERVER:
+            raise ValueError("chat_runtimes.codex_app_server must select the codex_app_server implementation")
+        return value
 
     @property
-    def kinds(self) -> frozenset[RuntimeKind]:
-        """Implementation kinds represented by this closed deploy catalog."""
-        return frozenset(RuntimeKind(name) for name in type(self).model_fields)
+    def registrations(self) -> tuple[RuntimeRegistrationConfig, ...]:
+        """Agent/runtime registrations represented by this closed deploy catalog."""
+        return tuple(runtime for runtime in (self.claude_code, self.codex_app_server) if runtime is not None)
 
 
 class WebPushConfig(BaseModel):
@@ -655,20 +640,6 @@ class Settings(BaseSettings):
     # policies, static machine `agents` (id + env-referenced bearer + operator subject + policy),
     # Claude runtime wiring, and the `hostexec` host map (in-scope machines + exec URLs/audiences).
     config_file: Path
-
-    # Transitional Settings-owned execution registration for Codex. It lives in the top-level
-    # ``settings`` section of the shared YAML, which old ConsoleConfigFile parsers ignore, rather
-    # than under the closed ``chat_runtimes`` schema they would reject during a rolling update.
-    codex_runtime: RuntimeRegistrationConfig | None = None
-
-    @field_validator("codex_runtime")
-    @classmethod
-    def _transitional_codex_slot_accepts_only_codex(
-        cls, value: RuntimeRegistrationConfig | None
-    ) -> RuntimeRegistrationConfig | None:
-        if value is not None and value.kind is not RuntimeKind.CODEX_APP_SERVER:
-            raise ValueError("codex_runtime must select the codex_app_server implementation")
-        return value
 
     # Non-secret runner topology selected by Console for every launched Agent. The runner turns
     # this into an ephemeral tokenFile kubeconfig backed by the exact-session bearer.

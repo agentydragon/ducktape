@@ -5,6 +5,9 @@
       "model": {
         "primary": "litellm-subscription/codex-gpt-5.6-luna"
       },
+      "compaction": {
+        "reserveTokensFloor": 50000
+      },
       "sandbox": {
         "mode": "off"
       },

@@ -28,6 +28,12 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     console_config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())
     runtime = console_config["chat_runtimes"]["claude_code"]
     assert runtime["namespace"] == template_namespace == "haku-runtime-sandbox"
+    assert runtime["agent_id"] == "8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2"
+    assert runtime["claim_prefix"] == "claude"
+    assert runtime["runtime_label"] == "claude-chat"
+    assert runtime["implementation"] == {"kind": "claude_code", "oauth_placeholder": "sk-ant-oat01-placeholder"}
+    assert "mcp_static_agent_id" not in runtime
+    assert "oauth_placeholder" not in runtime
     pod_template = template["spec"]["podTemplate"]
     assert pod_template["metadata"]["labels"]["haku.allegedly.works/access-profile-id"] == "haku"
     assert pod_template["spec"]["automountServiceAccountToken"] is False
@@ -735,11 +741,12 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     assert not (console_dir / "codex-runner-service.yaml").exists()
 
     shared_config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())
-    codex = shared_config["settings"]["codex_runtime"]
+    codex = shared_config["chat_runtimes"]["codex_app_server"]
     assert codex["namespace"] == namespace
     assert codex["claim_prefix"] == "codex"
     assert codex["runtime_label"] == "codex-chat"
-    assert codex["agent_id"] not in {entry["agent_id"] for entry in shared_config["launchable_agents"]}
+    assert codex["agent_id"] in {entry["agent_id"] for entry in shared_config["launchable_agents"]}
+    assert shared_config["default_chat_agent_id"] == "8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2"
     implementation = codex["implementation"]
     assert implementation["kind"] == "codex_app_server"
     assert implementation["provider_id"] == "haku"
@@ -751,6 +758,7 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     assert "litellm.litellm.svc.cluster.local" not in codex["no_proxy"]
     assert "haku-console.haku-console.svc.cluster.local" in codex["no_proxy"]
     assert "haku-kube-api-proxy.haku-console.svc.cluster.local" in codex["no_proxy"]
+    assert "codex_runtime" not in shared_config["settings"]
     assert shared_config["kubernetes_authorization"]["subjects_by_access_profile"]["haku"] == {
         "username": "haku:access-profile:haku",
         "groups": ["haku:access-profile:haku", "system:authenticated"],

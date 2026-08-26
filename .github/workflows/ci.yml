@@ -15,11 +15,20 @@ on:
 
 # Deliberately no workflow-level concurrency group. That would cancel the whole run —
 # release and push-images included — the moment a new commit lands on the same ref,
-# so a busy merge day never lets an image finish publishing (#2759). bazel-ci.yml
-# already carries its own concurrency group (dedupes redundant test/build runs, the
-# one place cancellation is actually worth it); release.yml and push-images.yml gate
-# each artifact on its own embedded test, so running them for a commit whose bazel-ci
-# got superseded costs some duplicate publishing, never a wrong one.
+# so a busy merge day never lets an image finish publishing (#2759).
+#
+# Each called workflow carries its own group instead, and the polarity differs according
+# to what the work is worth once it has been superseded:
+#
+#   bazel-ci.yml                  cancel-in-progress: true — a test result for a commit
+#                                 nobody will ship is worthless, so kill it.
+#   push-images.yml, release.yml  cancel-in-progress: false — a half-finished publish is
+#                                 not worthless. Queued runs coalesce (a new one replaces
+#                                 the pending one); running ones are left to finish.
+#
+# release.yml and push-images.yml also gate each artifact on its own embedded test, so
+# running them for a commit whose bazel-ci got superseded costs some duplicate
+# publishing, never a wrong one.
 
 permissions:
   contents: write

@@ -228,13 +228,12 @@ def create_app(
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     claude_runtime = console_config.chat_runtimes.claude_code if console_config.chat_runtimes is not None else None
-    claude_registration_config = claude_runtime.registration_config() if claude_runtime is not None else None
-    codex_runtime = settings.codex_runtime
+    codex_runtime = console_config.chat_runtimes.codex_app_server if console_config.chat_runtimes is not None else None
     static_by_id = {agent.agent_id: agent for agent in console_config.static_agents}
     profile_runtime_kinds = {
         profile.id: set(profile.allowed_chat_runtimes) for profile in console_config.access_profiles
     }
-    launchable_agent_ids = set(console_config.effective_launchable_agent_ids)
+    launchable_agent_ids = {entry.agent_id for entry in console_config.launchable_agents}
     session_notifications = SessionNotifications(database_url)
     # Session changes reach open tabs over the console socket the shell already holds, coalesced
     # per session. Constructed unconditionally: it listens on the session channel and sends on the
@@ -323,20 +322,19 @@ def create_app(
         else {KUBERNETES_PROXY_URL_ENV: settings.runner_kubernetes_proxy_url}
     )
     if claude_runtime is not None:
-        assert claude_registration_config is not None
         try:
-            claude_profile_id = static_by_id[claude_registration_config.agent_id].access_profile_id
+            claude_profile_id = static_by_id[claude_runtime.agent_id].access_profile_id
         except KeyError as error:
             raise ValueError("configured Claude Agent must be a static Agent") from error
         registrations.append(
             runtime_catalog.runtime_registration(
-                claude_registration_config,
+                claude_runtime,
                 sandbox_claims.KubernetesSandboxClaims(
                     sandbox_claims.SandboxClaimSpec(
-                        namespace=claude_registration_config.namespace,
-                        warm_pool=claude_registration_config.warm_pool,
-                        claim_prefix=claude_registration_config.claim_prefix,
-                        runtime_label=claude_registration_config.runtime_label,
+                        namespace=claude_runtime.namespace,
+                        warm_pool=claude_runtime.warm_pool,
+                        claim_prefix=claude_runtime.claim_prefix,
+                        runtime_label=claude_runtime.runtime_label,
                         runner_environment={},
                     )
                 ),
@@ -391,10 +389,6 @@ def create_app(
         }
         if profile_agents != {codex_runtime.agent_id}:
             raise ValueError("configured Codex Agent must have a dedicated access profile")
-        # Keep Claude in the shared profile schema only so the previous image can parse the same
-        # ConfigMap. This replica narrows the actual public-coder launch boundary to Codex.
-        profile_runtime_kinds[codex_profile_id] = {codex_runtime.kind}
-        launchable_agent_ids.add(codex_runtime.agent_id)
     # All read and write paths share one registry. Projection-only composition may link dormant
     # adapters, while launch-capable production composition includes only deliberately supported
     # adapters and resources; no hidden Claude fallback can reinterpret another runtime's rows.
@@ -465,17 +459,19 @@ def create_app(
         authorize_chat_launch = ChatLaunchAuthorizer(
             agent_authority,
             launchable_agent_ids=launchable_agent_ids,
-            registered_runtime_kinds=runtime_registry.configured_kinds,
+            registered_runtime_identities=runtime_registry.configured_identities,
             profile_runtime_kinds=profile_runtime_kinds,
         )
 
-        # `mcp_static_agent_id` is the old ConfigMap's durable Haku Agent selector. During the
-        # schema roll it remains the default identity only; its static credential is no longer
-        # loaded into or passed to the runtime.
-        default_chat_agent_id = console_config.effective_default_chat_agent_id
+        default_chat_agent_id = console_config.default_chat_agent_id
         assert default_chat_agent_id is not None
         default_profile_id = static_by_id[default_chat_agent_id].access_profile_id
-        default_candidates = runtime_registry.configured_kinds.intersection(profile_runtime_kinds[default_profile_id])
+        default_candidates = {
+            identity.runtime_kind
+            for identity in runtime_registry.configured_identities
+            if identity.agent_id == default_chat_agent_id
+            and identity.runtime_kind in profile_runtime_kinds[default_profile_id]
+        }
         if RuntimeKind.CLAUDE_CODE in default_candidates:
             default_runtime_kind = RuntimeKind.CLAUDE_CODE
         else:
@@ -871,18 +867,18 @@ def create_app(
     async def config() -> ConfigResponse:
         """Static config for the SPA, including deploy-authorized Web chat launch pairs."""
         launch = settings.launch_routine
-        default_agent_id = console_config.effective_default_chat_agent_id
+        default_agent_id = console_config.default_chat_agent_id
         launch_options = [
             ChatLaunchOption(
-                agent_id=agent_id,
-                agent_display_name=static_by_id[agent_id].display_name,
-                runtime=kind,
-                runtime_display_name=runtime_registry[kind].display_name,
-                is_default=agent_id == default_agent_id and kind is default_runtime_kind,
+                agent_id=identity.agent_id,
+                agent_display_name=static_by_id[identity.agent_id].display_name,
+                runtime=identity.runtime_kind,
+                runtime_display_name=runtime_registry[identity.runtime_kind].display_name,
+                is_default=identity.agent_id == default_agent_id and identity.runtime_kind is default_runtime_kind,
             )
-            for agent_id in launchable_agent_ids
-            for kind in sorted(runtime_registry.configured_kinds, key=lambda value: value.value)
-            if kind in profile_runtime_kinds[static_by_id[agent_id].access_profile_id]
+            for identity in runtime_registry.configured_identities
+            if identity.agent_id in launchable_agent_ids
+            and identity.runtime_kind in profile_runtime_kinds[static_by_id[identity.agent_id].access_profile_id]
         ]
         launch_options.sort(key=lambda option: (not option.is_default, option.agent_display_name, option.runtime.value))
         return ConfigResponse(

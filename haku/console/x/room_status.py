@@ -51,7 +51,7 @@ PROVISIONING_STATUS = "provisioning a sandbox"
 class StatusFrontend(Protocol):
     """The Matrix operations the stream fold reconciles."""
 
-    async def show_status(self, text: str, session_id: UUID | None = None) -> None: ...
+    async def show_status(self, text: str) -> None: ...
 
     async def clear_status(self) -> None: ...
 
@@ -193,7 +193,7 @@ class LiveStatus:
                 self._shown = None
                 self._shown_at = None
         elif desired != self._shown and (self._shown_at is None or now - self._shown_at >= STATUS_EDIT_INTERVAL):
-            await frontend.show_status(desired, self._session_id)
+            await frontend.show_status(desired)
             self._shown = desired
             self._shown_at = now
 

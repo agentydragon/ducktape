@@ -56,6 +56,27 @@ transforms:
             - host: "aiquota.allegedly.works"
               methods: ["GET"]
               paths: ["/v1/quotas", "/v1/providers/*/raw"]
+        - source:
+            type: env
+            var: AW_READ_TOKEN
+          replace:
+            # Read-only bearer for the central ActivityWatch read route. Substituted
+            # only on that host and only for read methods -- GET any path (the
+            # buckets/events read API) plus POST to the query endpoint -- so a leaked
+            # placeholder can't be turned into a write. The bearer-proxy enforces the
+            # same read-only policy server-side; restricting substitution to match it
+            # keeps this from becoming general authenticated access. Lets the Haku
+            # agent read the operator's own activity history without holding the token.
+            proxy_value: "activitywatch-read-token-placeholder"
+            match_headers: ["Authorization"]
+          rules:
+            - host: "activitywatch-read.allegedly.works"
+              methods: ["CONNECT"]
+            - host: "activitywatch-read.allegedly.works"
+              methods: ["GET"]
+            - host: "activitywatch-read.allegedly.works"
+              methods: ["POST"]
+              paths: ["/api/0/query/", "/api/0/query/*"]
 
 log:
   level: "info"

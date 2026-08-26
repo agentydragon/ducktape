@@ -125,13 +125,25 @@ spec:
       extraEnvFrom:
         - secretRef:
             name: loki-s3-credentials
+      # Loki doesn't derive GOMEMLIMIT from its own cgroup limit yet (open
+      # upstream: grafana/loki#23514, grafana/loki#19586), so the Go GC never
+      # gets a chance to work harder before the kernel OOM-kills the process —
+      # it only ever sees the hard wall. Set it explicitly to ~80% of the
+      # limit below so GC pressure ramps up first. `read` runs query-frontend
+      # + querier in one process (-target=read) and is the component that hits
+      # this: a wide/low-selectivity query has to fetch and decompress every
+      # matching chunk before a line filter ever runs, so memory tracks data
+      # scanned, not data returned. See ducktape#4763.
+      extraEnv:
+        - name: GOMEMLIMIT
+          value: "3277MiB"
       resources:
         requests:
           cpu: 50m
           memory: 128Mi
         limits:
           cpu: 500m
-          memory: 256Mi
+          memory: 4Gi
 
     backend:
       replicas: 2
