@@ -45,7 +45,7 @@ spec:
             # csi-proxmox and cpap-sync are separately reviewed Haku-only
             # exceptions retained from the original proxy policy.
             - name: NAMESPACE_ALLOWLIST
-              value: "airlock,analytics,authentik,cert-manager,cli-proxy-api,cnpg-system,cpap-sync,csi-proxmox,docker-ci,flux-system,gatus,grocy-sf,grocy-vallejo,haku-ci,kube-system,litellm,local-path-storage,monitoring,node-feature-discovery,nvidia-device-plugin,oci-cache,openebs,osm-mcp,plaid-mcp,proxmox-proxy,props,study-casino,tana-mcp"
+              value: "airlock,analytics,authentik,cert-manager,cli-proxy-api,cnpg-system,cpap-sync,csi-proxmox,docker-ci,flux-system,gatus,grocy-sf,grocy-vallejo,haku-ci,kube-system,litellm,local-path-storage,loki,monitoring,node-feature-discovery,nvidia-device-plugin,oci-cache,openebs,osm-mcp,plaid-mcp,proxmox-proxy,props,study-casino,tana-mcp"
             # Must stay in sync with the egress CiliumNetworkPolicy in this
             # directory, which only allows the Loki gateway.
             - name: UPSTREAM_URL

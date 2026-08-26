@@ -233,13 +233,13 @@ def test_public_coder_and_haku_standing_diagnostics_are_secret_free(k8s_dir: Pat
     expected_namespace_labels = {
         "agents/agent-sandbox/controller/patches.yaml": agent_readable_metadata_label,
         "agents/public-coder-agent/namespace/namespace.yaml": agent_readable_metadata_label,
-        "monitoring/loki/namespace.yaml": agent_readable_metadata_label,
         "nix-cache/namespace/namespace.yaml": agent_readable_metadata_label,
         "vm-images-publisher/namespace.yaml": agent_readable_metadata_label,
         "cli-proxy-api/namespace.yaml": agent_readable_logs_label,
         "grocy/sf/app/namespace.yaml": agent_readable_logs_label,
         "grocy/vallejo/app/namespace.yaml": agent_readable_logs_label,
         "haku-ci/namespace.yaml": agent_readable_logs_label,
+        "monitoring/loki/namespace.yaml": agent_readable_logs_label,
         "props/namespace/namespace.yaml": agent_readable_logs_label,
     }
     for path, expected_label in expected_namespace_labels.items():
