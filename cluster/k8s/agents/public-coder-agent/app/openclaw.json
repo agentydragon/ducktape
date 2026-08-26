@@ -192,6 +192,29 @@
             "mode": "web"
           }
         }
+      },
+      // Disabled: unused on this headless agent. The companion-device/"node"
+      // stack (canvas, device-pair, file-transfer, talk-voice) only activates
+      // once a phone/desktop app pairs to the gateway, which cannot happen
+      // here; phone-control drives a paired Android device; ollama adds a
+      // local-model provider this agent does not use (it runs on LiteLLM).
+      "canvas": {
+        "enabled": false
+      },
+      "device-pair": {
+        "enabled": false
+      },
+      "file-transfer": {
+        "enabled": false
+      },
+      "talk-voice": {
+        "enabled": false
+      },
+      "phone-control": {
+        "enabled": false
+      },
+      "ollama": {
+        "enabled": false
       }
     }
   },
