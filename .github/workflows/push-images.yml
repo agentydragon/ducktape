@@ -38,6 +38,19 @@ on:
         default: ""
   workflow_dispatch:
 
+# Coalesce, never cancel. A newly queued run replaces whichever run is *pending* in this
+# group, so a burst of merges collapses into a single publish — but a run that is already
+# publishing is left alone. `cancel-in-progress: true` here is exactly what stalled image
+# rollouts for ~2.5h on a busy merge day (#2759): do not "fix" this flag.
+#
+# Skipping the superseded commits is safe because publishing is content-addressed. Every
+# image's digest is compared against the newest `devel-*` tag in its registry, so whichever
+# run gets there publishes everything still outstanding — an image whose change landed in a
+# coalesced commit still differs from the registry and is picked up by the next run.
+concurrency:
+  group: push-images-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   packages: write

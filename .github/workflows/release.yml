@@ -31,6 +31,15 @@ on:
         default: ""
   workflow_dispatch:
 
+# Coalesce, never cancel — same reasoning as the block in push-images.yml. A queued run
+# replaces the pending one so a merge burst collapses into one publish; a run already
+# creating releases is never killed (#2759). Safe to skip superseded commits because a
+# release's identity is a content hash, so the next run publishes whatever is still
+# unreleased.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
