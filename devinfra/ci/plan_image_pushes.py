@@ -99,17 +99,18 @@ def digest_glob(label: str) -> str:
     return str(prefix / package / f"{name}{DIGEST_SUFFIX}")
 
 
-def resolve_digest_file(label: str, root: Path) -> Path:
-    """The single digest file `label` produced, or raise naming what was found."""
+def resolve_digest_file(label: str, root: Path) -> Path | None:
+    """The single digest file `label` produced, or None if it was not materialized.
+
+    `bb remote build` does not reliably bring every requested output back to the
+    GitHub runner, so a missing file is an expected state, not a fault: the caller
+    treats it as "cannot prove unchanged" and keeps the image. More than one match
+    still raises — that means the label derivation is wrong, which is a bug.
+    """
     matches = sorted(root.glob(digest_glob(label)))
-    if len(matches) != 1:
-        raise RuntimeError(f"expected exactly one digest file for {label=}, found {[str(m) for m in matches]}")
-    return matches[0]
-
-
-def oci_dir_for(digest_file: Path) -> Path:
-    """The OCI layout directory that sits beside a digest file."""
-    return digest_file.with_name(digest_file.name[: -len(DIGEST_SUFFIX)])
+    if len(matches) > 1:
+        raise RuntimeError(f"expected at most one digest file for {label=}, found {[str(m) for m in matches]}")
+    return matches[0] if matches else None
 
 
 class RegistryReader(Protocol):
@@ -157,17 +158,19 @@ class Crane:
 @dataclasses.dataclass(frozen=True)
 class Decision:
     image: Image
-    local_digest: str
-    oci_dir: Path
+    local_digest: str | None
     published_tag: str | None
     published_digest: str | None
 
     @property
     def needs_push(self) -> bool:
-        return self.local_digest != self.published_digest
+        # An unresolvable local digest is not evidence the image is unchanged.
+        return self.local_digest is None or self.local_digest != self.published_digest
 
     @property
     def reason(self) -> str:
+        if self.local_digest is None:
+            return "digest not materialized; pushing to be safe"
         if self.published_tag is None:
             return "no devel tag published yet"
         if self.published_digest is None:
@@ -177,17 +180,15 @@ class Decision:
 
 def decide(image: Image, root: Path, crane: RegistryReader) -> Decision:
     digest_file = resolve_digest_file(image.target, root)
+    if digest_file is None:
+        print(f"::warning::{image.name}: digest not downloaded; keeping it in the push matrix", file=sys.stderr)
+        return Decision(image=image, local_digest=None, published_tag=None, published_digest=None)
     published_tag = crane.latest_devel_tag(image.repo)
-    published_digest = crane.digest(f"{image.repo}:{published_tag}") if published_tag else None
-    oci_dir = oci_dir_for(digest_file)
     return Decision(
         image=image,
         local_digest=digest_file.read_text().strip(),
-        # The push job resolves this against its own checkout, so it must be
-        # repo-root-relative whatever --root the planner was pointed at.
-        oci_dir=oci_dir.relative_to(root) if oci_dir.is_absolute() else oci_dir,
         published_tag=published_tag,
-        published_digest=published_digest,
+        published_digest=crane.digest(f"{image.repo}:{published_tag}") if published_tag else None,
     )
 
 
@@ -208,8 +209,6 @@ def matrix_include(decisions: list[Decision]) -> list[dict[str, str]]:
             "image": d.image.target,
             "test_target": d.image.test or "",
             "registry": d.image.registry,
-            "oci_dir": str(d.oci_dir),
-            "local_digest": d.local_digest,
         }
         for d in decisions
         if d.needs_push

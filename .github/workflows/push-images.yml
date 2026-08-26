@@ -171,15 +171,33 @@ jobs:
             -u "$FORGEJO_IMAGES_USERNAME" \
             -p "$FORGEJO_IMAGES_PASSWORD"
 
-      # The planner already resolved oci_dir from the Bazel label and read the digest;
-      # the path is the same under this job's bb-out because the Bazel config is.
+      # This job builds exactly one image, so a search by target name is unambiguous
+      # here even though it would not be in the planner's 42-target build. Resolving
+      # locally also means the push never depends on which outputs `bb remote build`
+      # chose to bring back for the planner.
+      - name: Resolve image output path
+        id: paths
+        shell: bash
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          NAME="${IMAGE##*:}"
+          BIN="bb-out/bazel-out/k8-fastbuild/bin"
+          mapfile -t DIGEST_FILES < <(find "$BIN" -path "*/${NAME}.json.sha256" -type f)
+          if [[ "${#DIGEST_FILES[@]}" -ne 1 ]]; then
+            printf 'Expected exactly one digest file for %s, found %s:\n' "$IMAGE" "${#DIGEST_FILES[@]}" >&2
+            printf '  %s\n' "${DIGEST_FILES[@]}" >&2
+            exit 1
+          fi
+          echo "oci_dir=${DIGEST_FILES[0]%.json.sha256}" >> "$GITHUB_OUTPUT"
+
       - name: Push image
         shell: bash
         env:
-          OCI_DIR: ${{ matrix.oci_dir }}
+          OCI_DIR: ${{ steps.paths.outputs.oci_dir }}
           IMAGE_NAME: ${{ matrix.image_name }}
           REGISTRY: ${{ matrix.registry }}
-          LOCAL_DIGEST: ${{ matrix.local_digest }}
         run: |
           set -euo pipefail
 
@@ -189,16 +207,9 @@ jobs:
             REPO="ghcr.io/agentydragon/$IMAGE_NAME"
           fi
 
-          # Re-read the digest Bazel just produced rather than trusting the planner's:
-          # the two builds are separate invocations, and a mismatch means the tree
-          # moved under us — push the tag whose content we actually hold.
-          BUILT_DIGEST=$(cat "${OCI_DIR}.json.sha256")
-          if [ "$BUILT_DIGEST" != "$LOCAL_DIGEST" ]; then
-            echo "::notice::$IMAGE_NAME digest changed between plan and push ($LOCAL_DIGEST -> $BUILT_DIGEST); pushing the rebuilt content"
-          fi
-
+          LOCAL_DIGEST=$(cat "${OCI_DIR}.json.sha256")
           PINNED="devel-$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
-          echo "$REPO: pushing $BUILT_DIGEST as :$PINNED"
+          echo "$REPO: pushing $LOCAL_DIGEST as :$PINNED"
           crane push "$OCI_DIR" "$REPO:$PINNED"
           crane tag "$REPO:$PINNED" latest
 

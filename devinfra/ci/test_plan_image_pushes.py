@@ -16,7 +16,6 @@ from devinfra.ci.plan_image_pushes import (
     digest_target,
     load_images,
     matrix_include,
-    oci_dir_for,
     plan,
     resolve_digest_file,
 )
@@ -81,18 +80,34 @@ def test_same_target_name_in_different_packages_stays_distinct() -> None:
     assert digest_glob("//airlock:image") != digest_glob("//props/backend:image")
 
 
-def test_resolve_digest_file_requires_exactly_one_match(tmp_path: Path) -> None:
-    with pytest.raises(RuntimeError, match="expected exactly one"):
-        resolve_digest_file("//airlock:image", tmp_path)
+def test_a_digest_that_was_not_downloaded_resolves_to_none(tmp_path: Path) -> None:
+    """`bb remote build` does not reliably return every output; that is not a fault."""
+    assert resolve_digest_file("//airlock:image", tmp_path) is None
 
-    write_digest(tmp_path, f"{BIN}/external/a/image{'.json.sha256'}", "sha256:a")
-    write_digest(tmp_path, f"{BIN}/external/b/image{'.json.sha256'}", "sha256:b")
-    with pytest.raises(RuntimeError, match="expected exactly one"):
+
+def test_two_matching_digest_files_is_still_a_bug(tmp_path: Path) -> None:
+    write_digest(tmp_path, f"{BIN}/external/a/image.json.sha256", "sha256:a")
+    write_digest(tmp_path, f"{BIN}/external/b/image.json.sha256", "sha256:b")
+    with pytest.raises(RuntimeError, match="expected at most one"):
         resolve_digest_file("@some_repo//:image", tmp_path)
 
 
-def test_oci_dir_sits_beside_the_digest_file() -> None:
-    assert oci_dir_for(Path(f"{BIN}/airlock/image.json.sha256")) == Path(f"{BIN}/airlock/image")
+def test_an_undownloaded_digest_keeps_the_image(tmp_path: Path) -> None:
+    """Fail open. Hard-failing here broke image publishing on devel entirely."""
+    image = Image(name="airlock", target="//airlock:image", test=None, registry="ghcr")
+    crane = FakeCrane({image.repo: {"devel-20260826120000-abc1234": "sha256:whatever"}})
+
+    decision = decide(image, tmp_path, crane)
+    assert decision.local_digest is None
+    assert decision.needs_push
+    assert [row["image_name"] for row in matrix_include([decision])] == ["airlock"]
+
+
+def test_a_whole_failed_download_degrades_to_the_old_fan_out(tmp_path: Path) -> None:
+    """Worst case is every image kept, never a silently dropped push."""
+    images = [Image(name=n, target=f"//{n}:image", test=None, registry="ghcr") for n in ("a", "b", "c")]
+    decisions = plan(images, lambda i: decide(i, tmp_path, FakeCrane({})), workers=3)
+    assert len(matrix_include(decisions)) == len(images)
 
 
 def test_repo_url_follows_the_registry() -> None:
@@ -135,25 +150,8 @@ def test_changed_digest_is_pushed(tmp_path: Path) -> None:
     decision = decide(image, tmp_path, crane)
     assert decision.needs_push
     assert matrix_include([decision]) == [
-        {
-            "image_name": "airlock",
-            "image": "//airlock:image",
-            "test_target": "//airlock/...",
-            "registry": "ghcr",
-            "oci_dir": f"{BIN}/airlock/image",
-            "local_digest": "sha256:new",
-        }
+        {"image_name": "airlock", "image": "//airlock:image", "test_target": "//airlock/...", "registry": "ghcr"}
     ]
-
-
-def test_oci_dir_is_repo_root_relative_whatever_root_was(tmp_path: Path) -> None:
-    """The push job resolves oci_dir against its own checkout, not the planner's."""
-    write_digest(tmp_path, f"{BIN}/airlock/image.json.sha256", "sha256:new")
-    image = Image(name="airlock", target="//airlock:image", test=None, registry="ghcr")
-
-    decision = decide(image, tmp_path, FakeCrane({}))
-    assert decision.oci_dir == Path(f"{BIN}/airlock/image")
-    assert not decision.oci_dir.is_absolute()
 
 
 def test_never_published_image_is_pushed(tmp_path: Path) -> None:
