@@ -8,3 +8,6 @@ metadata:
     pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/audit: privileged
     pod-security.kubernetes.io/warn: privileged
+    # Lets the approved agent identities read workload metadata and pod logs here,
+    # so a crashlooping sidecar can be diagnosed without an operator grant.
+    rbac.ducktape.io/agent-readable-logs: "true"

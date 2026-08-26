@@ -11,6 +11,10 @@
 #   write methods once the importer syncs incrementally from a local high-water mark
 #   and no longer reads the destination (see cluster/docs/activitywatch/revival-plan.md).
 
+# The map key "Bearer <64-hex token>" is 71 bytes, past nginx's default 64-byte
+# bucket -- without this bump nginx dies at startup with "could not build map_hash".
+map_hash_bucket_size 128;
+
 map $http_authorization $aw_write_ok {
     default 0;
     "Bearer ${AW_WRITE_TOKEN}" 1;
