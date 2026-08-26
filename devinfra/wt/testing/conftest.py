@@ -9,6 +9,7 @@ import subprocess
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock
 
 import pygit2
@@ -484,7 +485,7 @@ def build_test_configuration(repo_path: Path, wt_dir: Path | None = None, **conf
         wt_dir = repo_path / ".wt"
 
     # Default config suitable for most tests
-    defaults = {
+    defaults: dict[str, Any] = {
         "main_repo": str(repo_path),
         "worktrees_dir": str(repo_path / "worktrees"),
         "branch_prefix": "test/",
