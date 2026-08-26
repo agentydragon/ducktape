@@ -35,13 +35,17 @@
     };
   };
 
+  # ActivityWatch capture + import into the central server. rugged is the revive
+  # canary: the importer reads the local aw-server and folds buckets into
+  # rugged::<bucket> over the bearer-gated write route, authenticating with the same
+  # dual-recipient Secret the cluster write-proxy checks. No Syncthing here -- the
+  # importer is the transport now (fleet-wide Syncthing teardown is a follow-up).
   ducktape.activitywatch.sync = {
-    # Retired with the cluster receiver; retain config material for a future
-    # snapshot-based replacement of the aw-sync transport.
-    enable = false;
-    syncthing = {
-      certFile = ../../../secrets/home/rugged/activitywatch-syncthing.cert.pem;
-      keySopsFile = ../../../secrets/home/rugged/activitywatch-syncthing.sops.key;
+    enable = true;
+    dest = {
+      url = "https://activitywatch-write.allegedly.works";
+      device = "rugged";
+      tokenSopsFile = ../../../cluster/k8s/x/activitywatch/activitywatch-write-token.sops.yaml;
     };
   };
 

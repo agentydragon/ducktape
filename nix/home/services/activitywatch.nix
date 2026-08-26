@@ -25,36 +25,58 @@ let
     echo "ActivityWatch server did not become ready on 127.0.0.1:${toString cfg.sync.localPort}" >&2
     exit 1
   '';
-  syncPushScript = pkgs.writeShellScript "activitywatch-sync-push" ''
-    exec ${pkgs.activitywatch}/bin/aw-sync \
-      --host 127.0.0.1 \
-      --port ${toString cfg.sync.localPort} \
-      --sync-dir ${lib.escapeShellArg syncRoot} \
-      sync-advanced \
-      --mode push
-  '';
 in
 {
   options.ducktape.activitywatch = {
     sync = {
-      enable = lib.mkEnableOption "local ActivityWatch capture with aw-sync push into a Syncthing folder";
+      enable = lib.mkEnableOption "local ActivityWatch capture, plus an importer or Syncthing transport to the central server";
 
       root = lib.mkOption {
         type = lib.types.str;
         default = "${config.home.homeDirectory}/.activitywatch-sync";
-        description = "Hidden root shared by aw-sync and Syncthing.";
+        description = "Hidden root for the (legacy) Syncthing send-only folder.";
       };
 
       interval = lib.mkOption {
         type = lib.types.str;
         default = "5min";
-        description = "systemd timer interval for pushing local buckets into the sync folder.";
+        description = "systemd timer interval between importer runs.";
       };
 
       localPort = lib.mkOption {
         type = lib.types.port;
         default = 5600;
-        description = "Local aw-server port used by watchers and aw-sync.";
+        description = "Local aw-server port used by watchers and the importer's source read.";
+      };
+
+      dest = {
+        url = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          description = ''
+            Base URL of the central aw-server to import into. When set, a timer
+            runs the instance-to-instance importer (aw-importer), reading this
+            host's local aw-server and folding its buckets into
+            `<device>::<bucket>` on the central one. null disables the importer.
+          '';
+        };
+
+        device = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          description = "Provenance id this host's buckets are namespaced under on the central server.";
+        };
+
+        tokenSopsFile = lib.mkOption {
+          type = lib.types.nullOr lib.types.path;
+          default = null;
+          description = ''
+            SOPS file holding the central write token under `stringData/token`.
+            Decrypted to AW_DEST_TOKEN for the importer. The shared dual-recipient
+            Secret (cluster + desktops) is
+            cluster/k8s/x/activitywatch/activitywatch-write-token.sops.yaml.
+          '';
+        };
       };
 
       syncthing = {
@@ -88,8 +110,8 @@ in
   config = lib.mkIf enableGui (
     lib.mkMerge [
       {
-        # aw-server and aw-sync. The server runs headlessly under systemd;
-        # awatcher owns window+AFK capture.
+        # aw-server (from the activitywatch bundle) runs headlessly under systemd;
+        # awatcher owns window+AFK capture, the importer ships the buckets onward.
         home.packages = [ pkgs.activitywatch ];
       }
 
@@ -101,8 +123,8 @@ in
         # Introspect.GetWindows). awatcher reads focus via the focused-window-d-bus
         # GNOME Shell extension on GNOME, wlr-foreign-toplevel on wlroots, or xlib on
         # X11. It writes the same aw-watcher-window_<host>/aw-watcher-afk_<host>
-        # buckets the stock watchers did, so aw-sync → Syncthing → cluster ingestion
-        # is unchanged. See cluster/docs/activitywatch/gnome-wayland-capture.md.
+        # buckets the stock watchers did, so what the importer ships onward is
+        # unchanged. See cluster/docs/activitywatch/gnome-wayland-capture.md.
         home.packages = [ pkgs.awatcher ];
 
         # GNOME hosts need the in-shell extension that exports focus on the session
@@ -179,32 +201,60 @@ in
           Install.WantedBy = [ "default.target" ];
         };
 
-        home.activation.activitywatchSyncDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-          mkdir -p '${syncRoot}'
-        '';
-
-        systemd.user.services.activitywatch-sync-push = {
-          Unit = {
-            Description = "Push ActivityWatch buckets into Syncthing sync folder";
-            Requires = [ "activitywatch-server.service" ];
-            After = [ "activitywatch-server.service" ];
-          };
-          Service = {
-            Type = "oneshot";
-            ExecStart = syncPushScript;
-          };
-        };
-
-        systemd.user.timers.activitywatch-sync-push = {
-          Unit.Description = "Push ActivityWatch buckets into Syncthing sync folder";
-          Timer = {
-            OnBootSec = "2min";
-            OnUnitActiveSec = cfg.sync.interval;
-            Unit = "activitywatch-sync-push.service";
-          };
-          Install.WantedBy = [ "timers.target" ];
-        };
       })
+
+      # Importer transport: read this host's local aw-server and fold its buckets
+      # into the central one over the bearer-gated write route. Replaces the retired
+      # aw-sync push; active only where a dest.url is set (so only those hosts pull in
+      # the aw-importer artifact).
+      (lib.mkIf (cfg.sync.enable && cfg.sync.dest.url != null) (
+        let
+          importScript = pkgs.writeShellScript "activitywatch-import" ''
+            set -eu
+            export AW_DEST_TOKEN="$(cat ${config.sops.secrets.aw_dest_token.path})"
+            exec ${lib.getExe ducktapePackages.aw-importer} \
+              --source-url http://127.0.0.1:${toString cfg.sync.localPort} \
+              --dest-url ${lib.escapeShellArg cfg.sync.dest.url} \
+              --device ${lib.escapeShellArg cfg.sync.dest.device}
+          '';
+        in
+        {
+          assertions = [
+            {
+              assertion = cfg.sync.dest.device != null && cfg.sync.dest.tokenSopsFile != null;
+              message = "ducktape.activitywatch.sync.dest.url needs dest.device and dest.tokenSopsFile set too.";
+            }
+          ];
+
+          sops.secrets.aw_dest_token = {
+            sopsFile = cfg.sync.dest.tokenSopsFile;
+            key = "stringData/token";
+            mode = "0400";
+          };
+
+          systemd.user.services.activitywatch-import = {
+            Unit = {
+              Description = "Import local ActivityWatch buckets into the central server";
+              Requires = [ "activitywatch-server.service" ];
+              After = [ "activitywatch-server.service" ];
+            };
+            Service = {
+              Type = "oneshot";
+              ExecStart = importScript;
+            };
+          };
+
+          systemd.user.timers.activitywatch-import = {
+            Unit.Description = "Periodic ActivityWatch import into the central server";
+            Timer = {
+              OnBootSec = "2min";
+              OnUnitActiveSec = cfg.sync.interval;
+              Unit = "activitywatch-import.service";
+            };
+            Install.WantedBy = [ "timers.target" ];
+          };
+        }
+      ))
 
       (lib.mkIf (cfg.sync.enable && syncthingConfigured) {
         sops.secrets.activitywatch_syncthing_key = {
@@ -212,6 +262,10 @@ in
           format = "binary";
           mode = "0600";
         };
+
+        home.activation.activitywatchSyncDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+          mkdir -p '${syncRoot}'
+        '';
 
         services.syncthing = {
           enable = true;

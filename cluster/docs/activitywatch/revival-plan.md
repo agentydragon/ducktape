@@ -35,35 +35,35 @@ importer dedups any residue.
   `AW_DEST_TOKEN`. aw-server itself and the Authentik read path are untouched, and
   the cluster Syncthing receiver and old aw-sync cronjob are removed rather than
   revived.
+- **Packaging** (#4746): `aw-importer` ships as a CI-released artifact plus a guarded
+  nix package; `release.yml` runs `aw_importer_test` before publishing, which is the
+  module's only CI coverage (the PR `//...` sweep skips this `.bazelignore`d module).
+- **Desktop scheduling (rugged canary)**: `nix/home/services/activitywatch.nix` runs
+  the importer on a timer against the central write route, `AW_DEST_TOKEN` from the
+  shared Secret, replacing the aw-sync push. rugged is importer-only; the other synced
+  hosts stay dormant until the canary proves out.
 
 ## What's left
 
-1. **Package + schedule on the desktop** (nix). Replace the `aw-sync … --mode push`
-   timer in `nix/home/services/activitywatch.nix` with the importer on a timer:
-   `aw_importer_bin --dest-url https://activitywatch-write.allegedly.works --device <host>`,
-   `AW_DEST_TOKEN` decrypted from the shared SOPS secret. The importer needs a
-   writable `XDG_CACHE_HOME`/`HOME` — `AwClient` takes a `SingleInstance` lock there.
+1. **Prove the rugged canary, then roll out.** Do one real end-to-end pass — importer
+   → central → query it back — before enabling the other synced hosts (iguana, atlas,
+   wyrm2 still sit at `sync.enable = false`); each gets `sync.enable = true` and its own
+   `dest.device`, per the README's "Adding More Devices". First-run gotcha to watch:
+   the importer's `AwClient` takes a `SingleInstance` lock under `dirs::cache_dir()`, so
+   the systemd user service needs a writable `HOME`/`XDG_CACHE_HOME`.
 
 2. **Retire Syncthing (desktop side).** The cluster receiver, its certs, and the old
-   aw-sync cronjob are gone; what remains is the desktop send-only folder and the
-   per-host Syncthing certs/keys — a deletion across
-   `nix/home/services/activitywatch.nix` and `secrets/home/<host>/` (plus the now
-   unused `//secrets/home:activitywatch_syncthing_files` filegroup).
+   aw-sync cronjob are gone, and rugged is already importer-only. What remains is the
+   send-only folder and per-host Syncthing certs/keys on iguana/atlas/wyrm2 — a
+   deletion across `nix/home/services/activitywatch.nix` and `secrets/home/<host>/`
+   (plus the now unused `//secrets/home:activitywatch_syncthing_files` filegroup).
 
-3. **CI coverage.** Gate `@ducktape_activitywatch//importer:aw_importer_test`: the
-   root `//...` sweep and the PR bazel-diff both skip this `.bazelignore`d module, so
-   it regresses ungated otherwise.
-
-4. **Incremental sync, then make the write route ingest-only.** v1 reads the whole
+3. **Incremental sync, then make the write route ingest-only.** v1 reads the whole
    source and whole destination bucket each run; switch to a per-bucket high-water
    mark — read only source events past the newest already in the destination. Once
    the importer no longer reads the destination, restrict the write route to write
    methods: today it must allow GET, so a leaked token can read history, not just
    ingest.
-
-5. **One end-to-end canary.** A single real pass — desktop importer → central server
-   → query — before enabling every device, then add devices back per the README's
-   "Adding More Devices".
 
 ## Not blocking
 
