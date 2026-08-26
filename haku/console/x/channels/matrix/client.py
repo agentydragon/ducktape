@@ -122,12 +122,16 @@ class EventTag(BaseModel):
 
     **Ids and kinds only.** The room is public and federated, so a tag carrying text would publish
     the same thing twice, in a field nobody renders.
+
+    **Conversation ids, never a session's.** A room event is permanent and federated, so an id in
+    its tag outlives every session it could name — and the thread a room holds a copy of is the
+    conversation (<../../../docs/chat_layers.md>).
     """
 
     model_config = ConfigDict(frozen=True, extra="ignore")
 
     kind: RoomEventKind
-    session_id: UUID | None = None
+    conversation_id: UUID | None = None
     source: ConversationEventSource | None = None
 
     def content(self) -> dict[str, Any]:

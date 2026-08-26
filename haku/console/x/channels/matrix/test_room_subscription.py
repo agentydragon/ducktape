@@ -39,7 +39,7 @@ class Room:
     def __init__(self) -> None:
         self.said: list[str] = []
         self.kinds: list[RoomEventKind] = []
-        self.statuses: list[tuple[str, UUID | None]] = []
+        self.statuses: list[str] = []
         self.cleared = 0
         self.typing: list[bool] = []
         self.projected: list[tuple[UUID, int]] = []
@@ -59,8 +59,8 @@ class Room:
             raise RuntimeError("homeserver refused the projected notice")
         await self.announce(body, kind)
 
-    async def show_status(self, text: str, session_id: UUID | None = None) -> None:
-        self.statuses.append((text, session_id))
+    async def show_status(self, text: str) -> None:
+        self.statuses.append(text)
 
     async def clear_status(self) -> None:
         self.cleared += 1

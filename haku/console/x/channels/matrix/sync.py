@@ -247,7 +247,7 @@ class MatrixSyncService:
         binding = await self._conversations.bound_room()
         return None if binding is None else binding.room_id
 
-    async def show_status(self, body: str, session_id: UUID | None = None) -> None:
+    async def show_status(self, body: str) -> None:
         """Make the room's single status line say *body*, creating or editing it.
 
         One line per turn rather than a notice per step: a room where every tool call is a message
@@ -277,7 +277,7 @@ class MatrixSyncService:
             return
         self._status_body = body
 
-        tag = EventTag(kind=RoomEventKind.STATUS, session_id=session_id)
+        tag = EventTag(kind=RoomEventKind.STATUS, conversation_id=binding.conversation_id)
 
         async def post() -> None:
             token = await self._token()
