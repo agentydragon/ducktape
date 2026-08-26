@@ -36,7 +36,7 @@ class ConfigFactory:
             wt_dir = self.temp_base_dir / TestData.Paths.TEST_WT_DIR_PARENT / TestData.Paths.WT_DIR_NAME
 
         # Create default configuration
-        default_config = {
+        default_config: dict[str, Any] = {
             "main_repo": str(self.repo_path),
             "worktrees_dir": str(self.repo_path / TestData.Paths.WORKTREES_DIR_NAME),
             "branch_prefix": TestData.Branches.TEST_PREFIX,
