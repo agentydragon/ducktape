@@ -20,7 +20,7 @@ def test_deployed_console_config_is_valid() -> None:
     assert {"oauth_placeholder", "mcp_static_agent_id"} <= claude.keys()
 
     profiles = {profile.id: profile for profile in config.access_profiles}
-    assert profiles["haku"].in_process_server_ids == {"haku_conversations", "kubernetes", "sandbox"}
+    assert profiles["haku"].in_process_server_ids == {"haku_conversations", "kubernetes"}
 
     assert config.kubernetes_authorization is not None
     subjects = config.kubernetes_authorization.subjects_by_access_profile
