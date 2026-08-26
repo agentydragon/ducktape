@@ -1,0 +1,29 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: haku-openclaw-spike-backups
+  namespace: seaweedfs
+spec:
+  seaweedRef:
+    name: seaweedfs
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: haku-openclaw-spike-backups
+  namespace: seaweedfs
+spec:
+  seaweedRef:
+    name: seaweedfs
+  identityRef:
+    name: haku-openclaw-spike-backups
+  # Generate the narrowly scoped credentials directly where VolSync consumes
+  # them. A namespace-local ExternalSecret adds the Restic repository/password
+  # without copying these keys through static IAM or cross-namespace reflection.
+  secretRef:
+    name: haku-openclaw-spike-volsync-s3
+    namespace: haku-openclaw-spike
+    accessKeyField: AWS_ACCESS_KEY_ID
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+  reclaimPolicy: Retain

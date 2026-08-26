@@ -1,0 +1,32 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: haku-openclaw-spike-backup
+  namespace: ducktape-flux
+  annotations:
+    description: >-
+      Restic/VolSync backup of the Haku OpenClaw spike state to its dedicated
+      private SeaweedFS S3 bucket, plus the one-shot restore into the optiplex
+      worker PVC that migrates the state off the control plane.
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  wait: true
+  path: ./cluster/k8s/agents/haku-openclaw-spike/backup
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  dependsOn:
+    - name: seaweedfs-haku-openclaw-spike-backups-bucket
+      namespace: ducktape-flux
+    - name: external-secrets-config
+      namespace: ducktape-flux
+    - name: volsync
+      namespace: ducktape-flux

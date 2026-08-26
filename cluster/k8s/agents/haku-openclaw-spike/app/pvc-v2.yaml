@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: haku-openclaw-spike-state-v2
+  namespace: haku-openclaw-spike
+  annotations:
+    description: >-
+      Worker-local (optiplex SSD) replacement for the OpenClaw spike state,
+      migrating it off the ovh-ns103656 control-plane HDD (which fell over under
+      I/O contention with etcd+kubelet). WaitForFirstConsumer binds it on
+      optiplex when the VolSync restore mover is created; it must not be mounted
+      by the Deployment before the restore completes.
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path-home-ssd
+  resources:
+    requests:
+      # State is ~30 GiB; local-path does not enforce this as a quota, but 40 GiB
+      # records sensible headroom on optiplex's 256 GiB NVMe (shared with Home
+      # Assistant + the OS).
+      storage: 40Gi

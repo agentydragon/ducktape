@@ -1,0 +1,37 @@
+# One-shot restore of the latest Restic snapshot into the optiplex worker PVC
+# (haku-openclaw-spike-state-v2), to migrate the spike state off the control
+# plane. Bump the manual trigger to re-run. The mover is pinned to optiplex so
+# the WaitForFirstConsumer PVC binds there. After the restore verifies and the
+# Deployment is cut over to state-v2, this destination can be removed.
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationDestination
+metadata:
+  name: haku-openclaw-spike-state-restore
+  namespace: haku-openclaw-spike
+spec:
+  trigger:
+    manual: restore-1
+  restic:
+    repository: haku-openclaw-spike-volsync-restic
+    destinationPVC: haku-openclaw-spike-state-v2
+    copyMethod: Direct
+    cacheStorageClassName: local-path-home-ssd
+    cacheAccessModes: [ReadWriteOnce]
+    cacheCapacity: 1Gi
+    moverPodLabels:
+      app.kubernetes.io/name: haku-openclaw-spike-volsync
+    moverSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+    moverAffinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: kubernetes.io/hostname
+                  operator: In
+                  values: [optiplex]

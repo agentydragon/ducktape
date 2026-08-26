@@ -1,0 +1,34 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: haku-openclaw-spike-volsync-restic
+  namespace: haku-openclaw-spike
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: SecretStore
+    name: haku-openclaw-spike-volsync-s3
+  target:
+    name: haku-openclaw-spike-volsync-restic
+    creationPolicy: Owner
+    template:
+      type: Opaque
+      # Preserve the data fetched below alongside the static Restic endpoint.
+      mergePolicy: Merge
+      templateFrom:
+        - literal: |
+            RESTIC_REPOSITORY: s3:http://seaweedfs-s3.seaweedfs.svc:8333/haku-openclaw-spike-backups
+            AWS_DEFAULT_REGION: us-east-1
+  data:
+    - secretKey: AWS_ACCESS_KEY_ID
+      remoteRef:
+        key: haku-openclaw-spike-volsync-s3
+        property: AWS_ACCESS_KEY_ID
+    - secretKey: AWS_SECRET_ACCESS_KEY
+      remoteRef:
+        key: haku-openclaw-spike-volsync-s3
+        property: AWS_SECRET_ACCESS_KEY
+    - secretKey: RESTIC_PASSWORD
+      remoteRef:
+        key: haku-openclaw-spike-volsync-restic-password
+        property: RESTIC_PASSWORD

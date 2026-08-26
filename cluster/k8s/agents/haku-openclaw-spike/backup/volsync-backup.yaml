@@ -1,0 +1,52 @@
+# Encrypted, deduplicated Restic snapshots of the OpenClaw spike state to its
+# dedicated private SeaweedFS S3 bucket. Direct copies are crash-consistent.
+#
+# sourcePVC is still the original control-plane-pinned PVC (haku-openclaw-spike-state
+# on ovh-ns103656); the mover is pinned there because that is where the volume
+# lives. Once the state is migrated to the optiplex worker PVC (state-v2), repoint
+# sourcePVC + moverAffinity + cacheStorageClassName to that worker.
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationSource
+metadata:
+  name: haku-openclaw-spike-state-restic
+  namespace: haku-openclaw-spike
+spec:
+  sourcePVC: haku-openclaw-spike-state
+  trigger:
+    # 03:23 UTC, away from interactive use and staggered from public-coder's 09:17.
+    schedule: "23 03 * * *"
+  restic:
+    repository: haku-openclaw-spike-volsync-restic
+    copyMethod: Direct
+    pruneIntervalDays: 7
+    retain:
+      daily: 7
+      weekly: 4
+      monthly: 6
+    cacheStorageClassName: local-path-ovh-hdd
+    cacheAccessModes: [ReadWriteOnce]
+    cacheCapacity: 1Gi
+    moverPodLabels:
+      app.kubernetes.io/name: haku-openclaw-spike-volsync
+    moverResources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+    moverSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+    moverAffinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: kubernetes.io/hostname
+                  operator: In
+                  values: [ovh-ns103656]
