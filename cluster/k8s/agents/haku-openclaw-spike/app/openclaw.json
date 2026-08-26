@@ -6,6 +6,7 @@
   },
   "agents": {
     "defaults": {
+      "userTimezone": "America/Los_Angeles",
       "model": {
         "primary": "anthropic/claude-opus-5"
       },

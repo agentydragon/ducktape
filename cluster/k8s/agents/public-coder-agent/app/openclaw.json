@@ -1,6 +1,7 @@
 {
   "agents": {
     "defaults": {
+      "userTimezone": "America/Los_Angeles",
       "model": {
         "primary": "litellm-subscription/codex-gpt-5.6-luna"
       },
