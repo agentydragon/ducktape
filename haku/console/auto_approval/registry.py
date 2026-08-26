@@ -1,10 +1,8 @@
-"""Composable, per-Agent auto-approval policies for haku-console MCP calls."""
+"""The policy graph: validated Agent access profiles dispatching to per-kind evaluators."""
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import re
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any
@@ -12,13 +10,21 @@ from typing import Any
 import jsonschema
 from fastmcp import FastMCP
 
-from haku.console.kubectl_passthrough_policy import map_kubectl_passthrough_request
+from haku.console.auto_approval.decision import AutoApprovalDecision, AutoApproved, AutoDenied, NotAutoApproved
+from haku.console.auto_approval.github import (
+    GitHubRepositoryVisibilityService,
+    evaluate_fixed_repository,
+    evaluate_public_repository,
+)
+from haku.console.auto_approval.gmail import LABEL_NAMESPACE_TOOLS, evaluate_label_namespace
+from haku.console.auto_approval.kubernetes import evaluate_passthrough_redundancy
 from haku.console.kubernetes_authorization import KubernetesAuthorizationService
 from haku.console.mcp_config import (
     AnyOfAutoApprovalPolicy,
     AutoApprovalPolicy,
     ConsoleConfigFile,
     ExactToolsAutoApprovalPolicy,
+    GitHubPublicRepositoryAutoApprovalPolicy,
     GitHubRepositoryAutoApprovalPolicy,
     GmailLabelNamespaceAutoApprovalPolicy,
     KubernetesPassthroughAutoApprovalPolicy,
@@ -31,18 +37,6 @@ logger = logging.getLogger(__name__)
 
 AGENT_AUTO_APPROVAL_ID = "agent_policy_v1"
 SCHEMA_AUTO_DENIAL_EVALUATION = "denied: arguments failed the registered tool schema"
-GMAIL_LABEL_NAMESPACE_TOOLS = frozenset({"threads_modify_labels", "labels_patch", "labels_delete"})
-# GitHub MCP's search_pull_requests adds ``repo:<owner>/<repo>`` from the separate owner/repo
-# arguments only when the query contains no repository qualifier. Do not allow a caller to bypass
-# a repository policy by supplying an approved owner/repo pair alongside a query for another repo.
-_GITHUB_SEARCH_REPOSITORY_QUALIFIER = re.compile(r"(?:^|[^\w])repo:", re.IGNORECASE)
-# search_code has no separate owner/repo parameters. Its one repository boundary must therefore be
-# an unquoted, whitespace-delimited ``repo:owner/repo`` search qualifier. Keep the recognizer
-# deliberately narrow: a syntax GitHub may instead interpret as free text cannot establish standing
-# authority.
-_GITHUB_CODE_SEARCH_REPOSITORY_QUALIFIER = re.compile(
-    r"(?<!\S)repo:([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(?=$|\s)", re.IGNORECASE
-)
 
 
 class ToolAutoApprovalMode(IntEnum):
@@ -64,25 +58,6 @@ class PolicyDenial:
 
     reason: str
     evaluation: str
-
-
-@dataclass(frozen=True, slots=True)
-class AutoDenied:
-    reason: str
-    evaluation: str
-
-
-@dataclass(frozen=True, slots=True)
-class AutoApproved:
-    explanation: str
-
-
-@dataclass(frozen=True, slots=True)
-class NotAutoApproved:
-    reason: str
-
-
-type AutoApprovalDecision = AutoApproved | NotAutoApproved | AutoDenied
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,7 +94,11 @@ class AutoApprovalPolicyRegistry:
     """Validated policy graph selected through durable, config-defined Agent access profiles."""
 
     def __init__(
-        self, config: ConsoleConfigFile, *, kubernetes_authorization: KubernetesAuthorizationService | None = None
+        self,
+        config: ConsoleConfigFile,
+        *,
+        kubernetes_authorization: KubernetesAuthorizationService | None = None,
+        github_repository_visibility: GitHubRepositoryVisibilityService | None = None,
     ) -> None:
         self._config = config
         self._profiles = {profile.id: profile for profile in config.access_profiles}
@@ -129,6 +108,7 @@ class AutoApprovalPolicyRegistry:
         # auto-approves; this affects presentation only, never Operator authorization.
         self._assigned_roots = tuple(dict.fromkeys(profile.auto_approval_policy for profile in self._profiles.values()))
         self._kubernetes_authorization = kubernetes_authorization
+        self._github_repository_visibility = github_repository_visibility
 
     def _actor_root(self, actor: AgentActor) -> str | None:
         profile = self._profiles.get(actor.access_profile_id) if actor.access_profile_id is not None else None
@@ -158,10 +138,16 @@ class AutoApprovalPolicyRegistry:
             case GmailLabelNamespaceAutoApprovalPolicy(server=server):
                 return (
                     ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED
-                    if server_id == server and tool_name in GMAIL_LABEL_NAMESPACE_TOOLS
+                    if server_id == server and tool_name in LABEL_NAMESPACE_TOOLS
                     else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
                 )
             case GitHubRepositoryAutoApprovalPolicy(server=server, tools=tools):
+                return (
+                    ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED
+                    if server_id == server and tool_name in tools
+                    else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
+                )
+            case GitHubPublicRepositoryAutoApprovalPolicy(server=server, tools=tools):
                 return (
                     ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED
                     if server_id == server and tool_name in tools
@@ -243,48 +229,27 @@ class AutoApprovalPolicyRegistry:
                     return
                 evaluation.record(current_path, AutoApproved(f"exact tool {server_id}/{tool_name} is listed"))
             case GmailLabelNamespaceAutoApprovalPolicy(server=server, label_prefix=label_prefix):
-                if server_id != server or tool_name not in GMAIL_LABEL_NAMESPACE_TOOLS:
+                if server_id != server or tool_name not in LABEL_NAMESPACE_TOOLS:
                     return
-                decision = await _evaluate_gmail_label_namespace(tool_name, arguments, label_prefix, gmail)
+                decision = await evaluate_label_namespace(tool_name, arguments, label_prefix, gmail)
                 evaluation.record(current_path, decision)
             case GitHubRepositoryAutoApprovalPolicy(server=server, owner=owner, repository=repository, tools=tools):
                 if server_id != server or tool_name not in tools:
                     return
-                evaluation.record(current_path, _evaluate_github_repository(tool_name, arguments, owner, repository))
+                evaluation.record(current_path, evaluate_fixed_repository(tool_name, arguments, owner, repository))
+            case GitHubPublicRepositoryAutoApprovalPolicy(server=server, tools=tools):
+                if server_id != server or tool_name not in tools:
+                    return
+                decision = await evaluate_public_repository(tool_name, arguments, self._github_repository_visibility)
+                evaluation.record(current_path, decision)
             case KubernetesPassthroughAutoApprovalPolicy(server=server):
                 if server_id != server:
                     return
-                if (
-                    isinstance(actor, AgentActor)
-                    and actor.access_profile_id is not None
-                    and self._kubernetes_authorization is not None
-                    and (auth_requests := map_kubectl_passthrough_request(tool_name, arguments)) is not None
-                ):
-                    try:
-                        decisions = await asyncio.gather(
-                            *[
-                                self._kubernetes_authorization.evaluate(
-                                    agent_id=actor.agent_id, access_profile_id=actor.access_profile_id, request=auth_req
-                                )
-                                for auth_req in auth_requests
-                            ]
-                        )
-                        if all(d.allowed for d in decisions):
-                            evaluation.record(
-                                current_path,
-                                AutoDenied(
-                                    reason=(
-                                        "Covered by your direct Kubernetes permissions. Use your direct Haku "
-                                        "Kubernetes proxy or local kubectl instead of kubectl-passthrough-mcp."
-                                    ),
-                                    evaluation="denied: covered by direct agent access",
-                                ),
-                            )
-                    except Exception:
-                        logger.warning(
-                            "Kubernetes authorization evaluation failed during kubectl-passthrough policy check",
-                            exc_info=True,
-                        )
+                passthrough_decision = await evaluate_passthrough_redundancy(
+                    actor, tool_name, arguments, self._kubernetes_authorization
+                )
+                if passthrough_decision is not None:
+                    evaluation.record(current_path, passthrough_decision)
             case AnyOfAutoApprovalPolicy(policies=members):
                 for member in members:
                     await self._evaluate_policy(
@@ -299,50 +264,6 @@ class AutoApprovalPolicyRegistry:
                     )
             case NeverAutoApprovalPolicy():
                 evaluation.record(current_path, NotAutoApproved("policy never auto-approves"))
-
-
-def _evaluate_github_repository(
-    tool_name: str, arguments: dict[str, Any], owner: str, repository: str
-) -> AutoApprovalDecision:
-    if tool_name == "search_code":
-        return _evaluate_github_code_search(arguments, owner, repository)
-
-    actual_owner = arguments.get("owner")
-    actual_repository = arguments.get("repo")
-    if not isinstance(actual_owner, str) or not isinstance(actual_repository, str):
-        return NotAutoApproved("call does not identify a repository with string owner/repo arguments")
-    if (actual_owner.casefold(), actual_repository.casefold()) != (owner.casefold(), repository.casefold()):
-        return NotAutoApproved(f"repository {actual_owner}/{actual_repository} is outside {owner}/{repository}")
-    if tool_name == "search_pull_requests":
-        query = arguments.get("query")
-        if not isinstance(query, str):
-            return NotAutoApproved("pull-request search requires a string query")
-        if _GITHUB_SEARCH_REPOSITORY_QUALIFIER.search(query):
-            return NotAutoApproved(
-                "pull-request search query sets a repository qualifier; omit it so owner/repo scopes the search"
-            )
-    return AutoApproved(f"reviewed read targets repository {owner}/{repository}")
-
-
-def _evaluate_github_code_search(arguments: dict[str, Any], owner: str, repository: str) -> AutoApprovalDecision:
-    query = arguments.get("query")
-    if not isinstance(query, str):
-        return NotAutoApproved("code search requires a string query")
-
-    # Every syntactic occurrence of `repo:` must be the single, deliberately narrow qualifier
-    # below. This rejects quoted, negated, duplicate, and malformed qualifiers rather than
-    # guessing how GitHub Search will interpret them.
-    if len(_GITHUB_SEARCH_REPOSITORY_QUALIFIER.findall(query)) != 1:
-        return NotAutoApproved("code search requires exactly one repository qualifier")
-    matches = _GITHUB_CODE_SEARCH_REPOSITORY_QUALIFIER.findall(query)
-    if len(matches) != 1:
-        return NotAutoApproved("code search requires one unquoted repo:owner/repo qualifier")
-
-    actual_repository = matches[0]
-    expected_repository = f"{owner}/{repository}"
-    if actual_repository.casefold() != expected_repository.casefold():
-        return NotAutoApproved(f"repository {actual_repository} is outside {expected_repository}")
-    return AutoApproved(f"reviewed code search targets repository {expected_repository}")
 
 
 async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str, Any]) -> PolicyDenial | str | None:
@@ -391,47 +312,3 @@ async def auto_approve_tool_call(
     return await policies.evaluate(
         actor=actor, server_id=server_id, tool_name=tool_name, arguments=arguments, gmail=gmail
     )
-
-
-async def _evaluate_gmail_label_namespace(
-    tool_name: str, arguments: dict[str, Any], label_prefix: str, gmail: GmailToolsClient | None
-) -> AutoApprovalDecision:
-    """Evaluate the reviewed Gmail label-mutation boundary."""
-    try:
-
-        def allows_label(name: str) -> bool:
-            return name.startswith(label_prefix)
-
-        if tool_name == "threads_modify_labels":
-            add = arguments.get("add") or []
-            remove = arguments.get("remove") or []
-            if not add and not remove:
-                return NotAutoApproved("no label changes requested")
-            if set(add) & set(remove):
-                return NotAutoApproved("a label cannot be both added and removed")
-            if all(allows_label(name) for name in [*add, *remove]):
-                return AutoApproved(f"all label names are under {label_prefix!r}")
-            return NotAutoApproved(f"at least one label name is outside {label_prefix!r}")
-        if gmail is None:
-            raise RuntimeError("Gmail client is unavailable")
-        if tool_name == "labels_patch":
-            new_name = arguments.get("name")
-            if (
-                new_name is None
-                or arguments.get("label_list_visibility") is not None
-                or arguments.get("message_list_visibility") is not None
-            ):
-                return NotAutoApproved("label rename required without visibility changes")
-            current = await asyncio.to_thread(gmail.labels_get, arguments["label_id"])
-            if allows_label(current.name) and allows_label(new_name):
-                return AutoApproved(f"current and new label names are under {label_prefix!r}")
-            return NotAutoApproved(f"current or new label name is outside {label_prefix!r}")
-        if tool_name == "labels_delete":
-            current = await asyncio.to_thread(gmail.labels_get, arguments["label_id"])
-            if allows_label(current.name):
-                return AutoApproved(f"label name is under {label_prefix!r}")
-            return NotAutoApproved(f"label name is outside {label_prefix!r}")
-        return NotAutoApproved("Gmail operation is not handled by this policy")
-    except Exception:
-        logger.exception("auto-approval evaluation failed tool=%s", tool_name)
-        return NotAutoApproved("Gmail auto-approval evaluation failed")

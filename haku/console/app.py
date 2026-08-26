@@ -58,6 +58,7 @@ from haku.console import (
 from haku.console.agents import enrollment_routes
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
+from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.chat_models import RuntimeKind
 from haku.console.config import MCP_PATH, EmbedderConfig, GitRecallIndexDefinition, Settings
 from haku.console.database_migrate import main as migration_main, verify_schema
@@ -505,6 +506,7 @@ def create_app(
         if console_config.kubernetes_authorization is not None
         else None
     )
+    github_repository_visibility = GitHubRepositoryVisibilityService()
 
     # The gmail/google_calendar in-process servers are built per call from the acting Operator's
     # Google access token, resolved from the provider-connection store. Auto-approval label lookups
@@ -619,6 +621,7 @@ def create_app(
         authentik_token_store=authentik_operator_token_store,
         approval_notifier=approval_notifier,
         kubernetes_authorization=kubernetes_authorization,
+        github_repository_visibility=github_repository_visibility,
     )
 
     # The console's own Agent-and-Operator MCP server, mounted at /mcp — its reason to run.
@@ -694,6 +697,7 @@ def create_app(
                 await tool_calls.aclose()
                 if kubernetes_authorization is not None:
                     await kubernetes_authorization.aclose()
+                await github_repository_visibility.aclose()
                 if session_service is not None:
                     await session_service.aclose()
                 await session_notifications.aclose()

@@ -53,7 +53,7 @@ from pydantic import (
     model_serializer,
 )
 
-from haku.console.auto_approval import AutoApprovalPolicyRegistry, ToolAutoApprovalMode
+from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, ToolAutoApprovalMode
 from haku.console.config import Settings, tool_call_console_url
 from haku.console.mcp_approval import (
     DegradedReflection,

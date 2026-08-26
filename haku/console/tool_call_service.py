@@ -17,7 +17,8 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID
 
-from haku.console.auto_approval import AutoApprovalPolicyRegistry, PolicyDenial, auto_approve_tool_call
+from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
+from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, PolicyDenial, auto_approve_tool_call
 from haku.console.config import Settings
 from haku.console.kubernetes_authorization import KubernetesAuthorizationService
 from haku.console.mcp_config import (
@@ -281,6 +282,7 @@ class ToolCallApplicationService:
         approval_notifier: PendingApprovalNotifier,
         gmail_client_provider: GmailClientProvider,
         kubernetes_authorization: KubernetesAuthorizationService | None = None,
+        github_repository_visibility: GitHubRepositoryVisibilityService | None = None,
     ) -> None:
         self._settings = settings
         self._repository = repository
@@ -293,8 +295,11 @@ class ToolCallApplicationService:
         self._authentik_token_store = authentik_token_store
         self._gmail_client_provider = gmail_client_provider
         self._kubernetes_authorization = kubernetes_authorization
+        self._github_repository_visibility = github_repository_visibility
         self._auto_approval_policies = AutoApprovalPolicyRegistry(
-            load_console_config(settings), kubernetes_authorization=self._kubernetes_authorization
+            load_console_config(settings),
+            kubernetes_authorization=self._kubernetes_authorization,
+            github_repository_visibility=self._github_repository_visibility,
         )
         # In-flight background execution tasks dispatched by `decide`. Held so they aren't GC'd
         # mid-run, and drained/cancelled at shutdown (`aclose`).

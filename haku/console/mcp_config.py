@@ -244,9 +244,22 @@ class GitHubRepositoryAutoApprovalPolicy(AutoApprovalPolicyBase):
     """Conditionally auto-approve reviewed GitHub reads for one repository."""
 
     type: Literal["github_repository"] = "github_repository"
-    server: Literal["github"] = "github"
+    server: str = Field(min_length=1)
     owner: str = Field(min_length=1)
     repository: str = Field(min_length=1)
+    tools: set[str] = Field(min_length=1)
+
+
+class GitHubPublicRepositoryAutoApprovalPolicy(AutoApprovalPolicyBase):
+    """Conditionally auto-approve reviewed GitHub reads for any repository confirmed public.
+
+    Unlike ``GitHubRepositoryAutoApprovalPolicy``, the target repository is not fixed by config —
+    it is derived from the call the same way, then checked live for public visibility rather than
+    compared against a configured pair. See ``haku/console/auto_approval/github.py``.
+    """
+
+    type: Literal["github_public_repository"] = "github_public_repository"
+    server: str = Field(min_length=1)
     tools: set[str] = Field(min_length=1)
 
 
@@ -274,6 +287,7 @@ type AutoApprovalPolicy = Annotated[
     ExactToolsAutoApprovalPolicy
     | GmailLabelNamespaceAutoApprovalPolicy
     | GitHubRepositoryAutoApprovalPolicy
+    | GitHubPublicRepositoryAutoApprovalPolicy
     | KubernetesPassthroughAutoApprovalPolicy
     | AnyOfAutoApprovalPolicy
     | NeverAutoApprovalPolicy,
@@ -485,7 +499,14 @@ class ConsoleConfigFile(BaseModel):
                         f"auto-approval policy {policy.id!r} references unknown MCP servers {sorted(unknown_servers)!r}"
                     )
             elif (
-                isinstance(policy, (GmailLabelNamespaceAutoApprovalPolicy, GitHubRepositoryAutoApprovalPolicy))
+                isinstance(
+                    policy,
+                    (
+                        GmailLabelNamespaceAutoApprovalPolicy,
+                        GitHubRepositoryAutoApprovalPolicy,
+                        GitHubPublicRepositoryAutoApprovalPolicy,
+                    ),
+                )
                 and policy.server not in server_ids
             ):
                 raise ValueError(f"auto-approval policy {policy.id!r} references unknown MCP server {policy.server!r}")
