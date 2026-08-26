@@ -1,10 +1,16 @@
 """The neutral conversation vocabulary as `haku_conversations` hands it out.
 
-<conversation_events.py> is what a conversation *is*, in dataclasses the console's own code folds
-and renders; <conversation_records.py> is what a read hands back, in Pydantic models
+<session_events.py> is what a conversation *is* once it is stored, in bodies the console's own code
+folds; <conversation_records.py> is what a read hands back, in Pydantic models
 <../tools/conversations.py> serialises. This is the one place the two are the same conversation, so
 a change to either shows up here rather than as a surface quietly drifting from the vocabulary it
 claims to expose.
+
+**The log is what is folded, not the frames behind it.** `conversation_event` is the record, written
+once as each frame arrived, so a transcript says what the console recorded rather than what
+re-reading the frames through today's adapter would make of them. Two things follow: this fold names
+no harness and needs no adapter to run, and a session that ran before a projection fix keeps the
+history it actually had. <reprojection.py> is what says where the two disagree.
 
 **Segments are folded here rather than handed on.** The vocabulary emits prose as increments so a
 live channel can print them as they arrive; a transcript is read after the fact and wants the item,
@@ -20,125 +26,185 @@ key for this one order.
 
 from __future__ import annotations
 
+import logging
+from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
+from uuid import UUID
 
-from haku.console.chat_models import ItemType, ReasoningDisclosure
-from haku.console.x import conversation_events, conversation_records
+from haku.console.chat_models import EventProvenance, ReasoningDisclosure
+from haku.console.database_schema import ConversationEvent as ConversationEventRow
+from haku.console.x import conversation_records, session_events
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
 class _Open:
-    """An item the fold has seen the start of, and the prose that has arrived for it."""
+    """An item the fold has seen the start of: what opening it said, and the prose since.
 
+    The opening body is kept because a completion does not repeat it — a call's `call_id` and a
+    prompt's origin are written once, on the row that opens the item, and the log pairs an item's
+    two ends by `item_id` rather than by copying either onto the other.
+    """
+
+    started: session_events.ItemStartedBody
     segments: list[str] = field(default_factory=list)
 
     def text(self) -> str:
         return "".join(self.segments)
 
 
-@dataclass(slots=True)
-class _Items:
-    """What a segment can be addressed by, mirroring the store's own two ways.
+@dataclass(frozen=True, slots=True)
+class Transcript:
+    """One session's whole transcript, and what its log held that this release cannot read."""
 
-    A tool call is found by the id its protocol supplies, because its answer arrives long after its
-    ask; everything else is the open item of its type, because a backend writes one at a time.
+    entries: list[conversation_records.TranscriptEntry]
+    unreadable: dict[str, int] | None
+
+
+def fold(rows: Iterable[ConversationEventRow]) -> Transcript:
+    """One session's stored log as the wire models: one entry per finished item, then numbered.
+
+    *rows* are that session's `conversation_event` rows in `event_seq` order, which is the order
+    they were written in and so the order the entries come out in.
     """
-
-    by_type: dict[ItemType, _Open] = field(default_factory=dict)
-    by_call: dict[str, _Open] = field(default_factory=dict)
-
-    def open(self, item_type: ItemType, *, call_id: str | None = None) -> None:
-        item = self.by_type[item_type] = _Open()
-        if call_id is not None:
-            self.by_call[call_id] = item
-
-    def named(self, ref: conversation_events.ItemRef) -> _Open | None:
-        match ref:
-            case conversation_events.CallRef(call_id=call_id):
-                return self.by_call.get(call_id)
-            case conversation_events.OpenRef(item_type=item_type):
-                return self.by_type.get(item_type)
-
-    def close(self, item_type: ItemType, *, call_id: str | None = None) -> _Open | None:
-        closed = self.by_call.pop(call_id, None) if call_id is not None else self.by_type.get(item_type)
-        self.by_type.pop(item_type, None)
-        return closed
-
-
-def entries(projection: conversation_events.Projection) -> list[conversation_records.TranscriptEntry]:
-    """One session's projection as the wire models: one entry per finished item, then numbered."""
-    open_items = _Items()
+    open_items: dict[UUID, _Open] = {}
     said: list[conversation_records.TranscriptEntry] = []
-    for event in projection.events:
-        if (entry := _entry(event, open_items, index=len(said))) is not None:
+    unread: Counter[str] = Counter()
+    for row in rows:
+        body = session_events.body_of(row)
+        if isinstance(body, session_events.UnknownEventBody):
+            # A row a newer release wrote. Counted rather than skipped, because a transcript that is
+            # quietly missing something is worse than one that says what it missed.
+            unread[body.kind] += 1
+        elif (entry := _entry(row, body, open_items, index=len(said))) is not None:
             said.append(entry)
-    return said
-
-
-def unreadable(projection: conversation_events.Projection) -> dict[str, int] | None:
-    """What the fold could not read, or nothing — never an empty map standing in for "none"."""
-    return dict(projection.unprojected) or None
+    return Transcript(entries=said, unreadable=dict(unread) or None)
 
 
 def _entry(
-    event: conversation_events.ConversationEvent, open_items: _Items, *, index: int
+    row: ConversationEventRow, body: session_events.WrittenBody, open_items: dict[UUID, _Open], *, index: int
 ) -> conversation_records.TranscriptEntry | None:
-    """This event's entry, where it produces one, folding what it says into the item it names."""
-    provenance = _provenance(event.provenance)
-    match event:
-        case conversation_events.MessageStarted():
-            open_items.open(ItemType.MESSAGE)
-            return None
-        case conversation_events.ReasoningStarted():
-            open_items.open(ItemType.REASONING)
-            return None
-        case conversation_events.ToolCallStarted():
-            open_items.open(ItemType.TOOL_CALL, call_id=event.call_id)
+    """This row's entry, where it produces one, folding what it says into the item it names."""
+    match body:
+        case session_events.ToolCallStartedBody():
+            open_items[_item(row)] = _Open(started=body)
             # The one item whose entry is written at its start: its arguments are whole by then, and
             # its answer is a separate entry joined by `call_id`.
             return conversation_records.ToolCallEntry(
                 index=index,
-                provenance=provenance,
-                call_id=event.call_id,
-                tool_name=event.tool_name,
-                arguments=dict(event.arguments),
+                provenance=_provenance(row),
+                call_id=body.call_id,
+                tool_name=body.tool_name,
+                arguments=dict(body.arguments),
             )
-        case conversation_events.ItemSegment():
-            if (item := open_items.named(event.item)) is not None:
-                item.segments.append(event.text)
+        case (
+            session_events.MessageStartedBody()
+            | session_events.ReasoningStartedBody()
+            | session_events.PromptStartedBody()
+        ):
+            # **Never reopens an item that is already open.** A fold resuming mid-message writes a
+            # second opening row about the message its predecessor left open
+            # (<conversation_log.py> `_item_for`), and starting fresh here would drop the prose
+            # already folded into it.
+            open_items.setdefault(_item(row), _Open(started=body))
             return None
-        case conversation_events.MessageCompleted():
-            if (message := open_items.close(ItemType.MESSAGE)) is None:
+        case session_events.SegmentBody():
+            if (opened := open_items.get(_item(row))) is None:
+                _unopened(row)
                 return None
+            opened.segments.append(body.text)
+            return None
+        case (
+            session_events.MessageCompletedBody()
+            | session_events.ReasoningCompletedBody()
+            | session_events.ToolCallCompletedBody()
+            | session_events.PromptCompletedBody()
+        ):
+            if (opened := open_items.pop(_item(row), None)) is None:
+                _unopened(row)
+                return None
+            return _finished(opened, body, index=index, provenance=_provenance(row))
+        case session_events.TurnEndedBody():
+            return conversation_records.TurnEndEntry(index=index, provenance=_provenance(row), outcome=body.outcome)
+        case (
+            session_events.TurnStartedBody()
+            | session_events.PromptRejectedBody()
+            | session_events.UnreadableInputBody()
+            | session_events.SessionAdoptedBody()
+            | session_events.LeaseExpiredBody()
+            | session_events.SessionProvisioningBody()
+            | session_events.SessionEndedBody()
+            | session_events.SetupNarrationBody()
+        ):
+            # The session's own story rather than the conversation's: which replica held the lease,
+            # what the sandbox printed coming up, a prompt that was refused and never delivered.
+            # The console's session views are where those are read.
+            return None
+
+
+def _finished(
+    opened: _Open,
+    body: session_events.ItemCompletedBody,
+    *,
+    index: int,
+    provenance: conversation_records.EntryProvenance,
+) -> conversation_records.TranscriptEntry:
+    """One finished item as its entry: what its two ends said, and the prose between them."""
+    match body, opened.started:
+        case session_events.MessageCompletedBody(), _:
             return conversation_records.MessageEntry(
-                index=index, provenance=provenance, text=message.text(), backend_item_id=event.backend_item_id
+                index=index, provenance=provenance, text=opened.text(), backend_item_id=body.backend_item_id
             )
-        case conversation_events.ReasoningCompleted():
-            if (reasoning := open_items.close(ItemType.REASONING)) is None:
-                return None
-            withheld = event.disclosure is ReasoningDisclosure.WITHHELD
+        case session_events.ReasoningCompletedBody(), _:
+            withheld = body.disclosure is ReasoningDisclosure.WITHHELD
             return conversation_records.ReasoningEntry(
-                index=index, provenance=provenance, summary=None if withheld else reasoning.text()
+                index=index, provenance=provenance, summary=None if withheld else opened.text()
             )
-        case conversation_events.ToolCallCompleted():
-            answered = open_items.close(ItemType.TOOL_CALL, call_id=event.item.call_id)
+        case session_events.ToolCallCompletedBody(), session_events.ToolCallStartedBody(call_id=call_id):
             return conversation_records.ToolResultEntry(
                 index=index,
                 provenance=provenance,
-                call_id=event.item.call_id,
-                content="" if answered is None else answered.text(),
-                structured=event.structured,
-                outcome=conversation_records.Outcome(event.outcome),
+                call_id=call_id,
+                content=opened.text(),
+                structured=body.structured,
+                outcome=conversation_records.Outcome(body.outcome),
             )
-        case conversation_events.TurnCompleted():
-            return conversation_records.TurnEndEntry(index=index, provenance=provenance, outcome=event.outcome)
+        case session_events.PromptCompletedBody(), session_events.PromptStartedBody(origin=origin):
+            return conversation_records.PromptEntry(
+                index=index, provenance=provenance, text=opened.text(), origin=origin.kind
+            )
+        case _:
+            raise ValueError(f"an item's two ends name different types: {body=} {opened.started=}")
 
 
-def _provenance(provenance: conversation_events.Provenance) -> conversation_records.EntryProvenance:
-    match provenance:
-        case conversation_events.FrameRange():
-            return conversation_records.FromFrames(
-                first_frame_seq=provenance.first_frame_seq, last_frame_seq=provenance.last_frame_seq
-            )
-        case conversation_events.Authored():
+def _unopened(row: ConversationEventRow) -> None:
+    """A row about an item the fold does not have open: a repeat, or a log that contradicts itself.
+
+    The adapters address a tool call by the id its protocol supplies and do not deduplicate, so a
+    `tool_result` block the wire repeated reaches the log as a second close of an item already
+    reported — and the first close is the one that happened, exactly as it is for a turn. A row that
+    is not a repeat means the log disagrees with itself, which `conversation_log` refuses to write.
+    Neither is worth losing the rest of the conversation over, so both are said out loud and passed
+    over.
+    """
+    logger.warning("a transcript fold has no open item for a row about one: %s/%s", row.conversation_id, row.event_seq)
+
+
+def _item(row: ConversationEventRow) -> UUID:
+    """The item an item-kind row is about, which the table's own constraint says it names."""
+    if row.item_id is None:
+        raise ValueError(f"an item's row names no item: {row.conversation_id=} {row.event_seq=}")
+    return row.item_id
+
+
+def _provenance(row: ConversationEventRow) -> conversation_records.EntryProvenance:
+    """The union the row's provenance column and its frame range spell out together."""
+    match row.provenance, row.source_first_frame_seq, row.source_last_frame_seq:
+        case EventProvenance.FRAME_RANGE, int(first), int(last):
+            return conversation_records.FromFrames(first_frame_seq=first, last_frame_seq=last)
+        case EventProvenance.AUTHORED, None, None:
             return conversation_records.ConsoleAuthored()
+        case _:
+            raise ValueError(f"a row's provenance and its frame range disagree: {row.event_seq=}")

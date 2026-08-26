@@ -136,8 +136,25 @@ def _bridge_frames(
     return query.where(SessionFrame.kind.in_(selected))
 
 
-def _harness_frames(query: Select[tuple[SessionFrame]]) -> Select[tuple[SessionFrame]]:
-    return _bridge_frames(query, [BridgeFrameKind.HARNESS_FRAME])
+def _session_log(session_id: UUID) -> Select[tuple[ConversationEventRow]]:
+    """One session's share of its conversation's log, in the order it was written.
+
+    **Which session an item belongs to is the item's own answer.** A prompt is admitted before a
+    runner exists, so the rows recording it may name no session at all, and the session that later
+    claims it is written onto `conversation_item` rather than back onto them. Every row that is
+    about no item names the session that wrote it, and a row neither of those reaches is a
+    conversation fact no session has taken yet.
+    """
+    conversation = select(Session.conversation_id).where(Session.session_id == session_id).scalar_subquery()
+    return (
+        select(ConversationEventRow)
+        .join(ConversationItem, ConversationItem.item_id == ConversationEventRow.item_id, isouter=True)
+        .where(
+            ConversationEventRow.conversation_id == conversation,
+            func.coalesce(ConversationItem.session_id, ConversationEventRow.session_id) == session_id,
+        )
+        .order_by(ConversationEventRow.event_seq)
+    )
 
 
 class PromptRecords(Protocol):
@@ -1743,30 +1760,24 @@ class SessionStore:
     async def read_transcript(
         self, session_id: UUID, *, cursor: TranscriptCursor | None, limit: int
     ) -> TranscriptSlice:
-        """A window of the session's projected transcript, for the `haku_conversations` reader.
+        """A window of the session's transcript, for the `haku_conversations` reader.
 
-        **The fold always runs from the session's first frame**, whatever the cursor says. A window
-        would need the state the frames before it left behind, and this reader has nowhere to keep
-        one; seeding empty from a suffix instead would let a page boundary close a message the
-        whole session does not end there, so the same entry would read differently depending on
-        which page it landed on. That costs one read of the session's projectable frames per page.
+        **The conversation log, not the frames behind it.** `conversation_event` is what the console
+        recorded as each frame arrived, so this read cannot disagree with the items and turns
+        materialised beside it, and it needs to know neither which harness ran the session nor how
+        to read its wire. The price is that a projection fix does not reach a session that already
+        happened: its transcript stays the history it had, and <reprojection.py> is what says where
+        re-reading the frames would now differ.
 
-        Console-authored `setup_output` is excluded using Haku's outer bridge discriminator. Every
-        native frame is handed to the selected integration intact; only that integration decides
-        which are deltas, durable facts, protocol noise, or unknown evidence.
+        **The fold still runs from the log's first row**, whatever the cursor says: the cursor is a
+        position in the fold, and a window would need the state the rows before it left behind. What
+        that costs is this session's log rows, which are the coalesced record rather than the wire.
         """
-        runtime_kind = await self.runtime_kind_of(session_id)
-        query = _harness_frames(select(SessionFrame).where(SessionFrame.session_id == session_id))
         async with self._sessions() as db:
-            rows = (await db.scalars(query.order_by(SessionFrame.frame_seq))).all()
-        projected = self._runtime_registry[runtime_kind].project_log(
-            (row.frame_seq, HarnessFrame(frame=row.payload, seq=row.runner_seq)) for row in rows
-        )
-        entries = transcript_entries.entries(projected)
+            rows = (await db.scalars(_session_log(session_id))).all()
+        folded = transcript_entries.fold(rows)
         start = cursor.index if cursor is not None else 0
-        return TranscriptSlice(
-            entries=entries[start : start + limit], unreadable=transcript_entries.unreadable(projected)
-        )
+        return TranscriptSlice(entries=folded.entries[start : start + limit], unreadable=folded.unreadable)
 
     async def read_operator_frames(
         self,

@@ -23,7 +23,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from haku.console.chat_models import BridgeFrameKind, RuntimeKind
+from haku.console.chat_models import BridgeFrameKind, PromptOriginKind, RuntimeKind
 
 
 class ChannelAttachment(BaseModel):
@@ -193,6 +193,22 @@ class _EntryBase(BaseModel):
     provenance: EntryProvenance
 
 
+class PromptEntry(_EntryBase):
+    """What the session was asked, and in whose voice.
+
+    On the transcript because a conversation without its questions is half a record. Console
+    authored, always: a prompt is admitted before it crosses any wire, so re-reading the frames
+    could only preserve one of these and never re-derive it.
+    """
+
+    kind: Literal["prompt"] = "prompt"
+    text: str
+    origin: PromptOriginKind = Field(
+        description="Who asked: `spa` or `matrix` for the operator, through the console or a room; `harness` "
+        "for the agent resuming its own session, which nobody typed."
+    )
+
+
 class MessageEntry(_EntryBase):
     """One agent message, finished: the concatenation of the prose that arrived for it.
 
@@ -261,7 +277,8 @@ class TurnEndEntry(_EntryBase):
 
 
 type TranscriptEntry = Annotated[
-    MessageEntry | ReasoningEntry | ToolCallEntry | ToolResultEntry | TurnEndEntry, Field(discriminator="kind")
+    PromptEntry | MessageEntry | ReasoningEntry | ToolCallEntry | ToolResultEntry | TurnEndEntry,
+    Field(discriminator="kind"),
 ]
 
 
@@ -269,9 +286,10 @@ class TranscriptCursor(BaseModel):
     """A position in a session's transcript, by ordinal.
 
     An ordinal rather than a keyset, and safe here for the one reason an offset is ever safe: this
-    order only ever grows at its *end*. The frame log is append-only and the projection is a
-    deterministic left-to-right fold of it, so entry *n* is the same entry on every read; the one
-    entry that can change is the last, when it belongs to a turn still in flight.
+    order only ever grows at its *end*. The conversation log is append-only and dense, and the
+    transcript is a deterministic left-to-right fold of it in which an entry is written by the row
+    that finishes its item — so entry *n* is the same entry on every read, and an entry already
+    handed out does not change when the turn it belongs to goes on.
 
     A keyset on the frame the entry came from would not do: a console-authored entry has no frames
     at all (see `ConsoleAuthored`) and so has no position in that key.
@@ -289,6 +307,10 @@ class TranscriptSlice(BaseModel):
 
     Up to `limit + 1` entries, like every other read here: the extra row is what tells a full page
     from the last one, and it is the row the returned cursor names.
+
+    `unreadable` counts, by their stored `kind`, the session's log rows this release has no reading
+    for — over the whole session rather than this page, so paging cannot hide one. None where there
+    were none, never an empty map standing in for it.
     """
 
     entries: list[TranscriptEntry]

@@ -394,6 +394,15 @@ for no shared benefit.
 The invariant worth checking on its own is `item.text = concat(segments)`, because it is what the
 whole streaming path depends on and it is cheap to state.
 
+**Reads fold the log too, and the agent-facing transcript is one of them.**
+`haku_conversations.read_transcript` folds a session's rows into neutral entries; it does not
+re-read `session_frames` through an adapter. So a transcript cannot disagree with the items and
+turns derived beside it, a reader of it needs neither the session's `runtime_kind` nor any harness
+vocabulary, and a session that ran before a projection fix keeps the history it had rather than
+acquiring a new one on the next read. What such a reader can fail to read is therefore a **log
+kind** — a row written by a newer release, reported as that tool's `unreadable` count — and not a
+frame class the adapter had no rule for.
+
 ## 3. How a channel resumes
 
 **A channel stores one integer.** `channel_cursor.event_seq` is a position in the conversation's

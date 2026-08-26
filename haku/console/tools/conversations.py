@@ -2,17 +2,19 @@
 
 Lets Haku consult what it actually did in an earlier session, rather than starting each one
 from the last twenty room messages and nothing else: the room is not the only corpus and it is the
-smaller one (<../x/channels/matrix/SPEC.md> § The agent's own view). The corpus is
-`session_frames`, the console's verbatim record of the agent protocol, so a tool call and the
-result it got are both there — which no other table has.
+smaller one (<../x/channels/matrix/SPEC.md> § The agent's own view). What it reads are the console's
+two durable records of a session: `conversation_event`, the neutral log written as each frame
+arrived, and `session_frames`, the verbatim wire it was read off. A tool call and the result it got
+are in both — which the room is not.
 
-**Two readings of one corpus, and the drilldown runs between them.** `read_transcript` is what a
-conversation *meant* — messages, reasoning, tool calls and their results, as one vocabulary that
-says nothing about which agent backend produced them. `read_rollout` and `read_frame` are the
-frames a **named** backend actually sent, verbatim — Claude Code's today, since that is the one
-adapter there is, and a reader must be told which rather than left to read them as the
-conversation. The first is what a reader almost always wants; the
-second is the appeal, and every transcript entry carries the frame range to appeal to
+**Two readings, and the drilldown runs between them.** `read_transcript` is what a conversation
+*meant* — prompts, messages, reasoning, tool calls and their results, as one vocabulary that says
+nothing about which agent backend produced them. It is folded from the log rather than re-read from
+the frames, so it says what was recorded at the time rather than what today's adapter would make of
+them now. `read_rollout` and `read_frame` are the frames a **named** backend actually sent,
+verbatim — Claude Code's today, since that is the one adapter there is, and a reader must be told
+which rather than left to read them as the conversation. The first is what a reader almost always
+wants; the second is the appeal, and every transcript entry carries the frame range to appeal to
 (`provenance`). That path is the whole reason the transcript records where it came from, so it is
 built to be walked: a `frames` provenance hands `first_frame_seq` straight to `read_frame`, or
 straight to `read_rollout` as its `cursor`, with no arithmetic in between.
@@ -147,9 +149,10 @@ class TurnPage(Page[TurnRecord, TurnCursor]):
 class TranscriptPage(Page[TranscriptEntry, TranscriptCursor]):
     unreadable: dict[str, int] | None = Field(
         default=None,
-        description="Frame classes this release has no reading for, counted over the whole session rather than "
-        "this page — so a transcript that is quietly missing something says so. Absent when there were none. "
-        "`read_rollout` is how to see what they held.",
+        description="Records in the conversation log this release has no reading for, by their stored kind, "
+        "counted over the whole session rather than this page — so a transcript that is quietly missing "
+        "something says so. These were written by a newer console release; this does not count harness frames, "
+        "which the transcript is not read from. Absent when there were none.",
     )
 
 
@@ -302,11 +305,12 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         limit: Annotated[int, Field(default=DEFAULT_PAGE, ge=1, le=MAX_PAGE)] = DEFAULT_PAGE,
         execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
     ) -> TranscriptPage:
-        """Read normalized messages, reasoning, tool calls, and results oldest first.
+        """Read normalized prompts, messages, reasoning, tool calls, and results oldest first.
 
         Entries use the console's neutral vocabulary and carry `provenance`; follow it into
         `read_frame` when a normalization needs checking. Tool calls and results are separate
-        entries joined by `call_id`.
+        entries joined by `call_id`. A `prompt` entry says who asked in its `origin`: `harness`
+        is the agent resuming its own session, which nobody typed.
         """
         require_conversation_access(execution)
         slice_ = await reader.read_transcript(session_id, cursor=cursor, limit=limit + 1)
