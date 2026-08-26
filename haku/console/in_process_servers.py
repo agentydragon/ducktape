@@ -18,6 +18,7 @@ import haku.console.tools.hostexec as hostexec_tools
 import haku.console.tools.kubernetes as kubernetes_tools
 import haku.console.tools.recall_index as recall_index_tools
 import haku.console.tools.routine as routine_tools
+import haku.console.tools.sandbox as sandbox_tools
 from haku.console.config import HostexecConfig
 from haku.console.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_config import (
@@ -30,6 +31,7 @@ from haku.console.mcp_config import (
 from haku.console.recall_index_access import RecallIndexAccessPolicy
 from haku.console.tools.hostexec_client import HostexecClient, NodeDaemonBroker
 from haku.console.tools.hostexec_token import HostexecJwtBearerExchanger
+from haku.sandbox.config import SandboxEnvironmentConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +42,14 @@ class HostexecServerConfig:
     config: HostexecConfig
     token_endpoint: str
     broker: NodeDaemonBroker
+
+
+@dataclass(frozen=True, slots=True)
+class SandboxServerConfig:
+    """The sandbox lifecycle client plus the environment whose limits its tool schema advertises."""
+
+    client: sandbox_tools.SandboxClient
+    environment: SandboxEnvironmentConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +71,9 @@ class InProcessServerDependencies:
     # `config.yaml` lists the server, which is also what requires an embedder to be configured.
     index: recall_index_tools.IndexSearcher | None = None
     kubernetes: kubernetes_tools.KubernetesToolsService | None = None
+    # The Agent Sandbox lifecycle client and the environment it hands out — set only when
+    # `config.yaml` both lists the server and configures `agent_sandbox`.
+    sandbox: SandboxServerConfig | None = None
     recall_access_profiles: tuple[AccessProfile, ...] = ()
     configured_recall_index_ids: tuple[str, ...] = ()
 
@@ -105,6 +118,12 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
             builder=lambda _token: kubernetes_tools.build_mcp(kubernetes),
             credential_kind=InProcessCredentialKind.NONE,
             authorizer=in_process_access.authorizer_for(kubernetes_tools.KUBERNETES_SERVER_ID),
+        )
+    if (sandbox := dependencies.sandbox) is not None:
+        servers[sandbox_tools.SANDBOX_SERVER_ID] = InProcessServerRegistration(
+            builder=lambda _token: sandbox_tools.build_mcp(sandbox.client, sandbox.environment),
+            credential_kind=InProcessCredentialKind.NONE,
+            authorizer=in_process_access.authorizer_for(sandbox_tools.SANDBOX_SERVER_ID),
         )
     if (hostexec := dependencies.hostexec) is not None:
         daemon_ids = {host: entry.daemon_id for host, entry in hostexec.config.hosts.items()}

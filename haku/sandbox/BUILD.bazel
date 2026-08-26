@@ -1,0 +1,62 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mcp_infra/exec:models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "kubernetes_client",
+    srcs = ["kubernetes_client.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        ":models",
+        "//mcp_infra/exec:models",
+        "//util:kubernetes",
+        "@pypi//aiohttp",
+        "@pypi//fastmcp_slim",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_config",
+    srcs = ["test_config.py"],
+    deps = [
+        ":config",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_kubernetes_client",
+    srcs = ["test_kubernetes_client.py"],
+    deps = [
+        ":config",
+        ":kubernetes_client",
+        ":models",
+        "//:conftest",
+        "//mcp_infra/exec:models",
+        "@pypi//fastmcp_slim",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -13,9 +13,9 @@ resources:
   # a creation-age CleanupPolicy would only cap a tended session short of its deadline. Accepted
   # trade-off (operator, 2026-08-15): no backstop if the controller itself stays broken.
   # Cross-namespace RBAC lives here rather than under a namespace-transforming
-  # workload kustomization. The general sandbox MCP bindings remain in haku-sandbox;
+  # workload kustomization. Console's exec-target sandbox bindings live in haku-sandbox;
   # Console's launched-runtime claim-only binding lives in haku-runtime-sandbox.
-  - haku-sandbox-mcp-role.yaml
-  - haku-sandbox-mcp-rolebinding.yaml
+  - haku-console-sandbox-role.yaml
+  - haku-console-sandbox-rolebinding.yaml
   - haku-console-runtime-claim-role.yaml
   - haku-console-runtime-claim-rolebinding.yaml

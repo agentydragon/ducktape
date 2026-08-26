@@ -34,7 +34,7 @@ metadata:
     # do NOT use reloader's blanket auto mode: the projected static-image metadata
     # changes on every frontend release and must not restart API/MCP/background work.
     configmap.reloader.stakater.com/reload: haku-console-config
-    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-matrix-bot-password,haku-console-web-push-vapid,haku-forgejo-git,tana-agentydragon-gmail-com-account-pat,haku-sandbox-mcp-bearer,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials
+    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-matrix-bot-password,haku-console-web-push-vapid,haku-forgejo-git,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials
 spec:
   replicas: 2
   strategy:
@@ -202,13 +202,6 @@ spec:
                 secretKeyRef:
                   name: tana-agentydragon-gmail-com-account-pat
                   key: token
-            # sandbox-mcp static bearer — the SAME token the MCP validates, reflected from
-            # haku-sandbox-mcp/haku-sandbox-mcp-bearer into this namespace (emberstack reflector).
-            - name: HAKU_CONSOLE_MCP_CREDENTIAL_SANDBOX_MCP_BEARER
-              valueFrom:
-                secretKeyRef:
-                  name: haku-sandbox-mcp-bearer
-                  key: bearer-token
             # ha-mcp static bearer — the SAME token the facade validates, reflected from
             # ha-mcp/ha-mcp-bearer into this namespace (emberstack reflector).
             - name: HAKU_CONSOLE_MCP_CREDENTIAL_HA_MCP_BEARER

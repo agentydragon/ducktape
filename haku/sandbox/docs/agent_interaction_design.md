@@ -19,7 +19,7 @@ wait; the caller polls `get_sandbox_info` or retries provisioning.
   timeout/output limits. Nonzero exit status is returned as data.
 - `get_sandbox_info` and `list_sandboxes` expose compact derived state, never
   raw manifests, environment variables, credentials, or command output.
-- `dispose_sandbox` deletes only claims labeled as owned by this server.
+- `dispose_sandbox` deletes only claims labeled as Console-owned.
 
 All time quantities use seconds. Every exec first confirms a deadline at least
 the configured extension into the future; a renewal failure prevents execution.
@@ -43,7 +43,7 @@ as failed.
 
 ## Safety audit
 
-- Mutations never target claims without the server ownership label.
+- Mutations never target claims without the ownership label.
 - Lists are paginated and bounded.
 - Initial TTL, warm pool, container, and bootstrap cannot be overridden by the
   agent.
@@ -55,6 +55,4 @@ as failed.
 
 Multiple environment profiles, suspend/resume, interactive terminals, file
 transfer, port forwarding, and log streaming are intentionally not part of v1.
-Deployment manifests and RBAC stay outside this package. Registration behind
-haku-console has since landed (`cluster/k8s/haku/console/config.yaml`, the
-`sandbox-mcp` entry).
+Deployment manifests and RBAC stay outside this package.

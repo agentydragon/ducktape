@@ -3,7 +3,7 @@
 # cluster/AGENTS.md "Annotating a SOPS-encrypted Secret"). The emberstack reflector
 # mirrors it into haku-console so the console presents the SAME token
 # (HAKU_CONSOLE_MCP_CREDENTIAL_HA_MCP_BEARER) when it calls this MCP — one source of
-# truth, no drift (same pattern as haku-sandbox-mcp and tana's account PAT).
+# truth, no drift (same pattern as tana's account PAT).
 apiVersion: v1
 kind: Secret
 metadata:

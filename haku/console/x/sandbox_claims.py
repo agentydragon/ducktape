@@ -29,7 +29,7 @@ from util.kubernetes import CustomObjectsClient
 
 logger = logging.getLogger(__name__)
 
-# Copying `sandbox_mcp`'s `_renew`: a few tries is enough for the resourceVersion `test` to win
+# Copying `haku/sandbox`'s `_renew`: a few tries is enough for the resourceVersion `test` to win
 # against the controller's own status writes; a persistent conflict is a bug, not contention.
 _RENEW_ATTEMPTS = 3
 

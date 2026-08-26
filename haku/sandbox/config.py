@@ -1,20 +1,17 @@
-"""Configuration for the single-environment Haku sandbox MCP server."""
+"""Deploy-reviewed configuration for the Kubernetes Agent Sandbox environment."""
 
 from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
 
-import yaml
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 _DNS_LABEL = r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
 
 
 class SandboxConfig(BaseModel):
-    """The one Agent Sandbox environment managed by this server."""
+    """The one Agent Sandbox environment Console hands out."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -39,8 +36,8 @@ class BootstrapConfig(BaseModel):
     script: str = Field(min_length=1)
 
 
-class EnvironmentConfig(BaseModel):
-    """Non-secret YAML configuration for the server's one environment."""
+class SandboxEnvironmentConfig(BaseModel):
+    """Non-secret deploy configuration for that environment and its reviewed bootstrap."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -48,7 +45,7 @@ class EnvironmentConfig(BaseModel):
     bootstrap: BootstrapConfig
 
     @model_validator(mode="after")
-    def _validate_lifecycle_budgets(self) -> EnvironmentConfig:
+    def _validate_lifecycle_budgets(self) -> SandboxEnvironmentConfig:
         minimum_initial_ttl = self.sandbox.provisioning_timeout_seconds + self.bootstrap.timeout_seconds
         if self.sandbox.initial_ttl_seconds <= minimum_initial_ttl:
             raise ValueError(
@@ -64,21 +61,3 @@ class EnvironmentConfig(BaseModel):
 
         payload = json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(payload.encode()).hexdigest()
-
-
-class ServerSettings(BaseSettings):
-    """Secret/process settings sourced only from ``HAKU_SANDBOX_MCP_*`` env vars."""
-
-    model_config = SettingsConfigDict(env_prefix="HAKU_SANDBOX_MCP_", extra="forbid")
-
-    config_file: Path
-    bearer_token: SecretStr
-    host: str = "0.0.0.0"
-    port: int = Field(default=8765, ge=1, le=65535)
-
-    def load_environment(self) -> EnvironmentConfig:
-        try:
-            raw = yaml.safe_load(self.config_file.read_text())
-        except OSError as error:
-            raise ValueError(f"could not read sandbox config {self.config_file}: {error}") from error
-        return EnvironmentConfig.model_validate(raw)

@@ -79,7 +79,6 @@ jobs:
               image_name: haku-harness-runner,
               test_target: "//haku/runtime/x/bridge/...",
             }
-          - { image: "//haku/sandbox_mcp:image", image_name: haku-sandbox-mcp, test_target: "//haku/sandbox_mcp/..." }
           - {
               image: "//haku/kube_api_proxy:image",
               image_name: haku-kube-api-proxy,

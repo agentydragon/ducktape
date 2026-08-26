@@ -1,4 +1,4 @@
-"""Tool-surface tests for the standalone sandbox MCP server."""
+"""Tool-surface tests for Console's in-process sandbox server."""
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock
@@ -7,16 +7,16 @@ import pytest_bazel
 from fastmcp import Client
 from mcp.types import Tool
 
-from haku.sandbox_mcp.config import EnvironmentConfig
-from haku.sandbox_mcp.models import DisposeSandboxResult, SandboxExecResult, SandboxInfo, SandboxListPage
-from haku.sandbox_mcp.server import build_mcp
+from haku.console.tools.sandbox import build_mcp
+from haku.sandbox.config import SandboxEnvironmentConfig
+from haku.sandbox.models import DisposeSandboxResult, SandboxExecResult, SandboxInfo, SandboxListPage
 from mcp_infra.exec.models import Exited
 
 NOW = datetime(2026, 7, 22, 12, 0, tzinfo=UTC)
 
 
-def _environment(*, max_exec_timeout_seconds: int = 300, max_output_bytes: int = 100_000) -> EnvironmentConfig:
-    return EnvironmentConfig.model_validate(
+def _environment(*, max_exec_timeout_seconds: int = 300, max_output_bytes: int = 100_000) -> SandboxEnvironmentConfig:
+    return SandboxEnvironmentConfig.model_validate(
         {
             "sandbox": {
                 "namespace": "agent-workspaces",
@@ -60,7 +60,7 @@ def _client() -> Mock:
     return client
 
 
-async def _tools(client: Mock, environment: EnvironmentConfig | None = None) -> dict[str, Tool]:
+async def _tools(client: Mock, environment: SandboxEnvironmentConfig | None = None) -> dict[str, Tool]:
     async with Client(build_mcp(client, environment or _environment())) as mcp_client:
         return {tool.name: tool for tool in await mcp_client.list_tools()}
 

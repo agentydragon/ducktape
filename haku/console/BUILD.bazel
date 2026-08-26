@@ -76,6 +76,7 @@ py_library(
         ":provider_connection_registry",
         ":tool_call_actor",
         "//haku/console/agents:naming",
+        "//haku/sandbox:config",
         "//mcp_infra:prefix",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
@@ -180,6 +181,8 @@ py_library(
         "//haku/console/tools:kubernetes",
         "//haku/console/tools:recall_index",
         "//haku/console/tools:routine",
+        "//haku/console/tools:sandbox",
+        "//haku/sandbox:config",
     ],
 )
 
@@ -1182,6 +1185,8 @@ py_library(
         "//haku/console/tools:gmail",
         "//haku/console/tools:kubernetes",
         "//haku/console/tools:routine",
+        "//haku/console/tools:sandbox",
+        "//haku/sandbox:kubernetes_client",
         "//haku/console/x:conversation_follow",
         "//haku/console/x:conversation_history",
         "//haku/console/x:conversation_runtime",

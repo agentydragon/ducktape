@@ -36,6 +36,7 @@ from haku.console.config import (
 )
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_actor import ToolCallActor
+from haku.sandbox.config import SandboxEnvironmentConfig
 from mcp_infra.prefix import MCPMountPrefix
 
 
@@ -389,6 +390,11 @@ class ConsoleConfigFile(BaseModel):
     # A deploy-reviewed fail-safe maximum for approval-created temporary grants. Tool schema bounds
     # remain useful client guidance, but this server-side setting is authoritative.
     kubernetes_grant_max_lifetime_seconds: int = Field(default=3600, ge=1, le=86_400)
+    # The one Agent Sandbox environment the `sandbox` in-process server hands out: which warm pool
+    # it claims from and the reviewed bootstrap each claim runs. Unset → the server is not offered.
+    # Its `contract_hash` identifies claims created under this exact environment, so an edit here
+    # makes live claims unusable until they are disposed (see haku/sandbox/TODO.md).
+    agent_sandbox: SandboxEnvironmentConfig | None = None
 
     @property
     def effective_launchable_agent_ids(self) -> frozenset[UUID]:

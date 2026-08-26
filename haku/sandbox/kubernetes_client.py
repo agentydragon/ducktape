@@ -19,8 +19,8 @@ from kubernetes_asyncio.config.config_exception import ConfigException
 from kubernetes_asyncio.stream import WsApiClient
 from kubernetes_asyncio.stream.ws_client import ERROR_CHANNEL, STDERR_CHANNEL, STDOUT_CHANNEL
 
-from haku.sandbox_mcp.config import EnvironmentConfig
-from haku.sandbox_mcp.models import (
+from haku.sandbox.config import SandboxEnvironmentConfig
+from haku.sandbox.models import (
     BootstrapState,
     DisposeSandboxResult,
     SandboxExecResult,
@@ -41,6 +41,9 @@ SANDBOXES_PLURAL = "sandboxes"
 POD_NAME_ANNOTATION = "agents.x-k8s.io/pod-name"
 
 MANAGED_BY_LABEL = "app.kubernetes.io/managed-by"
+# Ownership marker written on every claim and required by every mutation, so it is a stored
+# value rather than a name: changing it orphans live claims, which then match nothing and can
+# be neither adopted nor disposed. It still reads "-mcp" from when this ran as its own service.
 MANAGED_BY_VALUE = "haku-sandbox-mcp"
 CONFIG_HASH_ANNOTATION = "haku.allegedly.works/sandbox-config-hash"
 BOOTSTRAP_STATE_ANNOTATION = "haku.allegedly.works/sandbox-bootstrap-state"
@@ -234,7 +237,7 @@ class KubernetesSandboxClient:
 
     def __init__(
         self,
-        environment: EnvironmentConfig,
+        environment: SandboxEnvironmentConfig,
         *,
         api_client: ApiClient,
         custom_objects: CustomObjectsClient,
@@ -251,14 +254,6 @@ class KubernetesSandboxClient:
 
     async def aclose(self) -> None:
         await self._api_client.close()
-
-    async def ready(self) -> None:
-        try:
-            await self._custom_objects.list_namespaced_custom_object(
-                CLAIM_GROUP, API_VERSION, self._environment.sandbox.namespace, CLAIMS_PLURAL, limit=1
-            )
-        except ApiException as error:
-            raise ToolError(_api_error("probe SandboxClaim access", error)) from error
 
     async def provision(self, name: str) -> SandboxInfo:
         claim = await self._create_or_adopt_claim(name)
@@ -624,7 +619,7 @@ class KubernetesSandboxClient:
 class InClusterSandboxClient:
     """Lazily initialize the in-cluster Kubernetes clients."""
 
-    def __init__(self, environment: EnvironmentConfig) -> None:
+    def __init__(self, environment: SandboxEnvironmentConfig) -> None:
         self._environment = environment
         self._client: KubernetesSandboxClient | None = None
         self._lock = asyncio.Lock()
@@ -667,9 +662,6 @@ class InClusterSandboxClient:
 
     async def dispose(self, name: str) -> DisposeSandboxResult:
         return await (await self._get_client()).dispose(name)
-
-    async def ready(self) -> None:
-        await (await self._get_client()).ready()
 
     async def aclose(self) -> None:
         if self._client is not None:

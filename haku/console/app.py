@@ -62,7 +62,12 @@ from haku.console.chat_models import RuntimeKind
 from haku.console.config import MCP_PATH, EmbedderConfig, GitRecallIndexDefinition, Settings
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
-from haku.console.in_process_servers import HostexecServerConfig, InProcessServerDependencies, build_in_process_servers
+from haku.console.in_process_servers import (
+    HostexecServerConfig,
+    InProcessServerDependencies,
+    SandboxServerConfig,
+    build_in_process_servers,
+)
 from haku.console.kubernetes_authorization import KubernetesAuthorizationService, KubernetesSubjectAccessReviewClient
 from haku.console.kubernetes_grant_repository import PostgresKubernetesGrantRepository
 from haku.console.kubernetes_grant_service import KubernetesGrantService
@@ -82,7 +87,12 @@ from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance
-from haku.console.tools import gmail as gmail_tools, kubernetes as kubernetes_tools, routine as routine_tools
+from haku.console.tools import (
+    gmail as gmail_tools,
+    kubernetes as kubernetes_tools,
+    routine as routine_tools,
+    sandbox as sandbox_tools,
+)
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import (
     conversation_follow,
@@ -114,6 +124,7 @@ from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.recall_index.git_tree import configure_ca_trust
 from haku.recall_index.openai_embedder import OpenAIEmbedder
 from haku.runtime.x.bridge.protocol import KUBERNETES_PROXY_URL_ENV, RUNNER_SETUP_ENV
+from haku.sandbox.kubernetes_client import InClusterSandboxClient
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
 APP_SHELL_CACHE_CONTROL = "no-store"
@@ -530,6 +541,7 @@ def create_app(
     # in-process servers: a test that wants either background stage drives it itself.
     index_maintenance: RecallIndexMaintenance | None = None
     embedding_maintenance: RecallEmbeddingMaintenance | None = None
+    sandbox_server: SandboxServerConfig | None = None
     if in_process_servers is None:
         # hostexec being configured implies a real Authentik operator OIDC, so deriving the token
         # endpoint here (only in this branch) is safe.
@@ -571,6 +583,16 @@ def create_app(
                 db_sessions,
                 embedder=_embedder(settings.embedder, timeout=settings.embedder.sync_timeout_seconds),
             )
+        # Claims are created lazily on first use, so this holds no Kubernetes connection until an
+        # Agent provisions; `aclose` below is what releases it.
+        sandbox_server = (
+            SandboxServerConfig(
+                client=InClusterSandboxClient(console_config.agent_sandbox), environment=console_config.agent_sandbox
+            )
+            if console_config.agent_sandbox is not None
+            and any(server.id == sandbox_tools.SANDBOX_SERVER_ID for server in console_config.mcp.servers)
+            else None
+        )
         in_process_servers = build_in_process_servers(
             InProcessServerDependencies(
                 routine_launcher=routine_launcher,
@@ -581,6 +603,7 @@ def create_app(
                 # Only with an executable runtime: otherwise nothing writes sessions, so the read
                 # tools would reflect an always-empty corpus.
                 conversations=session_store if runtime_registry.configured_kinds else None,
+                sandbox=sandbox_server,
                 kubernetes=(
                     kubernetes_tools.KubernetesToolsService(
                         grants=kubernetes_grants, authorization=kubernetes_authorization
@@ -694,6 +717,8 @@ def create_app(
                 await tool_calls.aclose()
                 if kubernetes_authorization is not None:
                     await kubernetes_authorization.aclose()
+                if sandbox_server is not None:
+                    await sandbox_server.client.aclose()
                 if session_service is not None:
                     await session_service.aclose()
                 await session_notifications.aclose()

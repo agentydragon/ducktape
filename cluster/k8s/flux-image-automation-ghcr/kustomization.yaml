@@ -4,8 +4,6 @@ resources:
   - ducktape-write-source.yaml
   - aiquota-api-image-repository.yaml
   - aiquota-api-image-policy.yaml
-  - haku-sandbox-mcp-image-repository.yaml
-  - haku-sandbox-mcp-image-policy.yaml
   - loki-read-proxy-image-repository.yaml
   - loki-read-proxy-image-policy.yaml
   - props-backend-image-repository.yaml

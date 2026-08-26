@@ -219,7 +219,7 @@ first console session flow.
 ```text
 haku-console  ── session records, chat UI, MCP + approval queue
      │
-     │ provision / dispose (sandbox_mcp)
+     │ provision / dispose (sandbox tools)
      ▼
 Sandbox CR (new template)  ── pod running the Python harness
      │                            └─ ClaudeSDKClient, tools = MCP-only

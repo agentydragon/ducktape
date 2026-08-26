@@ -12,8 +12,8 @@ import pytest_bazel
 from fastmcp.exceptions import ToolError
 from kubernetes_asyncio.client import ApiException
 
-from haku.sandbox_mcp.config import EnvironmentConfig
-from haku.sandbox_mcp.kubernetes_client import (
+from haku.sandbox.config import SandboxEnvironmentConfig
+from haku.sandbox.kubernetes_client import (
     API_VERSION,
     BOOTSTRAP_STARTED_AT_ANNOTATION,
     BOOTSTRAP_STATE_ANNOTATION,
@@ -39,8 +39,8 @@ SANDBOX: dict[str, Any] = {
 
 
 @pytest.fixture
-def environment() -> EnvironmentConfig:
-    return EnvironmentConfig.model_validate(
+def environment() -> SandboxEnvironmentConfig:
+    return SandboxEnvironmentConfig.model_validate(
         {
             "sandbox": {
                 "namespace": "agent-workspaces",
@@ -59,7 +59,7 @@ def environment() -> EnvironmentConfig:
 
 
 def _claim(
-    environment: EnvironmentConfig,
+    environment: SandboxEnvironmentConfig,
     *,
     deadline: datetime,
     bootstrap_state: str = "succeeded",
@@ -97,7 +97,7 @@ def _runner_result() -> CommandResult:
     return CommandResult(exit=Exited(exit_code=0), stdout="ok", stderr="", duration_seconds=0.1)
 
 
-def _client(environment: EnvironmentConfig, custom: Mock, core: Mock, runner: Mock) -> KubernetesSandboxClient:
+def _client(environment: SandboxEnvironmentConfig, custom: Mock, core: Mock, runner: Mock) -> KubernetesSandboxClient:
     return KubernetesSandboxClient(
         environment, api_client=Mock(), custom_objects=custom, core_v1=core, exec_runner=runner, now=lambda: NOW
     )
@@ -116,7 +116,9 @@ def _route_get(claim: dict):
     return get
 
 
-async def test_provision_creates_named_delete_claim_and_adopts_ready_result(environment: EnvironmentConfig) -> None:
+async def test_provision_creates_named_delete_claim_and_adopts_ready_result(
+    environment: SandboxEnvironmentConfig,
+) -> None:
     claim = _claim(environment, deadline=NOW + timedelta(hours=8))
     custom = Mock()
     custom.create_namespaced_custom_object = AsyncMock(return_value=claim)
@@ -134,7 +136,7 @@ async def test_provision_creates_named_delete_claim_and_adopts_ready_result(envi
     assert body["metadata"]["annotations"][CONFIG_HASH_ANNOTATION] == environment.contract_hash
 
 
-async def test_provision_adopts_matching_claim_after_create_conflict(environment: EnvironmentConfig) -> None:
+async def test_provision_adopts_matching_claim_after_create_conflict(environment: SandboxEnvironmentConfig) -> None:
     claim = _claim(environment, deadline=NOW + timedelta(hours=8))
     custom = Mock()
     custom.create_namespaced_custom_object = AsyncMock(side_effect=ApiException(status=409))
@@ -147,7 +149,7 @@ async def test_provision_adopts_matching_claim_after_create_conflict(environment
     assert result.state == "ready"
 
 
-async def test_changed_configuration_is_visible_but_cannot_execute(environment: EnvironmentConfig) -> None:
+async def test_changed_configuration_is_visible_but_cannot_execute(environment: SandboxEnvironmentConfig) -> None:
     claim = _claim(environment, deadline=NOW + timedelta(hours=8), contract_hash="old")
     custom = Mock()
     custom.get_namespaced_custom_object = AsyncMock(side_effect=_route_get(claim))
@@ -160,7 +162,7 @@ async def test_changed_configuration_is_visible_but_cannot_execute(environment: 
         await client.execute(name="task-one", script="true", cwd=None, timeout_seconds=1, max_output_bytes=100)
 
 
-async def test_exec_renews_near_deadline_before_running(environment: EnvironmentConfig) -> None:
+async def test_exec_renews_near_deadline_before_running(environment: SandboxEnvironmentConfig) -> None:
     claim = _claim(environment, deadline=NOW + timedelta(minutes=5))
     custom = Mock()
     custom.get_namespaced_custom_object = AsyncMock(side_effect=_route_get(claim))
@@ -189,7 +191,7 @@ async def test_exec_renews_near_deadline_before_running(environment: Environment
     assert result.expires_at == NOW + timedelta(hours=2)
 
 
-async def test_exec_does_not_shorten_later_deadline(environment: EnvironmentConfig) -> None:
+async def test_exec_does_not_shorten_later_deadline(environment: SandboxEnvironmentConfig) -> None:
     claim = _claim(environment, deadline=NOW + timedelta(hours=6))
     custom = Mock()
     custom.get_namespaced_custom_object = AsyncMock(side_effect=_route_get(claim))
@@ -207,7 +209,7 @@ async def test_exec_does_not_shorten_later_deadline(environment: EnvironmentConf
     assert result.expires_at == NOW + timedelta(hours=6)
 
 
-async def test_exec_is_available_for_bootstrap_diagnostics(environment: EnvironmentConfig) -> None:
+async def test_exec_is_available_for_bootstrap_diagnostics(environment: SandboxEnvironmentConfig) -> None:
     claim = _claim(environment, deadline=NOW + timedelta(hours=6), bootstrap_state="failed")
     custom = Mock()
     custom.get_namespaced_custom_object = AsyncMock(side_effect=_route_get(claim))
@@ -225,7 +227,7 @@ async def test_exec_is_available_for_bootstrap_diagnostics(environment: Environm
     runner.run.assert_awaited_once()
 
 
-async def test_interrupted_bootstrap_becomes_failed(environment: EnvironmentConfig) -> None:
+async def test_interrupted_bootstrap_becomes_failed(environment: SandboxEnvironmentConfig) -> None:
     claim = _claim(environment, deadline=NOW + timedelta(hours=6), bootstrap_state="running")
     claim["metadata"]["annotations"][BOOTSTRAP_STARTED_AT_ANNOTATION] = (NOW - timedelta(minutes=1)).isoformat()
     custom = Mock()
@@ -239,7 +241,7 @@ async def test_interrupted_bootstrap_becomes_failed(environment: EnvironmentConf
     assert info.bootstrap_state == "failed"
 
 
-async def test_provision_does_not_retry_failed_bootstrap(environment: EnvironmentConfig) -> None:
+async def test_provision_does_not_retry_failed_bootstrap(environment: SandboxEnvironmentConfig) -> None:
     claim = _claim(environment, deadline=NOW + timedelta(hours=6), bootstrap_state="failed")
     custom = Mock()
     custom.create_namespaced_custom_object = AsyncMock(side_effect=ApiException(status=409))
@@ -256,7 +258,7 @@ async def test_provision_does_not_retry_failed_bootstrap(environment: Environmen
     runner.run.assert_not_awaited()
 
 
-async def test_renewal_failure_prevents_exec(environment: EnvironmentConfig) -> None:
+async def test_renewal_failure_prevents_exec(environment: SandboxEnvironmentConfig) -> None:
     claim = _claim(environment, deadline=NOW + timedelta(minutes=5))
     custom = Mock()
     custom.get_namespaced_custom_object = AsyncMock(side_effect=_route_get(claim))
@@ -272,7 +274,7 @@ async def test_renewal_failure_prevents_exec(environment: EnvironmentConfig) -> 
     runner.run.assert_not_awaited()
 
 
-async def test_dispose_is_idempotent(environment: EnvironmentConfig) -> None:
+async def test_dispose_is_idempotent(environment: SandboxEnvironmentConfig) -> None:
     custom = Mock()
     custom.get_namespaced_custom_object = AsyncMock(side_effect=ApiException(status=404))
 

@@ -57,8 +57,6 @@ resources:
   - agents/agent-sandbox/controller/flux-kustomization.yaml
   - agents/agent-sandbox/workspaces/namespace/flux-kustomization.yaml
   - agents/agent-sandbox/workspaces/app/flux-kustomization.yaml
-  - agents/haku-sandbox-mcp/namespace/flux-kustomization.yaml # the sandbox-provisioning MCP server
-  - agents/haku-sandbox-mcp/app/flux-kustomization.yaml
   - agents/claude-sandbox-secrets/flux-kustomization.yaml
   - agents/authentik-jwt-rotation/flux-kustomization.yaml
   - agents/forgejo-token-rotation/flux-kustomization.yaml

@@ -1,14 +1,13 @@
-"""Configuration tests for the single-environment sandbox MCP server."""
+"""Configuration tests for the single Agent Sandbox environment."""
 
 from copy import deepcopy
-from pathlib import Path
 from typing import Any
 
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from haku.sandbox_mcp.config import EnvironmentConfig, ServerSettings
+from haku.sandbox.config import SandboxEnvironmentConfig
 
 RAW_CONFIG: dict[str, Any] = {
     "sandbox": {
@@ -31,8 +30,8 @@ RAW_CONFIG: dict[str, Any] = {
 
 
 def test_environment_uses_seconds_and_has_stable_contract_hash() -> None:
-    first = EnvironmentConfig.model_validate(RAW_CONFIG)
-    second = EnvironmentConfig.model_validate(RAW_CONFIG)
+    first = SandboxEnvironmentConfig.model_validate(RAW_CONFIG)
+    second = SandboxEnvironmentConfig.model_validate(RAW_CONFIG)
 
     assert first.sandbox.initial_ttl_seconds == 28_800
     assert first.contract_hash == second.contract_hash
@@ -40,11 +39,11 @@ def test_environment_uses_seconds_and_has_stable_contract_hash() -> None:
 
 
 def test_contract_hash_changes_with_bootstrap() -> None:
-    first = EnvironmentConfig.model_validate(RAW_CONFIG)
+    first = SandboxEnvironmentConfig.model_validate(RAW_CONFIG)
     changed = deepcopy(RAW_CONFIG)
     changed["bootstrap"]["script"] = "echo changed"
 
-    assert first.contract_hash != EnvironmentConfig.model_validate(changed).contract_hash
+    assert first.contract_hash != SandboxEnvironmentConfig.model_validate(changed).contract_hash
 
 
 def test_initial_ttl_must_cover_provisioning_and_bootstrap() -> None:
@@ -52,7 +51,7 @@ def test_initial_ttl_must_cover_provisioning_and_bootstrap() -> None:
     raw["sandbox"]["initial_ttl_seconds"] = 900
 
     with pytest.raises(ValidationError, match="must exceed provisioning_timeout_seconds"):
-        EnvironmentConfig.model_validate(raw)
+        SandboxEnvironmentConfig.model_validate(raw)
 
 
 def test_exec_extension_must_cover_longest_exec() -> None:
@@ -60,33 +59,7 @@ def test_exec_extension_must_cover_longest_exec() -> None:
     raw["sandbox"]["exec_ttl_extension_seconds"] = 299
 
     with pytest.raises(ValidationError, match="must be at least"):
-        EnvironmentConfig.model_validate(raw)
-
-
-def test_settings_load_only_non_secret_yaml(tmp_path: Path) -> None:
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        """
-sandbox:
-  namespace: agent-workspaces
-  warm_pool: haku
-  container: workspace
-  default_cwd: /workspace/haku-state
-  initial_ttl_seconds: 28800
-  exec_ttl_extension_seconds: 7200
-  provisioning_timeout_seconds: 600
-  max_exec_timeout_seconds: 300
-  max_output_bytes: 100000
-bootstrap:
-  cwd: /workspace
-  timeout_seconds: 300
-  script: echo ready
-""".lstrip()
-    )
-
-    settings = ServerSettings(config_file=config_path, bearer_token="secret")
-
-    assert settings.load_environment().sandbox.warm_pool == "haku"
+        SandboxEnvironmentConfig.model_validate(raw)
 
 
 if __name__ == "__main__":

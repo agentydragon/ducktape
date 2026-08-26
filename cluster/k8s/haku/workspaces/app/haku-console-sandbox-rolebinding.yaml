@@ -1,0 +1,16 @@
+# Bind the claim/exec Role (in haku-sandbox) to Console's ServiceAccount (in
+# haku-console). Cross-namespace: the subject SA lives in Console's own namespace,
+# the Role + RoleBinding live in the pool namespace it operates on.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: haku-console-sandbox
+  namespace: haku-sandbox
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: haku-console-sandbox
+subjects:
+  - kind: ServiceAccount
+    name: haku-console
+    namespace: haku-console

@@ -75,9 +75,6 @@ spec:
       name: haku-harness-runner
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: haku-sandbox-mcp
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
       name: loki-read-proxy
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository

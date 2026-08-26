@@ -1,30 +1,17 @@
-"""Standalone FastMCP and HTTP entrypoint for one Agent Sandbox environment."""
+"""In-process MCP tools for the one Kubernetes Agent Sandbox environment Console hands out."""
 
 from __future__ import annotations
 
-import contextlib
-import logging
-import sys
-from collections.abc import AsyncIterator
 from typing import Annotated, Protocol
 
-import uvicorn
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field
-from starlette.applications import Starlette
-from starlette.requests import Request
-from starlette.responses import JSONResponse
-from starlette.routing import Mount, Route
 
-from haku.sandbox_mcp.config import EnvironmentConfig, ServerSettings
-from haku.sandbox_mcp.kubernetes_client import InClusterSandboxClient
-from haku.sandbox_mcp.models import DisposeSandboxResult, SandboxExecResult, SandboxInfo, SandboxListPage, SandboxName
-from mcp_infra.static_bearer import StaticBearerGuard
+from haku.sandbox.config import SandboxEnvironmentConfig
+from haku.sandbox.models import DisposeSandboxResult, SandboxExecResult, SandboxInfo, SandboxListPage, SandboxName
 
-logger = logging.getLogger(__name__)
-
-SERVER_NAME = "haku_sandbox"
+SANDBOX_SERVER_ID = "sandbox"
 _READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
 _PROVISION = ToolAnnotations(destructiveHint=False, idempotentHint=True, openWorldHint=False)
 _DISPOSE = ToolAnnotations(destructiveHint=True, idempotentHint=True, openWorldHint=False)
@@ -61,16 +48,14 @@ class SandboxClient(Protocol):
 
     async def dispose(self, name: str) -> DisposeSandboxResult: ...
 
-    async def ready(self) -> None: ...
-
     async def aclose(self) -> None: ...
 
 
-def build_mcp(client: SandboxClient, environment: EnvironmentConfig) -> FastMCP:
+def build_mcp(client: SandboxClient, environment: SandboxEnvironmentConfig) -> FastMCP:
     """Build the agent-facing five-tool surface around an injected lifecycle client."""
 
     mcp: FastMCP = FastMCP(
-        name=SERVER_NAME,
+        name=SANDBOX_SERVER_ID,
         strict_input_validation=True,
         instructions=(
             "Provision and use the one configured Kubernetes Agent Sandbox environment. "
@@ -143,7 +128,7 @@ def build_mcp(client: SandboxClient, environment: EnvironmentConfig) -> FastMCP:
             Field(default=None, description="Opaque token returned by the previous page; omit for the first page."),
         ] = None,
     ) -> SandboxListPage:
-        """List this server's managed sandboxes as one bounded page.
+        """List Console's managed sandboxes as one bounded page.
 
         Use this to discover names and current lifecycle state; use ``get_sandbox_info`` for a
         focused follow-up. Pass the returned ``continue_token`` unchanged to fetch the next page.
@@ -165,45 +150,3 @@ def build_mcp(client: SandboxClient, environment: EnvironmentConfig) -> FastMCP:
         return await client.dispose(name)
 
     return mcp
-
-
-def create_app(settings: ServerSettings, environment: EnvironmentConfig, client: SandboxClient) -> Starlette:
-    mcp_app = build_mcp(client, environment).http_app(path="/mcp")
-
-    async def healthz(request: Request) -> JSONResponse:
-        return JSONResponse({"ok": True})
-
-    async def readyz(request: Request) -> JSONResponse:
-        try:
-            await client.ready()
-        except Exception as error:
-            logger.warning("sandbox MCP readiness failed: %s", error)
-            return JSONResponse({"ready": False, "error": str(error)}, status_code=503)
-        return JSONResponse({"ready": True})
-
-    @contextlib.asynccontextmanager
-    async def lifespan(app: Starlette) -> AsyncIterator[None]:
-        async with mcp_app.lifespan(app):
-            try:
-                yield
-            finally:
-                await client.aclose()
-
-    protected = StaticBearerGuard(mcp_app, token=settings.bearer_token.get_secret_value())
-    return Starlette(
-        routes=[Route("/healthz", healthz), Route("/readyz", readyz), Mount("/", app=protected)], lifespan=lifespan
-    )
-
-
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s", stream=sys.stderr)
-    settings = ServerSettings()
-    environment = settings.load_environment()
-    client = InClusterSandboxClient(environment)
-    app = create_app(settings, environment, client)
-    logger.info("haku-sandbox-mcp listening on %s:%d", settings.host, settings.port)
-    uvicorn.run(app, host=settings.host, port=settings.port, log_level="info")
-
-
-if __name__ == "__main__":
-    main()

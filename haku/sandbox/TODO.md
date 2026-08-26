@@ -1,8 +1,8 @@
-# TODO — sandbox MCP
+# TODO — Agent Sandbox client
 
 ## Don't invalidate live sandboxes the moment the config changes
 
-Today any change to the server's `EnvironmentConfig` changes `contract_hash`
+Today any change to the `SandboxEnvironmentConfig` changes `contract_hash`
 (<config.py>), and every claim annotated with the old hash is immediately unusable:
 `provision_sandbox` and `exec_sandbox` both fail with _"sandbox `<name>` was created with
 different server configuration; dispose and recreate it"_ (<kubernetes_client.py>). The
@@ -37,7 +37,7 @@ The read tools say _that_ a claim is stale — `get_sandbox_info` and every entr
 _what_ differs. Neither hash is in the response and neither is in the provision/exec error, so
 the agent's only recourse is to guess from the recent deploy.
 
-- `get_sandbox_info` should report the claim's stored contract hash, the server's current
+- `get_sandbox_info` should report the claim's stored contract hash, the current
   one, and which config fields diverge.
 - Surface what the box was actually bootstrapped **with**: the bootstrap script's own
   hash (or a short digest), its exit status, and when it ran. Today `bootstrap_state`
@@ -52,7 +52,7 @@ The shape both of the above want is a **non-fatal warning list** on the read too
 refusal and not a new synthetic state. `get_sandbox_info` (and a compact form in
 `list_sandboxes`) should carry something like `warnings: ["pod image
 …043101-57961d1 is behind the template's …052952-ad87431", "claim contract hash predates
-the server's current config"]` — the claim stays usable, and the agent decides whether the
+the current config"]` — the claim stays usable, and the agent decides whether the
 skew matters for what it is about to do.
 
 **Image skew is a real case, not a hypothetical, and it is separate from contract drift.**

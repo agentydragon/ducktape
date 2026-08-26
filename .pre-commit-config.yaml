@@ -274,7 +274,6 @@ repos:
             cluster/k8s/agents/grocy-mcp/envoy\.yaml|
             cluster/k8s/agents/homeassistant-proxy/config\.yaml|
             cluster/k8s/x/claude-sandbox-firecracker/config\.yaml|
-            cluster/k8s/agents/haku-sandbox-mcp/app/config\.yaml|
             # act_runner config mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/haku-ci/config\.yaml|
             # OpenShell policy mounted via configMapGenerator, not a K8s manifest

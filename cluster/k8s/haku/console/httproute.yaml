@@ -35,9 +35,9 @@ spec:
         - name: haku-console-static
           port: 8080
       # The MCP streamable-HTTP/SSE stream and the OAuth dance can outlast the default. It must
-      # also clear haku-sandbox-mcp's exec_sandbox budget: max_exec_timeout_seconds is 300s
-      # (cluster/k8s/agents/haku-sandbox-mcp/app/config.yaml) and the server itself waits up to
-      # timeout_seconds+15s for that command (haku/sandbox_mcp/kubernetes_client.py,
+      # also clear the `sandbox` server's exec_sandbox budget: max_exec_timeout_seconds is 300s
+      # (agent_sandbox in cluster/k8s/haku/console/config.yaml) and Console itself waits up to
+      # timeout_seconds+15s for that command (haku/sandbox/kubernetes_client.py,
       # KubernetesWebSocketExecRunner.run) — a 120s route timeout was cutting off legitimate
       # long-running execs at 2 minutes instead of letting them run the allotted 5.
       timeouts:

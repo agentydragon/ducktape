@@ -11,7 +11,7 @@ Companion to [runtime_options.md](runtime_options.md): this
 does not change _who runs the agent loop_ (still Runtime A, Claude Code web) — it moves
 **where the run's commands execute** from the Anthropic-provisioned container into the
 `haku-sandbox` pod the sandbox-provisioning MCP hands out
-(<../../cluster/k8s/haku/workspaces/>, <../sandbox_mcp/>).
+(<../../cluster/k8s/haku/workspaces/>, <../sandbox/>).
 
 ## Why bother
 
@@ -194,7 +194,7 @@ heavy in-place editing across many items.
    egress-CA half: a 25-line bash blob in YAML is what STYLE.md forbids, and in the script
    `shfmt`/`shellcheck` lint it. Deviation: changing bootstrap behavior now costs an image
    rebuild + rollout rather than a ConfigMap edit — accepted because the MCP's environment
-   contract hash never covered the image tag anyway (`haku/sandbox_mcp/config.py`), so no
+   contract hash never covered the image tag anyway (`haku/sandbox/config.py`), so no
    drift detection is lost.
 2. `cluster/k8s/kyverno/policies/inject-haku-egress-proxy.yaml`: add `.svc` and
    `kubernetes.default.svc` to `NO_PROXY`. Suffix matching is literal, so the short

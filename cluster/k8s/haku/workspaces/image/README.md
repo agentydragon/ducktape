@@ -1,6 +1,6 @@
 # Haku sandbox image
 
-The toolchain the sandbox-provisioning MCP (<../../../../../haku/sandbox_mcp/>) hands out:
+The toolchain the sandbox-provisioning MCP (<../../../../../haku/sandbox/>) hands out:
 an in-cluster **exec target** where an agent runs `bazel run //cli:…` / `bazel test //…`
 against a git-synced `haku-state` checkout. Not an agent-loop runtime — the agent loop lives
 in the harness and drives this box through `exec_sandbox`.

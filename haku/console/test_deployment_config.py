@@ -15,7 +15,7 @@ def test_deployed_console_config_is_valid() -> None:
     config = ConsoleConfigFile.model_validate(raw)
 
     profiles = {profile.id: profile for profile in config.access_profiles}
-    assert profiles["haku"].in_process_server_ids == {"haku_conversations", "kubernetes"}
+    assert profiles["haku"].in_process_server_ids == {"haku_conversations", "kubernetes", "sandbox"}
 
     assert config.kubernetes_authorization is not None
     subjects = config.kubernetes_authorization.subjects_by_access_profile
@@ -24,7 +24,20 @@ def test_deployed_console_config_is_valid() -> None:
     assert subjects["public-coder"].username == "haku:access-profile:public-coder"
     assert subjects["public-coder"].groups == ("haku:access-profile:public-coder", "system:authenticated")
 
+    # Listing an in-process server and configuring what it serves are one decision recorded in two
+    # places: without `agent_sandbox` nothing registers `sandbox`, and startup fails
+    # `validate_in_process_server_bindings` rather than quietly offering a server that cannot run.
+    server_ids = {server.id for server in config.mcp.servers}
+    assert ("sandbox" in server_ids) == (config.agent_sandbox is not None)
+
     policies = {policy["id"]: policy for policy in raw["auto_approval_policies"]}
+    # A policy naming a server the catalog does not declare governs nothing at all, and does so
+    # silently — renaming a server would leave its approvals behind without failing anything.
+    for policy in raw["auto_approval_policies"]:
+        named = set(policy["tools"]) if policy["type"] == "exact_tools" else set()
+        if (server := policy.get("server")) is not None:
+            named.add(server)
+        assert named <= server_ids, policy["id"]
     assert policies["kubernetes_reads"]["tools"] == {"kubernetes": ["can_i", "list_grants", "get_grant"]}
     assert "kubernetes_reads" in policies["haku_v1"]["policies"]
     assert "kubernetes_reads" in policies["public_coder_safe_reads"]["policies"]
