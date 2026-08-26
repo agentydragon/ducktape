@@ -131,13 +131,28 @@ let
     ]
     ++ [ nodejs ];
 
-  # The preload imports undici. Put it beside the gateway's node_modules so
-  # Node's ESM resolver finds the dependency exactly as it did in /app on the
-  # old image. The symlink keeps the dependency closure shared.
+  # The proxy preload imports `undici` (EnvHttpProxyAgent + setGlobalDispatcher).
+  # nix-openclaw's npm gateway hoists undici out of node_modules/openclaw -- the
+  # beta ships no npm-shrinkwrap to nest it, unlike the stable release the
+  # public-coder image consumes -- so it is NOT in ${gateway}/lib/openclaw/
+  # node_modules. Fetch it standalone (version pinned to npm_wrapper's lock) and
+  # place it beside the preload. setGlobalDispatcher writes undici's shared global
+  # symbol, so this separate instance still redirects the gateway's own bundled
+  # fetch through the proxy.
+  undici = pkgs.runCommand "undici-8.9.0" { } ''
+    mkdir -p "$out"
+    tar -xzf ${
+      pkgs.fetchurl {
+        url = "https://registry.npmjs.org/undici/-/undici-8.9.0.tgz";
+        hash = "sha256-9VSrs+k1LgS8MlIIBmolwikWPYQIux1RYds9eTRF1pw=";
+      }
+    } -C "$out" --strip-components=1
+  '';
+
   proxySetup = pkgs.runCommand "openclaw-spike-proxy-setup" { } ''
-    mkdir -p "$out/lib/openclaw"
+    mkdir -p "$out/lib/openclaw/node_modules"
     cp ${../../openclaw/proxy-setup.mjs} "$out/lib/openclaw/proxy-setup.mjs"
-    ln -s ${gateway}/lib/openclaw/node_modules "$out/lib/openclaw/node_modules"
+    ln -s ${undici} "$out/lib/openclaw/node_modules/undici"
   '';
 
   path = pkgs.lib.makeBinPath ([ gateway ] ++ tools);
