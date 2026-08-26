@@ -406,8 +406,8 @@ class ConsoleConfigFile(BaseModel):
     kubernetes_grant_max_lifetime_seconds: int = Field(default=3600, ge=1, le=86_400)
     # The one Agent Sandbox environment the `sandbox` in-process server hands out: which warm pool
     # it claims from and the reviewed bootstrap each claim runs. Unset → the server is not offered.
-    # Its `contract_hash` identifies claims created under this exact environment, so an edit here
-    # makes live claims unusable until they are disposed (see haku/sandbox/TODO.md).
+    # Editing this keeps live claims usable; a claim whose recorded pod properties no longer match
+    # is reported in its `warnings` rather than refused (see haku/sandbox/README.md).
     agent_sandbox: SandboxEnvironmentConfig | None = None
 
     @property

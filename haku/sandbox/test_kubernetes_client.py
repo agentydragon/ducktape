@@ -15,16 +15,19 @@ from kubernetes_asyncio.client import ApiException
 from haku.sandbox.config import SandboxEnvironmentConfig
 from haku.sandbox.kubernetes_client import (
     API_VERSION,
+    BOOTSTRAP_HASH_ANNOTATION,
     BOOTSTRAP_STARTED_AT_ANNOTATION,
     BOOTSTRAP_STATE_ANNOTATION,
     CLAIM_GROUP,
     CLAIMS_PLURAL,
-    CONFIG_HASH_ANNOTATION,
+    CONTAINER_ANNOTATION,
+    DEFAULT_CWD_ANNOTATION,
     MANAGED_BY_LABEL,
     MANAGED_BY_VALUE,
     POD_NAME_ANNOTATION,
     SANDBOX_GROUP,
     SANDBOXES_PLURAL,
+    WARM_POOL_ANNOTATION,
     CommandResult,
     KubernetesSandboxClient,
     _exec_handshake_error,
@@ -63,18 +66,22 @@ def _claim(
     *,
     deadline: datetime,
     bootstrap_state: str = "succeeded",
-    contract_hash: str | None = None,
+    annotations: dict[str, str] | None = None,
 ) -> dict:
+    recorded = {
+        WARM_POOL_ANNOTATION: environment.sandbox.warm_pool,
+        CONTAINER_ANNOTATION: environment.sandbox.container,
+        DEFAULT_CWD_ANNOTATION: environment.sandbox.default_cwd,
+        BOOTSTRAP_HASH_ANNOTATION: environment.bootstrap.script_digest,
+        BOOTSTRAP_STATE_ANNOTATION: bootstrap_state,
+    }
     return {
         "metadata": {
             "name": "task-one",
             "resourceVersion": "7",
             "creationTimestamp": NOW.isoformat(),
             "labels": {MANAGED_BY_LABEL: MANAGED_BY_VALUE},
-            "annotations": {
-                CONFIG_HASH_ANNOTATION: contract_hash or environment.contract_hash,
-                BOOTSTRAP_STATE_ANNOTATION: bootstrap_state,
-            },
+            "annotations": recorded | (annotations or {}),
         },
         "spec": {
             "warmPoolRef": {"name": "haku"},
@@ -133,7 +140,12 @@ async def test_provision_creates_named_delete_claim_and_adopts_ready_result(
     assert body["metadata"]["name"] == "task-one"
     assert body["spec"]["warmPoolRef"] == {"name": "haku"}
     assert body["spec"]["lifecycle"]["shutdownPolicy"] == "Delete"
-    assert body["metadata"]["annotations"][CONFIG_HASH_ANNOTATION] == environment.contract_hash
+    recorded = body["metadata"]["annotations"]
+    assert recorded[WARM_POOL_ANNOTATION] == environment.sandbox.warm_pool
+    assert recorded[CONTAINER_ANNOTATION] == environment.sandbox.container
+    assert recorded[DEFAULT_CWD_ANNOTATION] == environment.sandbox.default_cwd
+    # Per-call and lifecycle budgets describe no property of the pod, so nothing records them.
+    assert not [key for key in recorded if "ttl" in key or "timeout" in key or "bytes" in key]
 
 
 async def test_provision_adopts_matching_claim_after_create_conflict(environment: SandboxEnvironmentConfig) -> None:
@@ -149,17 +161,116 @@ async def test_provision_adopts_matching_claim_after_create_conflict(environment
     assert result.state == "ready"
 
 
-async def test_changed_configuration_is_visible_but_cannot_execute(environment: SandboxEnvironmentConfig) -> None:
-    claim = _claim(environment, deadline=NOW + timedelta(hours=8), contract_hash="old")
+async def test_diverged_bootstrap_warns_and_stays_usable(environment: SandboxEnvironmentConfig) -> None:
+    claim = _claim(
+        environment, deadline=NOW + timedelta(hours=8), annotations={BOOTSTRAP_HASH_ANNOTATION: "0123456789abcdef"}
+    )
     custom = Mock()
     custom.get_namespaced_custom_object = AsyncMock(side_effect=_route_get(claim))
     core = Mock()
     core.read_namespaced_pod = AsyncMock(return_value=_pod())
-    client = _client(environment, custom, core, Mock())
+    runner = Mock()
+    runner.run = AsyncMock(return_value=_runner_result())
+    client = _client(environment, custom, core, runner)
 
-    assert (await client.info("task-one")).state == "stale_config"
-    with pytest.raises(ToolError, match="different server configuration"):
-        await client.execute(name="task-one", script="true", cwd=None, timeout_seconds=1, max_output_bytes=100)
+    info = await client.info("task-one")
+    result = await client.execute(name="task-one", script="true", cwd=None, timeout_seconds=1, max_output_bytes=100)
+
+    assert info.state == "ready"
+    assert [warning.kind for warning in info.warnings] == ["bootstrap_script_changed"]
+    assert "0123456789abcdef" in info.warnings[0].detail
+    assert environment.bootstrap.script_digest in info.warnings[0].detail
+    assert result.stdout == "ok"
+
+
+async def test_pod_describing_fields_each_warn_by_kind(environment: SandboxEnvironmentConfig) -> None:
+    claim = _claim(
+        environment,
+        deadline=NOW + timedelta(hours=8),
+        annotations={
+            WARM_POOL_ANNOTATION: "retired-pool",
+            CONTAINER_ANNOTATION: "old-workspace",
+            DEFAULT_CWD_ANNOTATION: "/workspace/old",
+        },
+    )
+    custom = Mock()
+    custom.get_namespaced_custom_object = AsyncMock(side_effect=_route_get(claim))
+    core = Mock()
+    core.read_namespaced_pod = AsyncMock(return_value=_pod())
+
+    info = await _client(environment, custom, core, Mock()).info("task-one")
+
+    assert info.state == "ready"
+    assert {warning.kind for warning in info.warnings} == {
+        "warm_pool_changed",
+        "container_changed",
+        "default_cwd_changed",
+    }
+
+
+async def test_claim_without_provenance_is_unknown_not_diverged(environment: SandboxEnvironmentConfig) -> None:
+    claim = _claim(environment, deadline=NOW + timedelta(hours=8))
+    claim["metadata"]["annotations"] = {BOOTSTRAP_STATE_ANNOTATION: "succeeded"}
+    custom = Mock()
+    custom.get_namespaced_custom_object = AsyncMock(side_effect=_route_get(claim))
+    core = Mock()
+    core.read_namespaced_pod = AsyncMock(return_value=_pod())
+
+    info = await _client(environment, custom, core, Mock()).info("task-one")
+
+    assert info.state == "ready"
+    assert [warning.kind for warning in info.warnings] == ["provenance_unknown"]
+
+
+async def test_unknown_annotations_are_ignored(environment: SandboxEnvironmentConfig) -> None:
+    """A claim written by a newer Console must stay readable through a rolling deploy."""
+
+    claim = _claim(
+        environment, deadline=NOW + timedelta(hours=8), annotations={"haku.allegedly.works/sandbox-future": "x"}
+    )
+    custom = Mock()
+    custom.get_namespaced_custom_object = AsyncMock(side_effect=_route_get(claim))
+    core = Mock()
+    core.read_namespaced_pod = AsyncMock(return_value=_pod())
+
+    info = await _client(environment, custom, core, Mock()).info("task-one")
+
+    assert info.state == "ready"
+    assert info.warnings == []
+
+
+async def test_unbootstrapped_claim_does_not_warn_about_the_script(environment: SandboxEnvironmentConfig) -> None:
+    """Nothing has run yet, so the current script is what the claim will get."""
+
+    claim = _claim(environment, deadline=NOW + timedelta(hours=8), bootstrap_state="pending")
+    del claim["metadata"]["annotations"][BOOTSTRAP_HASH_ANNOTATION]
+    custom = Mock()
+    custom.get_namespaced_custom_object = AsyncMock(side_effect=_route_get(claim))
+    core = Mock()
+    core.read_namespaced_pod = AsyncMock(return_value=_pod())
+
+    info = await _client(environment, custom, core, Mock()).info("task-one")
+
+    assert info.warnings == []
+
+
+async def test_bootstrap_records_the_script_it_ran(environment: SandboxEnvironmentConfig) -> None:
+    claim = _claim(environment, deadline=NOW + timedelta(hours=8), bootstrap_state="pending")
+    del claim["metadata"]["annotations"][BOOTSTRAP_HASH_ANNOTATION]
+    custom = Mock()
+    custom.create_namespaced_custom_object = AsyncMock(return_value=claim)
+    custom.get_namespaced_custom_object = AsyncMock(side_effect=_route_get(claim))
+    custom.patch_namespaced_custom_object = AsyncMock()
+    core = Mock()
+    core.read_namespaced_pod = AsyncMock(return_value=_pod())
+    runner = Mock()
+    runner.run = AsyncMock(return_value=_runner_result())
+
+    await _client(environment, custom, core, runner).provision("task-one")
+
+    started = custom.patch_namespaced_custom_object.await_args_list[0].args[5]["metadata"]["annotations"]
+    assert started[BOOTSTRAP_STATE_ANNOTATION] == "running"
+    assert started[BOOTSTRAP_HASH_ANNOTATION] == environment.bootstrap.script_digest
 
 
 async def test_exec_renews_near_deadline_before_running(environment: SandboxEnvironmentConfig) -> None:

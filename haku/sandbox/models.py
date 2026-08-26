@@ -22,8 +22,20 @@ SandboxName = Annotated[
     ),
 ]
 
-SandboxState = Literal["provisioning", "ready", "unhealthy", "expired", "stale_config"]
+SandboxState = Literal["provisioning", "ready", "unhealthy", "expired"]
 BootstrapState = Literal["pending", "running", "succeeded", "failed"]
+SandboxWarningKind = Literal[
+    "warm_pool_changed", "container_changed", "default_cwd_changed", "bootstrap_script_changed", "provenance_unknown"
+]
+
+
+class SandboxWarning(BaseModel):
+    """One non-fatal divergence between the running sandbox and current configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: SandboxWarningKind = Field(description="Enumerable divergence category, for scanning a page of sandboxes.")
+    detail: str = Field(description="What the claim records and what the current configuration names.")
 
 
 class SandboxInfo(BaseModel):
@@ -41,6 +53,14 @@ class SandboxInfo(BaseModel):
     bootstrap_state: BootstrapState
     reason: str | None = None
     message: str | None = None
+    warnings: list[SandboxWarning] = Field(
+        default_factory=list,
+        description=(
+            "Ways this sandbox no longer matches the current configuration. Empty means no known "
+            "divergence. The sandbox stays usable regardless; deciding whether the skew matters is "
+            "the caller's."
+        ),
+    )
 
 
 class SandboxExecResult(BaseModel):

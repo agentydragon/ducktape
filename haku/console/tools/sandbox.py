@@ -71,8 +71,10 @@ def build_mcp(client: SandboxClient, environment: SandboxEnvironmentConfig) -> F
         Use this before executing work. The call waits for Agent Sandbox allocation, Pod readiness,
         and bootstrap, but may return ``state=provisioning`` or ``state=ready`` with
         ``bootstrap_state=running`` if the configured wait budget expires; call
-        ``get_sandbox_info`` or retry this idempotent tool. A same-named foreign or
-        stale-configuration claim is rejected with disposal guidance.
+        ``get_sandbox_info`` or retry this idempotent tool. A same-named foreign claim is rejected.
+        An existing claim whose recorded environment no longer matches the current configuration is
+        still resumed; the mismatch is reported in ``warnings`` for you to weigh against the work at
+        hand, and ``dispose_sandbox`` is how you act on it.
         """
 
         return await client.provision(name)
@@ -115,7 +117,10 @@ def build_mcp(client: SandboxClient, environment: SandboxEnvironmentConfig) -> F
         Use this to poll provisioning, diagnose bootstrap failure, or confirm readiness and expiry
         before more work. The response combines claim, assigned Sandbox, Pod, target-container, and
         bootstrap state without exposing raw manifests, environment variables, or secrets. Missing
-        and foreign claims are actionable MCP errors.
+        and foreign claims are actionable MCP errors. ``warnings`` names each way the running
+        sandbox no longer matches the current configuration — a different bootstrap script, warm
+        pool, container, or default working directory, or a claim too old to record them. These
+        never block use; decide per warning whether to keep working or dispose and reprovision.
         """
 
         return await client.info(name)
@@ -131,8 +136,10 @@ def build_mcp(client: SandboxClient, environment: SandboxEnvironmentConfig) -> F
         """List Console's managed sandboxes as one bounded page.
 
         Use this to discover names and current lifecycle state; use ``get_sandbox_info`` for a
-        focused follow-up. Pass the returned ``continue_token`` unchanged to fetch the next page.
-        Only service-owned claims are returned, and raw Kubernetes objects and secrets are omitted.
+        focused follow-up. Each entry carries the same ``warnings`` as ``get_sandbox_info``, so a
+        page can be scanned by warning ``kind`` for sandboxes that have drifted from the current
+        configuration. Pass the returned ``continue_token`` unchanged to fetch the next page. Only
+        service-owned claims are returned, and raw Kubernetes objects and secrets are omitted.
         """
 
         return await client.list(limit=limit, continue_token=continue_token)

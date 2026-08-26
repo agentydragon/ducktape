@@ -9,7 +9,7 @@ from mcp.types import Tool
 
 from haku.console.tools.sandbox import build_mcp
 from haku.sandbox.config import SandboxEnvironmentConfig
-from haku.sandbox.models import DisposeSandboxResult, SandboxExecResult, SandboxInfo, SandboxListPage
+from haku.sandbox.models import DisposeSandboxResult, SandboxExecResult, SandboxInfo, SandboxListPage, SandboxWarning
 from mcp_infra.exec.models import Exited
 
 NOW = datetime(2026, 7, 22, 12, 0, tzinfo=UTC)
@@ -34,7 +34,7 @@ def _environment(*, max_exec_timeout_seconds: int = 300, max_output_bytes: int =
     )
 
 
-def _info(name: str = "task-one") -> SandboxInfo:
+def _info(name: str = "task-one", warnings: list[SandboxWarning] | None = None) -> SandboxInfo:
     return SandboxInfo(
         name=name,
         state="ready",
@@ -43,6 +43,7 @@ def _info(name: str = "task-one") -> SandboxInfo:
         bootstrap_state="succeeded",
         sandbox_name="haku-abcde",
         pod_name="haku-abcde",
+        warnings=warnings or [],
     )
 
 
@@ -117,6 +118,19 @@ async def test_exec_dispatches_bash_inputs_in_seconds() -> None:
         timeout_seconds=30,
         max_output_bytes=4096,
     )
+
+
+async def test_divergence_reaches_the_agent_as_a_non_fatal_warning() -> None:
+    warning = SandboxWarning(kind="bootstrap_script_changed", detail="claim records bootstrap script digest 'abc'")
+    client = _client()
+    client.info = AsyncMock(return_value=_info(warnings=[warning]))
+
+    async with Client(build_mcp(client, _environment())) as mcp_client:
+        result = await mcp_client.call_tool("get_sandbox_info", {"name": "task-one"})
+
+    assert not result.is_error
+    assert result.data.state == "ready"
+    assert [(entry.kind, entry.detail) for entry in result.data.warnings] == [(warning.kind, warning.detail)]
 
 
 if __name__ == "__main__":

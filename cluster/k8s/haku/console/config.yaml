@@ -412,9 +412,10 @@ kubernetes_authorization:
 kubernetes_grant_max_lifetime_seconds: 3600
 #
 # The one Agent Sandbox environment the `sandbox` server hands out: the Haku pool in
-# cluster/k8s/haku/workspaces/ and the reviewed bootstrap each claim runs. `contract_hash` over
-# this block identifies claims created under it, so editing it makes live claims unusable until
-# they are disposed (haku/sandbox/TODO.md).
+# cluster/k8s/haku/workspaces/ and the reviewed bootstrap each claim runs. Each claim records the
+# pod-describing fields it was created for, so editing one of those leaves live claims usable and
+# flags them in `warnings`; the budgets below are read live and are never recorded
+# (haku/sandbox/README.md).
 agent_sandbox:
   sandbox:
     namespace: haku-sandbox

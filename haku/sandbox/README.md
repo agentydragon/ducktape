@@ -38,8 +38,15 @@ All durations are integer seconds. The initial TTL and bootstrap are fixed
 deployment policy. Before every exec the client guarantees at least
 `exec_ttl_extension_seconds` remain without shortening a later deadline.
 
-`contract_hash` over that block identifies claims created under it, so an edit makes
-live claims unusable until they are disposed — see <TODO.md>.
+Each claim records the properties of the box it was created for — `warm_pool`,
+`container`, `default_cwd`, and a digest of the bootstrap script that actually ran —
+as `haku.allegedly.works/sandbox-*` annotations. The rest of the block is per-call or
+lifecycle policy, read live from the current configuration and never recorded. When a
+recorded property no longer matches, `get_sandbox_info` and `list_sandboxes` report it
+in `warnings` and the claim stays usable; disposing it is the caller's call. A claim
+older than these annotations, or one carrying annotations this Console does not know,
+is reported as unknown rather than diverged, so a rolling deploy neither rejects nor
+misreads its own claims.
 
 ## External prerequisites
 

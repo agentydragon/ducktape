@@ -18,7 +18,10 @@ wait; the caller polls `get_sandbox_info` or retries provisioning.
 - `exec_sandbox` accepts Bash text, an optional working directory, and explicit
   timeout/output limits. Nonzero exit status is returned as data.
 - `get_sandbox_info` and `list_sandboxes` expose compact derived state, never
-  raw manifests, environment variables, credentials, or command output.
+  raw manifests, environment variables, credentials, or command output. Each
+  carries a `warnings` list of non-fatal divergences, every entry an enumerable
+  `kind` plus a `detail` naming what the claim records and what the current
+  configuration names.
 - `dispose_sandbox` deletes only claims labeled as Console-owned.
 
 All time quantities use seconds. Every exec first confirms a deadline at least
@@ -28,10 +31,12 @@ bootstrap lifecycle directly; the two are not collapsed into a synthetic state.
 
 ## Retry and failure behavior
 
-Claim names are idempotency keys. A create conflict adopts only a service-owned
-claim bearing the current environment contract hash. Configuration drift is
-visible through read tools but blocks provisioning and execution until the
-claim is disposed and recreated.
+Claim names are idempotency keys. A create conflict adopts any service-owned
+claim of that name. Configuration drift never blocks provisioning or execution:
+a claim records only the properties that describe its pod, and a divergence in
+one of them is reported as a warning on the read tools. The running box, its
+checkout, and its caches survive a configuration edit; disposing and
+reprovisioning is a decision the caller makes with the warning in hand.
 
 Bootstrap scripts are reviewed and run once per claim. Failure leaves the claim
 available for inspection, diagnostic exec, or disposal, but provisioning never
@@ -56,3 +61,7 @@ as failed.
 Multiple environment profiles, suspend/resume, interactive terminals, file
 transfer, port forwarding, and log streaming are intentionally not part of v1.
 Deployment manifests and RBAC stay outside this package.
+
+Pod image skew is not reported. Reading the pool's current template needs API
+access this package's Role does not grant, so the comparison cannot be made from
+here; see <../TODO.md>.

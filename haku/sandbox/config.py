@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -35,6 +34,16 @@ class BootstrapConfig(BaseModel):
     timeout_seconds: int = Field(gt=0, le=3600)
     script: str = Field(min_length=1)
 
+    @property
+    def script_digest(self) -> str:
+        """Identity of the script text, stamped on a claim when its bootstrap runs.
+
+        Truncated because it is only ever compared for equality and is quoted verbatim into
+        agent-facing warnings, where a full SHA-256 is noise.
+        """
+
+        return hashlib.sha256(self.script.encode()).hexdigest()[:16]
+
 
 class SandboxEnvironmentConfig(BaseModel):
     """Non-secret deploy configuration for that environment and its reviewed bootstrap."""
@@ -54,10 +63,3 @@ class SandboxEnvironmentConfig(BaseModel):
         if self.sandbox.exec_ttl_extension_seconds < self.sandbox.max_exec_timeout_seconds:
             raise ValueError("sandbox.exec_ttl_extension_seconds must be at least sandbox.max_exec_timeout_seconds")
         return self
-
-    @property
-    def contract_hash(self) -> str:
-        """Stable identity for claims created under this exact environment contract."""
-
-        payload = json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256(payload.encode()).hexdigest()

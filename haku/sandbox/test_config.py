@@ -29,21 +29,21 @@ RAW_CONFIG: dict[str, Any] = {
 }
 
 
-def test_environment_uses_seconds_and_has_stable_contract_hash() -> None:
-    first = SandboxEnvironmentConfig.model_validate(RAW_CONFIG)
-    second = SandboxEnvironmentConfig.model_validate(RAW_CONFIG)
-
-    assert first.sandbox.initial_ttl_seconds == 28_800
-    assert first.contract_hash == second.contract_hash
-    assert len(first.contract_hash) == 64
+def _digest(raw: dict[str, Any]) -> str:
+    return SandboxEnvironmentConfig.model_validate(raw).bootstrap.script_digest
 
 
-def test_contract_hash_changes_with_bootstrap() -> None:
-    first = SandboxEnvironmentConfig.model_validate(RAW_CONFIG)
-    changed = deepcopy(RAW_CONFIG)
-    changed["bootstrap"]["script"] = "echo changed"
+def test_script_digest_identifies_the_script_and_nothing_else() -> None:
+    rescripted = deepcopy(RAW_CONFIG)
+    rescripted["bootstrap"]["script"] = "echo changed"
+    # A per-call ceiling cannot change what a running box was bootstrapped with, so it must not
+    # move the digest a live claim is judged against.
+    retuned = deepcopy(RAW_CONFIG)
+    retuned["sandbox"]["max_output_bytes"] = 50_000
 
-    assert first.contract_hash != SandboxEnvironmentConfig.model_validate(changed).contract_hash
+    assert _digest(RAW_CONFIG) == _digest(deepcopy(RAW_CONFIG))
+    assert _digest(RAW_CONFIG) != _digest(rescripted)
+    assert _digest(RAW_CONFIG) == _digest(retuned)
 
 
 def test_initial_ttl_must_cover_provisioning_and_bootstrap() -> None:

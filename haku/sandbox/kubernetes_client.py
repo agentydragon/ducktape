@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import shlex
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from types import TracebackType
@@ -27,6 +27,8 @@ from haku.sandbox.models import (
     SandboxInfo,
     SandboxListPage,
     SandboxState,
+    SandboxWarning,
+    SandboxWarningKind,
 )
 from mcp_infra.exec.models import ExecStream, Exited, Killed, TimedOut, TruncatedStream
 from util.kubernetes import CustomObjectsClient
@@ -45,7 +47,10 @@ MANAGED_BY_LABEL = "app.kubernetes.io/managed-by"
 # value rather than a name: changing it orphans live claims, which then match nothing and can
 # be neither adopted nor disposed. It still reads "-mcp" from when this ran as its own service.
 MANAGED_BY_VALUE = "haku-sandbox-mcp"
-CONFIG_HASH_ANNOTATION = "haku.allegedly.works/sandbox-config-hash"
+WARM_POOL_ANNOTATION = "haku.allegedly.works/sandbox-warm-pool"
+CONTAINER_ANNOTATION = "haku.allegedly.works/sandbox-container"
+DEFAULT_CWD_ANNOTATION = "haku.allegedly.works/sandbox-default-cwd"
+BOOTSTRAP_HASH_ANNOTATION = "haku.allegedly.works/sandbox-bootstrap-hash"
 BOOTSTRAP_STATE_ANNOTATION = "haku.allegedly.works/sandbox-bootstrap-state"
 BOOTSTRAP_STARTED_AT_ANNOTATION = "haku.allegedly.works/sandbox-bootstrap-started-at"
 BOOTSTRAP_COMPLETED_AT_ANNOTATION = "haku.allegedly.works/sandbox-bootstrap-completed-at"
@@ -62,6 +67,21 @@ _FATAL_ALLOCATION_REASONS = frozenset(
         "WarmPoolNotFound",
     }
 )
+
+
+@dataclass(frozen=True, slots=True)
+class _ProvenanceField:
+    """One annotated property of the box a claim was created for, and its configured counterpart.
+
+    Only properties that genuinely describe the running pod are recorded. Per-call and lifecycle
+    budgets (output and exec ceilings, TTLs, provisioning timeout) are read live from the current
+    configuration and are never grounds to consider a claim divergent.
+    """
+
+    kind: SandboxWarningKind
+    annotation: str
+    description: str
+    configured: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -256,15 +276,10 @@ class KubernetesSandboxClient:
         await self._api_client.close()
 
     async def provision(self, name: str) -> SandboxInfo:
-        claim = await self._create_or_adopt_claim(name)
-        self._require_current_contract(claim)
+        await self._create_or_adopt_claim(name)
         deadline = asyncio.get_running_loop().time() + self._environment.sandbox.provisioning_timeout_seconds
         while True:
             info = await self.info(name)
-            if info.state == "stale_config":
-                raise ToolError(
-                    f"sandbox {name!r} was created with different server configuration; dispose and recreate it"
-                )
             if info.state == "unhealthy" and info.reason in _FATAL_ALLOCATION_REASONS:
                 raise ToolError(f"sandbox {name!r} provisioning failed: {info.reason}: {info.message or ''}".rstrip())
             if info.state == "ready" and info.bootstrap_state in {"succeeded", "failed"}:
@@ -321,25 +336,17 @@ class KubernetesSandboxClient:
         expires_at = _claim_expiry(claim)
         created_at = _metadata_timestamp(claim, "creationTimestamp")
         bootstrap_state = self._bootstrap_state(claim)
+        warnings = self._divergences(claim, bootstrap_state)
         if expires_at <= self._now():
             return _info(
                 name,
                 "expired",
                 expires_at,
                 bootstrap_state,
+                warnings,
                 created_at=created_at,
                 reason="ClaimExpired",
                 message="The sandbox deadline has passed.",
-            )
-        if not self._matches_current_contract(claim):
-            return _info(
-                name,
-                "stale_config",
-                expires_at,
-                bootstrap_state,
-                created_at=created_at,
-                reason="ConfigurationChanged",
-                message="Dispose and recreate this sandbox before provisioning or executing.",
             )
 
         claim_ready = _condition(claim, "Ready")
@@ -349,7 +356,14 @@ class KubernetesSandboxClient:
         if sandbox_name is None:
             state: SandboxState = "unhealthy" if reason in _FATAL_ALLOCATION_REASONS else "provisioning"
             return _info(
-                name, state, expires_at, bootstrap_state, created_at=created_at, reason=reason, message=message
+                name,
+                state,
+                expires_at,
+                bootstrap_state,
+                warnings,
+                created_at=created_at,
+                reason=reason,
+                message=message,
             )
 
         sandbox = await self._get_custom(SANDBOX_GROUP, SANDBOXES_PLURAL, sandbox_name, "inspect Sandbox")
@@ -359,6 +373,7 @@ class KubernetesSandboxClient:
                 "unhealthy",
                 expires_at,
                 bootstrap_state,
+                warnings,
                 created_at=created_at,
                 sandbox_name=sandbox_name,
                 reason="SandboxMissing",
@@ -375,6 +390,7 @@ class KubernetesSandboxClient:
                     "provisioning",
                     expires_at,
                     bootstrap_state,
+                    warnings,
                     created_at=created_at,
                     sandbox_name=sandbox_name,
                     pod_name=pod_name,
@@ -394,6 +410,7 @@ class KubernetesSandboxClient:
                 "provisioning",
                 expires_at,
                 bootstrap_state,
+                warnings,
                 created_at=created_at,
                 sandbox_name=sandbox_name,
                 pod_name=pod_name,
@@ -405,6 +422,7 @@ class KubernetesSandboxClient:
             "ready",
             expires_at,
             bootstrap_state,
+            warnings,
             created_at=created_at,
             healthy=True,
             sandbox_name=sandbox_name,
@@ -462,7 +480,9 @@ class KubernetesSandboxClient:
                 "name": name,
                 "labels": {MANAGED_BY_LABEL: MANAGED_BY_VALUE},
                 "annotations": {
-                    CONFIG_HASH_ANNOTATION: self._environment.contract_hash,
+                    WARM_POOL_ANNOTATION: self._environment.sandbox.warm_pool,
+                    CONTAINER_ANNOTATION: self._environment.sandbox.container,
+                    DEFAULT_CWD_ANNOTATION: self._environment.sandbox.default_cwd,
                     BOOTSTRAP_STATE_ANNOTATION: "pending",
                 },
             },
@@ -487,11 +507,17 @@ class KubernetesSandboxClient:
     async def _run_bootstrap(self, name: str, info: SandboxInfo) -> SandboxInfo:
         if info.pod_name is None:
             raise ToolError(f"sandbox {name!r} has no ready pod for bootstrap")
+        bootstrap = self._environment.bootstrap
+        # Stamped from the script about to run, not at claim creation: until the bootstrap starts,
+        # the claim will be set up by whatever config is current, so there is nothing to diverge from.
         await self._patch_annotations(
             name,
-            {BOOTSTRAP_STATE_ANNOTATION: "running", BOOTSTRAP_STARTED_AT_ANNOTATION: _format_timestamp(self._now())},
+            {
+                BOOTSTRAP_STATE_ANNOTATION: "running",
+                BOOTSTRAP_STARTED_AT_ANNOTATION: _format_timestamp(self._now()),
+                BOOTSTRAP_HASH_ANNOTATION: bootstrap.script_digest,
+            },
         )
-        bootstrap = self._environment.bootstrap
         result = await self._exec_runner.run(
             pod_name=info.pod_name,
             namespace=self._environment.sandbox.namespace,
@@ -522,7 +548,6 @@ class KubernetesSandboxClient:
             if claim is None:
                 raise ToolError(f"sandbox {name!r} was not found; provision it first")
             self._require_owned(claim, name)
-            self._require_current_contract(claim)
             current = _claim_expiry(claim)
             now = self._now()
             if current <= now:
@@ -588,16 +613,62 @@ class KubernetesSandboxClient:
         if labels.get(MANAGED_BY_LABEL) != MANAGED_BY_VALUE:
             raise ToolError(f"SandboxClaim {name!r} exists but is not owned by this MCP server")
 
-    def _matches_current_contract(self, claim: dict[str, Any]) -> bool:
-        annotations = claim.get("metadata", {}).get("annotations", {}) or {}
-        return annotations.get(CONFIG_HASH_ANNOTATION) == self._environment.contract_hash
-
-    def _require_current_contract(self, claim: dict[str, Any]) -> None:
-        if not self._matches_current_contract(claim):
-            name = _nested_string(claim, "metadata", "name") or "<unknown>"
-            raise ToolError(
-                f"sandbox {name!r} was created with different server configuration; dispose and recreate it"
+    # Annotated as tuples because `list` resolves to this class's `list` method in a signature.
+    def _provenance_fields(self, bootstrap_state: BootstrapState) -> tuple[_ProvenanceField, ...]:
+        sandbox = self._environment.sandbox
+        fields = [
+            _ProvenanceField("warm_pool_changed", WARM_POOL_ANNOTATION, "warm pool", sandbox.warm_pool),
+            _ProvenanceField("container_changed", CONTAINER_ANNOTATION, "container", sandbox.container),
+            _ProvenanceField(
+                "default_cwd_changed", DEFAULT_CWD_ANNOTATION, "default working directory", sandbox.default_cwd
+            ),
+        ]
+        if bootstrap_state != "pending":
+            fields.append(
+                _ProvenanceField(
+                    "bootstrap_script_changed",
+                    BOOTSTRAP_HASH_ANNOTATION,
+                    "bootstrap script digest",
+                    self._environment.bootstrap.script_digest,
+                )
             )
+        return tuple(fields)
+
+    def _divergences(self, claim: dict[str, Any], bootstrap_state: BootstrapState) -> tuple[SandboxWarning, ...]:
+        """Report how the claim's recorded environment differs from the configured one.
+
+        Annotations this Console does not know are ignored rather than rejected, so a claim written
+        by a newer replica during a rolling deploy stays readable.
+        """
+
+        annotations = claim.get("metadata", {}).get("annotations", {}) or {}
+        warnings: list[SandboxWarning] = []
+        unrecorded: list[str] = []
+        for provenance in self._provenance_fields(bootstrap_state):
+            recorded = annotations.get(provenance.annotation)
+            if recorded is None:
+                unrecorded.append(provenance.description)
+            elif str(recorded) != provenance.configured:
+                warnings.append(
+                    SandboxWarning(
+                        kind=provenance.kind,
+                        detail=(
+                            f"claim records {provenance.description} {str(recorded)!r}; "
+                            f"configuration now names {provenance.configured!r}"
+                        ),
+                    )
+                )
+        if unrecorded:
+            warnings.append(
+                SandboxWarning(
+                    kind="provenance_unknown",
+                    detail=(
+                        f"claim records no {', '.join(unrecorded)}, so whether it matches the current "
+                        "configuration is unknown"
+                    ),
+                )
+            )
+        return tuple(warnings)
 
     def _bootstrap_state(self, claim: dict[str, Any]) -> BootstrapState:
         """Treat an interrupted bootstrap as failed after its execution budget."""
@@ -733,6 +804,7 @@ def _info(
     state: SandboxState,
     expires_at: datetime,
     bootstrap_state: BootstrapState,
+    warnings: Sequence[SandboxWarning],
     *,
     created_at: datetime | None = None,
     healthy: bool = False,
@@ -752,6 +824,7 @@ def _info(
         bootstrap_state=bootstrap_state,
         reason=reason,
         message=message,
+        warnings=warnings,
     )
 
 
