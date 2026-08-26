@@ -37,15 +37,30 @@ class KyvernoApplyResult:
 _SUMMARY_RE = re.compile(r"pass:\s*(\d+),\s*fail:\s*(\d+),\s*warn:\s*(\d+),\s*error:\s*(\d+),\s*skip:\s*(\d+)")
 
 
-def apply_policy(policy_path: Path, resource_path: Path) -> KyvernoApplyResult:
-    """Run `kyverno apply` against a resource, parse summary and mutated output."""
+def apply_policy(policy_path: Path, resource_path: Path, set_vars: dict[str, str] | None = None) -> KyvernoApplyResult:
+    """Run `kyverno apply` against a resource, parse summary and mutated output.
+
+    `set_vars` feeds `--set name=value` pairs into the run. `kyverno apply` unconditionally
+    disables `context[].apiCall` loading outside `--cluster` mode (verified against this
+    pinned CLI: passing the apiCall's target as an extra `--resource` has no effect, and the
+    engine logs "disabled loading of APICall context entry" regardless) -- so a policy whose
+    precondition depends on an apiCall-populated variable can only be exercised offline by
+    supplying that variable's value directly, keyed by the same name the `context` entry
+    would have bound it to.
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
-        result = subprocess.run(
-            [_kyverno_bin(), "apply", str(policy_path), "--resource", str(resource_path), "-o", tmpdir],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        args: list[str | Path] = [
+            _kyverno_bin(),
+            "apply",
+            str(policy_path),
+            "--resource",
+            str(resource_path),
+            "-o",
+            tmpdir,
+        ]
+        if set_vars:
+            args += ["--set", ",".join(f"{name}={value}" for name, value in set_vars.items())]
+        result = subprocess.run(args, check=False, capture_output=True, text=True)
         stdout = result.stdout + result.stderr
         match = _SUMMARY_RE.search(stdout)
         if not match:
