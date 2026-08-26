@@ -3,6 +3,20 @@
 Project-level TODOs for the console. Design rationale lives in `README.md`; this is the
 actionable checklist. Remove entries once done.
 
+## Extend the kubectl-passthrough redundancy check past public-coder
+
+`kubectl_passthrough_redundancy_check` (`auto_approval_policies`, `type: kubernetes_passthrough`)
+auto-denies a `kubectl-passthrough-mcp` call when the caller's own Kubernetes SAR identity already
+covers it, redirecting the Agent to its direct path instead of the operator's broader passthrough
+credential. It's scoped to `public_coder_safe_reads` only.
+
+Before adding it to `haku_v1` (or any other profile), confirm that profile's runtime actually has a
+working direct path to reach for — a verified `kubectl` (or equivalent) in its own environment, and
+instructions that actually tell it to use that (or the haku sandbox's own `kube-api-proxy`) instead
+of `kubectl-passthrough-mcp` — otherwise the redirect is just a dead end: a denial with nowhere to
+go. This matters most for Claude Code web/claude.ai-hosted sessions, whose environment setup is not
+the same as Haku's own sandbox.
+
 ## The console as a channel, not a viewer
 
 Direction set 2026-08-15: Matrix and the console frontend should be two **messaging channels**
