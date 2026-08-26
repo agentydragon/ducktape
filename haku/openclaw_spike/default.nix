@@ -115,9 +115,12 @@ let
       claude-code
       coreutils
       curl
+      gawk
       gcc
       git
+      gnugrep
       gnumake
+      gnused
       jdk_headless
       jq
       kubectl

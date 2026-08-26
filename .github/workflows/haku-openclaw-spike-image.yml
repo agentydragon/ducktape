@@ -91,12 +91,12 @@ jobs:
             claude --version
             java -version
             keytool -version
-            for command in bazel kubectl tea ruff git jq python3 rg; do
+            for command in bazel kubectl tea ruff git jq python3 rg sed awk grep; do
               command -v "$command"
             done
             # The egress proxy preload is wired via NODE_OPTIONS (a nix-store
             # path, not /app as on the old upstream-base image); confirm it exists.
-            preload="$(printf %s "$NODE_OPTIONS" | sed "s#^--import=file://##")"
+            preload="${NODE_OPTIONS#--import=file://}"
             test -f "$preload"
           '
 
