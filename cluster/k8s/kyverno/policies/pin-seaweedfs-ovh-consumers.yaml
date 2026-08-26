@@ -25,7 +25,7 @@
 #   kubectl get csinodes -o jsonpath='{.items[*].spec.drivers[?(@.name=="seaweedfs-csi-driver")].topologyKeys}'
 # which is null today (checked against v1.4.14 and current upstream v1.4.29).
 # Tracked upstream: seaweedfs/seaweedfs-csi-driver#300. Fix in progress:
-# agentydragon/seaweedfs-csi-driver#1 (this account's fork, not yet upstream).
+# seaweedfs/seaweedfs-csi-driver#301 (maintainer's own PR, not yet merged).
 #
 # Matches literal StorageClass names (seaweedfs-ovh, seaweedfs-ovh-ssd) rather
 # than the underlying `provisioner` field: simpler (no second chained
