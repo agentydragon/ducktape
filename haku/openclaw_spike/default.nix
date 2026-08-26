@@ -61,16 +61,40 @@ let
     releaseTag = "v2026.8.1-beta.3";
     releaseVersion = "2026.8.1-beta.3";
     runtimePluginVersion = "2026.8.1";
+    # a8c1973 is the *annotated tag object* for v2026.8.1-beta.3; fetchFromGitHub
+    # resolves it to the tagged commit (5831b807). Pinning the tag object is
+    # stable -- annotated tags are immutable unless force-repushed.
     rev = "a8c1973388fa2645fce83f0239b2356744a98045";
     # fetchFromGitHub tree hash for the release rev.
     hash = "sha256-BTrlg8Y88j50hS3EHDCGQhh0k9zSbZt58b2LmYMcq8w=";
-    # pnpm dependency FOD hash for this release (from the nix-openclaw
-    # from-source gateway build).
-    pnpmDepsHash = "sha256-v/iNnAuMAvIsTRJXIvB29iKAH3hb5qExytr0ADQLWLE=";
+    # pnpm dependency FOD hash for this release, built with the pnpm 11.15.1
+    # override below. PLACEHOLDER: the FOD output only exists after a build, so
+    # the first CI run fails with the real `got:` hash, which is filled in here.
+    pnpmDepsHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
   };
 
+  # nix-openclaw hardcodes pnpm 11.2.2 (nix/packages/pnpm-11.nix), but the beta's
+  # pnpm-lock.yaml is authored by pnpm 11.15.1 (lockfileVersion 9.0, and a
+  # pnpm-workspace.yaml `minimumReleaseAge` guard the older pnpm handles
+  # differently). Populating the frozen store with 11.2.2 silently omits a
+  # normally-locked registry dependency (@clack/core), so the gateway's offline
+  # `pnpm install` aborts with ERR_PNPM_NO_OFFLINE_TARBALL. Splice pnpm 11.15.1
+  # into a copy of the nix-openclaw tree and build the gateway from that. The
+  # `--replace-fail`s make an upstream pnpm bump fail loudly here rather than
+  # silently reverting the override.
+  # TODO: upstream a configurable/bumped gateway pnpm to nix-openclaw, drop this.
+  patchedNixOpenclaw = ocPkgs.runCommand "nix-openclaw-pnpm-11.15.1" { } ''
+    cp -r ${nix-openclaw} "$out"
+    chmod -R u+w "$out"
+    substituteInPlace "$out/nix/packages/pnpm-11.nix" \
+      --replace-fail 'version = "11.2.2";' 'version = "11.15.1";' \
+      --replace-fail \
+        'hash = "sha256-mcS+gx7SMYKYlRQtlnk9vnWvxTeVkzrtg2bmjczh4bg=";' \
+        'hash = "sha256-J0YGKbEBEWBOf5iIJ1O1M5iYaCDCDgoGXzpKXp59tx8=";'
+  '';
+
   gateway =
-    (import "${nix-openclaw}/nix/packages" {
+    (import "${patchedNixOpenclaw}/nix/packages" {
       pkgs = ocPkgs;
       sourceInfo = betaSourceInfo;
     }).openclaw-gateway;
