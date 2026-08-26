@@ -59,6 +59,11 @@
       "target": "//devinfra/js/debundle:debundle",
       "output": "bb-out/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle",
       "release": "debundle"
+    },
+    "aw-importer": {
+      "target": "@ducktape_activitywatch//importer:aw_importer_bin",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/external/ducktape_activitywatch+/importer/aw_importer_bin",
+      "release": "aw-importer"
     }
   },
   "releases": {
@@ -107,6 +112,10 @@
       "bazelFlags": "-c opt --@rules_rust//:extra_rustc_flag=-Cdebuginfo=1",
       "releaseMetadata": true,
       "metadataPlatform": "linux-amd64",
+      "nixPackage": false
+    },
+    "aw-importer": {
+      "tests": "@ducktape_activitywatch//importer:aw_importer_test",
       "nixPackage": false
     }
   }

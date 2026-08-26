@@ -169,6 +169,15 @@ let
     extraBuildInputs = [ pkgs.openssl ];
   };
 
+  # Instance-to-instance ActivityWatch importer: reads a device's local aw-server
+  # over REST and folds its buckets into the central one, deduping on insert.
+  # reqwest links aw-server-rust's rustls backend, so no libssl to autopatch.
+  aw-importer = mkBinaryArtifact {
+    pname = "aw-importer";
+    src = artifacts.aw-importer;
+    description = "ActivityWatch instance-to-instance importer (Rust)";
+  };
+
 in
 rec {
   inherit ducktape-util;
@@ -371,4 +380,7 @@ rec {
 }
 // lib.optionalAttrs (artifacts ? hostexecd) {
   inherit hostexecd;
+}
+// lib.optionalAttrs (artifacts ? aw-importer) {
+  inherit aw-importer;
 }
