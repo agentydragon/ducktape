@@ -68,6 +68,7 @@ pinned DBs or vice versa. This prevents cross-site write latency.
 | atuin-db               | OVH-HA                        | Yes         |
 | forgejo-db             | OVH-HA                        | Yes         |
 | langfuse-db            | OVH-HA                        | Yes         |
+| firecrawl-db           | Proxmox-single                | Yes         |
 | inventree-db           | Proxmox-single                | Yes         |
 | harbor-db              | OVH single-instance (interim) | Exception\* |
 | props-db               | OVH-HA                        | Yes         |

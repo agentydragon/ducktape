@@ -780,15 +780,18 @@ in `claude-sandbox`.
 
 ### CNPG Backup Strategy
 
-Single-instance Proxmox CNPG clusters (inventree, matrix, tandoor) rely on Proxmox ZFS
-for local reliability (checksums, snapshots). Off-site disaster recovery needed:
+Single-instance Proxmox CNPG clusters — firecrawl, inventree, tandoor — rely on
+Proxmox ZFS for local reliability (checksums, snapshots); all three are currently
+parked (suspended Flux Kustomizations). Off-site disaster recovery needed:
 
-(`harbor-db` moved to a single OVH instance and `props-db` to a 2-instance OVH-HA
-cluster — see <cnpg_conventions.md> Compliance table — so they're no longer part of
-this Proxmox-only gap.)
+(`harbor-db` moved to a single OVH instance; `matrix-db` and `props-db` moved to
+2-instance OVH-HA clusters — see <cnpg_conventions.md> Compliance table — so they're
+no longer part of this Proxmox-only gap.)
 
-- [ ] Generalize the `tofu-state` pg_dump CronJob pattern to all Proxmox CNPG clusters
-      (write dumps to OVH-hosted PVC or object storage)
+- [ ] Set up a `pg_dump` CronJob pattern for Proxmox CNPG clusters, writing dumps to
+      OVH-hosted PVC or object storage. No such CronJob exists today — the one
+      precedent (tofu-state's) was deleted 2026-06-02; see "Set up offsite tofu-state
+      backup" in Next Actions.
 - [ ] Longer term: CNPG `ScheduledBackup` + Barman to S3-compatible store (SeaweedFS
       S3 gateway, or an external cloud bucket) for continuous WAL archiving and
       point-in-time recovery
