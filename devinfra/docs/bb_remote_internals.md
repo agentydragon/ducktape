@@ -242,6 +242,16 @@ devel` fallback) both fail — `bazel-ci.yml` creates a local `devel` ref for PR
   huge because of base-commit staleness (above) can also fail outright with
   `error: cannot apply binary patch ... without full index line` when it spans
   binary-file history it shouldn't need to touch.
+- **Binary deletions are unshippable**: `generatePatches` runs `git diff --binary`
+  only for binary files it detects as _modified_; a binary file **deleted** since
+  the diff base lands in the plain-text diff as a content-less stub, and the
+  runner's `git apply` fails with `cannot apply binary patch to '<file>' without
+full index line` — every run breaks during git setup until the deleting commit
+  is pushed (so the base moves past it). This bites even with a perfectly fresh
+  base: a working tree whose staged diff deletes `.eval`/`.gz` artifacts breaks
+  the `pytest-main-check` commit hook's `bbr query`. `devinfra/bbr.py`'s
+  `check_binary_deletions()` preflights this and refuses to run
+  (`BBR_ALLOW_BINARY_DELETIONS=1` overrides).
 - **Repo-scoped Claude sessions' git `insteadOf` rewrite defeats the
   `github-no-proxy` remote**: Claude Code web sessions rewrite `origin` to a
   local git-mirroring proxy (`http://127.0.0.1:<port>/git/...`) so the cloud

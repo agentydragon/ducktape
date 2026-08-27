@@ -22,6 +22,7 @@ from devinfra.bbr import (
     _read_repo_config,
     build_command,
     check_base_branch_freshness,
+    check_binary_deletions,
     find_verb_index,
 )
 
@@ -414,6 +415,73 @@ class TestCheckBaseBranchFreshness:
         repo.config["buildbuddy.remote-bazel-default-branch"] = "devel"
         repo.set_head(base)
         assert check_base_branch_freshness(repo) is None
+
+
+def _commit_files(repo: pygit2.Repository, message: str, files: dict[str, bytes], parents: list) -> pygit2.Oid:
+    """Write files into the workdir, stage them, and commit on the current branch."""
+    workdir = Path(repo.workdir)
+    for name, content in files.items():
+        (workdir / name).write_bytes(content)
+        repo.index.add(name)
+    repo.index.write()
+    sig = pygit2.Signature("test", "test@test.com")
+    return repo.create_commit("HEAD", sig, sig, message, repo.index.write_tree(), parents)
+
+
+BINARY = b"\x00\x01binary\x00"
+
+
+class TestCheckBinaryDeletions:
+    """`check_binary_deletions` preflights the bb remote limitation that a
+    binary file deleted since the diff base produces a patch the runner's
+    `git apply` rejects (bb_remote_internals.md § Gotchas)."""
+
+    def _repo_with_files(self, tmp_path: Path, files: dict[str, bytes]) -> tuple[pygit2.Repository, pygit2.Oid]:
+        repo = pygit2.init_repository(str(tmp_path / "repo"), initial_head="feature")
+        base = _commit_files(repo, "init", files, [])
+        repo.config["buildbuddy.remote-bazel-default-branch"] = "devel"
+        repo.references.create("refs/remotes/origin/devel", base)
+        return repo, base
+
+    def test_deleted_binary_reports(self, tmp_path: Path) -> None:
+        repo, _base = self._repo_with_files(tmp_path, {"blob.bin": BINARY})
+        (Path(repo.workdir) / "blob.bin").unlink()
+
+        message = check_binary_deletions(repo)
+
+        assert message is not None
+        assert "blob.bin" in message
+        assert "origin/devel" in message
+        assert "BBR_ALLOW_BINARY_DELETIONS" in message
+
+    def test_deleted_text_file_returns_none(self, tmp_path: Path) -> None:
+        repo, _base = self._repo_with_files(tmp_path, {"notes.txt": b"line one\nline two\n"})
+        (Path(repo.workdir) / "notes.txt").unlink()
+        assert check_binary_deletions(repo) is None
+
+    def test_modified_binary_returns_none(self, tmp_path: Path) -> None:
+        """Modified (not deleted) binaries are the case bb handles via --binary."""
+        repo, _base = self._repo_with_files(tmp_path, {"blob.bin": BINARY})
+        (Path(repo.workdir) / "blob.bin").write_bytes(BINARY + b"\x02more")
+        assert check_binary_deletions(repo) is None
+
+    def test_pushed_deletion_returns_none(self, tmp_path: Path) -> None:
+        """Once the deleting commit is on the branch's tracking ref, bb bases on
+        HEAD and the deletion is no longer part of the patchset."""
+        repo, base = self._repo_with_files(tmp_path, {"blob.bin": BINARY})
+        (Path(repo.workdir) / "blob.bin").unlink()
+        repo.index.remove("blob.bin")
+        repo.index.write()
+        sig = pygit2.Signature("test", "test@test.com")
+        head = repo.create_commit("HEAD", sig, sig, "delete blob", repo.index.write_tree(), [base])
+        repo.references.create("refs/remotes/origin/feature", head)
+        assert check_binary_deletions(repo) is None
+
+    def test_no_bb_config_returns_none(self, tmp_path: Path) -> None:
+        repo = pygit2.init_repository(str(tmp_path / "repo"), initial_head="feature")
+        _commit_files(repo, "init", {"blob.bin": BINARY}, [])
+        (Path(repo.workdir) / "blob.bin").unlink()
+        assert check_binary_deletions(repo) is None
 
 
 if __name__ == "__main__":

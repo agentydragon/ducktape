@@ -142,6 +142,59 @@ def check_base_branch_freshness(repo: pygit2.Repository) -> str | None:
     )
 
 
+def _likely_diff_base(repo: pygit2.Repository) -> tuple[pygit2.Oid, str] | None:
+    """Resolve bb remote's likely diff base (commit, human name), mirroring its
+    Phase 2 logic (bb_remote_internals.md): HEAD itself when the current branch
+    is tracked and HEAD is not ahead of it, else `<default-branch>@{upstream}`.
+    None when it can't be determined locally — silence, not a guess."""
+    remote = _config_get(repo, "buildbuddy.remote-bazel-remote-name") or "origin"
+    default_branch = _config_get(repo, "buildbuddy.remote-bazel-default-branch")
+    if default_branch is None or repo.head_is_detached:
+        return None
+
+    current_tracking_ref = repo.references.get(f"refs/remotes/{remote}/{repo.head.shorthand}")
+    if current_tracking_ref is not None:
+        ahead, _ = repo.ahead_behind(repo.head.target, current_tracking_ref.target)
+        if ahead == 0:
+            return repo.head.target, "HEAD"
+
+    tracking_ref = repo.references.get(f"refs/remotes/{remote}/{default_branch}")
+    if tracking_ref is None:
+        return None
+    return tracking_ref.target, f"{remote}/{default_branch}"
+
+
+def check_binary_deletions(repo: pygit2.Repository) -> str | None:
+    """Preflight for a `bb remote` limitation: its patchset generator runs
+    `git diff --binary` only for *modified* binary files, so a binary file
+    deleted since the diff base ships as a stub patch the runner's `git apply`
+    rejects ("cannot apply binary patch without full index line"), failing
+    every run during git setup. Returns an error message (main() refuses to
+    run unless BBR_ALLOW_BINARY_DELETIONS is set), or None."""
+    if (base := _likely_diff_base(repo)) is None:
+        return None
+    base_oid, base_name = base
+
+    numstat = subprocess.run(
+        ["git", "diff", "--numstat", "--diff-filter=D", str(base_oid)],
+        cwd=repo.workdir,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    deleted_binaries = [line.split("\t", 2)[2] for line in numstat.splitlines() if line.startswith("-\t-\t")]
+    if not deleted_binaries:
+        return None
+
+    return (
+        f"bbr: the diff against bb remote's likely base ({base_name}) deletes binary "
+        f"file(s): {', '.join(deleted_binaries)}. bb's patchset cannot express a binary "
+        f"deletion, so the runner fails during git setup ('cannot apply binary patch "
+        f"without full index line'). Fix: push the commit that deletes them, so the "
+        f"base moves past the deletion. Set BBR_ALLOW_BINARY_DELETIONS=1 to try anyway."
+    )
+
+
 def _env_args(var: str) -> list[str]:
     """Parse space-separated args from an env var."""
     return shlex.split(os.environ.get(var, ""))
@@ -280,6 +333,10 @@ def main() -> None:
     if message := check_base_branch_freshness(repo):
         print(message, file=sys.stderr)
         if not os.environ.get("BBR_ALLOW_STALE_BASE"):
+            sys.exit(1)
+    if message := check_binary_deletions(repo):
+        print(message, file=sys.stderr)
+        if not os.environ.get("BBR_ALLOW_BINARY_DELETIONS"):
             sys.exit(1)
     cmd = build_command(repo, args)
 
