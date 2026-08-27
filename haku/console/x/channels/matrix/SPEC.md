@@ -2,8 +2,8 @@
 
 Matrix is one channel onto a chat session: a transport for prose, plus the notices that make a run
 legible from a phone. The console remains the session owner, the credential holder and the approval
-authority; nothing here is a store of record. Where this channel is going — one subscription, one
-reconciler per attachment — is <../../../plans/conversation_layers.md>.
+authority; nothing here is a store of record. Active redesign work — one subscription, one
+reconciler per attachment — lives in <../../../plans/conversation_layers.md>.
 
 Out of scope by decision, so it is not re-litigated: end-to-end encryption, federation, approvals
 over Matrix, and any write surface for the agent beyond its own replies.
@@ -64,9 +64,9 @@ over Matrix, and any write surface for the agent beyond its own replies.
 - **Batch order follows the homeserver's stream order** and is preserved in the rendered prompt.
 - **A batch that arrives mid-turn is rejected, not held.** The room is told it was not delivered and
   the operator sends it again; nothing queues behind a running turn. Acceptance is the
-  acknowledgement, so the watermark advances every pass. The cost, and the two richer answers that
-  would take it back — mid-turn steering, a conversation-layer queue — are in
-  <../../../plans/conversation_layers.md> § 7.
+  acknowledgement, so the watermark advances every pass. The cost is deliberate: mid-turn steering
+  and a conversation-layer queue are the richer answers that would take it back, and neither is
+  built.
 - **What a prompt answered is recorded, not rendered.** The `PROMPT_ENQUEUED` event's body names the
   prompt's origin — a closed union of the SPA and a Matrix room, required with no default, so every
   stored prompt says which. The room's arm carries the room beside the events folded into the prompt,

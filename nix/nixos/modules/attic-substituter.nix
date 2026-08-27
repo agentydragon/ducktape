@@ -8,7 +8,7 @@
 # back to local build for closures the cache can't serve. drivectl/drivefs
 # closures are not buildable on hosts (no Bazel, no source), so realization
 # of those specific paths fails when the cache is unreachable; unrelated
-# builds still proceed. See plans/token-minting-i-think-scalable-moth.md.
+# builds still proceed.
 {
   config,
   lib,

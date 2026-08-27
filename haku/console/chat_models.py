@@ -84,7 +84,7 @@ class MatrixOrigin(BaseModel):
     **Both strings are opaque to everything but the Matrix channel.** Only the channel that minted
     an origin may look inside one; **everything else compares, it never interprets**. That is what
     lets the conversation layer hold a channel's address without learning its vocabulary
-    (<plans/conversation_layers.md> § 1).
+    (<docs/chat_layers.md>).
 
     **`address` is why this is not just a ref.** One bot serves many rooms, so a bare event id
     cannot tell a sibling room's copy from this room's — and telling them apart is the whole job of

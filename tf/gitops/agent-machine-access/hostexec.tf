@@ -8,7 +8,7 @@
 # and checks the `hostexec-<run_as>-<host>` group. No RFC 8693: Authentik mints
 # a fresh token bound to the per-host provider, preserving the operator identity.
 # `hostexecd` holds no client credential — only the operator's own token has
-# value. See haku/hostexec/PLAN.md.
+# value. See haku/hostexec/README.md.
 
 # "May run as <run_as> on <host>." The operator holds all four; each name must
 # equal hostexecd's expected `hostexec-<run_as>-<host>` string exactly

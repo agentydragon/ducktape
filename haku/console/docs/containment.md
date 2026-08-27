@@ -2,10 +2,9 @@
 
 The realized design for the agent-authored console: the trusted shell frames Haku's own UI
 service and owns nothing but the boundary. This is the **current contract**, in present
-tense — the design narrative and build history live in git (the retired
-`plans/free_form_ui_iframe.md`). Haku's full security model (threat model, enforcement
-inventory, invariants) is <../../docs/security.md>; this doc is the console-side detail
-behind its inventory rows #10–#11.
+tense — the design narrative and build history live in git. Haku's full security model
+(threat model, enforcement inventory, invariants) is <../../docs/security.md>; this doc is
+the console-side detail behind its inventory rows #10–#11.
 
 ## The shape
 

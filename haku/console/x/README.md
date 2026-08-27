@@ -115,9 +115,8 @@ announces itself, so the browser one is the easy one to forget you are paying fo
 
 ### What has been lifted out of it
 
-Each is a module nothing in `session_runtime.py` reaches into
-(<../plans/conversation_layers.md> § 9). `session_store.py` is not one of them: the service calls it
-on every path, so that split is a seam and not a leaf.
+Each is a module nothing in `session_runtime.py` reaches into. `session_store.py` is not one of
+them: the service calls it on every path, so that split is a seam and not a leaf.
 
 | Path               | Role                                                                                                                                                           |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -3,7 +3,7 @@
 # bearer authenticates heartbeat/claim traffic but grants no execution authority:
 # every claimed command still carries a short-lived, single-use per-host operator
 # token, which hostexecd verifies before dropping to its `run_as` user. Trust model
-# and daemon internals: haku/hostexec/PLAN.md and haku/hostexec/hostexecd/main.rs.
+# and daemon internals: haku/hostexec/README.md and haku/hostexec/hostexecd/main.rs.
 #
 # Runs as root (it setuids to the token's `run_as`, which may be root or an
 # unprivileged user), so this unit deliberately applies NO systemd sandboxing /
