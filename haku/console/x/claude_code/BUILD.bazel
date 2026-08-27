@@ -173,7 +173,6 @@ py_test(
         ":projection",
         "//:conftest",
         "//haku/console:chat_models",
-        "//haku/console/tools:conversations",
         "//haku/console/x:conversation_events",
         "//haku/console/x/claude_code/testing:fold",
         "//util/bazel:runfiles",
