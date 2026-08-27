@@ -11,13 +11,12 @@ routes work between specialist roles and owns project-adapter details.
 Shared CLI workflows land here so planner, intake, and worker routing use the
 same command semantics:
 
-@references/cli_basics.md
+@references/cli.md
 @references/spec_editing.md
 
 Read other bundled references as needed:
 
 - `references/workflow.md` for the shared multi-agent workflow
-- `references/cli.md` for the full `debundle` command surface
 - `references/README.md` for the crate pitch + Bazel integration + Comments
 - `references/module_shape.md` for when to route to architect or lane workers
 

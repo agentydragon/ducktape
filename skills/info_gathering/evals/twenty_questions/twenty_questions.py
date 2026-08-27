@@ -39,7 +39,7 @@ from skills.info_gathering.evals.twenty_questions.prompts import (
     load_scratch_system_note,
     load_sim_prompt,
 )
-from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, RunSummary, Timeout
+from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, Player, RunSummary, Timeout
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ class _TextCaptureHandler(BaseHandler):
 class _TurnLogHandler(BaseHandler):
     """Logs a LogEntry per LLM response."""
 
-    def __init__(self, *, player: Literal["guesser", "simulator"], write_entry: Callable[[LogEntry], None]) -> None:
+    def __init__(self, *, player: Player, write_entry: Callable[[LogEntry], None]) -> None:
         self._player = player
         self._write_entry = write_entry
         self._text = ""
@@ -180,8 +180,8 @@ class _TwentyQuestionsRunner:
             nonlocal sim_action
             sim_action = SimCorrectAnswer()
 
-        agent_log = _TurnLogHandler(player="guesser", write_entry=write_entry)
-        sim_log = _TurnLogHandler(player="simulator", write_entry=write_entry)
+        agent_log = _TurnLogHandler(player=Player.GUESSER, write_entry=write_entry)
+        sim_log = _TurnLogHandler(player=Player.SIMULATOR, write_entry=write_entry)
         text_capture = _TextCaptureHandler()
 
         agent = Agent(

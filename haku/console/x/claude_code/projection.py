@@ -1,6 +1,6 @@
 """Claude CLI frames into neutral conversation events.
 
-A **reducer**: `project(state, frames)` returns the state after those frames and what they
+A **reducer**: `state.advance(frames)` returns the state after those frames and what they
 produced. Both the state and frames are Claude's; only the emitted conversation events are neutral.
 It is resumable from a cursor: a position
 in the frame log is the whole of what a fold needs to carry on from.
@@ -18,7 +18,7 @@ defensive preserves a shape the projection must tolerate.
 
 | What the wire does                                              | What this does with it                                                                                                                    |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| One block per `assistant` frame, so a message spans several      | A message is the run of frames sharing `message.id`, closed by a *different* id, a `result`, or the caller saying the stream ended — never by a clock or a batch boundary |
+| One block per `assistant` frame, so a message spans several      | A message is the run of frames sharing `message.id`, closed by a *different* id or a `result` — never by a clock, a batch boundary, or a caller declaring the stream over |
 | `stop_reason` is never set                                       | Nothing reads it; there is no "the provider said it was done" branch to be wrong                                                           |
 | A `user` frame can land between two frames of one message        | A `user` frame never closes a message. Its `FrameRange` spans the interruption, which is what a range means                                |
 | `content` is usually prose, sometimes tool names and no payload  | `content` is rendered to text whatever shape it arrived in, and the real output rides beside it as `structured` (`tool_use_result`, many per-tool shapes) |
@@ -27,8 +27,7 @@ defensive preserves a shape the projection must tolerate.
 | Frame classes and `system` subtypes exist that `protocol.md` omits | The default branch counts into `Projection.unprojected` — neither a crash nor a silent drop                                                |
 | `command_lifecycle` is not a clean triple                        | It is not read at all: turn boundaries come from `result`, so no sequence assumption exists to be violated                                 |
 
-Where an `ItemSegment` is cut is the only thing the wire and the stored log disagree about — see
-`DeltaSource`.
+How finely an `ItemSegment` is cut is a caller's choice — see `DeltaSource`.
 
 **`result.result` is not projected as prose.** It repeats the final message, so minting one from it
 would double every answer. A turn that produced no message item said nothing, which is a fact worth
@@ -94,6 +93,25 @@ class OpenToolCall:
     partial_json: str = ""
 
 
+class DeltaSource(StrEnum):
+    """Which frames a projection cuts its `ItemSegment`s from.
+
+    Granularity, not content: an item's whole text is the same prose whichever is chosen, and the
+    vocabulary already says how finely a backend cuts an increment is the adapter's business.
+
+    `STREAM_EVENTS` is what the console drives, and the only one it drives: it takes the increments
+    as they arrive and skips the completed block's own text, which those increments already
+    delivered. `COMPLETED_BLOCKS` reads the completed blocks alone and ignores every delta; it was
+    what a whole-log read of *stored* frames used, since a log truncated mid-block re-projects to
+    different text than the completed block that follows it. Nothing reads stored frames now — a
+    transcript is folded from `conversation_event` — so its remaining callers are the fixtures that
+    assert against it.
+    """
+
+    COMPLETED_BLOCKS = "completed_blocks"
+    STREAM_EVENTS = "stream_events"
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectionState:
     """Claude-private state carried between native frame batches."""
@@ -102,6 +120,34 @@ class ProjectionState:
     open_reasoning: OpenItem | None = None
     open_tool_call: OpenToolCall | None = None
     seen_call_ids: frozenset[str] = frozenset()
+
+    def advance(
+        self, frames: Iterable[RecordedFrame], *, delta_source: DeltaSource = DeltaSource.COMPLETED_BLOCKS
+    ) -> tuple[ProjectionState, Projection]:
+        """Fold frames into the state: the state after them, and what they produced.
+
+        Pure and order-dependent — the events are a function of the sequence, not of any one frame —
+        and the state holds everything that order-dependence needs, which is why a batch boundary is
+        not an event. Unknown envelopes are counted as unprojected native evidence rather than making
+        a forensic read fail.
+        """
+        projector = _Projector(
+            delta_source=delta_source,
+            open_message=self.open_message,
+            open_tool_call=self.open_tool_call,
+            seen_call_ids=set(self.seen_call_ids),
+        )
+        for frame in frames:
+            projector.fold(frame)
+        return (
+            ProjectionState(
+                open_message=projector.open_message,
+                open_reasoning=self.open_reasoning,
+                open_tool_call=projector.open_tool_call,
+                seen_call_ids=frozenset(projector.seen_call_ids),
+            ),
+            projector.projected(),
+        )
 
 
 # Frame classes that say nothing about the conversation, listed rather than discovered so that a
@@ -124,25 +170,6 @@ _IGNORED_KINDS = frozenset({"command_lifecycle", "control_request", "control_res
 _IGNORED_SYSTEM_SUBTYPES = frozenset({"thinking_tokens", "status", "init"})
 
 
-class DeltaSource(StrEnum):
-    """Which frames a projection cuts its `ItemSegment`s from.
-
-    Granularity, not content: an item's whole text is the same prose whichever is chosen, and the
-    vocabulary already says how finely a backend cuts an increment is the adapter's business.
-
-    `COMPLETED_BLOCKS` is the only honest reading of a *stored* log: most sessions emit no
-    `stream_event` at all, those that do are mostly `input_json_delta` (tool arguments, not prose),
-    they carry no identity so `haku/cli_protocol/frame_identity.py` refuses to dedupe them, and a
-    log truncated mid-block would re-project to different text than the completed block that
-    follows it — which is the determinism the whole design rests on. `STREAM_EVENTS` is what a
-    consumer holding the live wire drives: it takes the increments as they arrive and skips the
-    completed block's own text, which those increments already delivered.
-    """
-
-    COMPLETED_BLOCKS = "completed_blocks"
-    STREAM_EVENTS = "stream_events"
-
-
 @dataclass(frozen=True, slots=True)
 class RecordedFrame:
     """One row of the frame log: a CLI protocol frame and where it sits in the session.
@@ -154,51 +181,6 @@ class RecordedFrame:
 
     frame_seq: int
     payload: dict[str, Any]
-
-
-def project(
-    state: ProjectionState, frames: Iterable[RecordedFrame], *, delta_source: DeltaSource = DeltaSource.COMPLETED_BLOCKS
-) -> tuple[ProjectionState, Projection]:
-    """Fold frames into the state: the state after them, and what they produced.
-
-    Pure and order-dependent — the events are a function of the sequence, not of any one frame —
-    and the state holds everything that order-dependence needs, which is why a batch boundary is
-    not an event. Unknown envelopes are counted as unprojected native evidence rather than making
-    a forensic read fail.
-    """
-    projector = _Projector(
-        delta_source=delta_source,
-        open_message=state.open_message,
-        open_tool_call=state.open_tool_call,
-        seen_call_ids=set(state.seen_call_ids),
-    )
-    for frame in frames:
-        projector.fold(frame)
-    return (
-        ProjectionState(
-            open_message=projector.open_message,
-            open_reasoning=state.open_reasoning,
-            open_tool_call=projector.open_tool_call,
-            seen_call_ids=frozenset(projector.seen_call_ids),
-        ),
-        projector.projected(),
-    )
-
-
-def finish(state: ProjectionState) -> Projection:
-    """What ending the stream produces: an open message completed, or nothing at all.
-
-    A message still open when the frames run out is one whose turn died mid-answer, which real
-    sessions do; it completes with what it had rather than
-    being lost. Only a caller that knows no more frames are coming may say this — for one reading a
-    live wire, the next frame is the continuation.
-
-    No `DeltaSource`, and that is the shape saying something true: ending a stream reads no frame,
-    so how finely one would be cut cannot arise.
-    """
-    if (open_message := state.open_message) is None:
-        return Projection(events=(), unprojected=MappingProxyType({}))
-    return Projection(events=(_completed(open_message),), unprojected=MappingProxyType({}))
 
 
 def undelivered(text: str, delivered: str) -> str:
@@ -229,14 +211,6 @@ def _completed(open_message: OpenItem) -> MessageCompleted:
         backend_item_id=open_message.backend_item_id,
         provenance=FrameRange(open_message.opened_at_frame_seq, open_message.last_frame_seq),
     )
-
-
-def project_log(
-    frames: Iterable[RecordedFrame], *, delta_source: DeltaSource = DeltaSource.COMPLETED_BLOCKS
-) -> Projection:
-    """A whole session's frames, with nothing after them — the reader's shape of the reducer."""
-    state, projected = project(ProjectionState(), frames, delta_source=delta_source)
-    return projected.then(finish(state))
 
 
 @dataclass(slots=True)
@@ -272,8 +246,8 @@ class _Projector:
 
     def close_message(self) -> None:
         """End the open message, if there is one. Called where wire semantics say a message ends — a
-        different `message.id`, a `result`, a caller declaring the stream over — and nowhere else.
-        Running out of frames is not one of those: `project` leaves it in the state."""
+        different `message.id`, or a `result` — and nowhere else. Running out of frames is not one
+        of those: `project` leaves it in the state, and nothing may declare a stream over."""
         if (open_message := self.open_message) is None:
             return
         self.open_message = None

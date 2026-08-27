@@ -1,220 +1,88 @@
 # debundle CLI
 
-Reference for the current `debundle` CLI command surface. Future CLI
-ideas live in `TODO.md`; this file should describe commands that exist
-today.
+Cross-command semantics of the `debundle` CLI: conventions, pipelines, and
+interactions that span commands. The per-command and per-flag reference is
+the clap doc-comments themselves — `debundle <command> --help` — and the
+code wins wherever prose and binary disagree. Future CLI ideas live in
+`TODO.md`.
 
-The CLI is one binary (`bazel run @ducktape_debundle_bin//file:debundle`
-or built locally as `bazel-bin/devinfra/js/debundle/debundle`). All
-commands share the same JSON-on-stdout / structured-diagnostic-
-on-stderr convention as the rest of ducktape.
+The CLI is one binary (`bazel run @ducktape_debundle_bin//file:debundle` or
+built locally as `bazel-bin/devinfra/js/debundle/debundle`). All commands
+share the same JSON-on-stdout / structured-diagnostic-on-stderr convention
+as the rest of ducktape.
 
-## Convention: validate-by-default for mutating commands
+## Command index
 
-Every command that **modifies the spec** (`bindings assign`,
-`bindings unassign`, `bindings rename`, `modules merge`,
-`modules delete`) runs validation **by default** before
-writing changes back to disk. For commands that affect the chunk's
-factorization (anything that moves a binding between modules), that
-means the full realizability gate; for renames, it means name-
-collision detection. If validation fails the command refuses with a
-structured diagnostic (binding-pair blame for gate rejections, name
-clash for renames) and **does not modify any file**.
+- Pipeline: `run` (mutates: emits JS + reports)
+- Spec edits (mutate the modules tree):
+  `bindings {assign,unassign,rename,comment}`,
+  `modules {merge,delete,comment}`,
+  `spec {selector-codemod,synthesize-selectors}` with `--apply`
+- Read-only queries: `bindings list`, `modules {list,propose}`,
+  `spec {stats,selector-debt,match-selector,validate}`, `atoms`, `coverage`,
+  `graph-summary`, `describe <id>`, `show-source <id>`, `scc`,
+  `cluster <sym>`, `gate {list,describe,cut}`, `selector-solve`
 
-Two flags adjust the default on spec-edit commands:
+## Common arguments and env vars
 
-| Flag          | Effect                                                                                                                                                        |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| (default)     | Validate; refuse the change if invalid; apply if valid.                                                                                                       |
-| `--no-verify` | Skip validation; apply the change regardless. Escape hatch for multi-step refactors where an intermediate state is intentionally invalid. Don't use casually. |
-| `--dry-run`   | Validate (or simulate) but do not modify any file. Print the validation result + a diff summary.                                                              |
+Three common paths show up on most commands. Each accepts both a flag and an
+env var; the flag wins if both are set.
 
-`--dry-run` and `--no-verify` can be combined: show what would
-change without validating. Mostly useful when investigating _why_
-the gate would reject and you want to inspect the intermediate
-state without committing to it.
+| Flag                  | Env var                | Meaning                                                                                                                                                     |
+| --------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--graph <path>`      | `DEBUNDLE_GRAPH`       | `owner_graph.json` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation. |
+| `--modules <dir>`     | `DEBUNDLE_MODULES`     | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                            |
+| `--source-root <dir>` | `DEBUNDLE_SOURCE_ROOT` | Upstream snapshot root containing the original chunk bytes.                                                                                                 |
 
-`debundle run --dry-run` is separate: it runs pipeline parse/facts/gate
-checks and skips emitted-JS and accept-path report writes. A gate
-rejection still writes `owner_graph.json` plus the rejection evidence
-(`cycles.json` / `atomic_unit_conflicts.json`) under
-`reports/tree/<chunk>/`, so `gate list` / `gate describe` work on the
-rejection that was just reported. Broad runs collect all supported diagnostics
-from a pass instead of stopping at the first one; currently this aggregates
-unresolved source-match selectors and duplicate binding claims with
-module/export/origin evidence. Use `--fail-fast` only when debugging the first
-failing selector or claim is more useful than the full diagnostic set. There is
-no `debundle run --no-verify`.
+`debundle run --out-root` reads `DEBUNDLE_OUT`. `debundle run
+--tree-source-root` (the spec-tree compile root for source-relative paths in
+the tree-shaped config) reads its own env var, `DEBUNDLE_TREE_SOURCE_ROOT` —
+deliberately **not** `DEBUNDLE_SOURCE_ROOT`, because the two roots are
+different directories in real corpora (spec tree vs. upstream snapshot).
 
-Read-only commands (queries, listings, source slicing) take
-neither flag — they have no side effects.
-
-`run` is a special case: the gate is part of the pipeline contract,
-not an optional pre-check. There is no `run --no-verify` — if you
-want the pipeline to emit JS regardless of the gate, fix the spec
-first.
-
-## Name resolution
-
-Every command that takes a binding name (`<sym>`) accepts **either
-form** wherever the lookup is unambiguous:
-
-- The _minimized_ name from the chunk (e.g. `XOe`) — the stable
-  hygiene-aware identity.
-- The _readable_ name from the spec's `name:` field
-  (e.g. `PluginSettingsAccessor`).
-
-If both forms could match different bindings, the command refuses
-with a list. Use the minified form to disambiguate.
-
-## Command table
-
-### Pipeline
-
-| Command        | Mutates?                 | Function                                                                                                                                                                                                                                                                                                      |
-| -------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `debundle run` | yes (emits JS + reports) | Run the full transform pipeline: parse + facts + owner_graph + atomic_units + realizability gate + lower + emit. `--dry-run` runs pipeline checks without writing emitted JS or reports. Broad runs aggregate supported diagnostics by default; pass `--fail-fast` to stop at the first supported diagnostic. |
-
-### Bindings
-
-| Command                                                           | Mutates?   | Function                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ----------------------------------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `debundle bindings list [--in <module>] [--unrenamed] [--orphan]` | no         | List bindings in the chunk with summary stats (home module, current readable name if any, atom-membership flag). Filters available for the common reverse-lookup cases (e.g. `--unrenamed` to find bindings still using the minified name).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `debundle bindings assign <sym>:<module>[:<readable>] …`          | yes (spec) | Move one or more bindings into named logical modules **atomically**. Each positional argument is colon-separated: `<sym>:<module>` to move and keep the current name, `<sym>:<module>:<readable>` to move and rename in the same step. `<sym>` accepts minified or readable form; the optional third field always sets the new readable `name:`. **Neither `<sym>` nor `<readable>` may contain `:`** — use `--batch` JSON for any edge case where they do. `--batch <file.json>` (or `--batch -` for stdin) reads moves as a JSON array of `{sym, module, readable?}` objects, or reviewed binding-only `modules propose` rows that map directly to member moves. Validation runs on the _whole batch's_ post-state and includes the realizability + atom-split gate (same predicate `modules merge` / `modules delete --force` use); the gate requires `--graph <owner_graph.json>` unless `--no-verify` is set. Destination modules are auto-created if they don't yet exist (destination paths are canonicalized/lowercased); source modules of the batch that become empty after the move are deleted unless they carry a module-level `comment:`, `source_matches:`, `annotations:`, or `anonymous_statements:`. Default: validate + apply atomically. `--no-verify` / `--dry-run` available. See "Batch atomicity" below. |
-| `debundle bindings unassign <sym> …`                              | yes (spec) | Remove one or more bindings from their current modules **atomically**; they fall through to residual (the default when an owner isn't claimed by any spec module). `<sym>` accepts minified or readable form, same resolution as `bindings assign`. Validation runs on the post-batch spec and includes the realizability + atom-split gate (same predicate `bindings assign` / `modules merge` use); the gate requires `--graph <owner_graph.json>` unless `--no-verify` is set. Splitting an atom by unassigning only some of its members is rejected; unassigning a whole atom together is accepted. Source modules of the batch drained to zero members are deleted unless they carry a module-level `comment:`, remaining `source_matches:`, remaining `annotations:`, or remaining `anonymous_statements:`. Default: validate + apply atomically. `--no-verify` / `--dry-run` available; dry-run and apply share an exit code on the same input.                                                                                                                                                                                                                                                                                                                                                                           |
-| `debundle bindings rename <original> <readable>`                  | yes (spec) | Rename a binding's readable `name:` without moving it. `<original>` accepts minified or current readable form. Neither `<original>` nor `<readable>` may contain `:`. Validation here is name-collision detection (no two bindings in the chunk get the same readable name). Mostly a convenience over `bindings assign` for the rename-without-move case. `--no-verify` / `--dry-run` available.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `debundle bindings comment <sym> [text] [--edit] [--clear]`       | yes (spec) | Set, read, or clear a binding's `comment:` field. Positional `"text"` replaces the comment with the literal arg. `--edit` opens `$EDITOR` (fallback `$VISUAL`, then `vi`) on a temp file pre-populated with the current comment. `--clear` removes the field. With no extra args, prints the current comment (plain text on tty, JSON on pipe). An unset comment reads as `null` in JSON (an empty line in text), distinct from an explicit `comment: ""`. `<sym>` accepts minified or readable. Validation is shape-preservation (YAML still parses); comments don't affect factorization, so `--no-verify` is a no-op. `--dry-run` previews without writing. Member comments emit as JS comment blocks above the binding's owner statement.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-
-### Modules
-
-| Command                                                                                                      | Mutates?   | Function                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ------------------------------------------------------------------------------------------------------------ | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `debundle modules list [--empty] [--residual] [--unassigned-bindings] [--auto-deletable] [--with-anonymous]` | no         | List all modules in the spec with summary stats (`member_count`, `anonymous_statement_count`, `residual` flag, `has_comment`). `--empty` filters to **truly empty** modules — no `members:`, `source_matches:`, `annotations:`, or `anonymous_statements:` — matching `modules delete`'s default-deletable predicate. A module with only `source_matches:`, `annotations:`, or `anonymous_statements:` is not empty and isn't reported. `--unassigned-bindings` uses the same predicate. `--auto-deletable` narrows further to truly-empty **and** no module-level `comment:` — the subset safe to sweep with `modules delete`, since a comment would pin the module as a kept shell. `--with-anonymous` adds the `anonymous_statement_count` to text output (JSON always carries it), surfacing residual-sentinel side-effect drift. `spec stats`'s `modules.empty` counter applies the same definition. |
-| `debundle modules merge --target <T> <sources...>`                                                           | yes (spec) | Splice `members:`, `source_matches:`, `annotations:`, and `anonymous_statements:` from each source YAML into `<T>`; concatenate source module `comment:` fields into the target's with a `--- from <source>:` divider; create `<T>` if needed; delete the sources. Module-file args may include or omit the `.yaml` suffix, so `ai/models/pricing` resolves to `ai/models/pricing.yaml` even when `ai/models/pricing/` is also a directory. Default: validate (realizability gate against the post-merge partition) + apply. `--no-verify` / `--dry-run` available. The gate requires `--graph <owner_graph.json>` unless `--no-verify` is set.                                                                                                                                                                                                                                                           |
-| `debundle modules delete <path>...`                                                                          | yes (spec) | Delete one or more module YAML files. Module-file args may include or omit the `.yaml` suffix. Default refuses non-empty modules (with `members:`, `source_matches:`, `annotations:`, or `anonymous_statements:`); pass `--force` to override. Multiple paths delete atomically (all paths are validated up front; if any check fails, nothing is deleted). `--no-verify` / `--dry-run` available. The realizability gate fires on the post-delete spec; for the all-empty case the check is trivial (no edges change). For `--force` deletions of non-empty modules the gate requires `--graph <owner_graph.json>` unless `--no-verify` is set.                                                                                                                                                                                                                                                          |
-| `debundle modules propose`                                                                                   | no         | Emit factorizer proposals (binding → module assignment recommendations) + diagnostics derived from the atomic DAG. Read-only — surfaces _suggested_ assignments; applying them requires `bindings assign`. Anonymous-statement proposals stay visible even when they are not directly addressable; with `--source-root`, JSON annotates `landable_today`, `unaddressable_anonymous_owner_ids`, and `landability_notes` using full-JS-AST selector uniqueness. `landable_today` is `false` both for proposals with unaddressable anonymous statements and for `blocked_residual_dependency` proposals (outgoing constraining edges into other residual cells) — the latter need their closure grown or manual co-location before they can land.                                                                                                                                                            |
-| `debundle modules comment <module> [text] [--edit] [--clear]`                                                | yes (spec) | Set, read, or clear a module's top-level `comment:` field. Same three modes as `bindings comment` (positional text / `--edit` / `--clear`; bare invocation reads). `<module>` is the module path relative to `$MODULES` (e.g. `runtime/plugins`). Module-level comments protect a module from auto-delete when `bindings assign` drains its members and emit at the top of the generated module file. `--no-verify` is a no-op; `--dry-run` previews without writing.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-
-Renaming or disabling a module is **not** a CLI operation — it's a
-plain `mv` on the YAML file. The spec compiler infers the module
-path from the file location, so:
+Export the env vars once per shell session and subsequent commands run
+without repeating the flags:
 
 ```bash
-# Rename: the module path is re-derived from the new filename.
-mv $MOD/runtime/plugins.yaml $MOD/runtime/plugin_settings.yaml
-
-# Disable: any non-.yaml suffix makes the compiler skip the file.
-mv $MOD/runtime/plugins.yaml $MOD/runtime/plugins.yaml.disabled
-```
-
-After the `mv`, the next `debundle run` (or any subsequent mutating
-command on the spec) re-validates and surfaces any resulting atom
-split as a gate diagnostic. No dedicated `modules rename` /
-`modules disable` subcommand — the filesystem operation is already
-the right primitive.
-
-### Spec-wide
-
-| Command                                                                                                   | Mutates?            | Function                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| --------------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `debundle spec stats`                                                                                     | no                  | Emit spec-wide summary in JSON (or text/ndjson). One pass over the modules tree: `modules` totals (`total`, `residual`, `empty`, `with_comment`) + `member_count` buckets (`min`, `max`, `singletons` = exactly 1 member, `tiny_2_to_5` = 2..=5, `medium_6_to_20` = 6..=20, `large_21_plus` = 21+), plus `bindings` totals (`total`, `renamed`, `unrenamed`, `orphan`, `with_comment`). Same per-row counters as `debundle modules list` / `debundle bindings list`; spec stats just folds them into one report so callers don't `jq`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `debundle spec selector-debt`                                                                             | no                  | Rank the spec's rebuild-fragile selectors. Sections: **name-only** selectors (`selector.binding`) scored by how minified the bound name looks (1-2 chars / vowel-less rank highest), most fragile first; **name-only module groups** when `--group-module-depth N` is set, bucketed by the first N module path components after `--min-score` filtering and before `--limit`; **repeated source_match** bodies copied verbatim (whitespace-insensitive) across source-backed binding claims and anonymous statements — the copies a contextual selector should replace; and, with `--against <other modules tree>`, **drifted bindings** — members whose readable `name:` is stable but whose `selector.binding.name` changed between the two spec versions. Opt in to source-aware checks with `--source-file <chunk.js>` or `--source-root <dir> --chunk <path>`: this adds **source-aware near-ambiguous** rows for structural selectors that match exactly one top-level statement today but have high-scoring non-matching sibling statements, **source-aware repeated exact** rows for copied structural selector bodies that resolve to the same body indices, and **source-aware grouped source-match suggestions** for repeated claims that resolve to one multi-declarator `var`/`let`/`const` declaration and can be collapsed into one `source_matches[]` entry with `DECLARATORS_*` holes. `--near-match-min-score N` controls that score cutoff; `--near-match-limit N` caps sibling candidates per selector. `--min-score N` filters the name-only list (`0..=100`; the summary keeps spec-wide totals); `--limit N` caps rows per section. Without source flags it reads only the modules tree. `ndjson` emits one tagged object per row plus a final `summary` line. |
-| `debundle spec selector-codemod`                                                                          | yes, with `--apply` | Dry-run by default; emits text/json/ndjson summary rows for source-aware selector synthesis. `--rewrite name-binding-to-source-match` is the only rewrite after legacy selector shapes were removed: pass `--source-file <chunk.js>` or `--source-root <dir> --chunk <path>` plus optional `--item module/path:ExportName` filters to convert selected name-only members into structural `source_matches[]` entries, grouping multiple requested exports from the same `var`/`let`/`const` declaration into one entry with `DECLARATORS_*` holes. Use `--file`, `--module`, or `--module-prefix` to scope the run before applying. Skipped rows include a machine-readable reason.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `debundle spec synthesize-selectors`                                                                      | yes, with `--apply` | Source-aware alias for `selector-codemod --rewrite name-binding-to-source-match`. It answers "given these module exports, produce a forward-compatible selector/spec fragment that uniquely selects them" using a per-chunk declaration/binding index, then proves the generated selector with the production matcher. The desired selector is the loosest readable unique form: it should prefer holes and stable anchors over long exact current-source bodies or subexpressions, because exact selectors can be over-narrow even when they match today. Dry-run JSON includes candidate count, matched top-level body index, group id, rewritten holes, and skip reasons. Current automated forms are exact function/class declarations and `var`/`let`/`const` declaration groups with non-target declarator runs collapsed to `DECLARATORS_BEFORE`, `DECLARATORS_BETWEEN`, or `DECLARATORS_AFTER`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `debundle spec match-selector --match '<sel>' (--source-file <chunk> \| --source-root <dir> --chunk <p>)` | no                  | Resolve one candidate `source_match` against the chunk and report what it binds: `unique` (does it pin exactly one target), `matches[]` (`{body_index, binding_name}` for every top-level statement it hits), and — unless `--no-slack` — `slack` (kept tokens that could be holed further without losing uniqueness, i.e. over-pin). Candidate selectors use the public alpha-equivalent identifier policy. `--target-binding <name>` is a probe-only way to focus on one selector-local binding when the match declares several; YAML claim projection belongs in `source_matches[].bindings[]`. The interactive prove-gate probe for selector authoring (the stabilize loop's step-4 "what does this candidate bind?" check).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `debundle spec validate`                                                                                  | no                  | Keep-going selector validation: one pass over every selector the spec materializes, reporting every problem (`no-match` / `ambiguous` / `duplicate-claim` / resolution error) instead of stopping at the first. It is `debundle run` in dry-run keep-going mode, so it takes the **same inputs** (`--spec` / `--tree-config` + package roots) and needs the full pipeline, not just the modules tree — run it via the Bazel `:debundle` target, not the standalone binary. `--fail-fast` stops at the first problem; JSON/ndjson carry per-class `counts`, a `total`, and per-chunk reports.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-
-### Quotient queries
-
-| Command                                                                                | Mutates? | Function                                                                                                                                                                                                                                                                                                                                                                                          |
-| -------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `debundle scc [--binding <sym>] [--cycles-only] [--residual-only] [--singletons-only]` | no       | List SCCs in the module-quotient graph. Filter to a single binding's SCC or to a specific class. (Streaming output via `--format ndjson` — see "Output format" above.)                                                                                                                                                                                                                            |
-| `debundle cluster <sym>`                                                               | no       | List the module-quotient neighbors of a binding's owner. `<sym>` may be passed positionally or as `--binding <sym>`. Each neighbor (and the home module) is reported as both its interned `logical:N` id and its human path `label`, so output is legible without a second `describe`.                                                                                                            |
-| `debundle gate list`                                                                   | no       | List every blocking SCC in `cycles.json`. One row per entry: id, modules count, cut size. (Streaming via `--format ndjson`.) A missing `cycles.json` is the clean state — the pipeline and the edit gate write it only on rejection, and a passing edit gate clears a stale one — so it reports zero blocking SCCs (`[]`) and exits 0, distinct from a present-but-malformed file (which errors). |
-| `debundle gate describe <id> [--binding <sym>]`                                        | no       | Full picture for one blocking SCC: modules list, cut, plus the per-edge evidence recomputed on demand from `owner_graph.json` and the SCC's module set. Renders the same per-binding-pair blame view the realizability gate emits to stderr at rejection time. `--binding` narrows evidence to one symbol's contribution (handy for 1000-module SCCs).                                            |
-| `debundle gate cut <id>`                                                               | no       | Just the cut edges for one blocking SCC. The actionable subset — spec authors read this to pick which back-edge to break.                                                                                                                                                                                                                                                                         |
-
-The `gate` namespace names what is rejecting: the realizability
-gate. It complements `scc` (which lists every quotient SCC,
-including singletons and realizable multi-node ones); `gate` lists
-**only** the SCCs the gate rejected. The unit is the blocking SCC,
-not a cycle — a single SCC can contain exponentially many simple
-cycles, so the CLI exposes the cut (a primitive on the SCC) but
-deliberately not a `cycle list`.
-
-Each `gate ...` command accepts an optional `--cycles <path>` flag
-that overrides the default `cycles.json` location (sibling of
-`--graph`). All other inputs follow the standard `--graph` /
-`--modules` convention below.
-
-### Atomic-DAG queries
-
-These are top-level commands.
-
-| Command                     | Mutates? | Function                                                                                                                                                                                                                                                                                                                                                             |
-| --------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `debundle atoms`            | no       | List structural atoms (owner-level SCCs of the constraining-edge graph; per design.md §"Two classes of atom").                                                                                                                                                                                                                                                       |
-| `debundle coverage`         | no       | Report spec coverage against atoms: which atoms are claimed, which fall through to residual. Add `--include-proposals` when rows should include matching factorizer proposal ids.                                                                                                                                                                                    |
-| `debundle graph-summary`    | no       | High-level counts (owners, edges, atoms, residual-eligible bindings, etc.). Add `--include-proposals` when proposal and diagnostic counts are needed.                                                                                                                                                                                                                |
-| `debundle describe <id>`    | no       | Dereference any identifier with full graph + spec context. Accepted ID kinds: a binding (minified `XOe` or readable `PluginSettingsAccessor`), a module path (`runtime/plugins`), a module id (`logical:7`), a proposal id, an atom id, an owner id (`owner:42`), a diagnostic id. Add `--include-proposals` when nearby proposal/diagnostic annotations are needed. |
-| `debundle show-source <id>` | no       | Print the source text for any identifier. Accepted ID kinds: binding (minified or readable), module path or unambiguous module filename or module id (concatenated source of every owner statement in the module, in declaration order), proposal id, atom id, owner id, diagnostic id.                                                                              |
-
-## Argument conventions
-
-Three common paths show up on most commands. Each accepts both a
-flag and an env var; the flag wins if both are set.
-
-| Flag                  | Env var                | Meaning                                                                                                                                                                                                                         |
-| --------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--graph <path>`      | `DEBUNDLE_GRAPH`       | `owner_graph.json` for the chunk being inspected. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation.                                                                               |
-| `--modules <dir>`     | `DEBUNDLE_MODULES`     | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                                                                                                |
-| `--source-root <dir>` | `DEBUNDLE_SOURCE_ROOT` | Upstream snapshot root containing the original chunk bytes. Needed by `show-source`, by `describe` for IDs that resolve to a source location, and by `modules propose` to annotate anonymous-statement selector addressability. |
-
-`debundle run --tree-source-root` (the spec-tree compile root for
-source-relative paths in the tree-shaped config) reads its own env
-var, `DEBUNDLE_TREE_SOURCE_ROOT` — deliberately **not**
-`DEBUNDLE_SOURCE_ROOT`, because the two roots are different
-directories in real corpora (spec tree vs. upstream snapshot).
-
-Setting all three env vars in the shell once per session lets
-commands run without repeating the flags:
-
-```bash
-export DEBUNDLE_GRAPH=$REPORTS/tree/static/index-EXAMPLE/owner_graph.json
-export DEBUNDLE_MODULES=vendored/web/example-snapshot/spec/modules
-export DEBUNDLE_SOURCE_ROOT=vendored/web/upstream/example-snapshot
+export DEBUNDLE_GRAPH=<debundle-output>/reports/tree/<chunk-id>/owner_graph.json
+export DEBUNDLE_MODULES=<spec-root>/<version>/modules
+export DEBUNDLE_SOURCE_ROOT=<debundle-output>/app
+export DEBUNDLE_OUT=<debundle-output-root>
 
 debundle describe XOe
 debundle scc --binding XOe
 debundle bindings assign XOe:runtime/plugins
 ```
 
+If remote execution downloads only minimal outputs, request full outputs so
+the report side files are local: `--remote_download_outputs=all`.
+
 ## Output format
 
-Every read-only command supports `--format <text|json|ndjson>`:
+Read-only commands accept `--format <text|json|ndjson>`:
 
 - `text` — human-readable default for interactive use.
-- `json` — single JSON document.
-- `ndjson` — one JSON value per line, for streaming consumers (`jq -c`, piping to other commands).
+- `json` — single JSON document, parseable with `jq`.
+- `ndjson` — one JSON value per line, for streaming consumers (`jq -c`,
+  piping to other commands). Reach for it on many-row streaming queries
+  (`debundle scc --format ndjson` over a large graph).
 
-If `--format` isn't passed and stdout is **not** a tty (i.e. the
-command is in a pipeline), the default flips to `json`. So
-`debundle modules propose | jq …` works without an explicit
-`--format json`.
+If `--format` isn't passed and stdout is **not** a tty (i.e. the command is
+in a pipeline), the default flips to `json`. So
+`debundle modules propose | jq …` works without an explicit `--format json`.
 
 Read-only inspection commands prefer fast graph/spec lookups. `modules
-propose` is the command that runs the proposal factorizer by default.
+propose` is the command that runs the proposal factorizer by default;
 `describe`, `coverage`, and `graph-summary` do not run it unless the
-selection itself is a proposal/diagnostic id or `--include-proposals`
-is passed. Proposal-derived JSON fields are omitted when the factorizer
-is skipped.
+selection itself is a proposal/diagnostic id or `--include-proposals` is
+passed (it is expensive on large graphs), and proposal-derived JSON fields
+are omitted when the factorizer is skipped.
 
 The five mutating verbs (`bindings assign`, `bindings unassign`,
 `bindings rename`, `modules merge`, `modules delete`) take the same
-`--format` flag with the same tty/pipe default. Under `text` they
-print a one-line "ok" / "would change N files" / "rejected" result.
-Under a JSON format each verb prints **one outcome object** sharing
-a common schema core:
+`--format` flag with the same tty/pipe default. Under `text` they print a
+one-line verdict (`<action>` plus move/file counts). Under a JSON format
+each verb prints **one outcome object** sharing a common schema core:
 
 | Field           | Values                                                                                                                            |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------- |
@@ -226,218 +94,282 @@ a common schema core:
 
 Verb-specific fields flatten in alongside the core: `moves_applied`
 (assign), `unassigned` (unassign), `binding` / `old_readable` /
-`new_readable` (rename), `target` (merge). Gate rejections replace
-the success object with a structured rejection object — see
-"Rejection diagnostics" below. Combined with `--dry-run` the outcome
-reports only the verdict and planned file set; a structured diff
-(post-mutation YAML preview) is a documented TODO in the codebase
-but not in v1.
+`new_readable` (rename), `target` (merge). Gate rejections replace the
+success object with a structured rejection object — see "Rejection
+diagnostics" below.
+
+## Name and identifier resolution
+
+Every command that takes a binding name (`<sym>`) accepts **either form**
+wherever the lookup is unambiguous:
+
+- The _minified_ name from the chunk (e.g. `XOe`) — the stable
+  hygiene-aware identity.
+- The _readable_ name from the spec's `name:` field
+  (e.g. `PluginSettingsAccessor`).
+
+If both forms could match different bindings, the command refuses with a
+list. Use the minified form to disambiguate.
+
+`describe` and `show-source` take any ID kind and dispatch on shape:
+bindings (minified or readable), module paths (`runtime/plugins`) or
+unambiguous module filenames, module ids (`logical:7`), owner ids
+(`owner:42`), atom ids (`atomic:N`), proposal ids, diagnostic ids.
+
+## Validate-by-default (mutating commands)
+
+Every command that modifies the spec runs validation **by default** before
+writing changes back to disk. For commands that affect the chunk's
+factorization (anything that moves a binding between modules), that means
+the full realizability + atom-split gate — which requires
+`--graph <owner_graph.json>` unless `--no-verify` is set; for renames, it
+means name-collision detection; for comment edits, shape preservation only
+(`--no-verify` is a no-op there). If validation fails the command refuses
+with a structured diagnostic and **does not modify any file**.
+
+Two flags adjust the default on spec-edit commands:
+
+| Flag          | Effect                                                                                                                                                        |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (default)     | Validate; refuse the change if invalid; apply if valid.                                                                                                       |
+| `--no-verify` | Skip validation; apply the change regardless. Escape hatch for multi-step refactors where an intermediate state is intentionally invalid. Don't use casually. |
+| `--dry-run`   | Validate (or simulate) but do not modify any file. Print the validation result + a diff summary.                                                              |
+
+`--dry-run` and `--no-verify` can be combined: show what would change
+without validating — useful when investigating _why_ the gate would reject.
+
+`run` is the exception: the gate is part of the pipeline contract, not an
+optional pre-check. There is no `run --no-verify` — if you want the pipeline
+to emit JS regardless of the gate, fix the spec first.
+
+Read-only commands take neither flag — they have no side effects.
+
+## Running the pipeline
+
+```bash
+debundle run --spec <transform-spec.yaml>
+
+debundle run \
+  --tree-config <spec-config.yaml> \
+  --tree-modules <modules-dir> \
+  --tree-vendor-marks <vendor-marks.yaml> \
+  --out-root <out-dir>
+```
+
+If the spec is unrealizable, `debundle run` rejects and emits structured
+side outputs (`cycles.json`, `atomic_unit_conflicts.json`) under
+`reports/tree/<chunk-id>/`. `debundle run --dry-run` runs pipeline
+parse/facts/gate checks without writing emitted JS or reports; a gate
+rejection still writes `owner_graph.json` plus the rejection evidence, so
+the `gate` queries work on the rejection that was just reported.
+
+Broad spec migrations continue through supported diagnostic failures by
+default and report all findings from that pass (currently: unresolved
+source-match selectors and duplicate binding claims, with
+module/export/origin evidence). Use `--fail-fast` only when the first
+failing selector or claim is the useful debugging target.
+
+`debundle spec validate` is `debundle run` in dry-run keep-going mode
+reporting every selector problem: it takes the **same inputs** (`--spec` /
+`--tree-config` + package roots) and needs the full pipeline, so run it via
+the Bazel `:debundle` target, not the standalone binary. Its source-only
+preflight mode (`--modules` plus `--source-file` or `--source-root
+--chunk`) needs only the binary and the chunk.
 
 ## Batch atomicity (`bindings assign`)
 
 `bindings assign` takes one or more positional triples
-`<sym>:<module>[:<readable>]`. Validation runs on the post-batch
-spec, not after each individual assignment — so multi-binding
-refactors whose intermediate (after some-but-not-all moves) states
-would be invalid can land in one shot.
+`<sym>:<module>[:<readable>]` and/or `--batch` JSON. Validation runs on the
+post-batch spec, not after each individual assignment — so multi-binding
+refactors whose intermediate states would be invalid can land in one shot:
 
-### Input shapes
+1. Parse all moves. Resolve each `sym` to its member and dedupe on the
+   resolved identity; contradictory moves for one member are rejected,
+   duplicates collapse with a stderr warning.
+2. Compute the post-batch spec in memory — parsed through the same claims
+   model `debundle run` loads, so `members:`, `source_matches:`,
+   `annotations:`, and `anonymous_statements:` in every module stay
+   claimed.
+3. Run the realizability gate on the post-batch spec.
+4. If invalid: print binding-pair blame, exit non-zero, **do not modify any
+   file**.
+5. If valid: write every changed surviving YAML first, then delete drained
+   move-source files — an interruption can never lose a member that was not
+   yet written to its destination.
 
-```bash
-# 1. Single move, keep current name.
-debundle bindings assign --modules $MOD XOe:runtime/plugins
-
-# 2. Single move + rename.
-debundle bindings assign --modules $MOD XOe:runtime/plugins:PluginSettingsAccessor
-
-# 3. Multi-move batch (positional triples).
-debundle bindings assign --modules $MOD \
-    XOe:runtime/plugins:PluginSettingsAccessor \
-    YOe:runtime/plugins \
-    ZOe:runtime/widgets:WidgetRegistry
-
-# 4. Large refactors: --batch reads JSON from a file (or `-` for stdin).
-debundle bindings assign --modules $MOD --batch moves.json
-debundle bindings assign --modules $MOD --batch -  < moves.json
-```
-
-`<sym>` accepts either the minified name (`XOe`) or the current
-readable name (`PluginSettingsAccessor`). The optional third field
-sets the **new** readable name; omitting it preserves whatever
-readable name is currently in the spec.
+`--dry-run` runs steps 1–4 and stops. `--no-verify` skips step 3 (still
+does duplicate-claim detection — that's a structural error, not a
+validation one). `bindings unassign` shares the same post-batch validation
+and drain sweep.
 
 ### `--batch` JSON format
 
-A top-level JSON array of move objects:
+A top-level JSON array of move objects (`sym` and `module` required;
+omitting `readable` preserves the current readable name):
 
 ```json
 [
   { "sym": "XOe", "module": "runtime/plugins", "readable": "PluginSettingsAccessor" },
-  { "sym": "YOe", "module": "runtime/plugins" },
-  { "sym": "ZOe", "module": "runtime/widgets", "readable": "WidgetRegistry" }
+  { "sym": "YOe", "module": "runtime/plugins" }
 ]
 ```
 
-- `sym` and `module` are required.
-- `readable` is optional; omitting it preserves the binding's current readable name.
-- Moves are deduplicated on the **resolved member identity** (the member's
-  source file + index), so a batch carrying both the minified and readable
-  spelling of one member collapses to a single move (with a stderr warning).
-  Two moves for the same member with contradictory destinations or readable
-  names are rejected.
-
 `--batch` also accepts `modules propose --format json` output, or a
-top-level array of proposal objects selected from `.proposals`, when
-every selected proposal is a direct member move:
+top-level array of proposal objects selected from `.proposals`, when every
+selected proposal is a direct member move:
 
 - `landable_today: true`
 - non-empty `binding_ids`
 - no `merge_into`
 - no `anonymous_statement_owner_ids`
 
-Fresh proposals move each `binding_ids[]` entry to
-`proposed_module_id`; extension proposals move them to
-`extends_module_id`. `merge_into` rows require `modules merge` or
-manual YAML because they combine existing source modules. Rows with
-`anonymous_statement_owner_ids` require `anonymous_statements:` edits,
-which `bindings assign` does not perform. Rows with
-`status: blocked_residual_dependency` carry `landable_today: false`
-and are rejected: grow the closure (assign them together with the
-residual cells they reference) or co-locate the owners manually first.
-
-JSON over TSV because it is schema-validated, queryable with `jq`, and
-composable with reviewed JSON outputs from the same CLI without a TSV
-conversion step.
-
-### Atomicity contract
-
-1. Parse all moves from positional + `--batch`. Resolve each `sym` to
-   its member and dedupe on the resolved identity; contradictory
-   moves for one member are rejected, duplicates collapse with a
-   stderr warning.
-2. Read the current spec. Compute the post-batch spec in memory —
-   parsed through the same claims model `debundle run` loads, so
-   `members:`, `source_matches:`, `annotations:`, and
-   `anonymous_statements:` in every module stay claimed.
-3. Run the realizability gate on the post-batch spec.
-4. If invalid: print binding-pair blame, exit non-zero, **do not
-   modify any file**.
-5. If valid: write every changed surviving YAML first, then delete
-   drained move-source files. The output is atomic from the
-   consumer's perspective — every file that changes does so
-   together — and an interruption can never lose a member that was
-   not yet written to its destination.
-
-`--dry-run` runs steps 1–4 and stops; reports the validation
-result + the planned diff. `--no-verify` skips step 3 (still does
-duplicate-claim detection — that's a structural error, not a
-validation one).
-
-### Per-move semantics
-
-If you want refuse-intermediate-invalid semantics, invoke
-`bindings assign` once per move. Per-batch is the default because
-the common case for batch is "this refactor needs all-or-nothing
-application." Per-move would be the surprising default.
+Fresh proposals move each `binding_ids[]` entry to `proposed_module_id`;
+extension proposals move them to `extends_module_id`. `merge_into` rows
+require `modules merge` or manual YAML because they combine existing source
+modules. Rows with `anonymous_statement_owner_ids` require
+`anonymous_statements:` edits, which `bindings assign` does not perform.
+Rows with `status: blocked_residual_dependency` carry
+`landable_today: false` and are rejected: grow the closure (assign them
+together with the residual cells they reference) or co-locate the owners
+manually first.
 
 ## Rejection diagnostics
 
-When validation refuses a mutating command, the diagnostic names
-exactly what's wrong without making the spec author re-derive the
-analysis from scratch. Two kinds:
+When validation refuses a mutating command, the diagnostic names exactly
+what's wrong. Two kinds:
 
-**Atom split** (refused by the realizability gate). The diagnostic
-lists each split atom: which owners it covers, which modules its
-members would land in, and the `DepKind` causes from the unit
-(eager cycle, rebind, sequenced, etc. — same data shape as
-`AtomicUnitConflict`). Example shape:
+**Atom split** (refused by the realizability gate). Lists each split atom:
+which owners it covers, which modules its members would land in, and the
+`DepKind` causes from the unit (same data shape as `AtomicUnitConflict`).
+The diagnostic does **not** auto-compute the minimal extra-moves completion
+— it names the owners and destinations so the author can read the
+completion off the printed atom membership.
 
-```
-atom-split refused — cannot apply 3 of 5 moves:
-  atom { iRe, rRe, MRe } [causes: eager_use]
-    iRe -> domains/system/ids       (planned by request)
-    rRe -> domains/system/schemas   (CURRENT — unmoved)
-    MRe -> domains/system/schemas   (CURRENT — unmoved)
-  reason: rRe and MRe must co-locate with iRe; the requested move
-    splits the atom into ids vs schemas.
-```
+**Name collision** (refused by `bindings rename` or by `bindings assign`
+when a `:readable` field collides). Lists each collision: the existing
+binding holding the name, the binding the rename would have given it.
 
-The diagnostic does **not** auto-compute the minimal completion
-("also move rRe and MRe to ids") — that's deferred (see "Out of
-scope" below). It does name the owners and the destinations, so
-the author can compute the completion by inspection.
-
-**Name collision** (refused by `bindings rename` or by `bindings
-assign` when a `:readable` field collides). Lists each collision:
-the existing binding holding the name, the binding the rename
-would have given it.
-
-Both diagnostic shapes go to stderr; the command exits non-zero.
-Under a JSON format (explicit `--format json|ndjson`, or stdout is a
-pipe) a realizability-gate rejection additionally prints one
-structured object on stdout so machine readers don't scrape the
-prose: `{verb, action: "rejected", rejection}`, where
+Both diagnostic shapes go to stderr; the command exits non-zero. Under a
+JSON format a realizability-gate rejection additionally prints one
+structured object on stdout: `{verb, action: "rejected", rejection}`, where
 `rejection.kind` is `atom_split` (with `conflicts`, the canonical
-`AtomicUnitConflictReport` projection) or `unrealizable_cycles`
-(with `blocking_sccs`, the canonical `BlockingSccEntry` projection).
-These are the **same wire shapes** `atomic_unit_conflicts.json` /
-`cycles.json` carry — there is no parallel rejection schema.
+`AtomicUnitConflictReport` projection) or `unrealizable_cycles` (with
+`blocking_sccs`, the canonical `BlockingSccEntry` projection). These are
+the **same wire shapes** `atomic_unit_conflicts.json` / `cycles.json` carry
+— there is no parallel rejection schema.
 
 Edit-gate rejections (including `--dry-run` probes) also write those
-artifacts to disk as siblings of `--graph` — the default location
-`gate list` / `gate describe` / `gate cut` read — so the documented
-follow-up queries work on the rejection that was just reported. A
-subsequent edit that passes the gate clears the stale artifacts.
-`debundle run` (and `run --dry-run`) writes the same files under
-`reports/tree/<chunk>/`, which is the same sibling-of-`owner_graph.json`
-layout.
+artifacts to disk as siblings of `--graph` — the default location the
+`gate` queries read — so the documented follow-up queries work on the
+rejection that was just reported. A subsequent edit that passes the gate
+clears the stale artifacts. `debundle run` (and `run --dry-run`) writes the
+same files under `reports/tree/<chunk>/`, which is the same
+sibling-of-`owner_graph.json` layout.
 
-## Out of scope
+## Gate queries
 
-- **No cross-process materializer reader.** `debundle run` reads
-  the spec and emits JS in one process. There is no
-  `materialize-from-cache` mode — see `wire_format.md` §"Why
-  pre-filter facts (`StatementFacts`) aren't on the wire" and
-  `lessons_learned/cross_process_stage_b.md` for the analysis.
-- **`facts.json` is not a CLI input.** It's an in-process debug
-  artifact at `reports/tree/<chunk>/chunk_analysis/facts.json`. See
-  `facts/wire.rs` module docstring.
-- **Module rename / disable** is just `mv` on the YAML file (see
-  "Modules" above). No dedicated subcommand.
-- **Auto-computed minimal completion** for atom-split rejections.
-  The diagnostic names the split atom and which destinations its
-  members would land in (see "Rejection diagnostics") but does not
-  compute the smallest extra-moves set that'd fix it. The author
-  reads off the completion from the printed atom membership.
-  Worth revisiting once the basic CLI surface is in use.
-- **YAML diff in `--dry-run`.** v1 prints only an "ok / would
-  change N files" verdict line. A structured diff (post-mutation
-  YAML preview) is a documented TODO in the codebase but not in
-  v1.
-- **Tab completion.** Not in v1.
+The `gate` namespace names what is rejecting: the realizability gate. It
+complements `scc` (which lists every quotient SCC, including singletons and
+realizable multi-node ones); `gate` lists **only** the SCCs the gate
+rejected. The unit is the blocking SCC, not a cycle — a single SCC can
+contain exponentially many simple cycles, so the CLI exposes the cut (a
+primitive on the SCC) but deliberately not a `cycle list`.
+
+Each `gate ...` command accepts `--cycles <path>` to override the default
+`cycles.json` location (sibling of `--graph`). A missing `cycles.json` is
+the clean state: zero blocking SCCs, exit 0.
+
+## Module rename / disable
+
+Renaming or disabling a module is **not** a CLI operation — it's a plain
+`mv` on the YAML file. The spec compiler infers the module path from the
+file location:
+
+```bash
+# Rename: the module path is re-derived from the new filename.
+mv $MOD/runtime/plugins.yaml $MOD/runtime/plugin_settings.yaml
+
+# Disable: any non-.yaml suffix makes the compiler skip the file.
+mv $MOD/runtime/plugins.yaml $MOD/runtime/plugins.yaml.disabled
+```
+
+After the `mv`, the next `debundle run` (or any subsequent mutating command
+on the spec) re-validates and surfaces any resulting atom split as a gate
+diagnostic.
+
+## Workflow: investigating a binding end-to-end
+
+When a binding's role is unclear or a proposal is suspicious:
+
+1. **`debundle describe <sym>`** — graph + spec context: the binding's
+   owner, home module, atom membership, and incoming/outgoing edges. Add
+   `--include-proposals` only when factorizer proposal/diagnostic
+   annotations are needed.
+2. **`debundle show-source <sym>`** — print the original source span for
+   the owner. Use `--context-lines 40` to widen the view.
+3. **`debundle cluster <sym>`** — list the module-quotient neighbors of the
+   binding's owner. Useful for "what does this module touch?" questions
+   before deciding a destination.
+
+## Evidence files
+
+Typical debundle outputs:
+
+- executable JS under `app/`
+- root reports under `reports/`: `output.json`, `chunks.json`,
+  `runtime.json`, `source_assets.json`, `provenance.json`,
+  `rename_queue.json`, `vendor_swaps.json` when those outputs are
+  configured
+- per-chunk reports under `reports/tree/<chunk-id>/`: `chunk.json`,
+  `modules.json`, `owner_graph.json`, plus `cycles.json` /
+  `atomic_unit_conflicts.json` only when validation rejects
+- mirrored per-directory and per-file dependency reports under
+  `reports/tree/**/index.json` and `reports/tree/**/*.js.json`
+
+Use manifests for progress reporting rather than rescanning generated JS by
+hand. Tree reports carry hierarchy-health evidence (semantic dependency
+counts by kind, symbol/file attribution for boundary crossings); treat them
+as graph evidence to pair with source reading, not as a substitute for
+understanding the implementation.
+
+## Gate discipline
+
+The adapter-provided gate is authoritative. For suspicious green builds,
+force a fresh execution; do not trust cache-only success when validating
+new module boundaries. Generated JS conflicts are resolved by the adapter
+regen command, not by hand-editing generated output.
 
 ## Comments
 
-The `comment:` / `note:` schema (which levels carry them, what emits
-into generated JS vs. stays YAML-only, the no-`#`-comments rule, and
-the `modules merge` → `note:` provenance) is documented once in
-<../README.md> → "Comments". The CLI surface for editing them is the
-`bindings comment` / `modules comment` rows in the command table above.
-Those commands edit emitting `comment:` fields; non-emitting `note:` /
-`notes:` fields are YAML-authored metadata that the rewriters preserve.
-Their round-trip and auto-delete move semantics are in `spec_editing.md`
-→ "Workflow: authoring `comment:` fields".
+The `comment:` / `note:` schema (which levels carry them, what emits into
+generated JS vs. stays YAML-only, the no-`#`-comments rule, and the
+`modules merge` composition) is documented once in <../README.md> →
+"Comments"; the editing workflow in `spec_editing.md` → "Workflow:
+authoring `comment:` fields". The CLI surface is `bindings comment` /
+`modules comment` — they edit emitting `comment:` fields; non-emitting
+`note:` fields are YAML-authored metadata that the rewriters preserve.
+
+## Out of scope
+
+- **No cross-process materializer reader.** `debundle run` reads the spec
+  and emits JS in one process — see `wire_format.md` § "Why pre-filter
+  facts (`StatementFacts`) aren't on the wire" and
+  `lessons_learned/cross_process_stage_b.md`. `facts.json` is an
+  in-process debug artifact, not a CLI input (`facts/wire.rs`).
+- **Auto-computed minimal completion** for atom-split rejections — worth
+  revisiting once the basic CLI surface is in use.
+- **YAML diff in `--dry-run`.** v1 prints only the verdict line and
+  planned file set; a structured diff (post-mutation YAML preview) is a
+  documented TODO in the codebase.
+- **Tab completion.** Not in v1.
 
 ## See also
 
-- `AGENTS.md` — generic operator workflows that compose these
-  commands.
-- `design.md` — the realizability theorem the validation gate
-  enforces.
-- `wire_format.md` — JSON sidecar conventions readers of these
-  commands consume.
-- `lessons_learned/cross_process_stage_b.md` — why pre-filter
-  analyzer facts are not a cross-process CLI input.
-- `design.md` §"Layered mental model" + §"Factor assembly inside
-  `debundle run`" — the factorization algorithm `modules propose`
-  draws its proposals from.
+- `AGENTS.md` — generic operator workflows that compose these commands.
+- `design.md` — the realizability theorem the gate enforces; § "Layered
+  mental model" + § "Factor assembly inside `debundle run`" for the
+  factorization algorithm `modules propose` draws from.
+- `wire_format.md` — JSON sidecar conventions readers of these commands
+  consume.
+- `selectors.md` / `spec_editing.md` — selector authoring and spec-editing
+  workflows.

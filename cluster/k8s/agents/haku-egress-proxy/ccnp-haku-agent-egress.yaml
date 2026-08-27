@@ -47,14 +47,15 @@ spec:
               protocol: TCP
     # Kubernetes access is mediated by the Haku Console authorization proxy. The runner writes
     # an ephemeral tokenFile kubeconfig only when Console selects this route; no ServiceAccount
-    # token is mounted in the runner pod and there is no direct apiserver path.
+    # token is mounted in the runner pod and there is no direct apiserver path. The proxy's TLS
+    # listener, because kubectl sends credentials only to an https server.
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: haku-console
             k8s:app.kubernetes.io/name: haku-kube-api-proxy
       toPorts:
         - ports:
-            - port: "8080"
+            - port: "8443"
               protocol: TCP
     # haku-state, so the session starts with Haku's manual rather than an empty workspace.
     # In-cluster and plaintext, the way the haku-sandbox exec target already clones it — so no

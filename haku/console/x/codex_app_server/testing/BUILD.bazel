@@ -1,6 +1,18 @@
-load("//devinfra/python:defs.bzl", "py_binary")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
-package(default_visibility = ["//haku/console/x/codex_app_server:__pkg__"])
+package(
+    default_testonly = True,
+    default_visibility = ["//haku/console/x/codex_app_server:__pkg__"],
+)
+
+py_library(
+    name = "fold",
+    srcs = ["fold.py"],
+    deps = [
+        "//haku/console/x:conversation_events",
+        "//haku/console/x/codex_app_server:projection",
+    ],
+)
 
 py_binary(
     name = "stub_codex_bin",

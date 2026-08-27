@@ -49,18 +49,17 @@ direction, and timestamps.
 `--harness claude` (or `codex-app-server`) is required by the deployed SandboxTemplate. The
 selected harness is resolved once at runner startup and cannot change for the lifetime of the process.
 The claim gives
-the sandbox one exact-session bearer. The runner uses it for the bridge and the Agent intentionally
-inherits it for Console MCP, so native MCP support and ordinary HTTP clients such as `curl` exercise
-the same pinned Agent/profile/binding authority. It is not the Claude OAuth credential, which never
-enters the sandbox. Claims expose the same bearer as both `HAKU_AGENT_SDK_RUNNER_TOKEN` and the
-rolling-compatible `HAKU_MCP_BEARER_TOKEN` alias: the previous runner strips only the first name,
-while the new runner preserves both, so either rollout direction leaves Claude's MCP configuration
-usable without creating a second credential.
+the sandbox one exact-session bearer, `HAKU_AGENT_SDK_RUNNER_TOKEN`. The runner uses it for the
+bridge and the Agent intentionally inherits it for Console MCP, so native MCP support and ordinary
+HTTP clients such as `curl` exercise the same pinned Agent/profile/binding authority. It is not the
+Claude OAuth credential, which never enters the sandbox.
 
 When the Console launch environment contains `HAKU_KUBERNETES_PROXY_URL`, the runner creates
 `$HOME/.kube/config` and a mode-0600 `$HOME/.kube/haku-agent-token`. The config points only at that
 URL and references the token via client-go's `tokenFile`; bearer bytes never occur in argv,
-or kubeconfig YAML. They are intentionally present in the ephemeral SandboxClaim environment for
+or kubeconfig YAML. The URL must be https — client-go reads kubeconfig credentials only for a TLS
+server, so a plain-http proxy receives every kubectl request unauthenticated — and the cluster
+entry pins the launch-selected `SSL_CERT_FILE` trust bundle as its `certificate-authority`. They are intentionally present in the ephemeral SandboxClaim environment for
 bridge/MCP authentication. The proxy is therefore Console-selected and authorization-aware, while
 the runner has no direct ServiceAccount token. The Console must add
 this launch variable when a session is permitted Kubernetes access; the runner intentionally has

@@ -76,8 +76,7 @@ class MarketSeedRecord:
     resolved_yes: bool
     # The market's own probability at as_of — `probAfter` of the last
     # non-redemption bet at/before as_of 00:00 UTC, reconstructed from
-    # `/v0/bets` (rule verified in loom/plans/market_harvest.md). Reference
-    # baseline for scoring; never shown to contestants.
+    # `/v0/bets`. Reference baseline for scoring; never shown to contestants.
     prob_at_as_of: float
     question: str
     evidence: tuple[EvidenceItem, ...]

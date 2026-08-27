@@ -14,7 +14,8 @@ from pathlib import Path
 from haku.console.chat_models import RuntimeKind
 from haku.console.x.codex_app_server import frames, projection
 from haku.console.x.codex_app_server.client import CodexClientFactory, CodexThread, app_server_over_websocket
-from haku.console.x.conversation_events import Projection, TurnCompleted
+from haku.console.x.codex_app_server.config import ReasoningEffort
+from haku.console.x.conversation_events import TurnCompleted
 from haku.console.x.runtime import (
     EMPTY_TURN_PROJECTION_SEED,
     FrameEffects,
@@ -49,6 +50,7 @@ class CodexRuntimeAdapter:
 
     client_factory: CodexClientFactory = app_server_over_websocket
     model: str | None = None
+    reasoning_effort: ReasoningEffort | None = None
     model_provider: CodexModelProvider | None = None
 
     @property
@@ -83,11 +85,6 @@ class CodexRuntimeAdapter:
         # Codex's idle-time frames are unclassified, so the stream is only consumed inside a turn.
         return None
 
-    def project_log(self, frames_: Iterable[tuple[int, HarnessFrame]]) -> Projection:
-        return projection.project_log(
-            projection.RecordedFrame(frame_seq=seq, payload=envelope.frame) for seq, envelope in frames_
-        )
-
     def prompt_submitted(self, outbound: Iterable[HarnessFrame]) -> bool:
         return any(frames.is_prompt(envelope.frame) for envelope in outbound)
 
@@ -96,17 +93,23 @@ class CodexRuntimeAdapter:
             name: HttpMcpServer(url=server.url, bearer_token_env_var=server.bearer_environment_variable)
             for name, server in launch.mcp_servers.items()
         }
+        cwd = Path(launch.cwd)
         return _NativeLaunch(
             harness=build_codex_launch(
                 CodexAppServerSession(
-                    cwd=Path(launch.cwd),
+                    cwd=cwd,
                     environment=launch.environment,
                     mcp_servers=native_servers,
                     model_provider=self.model_provider,
                 ),
                 resume_from=launch.resume_from,
             ),
-            thread=CodexThread(cwd=launch.cwd, model=self.model, developer_instructions=launch.appended_system_prompt),
+            thread=CodexThread(
+                cwd=cwd,
+                model=self.model,
+                reasoning_effort=self.reasoning_effort,
+                developer_instructions=launch.appended_system_prompt,
+            ),
         )
 
 
@@ -117,9 +120,7 @@ class CodexTurnHandler:
     state: projection.ProjectionState
 
     def apply(self, *, frame_seq: int, frame: HarnessFrame) -> FrameEffects:
-        self.state, result = projection.project(
-            self.state, [projection.RecordedFrame(frame_seq=frame_seq, payload=frame.frame)]
-        )
+        self.state, result = self.state.advance([projection.RecordedFrame(frame_seq=frame_seq, payload=frame.frame)])
         terminal = next((event for event in result.events if isinstance(event, TurnCompleted)), None)
         completion = None if terminal is None else TurnCompletion(end=terminal.end, final_text="")
         # Arrives before the terminal frame, so the loop carries it to the turn's close.

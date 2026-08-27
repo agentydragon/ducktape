@@ -24,6 +24,7 @@ import { formatTimestamp } from "./approval_state";
 import { ExternalLink } from "./link";
 import { toolCallPath } from "./routing";
 import { toastError, toastSuccess } from "./toast";
+import { principalText } from "./tool_rendering/kubernetes/responses";
 
 export type GrantHistoryFilter = "active" | "history" | "all";
 
@@ -91,6 +92,9 @@ function GrantSetCard({ item, onRevoke }: { item: KubernetesGrantSet; onRevoke: 
           <Text fw={600}>{item.agentDisplayName}</Text>
           <Text size="xs" c="dimmed" ff="monospace">
             {item.grants.length} grant{item.grants.length === 1 ? "" : "s"} from one approval
+          </Text>
+          <Text size="xs" c="dimmed">
+            Applies to {principalText(first.grant.principal)}
           </Text>
         </Stack>
         <Badge color={activeCount > 0 ? "teal" : "gray"} variant="light" style={{ flexShrink: 0 }}>
@@ -247,20 +251,20 @@ export function KubernetesGrantsPanel() {
 
   const agents = useMemo(() => {
     const names = new Map<string, string>();
-    for (const item of grants ?? []) names.set(item.grant.agent_id, item.agent_display_name);
+    for (const item of grants ?? []) names.set(item.grant.owner_agent_id, item.agent_display_name);
     return [...names].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
   }, [grants]);
 
   const grantSets = useMemo(() => {
     const sets = new Map<string, KubernetesGrantSet>();
     for (const item of grants ?? []) {
-      const key = `${item.grant.agent_id}:${item.grant.source_tool_call_id}`;
+      const key = `${item.grant.owner_agent_id}:${item.grant.source_tool_call_id}`;
       const current = sets.get(key);
       if (current) {
         current.grants.push(item);
       } else {
         sets.set(key, {
-          agentId: item.grant.agent_id,
+          agentId: item.grant.owner_agent_id,
           agentDisplayName: item.agent_display_name,
           sourceToolCallId: item.grant.source_tool_call_id,
           grants: [item],

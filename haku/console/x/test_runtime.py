@@ -10,6 +10,7 @@ import pytest_bazel
 
 from haku.console.chat_models import RuntimeKind
 from haku.console.x.claude_code import projection
+from haku.console.x.claude_code.testing.fold import whole_capture
 from haku.console.x.claude_code.testing.wire import assistant, recorded, text_block
 from haku.console.x.runtime import (
     AgentRuntimeResources,
@@ -79,9 +80,11 @@ def test_runtime_adapter_keeps_claude_projection_behavior_unchanged() -> None:
     adapter = projection_registry()[RuntimeKind.CLAUDE_CODE]
 
     through_adapter = adapter.turn_handler().apply(frame_seq=7, frame=HarnessFrame(frame=payload)).events
-    through_native = projection.project(
-        projection.ProjectionState(), [recorded(7, payload)], delta_source=projection.DeltaSource.STREAM_EVENTS
-    )[1].events
+    through_native = (
+        projection.ProjectionState()
+        .advance([recorded(7, payload)], delta_source=projection.DeltaSource.STREAM_EVENTS)[1]
+        .events
+    )
 
     assert through_adapter == through_native
 
@@ -92,11 +95,13 @@ def test_claude_adapter_keeps_opaque_native_frames_inspectable() -> None:
     undiscriminated = {"jsonrpc": "2.0", "id": 1, "result": {}}
 
     effects = adapter.turn_handler().apply(frame_seq=8, frame=HarnessFrame(frame=payload))
-    whole = adapter.project_log([(8, HarnessFrame(frame=payload)), (9, HarnessFrame(frame=undiscriminated))])
+    # The count is the reducer's rather than the handler's: `FrameEffects` carries a frame's
+    # neutral effects, and a frame the adapter has no case for has none.
+    counted = whole_capture([recorded(8, payload), recorded(9, undiscriminated)])
 
     assert effects.events == ()
-    assert whole.events == ()
-    assert whole.unprojected == {"future/event": 1, "<undiscriminated>": 1}
+    assert counted.events == ()
+    assert counted.unprojected == {"future/event": 1, "<undiscriminated>": 1}
 
 
 if __name__ == "__main__":

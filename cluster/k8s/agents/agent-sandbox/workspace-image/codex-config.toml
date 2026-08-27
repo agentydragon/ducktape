@@ -1,12 +1,12 @@
-# Codex → cluster LiteLLM (`*-chatgpt` Codex-account models), mirroring the
+# Codex → cluster LiteLLM (Codex-subscription models), mirroring the
 # codex-pod baked config (x/codex_pod_image/home.nix) but with the in-cluster
 # base URL. env_key names the env var carrying the LiteLLM virtual key — only
 # the codex-lane SandboxTemplate sets it, so on other lanes codex simply has
 # no credentials. wire_api=responses: LiteLLM passes /v1/responses straight
 # through to CLIProxyAPI's native Responses surface (no bridge), so the model
-# name must be one of the `*-chatgpt` entries — the `codex-*` ones are the
-# Anthropic-wire lane for Claude Code and do not speak this protocol.
-model = "gpt-5.6-sol-chatgpt"
+# must be a `chatgpt/oai-responses/*` entry — `chatgpt/ant-messages/*` is the
+# Anthropic-wire lane for Claude Code and does not speak this protocol.
+model = "chatgpt/oai-responses/gpt-5.6-sol"
 model_provider = "litellm"
 model_reasoning_effort = "xhigh"
 # Disposable operator-trusted pod, same as codex-pod: run unattended.

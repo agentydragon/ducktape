@@ -23,7 +23,7 @@ from tenacity import AsyncRetrying, before_sleep_log, retry_if_exception, stop_a
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
-from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE, MCP_CREDENTIAL_VARIABLE, CliBackend
+from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE, CliBackend
 from haku.runtime.x.bridge.backend_registry import BackendFactory, runner_backends
 from haku.runtime.x.bridge.protocol import (
     CONSOLE_TO_RUNNER,
@@ -238,13 +238,18 @@ def _materialize_proxy_kubeconfig(launch: HarnessLaunch, bearer_token: str | Non
     YAML. It is already present by design in the ephemeral SandboxClaim environment for bridge and
     MCP authentication. The proxy URL is launch-selected so the runner does not carry a catalog of
     Console topology or bypass the authorization boundary.
+
+    The proxy URL must be https: client-go reads kubeconfig user credentials only for a TLS
+    server, so against a plain-http proxy kubectl sends every request unauthenticated and the
+    proxy answers 401. The cluster entry pins the launch-selected sandbox trust bundle
+    (`SSL_CERT_FILE`), which carries the internal root that signs the proxy's certificate.
     """
     proxy_url = launch.environment.get(KUBERNETES_PROXY_URL_ENV)
     if not proxy_url:
         return launch
     # The claim-owned credential always wins. Launch-selected environment is topology/options,
     # never authority, and must not be able to replace the bearer inherited by this runner Pod.
-    token = bearer_token or os.environ.get(BRIDGE_CREDENTIAL_VARIABLE) or os.environ.get(MCP_CREDENTIAL_VARIABLE)
+    token = bearer_token or os.environ.get(BRIDGE_CREDENTIAL_VARIABLE)
     if not token:
         raise RuntimeError(f"{KUBERNETES_PROXY_URL_ENV} requires a bridge bearer")
 
@@ -256,12 +261,15 @@ def _materialize_proxy_kubeconfig(launch: HarnessLaunch, bearer_token: str | Non
     kube_dir.chmod(0o700)
     token_path = kube_dir / "haku-agent-token"
     config_path = kube_dir / "config"
+    cluster: dict[str, str] = {"server": proxy_url}
+    if ca_bundle := launch.environment.get("SSL_CERT_FILE", os.environ.get("SSL_CERT_FILE", "")):
+        cluster["certificate-authority"] = ca_bundle
     # JSON is valid kubeconfig YAML and avoids treating deploy-configured URL/path bytes as YAML.
     config = json.dumps(
         {
             "apiVersion": "v1",
             "kind": "Config",
-            "clusters": [{"name": "haku-console-proxy", "cluster": {"server": proxy_url}}],
+            "clusters": [{"name": "haku-console-proxy", "cluster": cluster}],
             "users": [{"name": "haku-agent-session", "user": {"tokenFile": str(token_path)}}],
             "contexts": [
                 {

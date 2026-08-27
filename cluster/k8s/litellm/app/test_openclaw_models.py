@@ -4,26 +4,32 @@ import yaml
 
 from cluster.k8s.litellm.app.model_rosters import (
     ANTHROPIC_MODELS,
+    CLIPROXY_MODELS,
     GEMINI_CONTEXT_WINDOW,
     GEMINI_MAX_OUTPUT_TOKENS,
     GEMINI_MODELS,
     GEMINI_NON_REASONING_MODELS,
+    OPENCLAW_CLIPROXY_MODELS,
     OPENCLAW_CODEX_MODELS,
+    ApiShape,
+    Provider,
+    exposed_name,
 )
 from util.bazel.runfiles import get_required_path
 
 # Measured, not published, and the published figures are wrong in both
 # directions: the raw models are ~1.05M and Codex product documentation says
 # 272K, while this serving path (OpenClaw -> LiteLLM -> CLIProxyAPI -> upstream)
-# accepts neither. LiteLLM carries no `max_input_tokens` for the codex-* routes,
-# so there is nothing upstream of this file to consult instead.
+# accepts neither. LiteLLM carries no `max_input_tokens` for the
+# Codex-subscription routes, so there is nothing upstream of this file to
+# consult instead.
 #
 # openai_utils/probe_context_window.py binary-searches the live path. On
 # 2026-07-29 all three 5.6 models behaved identically: 370,629 counted tokens
 # accepted, 372,194 rejected. Re-derive with:
 #
 #     kubectl exec -i -n <ns> <pod> -- python3 - --low 350000 --high 400000 \
-#         codex-gpt-5.6-{luna,sol,terra} < openai_utils/probe_context_window.py
+#         chatgpt/ant-messages/gpt-5.6-{luna,sol,terra} < openai_utils/probe_context_window.py
 CODEX_CONTEXT_WINDOW = 372_000
 CODEX_MAX_TOKENS = 128_000
 
@@ -41,7 +47,7 @@ _TANA_MODELS = {
 
 def _public_coder_agent_models() -> list[dict]:
     config = json5.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
-    models: list[dict] = config["models"]["providers"]["litellm-subscription"]["models"]
+    models: list[dict] = config["models"]["providers"]["litellm"]["models"]
     return models
 
 
@@ -65,12 +71,13 @@ def _litellm_models() -> dict[str, dict]:
 
 def test_litellm_config_has_a_route_per_declared_codex_model() -> None:
     """Every model the agents may name must exist in the committed LiteLLM config."""
+    assert set(OPENCLAW_CLIPROXY_MODELS) <= set(CLIPROXY_MODELS)
     litellm_models = _litellm_models()
-    for model_id in OPENCLAW_CODEX_MODELS:
-        assert litellm_models[model_id] == {
-            "model_name": model_id,
+    for model, catalog_id in zip(OPENCLAW_CLIPROXY_MODELS, OPENCLAW_CODEX_MODELS, strict=True):
+        assert litellm_models[catalog_id] == {
+            "model_name": catalog_id,
             "litellm_params": {
-                "model": f"anthropic/{model_id.removeprefix('codex-')}",
+                "model": f"anthropic/{model}",
                 "api_base": "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317",
                 "api_key": "os.environ/CLIPROXY_CLIENT_KEY",
             },
@@ -126,15 +133,19 @@ def test_tana_compatibility_roster_remains_explicitly_pinned() -> None:
         }
 
 
+# The catalog's Gemini ids, in roster order: GEMINI_MODELS under their #4823 scheme names.
+_OPENCLAW_GEMINI_IDS = [exposed_name(Provider.GOOGLE, ApiShape.OAI_CHAT, model) for model in GEMINI_MODELS]
+
+
 def test_public_coder_agent_models_match_litellm_codex_routes() -> None:
     """The agent's catalog is pinned to exactly the Codex and Gemini routes it should offer."""
-    assert [model["id"] for model in _public_coder_agent_models()] == [*OPENCLAW_CODEX_MODELS, *GEMINI_MODELS]
+    assert [model["id"] for model in _public_coder_agent_models()] == [*OPENCLAW_CODEX_MODELS, *_OPENCLAW_GEMINI_IDS]
 
     config = json5.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
-    provider = config["models"]["providers"]["litellm-subscription"]
+    provider = config["models"]["providers"]["litellm"]
     assert provider["api"] == "anthropic-messages"
     assert config["agents"]["defaults"]["model"]["primary"] in {
-        f"litellm-subscription/{model_id}" for model_id in OPENCLAW_CODEX_MODELS
+        f"litellm/{model_id}" for model_id in OPENCLAW_CODEX_MODELS
     }
 
 
@@ -161,9 +172,9 @@ def test_gemini_models_match_the_published_spec() -> None:
     litellm_models = _litellm_models()
     models = {model["id"]: model for model in _public_coder_agent_models()}
 
-    for model_id in GEMINI_MODELS:
-        assert model_id in litellm_models, f"{model_id} has no committed LiteLLM route"
-        entry = models[model_id]
+    for model_id, catalog_id in zip(GEMINI_MODELS, _OPENCLAW_GEMINI_IDS, strict=True):
+        assert catalog_id in litellm_models, f"{catalog_id} has no committed LiteLLM route"
+        entry = models[catalog_id]
         assert entry["contextWindow"] == GEMINI_CONTEXT_WINDOW
         assert entry["maxTokens"] == GEMINI_MAX_OUTPUT_TOKENS
         assert entry["input"] == ["text", "image"]

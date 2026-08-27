@@ -51,7 +51,7 @@ from haku.console.x.runtime import (
 )
 from haku.console.x.sandbox_claims import SandboxProvisioningView
 from haku.console.x.session_events import TurnAbortedBody, TurnAnsweredBody, TurnEndedBody, TurnFailedBody
-from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
+from haku.console.x.session_notifications import SessionEvent, SessionEventKind, SessionNotifications
 from haku.console.x.session_store import (
     LEASE_RENEW_INTERVAL,
     BridgeAuthentication,
@@ -73,8 +73,8 @@ from haku.console.x.session_views import (
     SessionProvisioningView,
     SessionView,
 )
-from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction
-from haku.runtime.x.bridge.backend import MCP_CREDENTIAL_VARIABLE
+from haku.console.x.system_prompt import HistoryMessage, HistorySender, SessionIntroduction
+from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE
 from haku.runtime.x.bridge.client import ReceivedFrame, RecordedFrame
 from haku.runtime.x.bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, HarnessFrame, TextWebSocket
 
@@ -493,7 +493,9 @@ class SessionService:
                 workspace=resources.cwd,
                 recent_messages=tuple(
                     HistoryMessage(
-                        sender="operator" if message.item_type is ItemType.PROMPT else "assistant",
+                        sender=HistorySender.OPERATOR
+                        if message.item_type is ItemType.PROMPT
+                        else HistorySender.ASSISTANT,
                         body=message.body,
                         sent_at=message.sent_at,
                     )
@@ -586,7 +588,7 @@ class SessionService:
                 cwd=resources.cwd,
                 environment=resources.environment,
                 mcp_servers={
-                    name: RuntimeMcpServer(url=url, bearer_environment_variable=MCP_CREDENTIAL_VARIABLE)
+                    name: RuntimeMcpServer(url=url, bearer_environment_variable=BRIDGE_CREDENTIAL_VARIABLE)
                     for name, url in resources.mcp_server_urls.items()
                 },
                 appended_system_prompt=appended,
@@ -596,7 +598,7 @@ class SessionService:
                 StarletteTextWebSocket(websocket),
                 # The cursor is read here, per connection, off the session's own rows — so a replica
                 # adopting a session mid-turn asks for what it is missing rather than being handed the
-                # runner's whole replay window (<README.md> § `session_store.py` and `session_runtime.py`).
+                # runner's whole replay window (`SessionStore.highest_runner_seq`).
                 launch,
                 self._progress_reporter(session_id),
                 RolloutRecorder(self._store, session_id),
@@ -661,15 +663,15 @@ class SessionService:
                                 if watcher is None:
                                     watcher = runtime.wake_watcher()
                                 if watcher is None:
-                                    # Wait for a LISTEN/NOTIFY instead of polling.
-                                    await self._notifications.wait(
-                                        SessionEventKind.PROMPT, session_id, timeout_seconds=30.0
-                                    )
+                                    # Wait for a LISTEN/NOTIFY instead of polling. Any kind about
+                                    # this session wakes it; the loop re-checks the queue, so a
+                                    # wake it did not need costs one query.
+                                    await self._notifications.wait(session_id, timeout_seconds=30.0)
                                     continue
                                 if pending_frame is None:
                                     pending_frame = asyncio.ensure_future(anext(frames))
                                 prompted = asyncio.ensure_future(
-                                    self._notifications.wait(SessionEventKind.PROMPT, session_id, timeout_seconds=30.0)
+                                    self._notifications.wait(session_id, timeout_seconds=30.0)
                                 )
                                 await asyncio.wait([pending_frame, prompted], return_when=asyncio.FIRST_COMPLETED)
                                 prompted.cancel()
@@ -805,13 +807,19 @@ class SessionService:
         """Set *abort_event* every time this session is told to abort, until cancelled.
 
         The operator's abort lands on whichever replica the Service picks, rarely the one holding
-        this session's websocket, so it arrives over NOTIFY rather than in process.
+        this session's websocket, so it arrives over NOTIFY rather than in process. An abort is an
+        edge with no row to re-check, so this dispatches on the delivered kind rather than taking
+        a plain wake — which is also what stops a listener reconnect (which wakes every waiter)
+        from aborting an innocent turn. An abort emitted during a reconnect gap is lost, and the
+        operator aborting again is the recovery.
         """
-        async with self._notifications.subscribe(SessionEventKind.ABORT, session_id) as notified:
-            while True:
-                await notified.wait()
-                notified.clear()
+
+        def on_event(event: SessionEvent) -> None:
+            if event.kind is SessionEventKind.ABORT:
                 abort_event.set()
+
+        with self._notifications.watch_session(session_id, on_event):
+            await asyncio.Event().wait()
 
     async def _run_turn(
         self,
@@ -829,7 +837,7 @@ class SessionService:
         **Project, then act.** Every frame goes through the selected runtime adapter and this loop
         acts on the neutral events that come back, so what it knows about is prose, messages, tool calls
         and a completed turn rather than any harness's native frame vocabulary
-        (<README.md> § The neutral projection).
+        (<conversation_events.py>).
 
         *frames* belongs to the session, not to this call — see `handle_runner`. This call is the
         turn's span and the only thing that closes it, so a turn left open means no code got to
@@ -842,7 +850,7 @@ class SessionService:
         (`SessionStore.apply_frame`), and `complete_frame` does the same for the terminal frame and
         turn close. A process dying anywhere therefore leaves the items saying what happened and
         the session saying which frame it got through — what makes adoption a replay from a durable
-        position and its effects exactly-once (<README.md> § The cursor).
+        position and its effects exactly-once (`SessionStore.apply_frame`).
         """
         runtime = await self._runtime(session_id)
         turn_id = turn.turn_id
@@ -973,7 +981,7 @@ async def _replaying(
 
     **This is what makes adoption and steady state one call.** The turn loop consumes one iterator
     and cannot tell which half a frame came from, so a turn whose ending is among the recorded
-    frames closes without the socket being consulted (<README.md> § The cursor).
+    frames closes without the socket being consulted (`SessionStore.apply_frame`).
     """
     for frame in recorded:
         yield frame

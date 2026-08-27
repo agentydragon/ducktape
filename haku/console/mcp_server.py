@@ -98,6 +98,7 @@ from haku.console.tool_call_service import (
 from haku.console.tool_calls import (
     MCP_TOOL_CALL_META_KEY,
     MCP_TOOL_META_KEY,
+    ApprovalMode,
     McpProxyToolMetadata,
     McpToolCallMetadata,
     SubmitToolCallRequest,
@@ -386,7 +387,7 @@ def _exposed_metadata(
         )
         return tool.model_copy(
             update={
-                "approval_mode": "passthrough" if passthrough else "approval_required",
+                "approval_mode": ApprovalMode.PASSTHROUGH if passthrough else ApprovalMode.APPROVAL_REQUIRED,
                 "input_schema": schema if include_schemas else None,
                 "output_schema": tool.output_schema if include_schemas else None,
             }
@@ -616,7 +617,7 @@ def _build_proxy_tool(
             MCP_TOOL_META_KEY: McpProxyToolMetadata(
                 server_id=server_id,
                 upstream_tool_name=tool.name,
-                approval_mode="passthrough" if passthrough else "approval_required",
+                approval_mode=ApprovalMode.PASSTHROUGH if passthrough else ApprovalMode.APPROVAL_REQUIRED,
             ).model_dump(mode="json")
         },
     )
@@ -897,21 +898,13 @@ def build_console_mcp(
         fields: Annotated[
             list[ToolCallPayloadField],
             Field(
-                description=(
-                    "Whole payloads to include. Allowed values are `arguments`, `rationale`, and `result`. "
-                    "Defaults to [`result`]; pass [] for a compact status poll."
-                ),
+                description="Whole payloads to include. Defaults to [`result`]; pass [] for a compact status poll.",
                 json_schema_extra={"default": [ToolCallPayloadField.RESULT]},
             ),
         ] = _DEFAULT_GET_TOOL_CALL_FIELDS,
         actor: ToolCallActor = current_actor_dependency,
     ) -> McpToolCallResponse:
-        """Read one tool call: status, selected payloads, terminal reason, and approval link.
-
-        By default this returns the downstream ``result`` but not the submitted arguments or
-        rationale. Pass ``fields=[]`` for a compact status poll. Payload fields are opaque whole
-        blobs; nested selectors are not supported.
-        """
+        """Read one tool call: status, selected payloads, terminal reason, and approval link."""
         try:
             record = await context.tool_calls.get(tool_call_id, actor=actor, fields=frozenset(fields))
         except (ToolCallNotFoundError, ToolCallStateConflictError) as error:
@@ -942,10 +935,7 @@ def build_console_mcp(
         fields: Annotated[
             list[ToolCallPayloadField],
             Field(
-                description=(
-                    "Whole payloads to include. Allowed values are `arguments`, `rationale`, and `result`. "
-                    "Defaults to [] for compact status summaries."
-                ),
+                description="Whole payloads to include. Defaults to [] for compact status summaries.",
                 json_schema_extra={"default": []},
             ),
         ] = _DEFAULT_LIST_TOOL_CALL_FIELDS,
@@ -956,10 +946,6 @@ def build_console_mcp(
         """List recent tool calls (newest first by default), optionally filtered by status/since/
         auto_approved (true: only calls the reviewed policy auto-approved; false: only calls that
         went through manual or no approval; omitted: no filter).
-
-        The default response contains compact status summaries only. Request ``fields`` to include
-        whole opaque ``arguments``, ``rationale``, or ``result`` payloads; nested selectors are not
-        supported.
         """
         records = await context.tool_calls.list_tool_calls(
             actor=actor,

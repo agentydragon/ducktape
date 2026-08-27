@@ -8,7 +8,7 @@ Small Talos k8s cluster with GitOps and HTTPS.
 - CNI: Cilium VXLAN (infrastructure-managed, not GitOps)
 - Secrets: SOPS (age-encrypted in git, decrypted by Flux). ESO with the Kubernetes
   provider mirrors a few secrets cross-namespace. Vault was decommissioned 2026-04-19
-  (see <archive/2026_04_19_vault_migration.md>).
+  (why: <docs/decisions.md> § "Secrets: SOPS SSOT").
 
 ## Prerequisites
 
@@ -65,17 +65,16 @@ lives in `nebula-mesh.json` at the repo root. To add or remove a node, see
 Key services (curated — this table is not the SSOT; the full set is the
 HTTPRoutes under `k8s/` and `k8s/authentik/proxy-routes/`):
 
-| Service        | URL                                | Purpose                 |
-| -------------- | ---------------------------------- | ----------------------- |
-| Authentik      | <https://auth.allegedly.works>     | SSO provider            |
-| Forgejo        | <https://git.allegedly.works>      | Git hosting             |
-| Harbor         | <https://registry.allegedly.works> | Container registry      |
-| Matrix/Element | <https://chat.allegedly.works>     | Chat                    |
-| Grafana        | <https://grafana.allegedly.works>  | Monitoring              |
-| Nix Cache      | <https://cache.allegedly.works>    | Binary cache            |
-| Gatus          | <https://status.allegedly.works>   | Health monitoring       |
-| Ollama         | <https://ollama.allegedly.works>   | LLM inference (GPU)     |
-| Airlock        | <https://airlock.allegedly.works>  | OAuth credential broker |
+| Service        | URL                               | Purpose                 |
+| -------------- | --------------------------------- | ----------------------- |
+| Authentik      | <https://auth.allegedly.works>    | SSO provider            |
+| Forgejo        | <https://git.allegedly.works>     | Git hosting             |
+| Matrix/Element | <https://chat.allegedly.works>    | Chat                    |
+| Grafana        | <https://grafana.allegedly.works> | Monitoring              |
+| Nix Cache      | <https://cache.allegedly.works>   | Binary cache            |
+| Gatus          | <https://status.allegedly.works>  | Health monitoring       |
+| Ollama         | <https://ollama.allegedly.works>  | LLM inference (GPU)     |
+| Airlock        | <https://airlock.allegedly.works> | OAuth credential broker |
 
 Credentials: `get-passwords` (requires direnv in cluster directory).
 
@@ -85,16 +84,17 @@ All storage is region-local — no cross-site synchronous replication. Key
 classes below (curated — SSOT is the `StorageClass` manifests under `k8s/`,
 e.g. `k8s/{local-path-provisioner,openebs-lvm}/`, plus CSI Helm values):
 
-| StorageClass         | Provisioner            | Region    | Notes                                                                                                |
-| -------------------- | ---------------------- | --------- | ---------------------------------------------------------------------------------------------------- |
-| `local-path-proxmox` | local-path-provisioner | `proxmox` | Proxmox-single CNPG DBs; node-pinned app data on Proxmox nodes                                       |
-| `local-path-ovh-hdd` | local-path-provisioner | `hil-ovh` | OVH KS-5 HDD tier: SeaweedFS bulk (`hdd`) volume servers, OVH-HA CNPG DBs, node-pinned bulk app data |
-| `local-path-ovh-ssd` | local-path-provisioner | `hil-ovh` | OVH KS-GAME NVMe tier: SeaweedFS hot (`ssd`) volume servers; SSD-pinned DBs                          |
-| `local-path-ovh`     | local-path-provisioner | `hil-ovh` | Deprecated alias, re-pinned to `local-path-ovh-hdd`                                                  |
-| `seaweedfs-ovh`      | SeaweedFS CSI          | `hil-ovh` | **Default for app data volumes** — not node-pinned, pods reschedule freely; POSIX/S3-backed (HDD)    |
-| `seaweedfs-ovh-ssd`  | SeaweedFS CSI          | `hil-ovh` | NVMe-backed SeaweedFS (`diskType: ssd`) — Forgejo git hot tier                                       |
-| `lvm-proxmox-ssd`    | OpenEBS LVM CSI        | `proxmox` | NVMe thin provisioning                                                                               |
-| `lvm-proxmox-hdd`    | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning                                                                                |
+| StorageClass          | Provisioner            | Region    | Notes                                                                                                                 |
+| --------------------- | ---------------------- | --------- | --------------------------------------------------------------------------------------------------------------------- |
+| `local-path-proxmox`  | local-path-provisioner | `proxmox` | Proxmox-single CNPG DBs; node-pinned app data on Proxmox nodes                                                        |
+| `local-path-ovh-hdd`  | local-path-provisioner | `hil-ovh` | OVH KS-5 HDD tier: SeaweedFS bulk (`hdd`) volume servers, OVH-HA CNPG DBs, node-pinned bulk app data                  |
+| `local-path-ovh-ssd`  | local-path-provisioner | `hil-ovh` | OVH KS-GAME NVMe tier: SeaweedFS hot (`ssd`) volume servers; SSD-pinned DBs                                           |
+| `local-path-home-ssd` | local-path-provisioner | `home`    | OptiPlex NVMe: hardware/LAN-pinned home state (Home Assistant, openclaw spike); VolSync copies it to SeaweedFS for DR |
+| `local-path-ovh`      | local-path-provisioner | `hil-ovh` | Deprecated alias, re-pinned to `local-path-ovh-hdd`                                                                   |
+| `seaweedfs-ovh`       | SeaweedFS CSI          | `hil-ovh` | **Default for app data volumes** — not node-pinned, pods reschedule freely; POSIX/S3-backed (HDD)                     |
+| `seaweedfs-ovh-ssd`   | SeaweedFS CSI          | `hil-ovh` | NVMe-backed SeaweedFS (`diskType: ssd`) — Forgejo git hot tier                                                        |
+| `lvm-proxmox-ssd`     | OpenEBS LVM CSI        | `proxmox` | NVMe thin provisioning                                                                                                |
+| `lvm-proxmox-hdd`     | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning                                                                                                 |
 
 OpenEBS LVM is constrained to nodes
 with the `openebs-proxmox-ssd` / `openebs-proxmox-hdd` volume groups (currently Proxmox nodes only).
@@ -117,9 +117,9 @@ wyrm2 (NixOS, 2x RTX 5090) provides `nvidia.com/gpu` resources; GPU pods need
 
 DNS (AWS Route 53) and the public website must keep working/recovering with OVH
 only (no Proxmox) — so they must not depend on Proxmox-pinned storage
-(`lvm-proxmox-*`, `local-path-proxmox`) or Proxmox-pinned nodes. Full invariant set,
-compliance tracking, and fix plan:
-<docs/plan.md> § "OVH-Only Resilience Invariants".
+(`lvm-proxmox-*`, `local-path-proxmox`) or Proxmox-pinned nodes. Full invariant set
+and compliance checklist:
+<docs/decisions.md> § "OVH-Only Resilience Invariants".
 
 ## SSO (Authentik)
 
@@ -148,7 +148,6 @@ cluster/
 │   ├── agents/             # Agent infra (public-coder-agent, airlock, agent-rbac-base, tana-mcp, ...)
 │   ├── authentik/          # SSO (app, blueprints, db, secrets, proxy-routes, ...)
 │   ├── monitoring/         # Observability (stack, loki, alloy, tempo, ...)
-│   ├── harbor/             # Registry (app, secrets, ci, webhook, ...)
 │   ├── <service>/          # Grouped: subdirs per flux-kustomization (namespace, secrets, app, db)
 │   ├── <service>/          # Flat: single flux-kustomization, all manifests at root
 │   └── flux-system/        # Flux controllers (auto-generated)

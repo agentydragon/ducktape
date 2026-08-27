@@ -22,7 +22,8 @@ import pytest_bazel
 from more_itertools import one
 
 from haku.console.chat_models import ToolOutcome
-from haku.console.x.claude_code.projection import RecordedFrame, project_log
+from haku.console.x.claude_code.projection import RecordedFrame
+from haku.console.x.claude_code.testing.fold import whole_capture
 from haku.console.x.conversation_events import (
     FrameRange,
     ItemSegment,
@@ -59,7 +60,7 @@ _AGENT_TASK = "id-161"
 
 @pytest.fixture(scope="module")
 def projection() -> Projection:
-    return project_log(_FRAMES)
+    return whole_capture(_FRAMES)
 
 
 def test_the_capture_folds_to_two_turns(projection: Projection):

@@ -7,7 +7,7 @@ import { useCoalescedRefresh } from "./coalesced_refresh";
 import { PendingToolCallActions } from "./pending_tool_call_actions";
 import { ToolCallCard } from "./tool_call_card";
 import { useToolCallDecision } from "./tool_call_decision";
-import { changedSessionId, useConsoleEvents } from "./console_events";
+import { changedConversationId, useConsoleEvents } from "./console_events";
 import { useVariant } from "./variant_control";
 
 // One screenful and change, not the ledger's `le=500` cap. Every record carries its whole arguments
@@ -138,11 +138,11 @@ export function ToolCallsPage() {
 
   // Live: initial load on mount plus a refetch of the first page whenever a tool call is submitted,
   // approved, denied, or finishes anywhere — the same WS signal the approvals panel uses. Pages
-  // already scrolled back through survive it (see `mergeNewestPage`). Session invalidations are
-  // skipped: they say nothing about the ledger, and a streaming turn emits one every coalescing
-  // window.
+  // already scrolled back through survive it (see `mergeNewestPage`). Conversation invalidations
+  // are skipped: they say nothing about the ledger, and a streaming turn emits one every
+  // coalescing window.
   useConsoleEvents((event) => {
-    if (changedSessionId(event) === null) refresh();
+    if (changedConversationId(event) === null) refresh();
   });
 
   const decisions = useToolCallDecision({ onSettled: refresh });

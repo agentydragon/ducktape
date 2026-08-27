@@ -24,7 +24,14 @@ import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join, resolve } from "path";
 
-import { prepareDeterministicPage, screenshotElement, settle, waitForStable } from "./capture.mjs";
+import {
+  abortUnexpectedRequests,
+  assertNetworkSettled,
+  prepareDeterministicPage,
+  screenshotElement,
+  settle,
+  waitForStable,
+} from "./capture.mjs";
 import { launchDeterministicBrowser } from "./launcher.mjs";
 import { upsertVisualReviewAsset } from "./visual-review-manifest.mjs";
 
@@ -90,6 +97,9 @@ export async function main(scenarioName, options) {
     // formatDistanceToNow used by formatAge) deterministic — without it, renders drift
     // as the mock dates cross date-fns thresholds ("about 1 year" → "over 1 year", etc.).
     await prepareDeterministicPage(page, { viewport, colorScheme });
+    // The harness is entirely local (file:// page, bundled fixtures), so nothing may reach the
+    // network; a request that tries is aborted and fails the scenario by name before capture.
+    const escapedRequests = await abortUnexpectedRequests(page, (request) => request.url().startsWith("file://"));
 
     const harnessUrl = `file://${indexPath}`;
 
@@ -111,6 +121,12 @@ export async function main(scenarioName, options) {
     // A scene whose content arrives after mount (a fetch, a lazily-built editor) still needs its
     // own condition; waitMs is the leftover blind wait for scenes that have not got one yet.
     if (options.waitMs) await settle(options.waitMs);
+    // No-op today (this harness stubs no fetch, so no page installs the ledger); wired so a
+    // future harness that does stub one is gated without touching this driver.
+    await assertNetworkSettled(page, { context: outputName });
+    if (escapedRequests.length > 0) {
+      throw new Error(`${outputName}: requests escaped the harness:\n  ${escapedRequests.join("\n  ")}`);
+    }
 
     const screenshot = await screenshotElement(page, options.element, { context: "main()" });
 

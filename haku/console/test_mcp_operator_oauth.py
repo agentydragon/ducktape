@@ -35,6 +35,7 @@ from haku.console.oauth_token_state import (
     OAuthRefreshFailureAction,
     OAuthRefreshFailureKind,
     PostgresOAuthTokenStateStore,
+    _refresh_retry_delay,
     new_oauth_token_state,
 )
 from haku.console.operator_identity import InactiveOperatorError, OperatorStatus
@@ -527,6 +528,86 @@ async def test_operator_oauth_retryable_failure_backs_off_and_clears_after_succe
     ).associations[0]
     assert isinstance(status.state, McpOperatorAuthConnected)
     assert attempts == 2
+
+
+def test_refresh_retry_delay_doubles_from_base_and_saturates_at_max() -> None:
+    """The persisted backoff sequence is operator-visible policy: 30s after the first failure,
+    doubling to the 15-minute cap from the sixth on, and saturated — never overflowed — for
+    arbitrarily long episodes (2**1024 exceeds float range; attempt 1025 froze episodes before)."""
+    assert [_refresh_retry_delay(attempt) for attempt in (1, 2, 3)] == [
+        datetime.timedelta(seconds=30),
+        datetime.timedelta(minutes=1),
+        datetime.timedelta(minutes=2),
+    ]
+    assert _refresh_retry_delay(5) == datetime.timedelta(minutes=8)
+    assert _refresh_retry_delay(6) == datetime.timedelta(minutes=15)
+    assert _refresh_retry_delay(1024) == datetime.timedelta(minutes=15)
+    assert _refresh_retry_delay(1025) == datetime.timedelta(minutes=15)
+
+
+async def test_operator_oauth_failure_recording_survives_long_episodes(
+    migrated_engine: AsyncEngine,
+    oauth_store_for: Callable[[str], Awaitable[tuple[PostgresMcpOperatorOAuthStore, UUID]]],
+    monkeypatch: pytest.MonkeyPatch,
+    dynamic_remote_oauth_server: McpServerEntry,
+) -> None:
+    """The 1025th consecutive failure must still be recorded: 2**1024 exceeds float range, so an
+    unclamped backoff exponent raises OverflowError inside the failure write, rolling it back and
+    freezing the persisted episode (and its surfaced status) at attempt 1024 forever."""
+    oauth_store, operator_id = await oauth_store_for("refresh-long-episode-operator")
+    server = dynamic_remote_oauth_server
+    now = datetime.datetime.now(datetime.UTC)
+    failure_message = "MCP OAuth token refresh request failed: ConnectError"
+    async with async_sessionmaker(migrated_engine)() as session, session.begin():
+        token_state = new_oauth_token_state(
+            operator_id=operator_id,
+            access_token="expired",
+            refresh_token="refresh-token",
+            token_type="Bearer",
+            scope=None,
+            expires_at=now - datetime.timedelta(days=10),
+            now=now,
+        )
+        token_state.refresh_failure_started_at = now - datetime.timedelta(days=10)
+        token_state.refresh_failure_initial_kind = OAuthRefreshFailureKind.CONNECT
+        token_state.refresh_failure_initial_message = failure_message
+        token_state.refresh_failure_latest_at = now - datetime.timedelta(minutes=15)
+        token_state.refresh_failure_latest_kind = OAuthRefreshFailureKind.CONNECT
+        token_state.refresh_failure_latest_message = failure_message
+        token_state.refresh_failure_count = 1024
+        token_state.refresh_failure_action = OAuthRefreshFailureAction.RETRYING
+        token_state.refresh_retry_at = now - datetime.timedelta(seconds=1)
+        session.add(
+            McpOperatorOAuthAssociation(
+                server_id=server.id,
+                operator_id=operator_id,
+                created_at=now - datetime.timedelta(days=30),
+                client_id="client-id",
+                token_endpoint="https://auth.test/token",
+                token_state=token_state,
+            )
+        )
+
+    async def refresh(_client: object, _refresh_token: str) -> OAuthToken:
+        raise OAuthRefreshError(
+            failure_message, kind=OAuthRefreshFailureKind.CONNECT, action=OAuthRefreshFailureAction.RETRYING
+        )
+
+    monkeypatch.setattr("haku.console.mcp_operator_oauth._refresh_operator_oauth_token", refresh)
+    with pytest.raises(OAuthRefreshError):
+        await oauth_store.access_token_for(server=server, operator_id=operator_id)
+
+    async with async_sessionmaker(migrated_engine)() as session, session.begin():
+        association = await session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
+        assert association is not None
+        state = association.token_state
+        assert state.refresh_failure_count == 1025
+        assert state.refresh_failure_started_at == now - datetime.timedelta(days=10)
+        assert state.refresh_failure_latest_at is not None
+        assert state.refresh_failure_latest_at > now - datetime.timedelta(minutes=15)
+        # Saturated backoff: the next retry stays scheduled at the cap rather than overflowing.
+        assert state.refresh_retry_at == state.refresh_failure_latest_at + datetime.timedelta(minutes=15)
+        assert state.refresh_claim_id is None
 
 
 async def test_forget_unconfigured_servers_drops_the_association_and_its_token(

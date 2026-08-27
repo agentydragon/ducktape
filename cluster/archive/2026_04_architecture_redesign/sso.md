@@ -1,10 +1,10 @@
 # Secrets & SSO Architecture
 
-Part of <plan.md>.
+Part of the 2026-04 architecture redesign (its plan is retired; git history has it).
 
 > **Status (2026-04-19)**: Resolved. The cluster moved to Option B-ish (TF writes
-> Authentik providers directly, secrets in SOPS). Vault was decommissioned — see
-> <../2026_04_19_vault_migration.md>. The options analysis below is kept as
+> Authentik providers directly, secrets in SOPS). Vault was decommissioned 2026-04-19 —
+> see <../../docs/decisions.md> § "Secrets: SOPS SSOT". The options analysis below is kept as
 > historical context for the decision.
 
 ## Current Setup (Vault + tofu-controller + ESO)
@@ -302,3 +302,13 @@ Authentik secret stays in Vault/ESO until Authentik is fully turned off.
 6. After validation period: delete Authentik, Vault, ESO, and
    tofu-controller secret resources. Keep TF resources that call
    external APIs (Harbor, DNS).
+
+## Authelia user provisioning (still current)
+
+Authelia is deployed (`k8s/authelia/`) with users in a static `users.yml`
+ConfigMap, passwords argon2id-hashed — config-as-code: add/change a user by
+editing the file and pushing; Reloader restarts the pod. Runtime self-service
+(password reset, profile changes) was rejected: it needs a writable `users.yml`
+(PVC or emptyDir seeded from the ConfigMap) plus an SMTP notifier, and password
+changes would then live only in the PVC, drifting from declared config.
+Revisit only if MFA (TOTP/WebAuthn) device enrollment requires runtime writes.

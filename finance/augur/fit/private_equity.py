@@ -74,15 +74,25 @@ class ValuationObservation(StrictModel):
     valuation_usd: float = Field(gt=0)
     uncertainty_log_sigma: float = Field(gt=0)
     valuation_kind: ValuationKind
-    cash_raised_usd: float | None = Field(default=None, ge=0)
-    """Cash injected into the company by this round. Required (>0) for `primary`;
-    must be `None` for non-primary kinds. Used by the mint-streams sampler to read
-    primary-round events directly from observations rather than inferring them
-    from a smooth dilution random walk."""
-    shares_outstanding_post_round: float | None = Field(default=None, gt=0)
-    """Post-event share count, when known (e.g. from a recap information statement
-    or SEC filing). The fitter can use this to pin per-event dilution exactly,
-    rather than inferring it from `cash_raised_usd / V_pre`."""
+    cash_raised_usd: float | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Cash injected into the company by this round. Required (>0) for `primary`; "
+            "must be `None` for non-primary kinds. Used by the mint-streams sampler to read "
+            "primary-round events directly from observations rather than inferring them "
+            "from a smooth dilution random walk."
+        ),
+    )
+    shares_outstanding_post_round: float | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Post-event share count, when known (e.g. from a recap information statement "
+            "or SEC filing). The fitter can use this to pin per-event dilution exactly, "
+            "rather than inferring it from `cash_raised_usd / V_pre`."
+        ),
+    )
     source_id: str = Field(min_length=1)
     notes: str = ""
 

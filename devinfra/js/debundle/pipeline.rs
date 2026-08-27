@@ -65,10 +65,12 @@ pub enum TransformSpecSource {
 /// Command-line arguments for the debundle transform pipeline.
 #[derive(ClapArgs, Debug)]
 pub struct TransformArgs {
-    /// Path to a flat transform spec YAML.
+    /// Path to a flat transform spec YAML. Pass exactly one of `--spec`
+    /// / `--tree-config`.
     #[arg(long)]
     pub spec: Option<PathBuf>,
-    /// Path to a tree-shaped authoring config YAML.
+    /// Path to a tree-shaped authoring config YAML. Requires
+    /// `--tree-modules`, `--tree-vendor-marks`, and `--out-root`.
     #[arg(long = "tree-config")]
     pub tree_config: Option<PathBuf>,
     /// Root directory containing tree-shaped logical module YAML files.
@@ -91,7 +93,12 @@ pub struct TransformArgs {
     /// Root directory containing per-package sources (alternative to repeated --package-root).
     #[arg(long)]
     pub packages_root: Option<PathBuf>,
-    /// Run pipeline checks without writing emitted JS or reports.
+    /// Run pipeline parse/facts/gate checks without writing emitted JS
+    /// or accept-path reports. A gate rejection still writes
+    /// `owner_graph.json` plus the rejection evidence (`cycles.json` /
+    /// `atomic_unit_conflicts.json`) under `reports/tree/<chunk>/`, so
+    /// `gate list` / `gate describe` work on the rejection just
+    /// reported.
     #[arg(long)]
     pub dry_run: bool,
     /// Deprecated compatibility no-op: keep-going is now the default.
@@ -99,7 +106,10 @@ pub struct TransformArgs {
     #[arg(long)]
     pub keep_going: bool,
     /// Stop at the first supported diagnostic instead of collecting all
-    /// findings from the pass.
+    /// findings from the pass. Broad runs otherwise aggregate every
+    /// supported diagnostic — currently unresolved source-match
+    /// selectors and duplicate binding claims, with
+    /// module/export/origin evidence — before failing.
     #[arg(long, conflicts_with = "keep_going")]
     pub fail_fast: bool,
 }

@@ -1,7 +1,7 @@
 # Editing the spec: modules and bindings
 
 Proposing, moving, merging, and renaming modules and bindings; peel heuristics;
-`comment:` fields. Operational base: `cli_basics.md`.
+`comment:` fields. Operational base: `cli.md`.
 
 ## Workflow: proposing new modules
 

@@ -568,8 +568,7 @@ diff_test(
 # Type-aware ESLint (no-floating-promises, no-misused-promises, await-thenable).
 # Runs as a whole-program test, not via the per-file lint-gate aspect: type-aware
 # rules need the full TS program (built from tsconfig.json), which only a
-# whole-package sandbox provides. Mirrors tsc_test's inputs. See P3 in
-# plans/eslint_tightening.md.
+# whole-package sandbox provides. Mirrors tsc_test's inputs.
 eslint_bin.eslint_test(
     name = "eslint_typed_test",
     args = [

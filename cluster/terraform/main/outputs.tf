@@ -86,7 +86,6 @@ output "service_endpoints" {
   description = "Service endpoints for API configuration"
   value = {
     authentik_url = "https://authentik.${var.cluster_domain}"
-    harbor_url    = "https://harbor.${var.cluster_domain}"
     forgejo_url   = "https://git.${var.cluster_domain}"
   }
 }

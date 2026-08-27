@@ -36,6 +36,8 @@ from haku.console import (
     capabilities,
     connection_metrics,
     console_events,
+    http_decide_routes,
+    http_grant_routes,
     kube_proxy_authorization,
     kubernetes_grant_routes,
     mcp_agent_auth,
@@ -63,6 +65,10 @@ from haku.console.chat_models import RuntimeKind
 from haku.console.config import MCP_PATH, EmbedderConfig, GitRecallIndexDefinition, Settings
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
+from haku.console.http_decide_config import load_egress_decide
+from haku.console.http_decide_service import HttpDecideService
+from haku.console.http_grant_repository import PostgresHttpGrantRepository
+from haku.console.http_grant_service import HttpGrantService
 from haku.console.in_process_servers import (
     HostexecServerConfig,
     InProcessServerDependencies,
@@ -90,6 +96,7 @@ from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance
 from haku.console.tools import (
     gmail as gmail_tools,
+    http_grants as http_grants_tools,
     kubernetes as kubernetes_tools,
     routine as routine_tools,
     sandbox as sandbox_tools,
@@ -97,6 +104,7 @@ from haku.console.tools import (
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import (
     conversation_follow,
+    conversation_reader,
     conversation_runtime,
     runtime as console_runtime,
     runtime_catalog,
@@ -112,13 +120,14 @@ from haku.console.x.channels.matrix import (
     conversation as matrix_conversation,
     ingress_ledger as matrix_ingress_ledger,
     outbox as matrix_outbox,
+    outbox_wake as matrix_outbox_wake,
     revisions as matrix_revisions,
-    room_subscription as matrix_room_subscription,
     sync as matrix_sync,
 )
+from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.conversation_history import ConversationHistory
+from haku.console.x.conversation_live_updates import ConversationLiveUpdates
 from haku.console.x.launch_identity import ChatLaunchAuthorizer
-from haku.console.x.session_live_updates import SessionLiveUpdates
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_store import SessionStore
 from haku.console.x.system_prompt import SystemPromptTemplate
@@ -235,10 +244,11 @@ def create_app(
     }
     launchable_agent_ids = {entry.agent_id for entry in console_config.launchable_agents}
     session_notifications = SessionNotifications(database_url)
-    # Session changes reach open tabs over the console socket the shell already holds, coalesced
-    # per session. Constructed unconditionally: it listens on the session channel and sends on the
-    # console one, neither of which depends on this replica running a Claude runtime.
-    session_live_updates = SessionLiveUpdates(session_notifications, console_event_hub, db_sessions)
+    # Conversation changes reach open tabs over the console socket the shell already holds,
+    # coalesced per conversation. Constructed unconditionally: it listens on the conversation
+    # channel and sends on the console one, neither of which depends on this replica running a
+    # Claude runtime.
+    conversation_live_updates = ConversationLiveUpdates(session_notifications, console_event_hub, db_sessions)
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
         db_sessions,
@@ -416,13 +426,12 @@ def create_app(
     # after the configured runtime catalog because it provisions sessions through that service.
     matrix_sync_service: matrix_sync.MatrixSyncService | None = None
     matrix_conversation_store: matrix_conversation.MatrixConversationStore | None = None
-    matrix_notices: matrix_room_subscription.RoomNotices | None = None
     if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
         matrix_conversation_store = matrix_conversation.MatrixConversationStore(db_sessions)
         matrix_ledger = matrix_ingress_ledger.IngressLedger(db_sessions)
-        # One object, because the two halves of the queue are two ends of it: the notice reader
-        # writes rows off the conversation's log and the sync service's drain says them.
-        matrix_room_outbox = matrix_outbox.RoomOutbox(db_sessions)
+        # The sync service hosts one reconciler per live attachment — each room's subscriber to the
+        # conversation record and the drain of its reply outbox — so the record readers, the
+        # correspondence store and the outbox are all composed into it.
         matrix_sync_service = matrix_sync.MatrixSyncService(
             matrix_config,
             matrix_config.password,
@@ -430,27 +439,16 @@ def create_app(
             matrix_sync.MatrixSyncStore(db_sessions),
             matrix_conversation_store,
             operator_identity_store,
-            matrix_conversation.MatrixTurns(
-                matrix_config, matrix_conversation_store, session_store, operator_identity_store, matrix_ledger
-            ),
-            matrix_room_outbox,
+            matrix_conversation.MatrixTurns(matrix_config, session_store, operator_identity_store, matrix_ledger),
+            matrix_outbox.RoomOutbox(db_sessions),
             matrix_revisions.RevisionLog(db_sessions),
             matrix_ledger,
-        )
-        # The room as a subscriber to the conversation: it reads the record from a position it keeps
-        # itself and says what the room has not been told, rather than being pushed at by whichever
-        # replica happens to be running the turn.
-        matrix_notices = matrix_room_subscription.RoomNotices(
-            db_engine,
+            RoomCopy(db_sessions),
+            # The channel's own wake wire; the sync leader starts and stops it with its reconcilers.
+            matrix_outbox_wake.OutboxWakes(database_url),
             db_sessions,
             subscription.ConversationStream(db_sessions),
-            matrix_conversation_store,
             session_notifications,
-            matrix_sync_service.announce,
-            matrix_sync_service.project_notice,
-            matrix_sync_service,
-            matrix_sync_service.bound_room,
-            matrix_room_outbox,
         )
     # Execution exists only when a launch-capable adapter was configured. Read-only replicas keep
     # the same registry in their store above but expose no session-creation runtime service.
@@ -540,6 +538,15 @@ def create_app(
         PostgresKubernetesGrantRepository(db_sessions),
         max_lifetime=datetime.timedelta(seconds=console_config.kubernetes_grant_max_lifetime_seconds),
     )
+    http_grants = HttpGrantService(
+        PostgresHttpGrantRepository(db_sessions),
+        max_lifetime=datetime.timedelta(seconds=console_config.http_grant_max_lifetime_seconds),
+    )
+    http_decide = (
+        HttpDecideService(grants=http_grants, credentials=load_egress_decide(console_config.egress_decide))
+        if console_config.egress_decide is not None
+        else None
+    )
     kubernetes_authorization = (
         KubernetesAuthorizationService(
             config=console_config.kubernetes_authorization,
@@ -592,8 +599,9 @@ def create_app(
         # listed and where the policy that lets an agent call it lives, and a boolean elsewhere
         # could only ever disagree with it — a listed server with no builder fails the binding
         # validation below.
+        configured_server_ids = {server.id for server in console_config.mcp.servers}
         index_searcher = None
-        if any(server.id == HAKU_INDEX_SERVER_ID for server in console_config.mcp.servers):
+        if HAKU_INDEX_SERVER_ID in configured_server_ids:
             if settings.embedder is None:
                 raise ValueError(
                     f"MCP server {HAKU_INDEX_SERVER_ID!r} is configured but no embedder is: "
@@ -624,8 +632,7 @@ def create_app(
             SandboxServerConfig(
                 client=InClusterSandboxClient(console_config.agent_sandbox), environment=console_config.agent_sandbox
             )
-            if console_config.agent_sandbox is not None
-            and any(server.id == sandbox_tools.SANDBOX_SERVER_ID for server in console_config.mcp.servers)
+            if console_config.agent_sandbox is not None and sandbox_tools.SANDBOX_SERVER_ID in configured_server_ids
             else None
         )
         in_process_servers = build_in_process_servers(
@@ -637,14 +644,21 @@ def create_app(
                 configured_recall_index_ids=tuple(index.index_id for index in console_config.recall_indexes),
                 # Only with an executable runtime: otherwise nothing writes sessions, so the read
                 # tools would reflect an always-empty corpus.
-                conversations=session_store if runtime_registry.configured_kinds else None,
+                conversations=(
+                    conversation_reader.ConversationReads(session_store) if runtime_registry.configured_kinds else None
+                ),
                 sandbox=sandbox_server,
                 kubernetes=(
                     kubernetes_tools.KubernetesToolsService(
                         grants=kubernetes_grants, authorization=kubernetes_authorization
                     )
                     if kubernetes_authorization is not None
-                    and any(server.id == kubernetes_tools.KUBERNETES_SERVER_ID for server in console_config.mcp.servers)
+                    and kubernetes_tools.KUBERNETES_SERVER_ID in configured_server_ids
+                    else None
+                ),
+                http_grants=(
+                    http_grants_tools.HttpToolsService(grants=http_grants, agents=agent_authority)
+                    if http_grants_tools.HTTP_GRANTS_SERVER_ID in configured_server_ids
                     else None
                 ),
             )
@@ -719,10 +733,6 @@ def create_app(
         # channel and of sandbox allocation, so browser-only and unattached conversations receive
         # the same maintenance as Matrix-bound ones.
         supervising = runtime_supervisor.run() if runtime_supervisor is not None else contextlib.nullcontext()
-        # Its own lock and its own task, like the two above: what it does is bounded by the room's
-        # send budget, and a room that is refusing sends must not hold up ingress or provisioning.
-        noticing = matrix_notices.run() if matrix_notices is not None else contextlib.nullcontext()
-        following = follow.run() if follow is not None else contextlib.nullcontext()
         # Prompt demand is channel-neutral and durable. Start its elected reconciler only after
         # the notification listener is live; the first sweep is also the restart backstop.
         allocating = sandbox_allocator.run() if sandbox_allocator is not None else contextlib.nullcontext()
@@ -733,7 +743,6 @@ def create_app(
             oauth_maintenance.run(),
             catalogs.run(),
             matrix_running,
-            noticing,
             indexing,
             embedding,
         ):
@@ -745,7 +754,7 @@ def create_app(
                 # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
                 if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
                     await mcp_auth.storage.setup()
-                async with session_live_updates.run(), following, supervising, allocating, mcp_asgi.lifespan(app):
+                async with conversation_live_updates.run(), supervising, allocating, mcp_asgi.lifespan(app):
                     yield
             finally:
                 # Cancel in-flight approved-call executions (each marks its row cancelled) before the
@@ -798,6 +807,8 @@ def create_app(
     app.state.web_push_identity = web_push_identity
     app.state.kubernetes_authorization = kubernetes_authorization
     app.state.kubernetes_grants = kubernetes_grants
+    app.state.http_grants = http_grants
+    app.state.http_decide = http_decide
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
@@ -841,6 +852,7 @@ def create_app(
     app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(mcp_approval.router, dependencies=operator_only)
     app.include_router(kubernetes_grant_routes.router, dependencies=operator_only)
+    app.include_router(http_grant_routes.router, dependencies=operator_only)
     app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
     app.include_router(provider_connection.router, dependencies=operator_only)
     app.include_router(oauth_connection_result.router, dependencies=operator_only)
@@ -855,6 +867,9 @@ def create_app(
     # Machine-to-machine, bearer-forwarding contract for the separate Kubernetes proxy. The
     # endpoint remains fail-closed unless standing SAR policy is configured.
     app.include_router(kube_proxy_authorization.router)
+    # Machine-to-machine decision contract for the colocated egress proxy (#4670): proxy-identity
+    # bearer plus body fence credential, fail-closed unless egress_decide config wires both.
+    app.include_router(http_decide_routes.router)
 
     @app.get("/api/deployment", dependencies=operator_only)
     async def deployment() -> DeploymentInfo:

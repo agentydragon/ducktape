@@ -2,7 +2,7 @@
 
 The vocabulary every surface renders and every backend adapter produces. Nothing in it is
 Claude-shaped: no `assistant`, no content block, no `msg_…`, no `tool_use_result`. The Claude
-adapter is <claude_code/projection.py> (<README.md> § The neutral projection).
+adapter is <claude_code/projection.py>.
 
 **Everything is an item, and an item is a type and three events**: started, then any number of
 segments, then completed. Both stream-native harness protocols reached that decomposition
@@ -32,10 +32,8 @@ measurements belong in protocol fixtures, not in this record model.
 
 from __future__ import annotations
 
-from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
-from types import MappingProxyType
 
 from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
 
@@ -264,14 +262,3 @@ class Projection:
 
     events: tuple[ConversationEvent, ...]
     unprojected: Mapping[str, int]
-
-    def then(self, later: Projection) -> Projection:
-        """This stretch of frames followed by the next one, as a single projection.
-
-        Frames read in one batch and the same frames read in any split, combined this way, are
-        equal. Counts sum because `unprojected` tallies frames read, not a set of what exists.
-        """
-        return Projection(
-            events=self.events + later.events,
-            unprojected=MappingProxyType(dict(Counter(self.unprojected) + Counter(later.unprojected))),
-        )

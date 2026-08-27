@@ -8,8 +8,7 @@
 // payload, and prints `value.stsTokenManager.refreshToken` to stdout. Pipe
 // the output straight into `sops -e` (see ../README.md). The token is enough
 // for an in-cluster sidecar to keep minting fresh Firebase custom tokens and
-// re-seed the desktop container's session — see
-// cluster/docs/plans/tana_mcp_sane_signin.md.
+// re-seed the desktop container's session.
 
 use std::path::PathBuf;
 use std::rc::Rc;

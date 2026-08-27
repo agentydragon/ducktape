@@ -4,7 +4,7 @@
 # and install it via helm CLI after the k8s API is reachable.
 
 locals {
-  cilium_version      = "1.19.2"
+  cilium_version      = "1.19.6"
   gateway_api_version = "v1.5.1"
 }
 
@@ -37,6 +37,13 @@ resource "null_resource" "gateway_api_crds" {
 }
 
 resource "null_resource" "cilium_bootstrap" {
+  # A provisioner runs only when its resource is created. Recreate this resource
+  # for chart/value changes so a targeted apply performs the Helm upgrade.
+  triggers = {
+    chart_version = local.cilium_version
+    values_sha256 = filesha256("${path.module}/cilium-values.yaml")
+  }
+
   depends_on = [
     null_resource.gateway_api_crds,
     local_file.kubeconfig,
@@ -46,6 +53,8 @@ resource "null_resource" "cilium_bootstrap" {
     environment = {
       KUBECONFIG = local_file.kubeconfig.filename
     }
+    # Roaming nodes can leave DaemonSet pods unavailable indefinitely. Do not
+    # roll back a healthy-node Cilium rollout just because Helm --wait times out.
     command = <<-EOT
       set -e
       helm repo add cilium https://helm.cilium.io/ && helm repo update cilium
@@ -53,11 +62,7 @@ resource "null_resource" "cilium_bootstrap" {
         --version ${local.cilium_version} \
         --namespace kube-system \
         --create-namespace \
-        -f ${path.module}/cilium-values.yaml \
-        --wait \
-        --wait-for-jobs \
-        --atomic \
-        --timeout 600s
+        -f ${path.module}/cilium-values.yaml
     EOT
   }
 }

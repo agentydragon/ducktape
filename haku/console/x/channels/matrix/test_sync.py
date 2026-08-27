@@ -26,6 +26,8 @@ from haku.console.x.channels.matrix.client import (
     InboundMessage,
     Invite,
     MatrixAuthError,
+    MatrixError,
+    ProjectedEvent,
     RoomEventKind,
     SyncResult,
     UnmappableEvent,
@@ -37,14 +39,18 @@ from haku.console.x.channels.matrix.conversation import (
     MatrixConversationStore,
     PromptAccepted,
     PromptRejected,
+    RoomAttachment,
 )
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply
-from haku.console.x.channels.matrix.pacer import RoomPacer
+from haku.console.x.channels.matrix.pacer import RoomPacers
 from haku.console.x.channels.matrix.revisions import RevisionLog
+from haku.console.x.channels.matrix.room_copy import RoomCopy
+from haku.console.x.channels.matrix.spans import Span, SpanKind
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
 from haku.console.x.session_store import BridgeAuthentication, SessionStore
+from haku.console.x.subscription import ConversationStream
 
 
 @dataclass
@@ -102,34 +108,35 @@ class _FakeMatrix:
 class _FakeTurns:
     """Ingress as the loop sees it: it accepts or rejects a batch, and says what to record.
 
-    What it hands back are bodies and the conversation they belong to, because an authored row's
-    position is allocated under that conversation's lock — so what the loop does with them is append
-    them where it moves the watermark. `conversation_id = None` is the room bound to nothing, where
-    there is nowhere to record and nowhere to say it either.
+    What it hands back are bodies and the conversation they belong to — read off the binding the
+    loop dispatched the batch with, the way the real ingress does — because an authored row's
+    position is allocated under that conversation's lock, so what the loop does with them is append
+    them where it moves the watermark.
     """
 
-    conversation_id: UUID | None
     session_id: UUID | None = None
     accepts: bool = True
     reason: PromptRejection = PromptRejection.TURN_IN_FLIGHT
     offered: list[list[str]] = field(default_factory=list)
+    offered_to: list[tuple[str, UUID]] = field(default_factory=list)
 
-    async def offer(self, messages: Sequence[InboundMessage]) -> Admission:
+    async def offer(self, binding: RoomAttachment, messages: Sequence[InboundMessage]) -> Admission:
         self.offered.append([message.body for message in messages])
+        self.offered_to.append((binding.room_id, binding.conversation_id))
         if self.accepts:
             return PromptAccepted(item_id=uuid4())
         return PromptRejected(
             reason=self.reason,
-            facts=self._facts(PromptRejectedBody(reason=self.reason, text="\n".join(self.offered[-1]))),
+            facts=self._facts(binding, PromptRejectedBody(reason=self.reason, text="\n".join(self.offered[-1]))),
         )
 
-    async def unreadable(self, events: Sequence[UnmappableEvent]) -> ConversationFacts | None:
-        return self._facts(*(UnreadableInputBody(media_type=event.msgtype) for event in events))
+    async def unreadable(self, binding: RoomAttachment, events: Sequence[UnmappableEvent]) -> ConversationFacts:
+        return self._facts(binding, *(UnreadableInputBody(media_type=event.msgtype) for event in events))
 
-    def _facts(self, *bodies: PromptRejectedBody | UnreadableInputBody) -> ConversationFacts | None:
-        if self.conversation_id is None:
-            return None
-        return ConversationFacts(conversation_id=self.conversation_id, session_id=self.session_id, bodies=tuple(bodies))
+    def _facts(self, binding: RoomAttachment, *bodies: PromptRejectedBody | UnreadableInputBody) -> ConversationFacts:
+        return ConversationFacts(
+            conversation_id=binding.conversation_id, session_id=self.session_id, bodies=tuple(bodies)
+        )
 
 
 @pytest.fixture
@@ -138,10 +145,9 @@ def sync_store(migrated_sessions) -> MatrixSyncStore:
 
 
 @pytest.fixture
-async def turns(chat_store: SessionStore, operator_id: UUID) -> _FakeTurns:
-    """Ingress over a real conversation, since what it hands the loop is appended to one."""
-    view, _ = await chat_store.create(operator_id)
-    return _FakeTurns(await chat_store.conversation_of(view.session_id), view.session_id)
+def turns() -> _FakeTurns:
+    """Ingress as the loop drives it: which conversation a fact lands on is the binding's."""
+    return _FakeTurns()
 
 
 @pytest.fixture
@@ -164,28 +170,35 @@ def _replica(sync_store, conversations, identities, turns, matrix, migrated_sess
         conversations=conversations,
         identities=identities,
         turns=cast(Any, turns),
-        # Answers are outbox rows, drained by a task `run()` starts; these tests drive one sync
-        # pass and assert the narration, which never touches the table (`test_outbox` does).
+        # Answers are outbox rows, drained by the reconcilers `run()` sweeps up; these tests drive
+        # one sync pass and assert the narration, which never touches the table (`test_outbox` does).
         outbox=cast(Any, None),
         revisions=RevisionLog(migrated_sessions),
         ledger=ledger,
+        room_copy=RoomCopy(migrated_sessions),
+        # The sync leader starts the wake wire with its reconcilers, inside `run()` (see `outbox`).
+        outbox_wakes=cast(Any, None),
+        sessions=migrated_sessions,
+        stream=ConversationStream(migrated_sessions),
+        # Consumed only by the reconcilers' subscribers, which these single-pass tests never start.
+        notifications=cast(Any, None),
     )
     service._client = cast(Any, matrix)
-    service.pacer = RoomPacer(sends_per_second=1e6, burst=1_000)
+    service.pacers = RoomPacers(sends_per_second=1e6, burst=1_000)
     return service
 
 
 @pytest.fixture
 async def service(sync_store, conversations, migrated_identity_store, turns, matrix, migrated_sessions, ledger):
-    """The service with its outbound queue running, because every send goes through it."""
+    """The service with its outbound queues running, because every send goes through them."""
     service = _replica(sync_store, conversations, migrated_identity_store, turns, matrix, migrated_sessions, ledger)
-    async with service.pacer.run():
+    async with service.pacers.run():
         yield service
 
 
 async def settled(service: MatrixSyncService) -> None:
     """Wait for what the service queued to actually reach the homeserver."""
-    await service.pacer.flush()
+    await service.pacers.flush()
 
 
 @pytest.fixture
@@ -214,9 +227,6 @@ async def recorded(sessions) -> list[tuple[StoredEventKind, dict[str, Any]]]:
             )
         ).all()
     return [(row.kind, row.body) for row in rows]
-
-
-SESSION = UUID("11111111-2222-3333-4444-555555555555")
 
 
 def _queued(body: str, *, item_id: UUID | None = None) -> PendingReply:
@@ -305,7 +315,7 @@ async def test_a_rejected_batch_is_acknowledged_and_recorded_in_one_go(
 
     The watermark covers the batch, so the homeserver will not offer it again, and the only
     surviving copy of what was said is the row written beside that watermark. The room hears about
-    it from that row (`room_subscription.notice`), so this pass says nothing itself.
+    it from that row (`conversation_subscriber.project_notice`), so this pass says nothing itself.
     """
     matrix.result = SyncResult("s2", (_message("hello"),), ())
     turns.accepts = False
@@ -331,7 +341,7 @@ async def test_a_recording_that_cannot_be_written_takes_the_watermark_with_it(sy
     )
 
     with pytest.raises(KeyError):
-        await sync_store.advance(MATRIX_USER, "s2", orphan)
+        await sync_store.advance(MATRIX_USER, "s2", (orphan,))
 
     assert await watermark(sync_store) is None
     assert await recorded(migrated_sessions) == []
@@ -391,13 +401,12 @@ async def test_a_rejection_with_no_session_behind_the_room_is_still_recorded(
     A row named a session, and a room whose sandbox has not been provisioned has none — so this was
     said into the room by ingress and kept nowhere. What a refusal is about is the conversation, and
     that exists from the moment the room is bound, so it is a row like every other refusal's, with
-    no session named because there was none. `RoomNotices` says it from that row, which is why this
+    no session named because there was none. `ConversationSubscriber` says it from that row, which is why this
     pass says nothing itself.
     """
     matrix.result = SyncResult("s2", (_message("hello"),), ())
     turns.accepts = False
     turns.reason = PromptRejection.NO_SESSION
-    turns.session_id = None
 
     await service.sync_once("tok")
     await settled(service)
@@ -453,7 +462,8 @@ async def test_the_text_of_a_mixed_batch_is_serviced_and_the_rest_recorded(
 async def test_an_unreadable_event_from_an_unserviced_room_reaches_nothing(
     service, matrix, migrated_sessions, bound_room
 ):
-    """Only the bound room is serviced, so a stray room's event is neither recorded nor said."""
+    """Only rooms holding a conversation are serviced, and an unreadable event adopts none — there
+    is no prose in it to answer — so a stray room's screenshot is neither recorded nor said."""
     matrix.result = SyncResult("s2", (), (), (_unreadable(room_id="!stray:allegedly.works"),))
 
     await service.sync_once("tok")
@@ -470,18 +480,21 @@ async def test_joins_an_invite_from_the_operator(service, matrix):
     assert matrix.joined == [MATRIX_ROOM]
 
 
-async def test_refuses_a_second_room_and_says_so_in_the_first(service, matrix, bound_room):
-    """Joining would put Haku in a room nothing services, which reads as listening."""
+async def test_a_second_invite_joins_and_binds_a_conversation_of_its_own(service, matrix, conversations, bound_room):
+    """One bot serves many rooms: a second invite is joined and bound beside the first, each room
+    its own conversation."""
     other = "!other:allegedly.works"
     matrix.result = SyncResult("s2", (), (Invite(room_id=other, inviter=MATRIX_OPERATOR),))
 
     await service.sync_once("tok")
 
     await settled(service)
-    assert matrix.joined == []
+    assert matrix.joined == [other]
     [(room_id, body)] = matrix.notices
-    assert room_id == MATRIX_ROOM
-    assert "still serving" in body
+    assert (room_id, "joined" in body) == (other, True)
+    bindings = await conversations.live_attachments()
+    assert [binding.room_id for binding in bindings] == [MATRIX_ROOM, other]
+    assert bindings[0].conversation_id != bindings[1].conversation_id
 
 
 async def test_leaves_an_invite_from_anybody_else_pending(service, matrix):
@@ -519,13 +532,42 @@ async def test_does_not_adopt_from_a_sender_who_is_not_the_operator(service, mat
     assert matrix.notices == []
 
 
-async def test_ignores_messages_from_a_room_that_is_not_the_live_one(service, matrix, turns, bound_room):
+async def test_operator_traffic_in_an_unbound_room_is_adopted_beside_the_existing_binding(
+    service, matrix, turns, bound_room
+):
+    """Adoption is per room, not only for a console with nothing bound: a joined room the operator
+    is speaking in gets its own binding beside the live one, and its batch is serviced."""
     stray = InboundMessage("!stray:allegedly.works", "$e", MATRIX_OPERATOR, "hi", 1)
     matrix.result = SyncResult("s2", (stray,), ())
 
     await service.sync_once("tok")
 
-    assert turns.offered == []
+    await settled(service)
+    assert [room for room, _ in turns.offered_to] == ["!stray:allegedly.works"]
+    assert turns.offered == [["hi"]]
+
+
+async def test_each_rooms_messages_are_offered_to_its_own_conversation(
+    service, matrix, turns, conversations, operator_id, bound_room
+):
+    """The dispatch itself: one batch carrying two rooms' messages becomes one offer per room, each
+    against the conversation its attachment names, in the order the rooms appear in the batch."""
+    other = (await conversations.bind_room("!other:allegedly.works", operator_id)).room_id
+    matrix.result = SyncResult(
+        "s2",
+        (
+            _message("first here", event_id="$a"),
+            InboundMessage(other, "$b", MATRIX_OPERATOR, "and there", 2),
+            _message("more here", event_id="$c"),
+        ),
+        (),
+    )
+
+    await service.sync_once("tok")
+
+    bindings = {binding.room_id: binding.conversation_id for binding in await conversations.live_attachments()}
+    assert turns.offered == [["first here", "more here"], ["and there"]]
+    assert turns.offered_to == [(MATRIX_ROOM, bindings[MATRIX_ROOM]), (other, bindings[other])]
 
 
 async def test_posting_a_queued_reply_says_it_as_text(service, matrix, sync_store, bound_room):
@@ -535,16 +577,6 @@ async def test_posting_a_queued_reply_says_it_as_text(service, matrix, sync_stor
     await service.post_reply(_queued("the answer"))
 
     assert matrix.sent == [(MATRIX_ROOM, "the answer")]
-
-
-async def test_announce_posts_a_notice_into_the_live_room(service, matrix, sync_store, bound_room):
-    matrix.result = SyncResult("s2", (), ())
-    await sync_store.save_token(MATRIX_USER, "cached")
-
-    await service.announce("provisioning a sandbox")
-    await settled(service)
-
-    assert matrix.notices == [(MATRIX_ROOM, "provisioning a sandbox")]
 
 
 async def test_a_projected_notice_uses_its_durable_source_as_the_transaction(service, matrix, bound_room) -> None:
@@ -572,14 +604,6 @@ async def test_a_projected_notice_uses_its_durable_source_as_the_transaction(ser
         ]
         * 2
     )
-
-
-async def test_announce_is_a_no_op_with_no_room_bound(service, matrix):
-    matrix.result = SyncResult("s2", (), ())
-
-    await service.announce("provisioning a sandbox")
-
-    assert matrix.notices == []
 
 
 async def test_a_quiet_batch_advances_the_watermark(service, matrix, sync_store, bound_room):
@@ -667,96 +691,142 @@ async def test_auth_error_surfaces_so_the_loop_can_re_login(service, matrix, bou
     raise AssertionError("MatrixAuthError should propagate out of sync_once")
 
 
-async def test_the_turn_status_is_one_line_that_gets_edited(service, matrix, bound_room) -> None:
-    """One line per turn, edited in place. A notice per update would make a busy turn unreadable,
-    which is the whole point of having a status line rather than progress messages."""
-    await service.show_status("running Bash")
+def _turn_span(conversation_id: UUID, seq: int = 5) -> Span:
+    return Span(kind=SpanKind.TURN, conversation_id=conversation_id, opened_seq=seq)
+
+
+async def test_a_spans_line_is_one_event_that_gets_edited(service, matrix, attached) -> None:
+    """One line per span, edited in place. A notice per update would make a busy turn unreadable,
+    which is the whole point of having a work span rather than progress messages."""
+    conversation_id, attachment_id = attached
+    span = _turn_span(conversation_id)
+    await service.show_span(MATRIX_ROOM, attachment_id, span, "running Bash")
     await settled(service)
-    await service.show_status("running Read")
+    await service.show_span(MATRIX_ROOM, attachment_id, span, "running Read")
     await settled(service)
-
-    assert matrix.notices == [(bound_room, "running Bash")]
-    assert matrix.edits == [("$notice-1", "running Read")]
-
-
-async def test_a_repeated_state_is_not_resent(service, matrix, bound_room) -> None:
-    await service.show_status("running Bash")
-    await service.show_status("running Bash")
-    await settled(service)
-
-    assert matrix.edits == []
-
-
-async def test_every_state_it_is_given_reaches_the_line(service, matrix, bound_room) -> None:
-    """Idempotent, not paced: what the line should say and when it may change are one decision,
-    and they belong to the caller (`room_status.TurnStatus`). Declining here would lose the update
-    outright, since the driver has already recorded it as shown.
-    """
-    await service.show_status("running Bash")
-    await settled(service)
-    await service.show_status("running Read")
-    await settled(service)
-    await service.show_status("running Grep")
+    await service.show_span(MATRIX_ROOM, attachment_id, span, "running Grep")
     await settled(service)
 
+    assert matrix.notices == [(MATRIX_ROOM, "running Bash")]
     assert matrix.edits == [("$notice-1", "running Read"), ("$notice-1", "running Grep")]
 
 
-async def test_the_line_is_redacted_when_the_turn_ends(service, matrix, bound_room) -> None:
-    await service.show_status("running Bash")
+async def test_the_line_is_redacted_when_its_span_retires(service, matrix, attached) -> None:
+    conversation_id, attachment_id = attached
+    span = _turn_span(conversation_id)
+    await service.show_span(MATRIX_ROOM, attachment_id, span, "running Bash")
     await settled(service)
 
-    await service.clear_status()
+    await service.retire_span(MATRIX_ROOM, attachment_id, span)
     await settled(service)
 
     assert matrix.redacted == ["$notice-1"]
 
 
 async def test_a_replica_that_adopts_the_session_edits_the_line_it_inherits(
-    service, sync_store, conversations, migrated_identity_store, turns, matrix, migrated_sessions, ledger, bound_room
+    service, sync_store, conversations, migrated_identity_store, turns, matrix, migrated_sessions, ledger, attached
 ) -> None:
-    """The status line outlives the process that posted it. Whichever replica holds the session's
-    lease drives the line, so one starting with an empty process would post a second line beside
-    its predecessor's and leave that one saying `running Bash` forever."""
-    await service.show_status("running Bash")
+    """A span's line outlives the process that posted it. The subject derived from its opening
+    event is what a successor resolves through `matrix_revision`, so it edits the line its
+    predecessor posted instead of posting a second one beside it."""
+    conversation_id, attachment_id = attached
+    span = _turn_span(conversation_id)
+    await service.show_span(MATRIX_ROOM, attachment_id, span, "running Bash")
     await settled(service)
 
     successor = _replica(sync_store, conversations, migrated_identity_store, turns, matrix, migrated_sessions, ledger)
-    async with successor.pacer.run():
-        await successor.show_status("running Read")
+    async with successor.pacers.run():
+        await successor.show_span(MATRIX_ROOM, attachment_id, span, "running Read")
         await settled(successor)
 
-    assert matrix.notices == [(bound_room, "running Bash")]
+    assert matrix.notices == [(MATRIX_ROOM, "running Bash")]
     assert matrix.edits == [("$notice-1", "running Read")]
 
 
-async def test_the_next_turn_opens_a_new_line_rather_than_editing_the_redacted_one(service, matrix, bound_room) -> None:
-    """Retiring the line frees its subject, so what follows is a create — an edit would address an
-    event the room no longer has."""
-    await service.show_status("running Bash")
+async def test_the_next_turn_opens_a_new_line_rather_than_editing_the_retired_one(service, matrix, attached) -> None:
+    """Retiring a span frees nothing to reuse: the next turn is a new span with a new subject, so
+    what follows is a create — an edit would address an event the room no longer has."""
+    conversation_id, attachment_id = attached
+    await service.show_span(MATRIX_ROOM, attachment_id, _turn_span(conversation_id, 5), "running Bash")
     await settled(service)
-    await service.clear_status()
-    await settled(service)
-
-    await service.show_status("running Read")
+    await service.retire_span(MATRIX_ROOM, attachment_id, _turn_span(conversation_id, 5))
     await settled(service)
 
-    assert matrix.notices == [(bound_room, "running Bash"), (bound_room, "running Read")]
+    await service.show_span(MATRIX_ROOM, attachment_id, _turn_span(conversation_id, 9), "running Read")
+    await settled(service)
+
+    assert matrix.notices == [(MATRIX_ROOM, "running Bash"), (MATRIX_ROOM, "running Read")]
     assert matrix.edits == []
 
 
-async def test_clearing_a_turn_that_never_showed_anything_does_nothing(service, matrix, bound_room) -> None:
+async def test_retiring_a_span_that_never_showed_anything_does_nothing(service, matrix, attached) -> None:
     """Short turns never create a line, and finishing one must not redact someone else's event."""
-    await service.clear_status()
+    conversation_id, attachment_id = attached
+    await service.retire_span(MATRIX_ROOM, attachment_id, _turn_span(conversation_id))
     await settled(service)
 
     assert matrix.redacted == []
 
 
+async def test_sealing_a_live_line_is_its_final_edit(service, matrix, attached) -> None:
+    """A seal keeps the line in scrollback with its final words, and frees its revision so nothing
+    edits it again."""
+    conversation_id, attachment_id = attached
+    span = Span(kind=SpanKind.SESSION, conversation_id=conversation_id, opened_seq=5)
+    await service.show_span(MATRIX_ROOM, attachment_id, span, "provisioning a sandbox")
+    await settled(service)
+
+    await service.seal_span(MATRIX_ROOM, attachment_id, span, "the session ended — its sandbox never came up")
+
+    assert matrix.edits == [("$notice-1", "the session ended — its sandbox never came up")]
+    assert matrix.redacted == []
+
+
+async def test_sealing_a_span_with_no_line_posts_the_sealed_notice(service, matrix, attached) -> None:
+    """The degenerate seal — no line to edit — is a sealed one-event notice: posted under the
+    span's source-derived transaction, so a crash replay is refused rather than doubled."""
+    conversation_id, attachment_id = attached
+    span = Span(kind=SpanKind.SESSION, conversation_id=conversation_id, opened_seq=7)
+
+    await service.seal_span(MATRIX_ROOM, attachment_id, span, "the session ended — its sandbox never came up")
+
+    assert matrix.notices == [(MATRIX_ROOM, "the session ended — its sandbox never came up")]
+    [tag] = matrix.tags
+    assert matrix.transactions == [tag.transaction_id()], "source-derived, so a replay is the same transaction"
+
+
+async def test_a_sealed_source_the_room_already_shows_is_not_posted_again(
+    service, matrix, migrated_sessions, attached
+) -> None:
+    """The replay past the seal: the revision is retired and the room's copy shows the source, so
+    repeating the closing event sends nothing at all."""
+    conversation_id, attachment_id = attached
+    span = Span(kind=SpanKind.SESSION, conversation_id=conversation_id, opened_seq=7)
+    await RoomCopy(migrated_sessions).record([_projected("$sealed", attachment_id, conversation_id, 7, ts=1)], [])
+
+    await service.seal_span(MATRIX_ROOM, attachment_id, span, "the session ended — its sandbox never came up")
+
+    assert (matrix.notices, matrix.edits) == ([], [])
+
+
+async def test_the_takeover_sweep_redacts_lines_no_open_span_accounts_for(service, matrix, attached) -> None:
+    """A retirement lost with its replica, or a line under a subject this release no longer
+    writes: either way the next leader takes it back, keeping what is still open."""
+    conversation_id, attachment_id = attached
+    await service.show_span(MATRIX_ROOM, attachment_id, _turn_span(conversation_id, 5), "running Bash")
+    await service.show_span(MATRIX_ROOM, attachment_id, _turn_span(conversation_id, 9), "running Read")
+    await settled(service)
+
+    await service.retire_stale_spans(MATRIX_ROOM, attachment_id, frozenset({"turn:9"}))
+    await settled(service)
+
+    assert matrix.redacted == ["$notice-1"]
+
+
 async def test_a_reply_says_what_it_is(service, matrix, sync_store, bound_room) -> None:
-    """The tag is write-only and for a person reading the room's event source, so what it carries is
-    the kind and nothing that would publish the same thing twice. Which item an event shows is the
-    outbox row's `subject`, which is the transaction it went out under."""
+    """A reply's tag carries the kind and nothing that would publish the same thing twice — and no
+    source, so the correspondence reader leaves it alone. Which item an event shows is the outbox
+    row's `subject`, which is the transaction it went out under."""
     await service.post_reply(_queued("the answer"))
 
     [tag] = matrix.tags
@@ -775,40 +845,138 @@ async def test_a_redriven_reply_is_the_same_transaction(service, matrix, sync_st
     assert first == second == reply.outbox_id.hex
 
 
-async def test_a_status_edit_is_a_new_transaction_every_time(service, matrix, bound_room) -> None:
-    """The other half of the rule: a line with no row to name is a genuinely new event each time,
+async def test_a_spans_create_is_its_source_transaction_and_each_edit_a_fresh_one(service, matrix, attached) -> None:
+    """The create is derived from the span's source, so one replayed before its revision row
+    committed is refused by the homeserver rather than doubled; each edit is a genuinely new event,
     and deriving its transaction would be a way to lose the edit rather than a way to dedupe."""
-    await service.show_status("running Bash")
-    await service.show_status("reading a file")
+    conversation_id, attachment_id = attached
+    span = _turn_span(conversation_id)
+    await service.show_span(MATRIX_ROOM, attachment_id, span, "running Bash")
+    await settled(service)
+    await service.show_span(MATRIX_ROOM, attachment_id, span, "reading a file")
     await settled(service)
 
-    assert len(set(matrix.transactions)) == len(matrix.transactions) == 2
+    create, edit = matrix.transactions
+    assert create == matrix.tags[0].transaction_id(), "source-derived, so a replayed create is the same send"
+    assert edit != create
 
 
-async def test_a_status_line_names_the_conversation_and_not_a_session(
-    service, matrix, bound_room, conversations
-) -> None:
+async def test_a_spans_line_names_its_durable_source_and_not_a_session(service, matrix, attached) -> None:
     """A room event is permanent and federated, so what its tag names has to outlive every session
-    that could have produced it — which is the conversation the room holds a copy of."""
-    binding = await conversations.bound_room()
-    assert binding is not None
-
-    await service.show_status("running Bash")
+    that could have produced it — the conversation event that opened the span, under the attachment
+    that projected it, which is also what lets `room_copy` hold the editable copy's correspondence."""
+    conversation_id, attachment_id = attached
+    await service.show_span(MATRIX_ROOM, attachment_id, _turn_span(conversation_id, 5), "running Bash")
     await settled(service)
 
     [tag] = [tag for tag in matrix.tags if tag.kind is RoomEventKind.STATUS]
-    assert tag.conversation_id == binding.conversation_id
+    assert tag.source == ConversationEventSource(
+        attachment_id=attachment_id, conversation_id=conversation_id, event_seq=5
+    )
 
 
-async def test_each_kind_of_notice_says_which_it_is(service, matrix, bound_room) -> None:
+def _projected(
+    event_id: str, attachment_id: UUID, conversation_id: UUID, seq: int, ts: int, room_id: str = MATRIX_ROOM
+) -> ProjectedEvent:
+    return ProjectedEvent(
+        room_id=room_id,
+        event_id=event_id,
+        source=ConversationEventSource(attachment_id=attachment_id, conversation_id=conversation_id, event_seq=seq),
+        origin_server_ts=ts,
+        replaces_event_id=None,
+    )
+
+
+@pytest.fixture
+async def attached(conversations: MatrixConversationStore, operator_id: UUID, bound_room: str) -> tuple[UUID, UUID]:
+    """The bound room's conversation and attachment, which its own events' tags name."""
+    binding = await conversations.bind_room(bound_room, operator_id)
+    return binding.conversation_id, binding.attachment_id
+
+
+async def test_an_own_echo_is_recorded_and_is_not_input(
+    service, matrix, turns, sync_store, migrated_sessions, attached
+) -> None:
+    """The pass records what the room showed of Haku's own sends, and never offers it as input."""
+    conversation_id, attachment_id = attached
+    matrix.result = SyncResult("s2", (), (), projected=(_projected("$own", attachment_id, conversation_id, 7, ts=1),))
+
+    await service.sync_once("tok")
+
+    assert await RoomCopy(migrated_sessions).shows(attachment_id, 7)
+    assert (await watermark(sync_store), turns.offered) == ("s2", [])
+
+
+async def test_a_second_live_copy_of_one_source_is_redacted(service, matrix, migrated_sessions, attached) -> None:
+    """Duplicate repair: a replay past Synapse's transaction cache posts a second event, and the
+    next observation of the pair takes the later copy back — the earlier one is the room's copy."""
+    conversation_id, attachment_id = attached
+    matrix.result = SyncResult("s2", (), (), projected=(_projected("$first", attachment_id, conversation_id, 7, ts=1),))
+    await service.sync_once("tok")
+
+    matrix.result = SyncResult("s3", (), (), projected=(_projected("$again", attachment_id, conversation_id, 7, ts=2),))
+    await service.sync_once("tok")
+
+    assert matrix.redacted == ["$again"]
+
+
+async def test_a_failed_duplicate_redaction_does_not_block_the_pass(
+    service, matrix, sync_store, attached, caplog
+) -> None:
+    """Repair is best effort: a redaction the homeserver refuses is logged loudly, the pass still
+    acknowledges its batch, and the store keeps both live rows as the evidence."""
+    conversation_id, attachment_id = attached
+
+    async def refuse(token: str, room_id: str, event_id: str, reason: str) -> None:
+        raise MatrixError("M_FORBIDDEN")
+
+    matrix.redact = refuse
+    matrix.result = SyncResult(
+        "s2",
+        (),
+        (),
+        projected=(
+            _projected("$first", attachment_id, conversation_id, 7, ts=1),
+            _projected("$again", attachment_id, conversation_id, 7, ts=2),
+        ),
+    )
+
+    with caplog.at_level("ERROR"):
+        await service.sync_once("tok")
+
+    assert await watermark(sync_store) == "s2"
+    assert "could not redact duplicate" in caplog.text
+
+
+async def test_an_own_echo_from_an_unserviced_room_reaches_no_row(service, matrix, migrated_sessions, attached) -> None:
+    conversation_id, attachment_id = attached
+    matrix.result = SyncResult(
+        "s2",
+        (),
+        (),
+        projected=(_projected("$stray", attachment_id, conversation_id, 7, ts=1, room_id="!stray:allegedly.works"),),
+    )
+
+    await service.sync_once("tok")
+
+    assert not await RoomCopy(migrated_sessions).shows(attachment_id, 7)
+
+
+async def test_each_kind_of_notice_says_which_it_is(service, matrix, attached) -> None:
     """Three different things, each saying which it is — where msgtype answered "is this
     conversational" only because everything worth excluding happened to be a notice.
 
-    A refusal is not among them any more: it is a recorded row, and `RoomNotices` is what says it.
+    A refusal is not among them any more: it is a recorded row, and the conversation subscriber is
+    what says it.
     """
-    await service.announce("provisioning a sandbox")
-    await service.announce("cloning haku-state", RoomEventKind.NARRATION)
-    await service.show_status("running Bash")
+    conversation_id, attachment_id = attached
+    await service.project_notice(
+        MATRIX_ROOM, attachment_id, "the turn failed — it did", RoomEventKind.LIFECYCLE, conversation_id, 17
+    )
+    await service.project_notice(
+        MATRIX_ROOM, attachment_id, "[sent from another surface] hi", RoomEventKind.NARRATION, conversation_id, 18
+    )
+    await service.show_span(MATRIX_ROOM, attachment_id, _turn_span(conversation_id), "running Bash")
     await settled(service)
 
     assert [tag.kind for tag in matrix.tags] == [RoomEventKind.LIFECYCLE, RoomEventKind.NARRATION, RoomEventKind.STATUS]

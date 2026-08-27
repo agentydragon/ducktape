@@ -28,25 +28,21 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.chat_models import (
-    HARNESS_ORIGIN,
     OPEN_SESSION_STATUSES,
     SPA_ORIGIN,
     BridgeFrameKind,
     FrameDirection,
     ItemStatus,
     ItemType,
+    PromptOriginKind,
     RuntimeKind,
     SessionStatus,
     ToolOutcome,
     TurnOutcome,
 )
-from haku.console.config import (
-    ChatRuntimesConfig,
-    ClaudeCodeImplementationConfig,
-    CodexAppServerImplementationConfig,
-    RuntimeRegistrationConfig,
-)
+from haku.console.config import ChatRuntimesConfig, ClaudeCodeImplementationConfig, RuntimeRegistrationConfig
 from haku.console.conftest import console_sessions
+from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import (
     Agent,
     Conversation,
@@ -75,7 +71,16 @@ from haku.console.x.claude_code.testing.wire import (
     tool_use_block,
     tool_use_start,
 )
-from haku.console.x.conftest import age_lease, answers, attach_channel, configured_runtimes, lease_of, runtime_config
+from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
+from haku.console.x.conftest import (
+    age_lease,
+    answers,
+    attach_channel,
+    configured_runtimes,
+    lease_of,
+    runtime_config,
+    session_items,
+)
 from haku.console.x.conversation_events import (
     CallRef,
     ConversationEvent as NeutralConversationEvent,
@@ -84,7 +89,6 @@ from haku.console.x.conversation_events import (
     MessageCompleted,
     MessageStarted,
     OpenRef,
-    Projection,
     ReasoningStarted,
     ToolCallCompleted,
     ToolCallStarted,
@@ -93,7 +97,8 @@ from haku.console.x.conversation_events import (
     TurnFailed,
 )
 from haku.console.x.conversation_history import ConversationHistory
-from haku.console.x.conversation_records import TurnAnsweredEnd, TurnFailedEnd
+from haku.console.x.conversation_reads import PromptEntry, TurnAnsweredEnd, TurnFailedEnd
+from haku.console.x.item_entries import entry_of
 from haku.console.x.launch_identity import ChatLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity
 from haku.console.x.runtime import (
     EMPTY_TURN_PROJECTION_SEED,
@@ -448,10 +453,9 @@ def test_runtime_registration_schema_exposes_the_implementation_discriminator() 
     assert len(implementation["oneOf"]) == 2
 
 
-@pytest.mark.parametrize("api_key_env_var", ["HAKU_MCP_BEARER_TOKEN", "HAKU_AGENT_SDK_RUNNER_TOKEN"])
-def test_codex_runtime_rejects_session_authority_as_the_provider_key(api_key_env_var: str) -> None:
+def test_codex_runtime_rejects_session_authority_as_the_provider_key() -> None:
     with pytest.raises(ValidationError, match="exact-session credential"):
-        _codex_runtime_config(api_key_env_var=api_key_env_var)
+        _codex_runtime_config(api_key_env_var="HAKU_AGENT_SDK_RUNNER_TOKEN")
 
 
 @pytest.mark.parametrize("field", ["api_base_url", "mcp_url"])
@@ -593,13 +597,6 @@ class _UnrelatedRuntimeAdapter:
     def turn_handler(self, seed: TurnProjectionSeed = EMPTY_TURN_PROJECTION_SEED) -> _UnrelatedTurnHandler:
         return _UnrelatedTurnHandler(seed)
 
-    def project_log(self, frames: Iterable[tuple[int, HarnessFrame]]) -> Projection:
-        handler = self.turn_handler()
-        events: list[NeutralConversationEvent] = []
-        for frame_seq, frame in frames:
-            events.extend(handler.apply(frame_seq=frame_seq, frame=frame).events)
-        return Projection(events=tuple(events), unprojected={})
-
     def prompt_submitted(self, frames: Iterable[HarnessFrame]) -> bool:
         return any(frame.frame.get("动作") == "输入" for frame in frames)
 
@@ -655,7 +652,7 @@ async def test_a_failed_turn_alone_leaves_the_session_usable(chat_store, notific
     """
     session_id = await _one_failed_turn(chat_store, notifications, operator_id, unusable=False)
 
-    [record] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
+    [record] = await chat_store.list_turns(str(session_id), cursor=None, limit=5, scope=UnrestrictedReads())
     assert record.end == TurnFailedEnd(failure="the provider gave up")
     assert await chat_store.status(session_id) != SessionStatus.FAILED
 
@@ -697,7 +694,7 @@ async def test_generic_turn_loop_is_opaque_to_a_discriminator_free_harness(
     await service._run_turn(client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event())
 
     assert await answers(migrated_sessions, view.session_id) == ["你好!"]
-    raw = await chat_store.read_frames(view.session_id, cursor=None, limit=25)
+    raw = await chat_store.read_frames(view.session_id, cursor=None, limit=25, scope=UnrestrictedReads())
     assert [frame.payload for frame in raw] == [
         {"动作": "输入", "正文": "say hello"},
         {"阶段": "碎片", "正文": "你"},
@@ -717,7 +714,7 @@ _TOOL_USE_SCRIPT = [
 
 
 async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
-    chat_store, chat_service, operator_id
+    chat_store, chat_service, migrated_sessions, operator_id
 ) -> None:
     """A tool-use block and the text after it are two messages, not one merged row."""
     view, token = await chat_store.create(operator_id)
@@ -733,13 +730,13 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
 
     items = [
         item
-        for item in (await chat_store.get(operator_id, view.session_id)).items
+        for item in await session_items(migrated_sessions, view.session_id)
         if item.item_type is not ItemType.PROMPT
     ]
     # A call is a sibling of the message rather than a field on it, and it is `open` because no
     # `user` frame answered it in this test — which the row says, rather than showing an empty
     # result.
-    assert [(item.item_type, item.text, item.tool_name, item.status) for item in items] == [
+    assert [(item.item_type, item.item_text, item.tool_name, item.status) for item in items] == [
         (ItemType.TOOL_CALL, "", "mcp__haku-console__haku-console__list_mcp_servers", ItemStatus.OPEN),
         (ItemType.MESSAGE, "The Haku Console catalog is available.", None, ItemStatus.COMPLETE),
     ]
@@ -747,7 +744,7 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
 
 
 async def test_run_turn_accepts_a_stream_only_tool_call_before_its_result(
-    chat_store, chat_service, operator_id
+    chat_store, chat_service, migrated_sessions, operator_id
 ) -> None:
     """A result cannot outrun the streamed declaration that made its call addressable.
 
@@ -775,11 +772,9 @@ async def test_run_turn_accepts_a_stream_only_tool_call_before_its_result(
     )
 
     call = one(
-        item
-        for item in (await chat_store.get(operator_id, view.session_id)).items
-        if item.item_type is ItemType.TOOL_CALL
+        item for item in await session_items(migrated_sessions, view.session_id) if item.item_type is ItemType.TOOL_CALL
     )
-    assert (call.tool_name, call.arguments, call.text, call.outcome, call.status) == (
+    assert (call.tool_name, call.arguments, call.item_text, call.outcome, call.status) == (
         "Bash",
         {"command": "true"},
         "ok",
@@ -837,7 +832,7 @@ async def test_projected_assistant_message_points_to_the_frames_that_built_it(
         client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
     )
 
-    items = (await chat_store.get(operator_id, view.session_id)).items
+    items = await session_items(migrated_sessions, view.session_id)
     said = one(item for item in items if item.item_type is ItemType.MESSAGE)
     # **The item carries no frame numbers.** They are one session's coordinates, so what an operator
     # appeals to is the log rows that actually built the message: the delta that opened it and the
@@ -965,7 +960,7 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
             "haku-console": {
                 "type": "http",
                 "url": "http://haku-console.test:9090/mcp",
-                "headers": {"Authorization": "Bearer ${HAKU_MCP_BEARER_TOKEN}"},
+                "headers": {"Authorization": "Bearer ${HAKU_AGENT_SDK_RUNNER_TOKEN}"},
             }
         }
     }
@@ -1116,7 +1111,7 @@ async def test_adoption_picks_the_answer_up_where_it_stopped(
 
 
 async def test_adoption_deduplicates_a_completed_copy_of_a_streamed_tool_call(
-    chat_store, chat_service, recording_claims, operator_id
+    chat_store, chat_service, migrated_sessions, recording_claims, operator_id
 ) -> None:
     """The stream declaration can commit before a roll and its completed copy arrive afterwards."""
     session = await _allocated_session(chat_service, recording_claims, operator_id)
@@ -1153,14 +1148,14 @@ async def test_adoption_deduplicates_a_completed_copy_of_a_streamed_tool_call(
         )
 
     calls = [
-        item for item in (await chat_store.get(operator_id, session_id)).items if item.item_type is ItemType.TOOL_CALL
+        item for item in await session_items(migrated_sessions, session_id) if item.item_type is ItemType.TOOL_CALL
     ]
     assert len(calls) == 1
-    assert (calls[0].call_id, calls[0].text, calls[0].status) == ("toolu_01", "ok", ItemStatus.COMPLETE)
+    assert (calls[0].call_id, calls[0].item_text, calls[0].status) == ("toolu_01", "ok", ItemStatus.COMPLETE)
 
 
 async def test_adoption_restores_open_reasoning_and_completed_call_ids_for_provider_owned_state(
-    chat_store, chat_service, recording_claims, operator_id
+    chat_store, chat_service, migrated_sessions, recording_claims, operator_id
 ) -> None:
     session = await _allocated_session(chat_service, recording_claims, operator_id)
     session_id = session.session_id
@@ -1227,7 +1222,7 @@ async def test_adoption_restores_open_reasoning_and_completed_call_ids_for_provi
 
 
 async def test_adoption_replays_a_tool_call_composition_from_its_start(
-    chat_store, chat_service, recording_claims, operator_id
+    chat_store, chat_service, migrated_sessions, recording_claims, operator_id
 ) -> None:
     """No durable item can hold half a JSON value, so a roll replays the composition whole."""
     session = await _allocated_session(chat_service, recording_claims, operator_id)
@@ -1268,13 +1263,13 @@ async def test_adoption_replays_a_tool_call_composition_from_its_start(
         )
 
     call = one(
-        item for item in (await chat_store.get(operator_id, session_id)).items if item.item_type is ItemType.TOOL_CALL
+        item for item in await session_items(migrated_sessions, session_id) if item.item_type is ItemType.TOOL_CALL
     )
-    assert (call.arguments, call.text, call.status) == ({"command": "true"}, "ok", ItemStatus.COMPLETE)
+    assert (call.arguments, call.item_text, call.status) == ({"command": "true"}, "ok", ItemStatus.COMPLETE)
 
 
 async def test_a_turn_that_said_something_the_room_could_not_hear_still_knows_it_spoke(
-    chat_store, chat_service, operator_id
+    chat_store, chat_service, migrated_sessions, operator_id
 ) -> None:
     """The resumed turn has to read that a message already completed, or `result.result` — which
     repeats it — becomes a message of its own.
@@ -1297,7 +1292,7 @@ async def test_a_turn_that_said_something_the_room_could_not_hear_still_knows_it
     )
     said = one(
         item
-        for item in (await chat_store.get(operator_id, session_id)).items
+        for item in await session_items(migrated_sessions, session_id)
         if item.item_type is ItemType.MESSAGE and item.status is ItemStatus.COMPLETE
     )
 
@@ -1314,8 +1309,8 @@ async def test_a_turn_that_said_something_the_room_could_not_hear_still_knows_it
 
     spoken = [
         item
-        for item in (await chat_store.get(operator_id, session_id)).items
-        if item.item_type is ItemType.MESSAGE and item.text
+        for item in await session_items(migrated_sessions, session_id)
+        if item.item_type is ItemType.MESSAGE and item.item_text
     ]
     assert [item.item_id for item in spoken] == [said.item_id], "the result frame repeated a message, not made one"
 
@@ -1352,7 +1347,7 @@ async def test_adoption_closes_a_turn_whose_result_nobody_projected(
             abort_event=asyncio.Event(),
         )
 
-    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
+    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5, scope=UnrestrictedReads())
     assert turn.end == TurnAnsweredEnd()
 
 
@@ -1389,7 +1384,7 @@ async def test_adoption_reads_a_failed_result_as_a_failed_turn(
             abort_event=asyncio.Event(),
         )
 
-    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
+    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5, scope=UnrestrictedReads())
     assert isinstance(turn.end, TurnFailedEnd)
     # Claude states nothing about the session on a failed result, and its CLI answers the next
     # prompt like any other, so the exchange failing leaves the session usable.
@@ -1424,7 +1419,7 @@ async def test_a_turn_whose_cursor_is_behind_it_is_failed_rather_than_resumed(
 
     assert await chat_store.adopt_open_turn(session_id) is None
 
-    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
+    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5, scope=UnrestrictedReads())
     assert isinstance(turn.end, TurnFailedEnd)
 
 
@@ -1706,11 +1701,9 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
         )
 
     assert await answers(migrated_sessions, session_id) == ["because the disk was full"], "not the answer twice"
-    said = [
-        item for item in (await chat_store.get(operator_id, session_id)).items if item.item_type is ItemType.MESSAGE
-    ]
+    said = [item for item in await session_items(migrated_sessions, session_id) if item.item_type is ItemType.MESSAGE]
     assert [item.item_id for item in said] == [half_answered], "continued, rather than forked into a second"
-    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
+    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5, scope=UnrestrictedReads())
     assert (turn.turn_id, turn.end) == (started.turn_id, TurnAnsweredEnd())
 
 
@@ -1828,7 +1821,7 @@ async def test_a_turn_the_cli_ended_badly_fails_even_though_is_error_says_it_did
         client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
     )
 
-    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=5)
+    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=5, scope=UnrestrictedReads())
     assert record.end == TurnFailedEnd(failure="error_max_turns: end_turn")
     assert await chat_store.status(view.session_id) != SessionStatus.FAILED
 
@@ -1885,7 +1878,7 @@ async def test_an_aborted_turn_leaves_a_notice_and_no_reply(
     assert client.interrupted
     # The two messages, and nothing from the interrupt's own `result` frame ("stopped"). That the
     # stop itself is recorded is `test_session_store`'s; the room reads that row for itself
-    # (<channels/matrix/room_subscription.py>) rather than being told here.
+    # (<channels/matrix/conversation_subscriber.py>) rather than being told here.
     assert queued == ["Looking at the logs now.", "Found it: a bad config."]
 
 
@@ -1960,7 +1953,7 @@ async def test_a_turn_brackets_the_frames_it_produced(chat_store, chat_service, 
         client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
     )
 
-    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=10)
+    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=10, scope=UnrestrictedReads())
     assert record.end == TurnAnsweredEnd()
     assert (record.first_frame_seq, record.last_frame_seq) == (recorded_answer.frame_seq, recorded_ending.frame_seq)
     assert record.ended_at is not None
@@ -1991,11 +1984,13 @@ async def test_a_turn_ends_at_its_own_result_rather_than_at_what_the_cli_logs_af
         client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
     )
 
-    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=10)
+    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=10, scope=UnrestrictedReads())
     assert record.last_frame_seq == recorded.frame_seq
 
 
-async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_service, operator_id) -> None:
+async def test_the_transcript_carries_what_each_tool_answered(
+    chat_store, chat_service, migrated_sessions, operator_id
+) -> None:
     """The call and its answer are the same item, found by `call_id` — exact, where matching the Nth
     answer to the Nth call would be a guess, and needing no id from the agent: neither frame here
     carries a `message.id`, as 1,417 production assistant rows do not."""
@@ -2019,14 +2014,14 @@ async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_s
 
     calls = {
         item.call_id: item
-        for item in (await chat_store.get(operator_id, view.session_id)).items
+        for item in await session_items(migrated_sessions, view.session_id)
         if item.item_type is ItemType.TOOL_CALL
     }
 
     answered = calls["toolu_ok"]
     # `UNKNOWN` because the frame carries no `is_error`, which is how the CLI sends a plain success
     # — an outcome the fold reports rather than guesses at.
-    assert (answered.tool_name, answered.text, answered.outcome) == ("Bash", "42", ToolOutcome.UNKNOWN)
+    assert (answered.tool_name, answered.item_text, answered.outcome) == ("Bash", "42", ToolOutcome.UNKNOWN)
     running = calls["toolu_running"]
     assert (running.status, running.outcome) == (ItemStatus.OPEN, None), (
         "a call still running must not read as an empty answer"
@@ -2041,7 +2036,9 @@ class _RealDbClaudeClient(_LifecycleClaudeClient):
         self.script = [assistant(text_block("pong")), result(text="pong")]
 
 
-async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, chat_service, operator_id) -> None:
+async def test_runner_survives_an_idle_wait_against_a_real_database(
+    chat_store, chat_service, migrated_sessions, operator_id
+) -> None:
     """The idle wait is a raw-driver call, so only a real engine exercises it.
 
     `handle_runner` loops: consume a prompt, then block in `wait_for_prompt` until the next one.
@@ -2071,12 +2068,14 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, 
             for _ in range(75):
                 if [
                     turn
-                    for turn in await chat_store.list_turns(str(view.session_id), cursor=None, limit=2)
+                    for turn in await chat_store.list_turns(
+                        str(view.session_id), cursor=None, limit=2, scope=UnrestrictedReads()
+                    )
                     if turn.ended_at
                 ]:
                     break
                 await asyncio.sleep(0.2)
-            [turn] = await chat_store.list_turns(str(view.session_id), cursor=None, limit=2)
+            [turn] = await chat_store.list_turns(str(view.session_id), cursor=None, limit=2, scope=UnrestrictedReads())
             assert turn.end == TurnAnsweredEnd(), "the turn never completed"
         finally:
             runner.cancel()
@@ -2084,11 +2083,9 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, 
                 await runner
 
     [answer] = [
-        item
-        for item in (await chat_store.get(operator_id, view.session_id)).items
-        if item.item_type is ItemType.MESSAGE
+        item for item in await session_items(migrated_sessions, view.session_id) if item.item_type is ItemType.MESSAGE
     ]
-    assert answer.text == "pong"
+    assert answer.item_text == "pong"
 
 
 class _ScriptedChannel:
@@ -2628,11 +2625,13 @@ async def test_a_harness_initiated_exchange_becomes_an_ordinary_turn(
             )
         ).all()
     assert [turn.outcome for turn in turns] == [TurnOutcome.ANSWERED, TurnOutcome.ANSWERED]
-    view = await chat_store.get(operator_id, session_id)
-    prompts = [item for item in view.items if item.item_type is ItemType.PROMPT]
-    assert [(item.text, item.origin) for item in prompts] == [
-        ("start the fetch", SPA_ORIGIN),
-        ('Background command "fetch" completed (exit code 0)', HARNESS_ORIGIN),
+    entries = await chat_store.read_item_rows(
+        await chat_store.conversation_of(session_id), after_seq=None, limit=100, scope=UnrestrictedReads()
+    )
+    prompts = [entry for entry in map(entry_of, entries) if isinstance(entry, PromptEntry)]
+    assert [(prompt.text, prompt.origin) for prompt in prompts] == [
+        ("start the fetch", PromptOriginKind.SPA),
+        ('Background command "fetch" completed (exit code 0)', PromptOriginKind.HARNESS),
     ]
     assert client.prompts == ["start the fetch"], "a wake turn asks no question"
     async with migrated_sessions() as db:

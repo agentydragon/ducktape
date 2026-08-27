@@ -37,7 +37,7 @@ from skills.info_gathering.evals.twenty_questions.prompts import (
     first_user_message,
     load_sim_prompt,
 )
-from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, RunSummary, Timeout
+from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, Player, RunSummary, Timeout
 from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
     add_common_args,
     output_dir_from_args,
@@ -66,9 +66,7 @@ class GameState:
     log_entries: list[LogEntry] = field(default_factory=list)
     sim_input: list[TResponseInputItem] = field(default_factory=list)
 
-    def record(
-        self, player: Literal["guesser", "simulator"], content: str, tool_calls: list[dict[str, object]] | None = None
-    ) -> None:
+    def record(self, player: Player, content: str, tool_calls: list[dict[str, object]] | None = None) -> None:
         self.log_entries.append(
             LogEntry(timestamp=datetime.now(UTC), player=player, content=content, tool_calls=tool_calls or [])
         )
@@ -159,7 +157,7 @@ async def run_twenty_questions(
     async def ask_yes_no_question(question: str) -> str:
         """Ask a yes/no question. Uses one turn."""
         state.turn += 1
-        state.record("guesser", question, [{"name": "ask_yes_no_question", "args": {"question": question}}])
+        state.record(Player.GUESSER, question, [{"name": "ask_yes_no_question", "args": {"question": question}}])
         logger.info("Guesser (turn %d): %s", state.turn, question[:200])
 
         sim_response, is_correct, is_invalid, invalid_reason = await _run_sim(f"Question: {question}")
@@ -167,18 +165,18 @@ async def run_twenty_questions(
         if is_invalid:
             state.invalid_input_count += 1
             state.record(
-                "simulator", invalid_reason or "", [{"name": "invalid_input", "args": {"reason": invalid_reason}}]
+                Player.SIMULATOR, invalid_reason or "", [{"name": "invalid_input", "args": {"reason": invalid_reason}}]
             )
             state.turn -= 1
             return invalid_reason or ""
 
         if is_correct:
-            state.record("simulator", "", [{"name": "correct_answer", "args": {}}])
+            state.record(Player.SIMULATOR, "", [{"name": "correct_answer", "args": {}}])
             state.result = Correct(turns=state.turn)
             return "Correct! You guessed it!"
 
         if sim_response:
-            state.record("simulator", sim_response, [{"name": "answer", "args": {"response": sim_response}}])
+            state.record(Player.SIMULATOR, sim_response, [{"name": "answer", "args": {"response": sim_response}}])
             logger.info("Simulator: %s", sim_response)
             if state.turn >= state.turn_limit and state.result is None:
                 state.result = Timeout(limit=state.turn_limit)
@@ -190,18 +188,18 @@ async def run_twenty_questions(
     async def guess_answer(answer_text: str) -> str:
         """Guess the secret answer. Uses one turn."""
         state.turn += 1
-        state.record("guesser", answer_text, [{"name": "guess_answer", "args": {"answer": answer_text}}])
+        state.record(Player.GUESSER, answer_text, [{"name": "guess_answer", "args": {"answer": answer_text}}])
         logger.info("Guesser (turn %d) guesses: %s", state.turn, answer_text[:200])
 
         sim_response, is_correct, _, _ = await _run_sim(f"My answer is: {answer_text}")
 
         if is_correct:
-            state.record("simulator", "", [{"name": "correct_answer", "args": {}}])
+            state.record(Player.SIMULATOR, "", [{"name": "correct_answer", "args": {}}])
             state.result = Correct(turns=state.turn)
             return "Correct! You guessed it!"
 
         if sim_response:
-            state.record("simulator", sim_response, [{"name": "answer", "args": {"response": sim_response}}])
+            state.record(Player.SIMULATOR, sim_response, [{"name": "answer", "args": {"response": sim_response}}])
             logger.info("Simulator: %s", sim_response)
             if state.turn >= state.turn_limit and state.result is None:
                 state.result = Timeout(limit=state.turn_limit)

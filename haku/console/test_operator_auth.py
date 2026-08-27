@@ -254,9 +254,10 @@ def test_every_unsafe_api_route_has_an_explicit_admission_boundary(make_client) 
         if path.startswith("/api/node-daemons/v1/"):
             assert operator_auth.require_operator not in calls, route.path
             assert operator_auth.require_operator_mutation_origin not in calls, route.path
-        elif path == "/api/internal/kubernetes/authorize":
-            # This deny-only, bearer-authenticated machine route is covered by
-            # test_kube_proxy_authorization; browser session / Origin guards do not apply.
+        elif path in {"/api/internal/kubernetes/authorize", "/api/internal/http/decide"}:
+            # These deny-only, bearer-authenticated machine routes are covered by
+            # test_kube_proxy_authorization and test_http_decide_routes; browser session /
+            # Origin guards do not apply.
             assert operator_auth.require_operator not in calls, route.path
             assert operator_auth.require_operator_mutation_origin not in calls, route.path
         elif path == "/auth/logout":

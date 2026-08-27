@@ -125,16 +125,9 @@ Options:
 
 ### Environment Inheritance
 
-The proxy environment variables are set at the **container level** (injected before PID 1 starts) and inherited by all processes:
-
-```
-Container runtime
-    └── process_api (PID 1) [inherits HTTP_PROXY, etc.]
-        └── /bin/sh (PID 23) [inherits]
-            └── environment-manager (PID 25) [inherits]
-                └── claude (PID 43) [inherits]
-                    └── bash shells [inherits]
-```
+The proxy environment variables are set at the **container level** (injected before PID 1
+starts) and inherited by every process in the tree above (`process_api` → `/bin/sh` →
+`environment-manager` → `claude` → bash shells).
 
 ## Sandbox Runtime Settings
 
@@ -606,14 +599,14 @@ http://container_{container_id}:jwt_{JWT_TOKEN}@21.0.0.127:15004
 ```json
 {
   "iss": "anthropic-egress-control",
-  "organization_uuid": "70aac9b0-f657-4178-8e9d-798bcd25ea76",
-  "iat": 1768846481,
-  "exp": 1768860881,
+  "organization_uuid": "...",
+  "iat": 1700000000,
+  "exp": 1700014400,
   "allowed_hosts": "*",
   "is_hipaa_regulated": "false",
   "use_egress_gateway": "false",
-  "session_id": "session_018FEXHGPoJPhpx1itTvdhA6",
-  "container_id": "container_01Vz7LuaCyv1EAd58QsayLrU--claude_code_remote--joyful-round-sticky"
+  "session_id": "session_...",
+  "container_id": "container_...--claude_code_remote--..."
 }
 ```
 
@@ -631,16 +624,9 @@ environment before the container starts. Key implications:
 
 1. **Static for session lifetime** - The URL never changes after container start
 2. **No refresh mechanism** - There's no API to get a new token
-3. **Inherited by all processes** - All child processes inherit the env vars
+3. **Inherited by all processes** - All child processes inherit the env vars (see the
+   Environment Inheritance tree under Container Init Process)
 4. **4-hour validity** - Token expires 4 hours after container start
-
-```
-Container runtime
-    └── process_api (PID 1) ← HTTP_PROXY injected here
-        └── environment-manager
-            └── claude
-                └── bash shells ← All inherit same proxy URL
-```
 
 **Programmatic Access**:
 
@@ -783,19 +769,8 @@ $ curl -s -X POST http://localhost:$CODESIGN_MCP_PORT/mcp \
   -d '{"jsonrpc": "2.0", "method": "initialize", "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "probe", "version": "1.0"}}, "id": 1}'
 ```
 
-Response:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "protocolVersion": "2024-11-05",
-    "capabilities": { "tools": { "listChanged": true } },
-    "serverInfo": { "name": "codesign", "version": "1.0.0" }
-  }
-}
-```
+Returns `protocolVersion` `2024-11-05`, `capabilities.tools.listChanged: true`, and
+`serverInfo` `{ name: codesign, version: 1.0.0 }`.
 
 ### Protocol: List Tools
 
@@ -1134,21 +1109,7 @@ Git commits are signed using a bridge between git's GPG interface and the MCP co
 3. MCP server signs with Ed25519 key (key never leaves server)
 4. Signature returned to git
 
-### MCP Codesign Tool
-
-```json
-{
-  "name": "sign_file",
-  "inputSchema": {
-    "required": ["file_path"],
-    "properties": {
-      "file_path": "Path to the file to sign",
-      "git_object_format": "sha1 or sha256 (default: sha1)",
-      "repo_directory": "Git repository working directory"
-    }
-  }
-}
-```
+The `sign_file` tool schema is documented above in § MCP Server: Codesign → List Tools.
 
 ### Security Benefits
 
@@ -1188,21 +1149,9 @@ File descriptors 3 and 4 contain auth tokens but are:
 - Not inherited by child processes
 - Not readable from other processes
 
-#### Attempted Exploits
-
-```bash
-# Direct CLI - hangs waiting for auth
-$ claude -p "Say hello"
-# Times out, no ANTHROPIC_API_KEY
-
-# Direct API - auth error
-$ curl https://api.anthropic.com/v1/messages -H "x-api-key: test" ...
-{"error":{"type":"authentication_error","message":"invalid x-api-key"}}
-
-# Reading parent FDs - empty/inaccessible
-$ cat /proc/43/fd/3
-# (empty - pipes don't work this way)
-```
+Probes confirming the table above: `claude -p` hangs with no `ANTHROPIC_API_KEY`; a direct
+`POST /v1/messages` returns an `authentication_error` ("invalid x-api-key"); reading the
+parent's FD 3/4 yields nothing (the pipes are already drained).
 
 #### Conclusion
 
@@ -1240,7 +1189,7 @@ The `Task` tool is the **only path** to spawn subagents. It routes through the o
 │             ▼                                                                │
 │  ┌────────────────────┐                                                     │
 │  │ Git Proxy           │                                                     │
-│  │ (localhost:51431)   │                                                     │
+│  │ (localhost:dyn-port)│                                                     │
 │  └──────────┬─────────┘                                                     │
 │             │                                                                │
 └─────────────┼────────────────────────────────────────────────────────────────┘
@@ -1266,37 +1215,11 @@ The `Task` tool is the **only path** to spawn subagents. It routes through the o
 
 ## Inference Protocol (Messages API)
 
-The Claude CLI inside the container communicates with the Anthropic backend using the standard Messages API over the WebSocket connection.
-
-### Request Format
-
-```json
-{
-  "model": "claude-opus-4-5-20251101",
-  "max_tokens": 8192,
-  "messages": [
-    {
-      "role": "user",
-      "content": [{ "type": "text", "text": "User prompt here" }]
-    }
-  ],
-  "tools": [
-    {
-      "name": "Bash",
-      "description": "Execute bash commands...",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "command": { "type": "string" },
-          "timeout": { "type": "number" }
-        },
-        "required": ["command"]
-      }
-    }
-  ],
-  "stream": true
-}
-```
+The Claude CLI inside the container speaks the **standard Anthropic Messages API**
+(`model`, `max_tokens`, `messages`, `tools`, `stream: true`; tool results returned as
+standard `tool_result` content blocks in a follow-up user message) over the WebSocket
+connection. The only environment-specific parts are the WebSocket envelope, auth header, and
+heartbeat documented below.
 
 ### Streaming Response Events
 
@@ -1313,68 +1236,8 @@ When `stream: true`, the API returns Server-Sent Events (SSE) with these event t
 | `ping`                | Keep-alive                                               |
 | `error`               | Error occurred                                           |
 
-### Event Flow Example
-
-```
-event: message_start
-data: {"type":"message_start","message":{"id":"msg_...","model":"claude-opus-4-5-20251101"}}
-
-event: content_block_start
-data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
-
-event: content_block_delta
-data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Let me "}}
-
-event: content_block_delta
-data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"help..."}}
-
-event: content_block_stop
-data: {"type":"content_block_stop","index":0}
-
-event: message_delta
-data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":42}}
-
-event: message_stop
-data: {"type":"message_stop"}
-```
-
-### Tool Use Response
-
-When the model decides to use a tool:
-
-```
-event: content_block_start
-data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_...","name":"Bash","input":{}}}
-
-event: content_block_delta
-data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\":"}}
-
-event: content_block_delta
-data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\"ls -la\"}"}}
-
-event: content_block_stop
-data: {"type":"content_block_stop","index":0}
-
-event: message_delta
-data: {"type":"message_delta","delta":{"stop_reason":"tool_use"}}
-```
-
-### Tool Result Submission
-
-After executing a tool, results are sent as a user message:
-
-```json
-{
-  "role": "user",
-  "content": [
-    {
-      "type": "tool_result",
-      "tool_use_id": "toolu_01ABC...",
-      "content": "total 4\ndrwxr-xr-x 2 user user 4096 Jan 19 12:00 ."
-    }
-  ]
-}
-```
+Content arrives as `text_delta` (assistant text) or `input_json_delta` (tool-call arguments
+streamed as partial JSON); `message_delta` carries the `stop_reason` (`end_turn`, `tool_use`).
 
 ### WebSocket Wrapper
 
@@ -1435,37 +1298,19 @@ The architecture deliberately prevents unauthorized inference requests:
 ### Token Single-Use Constraint
 
 The Session Ingress token (`sk-ant-si-...`) is **single-use per WebSocket connection**:
-
-```python
-# Attempting to reuse the token:
-async with websockets.connect(url, additional_headers=headers) as ws:
-    # Connection failed: InvalidStatus: server rejected WebSocket connection: HTTP 401
-```
-
-Once the active claude process establishes its WebSocket, no other process can connect with the same token.
+reconnecting with the same token is rejected with HTTP 401. Once the active claude process
+establishes its WebSocket, no other process can connect with the same token.
 
 ### Stdin Injection (Theoretical)
 
-It's technically possible to write to claude's stdin via `/proc/{pid}/fd/0`:
-
-```python
-import os
-import json
-
-# Claude uses stream-json format
-message = {"type": "user", "message": {"role": "user", "content": [...]}}
-
-fd = os.open("/proc/43/fd/0", os.O_WRONLY | os.O_NONBLOCK)
-os.write(fd, (json.dumps(message) + "\n").encode())
-os.close(fd)
-```
-
-However:
+Writing to claude's stdin via `/proc/{pid}/fd/0` is technically possible (the CLI reads
+stream-json), but does not bypass authentication:
 
 1. Messages queue in the pipe buffer until claude reads them
-2. The exact format required includes UUIDs and other fields
-3. Claude may reject malformed messages
-4. This doesn't bypass authentication - the WebSocket connection is already established
+2. The exact stream-json format includes UUIDs and other required fields, so malformed
+   messages are rejected
+3. The WebSocket connection is already established — injecting stdin does not open a new
+   authenticated channel
 
 ### Verified Local Services
 
@@ -1492,46 +1337,21 @@ Can we hijack the existing authenticated WebSocket connection?
 
 **Detailed findings:**
 
-1. **Socket FDs are protected**: Opening `/proc/43/fd/21` (a socket) returns `ENXIO`:
-
-   ```python
-   os.open("/proc/43/fd/21", os.O_RDWR)
-   # OSError: [Errno 6] No such device or address
-   ```
-
-2. **TLS 1.3 encryption**: Even if we could access the socket, traffic is encrypted:
-   - Cipher: `TLS_AES_256_GCM_SHA384`
-   - No `SSLKEYLOGFILE` environment variable set
-   - Session keys not found in heap memory dump
-
-3. **ptrace access works** (ptrace_scope=1, running as root), but:
-   - Raw socket I/O bypasses TLS, sending garbage
-   - Would need to find OpenSSL's `SSL` structure pointer
-   - Then call `SSL_write()` with correct context
-
-4. **Memory layout**:
-
-   ```
-   SSL_write @ 0x1f15e20 (in Node.js binary)
-   SSL_read  @ 0x1f153f0
-   TLS_client_method @ 0x1f00dc0
-   ```
-
-   But finding the SSL context pointer for the WebSocket connection requires:
-   - Understanding V8 heap structure
-   - Finding the WebSocket object → TLS socket → SSL\*
-
-5. **Heap scanning results**:
-   - Found 768 potential SSL structures in 80MB heap dump
-   - Tested candidates with `SSL_get_fd()` - all returned -1
-   - SSL\* pointers likely in V8's managed heap, not the C heap
-   - WebSocket URL found in memory: `wss://api.anthropic.com/v1/session_ingress/ws/{session_id}`
-
-6. **Syscall interception (ptrace)**:
-   - Can intercept `write()` syscalls, but data is already TLS-encrypted
-   - SSL_write is a library call, not a syscall - can't intercept with ptrace
-   - Would need gdb breakpoint on SSL_write + buffer modification
-   - Requires finding the correct SSL\* context first
+1. **Socket FDs are protected**: opening a socket FD under `/proc/{claude_pid}/fd/` returns
+   `ENXIO` — the kernel refuses to re-open it.
+2. **TLS 1.3 encryption**: even with socket access, traffic is encrypted (cipher
+   `TLS_AES_256_GCM_SHA384`), no `SSLKEYLOGFILE` is set, and session keys were not found in a
+   heap dump.
+3. **ptrace access works** (ptrace_scope=1, running as root), but raw socket I/O bypasses
+   TLS (sends garbage); hijacking would require locating OpenSSL's `SSL` structure pointer and
+   calling `SSL_write()` with the correct context.
+4. **Finding the SSL context is the blocker**: `SSL_write`/`SSL_read` resolve in the Node.js
+   binary, but the live `SSL*` for the WebSocket lives in V8's managed heap, not the C heap —
+   heap-scanned candidates all returned `-1` from `SSL_get_fd()`. The WebSocket URL itself is
+   recoverable from memory (`wss://api.anthropic.com/v1/session_ingress/ws/{session_id}`).
+5. **Syscall interception (ptrace)** can catch `write()`, but the data is already
+   TLS-encrypted; `SSL_write` is a library call, not a syscall, so reaching the plaintext
+   would need a gdb breakpoint on `SSL_write` — which again requires the `SSL*` context first.
 
 ### Security Conclusion
 
@@ -1559,12 +1379,4 @@ This design ensures that:
 | **Git config**               | Allowed                                                           |
 | **Nested sandbox**           | Weaker nested sandbox enabled                                     |
 
-## Process Tree
-
-```
-PID 1   init
-└── PID 23  /bin/sh -c ... environment-manager task-run ...
-    └── PID 25  environment-manager task-run --session {id}
-        └── PID 43  claude (with FD 3,4 for auth)
-            └── PID xxx  /bin/bash (agent shell commands)
-```
+The process hierarchy is documented under Container Init Process § Startup Sequence.

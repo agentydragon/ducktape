@@ -14,13 +14,16 @@ postgres deployments.
 
 Only these CNPG cluster profiles are permitted:
 
-| Profile            | Instances | Pin                                      | Storage          | Anti-affinity                         |
-| ------------------ | --------- | ---------------------------------------- | ---------------- | ------------------------------------- |
-| **OVH-HA**         | 2         | `topology.kubernetes.io/zone: hil-ovh`   | `local-path-ovh` | `topologyKey: kubernetes.io/hostname` |
-| **Proxmox-single** | 1         | `topology.kubernetes.io/region: proxmox` | `local-path`     | n/a                                   |
+| Profile            | Instances | Pin                                      | Storage                        | Anti-affinity                         |
+| ------------------ | --------- | ---------------------------------------- | ------------------------------ | ------------------------------------- |
+| **OVH-HA**         | 2         | `topology.kubernetes.io/zone: hil-ovh`   | `local-path-ovh-hdd` or `-ssd` | `topologyKey: kubernetes.io/hostname` |
+| **Proxmox-single** | 1         | `topology.kubernetes.io/region: proxmox` | `local-path-proxmox`           | n/a                                   |
 
-**OVH-HA**: For services co-located with the SeaweedFS cluster on the two OVH
-kimsufi workers. Two instances on separate kimsufi nodes.
+**OVH-HA**: For services co-located with the SeaweedFS cluster on the OVH
+nodes. Two instances on separate nodes. Existing clusters mostly still name
+`local-path-ovh` — the deprecated alias re-pinned to the same media as
+`local-path-ovh-hdd`, kept only for already-bound PVCs (see the SC manifest) —
+new clusters name the tiered classes explicitly.
 
 **Proxmox-single**: For homelab services. Single instance co-located with the
 app on Proxmox. Relies on ZFS for local reliability; off-site backups via
@@ -33,8 +36,10 @@ all instances to one site avoids this.
 
 ### R3: CNPG storage class follows the pin
 
-OVH-HA uses `local-path-ovh` (constrained to the OVH kimsufi nodes via
-`allowedTopologies`); Proxmox-single uses `local-path`. OVH-HA gets
+OVH-HA uses `local-path-ovh` (HDD; deprecated alias of `local-path-ovh-hdd`)
+or, for fsync/latency-critical DBs, the `local-path-ovh-ssd` KS-GAME NVMe tier
+(`forgejo-db-ssd`, `seaweedfs-filer-db-ssd`) — both constrained to OVH nodes
+via `allowedTopologies`. Proxmox-single uses `local-path-proxmox`. OVH-HA gets
 replication at the CNPG level (2 instances on separate nodes);
 Proxmox-single gets replication at the storage level (ZFS on the Proxmox
 host).
@@ -57,28 +62,36 @@ pinned DBs or vice versa. This prevents cross-site write latency.
 
 ## Current Compliance
 
-| Cluster                | Profile                       | Compliant   |
-| ---------------------- | ----------------------------- | ----------- |
-| authentik-db-ovh       | OVH-HA                        | Yes         |
-| gatus-db               | OVH-HA                        | Yes         |
-| grafana-db-ovh         | OVH-HA                        | Yes         |
-| tofu-state-db-ovh      | OVH-HA                        | Yes         |
-| attic-db               | OVH-HA                        | Yes         |
-| seaweedfs-filer-db-ssd | OVH-HA                        | Yes         |
-| atuin-db               | OVH-HA                        | Yes         |
-| forgejo-db             | OVH-HA                        | Yes         |
-| langfuse-db            | OVH-HA                        | Yes         |
-| inventree-db           | Proxmox-single                | Yes         |
-| harbor-db              | OVH single-instance (interim) | Exception\* |
-| props-db               | OVH-HA                        | Yes         |
-| matrix-db              | OVH-HA                        | Yes         |
-| tandoor-db             | Proxmox-single                | Yes         |
+No roster here — it drifts. The SSOT is the `Cluster` manifests themselves;
+sweep them with:
 
-\* `harbor-db` moved off Proxmox 2026-06-03 (`region: hil` / `local-path-ovh`) so
-Harbor's DB survives Proxmox downtime, but it's still a single instance rather than
-the 2-instance `zone: hil-ovh` OVH-HA shape — see the comment in
-`k8s/harbor/db/postgres-cluster.yaml`. Bumping it to a proper OVH-HA cluster (R2/R3)
-is a known, deliberately deferred follow-up, not an oversight.
+```bash
+grep -rl 'kind: Cluster' cluster/k8s --include='postgres-cluster*.yaml'
+```
+
+As of 2026-08, every **live** (unsuspended) cluster is 2-instance OVH-HA —
+most on the deprecated `local-path-ovh` alias (same media as `-hdd`), plus
+`forgejo-db-ssd` and `seaweedfs-filer-db-ssd`
+on the `local-path-ovh-ssd` tier — with one deviation:
+
+- `study-casino-db` (`k8s/study-casino/db/`): 3 instances pinned
+  `region: hil`, one per OVH node, so it tolerates a node loss without
+  quorum or primary impact. Deliberate deviation from the 2-instance
+  profile; the manifest comment is the record.
+
+Parked clusters (suspended Flux Kustomizations; R2/R3 bind again on revival):
+
+- `props-db` (`k8s/props/db/`): OVH-HA shape; suspended 2026-08-20 with the
+  rest of props for a temporary teardown (<decisions.md> § "Suspended
+  Kustomizations").
+- Proxmox-single: `firecrawl-db`, `inventree-db`, `tandoor-db` (`x/`). Their
+  manifests still name `local-path`, the chart-default StorageClass retired
+  2026-06-03 (`k8s/local-path-provisioner/helmrelease.yaml`) — re-point to
+  `local-path-proxmox` when reviving.
+- `wayback-archive-db` (`k8s/x/wayback-cache/db/`): OVH-HA shape, suspended
+  with the rest of wayback-cache.
+- `haku-dispatch-db` (`k8s/x/haku/dispatch/db/`): OVH-HA shape; not wired
+  into the root `k8s/kustomization.yaml` at all.
 
 ## TODO
 
@@ -91,7 +104,7 @@ is a known, deliberately deferred follow-up, not an oversight.
       appears in StatefulSets/Deployments outside of CNPG
 - [ ] Machine-check R2: validate that every CNPG Cluster matches one of the
       two allowed profiles (instance count, region)
-- [ ] Machine-check R3: validate that every CNPG Cluster uses `local-path`
-      storage class
-- [ ] Machine-check R4: validate that app `nodeSelector` region matches its
+- [ ] Machine-check R3: validate that every CNPG Cluster uses the storage
+      class R3 prescribes for its profile
+- [ ] Machine-check R5: validate that app `nodeSelector` region matches its
       CNPG cluster's region

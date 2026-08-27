@@ -11,7 +11,9 @@
 //!   and refuse on collision / atom-split rejection.
 //! * Operations are YAML-shape preserving via `serde_yaml::Value`.
 //!
-//! See `docs/cli.md` § "Bindings" for the user-facing contract.
+//! The per-command contract lives in the clap doc-comments
+//! (`cli/mod.rs`); cross-command semantics (batch atomicity, rejection
+//! diagnostics) in `docs/cli.md`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;

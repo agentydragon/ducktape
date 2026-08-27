@@ -40,13 +40,13 @@ emitted `.js`, and vitest runs the emitted `.test.js`.
   per-server widget (`tool_rendering/<server>/responses.tsx`) over the unwrapped
   `CallToolResult` payload, else the raw-JSON `Result` field (detailed only).
 - `console_events.ts` — `useConsoleEvents(onEvent)`: the shared live signal (the `/api/events/ws`
-  WebSocket) carrying tool-call, operator-link and chat-session changes. The server broadcasts typed
+  WebSocket) carrying tool-call, operator-link and conversation changes. The server broadcasts typed
   invalidations to every connected tab, so panels, the history view and the conversation inventory
   stay live without a reload and without client-side cross-tab plumbing. It auto-reconnects with backoff,
   refetches on reconnect to catch up, and returns a `LiveStatus` (`connecting`/`live`/`offline`)
   the shell uses to warn when the channel is down. Every consumer sees every event, so
-  `changedSessionId(event)` is how the tool-call surfaces skip session invalidations, which a
-  streaming turn emits every coalescing window.
+  `changedConversationId(event)` is how the tool-call surfaces skip conversation invalidations,
+  which a streaming turn emits every coalescing window.
 - `coalesced_refresh.ts` — `useCoalescedRefresh(read)`: at most one refetch in flight, with a burst
   of live events collapsing into a single catch-up afterwards, since overlapping fetches buy answers
   the next one discards. Used by the history page and the conversation inventory; a transcript

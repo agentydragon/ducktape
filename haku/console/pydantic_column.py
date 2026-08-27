@@ -10,7 +10,9 @@ from sqlalchemy.types import TypeDecorator
 class PydanticColumn[T](TypeDecorator[T]):
     """JSONB column that validates and serializes a Pydantic-supported type."""
 
-    impl = JSONB
+    # A nullable column's absent value must reach Postgres as SQL NULL: a JSON `null` would fail
+    # every `IS NULL` check and CHECK constraint while looking identical from Python.
+    impl = JSONB(none_as_null=True)
     cache_ok = True
 
     def __init__(self, pydantic_type: Any):

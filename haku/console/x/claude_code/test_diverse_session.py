@@ -28,8 +28,8 @@ import pytest_bazel
 from more_itertools import one
 
 from haku.console.chat_models import ToolOutcome
-from haku.console.tools.conversations import MAX_PAGE_BYTES
-from haku.console.x.claude_code.projection import RecordedFrame, project_log
+from haku.console.x.claude_code.projection import RecordedFrame
+from haku.console.x.claude_code.testing.fold import whole_capture
 from haku.console.x.conversation_events import (
     FrameRange,
     ItemSegment,
@@ -61,13 +61,10 @@ _FRAMES = [
 
 @pytest.fixture(scope="module")
 def projection() -> Projection:
-    """The whole capture folded once. Folding at all is the first thing under test: a frame class
-    the adapter has never seen must land in `unprojected`, never raise.
-
-    `project_log` rather than `project`: this fixture is a whole session with nothing after it, and
-    since #4149 that is the reader's shape of the reducer — `project` returns the state beside the
-    projection, for a caller with more frames coming."""
-    return project_log(_FRAMES)
+    """The whole capture folded once, one frame at a time — the batching the live turn loop uses.
+    Folding at all is the first thing under test: a frame class the adapter has never seen must
+    land in `unprojected`, never raise."""
+    return whole_capture(_FRAMES)
 
 
 def test_the_capture_folds_to_the_session_it_recorded(projection: Projection):
@@ -165,16 +162,6 @@ def test_a_stdout_line_is_not_a_frame():
 
     with pytest.raises(json.JSONDecodeError):
         json.loads(stray)
-
-
-def test_the_largest_frame_still_fits_a_transcript_page():
-    """One `system/commands_changed` frame was 35,488 bytes before redaction. `conversations.py`
-    budgets a *page* rather than a row, so a frame this size is returned whole and costs the rest
-    of its page — but a budget below it would clip the one frame that says which commands exist.
-    """
-    largest = max(record["original_bytes"] for record in _RECORDS if "original_bytes" in record)
-
-    assert largest < MAX_PAGE_BYTES
 
 
 if __name__ == "__main__":

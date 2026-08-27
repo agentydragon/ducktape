@@ -1,0 +1,253 @@
+"""Decide-service integration contracts on real PostgreSQL: fence binding, evaluation, fail-closed.
+
+Grants are created through the real repository with real approved-ToolCall provenance, so these
+tests exercise the same storage, status derivation, and principal filtering the endpoint uses in
+production. Only the authority-failure test points the repository at an unreachable database —
+that failure mode is the test's subject.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from functools import partial
+from ipaddress import IPv4Address
+from typing import Any, cast
+from uuid import UUID
+
+import pytest
+import pytest_bazel
+from fastapi import FastAPI
+from pydantic import SecretStr
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from haku.console.conftest import default_agent_binding, insert_approved_tool_call
+from haku.console.grant_principal import AgentGrantPrincipal
+from haku.console.http_decide_config import LoadedEgressDecide, LoadedFenceCredential
+from haku.console.http_decide_service import HttpDecideService, HttpDecideUnavailableError
+from haku.console.http_grant_models import HttpGrantSpec, HttpMethod, HttpOrigin, HttpScheme
+from haku.console.http_grant_repository import PostgresHttpGrantRepository
+from haku.console.http_grant_service import HttpGrantService
+from haku.egress.decision import DecideAllowed, DecideDenied, DecideRequest, DecisionSource, RequestMeta
+
+_NOW = datetime(2026, 8, 27, 12, 0, tzinfo=UTC)
+_ORIGIN = HttpOrigin(scheme=HttpScheme.HTTPS, host="api.example", port=443)
+_PROXY_TOKEN = "proxy-identity-token"
+_FENCE = "agent-fence-credential"
+_OTHER_FENCE = "other-agent-fence-credential"
+# Configured fence identity that owns no grants: isolation must come from principal filtering.
+_UNGRANTED_AGENT = UUID("10000000-0000-4000-8000-000000000099")
+
+_insert_http_source = partial(insert_approved_tool_call, server_id="http_grants")
+
+
+@dataclass(frozen=True)
+class _Harness:
+    decide: HttpDecideService
+    grants: HttpGrantService
+    sessions: async_sessionmaker[AsyncSession]
+    agent_id: UUID
+    binding_id: UUID
+
+
+def _harness(client: Any) -> _Harness:
+    app = cast(FastAPI, client.app)
+    sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
+    assert client.portal is not None
+    agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
+    grants = HttpGrantService(
+        PostgresHttpGrantRepository(sessions), max_lifetime=timedelta(hours=1), clock=lambda: _NOW
+    )
+    decide = HttpDecideService(
+        grants=grants,
+        credentials=LoadedEgressDecide(
+            proxy_token=SecretStr(_PROXY_TOKEN),
+            fence_credentials=[
+                LoadedFenceCredential(agent_id=agent_id, token=SecretStr(_FENCE)),
+                LoadedFenceCredential(agent_id=_UNGRANTED_AGENT, token=SecretStr(_OTHER_FENCE)),
+            ],
+        ),
+    )
+    return _Harness(decide=decide, grants=grants, sessions=sessions, agent_id=agent_id, binding_id=binding_id)
+
+
+def _create_grants(client: Any, harness: _Harness, *specs: HttpGrantSpec, expires_at: datetime) -> tuple[UUID, ...]:
+    """Create one approved-ToolCall grant set through the real repository; returns grant ids."""
+    source_tool_call_id = client.portal.call(
+        partial(_insert_http_source, harness.sessions, binding_id=harness.binding_id, now=_NOW)
+    )
+
+    async def create() -> tuple[UUID, ...]:
+        created = await harness.grants.create_grants(
+            owner_agent_id=harness.agent_id,
+            grant_principal=AgentGrantPrincipal(agent_id=harness.agent_id),
+            source_tool_call_id=source_tool_call_id,
+            grants=specs,
+            expires_at=expires_at,
+        )
+        return tuple(grant.grant_id for grant in created)
+
+    return cast(tuple[UUID, ...], client.portal.call(create))
+
+
+def _request(
+    *,
+    fence_credential: str = _FENCE,
+    method: str = "GET",
+    scheme: str | None = "https",
+    host: str = "api.example",
+    port: int = 443,
+    path: str | None = "/",
+) -> DecideRequest:
+    return DecideRequest(
+        fence_credential=SecretStr(fence_credential),
+        request=RequestMeta(method=method, scheme=scheme, host=host, port=port, path=path),
+        resolved_ips=frozenset({IPv4Address("192.0.2.10")}),
+        upstream_ip=IPv4Address("192.0.2.10"),
+    )
+
+
+def test_proxy_bearer_and_fence_identity_gate_evaluation(make_client: Any) -> None:
+    with make_client() as client:
+        harness = _harness(client)
+        service = harness.decide
+
+        assert service.authenticate_proxy(f"Bearer {_PROXY_TOKEN}")
+        assert service.authenticate_proxy(f"bearer {_PROXY_TOKEN}")
+        for rejected in ("", _PROXY_TOKEN, "Bearer", f"Bearer {_PROXY_TOKEN}x", f"Basic {_PROXY_TOKEN}"):
+            assert not service.authenticate_proxy(rejected)
+        # The Agent-bound fence credential is not the proxy's endpoint bearer.
+        assert not service.authenticate_proxy(f"Bearer {_FENCE}")
+
+        decision = client.portal.call(partial(service.decide, _request(fence_credential="not-configured")))
+        assert decision == DecideDenied(reason="unknown fence credential", grant_scope=None)
+
+
+def test_grant_scoped_verdicts_against_stored_grants(make_client: Any) -> None:
+    with make_client() as client:
+        harness = _harness(client)
+        prefix_spec = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}), path_regex="/api/.*")
+        exact_origin = HttpOrigin(scheme=HttpScheme.HTTPS, host="exact.example", port=443)
+        exact_spec = HttpGrantSpec(origin=exact_origin, methods=frozenset({HttpMethod.GET}), path_regex="/api/items")
+        prefix_grant_id, _ = _create_grants(
+            client, harness, prefix_spec, exact_spec, expires_at=_NOW + timedelta(minutes=30)
+        )
+        decide = partial(client.portal.call, harness.decide.decide)
+
+        allowed = decide(_request(path="/api/items?state=open"))
+        assert allowed == DecideAllowed(
+            source=DecisionSource.GRANT,
+            decision_id=f"grant:{prefix_grant_id}",
+            valid_until=_NOW + timedelta(minutes=30),
+            substitutions=[],
+        )
+
+        # Ruled in #4884: the coverage regex sees the path plus query exactly as the proxy sends
+        # it, so an exact-path pin does not admit the same path with a query string appended.
+        assert decide(_request(host="exact.example", path="/api/items")).allowed
+        exact_miss = decide(_request(host="exact.example", path="/api/items?state=open"))
+        assert isinstance(exact_miss, DecideDenied)
+
+        for miss in (
+            _request(method="POST", path="/api/items"),
+            _request(path="/elsewhere"),
+            _request(host="other.example", path="/api/items"),
+            _request(port=8443, path="/api/items"),
+            _request(scheme="http", port=80, path="/api/items"),
+            _request(fence_credential=_OTHER_FENCE, path="/api/items"),
+        ):
+            decision = decide(miss)
+            assert isinstance(decision, DecideDenied), miss.request
+            assert decision.reason == "no active HTTP grant covers the request"
+        denied = decide(_request(fence_credential=_OTHER_FENCE, path="/api/items"))
+        assert isinstance(denied, DecideDenied)
+        assert denied.grant_scope is not None
+        assert (denied.grant_scope.scheme, denied.grant_scope.host, denied.grant_scope.port) == (
+            "https",
+            "api.example",
+            443,
+        )
+
+
+def test_connect_tunnel_admission(make_client: Any) -> None:
+    with make_client() as client:
+        harness = _harness(client)
+        https_spec = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.POST}), path_regex="/api/.*")
+        cleartext_origin = HttpOrigin(scheme=HttpScheme.HTTP, host="plain.example", port=80)
+        cleartext_spec = HttpGrantSpec(origin=cleartext_origin, methods=frozenset({HttpMethod.GET}))
+        https_grant_id, _ = _create_grants(
+            client, harness, https_spec, cleartext_spec, expires_at=_NOW + timedelta(minutes=30)
+        )
+        decide = partial(client.portal.call, harness.decide.decide)
+
+        # Any active https grant at the origin admits the tunnel, whatever its method/path pins.
+        allowed = decide(_request(method="CONNECT", scheme=None, path=None))
+        assert isinstance(allowed, DecideAllowed)
+        assert allowed.decision_id == f"grant:{https_grant_id}"
+
+        unknown = decide(_request(method="CONNECT", scheme=None, path=None, host="other.example"))
+        assert isinstance(unknown, DecideDenied)
+        assert unknown.reason == "no active HTTP grant covers the origin"
+
+        # A tunnel transports TLS, so a cleartext-origin grant cannot admit one.
+        cleartext = decide(_request(method="CONNECT", scheme=None, path=None, host="plain.example", port=80))
+        assert isinstance(cleartext, DecideDenied)
+
+
+def test_earliest_expiry_bounds_the_admission(make_client: Any) -> None:
+    with make_client() as client:
+        harness = _harness(client)
+        spec = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}))
+        (later_id,) = _create_grants(client, harness, spec, expires_at=_NOW + timedelta(minutes=50))
+        (earlier_id,) = _create_grants(client, harness, spec, expires_at=_NOW + timedelta(minutes=10))
+        assert later_id != earlier_id
+
+        decision = client.portal.call(partial(harness.decide.decide, _request()))
+
+        assert isinstance(decision, DecideAllowed)
+        assert decision.decision_id == f"grant:{earlier_id}"
+        assert decision.valid_until == _NOW + timedelta(minutes=10)
+
+
+def test_ungrantable_metadata_denies_with_a_reason(make_client: Any) -> None:
+    with make_client() as client:
+        harness = _harness(client)
+        decide = partial(client.portal.call, harness.decide.decide)
+        for request, reason in [
+            (_request(method="CONNECT", scheme=None, path="/tunnel"), "malformed CONNECT metadata"),
+            (_request(method="CONNECT", path=None), "malformed CONNECT metadata"),
+            (_request(scheme=None), "malformed request metadata"),
+            (_request(path=None), "malformed request metadata"),
+            (_request(path="relative/path"), "malformed request metadata"),
+            (_request(method="TRACE"), "method is not grantable"),
+            (_request(method="get"), "method is not grantable"),
+            (_request(scheme="ftp"), "origin is not grantable"),
+            (_request(host="192.0.2.10"), "origin is not grantable"),
+            (_request(method="CONNECT", scheme=None, path=None, host="203.0.113.7"), "origin is not grantable"),
+        ]:
+            decision = decide(request)
+            assert decision == DecideDenied(reason=reason, grant_scope=None), request.request
+
+
+async def test_grant_authority_failure_raises_unavailable() -> None:
+    # An unreachable database is the authority failure the service must convert into a refusal;
+    # nothing here needs the container.
+    unreachable = async_sessionmaker(
+        create_async_engine("postgresql+asyncpg://nobody:nothing@127.0.0.1:9/unreachable"), expire_on_commit=False
+    )
+    service = HttpDecideService(
+        grants=HttpGrantService(
+            PostgresHttpGrantRepository(unreachable), max_lifetime=timedelta(hours=1), clock=lambda: _NOW
+        ),
+        credentials=LoadedEgressDecide(
+            proxy_token=SecretStr(_PROXY_TOKEN),
+            fence_credentials=[LoadedFenceCredential(agent_id=_UNGRANTED_AGENT, token=SecretStr(_FENCE))],
+        ),
+    )
+
+    with pytest.raises(HttpDecideUnavailableError):
+        await service.decide(_request())
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

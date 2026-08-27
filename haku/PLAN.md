@@ -68,7 +68,8 @@ allowed now — e.g. _draft an email_ (into Drafts, not send), _explore less-res
 websites_ for research, and similar low-blast-radius moves — without giving up the
 transparency and containment that make the read-only posture safe. (The `gmail-labeling`
 closure server was the first realized instance of the pattern: a narrow write surface
-made safe by construction — see `docs/security.md` inventory #7.)
+made safe by construction — see the in-process `gmail` + `google_calendar` entry in
+`docs/security.md`'s enforcement inventory.)
 
 Sketch to design out later (a real mechanism-design + security effort, not built):
 

@@ -34,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from haku.console.config import ProviderOAuthClientConfig
-from haku.console.console_events import ConsoleEventHubDep, OperatorConnectionChangedEvent
+from haku.console.console_events import ConnectionStatus, ConsoleEventHubDep, OperatorConnectionChangedEvent
 from haku.console.database_schema import ProviderConnection, ProviderConnectionFlow
 from haku.console.deps import SettingsDep
 from haku.console.mcp_config import (
@@ -511,8 +511,10 @@ async def disconnect_provider_connection(
 ) -> ProviderUnconnected:
     operator_id = actor.operator_id
     status = await store.disconnect(connection=connection, operator_id=operator_id)
+    # Maybe later: separate operator-connected / operator-disconnected event kinds instead
+    # of one event carrying a status field.
     await event_hub.broadcast(
-        operator_id, [OperatorConnectionChangedEvent(connection=connection, status="disconnected")]
+        operator_id, [OperatorConnectionChangedEvent(connection=connection, status=ConnectionStatus.DISCONNECTED)]
     )
     return status
 
@@ -559,7 +561,7 @@ async def provider_connection_callback(
             ),
         )
     await event_hub.broadcast(
-        operator_id, [OperatorConnectionChangedEvent(connection=status.connection, status="connected")]
+        operator_id, [OperatorConnectionChangedEvent(connection=status.connection, status=ConnectionStatus.CONNECTED)]
     )
     return await result_redirect(
         result_store,

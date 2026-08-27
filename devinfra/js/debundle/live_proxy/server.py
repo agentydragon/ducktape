@@ -35,16 +35,16 @@ class ProxyHandles:
     config: object
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> None:
     configure_logging()
     options = parse_live_proxy_args(list(sys.argv[1:] if argv is None else argv))
     if options.help:
         print(format_live_proxy_help())
-        return 0
-    return run_mitmdump(options)
+        return
+    run_mitmdump(options)
 
 
-def run_mitmdump(options: LiveProxyOptions) -> int:
+def run_mitmdump(options: LiveProxyOptions) -> None:
     config = load_live_proxy_configuration(options)
     config.state_dir.mkdir(parents=True, exist_ok=True)
     config.ca_dir.mkdir(parents=True, exist_ok=True)
@@ -63,7 +63,6 @@ def run_mitmdump(options: LiveProxyOptions) -> int:
         str(script_path),
     ]
     mitmdump(args=mitmdump_args)
-    return 0
 
 
 @asynccontextmanager

@@ -35,8 +35,7 @@ spec:
         name: kyverno
         namespace: flux-system
   values:
-    # Use ghcr.io instead of reg.kyverno.io (scarf.sh proxy) — more reliable
-    # and already mirrored through Harbor (ghcr-proxy).
+    # Use ghcr.io instead of reg.kyverno.io (scarf.sh proxy) — more reliable.
     global:
       image:
         registry: ghcr.io

@@ -1,27 +1,26 @@
 import { describe, expect, it } from "vitest";
 
-import type { Conversation, ConversationSession, ConversationUpdate } from "../client";
+import type { Conversation, ConversationEntry, ConversationUpdate } from "../client";
 import { followed } from "./conversation_follow";
 
-type Item = ConversationSession["items"][number];
-
-function message(id: string, text: string, createdAt: string, status: Item["status"] = "complete"): Item {
+function message(seq: number, text: string): ConversationEntry {
   return {
-    item_id: id,
-    item_type: "message",
-    status,
+    kind: "message",
+    seq,
+    provenance: { kind: "authored" },
     text,
-    created_at: createdAt,
-    updated_at: createdAt,
+    backend_item_id: null,
   };
 }
 
-function conversation(items: Item[]): Conversation {
+function conversation(entries: ConversationEntry[]): Conversation {
   return {
     conversation_id: "c1",
     runtime_kind: "claude_code",
     created_at: "2026-08-18T00:00:00Z",
     attachments: [],
+    entries,
+    streaming: [],
     session: {
       session_id: "s1",
       status: "ready",
@@ -30,8 +29,6 @@ function conversation(items: Item[]): Conversation {
       updated_at: "2026-08-18T00:00:00Z",
       provisioning: null,
       narration: [],
-      items,
-      turns: [],
     },
     earlier_sessions: [],
   };
@@ -50,18 +47,18 @@ function update(fields: Partial<ConversationUpdate>): ConversationUpdate {
     narration: [],
     attachments: [],
     earlier_sessions: [],
-    items: [],
-    turns: [],
+    entries: [],
+    streaming: [],
     ...fields,
   };
 }
 
 describe("followed", () => {
   it("replaces everything held when a snapshot arrives", () => {
-    const fresh = conversation([message("m2", "second", "2026-08-18T00:00:02Z")]);
+    const fresh = conversation([message(2, "second")]);
 
     expect(
-      followed(conversation([message("m1", "first", "2026-08-18T00:00:01Z")]), {
+      followed(conversation([message(1, "first")]), {
         message_type: "snapshot",
         position: 7,
         conversation: fresh,
@@ -69,37 +66,49 @@ describe("followed", () => {
     ).toEqual(fresh);
   });
 
-  it("replaces an item it already holds rather than repeating it", () => {
-    // The open item arrives once per coalescing window carrying the prose so far, so the same
-    // `item_id` lands again and again while a turn is being written.
-    const held = conversation([message("m1", "half an ans", "2026-08-18T00:00:01Z", "open")]);
+  it("unions arriving entries with the ones held, keyed by position", () => {
+    const held = conversation([message(1, "first")]);
 
-    const next = followed(held, update({ items: [message("m1", "half an answer", "2026-08-18T00:00:01Z")] }));
+    const next = followed(held, update({ entries: [message(1, "first"), message(2, "second")] }));
 
-    expect(next.session.items.map((row) => [row.item_id, row.text, row.status])).toEqual([
-      ["m1", "half an answer", "complete"],
-    ]);
+    expect(next.entries.map((entry) => entry.seq)).toEqual([1, 2]);
   });
 
-  it("puts an arriving item in transcript order, not arrival order", () => {
-    const held = conversation([message("m2", "answer", "2026-08-18T00:00:02Z")]);
+  it("puts an arriving entry in stream order, not arrival order", () => {
+    const held = conversation([message(5, "answer")]);
 
-    const next = followed(held, update({ items: [message("m1", "prompt", "2026-08-18T00:00:01Z")] }));
+    const next = followed(held, update({ entries: [message(2, "prompt")] }));
 
-    expect(next.session.items.map((row) => row.item_id)).toEqual(["m1", "m2"]);
+    expect(next.entries.map((entry) => entry.seq)).toEqual([2, 5]);
   });
 
   it("applying one update twice is applying it once", () => {
     // Delivery is not exactly-once by design: re-reading from an older position is always correct,
     // which is only true if the merge is.
-    const held = conversation([message("m1", "first", "2026-08-18T00:00:01Z")]);
-    const arriving = update({ items: [message("m2", "second", "2026-08-18T00:00:02Z")] });
+    const held = conversation([message(1, "first")]);
+    const arriving = update({ entries: [message(2, "second")] });
 
     expect(followed(followed(held, arriving), arriving)).toEqual(followed(held, arriving));
   });
 
+  it("replaces the streaming tail rather than merging it", () => {
+    // The open prose has no position and its text only grows, so what arrives is the tail now —
+    // including an empty one, which is how a finished message leaves the tail.
+    const held = {
+      ...conversation([]),
+      streaming: [{ item_type: "message" as const, text: "half an ans" }],
+    };
+
+    const grown = followed(held, update({ streaming: [{ item_type: "message", text: "half an answer" }] }));
+    expect(grown.streaming).toEqual([{ item_type: "message", text: "half an answer" }]);
+
+    const finished = followed(grown, update({ entries: [message(9, "half an answer, whole")], streaming: [] }));
+    expect(finished.streaming).toEqual([]);
+    expect(finished.entries.map((entry) => entry.seq)).toEqual([9]);
+  });
+
   it("takes the whole live session row, so nothing describes a replaced session", () => {
-    const held = conversation([message("m1", "before the sandbox died", "2026-08-18T00:00:01Z")]);
+    const held = conversation([message(1, "before the sandbox died")]);
 
     const next = followed(
       held,

@@ -43,7 +43,7 @@ spec:
           containers:
             - name: reconciler
               # Script baked in via Bazel (//cluster/provisioners/grocy_user_perms:image).
-              image: git.allegedly.works/ducktape-ci/grocy-user-perms-provisioner:devel-20260827010708-ad9239c # {"$imagepolicy": "flux-system:grocy-user-perms-provisioner"}
+              image: git.allegedly.works/ducktape-ci/grocy-user-perms-provisioner:devel-20260827014403-8427d07 # {"$imagepolicy": "flux-system:grocy-user-perms-provisioner"}
               imagePullPolicy: Always
               args:
                 - --policy

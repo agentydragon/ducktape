@@ -119,6 +119,30 @@ async def test_a_quiet_run_replies_once_to_every_message(deployment: Deployment,
     assert await room.replies() == ["re: one", "re: two", "re: three"]
 
 
+async def test_a_second_room_is_served_as_its_own_conversation(
+    deployment: Deployment, room: OperatorRoom, operator: AsyncClient
+) -> None:
+    """Attachment-scoped delivery, end to end: a second invite is joined and served beside the
+    first, each room answered from its own conversation by its own session — and neither room ever
+    shows the other's traffic, which is what per-attachment cursors, outboxes and budgets exist to
+    guarantee.
+    """
+    await deployment.start_console("console-1")
+    await room.wait_for_notice("joined — this is now Haku's room")
+    second = await OperatorRoom.invite(operator, bot_user_id=deployment.bot_user_id, check_alive=deployment.check_alive)
+    await second.wait_for_notice("joined — this is now Haku's room")
+
+    await room.say("one")
+    await second.say("uno")
+    await room.wait_for_reply("re: one")
+    await second.wait_for_reply("re: uno")
+    await room.say("two")
+    await room.wait_for_reply("re: two")
+
+    assert await room.replies() == ["re: one", "re: two"]
+    assert await second.replies() == ["re: uno"]
+
+
 async def test_a_reply_whose_send_is_refused_is_said_on_a_later_attempt(
     deployment: Deployment, room: OperatorRoom
 ) -> None:
@@ -158,18 +182,22 @@ async def test_a_reply_still_queued_when_the_console_stops_is_said_by_its_replac
 ) -> None:
     """A produced reply the console has not yet said, when the process goes away.
 
-    The agent narrates 25 lines first, which is 25 paced notices, and the answer queues behind them
-    at `SENDS_PER_SECOND`; the console is then stopped the way a deploy stops it.
+    The gap is opened by an armed homeserver refusal: the reply's first attempt is refused, so the
+    row waits out its backoff — and the 25 narration lines collapse into the session line's edits
+    instead of queueing ahead of it, which is why the refusal now carries the gap alone. A second
+    refusal is armed for the retry, so the first console cannot say it before the stop.
 
     Both halves of the assertion matter: with the process *gone* the room still does not have the
-    answer — a queue that had somehow flushed would make the second half vacuous — and a
-    replacement console says it without the agent, the runner or the operator doing anything. The
-    pacer's shutdown flush is bounded at `FLUSH_SECONDS`, which at this rate is one send, so the
-    gap is not luck.
+    answer — a row that had somehow been sent would make the second half vacuous — and a
+    replacement console says it without the agent, the runner or the operator doing anything.
+    Nothing but the row carries the answer across.
     """
     session_id = await start_serving(deployment, room)
 
+    deployment.refuse_the_next_reply()
     await room.say("two [narrate=25]")
+    await deployment.wait_until_refused()
+    deployment.refuse_the_next_reply()
     await deployment.wait_until_recorded(session_id, "re: two")
     assert "re: two" not in await room.replies(), "the answer reached the room before the gap could be opened"
 
@@ -188,15 +216,18 @@ async def test_every_message_is_answered_exactly_once_across_a_console_roll(
     """The headline: three messages, a console roll in the middle of the second, one reply each.
 
     The roll happens in the gap this module is about — the answer recorded, the room not yet told.
-    The runner replays the frame, which `RolloutRecorder.received` refuses as one this session
-    already has, so nothing but the row carries the answer across.
+    The held `result` is what opens it: a message stays an open item until the wire says it ended,
+    so its prose is durable while nothing can queue it for the room. The runner replays the frame,
+    which `RolloutRecorder.received` refuses as one this session already has, so nothing but the
+    record carries the answer across; the second console reads the completion and drains the row it
+    writes.
 
-    **Exactly once, so this fails on a duplicate as well as on a drop.** The row the first console
-    wrote is the same row the second one drains, and re-deriving the same reply collides with it
-    rather than adding a second copy.
+    **Exactly once, so this fails on a duplicate as well as on a drop.** Re-deriving the same reply
+    collides with the outbox's unique subject rather than adding a second copy.
 
     The agent holds its `result` across the roll on purpose: that leaves the turn open, so the
-    second console adopts an exchange in flight rather than finding a finished one.
+    second console adopts an exchange in flight rather than finding a finished one — and the 25
+    narration lines fold into the session line's edits rather than delaying anything.
     """
     session_id = await start_serving(deployment, room)
 

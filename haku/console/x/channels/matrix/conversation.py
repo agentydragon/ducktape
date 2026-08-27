@@ -1,9 +1,10 @@
-"""The conversation the room Haku services is attached to.
+"""The conversations the rooms Haku services are attached to.
 
-A `chat_attachment` row binds the room to a conversation, and the conversation outlives every
-session that runs under it. The binding and ingress are Matrix's; conversation history and turn
-execution are channel-neutral, and a replacement joins the conversation the attachment already
-names rather than re-pointing the attachment.
+A `chat_attachment` row binds a room to a conversation, and the conversation outlives every
+session that runs under it. One bot serves many rooms — every room the operator invites Haku into
+is its own conversation under its own attachment. The binding and ingress are Matrix's;
+conversation history and turn execution are channel-neutral, and a replacement joins the
+conversation the attachment already names rather than re-pointing the attachment.
 """
 
 from __future__ import annotations
@@ -30,9 +31,9 @@ from haku.console.x.session_store import PromptRefusedError, SessionStore
 
 logger = logging.getLogger(__name__)
 
-# There is no row to lock before the first room bind. This transaction-scoped mutex keeps two
-# ingress leaders from opening different conversations before the live-attachment uniqueness
-# constraint can choose a winner.
+# There is no row to lock before a room's first bind. This transaction-scoped mutex keeps two
+# concurrent binds from opening different conversations for one room before the live-attachment
+# uniqueness constraint can choose a winner.
 _BIND_ADVISORY_LOCK = 0x4D58_4244  # "MXBD"
 
 
@@ -43,8 +44,7 @@ async def live_attachment(db: AsyncSession, room_id: str) -> UUID | None:
     since — in which case there is nothing to record a send against and the room notice is the only
     account of it.
 
-    Takes the caller's session so a channel can record what it sent in the transaction that records
-    the send itself (`outbox.RoomOutbox.mark_sent`).
+    Takes the caller's session so a caller can read it inside its own transaction.
     """
     attachment_id: UUID | None = await db.scalar(
         select(ChatAttachment.attachment_id).where(
@@ -57,34 +57,38 @@ async def live_attachment(db: AsyncSession, room_id: str) -> UUID | None:
 
 
 @dataclass(frozen=True)
-class BoundRoom:
-    """The room this console services, and the conversation it holds a copy of."""
+class RoomAttachment:
+    """One live binding: a room, the conversation it holds a copy of, and the attachment holding it.
+
+    All three, because the channel's state hangs off each: the room is the address events are sent
+    to, the conversation is what the room's subscriber reads, and the attachment keys the cursor,
+    outbox, revisions and send budget that delivery runs on.
+    """
 
     room_id: str
     conversation_id: UUID
+    attachment_id: UUID
 
 
-async def _live_binding(db: AsyncSession) -> BoundRoom | None:
-    """The bound room, read off the attachment that is holding it.
-
-    Ordered so that the answer is the room bound first. One room at a time is `bind_room`'s
-    refusal rather than the schema's — `chat_attachment` deliberately admits many live rows,
-    because one bot serving several rooms is where this goes — so a second row that somehow
-    appeared must not make the bound room flip between reads.
-    """
+async def _live_room_binding(db: AsyncSession, room_id: str) -> RoomAttachment | None:
     row = (
         await db.execute(
-            select(ChatAttachment.address, ChatAttachment.conversation_id)
-            .where(ChatAttachment.surface == ChatSurface.MATRIX, ChatAttachment.detached_at.is_(None))
-            .order_by(ChatAttachment.attached_at, ChatAttachment.attachment_id)
-            .limit(1)
+            select(ChatAttachment.address, ChatAttachment.conversation_id, ChatAttachment.attachment_id).where(
+                ChatAttachment.surface == ChatSurface.MATRIX,
+                ChatAttachment.address == room_id,
+                ChatAttachment.detached_at.is_(None),
+            )
         )
     ).first()
-    return None if row is None else BoundRoom(room_id=row.address, conversation_id=row.conversation_id)
+    return (
+        None
+        if row is None
+        else RoomAttachment(room_id=row.address, conversation_id=row.conversation_id, attachment_id=row.attachment_id)
+    )
 
 
 class MatrixConversationStore:
-    """Which durable conversation the bound room holds a copy of.
+    """Which durable conversation each bound room holds a copy of.
 
     Runtime sessions are deliberately absent from the binding. Neutral supervision creates and
     replaces them under the conversation, so the channel has no pointer to tend or re-aim.
@@ -119,30 +123,43 @@ class MatrixConversationStore:
         async with self._sessions() as db:
             return await live_attachment(db, room_id)
 
-    async def bound_room(self) -> BoundRoom | None:
-        """The room this console services, or None before the operator has invited it into one."""
+    async def live_attachments(self) -> tuple[RoomAttachment, ...]:
+        """Every room this console services, oldest binding first."""
         async with self._sessions() as db:
-            return await _live_binding(db)
+            rows = (
+                await db.execute(
+                    select(ChatAttachment.address, ChatAttachment.conversation_id, ChatAttachment.attachment_id)
+                    .where(ChatAttachment.surface == ChatSurface.MATRIX, ChatAttachment.detached_at.is_(None))
+                    .order_by(ChatAttachment.attached_at, ChatAttachment.attachment_id)
+                )
+            ).all()
+            return tuple(
+                RoomAttachment(
+                    room_id=row.address, conversation_id=row.conversation_id, attachment_id=row.attachment_id
+                )
+                for row in rows
+            )
 
-    async def bind_room(self, room_id: str, operator_id: UUID) -> BoundRoom:
-        """Attach `room_id` if no room is attached yet; return whichever room is live.
+    async def bind_room(self, room_id: str, operator_id: UUID) -> RoomAttachment:
+        """Attach `room_id`, opening the conversation it holds a copy of; idempotent per room.
 
-        A caller that gets back a different room than it asked for has been refused. Binding opens
-        the conversation the room holds a copy of, in the same transaction — so a bound room always
-        has one, and the attachment outlives every session that serves it: a replacement joins the
-        conversation the attachment already names instead of the attachment being re-pointed at it.
+        A room already live keeps its binding; a new room binds beside the existing ones, because
+        one bot serves many rooms and each room is its own conversation. Binding opens the
+        conversation in the same transaction — so a bound room always has one, and the attachment
+        outlives every session that serves it: a replacement joins the conversation the attachment
+        already names instead of the attachment being re-pointed at it.
 
         Read-then-insert rather than insert-or-nothing, serialized by the sync loop's election:
-        only its leader handles invites, so the read and the insert cannot interleave with another
+        only its leader binds rooms, so the read and the insert cannot interleave with another
         replica's. `uq_chat_attachment_live_address` is the backstop if that ever stops holding.
         """
         async with self._sessions() as db, db.begin():
-            # There is no row to lock before the first bind, so serialize the empty-check with a
-            # transaction advisory lock. The Operator row is also locked by the authorizer below;
+            # There is no row to lock before a room's first bind, so serialize the empty-check with
+            # a transaction advisory lock. The Operator row is also locked by the authorizer below;
             # both locks remain held through the conversation and attachment inserts.
             await db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": _BIND_ADVISORY_LOCK})
             await db.get(Operator, operator_id, with_for_update=True)
-            if (live := await _live_binding(db)) is not None:
+            if (live := await _live_room_binding(db, room_id)) is not None:
                 return live
             now = datetime.datetime.now(datetime.UTC)
             identity: LaunchIdentity | None = None
@@ -168,9 +185,10 @@ class MatrixConversationStore:
             # mappers leaves their inserts in mapper-name order — `chat_attachment` ahead of
             # `conversation`, which the constraint rejects.
             await db.flush()
+            attachment_id = uuid4()
             db.add(
                 ChatAttachment(
-                    attachment_id=uuid4(),
+                    attachment_id=attachment_id,
                     conversation_id=conversation_id,
                     surface=ChatSurface.MATRIX,
                     address=room_id,
@@ -178,27 +196,7 @@ class MatrixConversationStore:
                     detached_at=None,
                 )
             )
-            return BoundRoom(room_id=room_id, conversation_id=conversation_id)
-
-    async def attachment_of_room(self, room_id: str) -> tuple[UUID, UUID] | None:
-        """The conversation *room_id* holds a copy of and the attachment holding it, or None.
-
-        Both, because a subscriber needs one of each: the conversation to read the log, and the
-        attachment to key the position it reads from. Addressed by room rather than answered from
-        the binding, because a subscriber is told which room it is reading for and a room that is
-        not the bound one holds nothing.
-        """
-        async with self._sessions() as db:
-            found = (
-                await db.execute(
-                    select(ChatAttachment.conversation_id, ChatAttachment.attachment_id).where(
-                        ChatAttachment.surface == ChatSurface.MATRIX,
-                        ChatAttachment.address == room_id,
-                        ChatAttachment.detached_at.is_(None),
-                    )
-                )
-            ).first()
-            return None if found is None else (found.conversation_id, found.attachment_id)
+            return RoomAttachment(room_id=room_id, conversation_id=conversation_id, attachment_id=attachment_id)
 
 
 @dataclass(frozen=True)
@@ -235,25 +233,28 @@ class PromptAccepted:
 class PromptRejected:
     """The batch was refused, and is not coming back: what to say, and the fact that records it.
 
-    `facts` is None only where no room is bound, so there is no conversation to record against —
-    and nowhere to say it either, which makes the two absences the same one.
+    `facts` is always there to append: a batch is only ever offered for a room with a live
+    binding, and the conversation a refusal is about exists from the moment the room is bound.
     """
 
     reason: PromptRejection
-    facts: ConversationFacts | None
+    facts: ConversationFacts
 
 
 type Admission = PromptAccepted | PromptRejected
 
 
 class MatrixTurns:
-    """Ingress: offers the operator's messages to the conversation the room is attached to.
+    """Ingress: offers the operator's messages to the conversation their room is attached to.
 
     Refusal is a first-class answer and a terminal one. Ingress offers the prompt to the durable
     conversation without resolving, creating or replacing a session. Neutral runtime supervision
     creates one when needed; admission still refuses an in-flight turn or an already queued prompt.
     What the caller does with a rejection is acknowledge it, recording the row this hands back in
     the same transaction (`sync.MatrixSyncStore.advance`).
+
+    The binding is the caller's argument: the sync pass dispatches a batch by room, so which
+    conversation a batch is offered to was resolved where the room was.
 
     A prompt this accepts is the conversation's, not the accepting session's, so a session that dies
     before claiming it strands nothing: its replacement finds the same queued row. What the record
@@ -264,32 +265,24 @@ class MatrixTurns:
     def __init__(
         self,
         config: MatrixConfig,
-        conversations: MatrixConversationStore,
         chat_store: SessionStore,
         identities: PostgresOperatorIdentityStore,
         ledger: IngressLedger,
     ):
         self._config = config
-        self._conversations = conversations
         self._chat_store = chat_store
         self._identities = identities
         self._ledger = ledger
 
-    async def offer(self, messages: Sequence[InboundMessage]) -> Admission:
+    async def offer(self, binding: RoomAttachment, messages: Sequence[InboundMessage]) -> Admission:
         """Enqueue `messages` as one prompt, or say why the session would not take them.
 
         The whole batch or none of it: a partial enqueue would leave half a sentence delivered and
         half of it rejected, which is a worse answer than either.
         """
-        return await self._enqueue(_as_prompt(messages), tuple(message.event_id for message in messages))
+        return await self._enqueue(binding, _as_prompt(messages), tuple(message.event_id for message in messages))
 
-    async def _enqueue(self, prompt_text: str, event_ids: tuple[str, ...]) -> Admission:
-        # The binding is read for the room alone — which session is serving comes through the
-        # conversation — because the room is the address this prompt's origin names.
-        binding = await self._conversations.bound_room()
-        if binding is None:
-            logger.info("Matrix: no room bound, rejecting %d event(s)", len(event_ids))
-            return PromptRejected(reason=PromptRejection.NO_SESSION, facts=None)
+    async def _enqueue(self, binding: RoomAttachment, prompt_text: str, event_ids: tuple[str, ...]) -> Admission:
         operator_id = await self._identities.resolve_configured_external_user_key(self._config.operator_subject)
         try:
             item_id = await self._chat_store.enqueue_conversation_prompt(
@@ -310,7 +303,7 @@ class MatrixTurns:
         return PromptAccepted(item_id=item_id)
 
     def _refused(
-        self, binding: BoundRoom, session_id: UUID | None, reason: PromptRejection, prompt_text: str
+        self, binding: RoomAttachment, session_id: UUID | None, reason: PromptRejection, prompt_text: str
     ) -> PromptRejected:
         return PromptRejected(
             reason=reason,
@@ -321,15 +314,8 @@ class MatrixTurns:
             ),
         )
 
-    async def unreadable(self, events: Sequence[UnmappableEvent]) -> ConversationFacts | None:
-        """The facts for events Haku has no way to read, one each, for the caller to append.
-
-        None where no room is bound, on the same terms as `PromptRejected.facts`: there is no
-        conversation to record against, and no room to say it in either.
-        """
-        binding = await self._conversations.bound_room()
-        if binding is None:
-            return None
+    async def unreadable(self, binding: RoomAttachment, events: Sequence[UnmappableEvent]) -> ConversationFacts:
+        """The facts for events Haku has no way to read, one each, for the caller to append."""
         return ConversationFacts(
             conversation_id=binding.conversation_id,
             session_id=None,
@@ -343,9 +329,9 @@ def _origin(room_id: str, event_ids: tuple[str, ...]) -> MatrixOrigin:
     One origin rather than one per message: a batch arrives through a single attachment and
     becomes a single prompt, so the room is the origin and the events are what it folded.
 
-    **The room travels with the events**, even though only one room is serviced today: a surface
-    deciding whether a prompt is already in front of its reader compares origins, and a bare event
-    id cannot tell a sibling room's copy from this room's the moment one bot serves several.
+    **The room travels with the events**: a surface deciding whether a prompt is already in front
+    of its reader compares origins, and a bare event id cannot tell a sibling room's copy from this
+    room's while one bot serves several.
     """
     return MatrixOrigin(address=room_id, refs=event_ids)
 

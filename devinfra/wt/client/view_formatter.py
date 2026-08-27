@@ -1,6 +1,6 @@
 import os
+from enum import StrEnum
 from pathlib import Path
-from typing import Literal
 
 import click
 from colorama import Style
@@ -8,6 +8,13 @@ from tabulate import tabulate
 
 from devinfra.wt.shared.github_models import PRData, PRState, PRStatus
 from devinfra.wt.shared.protocol import PRInfo, PRInfoError, PRInfoOk, StatusResult
+
+
+class Mergeability(StrEnum):
+    MERGEABLE = "mergeable"
+    CONFLICTING = "conflicting"
+    UNKNOWN = "unknown"
+
 
 # PR status display mapping centralized via PRStatus.display_text
 PR_STATUS_DISPLAY_MAP = {
@@ -65,18 +72,13 @@ class ViewFormatter:
             return f"\033]8;;{url}\007{text}\033]8;;\007"
         return text
 
-    def _mergeability_label(self, mergeable: bool | None) -> Literal["mergeable", "conflicting", "unknown"]:
+    def _mergeability_label(self, mergeable: bool | None) -> Mergeability:
         if mergeable is None:
-            return "unknown"
-        return "mergeable" if mergeable else "conflicting"
+            return Mergeability.UNKNOWN
+        return Mergeability.MERGEABLE if mergeable else Mergeability.CONFLICTING
 
     def get_pr_status_text(
-        self,
-        pr_state: PRState,
-        mergeability: Literal["mergeable", "conflicting", "unknown"],
-        *,
-        is_draft: bool = False,
-        merged_at: str | None = None,
+        self, pr_state: PRState, mergeability: Mergeability, *, is_draft: bool = False, merged_at: str | None = None
     ) -> str:
         # Show draft status first if it's a draft
         if is_draft:
@@ -86,9 +88,9 @@ class ViewFormatter:
         if pr_state == PRState.CLOSED:
             return "merged" if merged_at else "closed"
         if pr_state == PRState.OPEN:
-            if mergeability == "unknown":
+            if mergeability == Mergeability.UNKNOWN:
                 return PRStatus.OPEN_UNKNOWN.display_text
-            if mergeability == "mergeable":
+            if mergeability == Mergeability.MERGEABLE:
                 return PRStatus.OPEN_MERGEABLE.display_text
             return PRStatus.OPEN_CONFLICTING.display_text
         return str(pr_state.value).lower()

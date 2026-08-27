@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, cast
 
 import pytest_bazel
@@ -9,6 +10,7 @@ import pytest_bazel
 from haku.console.chat_models import RuntimeKind
 from haku.console.x.codex_app_server import projection
 from haku.console.x.codex_app_server.client import CodexThread
+from haku.console.x.codex_app_server.config import ReasoningEffort
 from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter, CodexTurnHandler
 from haku.console.x.conversation_events import FrameRange, ItemSegment, TurnAnswered, TurnCompleted, TurnFailed
 from haku.console.x.runtime import OpenItemSeed, RuntimeLaunch, RuntimeMcpServer, TurnProjectionSeed
@@ -23,7 +25,7 @@ def _launch(**overrides: Any) -> RuntimeLaunch:
         "environment": {"CODEX_HOME": "/codex-home"},
         "mcp_servers": {
             "haku-console": RuntimeMcpServer(
-                url="https://console.test/mcp", bearer_environment_variable="HAKU_MCP_BEARER_TOKEN"
+                url="https://console.test/mcp", bearer_environment_variable="HAKU_AGENT_SDK_RUNNER_TOKEN"
             )
         },
         "appended_system_prompt": "you are Haku",
@@ -50,6 +52,7 @@ def test_codex_builds_process_and_thread_configuration_from_the_same_neutral_lau
     adapter = CodexRuntimeAdapter(
         client_factory=factory,
         model="codex-gpt-5.6-sol",
+        reasoning_effort=ReasoningEffort.LOW,
         model_provider=CodexModelProvider(
             provider_id="haku",
             name="Haku OpenAI-compatible",
@@ -70,7 +73,7 @@ def test_codex_builds_process_and_thread_configuration_from_the_same_neutral_lau
         'wire_api = "responses"}}',
         "-c",
         'mcp_servers = {haku-console = {url = "https://console.test/mcp", '
-        'bearer_token_env_var = "HAKU_MCP_BEARER_TOKEN"}}',
+        'bearer_token_env_var = "HAKU_AGENT_SDK_RUNNER_TOKEN"}}',
         "app-server",
         "--listen",
         "stdio://",
@@ -79,7 +82,10 @@ def test_codex_builds_process_and_thread_configuration_from_the_same_neutral_lau
     assert factory.launch.resume_from == 29
     assert factory.launch.environment == {"CODEX_HOME": "/codex-home"}
     assert factory.thread == CodexThread(
-        cwd="/workspace", model="codex-gpt-5.6-sol", developer_instructions="you are Haku"
+        cwd=Path("/workspace"),
+        model="codex-gpt-5.6-sol",
+        reasoning_effort=ReasoningEffort.LOW,
+        developer_instructions="you are Haku",
     )
 
 

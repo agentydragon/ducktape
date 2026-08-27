@@ -34,6 +34,7 @@ from haku.console.config import (
     NodeDaemonsConfig,
     Settings,
 )
+from haku.console.http_decide_config import EgressDecideConfig
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_actor import ToolCallActor
 from haku.sandbox.config import SandboxEnvironmentConfig
@@ -316,8 +317,11 @@ class AccessProfile(BaseModel):
     # Chat runtime launch authority is configuration-owned.  The durable Agent row supplies the
     # selected profile; callers never get to supply this field.
     allowed_chat_runtimes: set[RuntimeKind] = Field(default_factory=set)
-    # Future read authorization is represented as a reviewed, acyclic graph here.  This release
-    # validates and stores the graph only; no Recall/conversation read path consults it yet.
+    # Conversation-history visibility: which other profiles' conversations this one may read,
+    # acyclic and transitive with self-read implicit. `conversation_read_access` derives the one
+    # read scope both `haku_conversations` drilldowns and `haku_index` chat search enforce. The
+    # graph grants information visibility only — never tool authority, approvals, credentials, or
+    # runtime grants.
     can_read_profiles: set[str] = Field(default_factory=set)
 
 
@@ -400,9 +404,12 @@ class ConsoleConfigFile(BaseModel):
     # Standing Kubernetes policy is selected by the same deploy-managed access profile that owns
     # the Agent's other durable authority. Unset keeps the internal proxy endpoint fail-closed.
     kubernetes_authorization: KubernetesAuthorizationConfig | None = None
+    # The internal HTTP egress decide endpoint's credentials (#4670). Unset keeps it fail-closed.
+    egress_decide: EgressDecideConfig | None = None
     # A deploy-reviewed fail-safe maximum for approval-created temporary grants. Tool schema bounds
-    # remain useful client guidance, but this server-side setting is authoritative.
+    # remain useful client guidance, but these server-side settings are authoritative.
     kubernetes_grant_max_lifetime_seconds: int = Field(default=3600, ge=1, le=86_400)
+    http_grant_max_lifetime_seconds: int = Field(default=3600, ge=1, le=86_400)
     # The one Agent Sandbox environment the `sandbox` in-process server hands out: which warm pool
     # it claims from and the reviewed bootstrap each claim runs. Unset → the server is not offered.
     # Editing this keeps live claims usable; a claim whose recorded pod properties no longer match

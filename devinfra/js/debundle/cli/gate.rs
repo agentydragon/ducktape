@@ -46,10 +46,22 @@ pub struct GateArgs {
 #[derive(Debug, Subcommand)]
 enum GateCommand {
     /// List every blocking SCC. One row per entry in `cycles.json`.
+    ///
+    /// A missing `cycles.json` is the clean state — the pipeline and
+    /// the edit gate write it only on rejection, and a passing edit
+    /// gate clears a stale one — so it reports zero blocking SCCs
+    /// (`[]`) and exits 0, distinct from a present-but-malformed file
+    /// (which errors).
     List(GateListArgs),
     /// Full picture for one blocking SCC: modules, cut, recomputed evidence.
+    ///
+    /// The per-edge evidence is recomputed on demand from
+    /// `owner_graph.json` and the SCC's module set — the same
+    /// per-binding-pair blame view the realizability gate emits to
+    /// stderr at rejection time.
     Describe(GateDescribeArgs),
-    /// Just the cut edges for one blocking SCC. The actionable subset.
+    /// Just the cut edges for one blocking SCC. The actionable subset —
+    /// spec authors read this to pick which back-edge to break.
     Cut(GateIdArgs),
 }
 

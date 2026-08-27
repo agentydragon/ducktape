@@ -26,6 +26,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":check_run",
+        "//devinfra/ci:invocation_ids",
         "//util:visual_diff",
         "//util:visual_review",
         "@pypi//boto3",
@@ -57,6 +58,7 @@ py_test(
     srcs = ["test_publisher.py"],
     deps = [
         ":publisher",
+        "//devinfra/ci:invocation_ids",
         "//util:visual_diff",
         "//util:visual_review",
         "@pypi//pillow",

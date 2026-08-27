@@ -41,10 +41,14 @@ pub struct MergeArgs {
     pub modules_root: PathBuf,
 
     /// Target module path (relative to --modules) to merge into.
+    /// Created if it doesn't exist yet.
     #[arg(long = "target")]
     pub target: PathBuf,
 
-    /// Source module paths (relative to --modules) to merge in.
+    /// Source module paths (relative to --modules) to merge in. The
+    /// `.yaml` suffix is optional: `ai/models/pricing` resolves to
+    /// `ai/models/pricing.yaml` even when `ai/models/pricing/` is also
+    /// a directory.
     #[arg(required = true)]
     pub sources: Vec<PathBuf>,
 
@@ -117,8 +121,9 @@ pub struct DeleteArgs {
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     pub modules_root: PathBuf,
 
-    /// Module paths (relative to --modules) to delete. Must be
-    /// non-empty.
+    /// Module paths (relative to --modules) to delete. The `.yaml`
+    /// suffix is optional. All paths are validated up front; if any
+    /// check fails, nothing is deleted.
     #[arg(required = true)]
     pub paths: Vec<PathBuf>,
 
@@ -178,7 +183,7 @@ impl DeleteSummary {
 /// Public entry point for the merge verb. Used by the top-level
 /// `debundle modules merge` command.
 ///
-/// Validation contract (per docs/cli.md § "Modules"):
+/// Validation contract (per docs/cli.md § "Validate-by-default"):
 ///
 /// * Default: run the realizability gate against the post-merge
 ///   partition. Accept and splice if `Verdict::Realizable`; reject
@@ -331,7 +336,7 @@ pub fn merge_modules(
         let label = display_relative(modules_root, src);
         // Source module comments concatenate into the target's
         // module-level `comment:` with a `--- from <source>:` divider
-        // (docs/cli.md § "Comments").
+        // (README.md § "Comments").
         if let Some(comment) = src_module
             .comment
             .as_deref()
@@ -411,7 +416,7 @@ pub fn merge_modules(
 
 /// Public entry point for `debundle modules delete`.
 ///
-/// Validation contract (per docs/cli.md § "Modules"):
+/// Validation contract (per docs/cli.md § "Validate-by-default"):
 ///
 /// * Default: refuse the deletion of a module that still has members
 ///   or anonymous statements. For empty deletions, no gate run is

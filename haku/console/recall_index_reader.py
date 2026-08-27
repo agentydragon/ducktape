@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ChatSurface
 from haku.console.config import ChatRecallIndexDefinition, ConfiguredRecallIndex, GitRecallIndexDefinition
+from haku.console.conversation_read_access import ConversationReadScope
 from haku.console.database_schema import ChatAttachment, Session
 from haku.console.tools.recall_index import (
     ChatIndexStatus,
@@ -65,7 +66,9 @@ class PostgresIndexSearcher:
             raise ValueError(f"unknown configured recall indexes: {', '.join(unknown)}")
         return tuple(self._indexes[index_id] for index_id in dict.fromkeys(index_ids))
 
-    async def search(self, query: str, *, index_id: str, limit: int, session_id: UUID | None) -> SearchResults:
+    async def search(
+        self, query: str, *, index_id: str, limit: int, session_id: UUID | None, scope: ConversationReadScope
+    ) -> SearchResults:
         selected = self._selected((index_id,))
         embedding = await self._embedder.embed_query(query)
         hits: list[SearchHit] = []
@@ -74,7 +77,11 @@ class PostgresIndexSearcher:
                 if isinstance(index, GitRecallIndexDefinition):
                     hits.extend(await self._search_git(session, index, embedding, limit=limit))
                 else:
-                    hits.extend(await self._search_chat(session, index, embedding, limit=limit, session_id=session_id))
+                    hits.extend(
+                        await self._search_chat(
+                            session, index, embedding, limit=limit, session_id=session_id, scope=scope
+                        )
+                    )
         hits.sort(key=lambda hit: hit.score, reverse=True)
         status = await self.status(index_ids=(index_id,))
         selected_ids = {index.index_id for index in selected}
@@ -125,6 +132,7 @@ class PostgresIndexSearcher:
         *,
         limit: int,
         session_id: UUID | None,
+        scope: ConversationReadScope,
     ) -> list[SearchHit]:
         found = await search_chat(
             session,
@@ -132,6 +140,7 @@ class PostgresIndexSearcher:
             index_id=index.index_id,
             model_key=self._embedder.model_key,
             limit=limit,
+            readable_profiles=scope.profile_filter,
             session_id=session_id,
             budget=self._budget,
         )
@@ -156,6 +165,7 @@ class PostgresIndexSearcher:
                 source=ChatSource(
                     index_id=index.index_id,
                     session_id=hit.session_id,
+                    conversation_id=hit.conversation_id,
                     room_id=rooms.get(hit.session_id),
                     message_ids=hit.message_ids,
                     first_message_at=hit.first_message_at,

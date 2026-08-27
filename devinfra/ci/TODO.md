@@ -30,3 +30,15 @@ of re-running, which also gives per-target granularity rather than per-pattern.
 
 `devinfra/ci/bes.py` already parses them (`Invocation.test_status`); nothing
 consumes it yet.
+
+## Scope the undeclared-outputs download narrower than "every test"
+
+`test:rbe --remote_download_regex=...` in <devinfra/bazel/rbe.bazelrc> forces
+every test's `test.outputs/` tree onto the runner, though only visual tests need
+it there. The cost is small and lands only on tests that wrote undeclared
+outputs (<devinfra/docs/bazel_caching.md> § Undeclared test outputs under BwoB),
+but the flag is global where the requirement is not.
+
+Uncosted: a second `bazel test` pass over the visual targets carrying the
+download flags, with the main `//...` sweep left on plain minimal; or giving
+those targets a different execution path entirely.

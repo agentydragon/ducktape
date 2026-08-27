@@ -33,7 +33,7 @@ bazel run //cluster:bootstrap
 ```
 
 The bootstrap script executes a multi-phase deployment against a single TF root
-(`terraform/main/`, PG backend via CNPG `tofu-state-db`):
+(`terraform/main/`, PG backend via CNPG `tofu-state-db-ovh`):
 
 ### Phase 0: Preflight Validation
 

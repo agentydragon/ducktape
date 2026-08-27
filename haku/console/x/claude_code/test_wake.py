@@ -14,7 +14,8 @@ from typing import Any
 
 import pytest_bazel
 
-from haku.console.x.claude_code.projection import RecordedFrame, project_log
+from haku.console.x.claude_code.projection import RecordedFrame
+from haku.console.x.claude_code.testing.fold import whole_capture
 from haku.console.x.claude_code.testing.wire import prompt, tool_result
 from haku.console.x.claude_code.wake import GENERIC_WAKE_DESCRIPTION, ClaudeWakeWatcher
 from haku.console.x.conversation_events import TurnCompleted
@@ -68,7 +69,7 @@ def test_both_captures_fold_to_two_completed_turns() -> None:
     turns, so bracketing the second one live asks nothing new of the projection."""
     for name in ("background_wake.jsonl", "scheduled_wakeup_fire.jsonl"):
         frames = [RecordedFrame(frame_seq=index, payload=frame) for index, frame in enumerate(_capture(name))]
-        projection = project_log(frames)
+        projection = whole_capture(frames)
         completions = [event for event in projection.events if isinstance(event, TurnCompleted)]
         assert len(completions) == 2, name
 

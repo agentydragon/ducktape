@@ -34,8 +34,18 @@ instead, so they load on demand.
 
 ## General
 
+**Correct, then short.** Short is not terminal: map the code to the domain, test what
+matters to pin down, comment what reading alone won't yield, and spend no tokens or
+attention past that.
+
 - **Enter async early**: a single `asyncio.run(async_main(...))` at the top of `main()`;
   never scattered or nested deeper in the call stack.
+- **`main()` returns `None`**: an entry point raises on failure and lets the traceback
+  and Python's own exit code say so — no `return 0`/`return 1`, no `sys.exit(main())`,
+  no catching an exception to turn it into a number. Where a specific code genuinely is
+  the contract (a shell gate, a `git` driver, a linter's "found findings" convention),
+  `raise SystemExit(2)` at the point that decides it and name the caller that reads it;
+  the signature still says `None`, because the code is raised and not returned.
 - **No large code blobs in YAML/JSON**: any embedded script/config block longer than ~5
   lines lives in its native file (`.py`, `.sh`) and is mounted via `configMapGenerator`
   or a `ConfigMap` file reference, so it stays lintable and type-checkable.
@@ -51,12 +61,21 @@ instead, so they load on demand.
   provenance goes in inert `#` comments next to the data, not schema fields (`note:`);
   delete write-only fields that survived refactors.
 - **No redundant derived fields**: don't return a collection plus a trivially computable
-  function of it (a list and its `len()`).
+  function of it (a list and its `len()`) — storing or returning `x` alongside
+  `trivial_function(x)` invites drift and leaves open which layer of the stack adds the
+  derivation.
 - **No unnecessary aliasing**: no import renames, fixture re-assignment, or convenience
   re-exports (`AgentEvent = EventType`). Aliases only at public API boundaries
   (`__init__.py` re-exports) or to avoid collisions, with a comment.
 - **Import from the defining module**, never from a module that happens to re-export
   the symbol.
+- **Reuse before minting**: before adding a helper, type, or mechanism, search for the
+  existing one solving the same shape; a near-duplicate dedupes into the original
+  rather than landing beside it.
+- **`typing.Protocol` is a smell by default**: name the concrete type or a union of the
+  real types; a Protocol earns its place only to break a proven circular dependency or
+  in genuinely structural metaprogramming, never as indirection over implementers you
+  can name.
 - **No dynamic attribute probing** (`getattr`/`hasattr`/`setattr`) unless justified and
   documented; in tests, assert attributes directly.
 - **Exceptions**:
@@ -90,6 +109,14 @@ instead, so they load on demand.
   combos that permit nonsense (`hook_installed=False, pid=42`). Dispatch on variants
   with `isinstance` (mypy narrows), not discriminator-string compares — except in
   Mako/Jinja templates, where `kind` strings are acceptable.
+- **One concept, one name across representations**: a concept's Pydantic model, ORM
+  class, and table share the concept-name; representation-role suffixes (`…Row`,
+  `…Body`, `…View`) only where two representations of one concept must coexist in a
+  namespace, and the concept half stays identical.
+- **Identifiers carry their type**: a UUID travels as `UUID` end to end, the
+  conversions absorbed by boundary adapters (Pydantic validators, ORM column types) —
+  no scattered `UUID(x)`/`str(y)` in code. Where a str-typed library surface can't be
+  adapter-absorbed, keeping `str` beats conversion churn.
 - **Typed concurrency messages**: dataclasses/models for actor/mailbox messages and
   results, never `dict[str, T]`.
 - **Dataclasses for internal types, Pydantic at boundaries**: `@dataclass` for purely
@@ -99,11 +126,15 @@ instead, so they load on demand.
   the boundary; `dict.get(...)` only for truly untyped external payloads. Construct
   models, not schema-shaped dicts, in tests; never `Mock()` a Pydantic model; no
   `model_dump()` except at I/O boundaries.
-- **`Field(description=...)`** for per-field docs, not a class docstring listing fields.
+- **`Field(description=...)`** for per-field docs — not a class docstring listing
+  fields, and not bare attribute docstrings, which Python discards at runtime and no
+  schema consumer sees.
 - **Explicit keyword arguments** when arguments are known; `Model.model_validate(data)`
   over `TypeAdapter(...)` unless adapter semantics are needed.
 - **Enums**: `EnumClass.VALUE`, not string literals. StrEnum is already a string — no
-  `.value` in f-strings.
+  `.value` in f-strings. A vocabulary occurring more than once is a StrEnum, not
+  repeated `Literal["…", "…"]` unions — unless an external API dictates the Literal
+  shape.
 - **Compact CLI output**: merge related information onto single lines; vertical space
   is at a premium.
 - **`f"{x=}"`** in error/log/debug strings, not `f"x={x!r}"`.
@@ -120,8 +151,11 @@ instead, so they load on demand.
   <3 files gets flattened.
 - **Sets for unordered collections** (`set[T]`); lists only when order or duplicates
   matter.
-- **Prefer `more_itertools`**: `one()` when more than one match is a bug, `first()`
-  when many are valid and you want the first; `itertools.batched` over manual slicing.
+- **Don't reinvent the wheel**: a solved problem uses the library the repo already
+  carries, never hand-rolled arithmetic — retry/backoff is `tenacity`; iteration
+  shapes are `more_itertools` (`one()` when more than one match is a bug, `first()`
+  when many are valid and you want the first) or `itertools.batched` over manual
+  slicing.
 
 ## Tombstones
 
@@ -151,6 +185,12 @@ old_field: str | None = None
 **ORM over raw SQL.** Raw SQL only for DB-specific features the ORM handles poorly
 (window functions, recursive CTEs, LATERAL joins), performance-critical queries,
 administrative DDL, or when the ORM equivalent would be markedly less readable.
+
+**Store facts, derive state.** A status column computable from stored facts
+(`revoked_at`, `valid_until`) is derived in queries or properties, never stored — the
+persistence form of no-redundant-derived-fields (§ General): a materialized status is a
+cache that can lie and demands a sweeper. Materialize only for a measured query-cost
+reason, stated where it happens.
 
 ## Build System (Bazel)
 
@@ -287,7 +327,8 @@ animation's `finished` never settles, so awaiting it hangs rather than capturing
 **Remove**: docstrings/comments that restate the name, signature, or next line; Args/
 Returns sections echoing types; trivial class docstrings; historical "used to"
 comments; **prose arguing that the current code is correct** — what was here before,
-why the change was right, what alternative was rejected; `# === Section ===` banners;
+why the change was right, what alternative was rejected (a litigated rejection moves to
+the design doc, never stays inline — § Decision records); `# === Section ===` banners;
 changelog comments; self-referential counts of an adjacent list ("the three steps
 below") — they drift as rows change; **process narration** — the order work landed in,
 what it replaced, what it is waiting on. An actionable transition is a **tombstone**
@@ -309,6 +350,21 @@ constraint that still holds. Those are instructions wearing a historical tense.
 place; "what" rarely does. Judge the file and not only the line: every comment can pass
 the test above while the file still reads as narration with some code in it. If prose
 is most of what a reader scrolls past, keep cutting.
+
+### Decision records
+
+The rejected-alternative ban above targets inline commentary, not the knowledge. A
+rejection that was genuinely litigated — an approach that looks right, was tried or
+seriously costed, and lost for a non-obvious reason — goes in the component's design
+doc (`<dir>/docs/design.md`, or a rejects section of an existing one), stated as the
+constraint that killed it. That is where future work checks before re-walking a
+months-old rabbithole; nobody searches git history for it.
+
+**The Y-test** decides what qualifies — there, and in every "X rather than Y" sentence
+anywhere: would a competent future author actually try Y? If yes, the rejection earns a
+durable record, and a contrast clause naming it earns its place. If nobody would ever
+try Y ("queries the API rather than hardcoding the list"), the clause is padding —
+state X and stop.
 
 ### Documentation lifecycle
 

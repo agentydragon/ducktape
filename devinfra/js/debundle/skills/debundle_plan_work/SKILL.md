@@ -11,7 +11,7 @@ spec edits; this skill does not mutate YAML itself.
 
 ## Shared CLI Workflows
 
-@references/cli_basics.md
+@references/cli.md
 @references/selectors.md
 @references/spec_editing.md
 

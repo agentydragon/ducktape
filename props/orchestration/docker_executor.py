@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
+from enum import StrEnum
 
 import aiodocker
 
@@ -16,16 +17,29 @@ from props.orchestration.executor import ContainerResult, Exited, PodInfo, PodPh
 
 logger = logging.getLogger(__name__)
 
+
+class DockerContainerState(StrEnum):
+    """Docker's container `State` strings as `docker ps`-style list summaries report them."""
+
+    CREATED = "created"
+    RESTARTING = "restarting"
+    RUNNING = "running"
+    PAUSED = "paused"
+    EXITED = "exited"
+    DEAD = "dead"
+
+
 # Docker container state -> runtime-agnostic PodPhase. Docker's list summary
-# carries a coarse state string (no exit code), so "exited" maps to "failed";
-# terminal pods are finalized by the supervisor either way.
+# carries a coarse state string (no exit code), so `exited` maps to FAILED;
+# terminal pods are finalized by the supervisor either way. Keyed as `str` because
+# lookups come off the raw summary payload (unknown states fall back to UNKNOWN).
 _DOCKER_STATE_MAP: dict[str, PodPhase] = {
-    "created": "pending",
-    "restarting": "pending",
-    "running": "running",
-    "paused": "running",
-    "exited": "failed",
-    "dead": "failed",
+    DockerContainerState.CREATED: PodPhase.PENDING,
+    DockerContainerState.RESTARTING: PodPhase.PENDING,
+    DockerContainerState.RUNNING: PodPhase.RUNNING,
+    DockerContainerState.PAUSED: PodPhase.RUNNING,
+    DockerContainerState.EXITED: PodPhase.FAILED,
+    DockerContainerState.DEAD: PodPhase.FAILED,
 }
 
 
@@ -154,7 +168,7 @@ class DockerExecutor:
             summary = c._container  # list() summary dict
             names = summary.get("Names") or [summary.get("Id", "")]
             labels = summary.get("Labels") or {}
-            phase: PodPhase = _DOCKER_STATE_MAP.get(summary.get("State", ""), "unknown")
+            phase: PodPhase = _DOCKER_STATE_MAP.get(summary.get("State", ""), PodPhase.UNKNOWN)
             pods.append(
                 PodInfo(
                     name=names[0].lstrip("/"),

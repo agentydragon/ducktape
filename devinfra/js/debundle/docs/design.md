@@ -1247,35 +1247,17 @@ member names`, it projects onto each importing chunk's local binding
   patch intrinsics would need the affected whitelist entries
   disabled for soundness.)
 
-A1–A5 are statically checkable on each chunk, and each now has an
-enforced core. A2 is enforced by the TLA scan inside fact analysis —
-`stage_one::compute_chunk_analysis` `bail!`s with the offending
-statement ordinal as soon as fact analysis returns, before any
-quotient or lowering work. A1, A3, and A5 are enforced (to the
-per-assumption strengths described above) by the input-chunk
-admission scan in `chunk_admission`, which
-`compute_chunk_analysis` runs right after the A2 bail; its
-diagnostics carry the chunk id, the offending statement ordinal,
-and the matched shape. A4 is enforced at parse time. The admission
-scan is on by default for every materialized chunk; for audited
-corpora a spec can disable individual checks per chunk via
+A1–A5 are statically checkable per chunk, each enforced to the
+strength stated on its bullet above (A1/A3/A5 by the `chunk_admission`
+scan, A2 by the TLA scan, A4 at parse). The admission scan is on by
+default for every materialized chunk; for audited corpora a spec can
+disable individual checks per chunk via
 `chunk_analysis_options.<chunk>.admission_overrides`
 (`[a1_eval, a3_dynamic_import, a5_import_meta]`) — every override
 use prints a one-line notice, and overrides that no longer suppress
-anything are reported as redundant. A6 (no module-eval reentry) is relied
-on by observation: the unmodified bundle loads in the browser.
-A7 (multi-chunk DAG) is satisfied by typical bundlers' vendor-leaf
-chunking. A8 (whitelist receivers not shadowed) is dropped to
-`Unknown` per-name by `compute_shadowed_globals` whenever the
-chunk-top declared-name set claims one of the whitelist receivers,
-so chunks that violate A8 still validate soundly. A9 (declared
-purity is author-trusted) is satisfied by spec review — every
-`purity: "pure"` annotation is an explicit, reviewable trust
-claim. A10 (declared local effects) is likewise satisfied by spec
-review, with analyzer shape checks limiting the trusted surface to
-the admitted helper-call forms. A11 (intrinsic integrity) is not
-statically checkable — pollution can originate outside the analyzed
-chunk — and is relied on by observation of the target bundles.
+anything are reported as redundant. A6, A7, and A11 are relied on by
+observation of the target bundles; A8 degrades soundly per its
+bullet; A9 and A10 are satisfied by spec review.
 
 ### Lemmas
 
@@ -1890,25 +1872,14 @@ scripts, notebooks, and repo-specific peel skills. It is emitted on
 both success and validation rejection, because useful graph data often
 exists precisely when the current assignment is not yet realizable.
 
-The detailed output is machine-readable, typed, and debundler-owned.
-For each chunk it includes:
-
-- run metadata: chunk id and source paths;
-- owner vertices: report id, statement ordinal, source location,
-  declared bindings as `{binding, export_name}` records, owner kind,
-  side-effect classification, and current destination;
-- owner edges: `source`, `target`, edge kind, optional binding,
-  statement ordinal, and whether the edge constrains realizability;
-- quotient projections for the current assignment: module nodes,
-  aggregated edge kinds, SCC membership, and SCC realizability
-  status;
-- `atomic_graph`: atomic unit nodes, atomic DAG edges, source spans, current
-  destinations, constraining owner-edge provenance, and unit causes.
-
-New fields can add source spans, input/spec hashes, direct importability
-classifications, and closure suggestions without changing the underlying
-graph transform. Do not add top-level `kind` or `schema_version` fields
-just to mimic an external compatibility scheme.
+The detailed output is machine-readable, typed, and debundler-owned:
+per chunk, the owner vertices/edges, quotient projections for the
+current assignment, and the `atomic_graph`. The field-level shape is
+the serde schema (`OwnerGraphReport` and siblings in
+<../reports/schema.rs>); this doc does not mirror it. New fields can
+be added without changing the underlying graph transform. Do not add
+top-level `kind` or `schema_version` fields just to mimic an external
+compatibility scheme.
 
 Keep this side output high fidelity. It is allowed to be larger than
 stderr and larger than a human-facing report. The compact console
@@ -2230,15 +2201,11 @@ certification too common, the fix is incremental component invalidation,
 a denser quotient reachability representation, or narrower exact-repair
 indexing, not weakening proposal soundness.
 
-Implementation status: the realizability index now maintains rollbackable
-quotient edge buckets and validates candidate deltas with scoped push/read/undo
-over localized SCC reachability. A tested non-mutating overlay predicate exists
-as a future optimization path, but local profiling found the current
-ordered-map overlay slower than the rollback path. The current proposer-latency
-fix is the quotient boolean gate split; further dense-index or reusable-buffer
-work should wait for a fresh post-fix profile that makes this path material
-again. `factorize` should continue to be audited against this contract before
-large-factor output is treated as authoritative.
+A tested non-mutating overlay predicate exists as an alternative to the
+index's rollbackable push/read/undo path, but profiling found the
+ordered-map overlay slower — don't switch without a profile saying
+otherwise. `factorize` should continue to be audited against this
+contract before large-factor output is treated as authoritative.
 
 ### Graph operations for peel tooling
 
@@ -2292,390 +2259,16 @@ The pipeline (`pipeline.rs`) is a fixed composition over three layers:
   exclusion, not an artifact removal; wrappers / facades / manifests
   are emission outputs.
 
-This is the landed shape of the 2026-06 vendor-into-emission
-collapse: the former stage braid — specifier rewriting, vendor
-renaming, and swapping braided around materialization across seven
-artifact mutations — is gone, and vendor operations contribute zero
-mutation waves.
-
-The remaining trajectory step is collapsing materialize-into-emit:
-`materialize_logical_modules` still writes lowered module files back
-into the chunk bundle for the emission stages to re-read, where the
-lowered outputs could feed `write_js_tree` / harness emission directly
-without the bundle round-trip. Tracked in ARCHITECTURE_BACKLOG.md; no
-timetable is committed. The e2e tests in `devinfra/js/debundle/e2e/`
+One bundle round-trip remains: `materialize_logical_modules` writes
+lowered module files back into the chunk bundle for the emission
+stages to re-read (collapsing that is tracked in
+ARCHITECTURE_BACKLOG.md). The e2e tests in `devinfra/js/debundle/e2e/`
 pin observable chunk → emitted-JS behavior and are the safety net for
-that step, as they were for the vendor collapse.
-
-## Selector vocabulary and matching
-
-> **Aspirational.** This section pins a _target_ selector model.
-> The current implementation uses simpler primitives (`name`,
-> `kind`, `owner.id`, `owner.line`) — drift-prone but adequate
-> while no second-version port has exercised the limits. The
-> richer vocabulary below (fingerprint / astPattern /
-> containsString / relational) and the bipartite forcing
-> matcher are not yet implemented. Revisit when a real
-> second-version port either validates the simple primitives
-> or surfaces a concrete failure.
-
-The spec is fully explicit: every owned binding has
-a spec entry naming which logical module owns it. The chunk's
-top-level bindings are scrambled (`Y5`, `b8`, `Q3` …) and the
-entry's **selector** is how the spec author points at the right
-one. Because the spec is now `O(num_bindings)`, selector
-ergonomics dominate spec-author cost.
-
-### Selectors are narrowing predicates, not unique identifiers
-
-Each selector is a conjunction of constraints (`kind` ∧
-`memberNames` ∧ `astPattern` ∧ …). Evaluated against the chunk,
-it produces a **candidate set** of bindings — possibly 0, 1, or
-many. Resolution is then a constraint-satisfaction problem
-across all spec entries.
-
-This decouples per-entry tightness from global resolvability:
-spec authors don't have to write fingerprints precise enough to
-match exactly one binding. They write predicates that are
-"specific enough in context"; the matcher disambiguates by
-elimination as other entries lock in their unique candidates.
-
-### Resolution algorithm
-
-Iterated bipartite forcing to a fixed point:
-
-```rust
-fn resolve(entries: &[SpecEntry], chunk: &Chunk) -> Result<Assignment, ResolveError> {
-    let mut candidates: BTreeMap<EntryId, BTreeSet<BindingId>> = entries
-        .iter()
-        .map(|e| (e.id, e.candidate_set(chunk)))
-        .collect();
-    let mut assignments: BTreeMap<EntryId, BindingId> = BTreeMap::new();
-    let mut available: BTreeSet<BindingId> = chunk.bindings();
-
-    loop {
-        let mut progressed = false;
-
-        // Forcing on entry side: an entry whose live candidates
-        // collapse to exactly one.
-        for (id, cands) in candidates.clone() {
-            let live: BTreeSet<_> = cands.intersection(&available).copied().collect();
-            if live.len() == 1 {
-                let b = *live.iter().next().unwrap();
-                assignments.insert(id, b);
-                available.remove(&b);
-                candidates.remove(&id);
-                progressed = true;
-            }
-        }
-
-        // Forcing on binding side: a binding with exactly one
-        // entry that wants it.
-        for &b in available.clone().iter() {
-            let claimers: Vec<EntryId> = candidates
-                .iter()
-                .filter_map(|(id, cs)| cs.contains(&b).then_some(*id))
-                .collect();
-            if claimers.len() == 1 {
-                let id = claimers[0];
-                assignments.insert(id, b);
-                available.remove(&b);
-                candidates.remove(&id);
-                progressed = true;
-            }
-        }
-
-        if !progressed {
-            break;
-        }
-    }
-
-    if !candidates.is_empty() {
-        return Err(diagnose(&candidates, &available));
-    }
-    Ok(Assignment(assignments))
-}
-```
-
-Soundness: if a unique solution exists and is reachable by
-iterated cardinality-1 inference (the "naked singles" rule from
-constraint propagation), the algorithm finds it. Solutions that
-require search past a forcing fixed point are reported as
-ambiguous — that's the spec author's signal to add a
-disambiguating predicate to one of the competing entries.
-
-The algorithm runs _strata-by-strata_ under relational
-selectors (see [Relational selectors](#relational-selectors)
-below).
-
-### Primitive predicates
-
-Selectors are JSON objects whose keys are primitive predicates;
-the predicate set is the conjunction.
-
-#### Static facts (drift-resilient)
-
-| primitive                  | applies to | semantics                                                                                                                              |
-| -------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `kind`                     | any        | exact match on the canonical serde spelling: `function_declaration` / `class_declaration` / `variable_declarator` / `import_specifier` |
-| `paramCount: N`            | functions  | exact match on parameter list length                                                                                                   |
-| `memberNames: [a, b, ...]` | classes    | every name in the list appears as a class member (instance or static; method, prop, accessor)                                          |
-| `minMembers: N`            | classes    | class has ≥ N members                                                                                                                  |
-| `superClass: <selector>`   | classes    | the class extends a binding that itself matches `<selector>` (recursive — see [Relational selectors](#relational-selectors))           |
-
-These are stable across re-minifications: minifiers preserve
-declaration kinds, param counts, class member name strings, and
-super-class structural relationships.
-
-#### AST pattern
-
-| primitive              | semantics                                                                                                       |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `astPattern: "<code>"` | the binding's source contains a subtree matching `<code>` interpreted as a JS pattern with identifier wildcards |
-
-Pattern syntax:
-
-- Identifiers spelled `_` (single underscore) are **independent
-  wildcards** — any identifier matches each `_` independently.
-  No cross-position consistency.
-- Other identifiers are matched **literally**. Useful for
-  patterns anchored on well-known names that survive
-  minification — `useState`, `console.log`, `Symbol.iterator`,
-  framework hooks.
-- Operators, keywords, control flow shape, literal values
-  (numeric, string, boolean) match exactly.
-
-Examples:
-
-```json
-{ "astPattern": "for (var _ = 0; _ < _; _++) _;" }
-```
-
-A C-style for-loop with constant-zero start, simple comparison,
-postfix-increment, single-statement body. Loose: matches any
-identifier names, any comparison RHS, any body.
-
-```json
-{ "astPattern": "useEffect(() => { _; }, [_])" }
-```
-
-A `useEffect` call with an arrow callback containing a single
-expression-statement and a single dep. Tight on `useEffect` (the
-literal name must match), loose on contents.
-
-```json
-{ "astPattern": "throw new Error(\"unreachable: \" + _)" }
-```
-
-A throw of an `Error` whose message starts with the literal
-prefix `"unreachable: "`. Pinpoint when this string is unique.
-
-Subtree match semantics: at each AST node in the binding's body,
-attempt a recursive structural match against the pattern's AST.
-A match exists if any subtree matches anywhere in the binding's
-syntactic span.
-
-A future extension (not in this iteration): named captures
-(`$name`) for cross-position consistency. Simple wildcards are
-adequate for selector use today; captures become useful when
-patterns describe relationships ("the same identifier appears
-both as the loop variable and in the body").
-
-#### Source text
-
-| primitive               | semantics                                                                                                 |
-| ----------------------- | --------------------------------------------------------------------------------------------------------- |
-| `containsString: "..."` | the binding's source contains the literal string anywhere — typically inside a string literal in the body |
-
-Useful for unique strings: error messages, RPC names, prop
-keys, debug labels, regex sources, embedded GraphQL or JSON.
-Stable to the extent the literal survives minification (most
-do; minifiers don't rewrite string contents).
-
-#### Relational selectors
-
-These reference _other_ spec entries:
-
-| primitive                  | semantics                                                                                            |
-| -------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `calls: <selector>`        | the binding's body contains a call to a binding that itself matches `<selector>`                     |
-| `calledBy: <selector>`     | the binding is called from inside the body of a binding that matches `<selector>`                    |
-| `references: <selector>`   | the binding reads (call, member access, etc.) a binding matching `<selector>` — broader than `calls` |
-| `referencedBy: <selector>` | converse — somebody matching `<selector>` reads this one                                             |
-| `superClass: <selector>`   | (also listed above) class-only — extends a binding matching `<selector>`                             |
-| `renamedName: "..."`       | shortcut: the binding's spec entry renames it to `"..."`                                             |
-
-Relational selectors create **selector-resolution dependencies**:
-to evaluate `calls: { renamedName: "JsxRuntime" }`, the matcher
-must first know which binding gets the renamedName `"JsxRuntime"`,
-which means resolving the entry that defines that rename.
-
-The matcher computes a topological order over entries based on
-their selector-reference deps. Strata-by-strata: leaf entries
-(no relational deps) resolve first; then entries whose
-relational deps now point at known bindings; etc. Within a
-stratum, the bipartite forcing algorithm runs.
-
-A cycle in selector-resolution deps is an error
-(`SelectorRefCycle`). Note this is **separate** from the
-realizability graph `I ∪ S`; selector-ref cycles are entirely
-within the spec layer and are usually a spec author's mistake
-(`A.calledBy: B`, `B.calledBy: A`). Resolution: anchor one of
-them with a non-relational predicate (kind + astPattern, etc.)
-so the cycle breaks at one node.
-
-#### Direct (drift-prone, escape hatches)
-
-| primitive    | issue                                                                                                                          |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| `name: "Y5"` | the scrambled local name. Minifier renames between builds → spec re-pin needed. Use only when no stable predicate is available |
-
-#### Rejected primitives
-
-These have been considered and rejected; they don't make it
-into the runtime:
-
-| primitive                                     | issue                                                                                                                                                                                            |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `owner.line`                                  | Source is typically prettified; line numbers shift with formatter changes. No semantic stability                                                                                                 |
-| `owner.id` (`owner_NNNNN`)                    | opaque sequential index minted by program analysis; carries no identity (see [Identifiers are typed, not stringly-typed](#identifiers-are-typed-not-stringly-typed))                             |
-| `bodyHash` (function sha)                     | whitespace, minor edits, and minifier comment-stripping invalidate constantly. Use `astPattern` or `containsString` instead                                                                      |
-| `fingerprint.memberNamesPrefix` (gaffer-only) | this gaffer-side resolution helper is what the runtime now exposes as a first-class `memberNames` predicate; "prefix" was a quirk of how gaffer extracted member lists, not a stability property |
-
-### Composition rules
-
-- Selectors are JSON objects with one or more primitive keys; the
-  selector is the conjunction.
-- `kind` is the most common refinement; combines with anything.
-- `paramCount` / `memberNames` / `minMembers` / `superClass` are
-  kind-specific; using them on a binding of the wrong kind makes
-  the candidate set empty (which is fine — that's how
-  disambiguation works).
-- Multiple primitives of the same shape (`memberNames: [a, b]`
-  _and_ `memberNames: [c]`) are not currently meaningful;
-  collapse to `memberNames: [a, b, c]`.
-- An empty selector `{}` matches every binding in the chunk —
-  which is rarely useful, but the matcher's forcing algorithm
-  still handles it (it gets resolved last by elimination).
-
-### Errors
-
-All errors are validate-time. Each carries enough evidence for a
-spec author to fix the spec without re-running the tool.
-
-```text
-SelectorResolution::Unsatisfiable
-  entry "ui/widget/MyClass"
-    selector: { kind: class_declaration, memberNames: ["render", "create"] }
-  reason: after forcing, candidate set is empty.
-    Y5 (the only binding with this shape) was claimed by entry
-    "ui/dom/Component" via its more specific `astPattern`.
-  resolve by: relaxing this entry's selector, or moving the
-    `Component` entry to a different binding so Y5 is freed.
-```
-
-```text
-SelectorResolution::Ambiguous
-  entries: [
-    "ui/widget/MyClass"  selector { kind: class_declaration, memberNames: ["render", "mount"] },
-    "ui/dom/Component"   selector { kind: class_declaration, memberNames: ["render", "mount"] },
-  ]
-  candidates: [Y5 (line 12345), X4 (line 23456), Q3 (line 34567)]
-  reason: no cardinality-1 forcing remains; both entries match
-    all three candidates equally.
-  resolve by: adding a disambiguating predicate (an `astPattern`,
-    a `containsString` for a unique literal, a `superClass`
-    referring to one's parent class) to at least one entry.
-```
-
-```text
-SelectorRefCycle
-  cycle: ["entry_a", "entry_b", "entry_a"]
-  reason: entry_a's selector references entry_b via `calls`,
-    and entry_b's selector references entry_a via `calledBy`.
-  resolve by: anchoring one with a non-relational predicate
-    (kind + astPattern, etc.) so its candidate set can be
-    resolved before the other.
-```
-
-### Resolution example
-
-Three classes share a `memberNames` shape; one extends a known
-base, another contains a unique string literal:
-
-```json
-[
-  {
-    "id": "spec_component",
-    "selector": {
-      "kind": "class_declaration",
-      "containsString": "instanceof Element"
-    },
-    "rename": "Component"
-  },
-  {
-    "id": "spec_widget",
-    "selector": {
-      "kind": "class_declaration",
-      "memberNames": ["render", "mount"],
-      "superClass": { "renamedName": "Component" }
-    }
-  },
-  {
-    "id": "spec_other",
-    "selector": {
-      "kind": "class_declaration",
-      "memberNames": ["render", "mount"]
-    }
-  }
-]
-```
-
-Trace:
-
-1. Selector-ref dep order: `spec_component` (no relational
-   deps), then `spec_widget` (depends on `spec_component`'s
-   rename), then `spec_other` (no relational deps but resolved
-   last by elimination).
-2. **Stratum 1.** `spec_component`'s candidate set: classes
-   whose source contains `instanceof Element`. Suppose only `Y5`.
-   Force `spec_component → Y5`. The rename map now has `Y5 →
-"Component"`.
-3. **Stratum 2.** `spec_widget`'s `superClass` resolves to `Y5`.
-   Candidate set: classes extending `Y5` with `["render",
-"mount"]` members. Suppose only `b8`. Force `spec_widget →
-b8`.
-4. **Stratum 3.** `spec_other`'s candidate set: classes with
-   `["render", "mount"]` members. After excluding `Y5` and `b8`,
-   only `Q3` remains. Force `spec_other → Q3`.
-
-All entries assigned, no ambiguity.
-
-### Design trade-offs surfaced by the algorithm
-
-- **No silent best-effort.** The matcher refuses to produce a
-  partial assignment with "best guesses." Every entry resolves
-  to exactly one binding, or the spec is rejected with a
-  diagnosable error. Same philosophy as the validator's cycle
-  rejection.
-- **Failure surface is per-entry.** Errors point at specific
-  entries, candidate bindings, and remediations. The spec author
-  edits one entry at a time and re-runs.
-- **Selector strength is local.** A loose selector elsewhere
-  can still tighten one entry, because it shrinks the
-  available-bindings set. So spec authors can write the simplest
-  predicate that works "in context" rather than the most
-  precise.
-- **Reference depth is bounded by selector-ref dep order.**
-  Even relational selectors resolve in a single pass per
-  stratum; the matcher doesn't iterate the whole bipartite
-  forcing across all entries indefinitely. Worst-case complexity
-  is O(entries × bindings) per stratum × strata-depth, which is
-  fine at typical bundle scale.
+any such pipeline reshaping.
 
 ## Anonymous-statement selectors
 
-Binding selectors (above) address an `Owned` binding by name.
+Binding selectors (<selectors.md>) address an `Owned` binding by name.
 Anonymous (empty-`declared`) statements have no name; they are
 side-effect IIFEs, decorator applications like
 `Ww([Z], $g.prototype, "invites", 2);`, runtime init bridges, and
@@ -2735,7 +2328,7 @@ residual dependency.
 
 ### Different from binding selectors
 
-Binding selectors (§"Selector vocabulary and matching") are
+Binding selectors (<selectors.md>) are
 **narrowing predicates** that may admit 0, 1, or many candidate
 bindings; the resolver disambiguates by elimination across all
 spec entries. Anonymous-statement selectors are **unique-by-design
@@ -2920,46 +2513,33 @@ peel-set hyperedges so authoring tools can mostly project and filter
 debundler facts instead of re-analyzing JavaScript or private repo
 YAML conventions.
 
-| Step                           | Module                           | Runs when                                                                                                                                                                                                                               |
-| ------------------------------ | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `load_transform_spec`          | <../pipeline.rs>                 | Always; loads either the flat YAML spec or the tree-shaped authoring spec.                                                                                                                                                              |
-| `validate_transform_spec`      | <../spec.rs>                     | Always after spec load.                                                                                                                                                                                                                 |
-| `load_js_chunks`               | <../artifact.rs>                 | Always; configured by `inputs`.                                                                                                                                                                                                         |
-| `prepare_js_chunks`            | <../prepare_chunks.rs>           | Always. In one parallel per-chunk pass, parses every chunk with SWC, computes shallow program facts, and canonicalizes entries.                                                                                                         |
-| `build_artifact_indexes`       | <../artifact.rs>                 | Always after preparation. Builds chunk id, source path, output path, and import-reference indexes for later stages.                                                                                                                     |
-| `build_vendor_resolution_plan` | <../vendor/plan.rs>              | Always after index build. Read-only: validates every `vendor` mark, resolves boundary mappings / swap targets / partial-swap symbol tables, runs the plan-time consumer gate.                                                           |
-| `materialize_logical_modules`  | <../lowering/> + analysis files  | When `logical_modules`, `unassigned_mode`, or `chunk_renames` is non-empty. Computes facts, quotients the owner graph into `I ∪ S`, validates, emits.                                                                                   |
-| `apply_emission_rewrites`      | <../vendor/emission.rs>          | Always. Pass-through directive rewrite (specifier canonicalization, boundary-rename mapping, partial-swap consumer surgery) over files emitted without lowering, plus the per-vendor-chunk residual composition (self-rewrite + strip). |
-| `validate_emitted_exports`     | <../validate_emitted_exports.rs> | Always; duplicate-public-export tripwire over the emission set (excluded full-swap chunks are skipped).                                                                                                                                 |
-| `write_js_tree`                | <../write_tree.rs>               | When `write_js_tree` output config is present; writes JS tree reports with exact `output_metrics` and directory reports when logical modules exist.                                                                                     |
-| `emit_browser_harness`         | <../emit_harness.rs>             | When `emit_browser_harness` output config is present; writes browser harness reports with exact `output_metrics` and directory reports when logical modules exist.                                                                      |
+The authoritative stage sequence — which stages exist, which module
+implements each, and when each runs — is the fixed composition in
+`run_transform_cli_with_options` (<../pipeline.rs>); this doc does not
+mirror it. The shape to know: spec load/validate → chunk load/prepare
+(one parallel per-chunk SWC parse) → artifact indexes → the read-only
+`build_vendor_resolution_plan` → `materialize_logical_modules` (the only
+lowering stage) → `apply_emission_rewrites` →
+`validate_emitted_exports` (duplicate-public-export tripwire) →
+optional tree/harness outputs.
 
-Within `materialize_logical_modules`, the substages are:
+Within `materialize_logical_modules`, analysis (chunk AST scan,
+statement facts, owner-graph construction — <../lowering/chunk_ast.rs>,
+<../facts/mod.rs>, <../graph/>) feeds the stages that carry design
+invariants:
 
-1. **Spec parsing** → `LogicalRequest` / `ModulePlan` per chunk.
-2. **Chunk AST analysis** (<../lowering/chunk_ast.rs>:
-   `analyze_chunk_ast`) → top-level declarations, declaration index,
-   and runtime import facts in one top-level scan.
-3. **Statement-facts analysis** (<../facts/mod.rs>:
-   `analyze_chunk`) → `Vec<StatementFacts>`.
-4. **Owner graph construction** (<../graph/>) → owner vertices plus read and
-   side-effect-order evidence. This is a first-class intermediate
-   and report side output.
-5. **Binding assignment** → `BTreeMap<BindingName, ModuleId>` from
+1. **Binding assignment** → `BTreeMap<BindingName, ModuleId>` from
    the spec's explicit member list. Bindings with no spec entry
    default to `ResidualEntry`; nothing pulls implicitly. (See
    [Spec explicitness](#spec-explicitness-and-diagnostics).)
-6. **Quotient + validation** (<../graph/>, <../validation.rs>).
-   The quotient graph
+2. **Quotient + validation** (<../graph/>, <../validation.rs>) —
    collapses owners by destination, aggregates edge reasons, and
-   validates the resulting `I ∪ S`.
-7. **Diagnostics projections** — cycle evidence, atomic-unit conflicts,
+   validates the resulting `I ∪ S`; an unrealizable cycle aborts the
+   pipeline with the cycle evidence.
+3. **Diagnostics projections** — cycle evidence, atomic-unit conflicts,
    and atomic graph reports are projections of the same owner graph +
    quotient, not separate heuristic analyses.
-8. **Cycle resolution gate** — if the validator finds an
-   unrealizable cycle, the pipeline aborts with the cycle
-   evidence.
-9. **Source-order emission** — each module's body in source order;
+4. **Source-order emission** — each module's body in source order;
    cross-module imports + source-chunk re-imports; `export { ... }`.
    No init wrappers. Import-directive ordering comes from the shared
    `esm_import_order::EsmImportOrder` (the same object the
@@ -3648,38 +3228,15 @@ exploration before crossing the relevant phase.
 
 ## File references
 
-Primary:
+Entry points (the rest of the tree hangs off these; per-concern file
+rosters live in the directories, not here):
 
-- <design.md> — this document.
+- <../pipeline.rs> — fixed transform composition.
 - <../facts/mod.rs> — `StatementFacts` analyzer.
 - <../graph/> — owner graph and `ModuleDepGraph` builders.
 - <../validation.rs> — realizability checks.
-- <../chunk_analysis.rs> — `ChunkAnalysis` (inputs + IR + input-derived caches).
-- <../chunk_factorization.rs> — `ChunkFactorization` construction and linker-order reasoning.
+- <../lowering/> — main splitting transform.
 - <../atomic_units.rs> — owner-level hard colocation units.
-- <../factor_assembly.rs> — spec claims projected onto atomic units.
-- <../peel/factorize.rs> — advisory factorization proposal construction
-  and reporting.
-- <../lowering/> — main splitting transform (`mod.rs` plus per-concern
-  sibling files: `chunk_ast.rs`, `lower.rs`, `materialize/`,
-  `plans.rs`, `naturalize.rs`, `imports_cross.rs`,
-  `imports_runtime.rs`, `exports.rs`, `plan_references.rs`,
-  `runtime_imports.rs`, `body_facts.rs`, `chunk_renames.rs`,
-  `rewrite_runtime.rs`, `visitors.rs`, `anonymous.rs`, `util.rs`).
-- <../pipeline.rs> — fixed transform composition.
-- <../program_analysis.rs> — chunk metadata + side-effect
-  classification (used as input to the analyzer).
-
-Secondary:
-
-- <../vendor/>, <../emit_harness.rs>, <../write_tree.rs>,
-  <../identifier_rename_queue.rs> — supporting transforms and
-  side-output producers.
-
-Tracking:
-
-- <../TODO.md> — open work items.
-- <../AGENTS.md> — operating principles for contributors.
 
 ## Conventions for updating this doc
 

@@ -10,19 +10,25 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     ARRAY,
     BigInteger,
+    Boolean,
     CheckConstraint,
+    ColumnElement,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
     Identity,
     Index,
+    Integer,
     LargeBinary,
     Text,
     UniqueConstraint,
+    case,
     text,
     text as sql_text,
+    type_coerce,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from haku.console.agents.models import (
@@ -42,6 +48,7 @@ from haku.console.chat_models import (
     FrameDirection,
     ItemStatus,
     ItemType,
+    PromptOrigin,
     ReasoningDisclosure,
     RuntimeKind,
     SessionStatus,
@@ -49,18 +56,20 @@ from haku.console.chat_models import (
     ToolOutcome,
     TurnOutcome,
 )
+from haku.console.grant_principal import GrantPrincipalKind
+from haku.console.http_grant_models import HttpMethod, HttpMethods, HttpScheme
 from haku.console.kubernetes_grant_models import KubernetesGrantScope, KubernetesGrantStatus, KubernetesRule
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.operator_identity import OperatorStatus
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.pydantic_column import PydanticColumn
 from haku.console.tool_calls import ToolCallStatus
+from util.enum_vocab import UnknownValue
 from util.sqlalchemy_types import (
     StrEnumColumn,
     StringBackedStrEnumColumn,
     TextBackedStrEnumColumn,
     TolerantTextBackedStrEnumUnionColumn,
-    UnknownValue,
 )
 
 
@@ -499,12 +508,13 @@ class AuthorizationGrant(Base):
 
 
 class KubernetesGrantRow(Base):
-    """One Agent-owned, time-bounded Kubernetes capability lease.
+    """One Agent-owned, principal-scoped, time-bounded Kubernetes capability lease.
 
     Scope and rules are intentionally JSONB: Kubernetes evolves its resource vocabulary, while
     the domain validates the stable namespace and RBAC-like shapes before writing.
     ``source_tool_call_id`` is retained as immutable provenance and must refer to the
-    Agent-authenticated source call.
+    Agent-authenticated source call. Lifecycle ownership and authorization applicability are
+    deliberately separate columns.
     """
 
     __tablename__ = "kubernetes_grants"
@@ -513,6 +523,13 @@ class KubernetesGrantRow(Base):
         CheckConstraint(
             "jsonb_typeof(rules) = 'array' AND jsonb_array_length(rules) > 0",
             name="ck_kubernetes_grants_rules_nonempty",
+        ),
+        CheckConstraint(
+            "(principal_kind = 'agent' AND principal_agent_id IS NOT NULL "
+            "AND principal_agent_id = owner_agent_id AND principal_session_id IS NULL) OR "
+            "(principal_kind = 'session' AND principal_agent_id IS NULL "
+            "AND principal_session_id IS NOT NULL)",
+            name="ck_kubernetes_grants_principal_shape",
         ),
         CheckConstraint(
             "jsonb_typeof(scope) = 'object' "
@@ -533,12 +550,23 @@ class KubernetesGrantRow(Base):
             name="ck_kubernetes_grants_status_shape",
         ),
         Index("idx_kubernetes_grants_source_tool_call", "source_tool_call_id"),
-        Index("idx_kubernetes_grants_agent_status_expiry", "agent_id", "status", "expires_at"),
+        Index("idx_kubernetes_grants_owner_status_expiry", "owner_agent_id", "status", "expires_at"),
+        Index("idx_kubernetes_grants_agent_principal_status_expiry", "principal_agent_id", "status", "expires_at"),
+        Index("idx_kubernetes_grants_session_principal_status_expiry", "principal_session_id", "status", "expires_at"),
     )
 
     grant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
-    agent_id: Mapped[UUID] = mapped_column(
+    owner_agent_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("agents.agent_id", ondelete="RESTRICT"), nullable=False
+    )
+    principal_kind: Mapped[GrantPrincipalKind] = mapped_column(
+        TextBackedStrEnumColumn(GrantPrincipalKind), nullable=False
+    )
+    principal_agent_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agents.agent_id", ondelete="RESTRICT"), nullable=True
+    )
+    principal_session_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="RESTRICT"), nullable=True
     )
     source_tool_call_id: Mapped[str] = mapped_column(
         Text, ForeignKey("mcp_tool_calls.tool_call_id", ondelete="RESTRICT"), nullable=False
@@ -551,6 +579,73 @@ class KubernetesGrantRow(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    end_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class HttpGrantRow(Base):
+    """One Agent-owned, principal-scoped, time-bounded HTTP egress lease.
+
+    The origin is three relational columns because a grant pins exactly ``(scheme, host, port)``;
+    ``methods``/``path_regex`` narrow requests at that origin. The domain canonicalizes and
+    validates coverage app-side (`http_grant_models`); Postgres holds only the relational
+    invariants. Status is derived, never stored (root STYLE.md § SQLAlchemy): the row records the
+    end facts — ``released_at``, ``revoked_at`` — and `http_grant_models.derive_status` computes
+    the vocabulary from them and the clock, so expiry needs no sweeper.
+    ``source_tool_call_id`` is retained as immutable provenance and must refer to the
+    Agent-authenticated source call. Lifecycle ownership and authorization applicability are
+    deliberately separate columns.
+    """
+
+    __tablename__ = "http_grants"
+    __table_args__ = (
+        CheckConstraint("btrim(source_tool_call_id) <> ''", name="ck_http_grants_source_tool_call_nonempty"),
+        CheckConstraint(
+            "(principal_kind = 'agent' AND principal_agent_id IS NOT NULL "
+            "AND principal_agent_id = owner_agent_id AND principal_session_id IS NULL) OR "
+            "(principal_kind = 'session' AND principal_agent_id IS NULL "
+            "AND principal_session_id IS NOT NULL)",
+            name="ck_http_grants_principal_shape",
+        ),
+        CheckConstraint("expires_at > created_at", name="ck_http_grants_expiration_after_creation"),
+        # The fact shape the derivation reads: at most one end action, and a reason exactly when
+        # one is recorded.
+        CheckConstraint(
+            "num_nonnulls(released_at, revoked_at) <= 1 "
+            "AND ((num_nonnulls(released_at, revoked_at) = 1) = (end_reason IS NOT NULL)) "
+            "AND (end_reason IS NULL OR btrim(end_reason) <> '')",
+            name="ck_http_grants_end_shape",
+        ),
+        Index("idx_http_grants_source_tool_call", "source_tool_call_id"),
+        Index("idx_http_grants_owner_expiry", "owner_agent_id", "expires_at"),
+        Index("idx_http_grants_agent_principal_expiry", "principal_agent_id", "expires_at"),
+        Index("idx_http_grants_session_principal_expiry", "principal_session_id", "expires_at"),
+    )
+
+    grant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    owner_agent_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agents.agent_id", ondelete="RESTRICT"), nullable=False
+    )
+    principal_kind: Mapped[GrantPrincipalKind] = mapped_column(
+        TextBackedStrEnumColumn(GrantPrincipalKind), nullable=False
+    )
+    principal_agent_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agents.agent_id", ondelete="RESTRICT"), nullable=True
+    )
+    principal_session_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="RESTRICT"), nullable=True
+    )
+    source_tool_call_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("mcp_tool_calls.tool_call_id", ondelete="RESTRICT"), nullable=False
+    )
+    scheme: Mapped[HttpScheme] = mapped_column(TextBackedStrEnumColumn(HttpScheme), nullable=False)
+    host: Mapped[str] = mapped_column(Text, nullable=False)
+    port: Mapped[int] = mapped_column(Integer, nullable=False)
+    methods: Mapped[frozenset[HttpMethod]] = mapped_column(PydanticColumn(HttpMethods), nullable=False)
+    path_regex: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    released_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     end_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
@@ -1055,7 +1150,16 @@ class ChannelCursor(Base):
 
 
 class Session(Base):
-    """One Operator-owned agent conversation and its Agent Sandbox rendezvous."""
+    """One Operator-owned agent conversation and its Agent Sandbox rendezvous.
+
+    **`status` is derived, never stored** (root STYLE.md § SQLAlchemy): the row records the facts —
+    allocation, attachment, the close request, the end — and the vocabulary every consumer speaks
+    is computed from them in one place, the `status` hybrid below. Extending the vocabulary is
+    therefore a fact change, and the decision-value roll rule (<../README.md> § Vocabularies across
+    a roll) lands on the derivation: the release that derives a new member from a new fact column
+    ships that derivation one release before anything writes the fact, because an older replica's
+    derivation reads the row as whichever old member its facts spell.
+    """
 
     __tablename__ = "sessions"
 
@@ -1073,7 +1177,6 @@ class Session(Base):
     agent_binding_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("credential_bindings.binding_id", ondelete="RESTRICT"), nullable=True
     )
-    status: Mapped[SessionStatus] = mapped_column(TextBackedStrEnumColumn(SessionStatus), nullable=False)
     # The verifier for this session's sandbox credential — SHA-256 of a bearer minted once at
     # allocation and never stored. The runner presents it on every rendezvous and the sandbox Agent
     # presents it to Console MCP; both resolve to this exact session. Admissibility is the status,
@@ -1098,6 +1201,15 @@ class Session(Base):
     # **`0` is "nothing here has ever projected"**, which no frame's `frame_seq` can be, so the
     # bound needs no absent state; it arrives by the server default.
     projected_frame_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("0"))
+    # The operator asked this session to end. Stamped once and never cleared — ending is one-way —
+    # which is what derives `closing` until `ended_at` lands.
+    close_requested_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The session is over as of this instant, whatever ended it; NULL is a session that can still
+    # run. With `error` it spells the terminal member: ended with an error is `failed`, without one
+    # `closed`.
+    ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Why it ended badly. NULL until `ended_at`, and NULL forever on a clean close
+    # (`ck_sessions_error_ended`).
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Renewed by whichever replica currently holds this session's runner websocket: a replica that
     # dies mid-turn otherwise leaves the row claiming a turn is in flight forever. Absent only while
@@ -1116,28 +1228,71 @@ class Session(Base):
     __table_args__ = (
         UniqueConstraint("bridge_token_fingerprint", name="uq_sessions_bridge_token_fingerprint"),
         UniqueConstraint("session_id", "agent_binding_id", name="uq_sessions_session_agent_binding"),
+        # The fact shapes the derivation reads, held by the database so no writer can record a
+        # combination the vocabulary cannot say. An error is how an ended session ended;
+        CheckConstraint("error IS NULL OR ended_at IS NOT NULL", name="ck_sessions_error_ended"),
+        # a runner can only ever have attached to a session that was allocated a credential;
         CheckConstraint(
-            "status IN ('idle','provisioning','ready','responding','closing','closed','failed')",
-            name="ck_sessions_status",
+            "bridge_connected_at IS NULL OR bridge_token_fingerprint IS NOT NULL",
+            name="ck_sessions_connected_allocated",
         ),
+        # and while a session can still run, allocation and its lease arrive together — idle holds
+        # neither, an allocated session both, so "live but unreclaimable" is unwritable.
         CheckConstraint(
-            "(status = 'idle' AND bridge_token_fingerprint IS NULL) OR "
-            "(status <> 'idle' AND (bridge_token_fingerprint IS NOT NULL OR status IN ('closing','closed','failed')))",
-            name="ck_sessions_idle_bridge_token",
+            "ended_at IS NOT NULL OR close_requested_at IS NOT NULL "
+            "OR ((bridge_token_fingerprint IS NULL) = (lease_expires_at IS NULL))",
+            name="ck_sessions_allocation_lease",
         ),
-        CheckConstraint(
-            "(status = 'idle' AND lease_expires_at IS NULL) OR "
-            "(status <> 'idle' AND (lease_expires_at IS NOT NULL OR status IN ('closing','closed','failed')))",
-            name="ck_sessions_idle_lease",
-        ),
+        # Claim cleanup is only ever recorded against a session that has ended.
+        CheckConstraint("claim_cleaned_at IS NULL OR ended_at IS NOT NULL", name="ck_sessions_claim_cleanup_ended"),
         Index("idx_sessions_operator", "operator_id", "created_at"),
         Index("idx_sessions_conversation", "conversation_id", "created_at"),
         Index(
             "idx_sessions_expired_lease",
             "lease_expires_at",
-            postgresql_where=text("status IN ('provisioning','ready','responding')"),
+            postgresql_where=text(
+                "ended_at IS NULL AND close_requested_at IS NULL AND bridge_token_fingerprint IS NOT NULL"
+            ),
         ),
     )
+
+    @hybrid_property
+    def status(self) -> SessionStatus:
+        """The lifecycle vocabulary, derived from the row's facts at the moment of asking.
+
+        One derivation for Python reads and, via the expression below, SQL filters — so no writer
+        maintains a summary that could disagree with the facts it summarizes. `RESPONDING` is
+        deliberately not derived here: whether a turn is open is `conversation_turn`'s fact, and
+        `session_views.live_status` layers it on top of this member.
+        """
+        if self.ended_at is not None:
+            return SessionStatus.FAILED if self.error is not None else SessionStatus.CLOSED
+        if self.close_requested_at is not None:
+            return SessionStatus.CLOSING
+        if self.bridge_token_fingerprint is None:
+            return SessionStatus.IDLE
+        if self.bridge_connected_at is None:
+            return SessionStatus.PROVISIONING
+        return SessionStatus.READY
+
+    @status.inplace.expression
+    @classmethod
+    def _status_expression(cls) -> ColumnElement[SessionStatus]:
+        # `type_coerce` rather than a bare CASE so a selected status decodes to the enum, and
+        # labelled so `select(Session.status, …)` rows answer `.status` by name — both exactly as
+        # the stored column did. In a WHERE the label compiles to its element, so filters are
+        # untouched by it.
+        return type_coerce(
+            case(
+                (cls.ended_at.is_not(None) & cls.error.is_not(None), SessionStatus.FAILED),
+                (cls.ended_at.is_not(None), SessionStatus.CLOSED),
+                (cls.close_requested_at.is_not(None), SessionStatus.CLOSING),
+                (cls.bridge_token_fingerprint.is_(None), SessionStatus.IDLE),
+                (cls.bridge_connected_at.is_(None), SessionStatus.PROVISIONING),
+                else_=SessionStatus.READY,
+            ),
+            TextBackedStrEnumColumn(SessionStatus),
+        ).label("status")
 
 
 class ConversationEvent(Base):
@@ -1279,7 +1434,7 @@ class ConversationItem(Base):
     # rows and on every delta, which is why the console mints its own.
     backend_item_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Prompt only: which attachment or surface sent it.
-    origin: Mapped[dict[str, Any] | None] = mapped_column(_ABSENT_JSONB, nullable=True)
+    origin: Mapped[PromptOrigin | None] = mapped_column(PydanticColumn(PromptOrigin), nullable=True)
     call_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     tool_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     arguments: Mapped[dict[str, Any] | None] = mapped_column(_ABSENT_JSONB, nullable=True)
@@ -1338,6 +1493,21 @@ class ConversationItem(Base):
         ),
         Index("idx_conversation_item_conversation", "conversation_id", "opened_seq"),
         Index("idx_conversation_item_turn", "turn_id", "opened_seq"),
+        # The `read_items` keyset branches: a page of entries is served from the rows' defining
+        # stream positions, so each branch needs an index that already stands in that order —
+        # partial, because the branch's filter would otherwise make it a scan of the other rows.
+        Index(
+            "idx_conversation_item_tool_call_opened",
+            "conversation_id",
+            "opened_seq",
+            postgresql_where=sql_text("item_type = 'tool_call'"),
+        ),
+        Index(
+            "idx_conversation_item_completed",
+            "conversation_id",
+            "closed_seq",
+            postgresql_where=sql_text("status = 'complete'"),
+        ),
     )
 
 
@@ -1390,6 +1560,13 @@ class ConversationTurn(Base):
         ),
         Index("idx_conversation_turn_conversation", "conversation_id", "first_seq"),
         Index("idx_conversation_turn_session", "session_id", "first_seq"),
+        # The `read_items` turn-end branch, ordered by where each ended exchange closed.
+        Index(
+            "idx_conversation_turn_ended",
+            "conversation_id",
+            "last_seq",
+            postgresql_where=sql_text("last_seq IS NOT NULL"),
+        ),
     )
 
 
@@ -1633,6 +1810,47 @@ class MatrixRevision(Base):
             unique=True,
             postgresql_where=text("retired_at IS NULL"),
         ),
+    )
+
+
+class MatrixRoomCopy(Base):
+    """One Haku-authored room event whose tag names the conversation event it projects.
+
+    **The room's copy, as durable correspondence.** Written by the sync loop from the events'
+    own `/sync` echoes — never by the send path — and read by the room's reconciler before it
+    sends: a source already showing in the room is not sent again, however long ago the send was,
+    which is what outlives Synapse's 30-to-60-minute transaction cache. Nothing outside the Matrix
+    channel reads it.
+
+    `redacted` marks a copy the room no longer shows. The row stays: correspondence answers "did
+    this projection reach the room", and a redaction does not unsend — it only removes the copy
+    from duplicate repair, which considers live originals alone.
+
+    `replaces_event_id` marks an `m.replace` revision of an earlier event. An edit is a content
+    change to a copy the room already shows, so it satisfies correspondence without ever being a
+    second copy to repair.
+    """
+
+    __tablename__ = "matrix_room_copy"
+
+    # The homeserver's id for the event, globally unique by construction.
+    event_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    # The attachment named by the event's own tag: a rebound room's old events keep naming the
+    # attachment they were projected under, so the new attachment starts with no correspondence.
+    attachment_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("chat_attachment.attachment_id", ondelete="CASCADE"), nullable=False
+    )
+    source_event_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    replaces_event_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The homeserver's ordering, which is what decides the copy to keep when repairing duplicates.
+    origin_server_ts: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    redacted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("btrim(event_id) <> ''", name="ck_matrix_room_copy_event_nonempty"),
+        CheckConstraint("source_event_seq > 0", name="ck_matrix_room_copy_source_positive"),
+        # What both readers ask: does this source show, and which copies share it.
+        Index("idx_matrix_room_copy_source", "attachment_id", "source_event_seq"),
     )
 
 

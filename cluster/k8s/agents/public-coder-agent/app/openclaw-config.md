@@ -36,8 +36,8 @@ the raw models are ~1.05M, Codex product docs say 272K -- and neither is
 what this chain accepts. cluster/k8s/litellm/app/test_openclaw_models.py
 pins every declaration in the repo to the same measured numbers.
 
-The same LiteLLM key and `litellm-subscription` provider also offer Google's
-Gemini chat lineup (`gemini-*`, mirroring GEMINI_MODELS in
+The same LiteLLM key and `litellm` provider also offer Google's
+Gemini chat lineup (`google/oai-chat/gemini-*`, mirroring GEMINI_MODELS in
 cluster/k8s/litellm/app/model_rosters.py), routed the same way Codex is --
 LiteLLM's `/v1/messages` surface accepts an Anthropic-shaped request for any
 backend model and translates it, so no separate provider entry is needed.

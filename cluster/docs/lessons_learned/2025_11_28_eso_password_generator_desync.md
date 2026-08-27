@@ -1,7 +1,7 @@
 # ESO Password Generator Desynchronization
 
 > **HISTORICAL (infra changed since 2025-11-28).** Vault was decommissioned
-> 2026-04-19 (secrets are now SOPS-managed; see <../../archive/2026_04_19_vault_migration.md>),
+> 2026-04-19 (secrets are now SOPS-managed; see <../decisions.md> § "Secrets: SOPS SSOT"),
 > and Terraform state moved off the old `tfstate-default-*` k8s secrets into the
 > `tofu-state-db` CNPG cluster with the kubernetes-backend migration. The
 > `kubectl exec -n vault vault-0 -- vault kv get` diagnostic below references the

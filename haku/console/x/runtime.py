@@ -14,7 +14,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from haku.console.chat_models import RuntimeKind
-from haku.console.x.conversation_events import ConversationEvent, Projection, TurnEnd
+from haku.console.x.conversation_events import ConversationEvent, TurnEnd
 from haku.console.x.sandbox_claims import SandboxClaims
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.runtime.x.bridge.client import FrameSink, ReceivedFrame, SentPrompt
@@ -200,8 +200,6 @@ class RuntimeAdapter(Protocol):
         keeps the pre-wake behaviour, where the stream is only consumed inside a turn.
         """
         ...
-
-    def project_log(self, frames: Iterable[tuple[int, HarnessFrame]]) -> Projection: ...
 
     def prompt_submitted(self, frames: Iterable[HarnessFrame]) -> bool:
         """Whether these outbound native frames include the turn's prompt submission."""

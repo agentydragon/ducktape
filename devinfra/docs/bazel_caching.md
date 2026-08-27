@@ -45,6 +45,44 @@ dedicated prewarm or `compute-targets` job. BuildBuddy-hosted `bb remote` runs
 execute in separate runner VMs and use BuildBuddy's cache rather than this
 GitHub-runner filesystem cache.
 
+## Undeclared test outputs under BwoB
+
+`--remote_download_minimal` (Build without the Bytes) singles out test runner
+actions. `RemoteOutputChecker.addTargetUnderTest` adds a test's outputs to the
+download set only when `outputsMode != MINIMAL`, so under minimal the
+`test.outputs/` tree stays remote-only.
+
+That is invisible until a cache hit. BEP's per-test file list comes from
+`TestRunnerAction.getTestOutputsMapping`, which stats each path on the local
+filesystem, and Bazel does not populate the output filesystem on an action-cache
+hit — an upstream limitation with a standing TODO in that method. A test served
+from the local action cache therefore reports `test.log` and nothing else, while
+the same test served from the remote cache reports its full `test.outputs/`,
+because that path materializes the outputs. `devinfra/pr_visuals` consumes
+exactly those artifacts, so a visual test that hit the local cache published
+nothing and the run looked like it had no visual changes.
+
+`test:rbe --remote_download_regex=bazel-out/.*/testlogs/.*/test.outputs(/.*)?`
+puts the tree back in the download set. That fixes the cache-hit path too, not
+just execution: `RemoteOutputChecker.shouldTrustMetadata` refuses to trust a
+remote-only output that should have been downloaded, so the action cache cannot
+hit while `test.outputs/` is remote-only. The cost lands only on tests that
+wrote undeclared outputs — an empty tree has no children to distrust — and it is
+a remote-cache round trip, not a re-execution.
+
+The pattern spans the whole path because `RegexPatternOption` matches the entire
+string, and its `.` is unescaped because a bazelrc consumes the backslash —
+`--announce_rc` shows what Bazel actually received.
+`shouldDownloadOutput` checks the child path and the tree root, so a pattern
+matching either is enough.
+
+### Rejected: --remote_download_toplevel
+
+The blunt form of the same fix, and it does work — but `toplevel` downloads
+every top-level target's important artifacts, which on `bazel test //...` means
+every OCI image tarball lands on the runner. The regex asks for the few hundred
+kilobytes of PNGs that BEP actually needs.
+
 ## Duplicate-key problem (historical)
 
 The former `bazel-repo-cache-save` action used `actions/cache/save@v4`, which creates a new cache entry even when the same key already exists. Multiple CI runs created conflicting entries per key. The GHA cache service responded with HTTP 400 on all restore attempts, making the cache useless across all jobs.

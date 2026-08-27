@@ -35,8 +35,8 @@ class RegistryProxyConfig:
       Defaults to host/port when not set. Needed in k8s where the backend resolves
       the service name (e.g. "props-registry-proxy") via cluster DNS, but the
       kubelet can't.
-    project: Optional upstream registry project prefix (e.g. "props" for Harbor).
-      When set, OCI references include it: registry.allegedly.works/props/critic@...
+    project: Optional upstream registry project/owner prefix (e.g. "props").
+      When set, OCI references include it: <registry>/props/critic@...
     """
 
     host: str
@@ -73,7 +73,7 @@ def get_registry_proxy_config() -> RegistryProxyConfig:
         PROPS_REGISTRY_PORT: Port for backend to reach registry proxy (default: 8000)
         PROPS_REGISTRY_PULL_HOST: Host for container runtime image pulls (default: PROPS_REGISTRY_HOST)
         PROPS_REGISTRY_PULL_PORT: Port for container runtime image pulls (default: PROPS_REGISTRY_PORT)
-        PROPS_REGISTRY_UPSTREAM_PROJECT: Harbor project prefix for OCI references (default: none)
+        PROPS_REGISTRY_UPSTREAM_PROJECT: upstream project/owner prefix for OCI references (default: none)
     """
     pull_host = os.environ.get("PROPS_REGISTRY_PULL_HOST") or None
     pull_port_str = os.environ.get("PROPS_REGISTRY_PULL_PORT")
@@ -99,7 +99,7 @@ class UpstreamRegistryConfig:
         PROPS_REGISTRY_UPSTREAM_URL: Base URL of upstream registry (required)
         PROPS_REGISTRY_UPSTREAM_USERNAME: Username for upstream auth (optional)
         PROPS_REGISTRY_UPSTREAM_PASSWORD: Password for upstream auth (optional)
-        PROPS_REGISTRY_UPSTREAM_PROJECT: Harbor project prefix, e.g. "props" (optional)
+        PROPS_REGISTRY_UPSTREAM_PROJECT: upstream project/owner prefix, e.g. "props" (optional)
     """
 
     url: str

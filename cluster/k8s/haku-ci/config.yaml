@@ -120,7 +120,7 @@ container:
   # (Was: -e DOCKER_CONFIG=/etc/oci-auth + a read-only config.json bind mount, to hand
   # rules_oci the public-door puller creds. That made DOCKER_CONFIG a read-only mount,
   # which broke `docker login` in every other job — `rename … device or resource busy`.
-  # Removed 2026-07-05; see cluster/docs/harbor_pullthrough.md.)
+  # Removed 2026-07-05.)
   #
   # Allow the runner's own CA bind mount + the pod-local Bazel-cache mount above through
   # act_runner's volume gate (a Haku-authored workflow still cannot mount arbitrary dind-host

@@ -1,0 +1,4 @@
+{"kind":"resume","generation":"runner_projection_v1","neutral_protocol_version":1,"acked_batch_seq":null}
+{"kind":"ack","acked_batch_seq":1}
+{"kind":"ack","acked_batch_seq":2}
+{"kind":"ack","acked_batch_seq":4}

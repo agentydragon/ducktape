@@ -5,14 +5,9 @@ import pytest_bazel
 import yaml
 from pydantic import SecretStr
 
-from haku.console.config import (
-    ClaudeCodeImplementationConfig,
-    CodexAppServerImplementationConfig,
-    OperatorIdentityConfig,
-    OperatorOidcConfig,
-    Settings,
-)
+from haku.console.config import ClaudeCodeImplementationConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
 from haku.console.mcp_config import ConsoleConfigFile
+from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from util.bazel.runfiles import get_required_path
 
 
@@ -87,7 +82,9 @@ def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest
 
     assert settings.config_file == config_path
     assert settings.max_wait_for_result_ms == int(max_wait_for_result_ms)
-    assert settings.runner_kubernetes_proxy_url == "http://haku-kube-api-proxy.haku-console.svc.cluster.local:8080"
+    # https, never http: client-go attaches kubeconfig credentials only to a TLS server, so a
+    # plain-http proxy URL silently un-authenticates every sandbox kubectl request.
+    assert settings.runner_kubernetes_proxy_url == "https://haku-kube-api-proxy.haku-console.svc.cluster.local:8443"
     assert str(settings.haku_agent_workspace_setup) == "/usr/local/bin/haku-sandbox-setup.sh"
     raw = yaml.safe_load(config_path.read_text())
     config = ConsoleConfigFile.model_validate(raw)

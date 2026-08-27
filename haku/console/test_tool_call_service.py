@@ -21,6 +21,7 @@ from haku.console.agents.models import AgentStatus, CredentialBindingStatus, Cre
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.conftest import console_settings, write_config
 from haku.console.database_schema import Agent, AgentNameReservation, CredentialBinding, StaticCredential
+from haku.console.grant_principal import RequestPrincipal
 from haku.console.mcp_approval import PostgresToolCallLedger
 from haku.console.mcp_config import (
     AccessProfile,
@@ -609,7 +610,7 @@ async def test_two_operator_two_agent_authorization_matrix(
     # original Agent rather than gaining the approving Operator's broader access.
     expected_agent_ids = {actor.agent_id for actor in (actors["aa1"], actors["ab1"]) if isinstance(actor, AgentActor)}
     assert {
-        execution[4].caller.agent_id
+        execution[4].caller.principal.agent_id
         for execution in executor.executions
         if isinstance(execution[4].caller, AgentMcpExecutionCaller)
     } == expected_agent_ids
@@ -715,7 +716,7 @@ async def test_auto_approval_resolves_auth_before_persistence_and_finishes_as_ag
     for execution, actor in zip(executor.executions, submitted_actors, strict=True):
         assert isinstance(actor, AgentActor)
         context = execution[4]
-        assert context.caller == AgentMcpExecutionCaller(agent_id=actor.agent_id)
+        assert context.caller == AgentMcpExecutionCaller(principal=RequestPrincipal.from_source(actor))
         assert context.tool_call_id is not None
         assert context.approving_operator_id is None
         assert context.approval_policy_id == "policy:test"
@@ -1084,7 +1085,7 @@ async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
     operator = actors["oa"]
     assert isinstance(agent, AgentActor)
     assert isinstance(operator, OperatorActor)
-    assert context.caller == AgentMcpExecutionCaller(agent_id=agent.agent_id)
+    assert context.caller == AgentMcpExecutionCaller(principal=RequestPrincipal.from_source(agent))
     assert context.tool_call_id == pending.tool_call_id
     assert context.approving_operator_id == operator.operator_id
     assert context.approval_policy_id is None

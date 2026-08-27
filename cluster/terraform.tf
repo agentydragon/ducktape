@@ -34,10 +34,6 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.9.0" # Latest: v3.9.0
     }
-    harbor = {
-      source  = "goharbor/harbor"
-      version = "~> 3.12.0" # Latest: v3.12.0
-    }
     powerdns = {
       source  = "pan-net/powerdns"
       version = "~> 1.5.0" # DNS provider for PowerDNS

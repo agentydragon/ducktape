@@ -40,6 +40,7 @@ from haku.console.config import HostexecConfig
 from haku.console.in_process_servers import HostexecServerConfig, InProcessServerDependencies, build_in_process_servers
 from haku.console.mcp_server import SERVER_NAME, McpServerConnectionStatusResponse, McpServerProbeResponse
 from haku.console.node_daemons import DaemonStatusResponse
+from haku.console.tools.http_grants import HttpToolsService
 from haku.console.tools.kubernetes import KubernetesToolsService
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 
@@ -137,8 +138,8 @@ def build_schema_servers() -> dict[str, FastMCP]:
     # touched until a tool executes, and `_InertCollaborator` makes that invariant fail
     # loudly if FastMCP ever changes its registration behavior. gmail/google_calendar builders
     # build their own inert client from a None token; routine and hostexec need an inert
-    # launcher/broker respectively, haku_index needs an inert searcher, and kubernetes needs inert
-    # grant/authorization services. hostexec's `hosts` map is empty — registration only needs the
+    # launcher/broker respectively, haku_index needs an inert searcher, and kubernetes/http_grants need inert
+    # grant/authorization/enrollment services. hostexec's `hosts` map is empty — registration only needs the
     # tool's own schema, never a real host to route to.
     dependency: Any = inert
     servers = {
@@ -149,6 +150,7 @@ def build_schema_servers() -> dict[str, FastMCP]:
                 hostexec=HostexecServerConfig(config=HostexecConfig(hosts={}), token_endpoint="", broker=dependency),
                 index=dependency,
                 kubernetes=KubernetesToolsService(grants=dependency, authorization=dependency),
+                http_grants=HttpToolsService(grants=dependency, agents=dependency),
             )
         ).items()
     }

@@ -17,6 +17,7 @@ import logging
 import secrets
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Annotated, Any, Literal, Never, TypeVar, cast
 from uuid import UUID
 
@@ -73,6 +74,7 @@ from haku.console.tool_call_service import (
 from haku.console.tool_calls import (
     AgentToolCallCaller,
     ApprovalDecisionRequest,
+    ApprovalMode,
     OperatorToolCallCaller,
     SubmitToolCallRequest,
     ToolCallCaller,
@@ -88,12 +90,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["mcp-approval"])
 
 
+class ReflectionFailureStage(StrEnum):
+    CREDENTIAL_RESOLUTION = "credential_resolution"
+    TOOL_DISCOVERY = "tool_discovery"
+
+
 @dataclass(frozen=True)
 class DegradedReflection:
     """A downstream server's tools couldn't be reflected right now — the *reason*, not a response
     shape. `server_metadata_response` is the only place this becomes the `degraded` API shape."""
 
-    failure_stage: Literal["credential_resolution", "tool_discovery"]
+    failure_stage: ReflectionFailureStage
     degraded_reason: str
 
 
@@ -123,7 +130,7 @@ class ToolMetadata(BaseModel):
         ),
     )
     output_schema: dict[str, Any] | None = None
-    approval_mode: Literal["passthrough", "approval_required"] | None = Field(
+    approval_mode: ApprovalMode | None = Field(
         default=None,
         description=(
             "Which payload shape `input_schema` is, for the caller this reflection was performed "
@@ -148,7 +155,7 @@ class AliveServerState(BaseModel):
 
 class DegradedServerState(BaseModel):
     status: Literal["degraded"] = "degraded"
-    failure_stage: Literal["credential_resolution", "tool_discovery"]
+    failure_stage: ReflectionFailureStage
     degraded_reason: str
 
 
@@ -309,7 +316,7 @@ class PostgresToolCallLedger:
             projection = (await session.execute(stmt)).mappings().first()
             if projection is None:
                 raise ToolCallNotFoundError("tool call not found")
-            return self._record_from_mapping(projection)
+            return self._record_from_mapping(projection, fields=fields)
 
     async def list_tool_calls(
         self,
@@ -350,7 +357,7 @@ class PostgresToolCallLedger:
                 stmt = stmt.where(position < boundary if newest_first else position > boundary)
             result = await session.execute(stmt.order_by(*order).limit(limit))
             projections = result.mappings().all()
-            return [self._record_from_mapping(projection) for projection in projections]
+            return [self._record_from_mapping(projection, fields=fields) for projection in projections]
 
     async def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> ToolCallRecord:
         operator = self._require_operator_actor(actor)
@@ -508,12 +515,22 @@ class PostgresToolCallLedger:
             case _:
                 raise TypeError(f"unsupported tool-call actor: {type(actor).__name__}")
 
+    @staticmethod
+    def _selected_fields(fields: frozenset[ToolCallPayloadField] | None) -> frozenset[ToolCallPayloadField]:
+        """``None`` means the actor-scoped ledger reader (browser/internal callers): every field."""
+        return frozenset(ToolCallPayloadField) if fields is None else fields
+
     @classmethod
     def _projection_stmt(
         cls, actor: ToolCallActor, fields: frozenset[ToolCallPayloadField] | None
     ) -> Select[tuple[Any, ...]]:
-        """Select one actor-scoped row shape; ``fields`` only controls optional payload columns."""
-        selected = frozenset(ToolCallPayloadField) if fields is None else fields
+        """Select one actor-scoped row shape; ``fields`` only controls optional payload columns.
+
+        The principal/agent columns needed to resolve ``caller`` are always selected: the same join
+        already scopes the row to the actor, so the columns are free. Whether ``caller`` is attached to
+        the returned record is decided in ``_record_from_mapping``, from the same ``fields`` selection.
+        """
+        selected = cls._selected_fields(fields)
         columns: list[Any] = [
             McpToolCall.tool_call_id.label("tool_call_id"),
             McpToolCall.server_id.label("server_id"),
@@ -540,7 +557,7 @@ class PostgresToolCallLedger:
             ToolCallPayloadField.RATIONALE: McpToolCall.rationale.label("rationale"),
             ToolCallPayloadField.RESULT: McpToolCall.result_json.label("result"),
         }
-        columns.extend(payload_columns[field] for field in ToolCallPayloadField if field in selected)
+        columns.extend(column for field, column in payload_columns.items() if field in selected)
         return cls._scope_to_actor(select(*columns), actor).outerjoin(
             AgentNameReservation,
             and_(
@@ -571,7 +588,9 @@ class PostgresToolCallLedger:
         )
 
     @classmethod
-    def _record_from_mapping(cls, projection: Mapping[str, Any]) -> ToolCallRecord:
+    def _record_from_mapping(
+        cls, projection: Mapping[str, Any], *, fields: frozenset[ToolCallPayloadField] | None
+    ) -> ToolCallRecord:
         principal = cls._resolve_principal(
             projection["tool_call_id"],
             McpToolCallPrincipal(
@@ -590,7 +609,12 @@ class PostgresToolCallLedger:
             caller = AgentToolCallCaller(
                 agent_id=principal.agent_id, display_name=principal.display_name, session_id=principal.session_id
             )
+        # `caller` is resolved unconditionally above (its columns are already joined for actor
+        # scoping), but it only joins `fields_set` — and so the MCP edge's serialized output — when
+        # selected; unlike the payload fields it is never a literal column in `projection`.
         selected_payloads = {field.value for field in ToolCallPayloadField if field.value in projection}
+        if ToolCallPayloadField.CALLER in cls._selected_fields(fields):
+            selected_payloads.add(ToolCallPayloadField.CALLER)
         fields_set = (
             set(ToolCallRecord.model_fields) - {field.value for field in ToolCallPayloadField} | selected_payloads
         )
@@ -860,7 +884,7 @@ class McpServerDispatcher:
             )
         except Exception as e:
             logger.warning("MCP tool discovery failed for %s", server.id, exc_info=True)
-            return DegradedReflection(failure_stage="tool_discovery", degraded_reason=str(e))
+            return DegradedReflection(failure_stage=ReflectionFailureStage.TOOL_DISCOVERY, degraded_reason=str(e))
 
     async def _reflect(self, server: McpServerEntry, auth_token: str | None) -> ReflectedCatalog:
         transport, transport_auth = _transport(server, self._in_process, auth_token)
@@ -1004,7 +1028,9 @@ async def metadata_for_operator(
         operator_id=operator_id, server=server, oauth_store=oauth_store, provider_store=provider_store
     )
     if isinstance(resolution, _DegradedAuth):
-        return DegradedReflection(failure_stage="credential_resolution", degraded_reason=resolution.reason)
+        return DegradedReflection(
+            failure_stage=ReflectionFailureStage.CREDENTIAL_RESOLUTION, degraded_reason=resolution.reason
+        )
     return await dispatcher.metadata(server, resolution.token)
 
 

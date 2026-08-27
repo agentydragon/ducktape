@@ -1,7 +1,7 @@
 # Reviving OpenShell for an experiment
 
 > **Archived, not a current plan.** OpenShell is ruled out for unattended use
-> ([../verdicts.md](../verdicts.md) § Isolation and sandboxing) and revisiting it is
+> ([verdicts.md](../../../docs/personal_agents/verdicts.md) § Isolation and sandboxing) and revisiting it is
 > gated on two upstream milestones that have not landed. Nothing here is scheduled;
 > this is the recovery guide should that gate ever open. One precondition on any
 > revival is still unmet: production wedged on 2026-07-28 by a route nobody has
@@ -10,7 +10,7 @@
 > `gh`/`git` probe have each been ruled out since. Until the trigger is known an
 > OpenShell-backed agent cannot be trusted unattended; the failure is silent,
 > permanent, and reachable by something ordinary. Write-up:
-> [../findings/openshell.md](../findings/openshell.md) F1.
+> <../../../docs/personal_agents/findings/openshell.md> F1.
 
 OpenShell was deleted from the cluster on 2026-07-31 (#3607) along with the
 OpenClaw gateway that was its only consumer. This is what you need to bring it
@@ -21,7 +21,7 @@ made the teardown necessary: a cluster-wide stateful gateway, owned by Flux,
 serving exactly one agent, left running and wedged for days because nothing
 depended on it noticing. Scope the revival to the experiment that needs it and
 delete it with the experiment. The decision record is
-[../verdicts.md](../verdicts.md) § Isolation and sandboxing.
+[verdicts.md](../../../docs/personal_agents/verdicts.md) § Isolation and sandboxing.
 
 ## What it was
 

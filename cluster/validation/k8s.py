@@ -186,6 +186,31 @@ class SecretResource(K8sResource):
     sops: SopsMetadata | None = None
 
 
+class CiliumRule(BaseModel):
+    """One policy rule of a Cilium policy (`spec`, or an element of `specs`).
+
+    Only the four rule-section lists are modeled — checks need their emptiness, not
+    their contents."""
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    ingress: list[dict] = Field(default_factory=list)
+    ingress_deny: list[dict] = Field(default_factory=list)
+    egress: list[dict] = Field(default_factory=list)
+    egress_deny: list[dict] = Field(default_factory=list)
+
+
+class CiliumPolicyResource(K8sResource):
+    """A `CiliumNetworkPolicy` or `CiliumClusterwideNetworkPolicy`."""
+
+    spec: CiliumRule | None = None
+    specs: list[CiliumRule] = Field(default_factory=list)
+
+    @property
+    def rules(self) -> list[CiliumRule]:
+        return ([self.spec] if self.spec is not None else []) + self.specs
+
+
 _KIND_MODELS: dict[str, type[K8sResource]] = {
     "GitRepository": GitRepositoryResource,
     "ImageUpdateAutomation": ImageUpdateAutomationResource,
@@ -195,6 +220,8 @@ _KIND_MODELS: dict[str, type[K8sResource]] = {
     "ImagePolicy": ImagePolicyResource,
     "Receiver": ReceiverResource,
     "Secret": SecretResource,
+    "CiliumNetworkPolicy": CiliumPolicyResource,
+    "CiliumClusterwideNetworkPolicy": CiliumPolicyResource,
 }
 
 

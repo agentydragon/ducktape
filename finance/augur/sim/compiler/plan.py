@@ -79,7 +79,6 @@ from finance.augur.sim.scenario import PropertySaleEvent, Scenario
 class SlotPlan:
     """Dense shape contract for one compiled simulation.
 
-    Dimensions use the notation from `augur/plans/dense_shape_discipline.md`.
     Counts that can be absent but are still iterated by engine phases use their
     allocated sentinel axis size, usually `max(1, actual_count)`.
     """

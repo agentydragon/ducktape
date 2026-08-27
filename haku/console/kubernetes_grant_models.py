@@ -1,8 +1,8 @@
 """Typed vocabulary for temporary Kubernetes grants.
 
-This module intentionally contains no request/authentication context.  A grant is owned by an
-explicit Agent UUID supplied by its caller and its source tool-call identifier is durable
-provenance, not a way to infer the caller.
+Capability scope/rules remain separate from the grant principal. A grant's owner controls its
+lifecycle, its principal receives the permission, and its source ToolCall remains immutable
+provenance rather than an authorization identity.
 """
 
 from __future__ import annotations
@@ -14,6 +14,8 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_serializer, field_validator, model_validator
+
+from haku.console.grant_principal import AgentGrantPrincipal, GrantPrincipal
 
 
 class KubernetesGrantStatus(StrEnum):
@@ -153,7 +155,8 @@ class KubernetesGrant(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     grant_id: UUID
-    agent_id: UUID
+    owner_agent_id: UUID
+    principal: GrantPrincipal
     source_tool_call_id: _NON_EMPTY
     scope: KubernetesGrantScope
     rules: tuple[KubernetesRule, ...] = Field(min_length=1)
@@ -171,8 +174,20 @@ class KubernetesGrant(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def validate_timestamps(self) -> KubernetesGrant:
+    def validate_scope_rules(self) -> KubernetesGrant:
         validate_grant_scope_rules(self.scope, self.rules)
+        return self
+
+    @model_validator(mode="after")
+    def validate_principal_owner(self) -> KubernetesGrant:
+        # Session ownership is a relational invariant enforced while persisting/reconstructing the
+        # grant: a globally unique session ID intentionally does not duplicate its Agent ID here.
+        if isinstance(self.principal, AgentGrantPrincipal) and self.principal.agent_id != self.owner_agent_id:
+            raise ValueError("Agent grant principals must belong to the lifecycle owner")
+        return self
+
+    @model_validator(mode="after")
+    def validate_timestamps(self) -> KubernetesGrant:
         if self.expires_at <= self.created_at:
             raise ValueError("expires_at must be after created_at")
         if self.status is KubernetesGrantStatus.ACTIVE:

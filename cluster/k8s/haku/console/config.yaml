@@ -4,7 +4,9 @@
 # wiring; the application deliberately has no topology/path/proxy defaults. The
 # placeholder is non-secret—the real OAuth bearer exists only in iron-proxy.
 settings:
-  runner_kubernetes_proxy_url: http://haku-kube-api-proxy.haku-console.svc.cluster.local:8080
+  # https, never http: client-go attaches kubeconfig credentials only to a TLS server, so a
+  # plain-http proxy URL makes every sandbox kubectl request unauthenticated (401).
+  runner_kubernetes_proxy_url: https://haku-kube-api-proxy.haku-console.svc.cluster.local:8443
   haku_agent_workspace_setup: /usr/local/bin/haku-sandbox-setup.sh
 
 git_ca_bundle: /etc/ssl/certs/ca-certificates.crt
@@ -76,7 +78,11 @@ chat_runtimes:
     system_prompt_template: /etc/haku-console/config/public_coder_system_prompt.md.j2
     implementation:
       kind: codex_app_server
-      model: codex-gpt-5.6-sol
+      # The runner pins wire_api=responses, so this must be a `chatgpt/oai-responses/*`
+      # LiteLLM entry, never `chatgpt/ant-messages/*` (the Messages lane, which fails every
+      # turn at /v1/responses) — cross-checked by cluster/k8s/litellm/app/test_litellm_config.py.
+      model: chatgpt/oai-responses/gpt-5.6-luna
+      reasoning_effort: low
       provider_id: haku
       provider_name: Haku OpenAI-compatible
       # The sandbox has no direct LiteLLM egress. Its inert OPENAI_API_KEY placeholder reaches this
@@ -358,11 +364,12 @@ auto_approval_policies:
     type: gmail_label_namespace
     server: gmail
     label_prefix: haku/
-  # Reading back what happened and what is written down: the rollout of a past session, and
+  # Reading back what happened and what is written down: the frames of a past session, and
   # semantic search over the same sessions plus haku-state. One atom because they are one
   # authority — every tool here reads a corpus Haku can already reach (it has a haku-state clone,
-  # and `read_rollout` already spans every session), so search adds discoverability rather than
-  # reachability. Worth knowing that both are unscoped across rooms and operators
+  # and `read_frames` spans every session in its read scope), so search adds discoverability
+  # rather than reachability. Both cross rooms and sessions but are fenced identically per
+  # conversation by the profile-DAG read scope over `can_read_profiles`
   # (haku/recall_index/README.md § Read scoping).
   - id: haku_recall_reads
     type: exact_tools
@@ -370,9 +377,8 @@ auto_approval_policies:
       haku_conversations:
         - list_sessions
         - list_turns
-        - read_transcript
-        - read_rollout
-        - read_frame
+        - read_conversation_items
+        - read_frames
       haku_index:
         - search
         - index_status

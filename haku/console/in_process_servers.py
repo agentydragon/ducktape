@@ -15,11 +15,13 @@ import haku.console.tools.conversations as conversations_tools
 import haku.console.tools.gmail as gmail_tools
 import haku.console.tools.google_calendar as google_calendar_tools
 import haku.console.tools.hostexec as hostexec_tools
+import haku.console.tools.http_grants as http_grants_tools
 import haku.console.tools.kubernetes as kubernetes_tools
 import haku.console.tools.recall_index as recall_index_tools
 import haku.console.tools.routine as routine_tools
 import haku.console.tools.sandbox as sandbox_tools
 from haku.console.config import HostexecConfig
+from haku.console.conversation_read_access import ConversationReadAccessPolicy
 from haku.console.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_config import (
     AccessProfile,
@@ -71,6 +73,7 @@ class InProcessServerDependencies:
     # `config.yaml` lists the server, which is also what requires an embedder to be configured.
     index: recall_index_tools.IndexSearcher | None = None
     kubernetes: kubernetes_tools.KubernetesToolsService | None = None
+    http_grants: http_grants_tools.HttpToolsService | None = None
     # The Agent Sandbox lifecycle client and the environment it hands out — set only when
     # `config.yaml` both lists the server and configures `agent_sandbox`.
     sandbox: SandboxServerConfig | None = None
@@ -85,6 +88,10 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
         dependencies.recall_access_profiles, configured_index_ids=dependencies.configured_recall_index_ids
     )
     in_process_access = InProcessServerAccessPolicy(dependencies.recall_access_profiles)
+    # One profile-DAG read authorizer for conversation history: the `haku_conversations` drilldown
+    # and `haku_index`'s chat hits fence rows with the same scope, so ranked retrieval can never
+    # surface a conversation the direct read would refuse.
+    conversation_reads = ConversationReadAccessPolicy(dependencies.recall_access_profiles)
     servers: InProcessServers = {
         gmail_tools.GMAIL_SERVER_ID: InProcessServerRegistration(
             builder=lambda token: gmail_tools.build_mcp(gmail_tools.build_gmail_client_from_token(token)),
@@ -103,13 +110,17 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
         )
     if (conversations := dependencies.conversations) is not None:
         servers[conversations_tools.HAKU_CONVERSATIONS_SERVER_ID] = InProcessServerRegistration(
-            builder=lambda _token: conversations_tools.build_mcp(conversations, access=in_process_access),
+            builder=lambda _token: conversations_tools.build_mcp(
+                conversations, access=in_process_access, conversation_reads=conversation_reads
+            ),
             credential_kind=InProcessCredentialKind.NONE,
             authorizer=in_process_access.authorizer_for(conversations_tools.HAKU_CONVERSATIONS_SERVER_ID),
         )
     if (index := dependencies.index) is not None:
         servers[recall_index_tools.HAKU_INDEX_SERVER_ID] = InProcessServerRegistration(
-            builder=lambda _token: recall_index_tools.build_mcp(index, access=recall_access),
+            builder=lambda _token: recall_index_tools.build_mcp(
+                index, access=recall_access, conversation_reads=conversation_reads
+            ),
             credential_kind=InProcessCredentialKind.NONE,
             authorizer=recall_access.authorize_index_tool,
         )
@@ -118,6 +129,12 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
             builder=lambda _token: kubernetes_tools.build_mcp(kubernetes),
             credential_kind=InProcessCredentialKind.NONE,
             authorizer=in_process_access.authorizer_for(kubernetes_tools.KUBERNETES_SERVER_ID),
+        )
+    if (http_grants := dependencies.http_grants) is not None:
+        servers[http_grants_tools.HTTP_GRANTS_SERVER_ID] = InProcessServerRegistration(
+            builder=lambda _token: http_grants_tools.build_mcp(http_grants),
+            credential_kind=InProcessCredentialKind.NONE,
+            authorizer=in_process_access.authorizer_for(http_grants_tools.HTTP_GRANTS_SERVER_ID),
         )
     if (sandbox := dependencies.sandbox) is not None:
         servers[sandbox_tools.SANDBOX_SERVER_ID] = InProcessServerRegistration(

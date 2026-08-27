@@ -12,7 +12,7 @@ in
 import ./gateway.nix { inherit pkgs lib; } "codex-claude" {
   baseUrl = "https://litellm.allegedly.works";
   authTokenEnvVar = "CODEX_LITELLM_KEY";
-  model = "codex-gpt-5.6-sol";
-  haikuModel = "codex-gpt-5.6-luna";
+  model = "chatgpt/ant-messages/gpt-5.6-sol";
+  haikuModel = "chatgpt/ant-messages/gpt-5.6-luna";
   gatewayDiscovery = true;
 }

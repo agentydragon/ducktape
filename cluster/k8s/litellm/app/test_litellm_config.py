@@ -1,12 +1,26 @@
 """Compose and verify the committed main LiteLLM config."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from functools import partial
 
 import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.k8s.litellm.app.model_rosters import ANTHROPIC_MODELS, GEMINI_EMBEDDING_MODELS, GEMINI_MODELS
+from cluster.k8s.litellm.app.model_rosters import (
+    ANTHROPIC_MODELS,
+    CLIPROXY_MODELS,
+    GEMINI_EMBEDDING_MODELS,
+    GEMINI_MODELS,
+    TANA_MODELS,
+    ApiShape,
+    Provider,
+    exposed_name,
+    legacy_google_name,
+    legacy_messages_name,
+    legacy_responses_name,
+    legacy_tana_name,
+)
 from cluster.validation.terraform_hcl import locals_blocks
 from util.bazel.runfiles import get_required_path
 
@@ -28,44 +42,28 @@ _MODELS: list[tuple[str, list[tuple[str, int | None]]]] = [
 GROQ_CHAT_MODELS: list[str] = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
 GROQ_WHISPER_MODELS: list[str] = ["whisper-large-v3", "whisper-large-v3-turbo"]
 
-# Tana (Tana-UI models) fronted through the DB-less tana-litellm proxy. tana-litellm is a
-# standard LiteLLM that speaks /v1/messages and authenticates with the same litellm-master-key
-# the main proxy already holds, so we chain to it with the `anthropic/` provider — a verbatim
-# /v1/messages passthrough with no shape translation. Key stays in-cluster only; laptop
-# consumers use a scoped tana virtual key against this proxy.
-#
-# Tana encodes reasoning effort in the model name (`/medium`, `/high`), not a `reasoning_effort`
-# param, so there is no clean "one model + effort knob" to map onto. We expose one model per
-# family at its default effort. Each entry: (exposed model_name, tana-litellm downstream
-# model_name). The downstream name's slash stays inside the `anthropic/` arg, never exposed.
+# Tana (Tana-UI models, TANA_MODELS in model_rosters.py) fronted through the DB-less
+# tana-litellm proxy. tana-litellm is a standard LiteLLM that speaks /v1/messages and
+# authenticates with the same litellm-master-key the main proxy already holds, so we
+# chain to it with the `anthropic/` provider — a verbatim /v1/messages passthrough with
+# no shape translation. Key stays in-cluster only; laptop consumers use a scoped tana
+# virtual key against this proxy.
 _TANA_LITELLM_BASE = "http://tana-litellm.litellm.svc.cluster.local:4000"
-_TANA_MODELS: list[tuple[str, str]] = [
-    ("tana-claude-sonnet-4-6", "claude-sonnet-4-6/medium"),
-    ("tana-claude-opus-4-6", "claude-opus-4-6/high"),
-    ("tana-claude-haiku-4-5", "claude-haiku-4-5-20251001"),
-]
 
 
 # CLIProxyAPI (ChatGPT/Codex subscription) is the only route to the Codex subscription
-# since the private litellm-chatgpt Deployment was retired 2026-08-06 (cluster/docs/plan.md).
+# since the private litellm-chatgpt Deployment was retired 2026-08-06 (cluster/docs/decisions.md).
 # One pod, exposed twice below because its two clients speak different wire protocols and
 # each one's native surface must be reached without a LiteLLM-side translation:
 #
-#   `codex-*`      -> `anthropic/` provider -> CLIProxyAPI /v1/messages  (Claude Code)
-#   `*-chatgpt`    -> `openai/` provider    -> CLIProxyAPI /v1/responses (Codex CLI)
+#   Messages wire   -> `anthropic/` provider -> CLIProxyAPI /v1/messages  (Claude Code)
+#   Responses wire  -> `openai/` provider    -> CLIProxyAPI /v1/responses (Codex CLI)
 #
 # Client key from CLIPROXY_CLIENT_KEY (cli-proxy-api-client-key mirrored into the litellm
 # namespace). Reasoning effort rides on the request (Claude Code's effortLevel, Codex's
 # `reasoning.effort`), never a model-slug suffix, so one entry per slug per surface.
+# Each wire surface is served under its legacy and its #4823 name (model_rosters.py).
 _CLIPROXY_BASE = "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317"
-_CLIPROXY_MODELS: list[str] = [
-    "gpt-5.4",
-    "gpt-5.5",
-    "gpt-5.6-sol",
-    "gpt-5.6-terra",
-    "gpt-5.6-luna",
-    "gpt-5.3-codex-spark",
-]
 
 
 # Real Anthropic API (plain claude-* names — the "-anthropic" suffix means
@@ -96,25 +94,28 @@ def _groq_entries() -> Iterator[dict]:
         }
 
 
-def _gemini_entries() -> Iterator[dict]:
+def _gemini_chat_entries(name: Callable[[str], str]) -> Iterator[dict]:
     for model in GEMINI_MODELS:
         yield {
-            "model_name": model,
+            "model_name": name(model),
             "litellm_params": {"model": f"gemini/{model}", "api_key": "os.environ/GEMINI_API_KEY"},
             "model_info": {"mode": "chat", "supports_function_calling": True},
         }
+
+
+def _gemini_embedding_entries(name: Callable[[str], str]) -> Iterator[dict]:
     for model in GEMINI_EMBEDDING_MODELS:
         yield {
-            "model_name": model,
+            "model_name": name(model),
             "litellm_params": {"model": f"gemini/{model}", "api_key": "os.environ/GEMINI_API_KEY"},
             "model_info": {"mode": "embedding"},
         }
 
 
-def _tana_entries() -> Iterator[dict]:
-    for exposed, downstream in _TANA_MODELS:
+def _tana_entries(name: Callable[[str], str]) -> Iterator[dict]:
+    for base, downstream in TANA_MODELS:
         yield {
-            "model_name": exposed,
+            "model_name": name(base),
             "litellm_params": {
                 "model": f"anthropic/{downstream}",
                 "api_base": _TANA_LITELLM_BASE,
@@ -127,10 +128,10 @@ def _tana_entries() -> Iterator[dict]:
 # Anthropic Messages surface: the one path that translates Codex tool calls correctly
 # (function_call -> tool_use) for Claude Code — what LiteLLM's own Responses bridge could
 # not do (BerriAI/litellm#25429).
-def _cliproxy_entries() -> Iterator[dict]:
-    for model in _CLIPROXY_MODELS:
+def _cliproxy_messages_entries(name: Callable[[str], str]) -> Iterator[dict]:
+    for model in CLIPROXY_MODELS:
         yield {
-            "model_name": f"codex-{model}",
+            "model_name": name(model),
             "litellm_params": {
                 "model": f"anthropic/{model}",
                 "api_base": _CLIPROXY_BASE,
@@ -145,17 +146,10 @@ def _cliproxy_entries() -> Iterator[dict]:
 # the OpenAI provider and forwards to `{api_base}/responses`, whereas every other provider
 # — including the `anthropic/` entries above — gets a bridge that rewrites the request into
 # chat completions. api_base therefore carries the `/v1` the `anthropic/` entries omit.
-#
-# The names are the pre-2026-08-06 ones on purpose. The two baked Codex configs
-# (<../agents/agent-sandbox/workspace-image/codex-config.toml>, <../../../x/codex_pod_image/home.nix>)
-# and `oai_lane_models` in <../../../tf/gitops/litellm-keys/main.tf> pin them, so restoring
-# the names here fixes Codex CLI with no image rebuild and no key repointing. The suffix
-# always named the ChatGPT/Codex *account*, which is unchanged; only the dead
-# litellm-chatgpt Deployment that used to serve them is gone.
-def _cliproxy_responses_entries() -> Iterator[dict]:
-    for model in _CLIPROXY_MODELS:
+def _cliproxy_responses_entries(name: Callable[[str], str]) -> Iterator[dict]:
+    for model in CLIPROXY_MODELS:
         yield {
-            "model_name": f"{model}-chatgpt",
+            "model_name": name(model),
             "litellm_params": {
                 "model": f"openai/{model}",
                 "api_base": f"{_CLIPROXY_BASE}/v1",
@@ -192,12 +186,18 @@ def _expected_main_config() -> dict:
     model_list: list[dict] = []
     for tag, ctx_variants in _MODELS:
         model_list.extend(_model_entries(tag, ctx_variants))
-    model_list.extend(_tana_entries())
-    model_list.extend(_cliproxy_entries())
-    model_list.extend(_cliproxy_responses_entries())
+    model_list.extend(_tana_entries(legacy_tana_name))
+    model_list.extend(_tana_entries(partial(exposed_name, Provider.TANA, ApiShape.ANT_MESSAGES)))
+    model_list.extend(_cliproxy_messages_entries(legacy_messages_name))
+    model_list.extend(_cliproxy_messages_entries(partial(exposed_name, Provider.CHATGPT, ApiShape.ANT_MESSAGES)))
+    model_list.extend(_cliproxy_responses_entries(legacy_responses_name))
+    model_list.extend(_cliproxy_responses_entries(partial(exposed_name, Provider.CHATGPT, ApiShape.OAI_RESPONSES)))
     model_list.extend(_anthropic_entries())
     model_list.extend(_groq_entries())
-    model_list.extend(_gemini_entries())
+    model_list.extend(_gemini_chat_entries(legacy_google_name))
+    model_list.extend(_gemini_embedding_entries(legacy_google_name))
+    model_list.extend(_gemini_chat_entries(partial(exposed_name, Provider.GOOGLE, ApiShape.OAI_CHAT)))
+    model_list.extend(_gemini_embedding_entries(partial(exposed_name, Provider.GOOGLE, ApiShape.OAI_EMBEDDINGS)))
 
     # Master key and Langfuse credentials are injected as env vars in the
     # Deployment; not repeated here.
@@ -224,20 +224,24 @@ def test_committed_configs_match_composed_expectations() -> None:
         assert _load_config(filename) == expected_config, filename
 
 
-# The two Codex lanes are named in three places: _CLIPROXY_MODELS here, and
-# `oai_lane_models` + `codex_client_models` in tf/gitops/litellm-keys/main.tf, which scope
-# the virtual keys. A comment in that file asks the lists to be kept in sync; these pin it
-# instead, so adding a Codex model cannot half-land and leave a key allowlisting a model
-# that does not exist (or omitting one that does).
+# The Codex-subscription names appear in three places: CLIPROXY_MODELS (model_rosters.py),
+# and `oai_lane_models` + `codex_client_models` in tf/gitops/litellm-keys/main.tf, which
+# scope the virtual keys. A comment in that file asks the lists to be kept in sync; these
+# pin it instead, so adding a Codex model cannot half-land and leave a key allowlisting a
+# model that does not exist (or omitting one that does).
 def _litellm_keys_locals() -> dict:
     blocks = locals_blocks(get_required_path("ducktape/tf/gitops/litellm-keys/main.tf"))
     return one(blocks)
 
 
-def test_terraform_codex_lanes_match_the_cliproxy_model_list() -> None:
+def test_terraform_codex_allowlists_match_the_cliproxy_model_list() -> None:
     tf_locals = _litellm_keys_locals()
-    assert tf_locals["oai_lane_models"] == [f"{model}-chatgpt" for model in _CLIPROXY_MODELS]
-    assert tf_locals["codex_client_models"] == [f"codex-{model}" for model in _CLIPROXY_MODELS]
+    assert tf_locals["oai_lane_models"] == [legacy_responses_name(model) for model in CLIPROXY_MODELS] + [
+        exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model) for model in CLIPROXY_MODELS
+    ]
+    assert tf_locals["codex_client_models"] == [legacy_messages_name(model) for model in CLIPROXY_MODELS] + [
+        exposed_name(Provider.CHATGPT, ApiShape.ANT_MESSAGES, model) for model in CLIPROXY_MODELS
+    ]
 
 
 # main.tf's own comment: "Model names must match generated model_name entries in
@@ -258,6 +262,23 @@ def test_terraform_key_allowlists_only_name_models_the_proxy_serves() -> None:
     for local in _TF_LITERAL_MODEL_LOCALS:
         missing = [model for model in tf_locals[local] if model not in served]
         assert not missing, f"{local} allows models the proxy does not serve: {missing}"
+
+
+# haku-console picks its Codex chat runtime's model from Git YAML — the one Codex consumer
+# whose model choice lives outside the baked-config and Terraform pins above. The runner
+# hardcodes wire_api="responses" (haku/runtime/x/bridge/codex_options.py), so the model
+# must be a Responses-wire entry (either era's name); a Messages-wire name fails every
+# turn at /v1/responses
+# (haku/console/x/codex_app_server/testdata/real_provider_failure.sanitized.jsonl).
+def test_console_codex_chat_runtimes_use_oai_responses_wire_models() -> None:
+    config = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
+    responses_wire_names = {legacy_responses_name(model) for model in CLIPROXY_MODELS} | {
+        exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model) for model in CLIPROXY_MODELS
+    }
+    for name, runtime in config["chat_runtimes"].items():
+        implementation = runtime["implementation"]
+        if implementation["kind"] == "codex_app_server":
+            assert implementation["model"] in responses_wire_names, name
 
 
 def test_config_maps_mount_their_matching_committed_configs() -> None:

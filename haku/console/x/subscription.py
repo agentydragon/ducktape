@@ -11,7 +11,7 @@ copy that outlives it — several tabs can watch one conversation at different p
 position is the read's own argument and the console keeps nothing (`ClientHeldCursor`). A Matrix
 room holds a federated copy that outlives every console process, so after a restart the channel has
 to know what it already put in the room: its position is durable and lives in the channel's own
-storage (<channels/matrix/room_subscription.py>).
+storage (<channels/matrix/conversation_subscriber.py>).
 
 What is shared is this interface and the read behind it. There is deliberately **no
 `conversation_cursor` table**: durability is one `Cursor` implementation's concern, not a property

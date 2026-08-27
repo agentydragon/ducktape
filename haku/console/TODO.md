@@ -63,29 +63,17 @@ Design, the parity gaps it closes, and the traps in each:
 <plans/conversation_layers.md>.
 
 The channel-neutral allocator and conversation-runtime supervision are complete. Web and Matrix
-offer prompts by conversation; Matrix no longer creates, replaces or tends sessions. `RoomNotices`
-reads the one bound conversation for replies, live status and sealed notices; sealed notices use an
-attachment-scoped transaction id and the cursor advances only after the homeserver accepts the
-send. Prompts from another surface are also relayed into the room. What remains, in dependency
-order:
+offer prompts by conversation; Matrix no longer creates, replaces or tends sessions. Delivery is
+attachment-scoped: each bound room's subscriber reads its own conversation for replies, sealed
+notices — relayed prompts and silent turns included — and the two editable span lines, all off its
+own cursor that advances only after the homeserver accepts what it is owed; the room's own copy
+suppresses replays, and a second invite binds and serves a second room beside the first. What
+remains, in dependency order:
 
-1. **Read Matrix's own copy.** Add the opposite-filter `/sync` reader for Haku-authored events and
-   parse `EventTag.source`. A transaction id covers only Synapse's cache window; durable
-   correspondence is what lets a restarted reconciler find the event already showing a source,
-   repair duplicates and reconcile edits or redactions.
-2. **Make notices spans, not queued moments.** Generalise the stream-derived `LiveStatus` pattern to
-   stable turn and session subjects whose bodies are pure, bounded folds: create, edit, then seal or
-   retire. Move relayed prompts, silent turns and supervisor lifecycle narration off `_queue_notice`
-   so advancing the cursor never outruns their delivery.
-3. **Make delivery attachment-scoped, then serve many rooms.** Keep one Matrix `/sync` owner for the
-   user-wide token, dispatch its room events by attachment, and give each live attachment one owner
-   for its conversation cursor, reply outbox, status revisions and send budget. Only after the
-   remaining `bound_room()` and process-global pacer/supervisor state is gone can a second invite
-   safely create and service another conversation.
-4. **Add Matrix commands**, beginning with abort, as ingress interception rather than an agent tool.
+1. **Add Matrix commands**, beginning with abort, as ingress interception rather than an agent tool.
    Prefer a prefix Element does not consume (for example `!haku stop`) over an assumed-free slash
    command.
-5. **Interlink the channels**: durable console-session links in Matrix, `matrix.to` links in the
+2. **Interlink the channels**: durable console-session links in Matrix, `matrix.to` links in the
    console, and session ↔ tool-call navigation. A posted Matrix event is permanent and federated, so
    mint only routes intended to survive.
 
@@ -247,13 +235,13 @@ exactly one timing — `session_ttl_seconds`. Every other number the runtime's b
 module-level constant, so changing one is a code edit, a CI build and a roll. The ones that are
 genuinely operational knobs should move onto the config model:
 
-- `x/room_status.py` — `STATUS_AFTER_SECONDS` (8s before a turn says anything, R6.2),
-  `STATUS_EDIT_INTERVAL_SECONDS` (5s edit floor, R6.5), `TYPING_REFRESH_SECONDS`.
+- `x/channels/matrix/spans.py` — `STATUS_AFTER` (8s before a turn says anything, R6.2),
+  `STATUS_EDIT_INTERVAL` (5s edit floor, R6.5), `TYPING_REFRESH`.
 - `x/session_store.py` — `LEASE_TTL` / `LEASE_RENEW_INTERVAL`, `PROVISION_LEASE`, `ADOPTION_GRACE`.
 - `x/channels/matrix/pacer.py` — `SENDS_PER_SECOND`, `SEND_BURST`, `MAX_QUEUED_SENDS`, `FLUSH_SECONDS`.
 - `x/channels/matrix/conversation.py` — `SUPERVISE_INTERVAL`, `PROVISION_BACKOFF`,
   `RE_AWAKENING_MESSAGES` (the N of R3.3a).
-- `x/channels/matrix/room_subscription.py` — `LEADER_RETRY`, `ERROR_BACKOFF`; and
+- `x/channels/matrix/conversation_subscriber.py` — `POLL_INTERVAL`, `ERROR_BACKOFF`; and
   `MAX_BACKFILL_PAGES` / `TIMELINE_LIMIT` from `x/channels/matrix/client.py`.
 - `runtime/x/bridge/runner.py` — `MAX_DISCONNECTED_SECONDS`, `REPLAY_WINDOW`,
   `RECONNECT_{BASE,MAX}_DELAY`. **These live in the runner**, whose image is pinned at claim
@@ -312,18 +300,19 @@ verbosity in a dedicated follow-up, with client-facing token budgets and semanti
 indexes its tier grants. The fence is the tier, not the room, so cross-room and cross-session
 reads remain open within a tier.
 
-Named logical indexes, multi-index search, and the public `ducktape-public` index are built. The
-remaining boundary is ordered work:
+Most of the boundary is built: named logical indexes with per-profile `recall_index_ids` grants
+enforced server-side, and one profile-DAG read authorizer (`conversation_read_access.py`, #4431
+stage 5) that fences both `haku_conversations` drilldowns and `haku_index` chat search on the
+conversation's pinned `access_profile_id` — semantic discovery and direct drilldown share one
+boundary, and unknown/unpinned data fails closed for agents.
 
-1. Add a tier to agent kinds and conversations. Matrix room tier is authoritative; data predating
-   the field reads as highest trust.
-2. Route chat occurrences to tier-specific indexes while keeping `chunks` as the shared embedding
-   cache.
-3. Give each agent explicit readable index ids and enforce them in <recall_index_reader.py>.
-   Omitted `index_ids` means all granted indexes; unknown or ungranted names fail closed.
-4. Apply the same decision to `haku_conversations` (`list_sessions`, `list_turns`, and transcript/
-   rollout reads), so semantic discovery and direct drilldown share one boundary.
-5. Replace the single `haku_recall_reads` authority with per-index grants.
+What remains is the tier generalization, when several agent kinds and shared rooms arrive:
+
+1. Add a tier to agent kinds and Matrix rooms, derive each conversation's label from them (room
+   tier authoritative where both exist) instead of equating label with the launch profile; data
+   predating any label keeps reading as highest trust.
+2. Decide whether tier-specific chat indexes replace the per-conversation profile join, keeping
+   `chunks` as the shared embedding cache either way.
 
 Full trust design: <../plans/information_trust_tiers.md>. Current index operation and the RLS
 alternative: <../recall_index/README.md> § Read scoping.
@@ -372,14 +361,6 @@ of thing.
 What the sketch still names correctly is what the seam does not cover: selecting an adapter, the
 control channel's `control_request` spelling, and choosing a backend per session.
 
-One obstacle it does not carry: **<x/README.md> claims a neutrality the live path does not have.**
-It says the live path "does not know that `assistant`, `stream_event` and `result` exist", while
-`_run_turn` reads `subtype`, `stop_reason` and `result` straight off the payload. The code is the
-honest half — both reads name themselves escape hatches — so what a second backend needs is those
-two answers coming from the vocabulary: why a turn failed, and a turn's final text when it arrived
-nowhere else. The chat-runtime plan already schedules the correction
-(<plans/conversation_layers.md>); check there before writing it again.
-
 ### More than one agent
 
 Several agent identities, each with its own permissions and its own session runner — an
@@ -414,9 +395,14 @@ changing session Agent identity.
 
 ## Small cleanups
 
-- `CodexThread.approval_policy` and `.sandbox` (`x/codex_app_server/client.py`) are bare `str` over
-  vocabularies the app-server fixes. `sandbox` selects the containment posture: `danger-full-access`
-  is deliberate for the runtime pod, but a typo in it type-checks today. STYLE.md wants enums here.
 - The comment above `_operator_auth_requires_canonical_public_origin` (`config.py`) describes an
   optional standing Kubernetes authorization policy field that is not on `Settings` —
   `kubernetes_authorization` is on `ConsoleConfigFile` in `mcp_config.py`. Delete the comment.
+- `HistorySender.ASSISTANT` (`x/system_prompt.py`) reads like the provider-LLM-API `assistant`
+  role; it records harness-side provenance of a recorded message. Rename to say so (e.g.
+  `HARNESS`) once the in-flight StrEnum PRs land.
+- `approval_mode` (`ApprovalMode` in `haku/shared/haku/console/tool_calls.py`, mirrored on
+  `mcp_approval.ToolMetadata`) conflates "which input-schema shape does the proxy tool advertise"
+  (enveloped vs raw) with "does a call auto-approve". They happen to map roughly 1-1 today, but
+  the interface should not encode that coupling — split the schema-shape signal from the
+  approval-policy signal.

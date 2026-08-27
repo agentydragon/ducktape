@@ -19,6 +19,8 @@ py_library(
     srcs = ["config.py"],
     deps = [
         ":chat_models",
+        ":http_url",
+        "//haku/console/x/codex_app_server:config",
         "//haku/recall_index:chunking",
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:config",
@@ -27,6 +29,12 @@ py_library(
         "@pypi//pydantic_settings",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "http_url",
+    srcs = ["http_url.py"],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -67,12 +75,26 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_conversation_read_access",
+    srcs = ["test_conversation_read_access.py"],
+    deps = [
+        ":conversation_read_access",
+        ":grant_principal",
+        ":mcp_config",
+        ":mcp_execution",
+        ":tool_call_actor",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "mcp_config",
     srcs = ["mcp_config.py"],
     deps = [
         ":chat_models",
         ":config",
+        ":http_decide_config",
         ":provider_connection_registry",
         ":tool_call_actor",
         "//haku/console/agents:naming",
@@ -88,6 +110,7 @@ py_library(
     name = "mcp_execution",
     srcs = ["mcp_execution.py"],
     deps = [
+        ":grant_principal",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
@@ -104,6 +127,7 @@ py_test(
         ":config",
         ":mcp_config",
         "//:conftest",
+        "//haku/console/x/codex_app_server:config",
         "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -133,6 +157,7 @@ py_library(
     srcs = ["recall_index_reader.py"],
     deps = [
         ":config",
+        ":conversation_read_access",
         ":database_schema",
         ":mcp_config",
         "//haku/console/tools:recall_index",
@@ -151,6 +176,18 @@ py_library(
     name = "recall_index_access",
     srcs = ["recall_index_access.py"],
     deps = [
+        ":grant_principal",
+        ":mcp_config",
+        ":mcp_execution",
+        ":tool_call_actor",
+    ],
+)
+
+py_library(
+    name = "conversation_read_access",
+    srcs = ["conversation_read_access.py"],
+    deps = [
+        ":grant_principal",
         ":mcp_config",
         ":mcp_execution",
         ":tool_call_actor",
@@ -161,6 +198,7 @@ py_library(
     name = "in_process_server_access",
     srcs = ["in_process_server_access.py"],
     deps = [
+        ":grant_principal",
         ":mcp_config",
         ":mcp_execution",
         ":tool_call_actor",
@@ -172,6 +210,7 @@ py_library(
     srcs = ["in_process_servers.py"],
     deps = [
         ":config",
+        ":conversation_read_access",
         ":in_process_server_access",
         ":mcp_config",
         ":recall_index_access",
@@ -181,6 +220,7 @@ py_library(
         "//haku/console/tools:hostexec",
         "//haku/console/tools:hostexec_client",
         "//haku/console/tools:hostexec_token",
+        "//haku/console/tools:http_grants",
         "//haku/console/tools:kubernetes",
         "//haku/console/tools:recall_index",
         "//haku/console/tools:routine",
@@ -232,12 +272,15 @@ py_library(
     srcs = ["database_schema.py"],
     deps = [
         ":chat_models",
+        ":grant_principal",
+        ":http_grant_models",
         ":kubernetes_grant_models",
         ":node_daemon_models",
         ":operator_identity",
         ":provider_connection_registry",
         ":pydantic_column",
         "//haku/console/agents:models",
+        "//util:enum_vocab",
         "//util:sqlalchemy_types",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//sqlalchemy",
@@ -245,9 +288,132 @@ py_library(
 )
 
 py_library(
+    name = "grant_principal",
+    srcs = ["grant_principal.py"],
+    deps = [
+        ":tool_call_actor",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_grant_principal",
+    srcs = ["test_grant_principal.py"],
+    deps = [
+        ":grant_principal",
+        ":tool_call_actor",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "http_decide_config",
+    srcs = ["http_decide_config.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "http_decide_routes",
+    srcs = ["http_decide_routes.py"],
+    deps = [
+        ":http_decide_service",
+        "//haku/egress:decision",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
+    name = "http_decide_service",
+    srcs = ["http_decide_service.py"],
+    deps = [
+        ":grant_principal",
+        ":http_decide_config",
+        ":http_grant_models",
+        ":http_grant_service",
+        "//haku/egress:decision",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "http_grant_models",
+    srcs = ["http_grant_models.py"],
+    deps = [
+        ":grant_principal",
+        "@pypi//idna",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "http_grant_repository",
+    srcs = ["http_grant_repository.py"],
+    deps = [
+        ":database_schema",
+        ":grant_principal",
+        ":http_grant_models",
+        "//haku/console/agents:models",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "http_grant_service",
+    srcs = ["http_grant_service.py"],
+    deps = [
+        ":grant_principal",
+        ":http_grant_models",
+    ],
+)
+
+py_library(
+    name = "http_grant_routes",
+    srcs = ["http_grant_routes.py"],
+    deps = [
+        ":http_grant_models",
+        ":http_grant_service",
+        ":operator_agents",
+        ":operator_auth",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "operator_agents",
+    srcs = ["operator_agents.py"],
+    deps = [
+        ":tool_call_actor",
+        "//haku/console/agents:enrollment",
+        "@pypi//fastapi",
+    ],
+)
+
+py_test(
+    name = "test_http_grant_routes",
+    srcs = ["test_http_grant_routes.py"],
+    deps = [
+        ":grant_principal",
+        ":http_grant_models",
+        ":http_grant_routes",
+        ":operator_auth",
+        ":tool_call_actor",
+        "//haku/console/agents:enrollment",
+        "//haku/console/agents:models",
+        "@pypi//fastapi",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
     name = "kubernetes_grant_models",
     srcs = ["kubernetes_grant_models.py"],
     deps = [
+        ":grant_principal",
         "@pypi//pydantic",
     ],
 )
@@ -256,7 +422,9 @@ py_library(
     name = "kubernetes_grant_repository",
     srcs = ["kubernetes_grant_repository.py"],
     deps = [
+        ":chat_models",
         ":database_schema",
+        ":grant_principal",
         ":kubernetes_grant_models",
         "//haku/console/agents:models",
         "@ducktape_haku//haku/console:tool_calls",
@@ -268,6 +436,7 @@ py_library(
     name = "kubernetes_grant_service",
     srcs = ["kubernetes_grant_service.py"],
     deps = [
+        ":grant_principal",
         ":kubernetes_grant_models",
     ],
 )
@@ -278,8 +447,8 @@ py_library(
     deps = [
         ":kubernetes_grant_models",
         ":kubernetes_grant_service",
+        ":operator_agents",
         ":operator_auth",
-        "//haku/console/agents:enrollment",
         "@pypi//fastapi",
         "@pypi//pydantic",
     ],
@@ -289,6 +458,7 @@ py_test(
     name = "test_kubernetes_grant_routes",
     srcs = ["test_kubernetes_grant_routes.py"],
     deps = [
+        ":grant_principal",
         ":kubernetes_grant_models",
         ":kubernetes_grant_routes",
         ":operator_auth",
@@ -382,6 +552,7 @@ py_library(
     deps = [
         ":agent_bearer_authority",
         ":config",
+        ":grant_principal",
         ":kubernetes_grant_models",
         ":kubernetes_grant_service",
         "@pypi//kubernetes_asyncio",
@@ -487,6 +658,7 @@ py_library(
         "@pypi//mcp",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
+        "@pypi//tenacity",
     ],
 )
 
@@ -744,6 +916,7 @@ py_library(
     srcs = ["tool_call_service.py"],
     deps = [
         ":config",
+        ":grant_principal",
         ":kubectl_passthrough_policy",
         ":kubernetes_authorization",
         ":mcp_config",
@@ -1128,6 +1301,12 @@ py_library(
         ":console_events",
         ":database_migrate",
         ":deployment",
+        ":http_decide_config",
+        ":http_decide_routes",
+        ":http_decide_service",
+        ":http_grant_repository",
+        ":http_grant_routes",
+        ":http_grant_service",
         ":in_process_servers",
         ":kube_proxy_authorization",
         ":kubernetes_authorization",
@@ -1161,16 +1340,18 @@ py_library(
         "//haku/console:chat_models",
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//haku/console/tools:gmail",
+        "//haku/console/tools:http_grants",
         "//haku/console/tools:kubernetes",
         "//haku/console/tools:routine",
         "//haku/console/tools:sandbox",
         "//haku/sandbox:kubernetes_client",
         "//haku/console/x:conversation_follow",
         "//haku/console/x:conversation_history",
+        "//haku/console/x:conversation_live_updates",
         "//haku/console/x:conversation_runtime",
+        "//haku/console/x:conversation_reader",
         "//haku/console/x:launch_identity",
         "//haku/console/x:sandbox_allocation",
-        "//haku/console/x:session_live_updates",
         "//haku/console/x:session_runtime",
         "//haku/console/x:session_store",
         "//haku/console/x:runtime",
@@ -1180,7 +1361,7 @@ py_library(
         "//haku/console/x/channels/matrix:ingress_ledger",
         "//haku/console/x/channels/matrix:outbox",
         "//haku/console/x/channels/matrix:revisions",
-        "//haku/console/x/channels/matrix:room_subscription",
+        "//haku/console/x/channels/matrix:room_copy",
         "//haku/console/x/channels/matrix:conversation",
         "//haku/console/x/channels/matrix:sync",
         "//haku/recall_index:git_tree",
@@ -1266,6 +1447,7 @@ py_library(
         "//grocy_mcp:batch_tools",
         "//grocy_mcp:client",
         "//grocy_mcp:mcp_types",
+        "//haku/console/tools:http_grants",
         "//haku/console/tools:kubernetes",
         "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp_slim",
@@ -1309,14 +1491,17 @@ py_library(
         ":app",
         ":config",
         ":database_migrate",
+        ":database_schema",
         ":operator_auth",
         ":operator_identity",
         ":operator_identity_store",
         ":tool_call_actor",
+        "//haku/console/agents:authorization",
         "//third_party/containers:rlocations",
         "//util:oci",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
+        "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//httpx",
         # SessionMiddleware (starlette) signs the operator session cookie with itsdangerous;
@@ -1459,6 +1644,7 @@ py_test(
     deps = [
         ":conftest",
         ":database_schema",
+        ":grant_principal",
         ":mcp_approval",
         ":mcp_config",
         ":oauth_token_state",
@@ -1494,6 +1680,7 @@ py_test(
         ":console_events",
         ":database_migrate",
         ":database_schema",
+        ":grant_principal",
         ":mcp_approval",
         ":mcp_config",
         ":mcp_operator_oauth",
@@ -1636,6 +1823,7 @@ py_test(
         ":chat_models",
         ":config",
         ":conftest",
+        ":conversation_read_access",
         ":database_schema",
         ":operator_identity",
         ":recall_index_reader",
@@ -1695,19 +1883,24 @@ py_test(
 )
 
 py_test(
-    name = "test_session_claim_cleaned_at",
+    name = "test_session_status_derivation",
     size = "medium",
-    srcs = ["test_session_claim_cleaned_at.py"],
+    srcs = ["test_session_status_derivation.py"],
     data = [
         "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],
     requires_docker = True,
     deps = [
+        ":chat_models",
         ":conftest",
-        ":database_migrate",
+        ":database_schema",
+        ":operator_identity_store",
         "//:conftest",
+        "//haku/console/x:session_views",
         "@pypi//psycopg",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -1753,6 +1946,27 @@ py_test(
 )
 
 py_test(
+    name = "test_kubernetes_grant_principal_migration",
+    size = "medium",
+    srcs = ["test_kubernetes_grant_principal_migration.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":database_migrate",
+        "//:conftest",
+        "@pypi//alembic",
+        "@pypi//psycopg",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
     name = "test_conversation_agent_identity_migration",
     size = "medium",
     srcs = ["test_conversation_agent_identity_migration.py"],
@@ -1773,9 +1987,9 @@ py_test(
 )
 
 py_test(
-    name = "test_session_status_constraint",
+    name = "test_turn_failure_reason_migration",
     size = "medium",
-    srcs = ["test_session_status_constraint.py"],
+    srcs = ["test_turn_failure_reason_migration.py"],
     data = [
         "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
@@ -1786,7 +2000,6 @@ py_test(
         ":database_migrate",
         "//:conftest",
         "@pypi//psycopg",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -1815,6 +2028,7 @@ py_test(
     name = "test_kube_proxy_authorization",
     srcs = ["test_kube_proxy_authorization.py"],
     deps = [
+        ":grant_principal",
         ":kube_proxy_authorization",
         ":kubernetes_authorization",
         ":tool_call_actor",
@@ -1845,9 +2059,87 @@ py_test(
 )
 
 py_test(
+    name = "test_http_decide_routes",
+    srcs = ["test_http_decide_routes.py"],
+    deps = [
+        ":http_decide_routes",
+        ":http_decide_service",
+        "//haku/egress:decision",
+        "@pypi//fastapi",
+        "@pypi//httpx",  # keep: starlette.testclient runtime requirement, not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_http_decide_config",
+    srcs = ["test_http_decide_config.py"],
+    deps = [
+        ":http_decide_config",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_http_decide_service",
+    size = "medium",
+    srcs = ["test_http_decide_service.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":grant_principal",
+        ":http_decide_config",
+        ":http_decide_service",
+        ":http_grant_models",
+        ":http_grant_repository",
+        ":http_grant_service",
+        "//:conftest",
+        "//haku/egress:decision",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_http_grants",
+    srcs = ["test_http_grants.py"],
+    deps = [
+        ":grant_principal",
+        ":http_grant_models",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_http_grant_service",
+    srcs = ["test_http_grant_service.py"],
+    deps = [
+        ":grant_principal",
+        ":http_grant_models",
+        ":http_grant_service",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_kubernetes_grants",
     srcs = ["test_kubernetes_grants.py"],
     deps = [
+        ":grant_principal",
         ":kubernetes_grant_models",
         ":kubernetes_grant_service",
         "@pypi//pydantic",
@@ -1860,11 +2152,35 @@ py_test(
     name = "test_kubernetes_grant_service",
     srcs = ["test_kubernetes_grant_service.py"],
     deps = [
+        ":grant_principal",
         ":kubernetes_grant_models",
         ":kubernetes_grant_service",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_http_grant_repository",
+    size = "medium",
+    srcs = ["test_http_grant_repository.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":database_schema",
+        ":grant_principal",
+        ":http_grant_models",
+        ":http_grant_repository",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -1880,11 +2196,10 @@ py_test(
     deps = [
         ":conftest",
         ":database_schema",
+        ":grant_principal",
         ":kubernetes_grant_models",
         ":kubernetes_grant_repository",
         "//:conftest",
-        "//haku/console/agents:authorization",
-        "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

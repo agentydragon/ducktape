@@ -4,7 +4,7 @@ The original OpenClaw gateway, its operator, and the OpenShell sandbox stack wer
 removed from the active cluster configuration on 2026-07-31. `public-coder-agent`
 became the reference agent: it runs the same OpenClaw image as a plain Deployment
 with `sandbox.mode: "off"`. The evaluated alternatives and retirement rationale
-remain in <../../plans/personal_agents/verdicts.md>.
+remain in <../../docs/personal_agents/verdicts.md>.
 
 ## Teardown history
 

@@ -3,11 +3,13 @@
 What Haku's console needs to know about the newline-delimited JSON protocol it speaks to
 `claude`, and the probes that establish it.
 
-The console drives that protocol directly rather than through the Agent SDK
-(<../plans/cli_protocol_ownership.md> holds the decision), so the protocol is now something this
-repo has to understand rather than depend on. Nothing here is published by Anthropic as a
-contract: the surface is reverse-engineered from the bundled binary's own schemas and measured by
-running it, and much of it the CLI marks `@internal`. Treat it as pinned to a CLI version.
+The console drives that protocol directly rather than through the Agent SDK (decided 2026-08;
+the why lives in the owning modules' docstrings, and the remaining work — npm sourcing, unadopted
+handshake capabilities — in <../plans/cli_protocol_ownership.md>), so the protocol is now
+something this repo has to understand rather than depend on. Nothing here is published by
+Anthropic as a contract: the surface is reverse-engineered from the bundled binary's own schemas
+and measured by running it, and much of it the CLI marks `@internal`. Treat it as pinned to a
+CLI version.
 
 | File                                     | Holds                                                              |
 | ---------------------------------------- | ------------------------------------------------------------------ |

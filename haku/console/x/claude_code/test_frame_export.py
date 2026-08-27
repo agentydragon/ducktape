@@ -16,8 +16,9 @@ from more_itertools import one
 
 from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection
 from haku.console.x.claude_code import frame_export, frames
-from haku.console.x.claude_code.projection import RecordedFrame, project_log
+from haku.console.x.claude_code.projection import RecordedFrame
 from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
+from haku.console.x.claude_code.testing.fold import whole_capture
 from haku.console.x.conversation_events import ToolCallCompleted, ToolCallStarted
 from haku.console.x.session_store import BridgeAuthentication
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
@@ -131,8 +132,10 @@ def test_redaction_leaves_the_projection_alone(exported) -> None:
     """Structure is what a fixture is for, so the redacted frames must fold to the same kinds in the
     same order — not to the same events, since the prose is gone by construction.
     """
-    original = project_log(RecordedFrame(frame_seq=seq, payload=payload) for seq, payload in enumerate(SESSION_FRAMES))
-    redacted = project_log(_reread(exported))
+    original = whole_capture(
+        RecordedFrame(frame_seq=seq, payload=payload) for seq, payload in enumerate(SESSION_FRAMES)
+    )
+    redacted = whole_capture(_reread(exported))
 
     assert [type(event) for event in redacted.events] == [type(event) for event in original.events]
     assert dict(redacted.unprojected) == dict(original.unprojected)
@@ -141,7 +144,7 @@ def test_redaction_leaves_the_projection_alone(exported) -> None:
 def test_a_call_and_its_answer_still_pair_after_pseudonymisation(exported) -> None:
     """One identifier, two frames: eliding it would leave a fixture unable to say which result
     answered which call."""
-    events = project_log(_reread(exported)).events
+    events = whole_capture(_reread(exported)).events
 
     started = one(event for event in events if isinstance(event, ToolCallStarted))
     completed = one(event for event in events if isinstance(event, ToolCallCompleted))

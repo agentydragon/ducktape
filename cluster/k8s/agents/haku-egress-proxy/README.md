@@ -1,7 +1,7 @@
 # Haku Egress Proxy Trust Management
 
-Haku's egress fence for `haku-sandbox` **and `haku-ci`** — enforcement inventory #5 in
-<../../../../haku/docs/security.md>. The name is implementation-neutral on
+Haku's egress fence for `haku-sandbox` **and `haku-ci`** — an enforcement inventory
+entry in <../../../../haku/docs/security.md>. The name is implementation-neutral on
 purpose: it is **currently implemented with mitmproxy** (mirroring
 `../mitmproxy`, but with a separate CA and proxy namespace), but the object
 names deliberately avoid `mitmproxy` so the implementation can be swapped (e.g.

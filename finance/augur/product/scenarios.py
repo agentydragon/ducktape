@@ -24,6 +24,7 @@ from finance.augur.product.wire import (
     ScenarioKey,
     SetPrimaryResidenceEventWire,
     SetRentedFractionEventWire,
+    SpendIndex,
 )
 from finance.augur.sim.fixed_point import round_currency_amount
 from finance.augur.sim.locations import Location
@@ -847,11 +848,11 @@ def _initial_rented_fraction(purchase: PropertyPurchase) -> Decimal:
 
 
 def _monthly_spend_amount(scenario_key: ScenarioKey) -> Decimal | SeriesIndexedAmount:
-    if scenario_key.spend_index == "inflation":
+    if scenario_key.spend_index == SpendIndex.INFLATION:
         return SeriesIndexedAmount(
             base_amount=scenario_key.monthly_spend, series=InflationKey(), adjustment_period_months=1
         )
-    if scenario_key.spend_index == "none":
+    if scenario_key.spend_index == SpendIndex.NONE:
         return scenario_key.monthly_spend
     raise ValueError(f"unsupported spend_index: {scenario_key.spend_index!r}")
 

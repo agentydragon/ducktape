@@ -50,9 +50,9 @@ def _conversation(conn: Connection) -> _Conversation:
         text(
             """
             INSERT INTO sessions (
-                session_id, operator_id, conversation_id, status, bridge_token_fingerprint,
-                lease_expires_at, created_at, updated_at
-            ) VALUES (:s, :o, :c, 'ready', :fp, :n, :n, :n)
+                session_id, operator_id, conversation_id, bridge_token_fingerprint,
+                bridge_connected_at, lease_expires_at, created_at, updated_at
+            ) VALUES (:s, :o, :c, :fp, :n, :n, :n, :n)
             """
         ),
         {"s": written.session_id, "o": operator_id, "c": written.conversation_id, "fp": b"fp", "n": _NOW},

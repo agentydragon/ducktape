@@ -30,26 +30,22 @@ committed. `NO_PROXY` in `inject-mitmproxy.yaml` is unchanged.
 ## InvenTree secrets if unsuspending
 
 - [ ] Add SOPS secrets for InvenTree admin and database passwords before
-      unsuspending it. The old Vault `kv/inventree/*` values are gone, so
-      generate fresh values. Background: <../archive/2026_04_19_vault_migration.md>.
+      unsuspending it. The old Vault `kv/inventree/*` values are gone with
+      Vault (decommissioned 2026-04-19; <../docs/decisions.md> § "Secrets: SOPS
+      SSOT"), so generate fresh values.
 
 ## Mobile Nebula phone followups
 
-- [ ] If ActivityWatch returns, design a phone-specific exporter/importer rather
-      than extending retired upstream `aw-sync` + Syncthing topology. It needs
-      provenance-preserving, idempotent imports from device-owned snapshots.
+- [ ] Wire the phone into ActivityWatch: a phone-specific exporter/importer
+      feeding the bearer-gated write route with the same idempotent,
+      provenance-preserving semantics as the desktop importer
+      (<../docs/activitywatch/README.md>).
 - [ ] Allow SSH from the phone to mesh machines such as `wyrm2`; verify the
       phone has an SSH client/key path, host SSH/firewall policy allows the
       phone's Nebula identity or `10.42.0.50`, and access stays key-only.
 - [ ] Consider running an SSH daemon on the phone for emergency access back to
       the device, probably via Termux/OpenSSH, with explicit keys and a clear
       power/background-execution story.
-
-## Retired ActivityWatch followups
-
-- [ ] Before unsuspending, replace upstream `aw-sync` with a repo-owned,
-      provenance-preserving idempotent importer from immutable device snapshots.
-      Then choose a recoverable store for any central query database.
 
 ## OpenHands: self-hosted git provider
 
@@ -82,7 +78,7 @@ to the authentik shared proxy outpost pod (per AGENTS.md):
 agents-mitmproxy, proxmox.
 
 **Critical unprotected services** (no NetworkPolicy at all):
-external-secrets, forgejo, harbor.
+external-secrets, forgejo.
 
 ## VPA memory audit — are these limits really needed?
 
@@ -323,3 +319,29 @@ The agent-box VM and its `codex` user are live (see
       with the `agent-box-codex-user` key) — caveat: the token likely carries a
       refresh token that rotates on use, so a static plant could go stale; check
       whether the Codex CLI rewrites `auth.json` after refresh.
+
+## Alloy `allow_arbitrary_file_access`: decide the residual components
+
+Native scrapes in `monitoring/alloy/config.alloy` cover apiserver and kubelet,
+and clearing the spurious token fixes coredns. Three consumers of
+`bearerTokenFile` are still rejected by Alloy and therefore still unscraped:
+`monitoring-kube-controller-manager`, `monitoring-kube-scheduler`, and
+`volsync-system/volsync`. The last one is emitted by the volsync chart, so
+kube-prometheus-stack values cannot reach it.
+
+The alternative is `allow_arbitrary_file_access = true` on
+`prometheus.operator.servicemonitors`, which fixes all three at once but grants
+file access to every ServiceMonitor in the cluster rather than to named jobs.
+Today that is close to free — only `monitoring-operator`, `kubevirt-operator`
+and `seaweedfs-operator-manager-role` can write ServiceMonitors, and Alloy
+mounts nothing but its own ConfigMap and service-account token — so the flag
+would hand a hostile author only a credential they could already obtain.
+
+- [ ] Decide between extending the native scrapes to controller-manager and
+      scheduler (needs their endpoints reachable on 10257/10259, unverified
+      since the metrics have been absent since 2026-08-07) versus enabling the
+      flag for the remainder. Whichever wins, `volsync` needs an answer: a
+      `postRenderers` patch on its HelmRelease, an upstream values knob, or the
+      flag.
+- [ ] Re-evaluate if Alloy ever mounts a Secret. The flag's low cost rests on
+      it having nothing worth reading; that assumption is the tripwire.

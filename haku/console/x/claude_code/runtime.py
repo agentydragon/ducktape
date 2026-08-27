@@ -16,7 +16,7 @@ from haku.console.chat_models import RuntimeKind
 from haku.console.x.claude_code import frames, projection
 from haku.console.x.claude_code.client import cli_over_websocket
 from haku.console.x.claude_code.wake import ClaudeWakeWatcher
-from haku.console.x.conversation_events import Projection, TurnCompleted, TurnFailed
+from haku.console.x.conversation_events import TurnCompleted, TurnFailed
 from haku.console.x.runtime import (
     EMPTY_TURN_PROJECTION_SEED,
     Checkpoint,
@@ -97,11 +97,6 @@ class ClaudeRuntimeAdapter:
     def wake_watcher(self) -> ClaudeWakeWatcher:
         return ClaudeWakeWatcher()
 
-    def project_log(self, frames: Iterable[tuple[int, HarnessFrame]]) -> Projection:
-        return projection.project_log(
-            projection.RecordedFrame(frame_seq=seq, payload=frame.frame) for seq, frame in frames
-        )
-
     def prompt_submitted(self, outbound: Iterable[HarnessFrame]) -> bool:
         return any(frames.frame_kind(frame.frame) == frames.PROMPT_FRAME_KIND for frame in outbound)
 
@@ -113,8 +108,7 @@ class ClaudeTurnHandler:
     state: projection.ProjectionState
 
     def apply(self, *, frame_seq: int, frame: HarnessFrame) -> FrameEffects:
-        self.state, result = projection.project(
-            self.state,
+        self.state, result = self.state.advance(
             [projection.RecordedFrame(frame_seq=frame_seq, payload=frame.frame)],
             delta_source=projection.DeltaSource.STREAM_EVENTS,
         )

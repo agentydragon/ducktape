@@ -15,18 +15,18 @@ export type LiveStatus = "connecting" | "live" | "offline";
 
 export type ConsoleEvent = { event_type: string };
 
-/** The session a `session_changed` event invalidates, or null for every other event.
+/** The conversation a `conversation_changed` event invalidates, or null for every other event.
  *
- * Mirrors `SessionChangedEvent` in ../console_events.py, which carries no more than this: the
- * socket says a session changed and REST stays the source of what it changed to.
+ * Mirrors `ConversationChangedEvent` in ../console_events.py, which carries no more than this: the
+ * socket says a conversation changed and REST stays the source of what it changed to.
  *
  * Every consumer sees *every* event, and a streaming turn emits one of these per coalescing
- * window, so anything not about sessions should skip an event this returns an id for.
+ * window, so anything not about conversations should skip an event this returns an id for.
  */
-export function changedSessionId(event: ConsoleEvent): string | null {
-  if (event.event_type !== "session_changed") return null;
-  const { session_id: sessionId } = event as ConsoleEvent & { session_id?: unknown };
-  return typeof sessionId === "string" ? sessionId : null;
+export function changedConversationId(event: ConsoleEvent): string | null {
+  if (event.event_type !== "conversation_changed") return null;
+  const { conversation_id: conversationId } = event as ConsoleEvent & { conversation_id?: unknown };
+  return typeof conversationId === "string" ? conversationId : null;
 }
 
 // The authoritative server-pushed event signal shared by console surfaces. `/api/events/ws`

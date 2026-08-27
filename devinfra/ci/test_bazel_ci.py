@@ -18,6 +18,7 @@ def test_pr_affected_targets_match_wildcard_semantics(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     query_log = tmp_path / "query.log"
+    test_args_log = tmp_path / "test-args.log"
 
     _write_executable(
         bin_dir / "git",
@@ -77,7 +78,8 @@ if query_arg:
     else:
         raise SystemExit(f"unexpected query file: {{query_arg}}")
 elif args and args[0] in {"test", "build"}:
-    pass
+    if args[0] == "test":
+        Path({str(test_args_log)!r}).write_text("\\n".join(args))
 else:
     raise SystemExit(f"unexpected bazel args: {{args}}")
 """,
@@ -91,6 +93,8 @@ else:
             "PR_HEAD_SHA": "pr-head",
             "PR_BASE_SHA": "base",
             "RBE_IMAGE": "test-image",
+            "TEST_INVOCATION_ID": "11111111-1111-1111-1111-111111111111",
+            "BUILD_INVOCATION_ID": "22222222-2222-2222-2222-222222222222",
         }
     )
     result = subprocess.run(
@@ -101,6 +105,9 @@ else:
     assert Path("/tmp/affected.txt").read_text() == (
         "//:.aspect_rules_js/node_modules/@lezer+json@1.0.3/dir\n//ci:normal_test\n"
     )
+    # The pre-assigned ID has to reach Bazel: it is the only handle a consumer has on
+    # this invocation when the run is cancelled before `bb remote` returns.
+    assert "--invocation_id=11111111-1111-1111-1111-111111111111" in test_args_log.read_text().splitlines()
     query = query_log.read_text()
     assert 'except kind("source file", set(' in query
     assert 'except attr("tags", "manual", set(' in query

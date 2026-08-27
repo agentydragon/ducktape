@@ -38,8 +38,8 @@ migrates their ownership. These backends still require identity-aware proxy
 authentication; moving them to Terraform must preserve `authentik_provider_proxy`, the
 application policy, embedded-outpost membership, and the backend NetworkPolicy.
 
-Vault was decommissioned 2026-04-19 (see
-<../archive/2026_04_19_vault_migration.md>). No active blueprint consumes a provider
+Vault was decommissioned 2026-04-19 (see <decisions.md> § "Secrets: SOPS
+SSOT"). No active blueprint consumes a provider
 client secret through `!Env`; reintroducing that pattern would restore the rotation-drift
 bug this migration fixed.
 

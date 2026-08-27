@@ -51,8 +51,8 @@ eviction or when the source node is still healthy enough to participate.
 The current storage table in `cluster/README.md` says all storage is
 region-local, with:
 
-- `local-path`, `local-path-proxmox`, `local-path-ovh`: node/region-local host
-  storage.
+- `local-path-proxmox`, `local-path-ovh-{hdd,ssd}`, `local-path-home-ssd`:
+  node/region-local host storage.
 - `lvm-proxmox-ssd` and `lvm-proxmox-hdd`: OpenEBS LVM LocalPV on Proxmox
   nodes.
 - `proxmox-csi-retain`: not installed; Proxmox CSI is not part of the current

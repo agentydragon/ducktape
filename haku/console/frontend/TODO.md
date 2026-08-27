@@ -22,7 +22,7 @@
   of the generic JSON fallback. Every one of them is an MCP tool `tool_rendering/` knows —
   `toolPreview` and friends dispatch on the MCP server id — but a transcript row cannot reach that
   key. Three separate gaps, and each has to close for the dispatch to be sound:
-  - `SessionToolCallView` (<../x/session_views.py>) carries `tool_name` and `arguments` and no
+  - `ToolCallEntry` (<../x/conversation_reads.py>) carries `tool_name` and `arguments` and no
     `server_id`, which is what `tool_rendering/index.tsx` indexes by.
   - The proxy's name is not one split away from that key. `server_tool_prefix`
     (<../mcp_config.py>) sanitizes the id into the tool namespace — `grocy-sf` and `tana-rw` become

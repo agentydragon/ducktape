@@ -17,10 +17,12 @@ import logging
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
 
 from haku.console.x.codex_app_server import frames
+from haku.console.x.codex_app_server.config import ApprovalPolicy, ReasoningEffort, SandboxMode
 from haku.console.x.codex_app_server.protocol import Notification, Request, RequestId, Response, parse_message
 from haku.console.x.runtime import RuntimeClient
 from haku.runtime.x.bridge.client import FrameSink, ReceivedFrame, SentPrompt
@@ -45,22 +47,32 @@ class FrameChannel(Protocol):
 class CodexThread:
     """Native app-server choices for the one thread behind a Haku session."""
 
-    cwd: str
+    cwd: Path
     model: str | None = None
+    reasoning_effort: ReasoningEffort | None = None
     developer_instructions: str | None = None
-    approval_policy: str = "never"
-    sandbox: str = "danger-full-access"
+    approval_policy: ApprovalPolicy = ApprovalPolicy.NEVER
+    # The containment posture. Full access is deliberate for the runtime pod: the sandbox
+    # boundary is the pod itself, not Codex's own jail.
+    sandbox: SandboxMode = SandboxMode.DANGER_FULL_ACCESS
     ephemeral: bool = True
 
     def start_params(self) -> dict[str, Any]:
         result: dict[str, Any] = {
-            "cwd": self.cwd,
+            "cwd": str(self.cwd),
             "approvalPolicy": self.approval_policy,
             "sandbox": self.sandbox,
             "ephemeral": self.ephemeral,
         }
         if self.model is not None:
             result["model"] = self.model
+        if self.reasoning_effort is not None:
+            # thread/start has no dedicated effort param at 0.144.1; its `config` map carries
+            # per-thread overrides in config-file vocabulary, and `model_reasoning_effort` is the
+            # exact key the app-server itself re-applies for a persisted thread's effort
+            # (codex-rs/app-server/src/request_processors/thread_processor.rs). The thread/start
+            # response echoes the effective value as `reasoningEffort`.
+            result["config"] = {"model_reasoning_effort": self.reasoning_effort}
         if self.developer_instructions is not None:
             result["developerInstructions"] = self.developer_instructions
         return result

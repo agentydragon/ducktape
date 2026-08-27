@@ -7,7 +7,7 @@
 # accurate — there is a credential, it is mediated, it cannot be read — where
 # `inject` would attach it invisibly and leave an agent that looks for a
 # credential finding none. Rationale and measurements:
-# plans/personal_agents/credential_proxy_options.md.
+# docs/personal_agents/credential_proxy.md.
 
 # Explicit forward proxy: consumers point HTTP_PROXY at the Service. The built-in
 # DNS interception mode is off — nothing here hijacks resolution.

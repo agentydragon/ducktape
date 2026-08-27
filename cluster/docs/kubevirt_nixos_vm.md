@@ -81,7 +81,7 @@ expected noise against a key-only sshd.
 
 ## Caveats
 
-VMs that use `local-path-ovh` (or any local-path class) are tied to one node
+VMs that use `local-path-ovh-hdd` (or any local-path class) are tied to one node
 and are not live-migratable; node loss = availability loss. For durable VMs,
 use a CSI backend with RWX/block support and `VolumeSnapshotClass` before
 relying on KubeVirt migration, snapshots, or node-failure recovery.

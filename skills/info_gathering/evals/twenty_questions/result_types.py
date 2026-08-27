@@ -1,6 +1,7 @@
 """Result types for Twenty Questions eval runs."""
 
 from datetime import datetime
+from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
@@ -21,9 +22,14 @@ class Timeout(BaseModel):
 Result = Annotated[Correct | Timeout, Field(discriminator="kind")]
 
 
+class Player(StrEnum):
+    GUESSER = "guesser"
+    SIMULATOR = "simulator"
+
+
 class LogEntry(BaseModel):
     timestamp: datetime
-    player: Literal["guesser", "simulator"]
+    player: Player
     model: str | None = None
     content: str
     tool_calls: list[dict[str, object]] = Field(default_factory=list)
@@ -31,6 +37,3 @@ class LogEntry(BaseModel):
 
 class RunSummary(_BaseRunSummary[Result]):
     invalid_input_count: int = 0
-
-
-__all__ = ["Correct", "LogEntry", "Result", "RunSummary", "Timeout"]

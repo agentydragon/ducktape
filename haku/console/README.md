@@ -51,9 +51,12 @@ exits:
 - the Operator approves it (`pending_approval` → `running`) or denies it (`denied`);
 - the submitting Agent withdraws its own still-pending request (`withdrawn`).
 
-Withdrawal records retraction, not human judgment and not deletion. It is scoped to the canonical
-Agent, races approval under the row lock, and can only move work away from execution. Agents never
-receive an approval tool. Approved execution revalidates the exact credential binding recorded at
+Withdrawal records retraction, not human judgment and not deletion: the row persists in the audit
+ledger (`GET /api/tool-calls`) as `withdrawn` with its `withdrawal_reason`, so a prompt-injected
+Agent can pull an ask out of the approval queue before the Operator scrutinises it but cannot erase
+that it was made. It is scoped to the canonical Agent (a sibling Agent under the same Operator sees
+only `not found`), races approval under the row lock, and can only move work away from execution.
+Agents never receive an approval tool. Approved execution revalidates the exact credential binding recorded at
 submission, so queued work cannot transfer to a replacement credential.
 
 The browser reads pending calls and the audit ledger through `/api/approvals/pending` and
@@ -173,8 +176,8 @@ refreshes only the newest page and merges it over older pages; result/argument e
 near the viewport rather than for every retained row.
 
 Agent-facing reads are compact by default: `list_tool_calls` returns status summaries and
-`get_tool_call` returns the selected result. Their `fields` selector includes only whole opaque
-`arguments`, `rationale`, and `result` payloads; `get_tool_call(fields=[])` is the cheap status poll.
+`get_tool_call` returns the selected result. Their `fields` selector opts into whole opaque
+payloads; `get_tool_call(fields=[])` is the cheap status poll.
 
 ## Notifications — Web Push for pending approvals
 

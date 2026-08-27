@@ -16,7 +16,7 @@
 #
 # Evidence for every choice here, including a real agent opening a pull request
 # from behind this configuration:
-# plans/personal_agents/findings/egress_and_tls.md F15-F18.
+# docs/personal_agents/findings/egress_and_tls.md F15-F18.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

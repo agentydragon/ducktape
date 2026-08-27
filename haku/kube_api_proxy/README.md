@@ -161,18 +161,26 @@ rejected before forwarding.
 
 ## Configuration
 
-| Environment                              |            Default | Meaning                                             |
-| ---------------------------------------- | -----------------: | --------------------------------------------------- |
-| `HAKU_KUBE_AUTHORIZATION_URL`            |           required | Absolute HTTPS Console authorization URL            |
-| `HAKU_KUBE_ALLOW_INSECURE_AUTHORITY`     |            `false` | Development/test-only plain-HTTP opt-in             |
-| `HAKU_KUBE_LISTEN_ADDRESS`               |            `:8080` | Proxy listen address                                |
-| `HAKU_KUBE_AUTHORIZATION_TIMEOUT`        |               `3s` | Maximum Console decision latency                    |
-| `HAKU_KUBE_REQUEST_TIMEOUT`              |              `30s` | Maximum ordinary Kubernetes request lifetime        |
-| `HAKU_KUBE_STREAM_REVALIDATION_INTERVAL` |               `5s` | Interval between active-stream authorization checks |
-| `HAKU_KUBE_MAX_REQUEST_BYTES`            |         `10485760` | Maximum request body size                           |
-| `HAKU_KUBE_SERVICEACCOUNT_DIRECTORY`     | Kubernetes default | Projected CA and token directory                    |
-| `KUBERNETES_SERVICE_HOST`                |           required | In-cluster Kubernetes API host                      |
-| `KUBERNETES_SERVICE_PORT_HTTPS`          |           required | In-cluster API port (`..._PORT` fallback)           |
+| Environment                              |            Default | Meaning                                               |
+| ---------------------------------------- | -----------------: | ----------------------------------------------------- |
+| `HAKU_KUBE_AUTHORIZATION_URL`            |           required | Absolute HTTPS Console authorization URL              |
+| `HAKU_KUBE_ALLOW_INSECURE_AUTHORITY`     |            `false` | Development/test-only plain-HTTP opt-in               |
+| `HAKU_KUBE_LISTEN_ADDRESS`               |            `:8080` | Plaintext listen address (Gateway backend hop)        |
+| `HAKU_KUBE_TLS_LISTEN_ADDRESS`           |            `:8443` | TLS listen address, served when the pair below is set |
+| `HAKU_KUBE_TLS_CERT_FILE`                |              unset | TLS certificate; set together with the key            |
+| `HAKU_KUBE_TLS_KEY_FILE`                 |              unset | TLS private key; set together with the certificate    |
+| `HAKU_KUBE_AUTHORIZATION_TIMEOUT`        |               `3s` | Maximum Console decision latency                      |
+| `HAKU_KUBE_REQUEST_TIMEOUT`              |              `30s` | Maximum ordinary Kubernetes request lifetime          |
+| `HAKU_KUBE_STREAM_REVALIDATION_INTERVAL` |               `5s` | Interval between active-stream authorization checks   |
+| `HAKU_KUBE_MAX_REQUEST_BYTES`            |         `10485760` | Maximum request body size                             |
+| `HAKU_KUBE_SERVICEACCOUNT_DIRECTORY`     | Kubernetes default | Projected CA and token directory                      |
+| `KUBERNETES_SERVICE_HOST`                |           required | In-cluster Kubernetes API host                        |
+| `KUBERNETES_SERVICE_PORT_HTTPS`          |           required | In-cluster API port (`..._PORT` fallback)             |
+
+The TLS listener exists for in-cluster kubeconfig callers: client-go reads kubeconfig user
+credentials only for an https server, so a sandbox kubectl pointed at the plaintext listener
+sends every request unauthenticated and is answered 401. The plaintext listener remains the
+Gateway's backend hop (the Gateway terminates public TLS itself) and the health-probe target.
 
 The Kubernetes API address, CA and rotating projected bearer are loaded from
 Kubernetes' standard in-cluster environment and ServiceAccount files. This is

@@ -60,7 +60,7 @@ from haku.console.x.conversation_events import (
     ToolCallStarted,
     TurnCompleted,
 )
-from util.sqlalchemy_types import UnknownValue
+from util.enum_vocab import UnknownValue
 
 
 class MessageStartedBody(BaseModel):
@@ -246,9 +246,12 @@ type AuthoredBody = (
 # Every shape `conversation_event.body` is ever read back as. A reader dispatches on these rather
 # than on `kind`, which keeps the discriminator and the payload from disagreeing.
 #
-# `UnknownEventBody` is the arm for a kind added by a release *later* than this one — read-only by
-# construction, since nothing here can write a kind it cannot name.
-type StoredBody = ItemStartedBody | SegmentBody | ItemCompletedBody | AuthoredBody | UnknownEventBody
+# `WrittenBody` is what this release can put in a row, so a fold over it is exhaustive and a kind
+# added here without an arm fails the type check. `UnknownEventBody` is the arm for a kind added by
+# a release *later* than this one — read-only by construction, since nothing here can write a kind
+# it cannot name.
+type WrittenBody = ItemStartedBody | SegmentBody | ItemCompletedBody | AuthoredBody
+type StoredBody = WrittenBody | UnknownEventBody
 
 
 def authored(

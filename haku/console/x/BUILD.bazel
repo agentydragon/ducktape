@@ -38,6 +38,7 @@ py_library(
         "//haku/console:config",
         "//haku/console/x/claude_code:client",
         "//haku/console/x/claude_code:runtime",
+        "//haku/console/x/codex_app_server:config",
         "//haku/console/x/codex_app_server:runtime",
         "//haku/runtime/x/bridge:codex_options",
         "@pypi//pydantic",
@@ -52,6 +53,7 @@ py_test(
         ":runtime_catalog",
         "//:conftest",
         "//haku/console/x/claude_code:projection",
+        "//haku/console/x/claude_code/testing:fold",
         "//haku/console/x/claude_code/testing:wire",
         "//haku/console/x/codex_app_server:runtime",
         "@pypi//pytest",
@@ -107,7 +109,7 @@ py_library(
         "//haku/console:chat_models",
         "//haku/console:database_schema",
         "//haku/runtime/x/bridge:protocol",
-        "//util:sqlalchemy_types",
+        "//util:enum_vocab",
         "@pypi//sqlalchemy",
     ],
 )
@@ -131,7 +133,7 @@ py_library(
         ":conversation_events",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
-        "//util:sqlalchemy_types",
+        "//util:enum_vocab",
         "@pypi//pydantic",
     ],
 )
@@ -152,7 +154,8 @@ py_library(
     deps = [
         ":conversation_events",
         ":conversation_log",
-        ":conversation_records",
+        ":conversation_reads",
+        ":item_entries",
         ":launch_identity",
         ":runtime",
         ":runtime_catalog",
@@ -161,10 +164,12 @@ py_library(
         ":session_views",
         ":setup_output",
         ":subscription",
-        ":transcript_entries",
         "//haku/cli_protocol:frame_identity",
         "//haku/console:chat_models",
+        "//haku/console:conversation_read_access",
         "//haku/console:database_schema",
+        "//haku/console:grant_principal",
+        "//haku/console:kubernetes_grant_models",
         "//haku/console/x/claude_code:frames",
         "//haku/runtime/x/bridge:client",
         "//haku/runtime/x/bridge:protocol",
@@ -185,8 +190,8 @@ py_library(
 )
 
 py_library(
-    name = "conversation_records",
-    srcs = ["conversation_records.py"],
+    name = "conversation_reads",
+    srcs = ["conversation_reads.py"],
     deps = [
         "//haku/console:chat_models",
         "@pypi//pydantic",
@@ -194,21 +199,25 @@ py_library(
 )
 
 py_library(
-    name = "transcript_entries",
-    srcs = ["transcript_entries.py"],
+    name = "item_entries",
+    srcs = ["item_entries.py"],
     deps = [
-        ":conversation_events",
-        ":conversation_records",
+        ":conversation_reads",
+        "//haku/console:chat_models",
+        "//haku/console:database_schema",
+        "@pypi//pydantic",
     ],
 )
 
 py_library(
-    name = "room_status",
-    srcs = ["room_status.py"],
+    name = "conversation_reader",
+    srcs = ["conversation_reader.py"],
     deps = [
-        ":session_events",
-        ":subscription",
+        ":conversation_reads",
+        ":item_entries",
+        ":session_store",
         "//haku/console:chat_models",
+        "//haku/console:conversation_read_access",
     ],
 )
 
@@ -216,12 +225,8 @@ py_library(
     name = "session_views",
     srcs = ["session_views.py"],
     deps = [
-        ":conversation_events",
-        ":conversation_records",
-        ":runtime",
-        ":runtime_catalog",
+        ":conversation_reads",
         ":sandbox_claims",
-        ":session_events",
         ":setup_output",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
@@ -279,11 +284,9 @@ py_library(
 )
 
 py_library(
-    name = "session_live_updates",
-    srcs = ["session_live_updates.py"],
+    name = "conversation_live_updates",
+    srcs = ["conversation_live_updates.py"],
     deps = [
-        ":runtime",
-        ":runtime_catalog",
         ":session_notifications",
         "//haku/console:console_events",
         "//haku/console:database_schema",
@@ -339,7 +342,7 @@ py_library(
     name = "session_notifications",
     srcs = ["session_notifications.py"],
     deps = [
-        "//util:sqlalchemy_types",
+        "//util:enum_vocab",
         "@pypi//asyncpg",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
@@ -383,6 +386,7 @@ py_test(
         ":conftest",
         ":conversation_events",
         ":conversation_follow",
+        ":conversation_reads",
         ":session_notifications",
         ":session_runtime",
         ":session_store",
@@ -400,12 +404,12 @@ py_test(
 )
 
 py_test(
-    name = "test_session_live_updates",
+    name = "test_conversation_live_updates",
     size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_session_live_updates.py"],
+    srcs = ["test_conversation_live_updates.py"],
     deps = [
         ":conftest",
-        ":session_live_updates",
+        ":conversation_live_updates",
         ":session_notifications",
         ":session_store",
         "//:conftest",
@@ -429,7 +433,9 @@ py_test(
         ":session_notifications",
         "//:conftest",
         "//haku/console:conftest",
+        "//util:enum_vocab",
         "@pypi//asyncpg",
+        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -444,6 +450,8 @@ py_test(
         ":conftest",
         ":conversation_events",
         ":conversation_history",
+        ":conversation_reads",
+        ":item_entries",
         ":launch_identity",
         ":reprojection",
         ":runtime",
@@ -456,6 +464,7 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:conftest",
+        "//haku/console:conversation_read_access",
         "//haku/console:database_schema",
         "//haku/console:mcp_config",
         "//haku/console/agents:authorization",
@@ -463,6 +472,7 @@ py_test(
         "//haku/console/x/claude_code:frames",
         "//haku/console/x/claude_code:runtime",
         "//haku/console/x/claude_code/testing:wire",
+        "//haku/console/x/codex_app_server:config",
         "//haku/console/x/testing:recording_claims",
         "//haku/runtime/x/bridge:client",
         "//haku/runtime/x/bridge:protocol",
@@ -485,6 +495,7 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console/x/claude_code:projection",
         "//haku/console/x/claude_code:runtime",
+        "//haku/console/x/claude_code/testing:fold",
         "//haku/console/x/claude_code/testing:wire",
         "//haku/runtime/x/bridge:protocol",
         "//util:sqlalchemy_types",
@@ -543,7 +554,8 @@ py_test(
     deps = [
         ":conftest",
         ":conversation_events",
-        ":conversation_records",
+        ":conversation_reads",
+        ":item_entries",
         ":runtime",
         ":session_events",
         ":session_notifications",
@@ -551,9 +563,14 @@ py_test(
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
+        "//haku/console:conversation_read_access",
         "//haku/console:database_schema",
+        "//haku/console:grant_principal",
+        "//haku/console:http_grant_models",
+        "//haku/console:kubernetes_grant_models",
         "//haku/console/x/claude_code:frames",
         "//haku/console/x/claude_code/testing:wire",
+        "@ducktape_haku//haku/console:tool_calls",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
@@ -586,7 +603,7 @@ py_test(
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
-        "//util:sqlalchemy_types",
+        "//util:enum_vocab",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -594,15 +611,15 @@ py_test(
 )
 
 py_test(
-    name = "test_transcript_entries",
-    srcs = ["test_transcript_entries.py"],
+    name = "test_item_entries",
+    srcs = ["test_item_entries.py"],
     deps = [
-        ":conversation_records",
-        ":transcript_entries",
+        ":conversation_reads",
+        ":item_entries",
         "//:conftest",
-        "//haku/console/x/claude_code:projection",
-        "//haku/console/x/claude_code/testing:wire",
-        "@pypi//more_itertools",
+        "//haku/console:chat_models",
+        "//haku/console:database_schema",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -613,6 +630,7 @@ py_test(
     srcs = ["test_session_views.py"],
     deps = [
         ":conftest",
+        ":conversation_reads",
         ":session_store",
         ":session_views",
         ":setup_output",
@@ -621,21 +639,8 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console/x/claude_code:projection",
+        "//haku/console/x/claude_code/testing:fold",
         "//haku/console/x/claude_code/testing:wire",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_room_status",
-    srcs = ["test_room_status.py"],
-    deps = [
-        ":room_status",
-        ":session_events",
-        ":subscription",
-        "//:conftest",
-        "//haku/console:chat_models",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],
@@ -654,6 +659,8 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        ":conversation_reads",
+        ":item_entries",
         ":session_notifications",
         ":session_runtime",
         ":session_store",
@@ -661,6 +668,7 @@ py_test(
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
+        "//haku/console:conversation_read_access",
         "//haku/console:database_schema",
         "//haku/console/x/testing:recording_claims",
         "//util:net",

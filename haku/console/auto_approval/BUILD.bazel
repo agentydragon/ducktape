@@ -44,6 +44,7 @@ py_library(
     srcs = ["kubernetes.py"],
     deps = [
         ":decision",
+        "//haku/console:grant_principal",
         "//haku/console:kubectl_passthrough_policy",
         "//haku/console:kubernetes_authorization",
         "//haku/console:tool_call_actor",

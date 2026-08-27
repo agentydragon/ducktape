@@ -153,16 +153,15 @@ async def operator_id(migrated_identity_store: PostgresOperatorIdentityStore) ->
 
 
 async def make_idle(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> None:
-    """Put a test session in the writer state the next rollout will create.
+    """Return a `_ProvisioningTestStore` session to the unallocated state production creates in.
 
-    Production deliberately has no idle writer in this compatibility release. Tests use a direct
-    row transition so the readers and allocation paths can be proven before that writer lands.
+    Clearing the credential and its lease is the whole transition: idle is what those facts derive.
     """
     async with sessions.begin() as db:
         await db.execute(
             update(Session)
             .where(Session.session_id == session_id)
-            .values(status="idle", bridge_token_fingerprint=None, lease_expires_at=None)
+            .values(bridge_token_fingerprint=None, lease_expires_at=None)
         )
 
 
@@ -183,6 +182,25 @@ async def attach_channel(sessions: async_sessionmaker[AsyncSession], session_id:
                 address=address,
                 attached_at=datetime.now(UTC),
             )
+        )
+
+
+async def session_items(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> list[ConversationItem]:
+    """This session's stored `conversation_item` rows, in opening order, for row-level assertions.
+
+    The rows and not a read model: what these tests pin is what the fold materialised — an item
+    still open, a call resumed onto the row its predecessor minted — which the read surfaces
+    deliberately do not carry.
+    """
+    async with sessions() as db:
+        return list(
+            (
+                await db.scalars(
+                    select(ConversationItem)
+                    .where(ConversationItem.session_id == session_id)
+                    .order_by(ConversationItem.opened_seq)
+                )
+            ).all()
         )
 
 

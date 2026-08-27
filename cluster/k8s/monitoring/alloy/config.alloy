@@ -43,6 +43,169 @@ prometheus.remote_write "mimir" {
   }
 }
 
+// --- Control-plane and kubelet scraping ---
+
+// kube-prometheus-stack's ServiceMonitors for these components authenticate with
+// the pod's own service-account token, and `prometheus.operator.servicemonitors`
+// refuses to read a file referenced by a ServiceMonitor unless
+// `allow_arbitrary_file_access` is set. Scraping them from config Alloy owns
+// keeps that file access scoped to these jobs instead of granting it to every
+// ServiceMonitor in the cluster, so the corresponding chart components are
+// switched off in ../stack/helmrelease.yaml.
+//
+// `job` and `metrics_path` are load-bearing, not cosmetic: the deployed
+// kubernetes-mixin rules select on job="kubelet" (35 rules), job="apiserver"
+// (90), metrics_path="/metrics" (27) and metrics_path="/metrics/cadvisor" (8).
+// Prometheus attaches `job` and `instance` on its own but NOT `metrics_path` --
+// prometheus-operator adds it when it renders a ServiceMonitor -- so every
+// scrape below sets it explicitly. Omit it and the rules go back to evaluating
+// against no data, with nothing logged.
+
+discovery.kubernetes "nodes" {
+  role = "node"
+}
+
+// One relabel per kubelet path: the `metrics_path` label has to be a literal,
+// and it is what separates cAdvisor series from kubelet's own on a shared job.
+discovery.relabel "kubelet_metrics" {
+  targets = discovery.kubernetes.nodes.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_node_name"]
+    target_label  = "node"
+  }
+  rule {
+    target_label = "metrics_path"
+    replacement  = "/metrics"
+  }
+}
+
+discovery.relabel "kubelet_cadvisor" {
+  targets = discovery.kubernetes.nodes.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_node_name"]
+    target_label  = "node"
+  }
+  rule {
+    target_label = "metrics_path"
+    replacement  = "/metrics/cadvisor"
+  }
+}
+
+discovery.relabel "kubelet_probes" {
+  targets = discovery.kubernetes.nodes.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_node_name"]
+    target_label  = "node"
+  }
+  rule {
+    target_label = "metrics_path"
+    replacement  = "/metrics/probes"
+  }
+}
+
+// insecure_skip_verify mirrors the chart's own kubelet ServiceMonitor: the
+// kubelet serving certificate is node-local and not signed by the cluster CA.
+prometheus.scrape "kubelet_metrics" {
+  targets           = discovery.relabel.kubelet_metrics.output
+  job_name          = "kubelet"
+  scheme            = "https"
+  metrics_path      = "/metrics"
+  honor_labels      = true
+  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+  tls_config {
+    insecure_skip_verify = true
+  }
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+prometheus.scrape "kubelet_cadvisor" {
+  targets           = discovery.relabel.kubelet_cadvisor.output
+  job_name          = "kubelet"
+  scheme            = "https"
+  metrics_path      = "/metrics/cadvisor"
+  honor_labels      = true
+  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+  tls_config {
+    insecure_skip_verify = true
+  }
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+prometheus.scrape "kubelet_probes" {
+  targets           = discovery.relabel.kubelet_probes.output
+  job_name          = "kubelet"
+  scheme            = "https"
+  metrics_path      = "/metrics/probes"
+  honor_labels      = true
+  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+  tls_config {
+    insecure_skip_verify = true
+  }
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+// The apiserver is reached through the `kubernetes` Service in `default`, whose
+// certificate the cluster CA does sign -- so this one verifies properly rather
+// than skipping.
+discovery.kubernetes "apiserver" {
+  role = "endpoints"
+
+  namespaces {
+    names = ["default"]
+  }
+}
+
+discovery.relabel "apiserver" {
+  targets = discovery.kubernetes.apiserver.targets
+
+  rule {
+    source_labels = [
+      "__meta_kubernetes_service_label_component",
+      "__meta_kubernetes_service_label_provider",
+      "__meta_kubernetes_endpoint_port_name",
+    ]
+    regex  = "apiserver;kubernetes;https"
+    action = "keep"
+  }
+  rule {
+    target_label = "metrics_path"
+    replacement  = "/metrics"
+  }
+}
+
+// Copied from the chart ServiceMonitor's metricRelabelings.
+// apiserver_request_duration_seconds_bucket is high-cardinality enough that
+// keeping every bucket is a real cost against `ingestion_rate_mb`.
+prometheus.relabel "apiserver" {
+  forward_to = [prometheus.remote_write.mimir.receiver]
+
+  rule {
+    source_labels = ["__name__", "le"]
+    regex         = "(etcd_request|apiserver_request_slo|apiserver_request_sli|apiserver_request)_duration_seconds_bucket;(0\\.15|0\\.2|0\\.3|0\\.35|0\\.4|0\\.45|0\\.6|0\\.7|0\\.8|0\\.9|1\\.25|1\\.5|1\\.75|2|3|3\\.5|4|4\\.5|6|7|8|9|15|20|40|45|50)(\\.0)?"
+    action        = "drop"
+  }
+}
+
+prometheus.scrape "apiserver" {
+  targets           = discovery.relabel.apiserver.output
+  job_name          = "apiserver"
+  scheme            = "https"
+  metrics_path      = "/metrics"
+  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+  tls_config {
+    ca_file     = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+    server_name = "kubernetes"
+  }
+  forward_to = [prometheus.relabel.apiserver.receiver]
+}
+
 // --- Rule sync (replaces Prometheus rule evaluation) ---
 
 // Sync PrometheusRule CRDs to Mimir Ruler for evaluation.

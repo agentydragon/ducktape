@@ -1,4 +1,115 @@
-"""Shared model rosters referenced by LiteLLM cross-configuration tests."""
+"""Shared model rosters and exposed-name derivations referenced by LiteLLM cross-configuration tests.
+
+Naming scheme (#4823): an exposed `model_name` is `{provider}/{shape}/{model}` — the
+upstream account/provider, the API shape LiteLLM exposes the entry under, then the
+upstream model:
+
+- `chatgpt/ant-messages/*` / `chatgpt/oai-responses/*` — ChatGPT/Codex subscription via
+  CLIProxyAPI, on the Anthropic Messages wire (Claude Code clients) and the OpenAI
+  Responses wire (Codex clients)
+- `tana/ant-messages/*` — Tana account via tana-litellm, an Anthropic Messages
+  passthrough
+- `google/oai-chat/*` / `google/oai-embeddings/*` — Google AI key (Gemini)
+
+A shape slug is `<definer>-<protocol>` (ant-messages, oai-responses, oai-chat,
+oai-embeddings): the shape segment names a wire protocol, and wire protocols are
+identified by their definer — the bare nouns are unique only in today's snapshot
+("chat" and "embeddings" are already generic: Cohere chat and Google embedContent are
+distinct wire shapes answering to the same nouns). The definer prefix is NOT the
+provider segment: provider says whose ACCOUNT serves the entry, the definer says whose
+PROTOCOL it speaks, and they vary independently — `chatgpt/ant-messages/*` is the
+ChatGPT account serving Anthropic's wire shape. Definer slugs stay short and fixed
+(ant, oai; future goog, coh, ...) so a provider slug can never stutter against a
+definer name (openai/openai-chat).
+
+Segments are separated by `/`, not `-`: provider model slugs are dash-heavy
+(gpt-5.6-sol, claude-sonnet-4-6, gemini-embedding-001), so a dash cannot mark segment
+boundaries unambiguously. `/` is LiteLLM's own model-group idiom (its docs' recommended
+`model_name: openai/gpt-4o`, wildcard `openai/*`) and is already served in-cluster by
+tana-litellm (`claude-sonnet-4-6/medium`, `gpt-5.1/medium`); clients carry the model in
+the request body (Claude Code, Codex, OpenClaw), and on this stack a model name never
+rides in a URL path or a Kubernetes resource name.
+
+The provider segment rides in front, not behind, because key allowlists match
+`model_name` prefixes (the `claude-*` wildcard in tf/gitops/litellm-keys/main.tf): a
+suffix-shaped Anthropic name would begin with `claude-` and silently join every
+`claude-*` allowlist. Deliberately not renamed: the direct-API `claude-*` entries
+(Claude Code names those slugs itself, and the client keys' `claude-*` wildcard admits
+them), the groq entries, and the self-hosted Ollama entries, whose
+`-openai-chat`/`-ollama-native` wire suffixes have no account to name.
+"""
+
+from enum import StrEnum
+
+
+class Provider(StrEnum):
+    """First scheme segment: the upstream account/provider an entry spends from."""
+
+    CHATGPT = "chatgpt"
+    TANA = "tana"
+    GOOGLE = "google"
+
+
+class ApiShape(StrEnum):
+    """Second scheme segment: the API shape LiteLLM exposes the entry under, as `<definer>-<protocol>`."""
+
+    ANT_MESSAGES = "ant-messages"
+    OAI_RESPONSES = "oai-responses"
+    OAI_CHAT = "oai-chat"
+    OAI_EMBEDDINGS = "oai-embeddings"
+
+
+def exposed_name(provider: Provider, shape: ApiShape, model: str) -> str:
+    """#4823 scheme name, e.g. `chatgpt/oai-responses/gpt-5.6-luna`."""
+    return f"{provider}/{shape}/{model}"
+
+
+# CLEANUP(added 2026-08-27): pre-#4823 names, still what every deployed consumer calls
+# (haku-console config.yaml, the baked workspace/codex-pod images, openclaw.json,
+# props config.toml, laptop wrappers). Consumers move one by one under #4823; when a
+# legacy derivation's last consumer moves, drop it together with its
+# proxy-config.yaml entries and tf/gitops/litellm-keys allowlist rows.
+def legacy_messages_name(model: str) -> str:
+    """Pre-#4823 Messages-wire name — the #4822 trap: says Codex, serves Claude Code."""
+    return f"codex-{model}"
+
+
+def legacy_responses_name(model: str) -> str:
+    """Pre-#4823 Responses-wire name — the suffix names the account, not the wire."""
+    return f"{model}-chatgpt"
+
+
+def legacy_google_name(model: str) -> str:
+    """Pre-#4823 Google-key name — the bare upstream id, no provider or shape."""
+    return model
+
+
+def legacy_tana_name(model: str) -> str:
+    """Pre-#4823 Tana name — provider prefix only, no shape segment."""
+    return f"tana-{model}"
+
+
+# ChatGPT/Codex-subscription models behind CLIProxyAPI, each exposed on both wire
+# surfaces (Provider.CHATGPT with ApiShape.ANT_MESSAGES and ApiShape.OAI_RESPONSES).
+CLIPROXY_MODELS: list[str] = [
+    "gpt-5.4",
+    "gpt-5.5",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-5.3-codex-spark",
+]
+
+# Tana-UI models fronted through tana-litellm. Tana encodes reasoning effort in the
+# model name (`/medium`, `/high`), not a `reasoning_effort` param, so there is no clean
+# "one model + effort knob" to map onto; we expose one model per family at its default
+# effort. Each entry: (exposed-name base, tana-litellm downstream model_name). The
+# downstream name's slash stays inside the `anthropic/` arg, never exposed.
+TANA_MODELS: list[tuple[str, str]] = [
+    ("claude-sonnet-4-6", "claude-sonnet-4-6/medium"),
+    ("claude-opus-4-6", "claude-opus-4-6/high"),
+    ("claude-haiku-4-5", "claude-haiku-4-5-20251001"),
+]
 
 # Real Anthropic API roster verified against the authenticated /v1/models
 # endpoint. These names are mirrored into Haku OpenClaw and Terraform.
@@ -6,7 +117,10 @@ ANTHROPIC_MODELS: list[str] = ["claude-opus-5", "claude-sonnet-5", "claude-fable
 
 # The subset exposed in OpenClaw's model picker. OpenClaw's bundled LiteLLM
 # provider does not query the proxy's authenticated /v1/models endpoint.
-OPENCLAW_CODEX_MODELS: list[str] = ["codex-gpt-5.6-luna", "codex-gpt-5.6-terra", "codex-gpt-5.6-sol"]
+OPENCLAW_CLIPROXY_MODELS: list[str] = ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]
+OPENCLAW_CODEX_MODELS: list[str] = [
+    exposed_name(Provider.CHATGPT, ApiShape.ANT_MESSAGES, model) for model in OPENCLAW_CLIPROXY_MODELS
+]
 
 # Google AI (Gemini). Key from the GEMINI_API_KEY env var (litellm-gemini-key
 # secret). Current-generation lineup only (Gemini 3.x) -- the 2.5 generation,
@@ -27,7 +141,7 @@ GEMINI_MODELS: list[str] = ["gemini-3.1-pro-preview", "gemini-3.7-flash", "gemin
 
 # Gemini embeddings, same key as the chat lineup. Added for OpenClaw memory search,
 # whose index needs an embedding backend and had none — see
-# plans/personal_agents/findings/harness_behaviour.md F9.
+# docs/personal_agents/findings/harness_behaviour.md F9.
 #
 # Both are stable and their embedding spaces are **mutually incompatible**: vectors
 # from one cannot be compared against the other, so switching a consumer between

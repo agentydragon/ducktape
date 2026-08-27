@@ -33,7 +33,7 @@ from haku.console import mcp_catalog_reconciler as mcp_catalog_reconciler_module
 from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig, OperatorOidcConfig
 from haku.console.conftest import console_settings, operator_session_cookie, resolve_operator_identity, write_config
-from haku.console.mcp_approval import DegradedReflection
+from haku.console.mcp_approval import DegradedReflection, ReflectionFailureStage
 from haku.console.mcp_config import ConsoleConfigFile, const_in_process_server
 from haku.console.mcp_guidance import SERVER_INSTRUCTIONS
 from haku.console.mcp_operator_oauth import (
@@ -551,24 +551,31 @@ async def test_tool_call_payload_fields_project_and_omit_nullable_values(agent_c
     listed = await agent_client.call_tool("list_tool_calls", {})
     assert listed.structured_content is not None
     listed_call = listed.structured_content["result"][0]
-    assert {"arguments", "rationale", "result"}.isdisjoint(listed_call)
+    assert {"arguments", "caller", "rationale", "result"}.isdisjoint(listed_call)
 
     default = await agent_client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
     assert default.structured_content is not None
     default_call = default.structured_content
     assert default_call["result"]["structuredContent"] == result.structured_content
-    assert {"arguments", "rationale"}.isdisjoint(default_call)
+    assert {"arguments", "caller", "rationale"}.isdisjoint(default_call)
 
     compact = await agent_client.call_tool("get_tool_call", {"tool_call_id": tool_call_id, "fields": []})
     assert compact.structured_content is not None
-    assert {"arguments", "rationale", "result"}.isdisjoint(compact.structured_content)
+    assert {"arguments", "caller", "rationale", "result"}.isdisjoint(compact.structured_content)
 
     selected = await agent_client.call_tool(
-        "get_tool_call", {"tool_call_id": tool_call_id, "fields": ["arguments", "rationale", "result"]}
+        "get_tool_call", {"tool_call_id": tool_call_id, "fields": ["arguments", "caller", "rationale", "result"]}
     )
     assert selected.structured_content is not None
     selected_call = selected.structured_content
-    assert {"arguments", "rationale", "result"} <= selected_call.keys()
+    assert {"arguments", "caller", "rationale", "result"} <= selected_call.keys()
+    assert selected_call["caller"]["kind"] == "agent"
+    assert set(selected_call["caller"]) == {"kind", "agent_id", "display_name", "session_id"}
+
+    caller_only = await agent_client.call_tool("list_tool_calls", {"fields": ["caller"]})
+    assert caller_only.structured_content is not None
+    assert {"arguments", "rationale", "result"}.isdisjoint(caller_only.structured_content["result"][0])
+    assert caller_only.structured_content["result"][0]["caller"]["kind"] == "agent"
 
     pending = await agent_client.call_tool(
         "gmail__drafts_create",
@@ -1712,7 +1719,8 @@ async def test_targeted_dispatch_reports_a_known_degraded_server(migrated_db_url
 
     catalogs = Mock()
     catalogs.metadata.return_value = DegradedReflection(
-        failure_stage="credential_resolution", degraded_reason="MCP OAuth token refresh failed: 401"
+        failure_stage=ReflectionFailureStage.CREDENTIAL_RESOLUTION,
+        degraded_reason="MCP OAuth token refresh failed: 401",
     )
     actor_resolver = Mock(spec=mcp_server_module.HakuMcpActorResolver)
     actor_resolver.resolve = AsyncMock(

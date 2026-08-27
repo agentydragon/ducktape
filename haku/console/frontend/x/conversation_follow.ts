@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { Conversation, ConversationFollowMessage } from "../client";
+import type { Conversation, ConversationEntry, ConversationFollowMessage } from "../client";
 import { redirectToOperatorLogin } from "../operator_login";
 
 // The one close the shell acts on instead of reconnecting: the operator session reached its
@@ -16,30 +16,28 @@ const OPERATOR_SESSION_EXPIRED_CLOSE_CODE = 4001;
  */
 export type FollowStatus = "connecting" | "live" | "offline";
 
-function byId<T>(rows: readonly T[], id: (row: T) => string): Map<string, T> {
-  return new Map(rows.map((row) => [id(row), row]));
-}
-
-/** Replace the rows of *held* that *arriving* carries, keeping the order the two agree on.
+/** Union *held* with the entries an update carries, in stream order.
  *
- * Merged rather than appended because an update carries whole rows for anything that moved,
- * including rows already held — a message being written arrives once per coalescing window with
- * the prose so far. Order is by the field the server sorts on, so a row that arrives before the
- * one it follows still lands in the right place.
+ * A union by `seq` rather than an append: an entry never changes once defined, so a duplicate —
+ * a message delivered twice, a re-read from an older position — lands on the entry already held,
+ * and an entry that arrives out of order still lands at its position.
  */
-function merged<T>(held: readonly T[], arriving: readonly T[], id: (row: T) => string, order: (row: T) => number): T[] {
-  const replacing = byId(arriving, id);
-  const kept = held.map((row) => replacing.get(id(row)) ?? row);
-  const known = new Set(kept.map(id));
-  return [...kept, ...arriving.filter((row) => !known.has(id(row)))].sort((left, right) => order(left) - order(right));
+function mergedEntries(
+  held: readonly ConversationEntry[],
+  arriving: readonly ConversationEntry[]
+): ConversationEntry[] {
+  const bySeq = new Map<number, ConversationEntry>(held.map((entry) => [entry.seq, entry]));
+  for (const entry of arriving) bySeq.set(entry.seq, entry);
+  return [...bySeq.values()].sort((left, right) => left.seq - right.seq);
 }
 
 /** The conversation a follower holds after one message: a snapshot replaces, an update merges.
  *
  * The whole client half of the follow contract, in one pure function — there is no gap to detect
  * and no repair read to issue, because the server sends a snapshot itself whenever it cannot serve
- * a position. Merging is idempotent, so a message delivered twice or re-read from an older
- * position lands on the same conversation.
+ * a position. Only the entries merge; everything else the update carries arrives whole and
+ * replaces what is held, the session block included, so nothing a follower shows can belong to a
+ * session it has just been told was replaced.
  *
  * An update with nothing to merge into is a protocol violation rather than a state to render: a
  * position is only ever sent back after a snapshot established what it addresses.
@@ -51,8 +49,9 @@ export function followed(held: Conversation | null, message: ConversationFollowM
     ...held,
     attachments: message.attachments,
     earlier_sessions: message.earlier_sessions,
+    entries: mergedEntries(held.entries, message.entries),
+    streaming: message.streaming,
     session: {
-      ...held.session,
       session_id: message.session_id,
       status: message.status,
       error: message.error,
@@ -60,18 +59,6 @@ export function followed(held: Conversation | null, message: ConversationFollowM
       updated_at: message.updated_at,
       provisioning: message.provisioning,
       narration: message.narration,
-      items: merged(
-        held.session.items,
-        message.items,
-        (row) => row.item_id,
-        (row) => Date.parse(row.created_at)
-      ),
-      turns: merged(
-        held.session.turns,
-        message.turns,
-        (row) => row.turn_id,
-        (row) => Date.parse(row.started_at)
-      ),
     },
   };
 }

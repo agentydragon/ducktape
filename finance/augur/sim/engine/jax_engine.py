@@ -3130,7 +3130,7 @@ def _fifo_sell(
     Quanta is the only denomination. A caller wanting to raise a dollar amount converts it
     first — `target_allocation._quanta_for_quanta` — because converting here would mean the
     engine dividing by a price and rounding, which is it choosing how much to trade rather
-    than executing what it was told (<plans/actor_actions.md>).
+    than executing what it was told.
 
     Oversell zeroes the whole target rather than part-filling it: a caller that asked for more
     than the pool holds gets nothing, and the obligation it could not fund fails the rollout at

@@ -17,9 +17,15 @@ import (
 )
 
 type environmentConfig struct {
-	AuthorizationURL              url.URL       `env:"HAKU_KUBE_AUTHORIZATION_URL,required,notEmpty"`
-	AllowInsecureAuthorization    bool          `env:"HAKU_KUBE_ALLOW_INSECURE_AUTHORITY" envDefault:"false"`
-	ListenAddress                 string        `env:"HAKU_KUBE_LISTEN_ADDRESS" envDefault:":8080"`
+	AuthorizationURL           url.URL `env:"HAKU_KUBE_AUTHORIZATION_URL,required,notEmpty"`
+	AllowInsecureAuthorization bool    `env:"HAKU_KUBE_ALLOW_INSECURE_AUTHORITY" envDefault:"false"`
+	ListenAddress              string  `env:"HAKU_KUBE_LISTEN_ADDRESS" envDefault:":8080"`
+	// In-cluster TLS listener for kubeconfig callers: kubectl attaches credentials only to an
+	// https server, so sandboxes reach this listener while the plaintext one stays the
+	// Gateway backend hop. Serving is enabled by supplying both files.
+	TLSListenAddress              string        `env:"HAKU_KUBE_TLS_LISTEN_ADDRESS" envDefault:":8443"`
+	TLSCertFile                   string        `env:"HAKU_KUBE_TLS_CERT_FILE"`
+	TLSKeyFile                    string        `env:"HAKU_KUBE_TLS_KEY_FILE"`
 	AuthorizationTimeout          time.Duration `env:"HAKU_KUBE_AUTHORIZATION_TIMEOUT" envDefault:"3s"`
 	RequestTimeout                time.Duration `env:"HAKU_KUBE_REQUEST_TIMEOUT" envDefault:"30s"`
 	StreamRevalidationInterval    time.Duration `env:"HAKU_KUBE_STREAM_REVALIDATION_INTERVAL" envDefault:"5s"`
@@ -65,14 +71,23 @@ func run() error {
 		return err
 	}
 
-	server := &http.Server{
-		Addr:              config.ListenAddress,
-		Handler:           handler,
-		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       60 * time.Second,
-		// Request contexts carry the stricter per-request/lease deadline. Do not
-		// add WriteTimeout here: it would make future streaming support subtly
-		// depend on a second, unrelated deadline.
+	newServer := func(address string) *http.Server {
+		return &http.Server{
+			Addr:              address,
+			Handler:           handler,
+			ReadHeaderTimeout: 5 * time.Second,
+			IdleTimeout:       60 * time.Second,
+			// Request contexts carry the stricter per-request/lease deadline. Do not
+			// add WriteTimeout here: it would make future streaming support subtly
+			// depend on a second, unrelated deadline.
+		}
+	}
+	plain := newServer(config.ListenAddress)
+	servers := []*http.Server{plain}
+	var tlsServer *http.Server
+	if config.TLSCertFile != "" {
+		tlsServer = newServer(config.TLSListenAddress)
+		servers = append(servers, tlsServer)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -81,14 +96,35 @@ func run() error {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = server.Shutdown(shutdownCtx)
+		for _, server := range servers {
+			_ = server.Shutdown(shutdownCtx)
+		}
 	}()
 
-	slog.Info("Haku Kubernetes API proxy listening", "address", server.Addr, "upstream", upstreamURL.Redacted())
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	// One failing listener stops the process: a proxy that silently lost its TLS endpoint would
+	// strand every kubeconfig caller while still answering probes on the plaintext one.
+	listenErrors := make(chan error, len(servers))
+	go func() { listenErrors <- plain.ListenAndServe() }()
+	if tlsServer != nil {
+		go func() { listenErrors <- tlsServer.ListenAndServeTLS(config.TLSCertFile, config.TLSKeyFile) }()
+	}
+	slog.Info(
+		"Haku Kubernetes API proxy listening",
+		"address", plain.Addr,
+		"tls_address", tlsAddress(tlsServer),
+		"upstream", upstreamURL.Redacted(),
+	)
+	if err := <-listenErrors; err != nil && err != http.ErrServerClosed {
 		return err
 	}
 	return nil
+}
+
+func tlsAddress(server *http.Server) string {
+	if server == nil {
+		return "disabled"
+	}
+	return server.Addr
 }
 
 func loadEnvironmentConfig() (environmentConfig, error) {
@@ -114,6 +150,9 @@ func parseEnvironmentConfig(options env.Options) (environmentConfig, error) {
 	}
 	if config.MaxRequestBytes <= 0 {
 		return environmentConfig{}, fmt.Errorf("HAKU_KUBE_MAX_REQUEST_BYTES must be positive")
+	}
+	if (config.TLSCertFile == "") != (config.TLSKeyFile == "") {
+		return environmentConfig{}, fmt.Errorf("HAKU_KUBE_TLS_CERT_FILE and HAKU_KUBE_TLS_KEY_FILE must be set together")
 	}
 	if config.kubernetesServicePort() == "" {
 		return environmentConfig{}, fmt.Errorf("KUBERNETES_SERVICE_PORT_HTTPS or KUBERNETES_SERVICE_PORT is required")

@@ -1,9 +1,10 @@
 # The Matrix channel — what it guarantees
 
-Matrix is one channel onto a chat session: a transport for prose, plus the notices that make a run
-legible from a phone. The console remains the session owner, the credential holder and the approval
-authority; nothing here is a store of record. Where this channel is going — one subscription, one
-reconciler per attachment — is <../../../plans/conversation_layers.md>.
+Matrix is one channel onto the chat runtime: a transport for prose, plus the notices that make a
+run legible from a phone. The console remains the session owner, the credential holder and the
+approval authority; nothing here is a store of record. Delivery is reconciled per attachment — one
+owner per bound room for its cursor, outbox, revisions and send budget; the redesign work still
+open lives in <../../../plans/conversation_layers.md>.
 
 Out of scope by decision, so it is not re-litigated: end-to-end encryption, federation, approvals
 over Matrix, and any write surface for the agent beyond its own replies.
@@ -25,7 +26,7 @@ over Matrix, and any write surface for the agent beyond its own replies.
   refusing does not converge: nothing about an already-sent screenshot ever changes, so the batch
   would be re-offered forever and one image would wedge ingress against every later message.
 
-  Both are **recorded** as `session_events` rows written in the transaction that advances the
+  Both are **recorded** as `conversation_event` rows written in the transaction that advances the
   watermark, so the room's line is a rendering of a fact the console kept rather than the only copy
   of it.
 
@@ -64,9 +65,9 @@ over Matrix, and any write surface for the agent beyond its own replies.
 - **Batch order follows the homeserver's stream order** and is preserved in the rendered prompt.
 - **A batch that arrives mid-turn is rejected, not held.** The room is told it was not delivered and
   the operator sends it again; nothing queues behind a running turn. Acceptance is the
-  acknowledgement, so the watermark advances every pass. The cost, and the two richer answers that
-  would take it back — mid-turn steering, a conversation-layer queue — are in
-  <../../../plans/conversation_layers.md> § 7.
+  acknowledgement, so the watermark advances every pass. The cost is deliberate: mid-turn steering
+  and a conversation-layer queue are the richer answers that would take it back, and neither is
+  built.
 - **What a prompt answered is recorded, not rendered.** The `PROMPT_ENQUEUED` event's body names the
   prompt's origin — a closed union of the SPA and a Matrix room, required with no default, so every
   stored prompt says which. The room's arm carries the room beside the events folded into the prompt,
@@ -80,9 +81,13 @@ over Matrix, and any write surface for the agent beyond its own replies.
 
 ## The room and the session behind it
 
-- **A DM, not a room.** The conversation is a direct chat between the operator and Haku. Nobody else
-  can speak in it, which is why mention gating, per-room sender allowlists and multi-bot loop
+- **A DM, not a room.** Each conversation is a direct chat between the operator and Haku. Nobody
+  else can speak in it, which is why mention gating, per-room sender allowlists and multi-bot loop
   protection are absent here rather than overlooked.
+- **One bot serves many rooms.** Every room the operator invites Haku into binds a conversation of
+  its own, served beside the others: per attachment, its own cursor, reply outbox, editable-line
+  revisions and send budget, so one room's backlog or refusals never reorder or starve another's.
+  Nothing crosses rooms except the `/sync` stream and the credential.
 - **The room is created by invitation, and Haku joins itself.** The operator starts a DM from any
   client; the harness sees the invite in `/sync`'s `rooms.invite` and joins — **only invites from
   the operator's own MXID**, the one mapped to an operator identity. An invite from anyone else is
@@ -116,18 +121,25 @@ over Matrix, and any write surface for the agent beyond its own replies.
   after the fact — refreshes it every ten seconds, and clears it on **every** terminal path
   including failure. The homeserver's own 30-second expiry is the backstop for the one path no code
   runs on, a console that dies mid-turn.
-- **For slow turns a status message reports what is happening now**, created lazily after a latency
+- **For slow turns one work line reports what is happening now**, created lazily after a latency
   threshold so short exchanges do not leave a status/answer pair behind. It is edited at most once
-  every five seconds and redacted on every terminal path.
+  every five seconds, **stays bounded however long the turn runs** — the running tools plus a tally
+  of the calls already done, never a line per step — and is redacted on every terminal path.
 - **Status is a coarse state, not a description of the work.** Where a tool is named, its identifier
   passes through verbatim: no per-tool copy, no mapping table to maintain as the tool surface grows.
   It is derived by the console from the neutral event stream it is already consuming — never by
   asking the model what it is doing, and never from one provider's own prose.
-- **Every transition is announced** — sandbox provisioning, ready, turn started and finished,
-  session compacted or rotated, sandbox lost, reconnecting, recovering. Verbosity is chosen
-  deliberately over tidiness: while this is new, a room that over-explains itself is the debugging
-  surface. System messages use `m.notice`, so clients render them distinctly and well-behaved bots
-  do not react to them.
+- **A session's pre-turn life is one edited line, and its ending stays in scrollback.** Sandbox
+  provisioning, setup narration and adoption edit one `m.notice` per session instead of posting one
+  each; the line is withdrawn once the first turn proves the session alive, and a lease expiry
+  seals the ending — as that line's final edit while it still shows, or as a one-event notice when
+  it does not. Rejections, unreadable input, aborts and failures stay notices of their own: those
+  are facts an operator scrolls back for. System messages use `m.notice`, so clients render them
+  distinctly and well-behaved bots do not react to them.
+- **Every editable line has a durable identity: the conversation event that opened its span.** The
+  tag every create, edit and seal carries names it, which is what lets a successor replica edit the
+  line its predecessor posted, the room's own copy hold correspondence for the editable lines, and
+  a takeover sweep redact a line whose span nothing open accounts for.
 - **The current session ID is visible in the room**, at minimum on startup and on rotation, so the
   operator can quote it when debugging without asking the agent or opening the console. The agent is
   told its own session ID in its prompt too.
@@ -165,6 +177,20 @@ over Matrix, and any write surface for the agent beyond its own replies.
   text; and **external images** are dropped, since `src` must be `mxc://`, so an image becomes its
   alt text.
 
+## The room's own copy
+
+- **Haku's own events are read back, and are still never input.** The same `/sync` ingress reads
+  carries the console's own sends; ingress keeps dropping them by sender, and a mirror reader keeps
+  what their tags say, durably and per attachment.
+- **A sealed notice posts once, however the console dies.** A notice projected from a durable
+  conversation event is not sent again when the room already shows an event tagged with that
+  source, no matter how long the console was down — Synapse's transaction-cache deduplication only
+  has to cover the window between a send and its echo becoming visible. In that window's one losing
+  case, the echo itself dying with the console, the duplicate that lands is redacted once both
+  copies have been observed, keeping the earliest.
+- **A redaction is respected, not fought.** The operator unsaying Haku's copy removes it from the
+  room; the console neither re-posts it nor treats the redacted copy as a duplicate to repair.
+
 ## Credentials and identity
 
 - **No Matrix access token is present in the sandbox.** The console holds the single Matrix
@@ -201,11 +227,12 @@ over Matrix, and any write surface for the agent beyond its own replies.
   none of it in the sandbox. The cost to settle first is that the secrets transform is
   **host**-scoped, so fencing off send, join and admin needs a path allowlist it may not have.
 
-- **Reads are unscoped across rooms and past conversations**, deliberately and for now. The fence
-  that replaces this is the information tier, not the room
-  (<../../../../plans/information_trust_tiers.md>) — a decision function at one console call site,
-  not scoping smeared through the transport, which is a second reason to keep the tools plain HTTP
-  entries rather than closures over a session.
+- **Reads cross rooms and past conversations; the fence is the reader's profile closure, not the
+  room.** One decision function at the console (`conversation_read_access.py`, the profile DAG
+  over each conversation's pinned profile) scopes the drilldown and semantic recall alike — not
+  scoping smeared through the transport, which is a second reason to keep the tools plain HTTP
+  entries rather than closures over a session. The tier generalization of that label remains
+  planned (<../../../../plans/information_trust_tiers.md>).
 - **IDs are given, not guessed.** Nothing renders one into a prompt, so the only ones the agent holds
   are what the operator pasted; a permalink is accepted as input, since that is what a client
   produces on "copy link". A finding drawn from a room message cites the message, in a form the

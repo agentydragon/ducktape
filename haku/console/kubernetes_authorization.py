@@ -19,7 +19,7 @@ import logging
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthorizationV1Api
@@ -28,6 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from haku.console.agent_bearer_authority import AgentBearerAuthority
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
+from haku.console.grant_principal import RequestPrincipal
 from haku.console.kubernetes_grant_models import (
     KubernetesAllNamespacesGrantScope,
     KubernetesClusterGrantScope,
@@ -67,7 +68,11 @@ class RequestAttributes(BaseModel):
     verb: str = Field(min_length=1)
     api_group: str = ""
     api_version: str = ""
-    namespace: str = ""
+    namespace: str = Field(
+        default="",
+        description="Exact namespace of a namespaced request; empty for cluster-scoped resources "
+        "and all-namespaces queries.",
+    )
     resource: str = ""
     subresource: str = ""
     name: str = ""
@@ -246,22 +251,24 @@ class KubernetesAuthorizationService:
             raise KubernetesAuthorizationUnavailableError("Haku Agent authority is unavailable") from error
         if actor is None:
             raise KubernetesBearerRejectedError("Haku rejected the caller credential")
-        return await self.evaluate(agent_id=actor.agent_id, access_profile_id=actor.access_profile_id, request=request)
+        return await self.evaluate(request_principal=RequestPrincipal.from_source(actor), request=request)
 
     async def authorize_agent(
-        self, *, agent_id: UUID, access_profile_id: str | None, request: AuthorizationRequest
+        self, *, request_principal: RequestPrincipal, request: AuthorizationRequest
     ) -> AuthorizationResponse:
         """Evaluate identity already revalidated into trusted in-process execution metadata."""
 
-        return await self.evaluate(agent_id=agent_id, access_profile_id=access_profile_id, request=request)
+        return await self.evaluate(request_principal=request_principal, request=request)
 
     async def evaluate(
-        self, *, agent_id: UUID, access_profile_id: str | None, request: AuthorizationRequest
+        self, *, request_principal: RequestPrincipal, request: AuthorizationRequest
     ) -> AuthorizationResponse:
         """Evaluate one trusted Agent request without mutating grant state."""
 
         subject = (
-            self._config.subjects_by_access_profile.get(access_profile_id) if access_profile_id is not None else None
+            self._config.subjects_by_access_profile.get(request_principal.access_profile_id)
+            if request_principal.access_profile_id is not None
+            else None
         )
         if subject is None:
             raise KubernetesAuthorizationUnavailableError(
@@ -279,10 +286,9 @@ class KubernetesAuthorizationService:
         decision_id = f"sar:{uuid4()}"
         if request.attributes.resource_request:
             logger.info(
-                "Kubernetes standing-policy decision agent_id=%s access_profile_id=%s subject=%s "
+                "Kubernetes standing-policy decision request_principal=%s subject=%s "
                 "decision_id=%s allowed=%s verb=%s namespace=%s resource=%s subresource=%s name=%s",
-                agent_id,
-                access_profile_id,
+                request_principal,
                 subject.username,
                 decision_id,
                 result.allowed,
@@ -294,10 +300,9 @@ class KubernetesAuthorizationService:
             )
         else:
             logger.info(
-                "Kubernetes standing-policy decision agent_id=%s access_profile_id=%s subject=%s "
+                "Kubernetes standing-policy decision request_principal=%s subject=%s "
                 "decision_id=%s allowed=%s verb=%s path=%s",
-                agent_id,
-                access_profile_id,
+                request_principal,
                 subject.username,
                 decision_id,
                 result.allowed,
@@ -313,17 +318,17 @@ class KubernetesAuthorizationService:
         # Matching is read-only: the repository query excludes expired rows.
         try:
             grant = await self._grants.match_request(
-                agent_id=agent_id, required_scope=request.required_scope, required_rules=request.required_rules
+                request_principal=request_principal,
+                required_scope=request.required_scope,
+                required_rules=request.required_rules,
             )
         except Exception as error:
             raise KubernetesAuthorizationUnavailableError("Kubernetes grant authority is unavailable") from error
         if grant.allowed and grant.grant_id is not None:
             grant_decision_id = f"grant:{grant.grant_id}"
             logger.info(
-                "Kubernetes temporary-grant decision agent_id=%s access_profile_id=%s "
-                "decision_id=%s allowed=true valid_until=%s",
-                agent_id,
-                access_profile_id,
+                "Kubernetes temporary-grant decision request_principal=%s decision_id=%s allowed=true valid_until=%s",
+                request_principal,
                 grant_decision_id,
                 grant.expires_at,
             )
@@ -365,10 +370,40 @@ def required_rule(attributes: RequestAttributes) -> KubernetesRule:
     )
 
 
+# Reviewed static set of built-in kinds that are cluster-scoped in stock Kubernetes, keyed by
+# (api_group, resource) because a CRD may reuse a resource name in another group (nodes.longhorn.io
+# is namespaced). Kinds outside this set — CRDs and unknowns — must still declare their scope.
+BUILTIN_CLUSTER_SCOPED_RESOURCES: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("", "namespaces"),
+        ("", "nodes"),
+        ("", "persistentvolumes"),
+        ("admissionregistration.k8s.io", "mutatingwebhookconfigurations"),
+        ("admissionregistration.k8s.io", "validatingadmissionpolicies"),
+        ("admissionregistration.k8s.io", "validatingadmissionpolicybindings"),
+        ("admissionregistration.k8s.io", "validatingwebhookconfigurations"),
+        ("apiextensions.k8s.io", "customresourcedefinitions"),
+        ("apiregistration.k8s.io", "apiservices"),
+        ("certificates.k8s.io", "certificatesigningrequests"),
+        ("flowcontrol.apiserver.k8s.io", "flowschemas"),
+        ("flowcontrol.apiserver.k8s.io", "prioritylevelconfigurations"),
+        ("networking.k8s.io", "ingressclasses"),
+        ("node.k8s.io", "runtimeclasses"),
+        ("rbac.authorization.k8s.io", "clusterrolebindings"),
+        ("rbac.authorization.k8s.io", "clusterroles"),
+        ("scheduling.k8s.io", "priorityclasses"),
+        ("storage.k8s.io", "csidrivers"),
+        ("storage.k8s.io", "csinodes"),
+        ("storage.k8s.io", "storageclasses"),
+        ("storage.k8s.io", "volumeattachments"),
+    }
+)
+
+
 def required_scope(
     attributes: RequestAttributes, *, unnamespaced_resource_kind: KubernetesGrantScopeKind | None = None
 ) -> KubernetesGrantScope:
-    """Derive scope when a request either names its namespace or states its unnamespaced kind."""
+    """Derive scope from a named namespace, a declared unnamespaced kind, or a built-in cluster-scoped kind."""
 
     if not attributes.resource_request:
         if unnamespaced_resource_kind is not None:
@@ -382,4 +417,14 @@ def required_scope(
         return KubernetesAllNamespacesGrantScope()
     if unnamespaced_resource_kind is KubernetesGrantScopeKind.CLUSTER:
         return KubernetesClusterGrantScope()
-    raise ValueError("an unnamespaced resource request must declare all_namespaces or cluster scope")
+    if unnamespaced_resource_kind is not None:
+        raise ValueError(
+            f"unnamespaced_resource_kind must be 'all_namespaces' or 'cluster', not {unnamespaced_resource_kind}"
+        )
+    if (attributes.api_group, attributes.resource) in BUILTIN_CLUSTER_SCOPED_RESOURCES:
+        return KubernetesClusterGrantScope()
+    resource = f"{attributes.resource}.{attributes.api_group}" if attributes.api_group else attributes.resource
+    raise ValueError(
+        f"cannot infer the scope of unnamespaced resource {resource!r}: "
+        "declare unnamespaced_resource_kind='all_namespaces' or 'cluster'"
+    )

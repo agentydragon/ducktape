@@ -7,8 +7,9 @@ is the only thing the other two talk to:
 >
 > A **session** listens to and sends to the **conversation**, never to a channel.
 
-The tables that realise this, and the evidence that their vocabulary belongs to no one backend, are
-in <conversation_schema.md>.
+The tables that realise this are the chat half of <../database_schema.py>; the evidence that their
+vocabulary belongs to no one backend, and the invariants spanning them, are in
+<conversation_schema.md>.
 
 ## What each layer owns
 
@@ -79,6 +80,19 @@ that re-derived everything would silently delete every fact no frame carries.
 
 ## Placing something new
 
+- **A module** goes to the directory of the one axis it varies on. Under `../x/` those are the
+  channel-neutral, harness-neutral runtime (`x/*.py`), one channel (`x/channels/<name>/`), and one
+  CLI harness each in a directory named for the product whose binary it launches (`x/claude_code/`,
+  `x/codex_app_server/` — the harness and the model behind it are different axes). The test is what
+  the module would take with it if the other axis were replaced: a second channel must reuse
+  everything at the runtime level unchanged, and a module that cannot compile without `matrix-nio`
+  is the channel's. Imports do not decide the harder cases — what the module's output is _for_
+  does. `channels/matrix/spans.py` imports no `matrix-nio` and reads only the neutral stream, yet
+  belongs to the channel, because what it folds the stream into is Matrix's own rendering and a
+  second channel writes its own fold; `x/sandbox_claims.py` mints `claude-`-prefixed claim names
+  but is Kubernetes provisioning any harness uses, so it is runtime. A vocabulary genuinely owned
+  by two axes is two modules: the CLI's own top-level `type` values are `x/claude_code/frames.py`,
+  and the bridge envelope's `kind` with the row the console authors under it is `x/setup_output.py`.
 - **A table** goes to the layer that outlives what it holds. State only one messaging service can
   interpret — retry budgets, transport ids, an addressable copy's revision — is that channel's own,
   lives below the channel boundary and is named after the channel. State that must survive a runner
@@ -87,6 +101,16 @@ that re-derived everything would silently delete every fact no frame carries.
   port outward — subscribe from a position, and offer input — and every channel is a consumer of
   it; a second channel is implementing that port and a cursor, and nothing else in the console
   changes.
+- **A subscription** is that port's read half, and there is exactly one protocol for it: the
+  positional read of the record, plus the conversation-keyed wake that says to look now — the wake
+  carries an address and never content, so the record stays the authority. Whatever transports a
+  consumer — a room, a follow socket, the console socket a tab already holds — what it subscribes
+  to is that pair. A new way to learn that a conversation moved is a second protocol, and the
+  answer is to be a consumer of the one that exists; the runtime side is symmetric, learning of
+  conversation demand by the same wake rather than by a path of its own. The protocol governs the
+  layer boundary, not the inside of a component: a signal that never crosses one — channel code
+  waking channel code about the channel's own delivery state — rides that component's own wiring,
+  below its boundary, and does not join this wire.
 - **An event kind** joins the record if any reader outside the session that produced it may need
   it, and takes its category from the route it arrived by, not from its subject. A kind that only
   a running turn reads is a session detail and needs no row; a kind a room or a tab renders is a

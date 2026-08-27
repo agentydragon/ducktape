@@ -18,6 +18,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncIterator, Callable, Iterable
+from enum import StrEnum
 from typing import Annotated, Any, ClassVar, Literal, cast
 from uuid import UUID
 
@@ -39,16 +40,22 @@ router = APIRouter(tags=["console-events"])
 OPERATOR_SESSION_EXPIRED_CLOSE_CODE = 4001
 
 
+# TODO: maybe this should be a bool (`connected: bool`) rather than a two-member enum.
+class ConnectionStatus(StrEnum):
+    CONNECTED = "connected"
+    DISCONNECTED = "disconnected"
+
+
 class McpOperatorAuthChangedEvent(BaseModel):
     event_type: Literal["mcp_operator_auth_changed"] = "mcp_operator_auth_changed"
     server_id: str
-    status: Literal["connected", "disconnected"]
+    status: ConnectionStatus
 
 
 class OperatorConnectionChangedEvent(BaseModel):
     event_type: Literal["operator_connection_changed"] = "operator_connection_changed"
     connection: str
-    status: Literal["connected", "disconnected"]
+    status: ConnectionStatus
 
 
 class ConsoleHelloEvent(BaseModel):
@@ -60,20 +67,20 @@ class ToolCallsChangedEvent(BaseModel):
     tool_call_id: str
 
 
-class SessionChangedEvent(BaseModel):
-    """A chat session's rows changed; a surface showing it should re-read them.
+class ConversationChangedEvent(BaseModel):
+    """A conversation's record changed; a surface showing it should re-read.
 
-    An invalidation, not a payload: the transcript stays a REST read, so a tab that missed events
+    An invalidation, not a payload: the record stays a REST read, so a tab that missed events
     entirely still lands correct by refetching, and no consumer has to decide whether the socket
-    or the API is the truth. Carrying the message itself would make this a second source of one.
+    or the API is the truth. Carrying the change itself would make this a second source of one.
     """
 
-    event_type: Literal["session_changed"] = "session_changed"
-    session_id: UUID
+    event_type: Literal["conversation_changed"] = "conversation_changed"
+    conversation_id: UUID
 
 
 type ConsoleEvent = (
-    ToolCallsChangedEvent | SessionChangedEvent | McpOperatorAuthChangedEvent | OperatorConnectionChangedEvent
+    ToolCallsChangedEvent | ConversationChangedEvent | McpOperatorAuthChangedEvent | OperatorConnectionChangedEvent
 )
 type ConsoleEventListener = Callable[[UUID, ConsoleEvent], None]
 

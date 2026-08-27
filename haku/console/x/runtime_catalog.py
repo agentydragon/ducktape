@@ -6,13 +6,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from haku.console.chat_models import RuntimeKind
-from haku.console.config import (
-    ClaudeCodeImplementationConfig,
-    CodexAppServerImplementationConfig,
-    RuntimeRegistrationConfig,
-)
+from haku.console.config import ClaudeCodeImplementationConfig, RuntimeRegistrationConfig
 from haku.console.x.claude_code.client import cli_over_websocket
 from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
+from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter
 from haku.console.x.runtime import (
     AgentRuntimeResources,
@@ -72,6 +69,7 @@ def runtime_registration(
     elif isinstance(implementation, CodexAppServerImplementationConfig):
         adapter = CodexRuntimeAdapter(
             model=implementation.model,
+            reasoning_effort=implementation.reasoning_effort,
             model_provider=CodexModelProvider(
                 provider_id=implementation.provider_id,
                 name=implementation.provider_name,

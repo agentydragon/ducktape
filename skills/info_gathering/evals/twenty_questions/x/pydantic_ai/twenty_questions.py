@@ -31,7 +31,14 @@ from skills.info_gathering.evals.twenty_questions.prompts import (
     first_user_message,
     load_sim_prompt,
 )
-from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, Result, RunSummary, Timeout
+from skills.info_gathering.evals.twenty_questions.result_types import (
+    Correct,
+    LogEntry,
+    Player,
+    Result,
+    RunSummary,
+    Timeout,
+)
 from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
     add_common_args,
     output_dir_from_args,
@@ -87,9 +94,7 @@ class GameState:
     log_entries: list[LogEntry] = field(default_factory=list)
     sim_history: list[ModelMessage] | None = None
 
-    def record(
-        self, player: Literal["guesser", "simulator"], content: str, tool_calls: list[dict[str, object]] | None = None
-    ) -> None:
+    def record(self, player: Player, content: str, tool_calls: list[dict[str, object]] | None = None) -> None:
         self.log_entries.append(
             LogEntry(timestamp=datetime.now(UTC), player=player, content=content, tool_calls=tool_calls or [])
         )
@@ -117,26 +122,28 @@ def _build_game_toolset(*, state: GameState, model_id: str | None, sim_instructi
     async def ask_yes_no_question(ctx: RunContext[None], /, question: str) -> str:
         """Ask a yes/no question. Uses one turn."""
         state.turn += 1
-        state.record("guesser", question, [{"name": "ask_yes_no_question", "args": {"question": question}}])
+        state.record(Player.GUESSER, question, [{"name": "ask_yes_no_question", "args": {"question": question}}])
         logger.info("Guesser (turn %d): %s", state.turn, question[:200])
 
         action = await _run_sim(f"Question: {question}")
 
         if isinstance(action, SimInvalidInput):
             state.invalid_input_count += 1
-            state.record("simulator", action.reason, [{"name": "invalid_input", "args": {"reason": action.reason}}])
+            state.record(
+                Player.SIMULATOR, action.reason, [{"name": "invalid_input", "args": {"reason": action.reason}}]
+            )
             state.turn -= 1  # Refund the turn.
             return action.reason
 
         if isinstance(action, SimAnswer):
-            state.record("simulator", action.response, [{"name": "answer", "args": {"response": action.response}}])
+            state.record(Player.SIMULATOR, action.response, [{"name": "answer", "args": {"response": action.response}}])
             logger.info("Simulator: %s", action.response)
             if state.turn >= state.turn_limit and state.result is None:
                 state.result = Timeout(limit=state.turn_limit)
             return action.response
 
         if isinstance(action, SimCorrectAnswer):
-            state.record("simulator", "", [{"name": "correct_answer", "args": {}}])
+            state.record(Player.SIMULATOR, "", [{"name": "correct_answer", "args": {}}])
             state.result = Correct(turns=state.turn)
             logger.info("Correct answer on turn %d!", state.turn)
             return "Correct! You guessed it!"
@@ -147,19 +154,19 @@ def _build_game_toolset(*, state: GameState, model_id: str | None, sim_instructi
     async def guess_answer(ctx: RunContext[None], /, answer: str) -> str:
         """Guess the secret answer. Uses one turn."""
         state.turn += 1
-        state.record("guesser", answer, [{"name": "guess_answer", "args": {"answer": answer}}])
+        state.record(Player.GUESSER, answer, [{"name": "guess_answer", "args": {"answer": answer}}])
         logger.info("Guesser (turn %d) guesses: %s", state.turn, answer[:200])
 
         action = await _run_sim(f"My answer is: {answer}")
 
         if isinstance(action, SimCorrectAnswer):
-            state.record("simulator", "", [{"name": "correct_answer", "args": {}}])
+            state.record(Player.SIMULATOR, "", [{"name": "correct_answer", "args": {}}])
             state.result = Correct(turns=state.turn)
             logger.info("Correct answer on turn %d!", state.turn)
             return "Correct! You guessed it!"
 
         if isinstance(action, SimAnswer):
-            state.record("simulator", action.response, [{"name": "answer", "args": {"response": action.response}}])
+            state.record(Player.SIMULATOR, action.response, [{"name": "answer", "args": {"response": action.response}}])
             logger.info("Simulator: %s", action.response)
             if state.turn >= state.turn_limit and state.result is None:
                 state.result = Timeout(limit=state.turn_limit)
@@ -167,7 +174,9 @@ def _build_game_toolset(*, state: GameState, model_id: str | None, sim_instructi
 
         if isinstance(action, SimInvalidInput):
             state.invalid_input_count += 1
-            state.record("simulator", action.reason, [{"name": "invalid_input", "args": {"reason": action.reason}}])
+            state.record(
+                Player.SIMULATOR, action.reason, [{"name": "invalid_input", "args": {"reason": action.reason}}]
+            )
             state.turn -= 1
             return action.reason
 

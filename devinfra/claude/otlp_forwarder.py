@@ -2,10 +2,9 @@
 
 Claude Code's native OTel exporter cannot reach the cluster directly: the
 managed container silently drops the claude process's direct HTTPS egress
-(verified 2026-07-06 — see plans/transcript_collection.md). So the session env
-points OTEL_EXPORTER_OTLP_ENDPOINT at this relay, which forwards to the
-Authentik-proxied Alloy endpoint through the container's egress proxy and
-attaches the rotated bearer.
+(verified 2026-07-06). So the session env points OTEL_EXPORTER_OTLP_ENDPOINT
+at this relay, which forwards to the Authentik-proxied Alloy endpoint through
+the container's egress proxy and attaches the rotated bearer.
 
 The bearer is re-read from TOKEN_FILE on every request so rotation propagates
 without a restart; ensure_otel_forwarder.sh materializes the file. Requests

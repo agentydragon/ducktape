@@ -20,6 +20,6 @@ variants, by sandbox location (Anthropic's own vocabulary):
   in `haku-sandbox` for in-cluster compute). Sidesteps the self-hosted worker
   entirely; **parked (2026-07-04)** — the cloud control-plane objects were
   deleted at Anthropic and `cluster/k8s/haku/cloud-agent-tf` is suspended; see
-  <anthropic_hosted/PLAN.md> for the reason and the resume decision.
+  <anthropic_hosted/README.md> for the reason and the resume decision.
 
 The "which runtime" comparison (A / B / C) is <../../plans/runtime_options.md>.

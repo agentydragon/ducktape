@@ -5,7 +5,8 @@ import { kubernetesResultPreviews } from "./responses";
 
 const GRANT = {
   grant_id: "20000000-0000-4000-8000-000000000002",
-  agent_id: "10000000-0000-4000-8000-000000000001",
+  owner_agent_id: "10000000-0000-4000-8000-000000000001",
+  principal: { kind: "agent" as const, agent_id: "10000000-0000-4000-8000-000000000001" },
   source_tool_call_id: "tc_create_grant",
   scope: { kind: "namespaces" as const, namespaces: ["haku-sandbox"] },
   rules: [{ api_groups: [""], resources: ["pods"], verbs: ["get", "list"] }],

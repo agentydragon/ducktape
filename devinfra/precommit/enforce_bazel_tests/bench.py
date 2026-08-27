@@ -20,7 +20,6 @@ import argparse
 import contextlib
 import os
 import subprocess
-import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -119,7 +118,7 @@ def _universe_expr(repo_root: Path) -> str:
     return " + ".join(parts)
 
 
-def main() -> int:
+def main() -> None:
     parser = argparse.ArgumentParser(description="Benchmark Bazel test discovery strategies")
     parser.add_argument("--profile", action="store_true", help="Enable Bazel JSON trace profiles")
     args = parser.parse_args()
@@ -203,8 +202,7 @@ def main() -> int:
         run_index += 1
 
     print(f"\nResults saved to: {out_dir}")
-    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

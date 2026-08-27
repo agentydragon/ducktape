@@ -3,9 +3,10 @@ from pathlib import Path
 import pytest_bazel
 
 from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome
-from haku.console.x.codex_app_server.projection import RecordedFrame, project_log
+from haku.console.x.codex_app_server.projection import RecordedFrame
 from haku.console.x.codex_app_server.protocol import read_trace, server_messages
 from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter
+from haku.console.x.codex_app_server.testing.fold import whole_capture
 from haku.console.x.conversation_events import (
     CallRef,
     FrameRange,
@@ -37,7 +38,7 @@ def _frames(fixture: str) -> tuple[RecordedFrame, ...]:
 
 
 def test_real_capture_projects_both_observed_turn_lifecycles():
-    projection = project_log(_frames(_TEXT_COMMAND))
+    projection = whole_capture(_frames(_TEXT_COMMAND))
 
     assert projection.events == (
         MessageStarted(provenance=FrameRange(12, 12)),
@@ -94,7 +95,7 @@ def test_a_failed_turn_projects_the_reason_the_provider_gave():
     """#4752: a failure reaches the neutral vocabulary in the runtime's own words, not as a bare outcome."""
     terminal = _terminal_frame()
 
-    projected = project_log(_frames(_PROVIDER_FAILURE))
+    projected = whole_capture(_frames(_PROVIDER_FAILURE))
 
     assert projected.events == (
         TurnCompleted(
@@ -143,7 +144,7 @@ def test_the_retry_notifications_are_still_unread():
     """
     frames_ = _frames(_PROVIDER_FAILURE)
 
-    projected = project_log(frames_)
+    projected = whole_capture(frames_)
 
     assert projected.unprojected["error"] == sum(frame.payload.get("method") == "error" for frame in frames_)
 

@@ -3,7 +3,7 @@
     "defaults": {
       "userTimezone": "America/Los_Angeles",
       "model": {
-        "primary": "litellm-subscription/codex-gpt-5.6-luna"
+        "primary": "litellm/chatgpt/ant-messages/gpt-5.6-luna"
       },
       "compaction": {
         "reserveTokensFloor": 50000
@@ -22,7 +22,7 @@
         "enabled": true,
         "sources": ["memory"],
         "provider": "openai-compatible",
-        "model": "gemini-embedding-2",
+        "model": "google/oai-embeddings/gemini-embedding-2",
         "remote": {
           "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
           "apiKey": "${OPENCLAW_LITELLM_API_KEY}",
@@ -95,7 +95,7 @@
   },
   "models": {
     "providers": {
-      "litellm-subscription": {
+      "litellm": {
         "agentRuntime": {
           "id": "openclaw"
         },
@@ -105,7 +105,7 @@
         "models": [
           {
             "contextWindow": 372000,
-            "id": "codex-gpt-5.6-luna",
+            "id": "chatgpt/ant-messages/gpt-5.6-luna",
             "input": ["text", "image"],
             "maxTokens": 128000,
             "name": "GPT-5.6 Luna (Codex subscription via LiteLLM)",
@@ -113,7 +113,7 @@
           },
           {
             "contextWindow": 372000,
-            "id": "codex-gpt-5.6-terra",
+            "id": "chatgpt/ant-messages/gpt-5.6-terra",
             "input": ["text", "image"],
             "maxTokens": 128000,
             "name": "GPT-5.6 Terra (Codex subscription via LiteLLM)",
@@ -121,7 +121,7 @@
           },
           {
             "contextWindow": 372000,
-            "id": "codex-gpt-5.6-sol",
+            "id": "chatgpt/ant-messages/gpt-5.6-sol",
             "input": ["text", "image"],
             "maxTokens": 128000,
             "name": "GPT-5.6 Sol (Codex subscription via LiteLLM)",
@@ -133,7 +133,7 @@
           // are pinned by cluster/k8s/litellm/app/test_openclaw_models.py.
           {
             "contextWindow": 1048576,
-            "id": "gemini-3.1-pro-preview",
+            "id": "google/oai-chat/gemini-3.1-pro-preview",
             "input": ["text", "image"],
             "maxTokens": 65536,
             "name": "Gemini 3.1 Pro Preview (Google AI via LiteLLM)",
@@ -141,7 +141,7 @@
           },
           {
             "contextWindow": 1048576,
-            "id": "gemini-3.7-flash",
+            "id": "google/oai-chat/gemini-3.7-flash",
             "input": ["text", "image"],
             "maxTokens": 65536,
             "name": "Gemini 3.7 Flash (Google AI via LiteLLM)",
@@ -149,7 +149,7 @@
           },
           {
             "contextWindow": 1048576,
-            "id": "gemini-3.5-flash-lite",
+            "id": "google/oai-chat/gemini-3.5-flash-lite",
             "input": ["text", "image"],
             "maxTokens": 65536,
             "name": "Gemini 3.5 Flash-Lite (Google AI via LiteLLM)",

@@ -3,7 +3,6 @@ kind: Kustomization
 resources:
   - flux-cluster.yaml
   - flux-control-plane.yaml
-  - harbor.yaml
   - cert-manager.yaml
   - authentik.yaml
   - cloudnative-pg.yaml

@@ -7,8 +7,8 @@ from uuid import UUID
 import pytest_bazel
 from mcp import types as mcp_types
 
-from haku.console.console_events import McpOperatorAuthChangedEvent
-from haku.console.mcp_approval import DegradedReflection
+from haku.console.console_events import ConnectionStatus, McpOperatorAuthChangedEvent
+from haku.console.mcp_approval import DegradedReflection, ReflectionFailureStage
 from haku.console.mcp_catalog_reconciler import OperatorCatalogReconciler
 from haku.console.mcp_config import McpServerEntry, NoCredential, RemoteMcpBackend
 from haku.console.mcp_reflection_cache import ReflectedCatalog
@@ -61,7 +61,7 @@ async def test_snapshot_reads_do_not_reflect_and_are_detached() -> None:
     metadata = AsyncMock(
         side_effect=[
             ReflectedCatalog(tools=[mcp_types.Tool(name="alpha_tool", inputSchema={"type": "object"})]),
-            DegradedReflection(failure_stage="tool_discovery", degraded_reason="offline"),
+            DegradedReflection(failure_stage=ReflectionFailureStage.TOOL_DISCOVERY, degraded_reason="offline"),
         ]
     )
     catalogs = _reconciler(operator_ids=AsyncMock(return_value=[operator_id]), metadata=metadata)
@@ -114,7 +114,9 @@ async def test_connection_change_invalidates_before_refreshing() -> None:
     catalogs = _reconciler(operator_ids=AsyncMock(return_value=[operator_id]), metadata=metadata)
     await catalogs.reconcile()
 
-    catalogs.connection_changed(operator_id, McpOperatorAuthChangedEvent(server_id="alpha", status="disconnected"))
+    catalogs.connection_changed(
+        operator_id, McpOperatorAuthChangedEvent(server_id="alpha", status=ConnectionStatus.DISCONNECTED)
+    )
     assert isinstance(catalogs.metadata(operator_id=operator_id, server=_server("alpha")), DegradedReflection)
 
     for _ in range(10):
@@ -148,7 +150,9 @@ async def test_pre_change_refresh_cannot_republish_an_invalidated_generation() -
     stale_refresh = asyncio.create_task(catalogs.refresh_operator(operator_id))
     await old_started.wait()
 
-    catalogs.connection_changed(operator_id, McpOperatorAuthChangedEvent(server_id="alpha", status="disconnected"))
+    catalogs.connection_changed(
+        operator_id, McpOperatorAuthChangedEvent(server_id="alpha", status=ConnectionStatus.DISCONNECTED)
+    )
     for _ in range(10):
         current = catalogs.metadata(operator_id=operator_id, server=_server("alpha"))
         if isinstance(current, ReflectedCatalog):

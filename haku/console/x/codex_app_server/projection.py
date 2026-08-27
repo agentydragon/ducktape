@@ -3,8 +3,8 @@
 Pinned protocol evidence: ``@openai/codex@0.144.1`` / upstream tag ``rust-v0.144.1``.  The exact
 schema and source references are recorded in ``docs/protocol_evidence.md``.
 
-The provider runtime wraps this reducer for live frames and complete-log reprojection. Native
-methods and item shapes remain private to this package; only neutral conversation events leave it.
+The provider runtime wraps this reducer for the live turn loop. Native methods and item shapes
+remain private to this package; only neutral conversation events leave it.
 
 Only facts represented by the existing conversation vocabulary are projected:
 
@@ -71,6 +71,26 @@ class ProjectionState:
     seen_call_ids: frozenset[str] = frozenset()
     completed_call_ids: frozenset[str] = frozenset()
 
+    def advance(self, frames: Iterable[RecordedFrame]) -> tuple[ProjectionState, Projection]:
+        """Fold server messages into neutral events, preserving state across arbitrary batches."""
+        projector = _Projector(
+            open_message=self.open_message,
+            open_reasoning=self.open_reasoning,
+            seen_call_ids=set(self.seen_call_ids),
+            completed_call_ids=set(self.completed_call_ids),
+        )
+        for frame in frames:
+            projector.fold(frame)
+        return (
+            ProjectionState(
+                open_message=projector.open_message,
+                open_reasoning=projector.open_reasoning,
+                seen_call_ids=frozenset(projector.seen_call_ids),
+                completed_call_ids=frozenset(projector.completed_call_ids),
+            ),
+            projector.projected(),
+        )
+
 
 _IGNORED_METHODS = frozenset(
     {
@@ -94,47 +114,6 @@ class RecordedFrame:
 
     frame_seq: int
     payload: dict[str, Any]
-
-
-def project(state: ProjectionState, frames: Iterable[RecordedFrame]) -> tuple[ProjectionState, Projection]:
-    """Fold server messages into neutral events, preserving state across arbitrary batches."""
-    projector = _Projector(
-        open_message=state.open_message,
-        open_reasoning=state.open_reasoning,
-        seen_call_ids=set(state.seen_call_ids),
-        completed_call_ids=set(state.completed_call_ids),
-    )
-    for frame in frames:
-        projector.fold(frame)
-    return (
-        ProjectionState(
-            open_message=projector.open_message,
-            open_reasoning=projector.open_reasoning,
-            seen_call_ids=frozenset(projector.seen_call_ids),
-            completed_call_ids=frozenset(projector.completed_call_ids),
-        ),
-        projector.projected(),
-    )
-
-
-def finish(state: ProjectionState) -> Projection:
-    """Close prose items when a caller knows no more native frames can arrive."""
-    events: list[ConversationEvent] = []
-    if state.open_message is not None:
-        events.append(
-            MessageCompleted(backend_item_id=state.open_message.backend_item_id, provenance=_span(state.open_message))
-        )
-    if state.open_reasoning is not None:
-        events.append(
-            ReasoningCompleted(disclosure=ReasoningDisclosure.SUMMARY, provenance=_span(state.open_reasoning))
-        )
-    return Projection(events=tuple(events), unprojected=MappingProxyType({}))
-
-
-def project_log(frames: Iterable[RecordedFrame]) -> Projection:
-    """Project a complete native message log; repeated calls on the same log are identical."""
-    state, projected = project(ProjectionState(), frames)
-    return projected.then(finish(state))
 
 
 @dataclass(slots=True)

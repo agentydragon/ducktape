@@ -6,7 +6,7 @@
 > gateway it describes was deleted entirely on 2026-07-31 along with the whole
 > OpenShell stack. Kept as a dated record of how it worked, not as current
 > documentation. The agent that replaced it is `public-coder-agent`; the
-> reasoning is in `plans/personal_agents/verdicts.md`.
+> reasoning is in `docs/personal_agents/verdicts.md`.
 
 ## Three Exec Host Modes
 

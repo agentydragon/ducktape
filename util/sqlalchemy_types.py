@@ -3,30 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import Enum, String, Text
 from sqlalchemy.types import TypeDecorator
 
-
-@dataclass(frozen=True, slots=True)
-class UnknownValue:
-    """A stored value none of a column's enums claims: what a reader older than its writer sees.
-
-    A named variant rather than `None` or a nearby member. Consumers dispatch on it with
-    `isinstance`, so a vocabulary that grows cannot be read as a value that already existed, and
-    every reader is made to say what it does with a value it has no words for.
-
-    Only a column that opted into tolerance ever produces one — see
-    `TolerantTextBackedStrEnumUnionColumn`.
-    """
-
-    value: str
-
-    def __str__(self) -> str:
-        return self.value
+from util.enum_vocab import UnknownValue
 
 
 def _union_members(enum_classes: Sequence[type[StrEnum]]) -> dict[str, StrEnum]:

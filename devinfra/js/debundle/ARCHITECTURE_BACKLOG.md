@@ -142,9 +142,9 @@ These files document the same project from multiple perspectives. Skimming them,
 
 - docs/design.md is the canonical theorem + algorithm document.
 - AGENTS.md is the canonical "how to work on this crate" document.
-- docs/cli.md is the command reference; docs/guide.md is the worked
-  step-by-step workflow document (at 644 lines it is now larger than
-  README.md, not "shorter intro material").
+- docs/cli.md is the cross-command CLI semantics document (per-flag
+  reference lives in the clap doc-comments / `--help`); docs/selectors.md
+  and docs/spec_editing.md are the worked workflow documents.
 - docs/wire_format.md is the JSON sidecar reference.
 - CODE_REVIEW.md is the active code-quality backlog.
 - CLI_DOGFOOD.md is the open CLI usability/scripting-safety backlog.

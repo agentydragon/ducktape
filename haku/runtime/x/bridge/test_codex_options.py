@@ -29,7 +29,7 @@ def test_the_app_server_launch_is_exactly_this() -> None:
             ),
             mcp_servers={
                 "haku-console": HttpMcpServer(
-                    url="https://console.test/mcp", bearer_token_env_var="HAKU_MCP_BEARER_TOKEN"
+                    url="https://console.test/mcp", bearer_token_env_var="HAKU_AGENT_SDK_RUNNER_TOKEN"
                 )
             },
         ),
@@ -45,7 +45,7 @@ def test_the_app_server_launch_is_exactly_this() -> None:
         'wire_api = "responses"}}',
         "-c",
         'mcp_servers = {haku-console = {url = "https://console.test/mcp", '
-        'bearer_token_env_var = "HAKU_MCP_BEARER_TOKEN"}}',
+        'bearer_token_env_var = "HAKU_AGENT_SDK_RUNNER_TOKEN"}}',
         "app-server",
         "--listen",
         "stdio://",
@@ -73,13 +73,13 @@ def test_the_provider_credential_never_enters_codex_arguments() -> None:
 
 
 def test_the_backend_preserves_the_claim_owned_session_bearer(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("HAKU_MCP_BEARER_TOKEN", "session-bearer")
+    monkeypatch.setenv("HAKU_AGENT_SDK_RUNNER_TOKEN", "session-bearer")
     launch = build_codex_launch(
         CodexAppServerSession(
-            environment={"HAKU_MCP_BEARER_TOKEN": "injected-secret", "SAFE": "value"},
+            environment={"HAKU_AGENT_SDK_RUNNER_TOKEN": "injected-secret", "SAFE": "value"},
             mcp_servers={
                 "haku-console": HttpMcpServer(
-                    url="https://console.test/mcp", bearer_token_env_var="HAKU_MCP_BEARER_TOKEN"
+                    url="https://console.test/mcp", bearer_token_env_var="HAKU_AGENT_SDK_RUNNER_TOKEN"
                 )
             },
         )
@@ -91,12 +91,12 @@ def test_the_backend_preserves_the_claim_owned_session_bearer(monkeypatch: pytes
         "/usr/local/bin/codex",
         "-c",
         'mcp_servers = {haku-console = {url = "https://console.test/mcp", '
-        'bearer_token_env_var = "HAKU_MCP_BEARER_TOKEN"}}',
+        'bearer_token_env_var = "HAKU_AGENT_SDK_RUNNER_TOKEN"}}',
         "app-server",
         "--listen",
         "stdio://",
     ]
-    assert resolved.environment["HAKU_MCP_BEARER_TOKEN"] == "session-bearer"
+    assert resolved.environment["HAKU_AGENT_SDK_RUNNER_TOKEN"] == "session-bearer"
     assert resolved.environment["SAFE"] == "value"
 
 

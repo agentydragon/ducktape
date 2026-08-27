@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Mapping
+from pathlib import Path
 from typing import Any
 
 import pytest
 import pytest_bazel
 
 from haku.console.x.codex_app_server.client import CodexAppServer, CodexAppServerError, CodexThread
+from haku.console.x.codex_app_server.config import ReasoningEffort
 from haku.runtime.x.bridge.client import RecordedFrame
 from haku.runtime.x.bridge.protocol import HarnessFrame
 
@@ -57,6 +59,21 @@ class ScriptedChannel:
         self.closed = True
 
 
+@pytest.fixture
+def channel() -> ScriptedChannel:
+    return ScriptedChannel()
+
+
+@pytest.fixture
+def sink() -> CountingSink:
+    return CountingSink()
+
+
+@pytest.fixture
+def cli(channel: ScriptedChannel, sink: CountingSink) -> CodexAppServer:
+    return CodexAppServer(channel, sink, CodexThread(cwd=Path("/workspace")), request_timeout=5)
+
+
 async def _written(channel: ScriptedChannel, count: int) -> None:
     for _ in range(100):
         if len(channel.written) >= count:
@@ -89,10 +106,11 @@ async def _connect_new(cli: CodexAppServer, channel: ScriptedChannel) -> Mapping
     return await connecting
 
 
-async def test_new_process_handshake_thread_configuration_and_prompt_are_exact() -> None:
-    channel, sink = ScriptedChannel(), CountingSink()
+async def test_new_process_handshake_thread_configuration_and_prompt_are_exact(
+    channel: ScriptedChannel, sink: CountingSink
+) -> None:
     cli = CodexAppServer(
-        channel, sink, CodexThread(cwd="/workspace", developer_instructions="you are Haku"), request_timeout=5
+        channel, sink, CodexThread(cwd=Path("/workspace"), developer_instructions="you are Haku"), request_timeout=5
     )
     assert await _connect_new(cli, channel) == {"userAgent": "codex_cli_rs/0.144.1"}
     assert channel.written[3]["params"] == {
@@ -118,9 +136,18 @@ async def test_new_process_handshake_thread_configuration_and_prompt_are_exact()
     await cli.aclose()
 
 
-async def test_an_initialized_process_is_adopted_with_its_active_turn_without_a_second_handshake() -> None:
-    channel = ScriptedChannel()
-    cli = CodexAppServer(channel, CountingSink(), CodexThread(cwd="/workspace"), request_timeout=5)
+def test_thread_start_params_carry_the_reasoning_effort_as_a_config_override() -> None:
+    # thread/start has no dedicated effort param at 0.144.1, so the effort travels in the
+    # `config` override map under the server's own `model_reasoning_effort` key.
+    with_effort = CodexThread(cwd=Path("/workspace"), model="gpt-test", reasoning_effort=ReasoningEffort.LOW)
+    assert with_effort.start_params()["config"] == {"model_reasoning_effort": "low"}
+    # Absent means the provider/config default, so no override may be sent at all.
+    assert "config" not in CodexThread(cwd=Path("/workspace")).start_params()
+
+
+async def test_an_initialized_process_is_adopted_with_its_active_turn_without_a_second_handshake(
+    cli: CodexAppServer, channel: ScriptedChannel
+) -> None:
     connecting = asyncio.create_task(cli.connect())
     await _written(channel, 1)
     channel.deliver(_response(channel.written[0], {"data": ["thread-existing"], "nextCursor": None}))
@@ -154,9 +181,9 @@ async def test_an_initialized_process_is_adopted_with_its_active_turn_without_a_
     await cli.aclose()
 
 
-async def test_notifications_are_delivered_but_responses_and_server_requests_are_plumbing() -> None:
-    channel, sink = ScriptedChannel(), CountingSink()
-    cli = CodexAppServer(channel, sink, CodexThread(cwd="/workspace"), request_timeout=5)
+async def test_notifications_are_delivered_but_responses_and_server_requests_are_plumbing(
+    cli: CodexAppServer, channel: ScriptedChannel, sink: CountingSink
+) -> None:
     await _connect_new(cli, channel)
 
     notification = {"method": "item/agentMessage/delta", "params": {"itemId": "item-1", "delta": "hi"}}
@@ -169,9 +196,7 @@ async def test_notifications_are_delivered_but_responses_and_server_requests_are
     await cli.aclose()
 
 
-async def test_interrupt_uses_the_active_native_thread_and_turn() -> None:
-    channel = ScriptedChannel()
-    cli = CodexAppServer(channel, CountingSink(), CodexThread(cwd="/workspace"), request_timeout=5)
+async def test_interrupt_uses_the_active_native_thread_and_turn(cli: CodexAppServer, channel: ScriptedChannel) -> None:
     await _connect_new(cli, channel)
     querying = asyncio.create_task(cli.query("hello"))
     await _written(channel, 5)
@@ -189,9 +214,9 @@ async def test_interrupt_uses_the_active_native_thread_and_turn() -> None:
     await cli.aclose()
 
 
-async def test_an_unsupported_server_request_is_refused_instead_of_blocking_codex() -> None:
-    channel = ScriptedChannel()
-    cli = CodexAppServer(channel, CountingSink(), CodexThread(cwd="/workspace"), request_timeout=5)
+async def test_an_unsupported_server_request_is_refused_instead_of_blocking_codex(
+    cli: CodexAppServer, channel: ScriptedChannel
+) -> None:
     await _connect_new(cli, channel)
 
     channel.deliver({"method": "item/commandExecution/requestApproval", "id": 91, "params": {}})
@@ -204,10 +229,9 @@ async def test_an_unsupported_server_request_is_refused_instead_of_blocking_code
     await cli.aclose()
 
 
-async def test_replayed_frames_are_recorded_but_not_delivered_twice() -> None:
-    channel = ScriptedChannel()
+async def test_replayed_frames_are_recorded_but_not_delivered_twice(channel: ScriptedChannel) -> None:
     sink = CountingSink(replayed_runner_seqs=frozenset({7}))
-    cli = CodexAppServer(channel, sink, CodexThread(cwd="/workspace"), request_timeout=5)
+    cli = CodexAppServer(channel, sink, CodexThread(cwd=Path("/workspace")), request_timeout=5)
     connecting = asyncio.create_task(cli.connect())
     await _written(channel, 1)
     channel.deliver({"method": "item/agentMessage/delta", "params": {"itemId": "old", "delta": "old"}}, seq=7)
@@ -223,9 +247,7 @@ async def test_replayed_frames_are_recorded_but_not_delivered_twice() -> None:
     await cli.aclose()
 
 
-async def test_request_errors_and_timeouts_surface_to_the_owner() -> None:
-    channel = ScriptedChannel()
-    cli = CodexAppServer(channel, CountingSink(), CodexThread(cwd="/workspace"), request_timeout=5)
+async def test_request_errors_and_timeouts_surface_to_the_owner(cli: CodexAppServer, channel: ScriptedChannel) -> None:
     connecting = asyncio.create_task(cli.connect())
     await _written(channel, 1)
     channel.deliver({"id": channel.written[0]["id"], "error": {"code": 7, "message": "nope"}})
@@ -233,7 +255,9 @@ async def test_request_errors_and_timeouts_surface_to_the_owner() -> None:
         await connecting
     await cli.aclose()
 
-    timed_out = CodexAppServer(ScriptedChannel(), CountingSink(), CodexThread(cwd="/workspace"), request_timeout=0.01)
+    timed_out = CodexAppServer(
+        ScriptedChannel(), CountingSink(), CodexThread(cwd=Path("/workspace")), request_timeout=0.01
+    )
     with pytest.raises(CodexAppServerError, match="thread/loaded/list"):
         await timed_out.connect()
     await timed_out.aclose()
@@ -241,8 +265,8 @@ async def test_request_errors_and_timeouts_surface_to_the_owner() -> None:
 
 async def test_replacement_clients_namespace_requests_away_from_late_predecessor_responses() -> None:
     first_channel, second_channel = ScriptedChannel(), ScriptedChannel()
-    first = CodexAppServer(first_channel, CountingSink(), CodexThread(cwd="/workspace"), request_timeout=5)
-    second = CodexAppServer(second_channel, CountingSink(), CodexThread(cwd="/workspace"), request_timeout=5)
+    first = CodexAppServer(first_channel, CountingSink(), CodexThread(cwd=Path("/workspace")), request_timeout=5)
+    second = CodexAppServer(second_channel, CountingSink(), CodexThread(cwd=Path("/workspace")), request_timeout=5)
     first_connect = asyncio.create_task(first.connect())
     second_connect = asyncio.create_task(second.connect())
     await _written(first_channel, 1)
@@ -260,9 +284,11 @@ async def test_replacement_clients_namespace_requests_away_from_late_predecessor
     await second.aclose()
 
 
-async def test_transport_closure_fails_an_outstanding_request_without_waiting_for_its_timeout() -> None:
-    channel = ScriptedChannel()
-    cli = CodexAppServer(channel, CountingSink(), CodexThread(cwd="/workspace"), request_timeout=60)
+async def test_transport_closure_fails_an_outstanding_request_without_waiting_for_its_timeout(
+    channel: ScriptedChannel,
+) -> None:
+    # request_timeout deliberately dwarfs the 1s wait below, so only closure can fail the request.
+    cli = CodexAppServer(channel, CountingSink(), CodexThread(cwd=Path("/workspace")), request_timeout=60)
     connecting = asyncio.create_task(cli.connect())
     await _written(channel, 1)
     channel.deliver(None)

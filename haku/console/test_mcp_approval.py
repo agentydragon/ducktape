@@ -18,7 +18,6 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastmcp import FastMCP
-from fastmcp.dependencies import Depends
 from mcp import types as mcp_types
 from pydantic import ValidationError
 from sqlalchemy import event, select, text
@@ -39,7 +38,7 @@ from haku.console.agents.models import (
     CredentialKind,
     EnrollmentPhase,
 )
-from haku.console.chat_models import RuntimeKind, SessionStatus
+from haku.console.chat_models import RuntimeKind
 from haku.console.conftest import operator_id, write_config
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
@@ -72,7 +71,7 @@ from haku.console.mcp_config import (
     RemoteServerOAuthAuth,
     validate_in_process_server_bindings,
 )
-from haku.console.mcp_execution import McpExecutionContext, OperatorMcpExecutionCaller, require_mcp_execution_context
+from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext, OperatorMcpExecutionCaller
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_reflection_cache import ReflectedCatalog
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
@@ -90,8 +89,6 @@ from haku.console.tool_calls import (
 from haku.console.tools.gmail import build_mcp as build_gmail_mcp
 from util.net import pick_free_port
 from util.testing.asgi import serve_app_sync
-
-_EXECUTION_CONTEXT_DEPENDENCY = Depends(require_mcp_execution_context)
 
 
 def _build_test_mcp_server() -> FastMCP:
@@ -190,9 +187,9 @@ def _build_execution_context_mcp_server() -> FastMCP:
     server = FastMCP("haku-execution-context-test")
 
     @server.tool()
-    async def caller_id(execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY) -> str:
+    async def caller_id(execution: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY) -> str:
         caller = execution.caller
-        return str(caller.operator_id) if isinstance(caller, OperatorMcpExecutionCaller) else str(caller.agent_id)
+        return str(caller.operator_id if isinstance(caller, OperatorMcpExecutionCaller) else caller.principal.agent_id)
 
     return server
 
@@ -664,7 +661,6 @@ async def test_session_agent_tool_call_retains_exact_session_attribution(
                     operator_id=static_actor.operator_id,
                     conversation_id=conversation_id,
                     agent_binding_id=static_actor.binding_id,
-                    status=SessionStatus.READY,
                     bridge_token_fingerprint=session_id.bytes,
                     bridge_connected_at=now,
                     lease_expires_at=now + datetime.timedelta(minutes=1),
@@ -1979,7 +1975,12 @@ async def test_executor_dispatches_to_registered_in_process_server() -> None:
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
-    context = McpExecutionContext(caller=OperatorMcpExecutionCaller(operator_id=UUID(int=42)), tool_call_id="tc_test")
+    context = McpExecutionContext(
+        caller=OperatorMcpExecutionCaller(operator_id=UUID(int=42)),
+        tool_call_id="tc_test",
+        approving_operator_id=None,
+        approval_policy_id=None,
+    )
     result = await executor.execute(
         server, "echo", {"text": "hi"}, auth_token="operator-token", execution_context=context
     )
@@ -2002,7 +2003,10 @@ async def test_executor_injects_trusted_context_into_a_stable_in_process_server(
         {},
         auth_token=None,
         execution_context=McpExecutionContext(
-            caller=OperatorMcpExecutionCaller(operator_id=operator_id), tool_call_id="tc_test"
+            caller=OperatorMcpExecutionCaller(operator_id=operator_id),
+            tool_call_id="tc_test",
+            approving_operator_id=None,
+            approval_policy_id=None,
         ),
     )
 
@@ -2021,7 +2025,10 @@ async def test_executor_raises_when_in_process_backend_is_not_registered() -> No
             {},
             auth_token=None,
             execution_context=McpExecutionContext(
-                caller=OperatorMcpExecutionCaller(operator_id=UUID(int=42)), tool_call_id=None
+                caller=OperatorMcpExecutionCaller(operator_id=UUID(int=42)),
+                tool_call_id=None,
+                approving_operator_id=None,
+                approval_policy_id=None,
             ),
         )
 

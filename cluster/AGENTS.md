@@ -35,14 +35,14 @@ applies the previous state and reads as a failed change.
 (Forgejo registry user) both manage objects inside another stateful system whose IDs
 they record in tfstate. Wiping the backing DB without also clearing the tofu state
 triggers `Unable to read … not found with id N` failures on the next plan. State lives
-in the `tofu-state-db` CNPG cluster (one schema per `Terraform` CR). Recovery:
+in the `tofu-state-db-ovh` CNPG cluster (one schema per `Terraform` CR). Recovery:
 <docs/troubleshooting.md> § "Resource ID Desync After Wiping a Backing Datastore".
 
 ### DNS and website must survive OVH-only
 
 They must work without Proxmox: no Proxmox-pinned storage (`lvm-proxmox-*`,
-`local-path-proxmox`) and no Proxmox-pinned nodes. See <docs/plan.md> "OVH-Only Resilience
-Invariants".
+`local-path-proxmox`) and no Proxmox-pinned nodes. See <docs/decisions.md> "OVH-Only
+Resilience Invariants".
 
 ## Primary Directive: Declarative Turnkey Bootstrap
 
@@ -69,19 +69,6 @@ New Terraform modules get BUILD.bazel targets for format, lint, and validate.
 - **SSH**: `root@atlas` (Proxmox host, key auth). Fallback from wyrm2: `root@10.2.0.2` if nebula DNS isn't up yet.
 - **Talos CLI**: Run from cluster directory (direnv provides tools + config)
 - **Proxmox API**: Only reachable from VLAN. Use `nodeSelector: topology.kubernetes.io/region: proxmox`.
-
-## Cilium Gateway Status
-
-The public `cluster-gateway` intentionally uses Cilium Gateway API in
-`gatewayAPI.hostNetwork.enabled` mode: Envoy binds 80/443 directly on the OVH nodes and
-Route 53 records point at those node IPs, so there is no provider `LoadBalancer`/VIP for
-Cilium to report as a Gateway address. `gateway-system/cluster-gateway` can therefore
-report `Programmed=False` (`AddressNotAssigned`) even while HTTPRoutes are accepted and
-public probes succeed. Do not treat that condition alone as an outage or "fix" it by
-adding static `Gateway.spec.addresses` (that would not create provider-level failover) —
-check HTTPRoute `Accepted`/`ResolvedRefs`, Cilium/Envoy programming, and blackbox probes
-against the public node IPs instead. Full rationale and migration options:
-<docs/plan.md> "Cilium Gateway API `Programmed=False`".
 
 ## Key Files
 

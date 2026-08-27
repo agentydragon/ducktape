@@ -1,6 +1,6 @@
 import { Badge, Code, Stack, Text } from "@mantine/core";
 import type { ReactNode } from "react";
-import type { ConversationItem } from "../client";
+import type { ToolCallEntry, ToolResultEntry } from "../client";
 
 import { CodeBlock } from "../code_block";
 
@@ -181,52 +181,52 @@ function registeredSummary(toolName: string, args: Record<string, unknown>): Rea
   }
 }
 
-function toolCallSummary(item: ConversationItem): ReactNode {
-  const args = item.arguments;
-  if (args !== null && typeof args === "object" && !Array.isArray(args) && item.tool_name != null) {
-    const rendered = registeredSummary(item.tool_name, args as Record<string, unknown>);
+function toolCallSummary(call: ToolCallEntry): ReactNode {
+  const args = call.arguments;
+  if (args !== null && typeof args === "object" && !Array.isArray(args)) {
+    const rendered = registeredSummary(call.tool_name, args as Record<string, unknown>);
     if (rendered !== null) return rendered;
   }
   return mono(previewText(toolPayloadText(args)));
 }
 
-/** One call, whole: what was asked, what it printed, and what it produced that no string carries.
+/** One call, whole: what was asked, and what it answered where the answer has arrived.
  *
- * A call is an item, so its ask and its answer are the same row — `status` is what says whether the
- * answer has arrived, rather than a nested result being present or absent.
+ * The ask and the answer are two entries joined by `call_id` — the join the conversation view makes once,
+ * here — so a `result` still missing is what says the call is running.
  *
  * **Folded to one line by default.** In a transcript the calls are the agent's working, not its
  * answer, and an open card per call buried the prose between them. The folded line carries the
  * name, the argument that identifies the call, and its state; everything else — full arguments,
  * output, structured result — is behind the fold.
  */
-export function ToolCallView({ item }: { item: ConversationItem }) {
+export function ToolCallView({ call, result }: { call: ToolCallEntry; result: ToolResultEntry | null }) {
   return (
     <details className="haku-chat-tool-call">
       <summary className="haku-chat-tool-call-summary">
-        <span className="haku-chat-tool-call-name">{item.tool_name}</span>
-        <span className="haku-chat-tool-call-snippet">{toolCallSummary(item)}</span>
-        {item.outcome === "failed" && (
+        <span className="haku-chat-tool-call-name">{call.tool_name}</span>
+        <span className="haku-chat-tool-call-snippet">{toolCallSummary(call)}</span>
+        {result?.outcome === "failed" && (
           <Badge variant="light" color="red">
             failed
           </Badge>
         )}
-        {item.status !== "complete" && (
+        {result === null && (
           <Badge variant="light" color="blue">
             running
           </Badge>
         )}
       </summary>
       <Stack gap="xs" className="haku-chat-tool-call-body">
-        <ToolPayload label="Arguments" value={item.arguments} emptyLabel="No arguments." emptyWhenNoKeys />
-        {item.status === "complete" ? (
+        <ToolPayload label="Arguments" value={call.arguments} emptyLabel="No arguments." emptyWhenNoKeys />
+        {result !== null ? (
           <>
             <ToolPayload
               label="Output"
-              value={item.text}
-              emptyLabel={item.outcome === "failed" ? "No error details captured." : "Empty result."}
+              value={result.content}
+              emptyLabel={result.outcome === "failed" ? "No error details captured." : "Empty result."}
             />
-            {item.structured != null && <ToolPayload label="Structured" value={item.structured} emptyLabel="" />}
+            {result.structured != null && <ToolPayload label="Structured" value={result.structured} emptyLabel="" />}
           </>
         ) : (
           <Text c="dimmed" size="xs">

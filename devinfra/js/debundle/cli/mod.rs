@@ -72,22 +72,38 @@ pub struct DebundleArgs {
 #[derive(Debug, Subcommand)]
 enum DebundleCommand {
     /// Run the debundle transform pipeline from a flat or tree-shaped spec.
+    ///
+    /// Parse + facts + owner_graph + atomic_units + realizability gate +
+    /// lower + emit. The gate is part of the pipeline contract: an
+    /// unrealizable spec is rejected (there is no `run --no-verify` — fix
+    /// the spec), and the rejection evidence (`cycles.json` /
+    /// `atomic_unit_conflicts.json`) is written under
+    /// `reports/tree/<chunk>/` next to `owner_graph.json`, where
+    /// `debundle gate list` / `gate describe` read it.
     Run(TransformArgs),
-    /// Per-binding spec verbs (comment, list, rename, assign).
+    /// Per-binding spec verbs (list, assign, unassign, rename, comment).
     Bindings(BindingsNs),
-    /// Module-level spec verbs (comment, merge, propose).
+    /// Module-level spec verbs (list, merge, delete, propose, comment).
     Modules(ModulesNs),
-    /// List structural atoms (owner-level SCCs of the constraining-edge graph).
+    /// List structural atoms (owner-level SCCs of the constraining-edge
+    /// graph; per docs/design.md § "Two classes of atom").
     Atoms(UnitsArgs),
-    /// Report spec coverage against atoms.
+    /// Report spec coverage against atoms: which atoms are claimed,
+    /// which fall through to residual.
     Coverage(PatchPlanArgs),
-    /// High-level graph counts.
+    /// High-level graph counts (owners, edges, atoms,
+    /// residual-eligible bindings, …).
     #[command(name = "graph-summary")]
     GraphSummary(GraphSummaryArgs),
     /// Dereference any identifier (binding, module path, proposal,
     /// atom, owner, diagnostic) with full graph + spec context.
     Describe(DescribeArgs),
     /// Print the source text for any identifier.
+    ///
+    /// Same `<id>` dispatch as `debundle describe`; a module path,
+    /// unambiguous module filename, or module id prints the
+    /// concatenated source of every owner statement in the module, in
+    /// declaration order.
     #[command(name = "show-source")]
     ShowSource(ShowSourceArgs),
     /// List SCCs in the module-quotient graph.
@@ -126,27 +142,86 @@ pub struct SpecNs {
 #[derive(Debug, Subcommand)]
 enum SpecNsCommand {
     /// Emit spec-wide summary: module + binding totals and member-count buckets.
+    ///
+    /// One pass over the modules tree. `modules` totals (`total`,
+    /// `residual`, `empty`, `with_comment`) + `member_count` buckets
+    /// (`min`, `max`, `singletons`, `tiny_2_to_5`, `medium_6_to_20`,
+    /// `large_21_plus`), plus `bindings` totals (`total`, `renamed`,
+    /// `unrenamed`, `orphan`, `with_comment`). Same per-row counters as
+    /// `debundle modules list` / `debundle bindings list` (including the
+    /// truly-empty definition of `empty`), folded into one report so
+    /// callers don't `jq`.
     Stats(SpecStatsArgs),
-    /// Rank fragile selectors: name-only minified selectors, repeated
-    /// copied `source_match` bodies, and (with `--against`) selectors
-    /// whose minified binding drifted between two spec versions.
+    /// Rank the spec's rebuild-fragile selectors.
+    ///
+    /// Sections: **name-only** selectors (`selector.binding`) scored by
+    /// how minified the bound name looks (1-2 chars / vowel-less rank
+    /// highest), most fragile first; **name-only module groups** when
+    /// `--group-module-depth` is set; **repeated source_match** bodies
+    /// copied verbatim (whitespace-insensitive) across source-backed
+    /// binding claims and anonymous statements — the copies a contextual
+    /// selector should replace; and, with `--against`, **drifted
+    /// bindings** — members whose readable `name:` is stable but whose
+    /// `selector.binding.name` changed between the two spec versions.
+    ///
+    /// Opt in to source-aware checks with `--source-file` or
+    /// `--source-root --chunk`: adds **near-ambiguous** rows (structural
+    /// selectors that match exactly one top-level statement today but
+    /// have high-scoring non-matching siblings), **repeated exact** rows
+    /// (copied structural selector bodies resolving to the same body
+    /// indices), and **grouped source-match suggestions** (repeated
+    /// claims resolving to one multi-declarator `var`/`let`/`const`
+    /// declaration, collapsible into one `source_matches[]` entry with
+    /// `DECLARATORS_*` holes). Without source flags it reads only the
+    /// modules tree.
     #[command(name = "selector-debt")]
     SelectorDebt(SelectorDebtArgs),
     /// Dry-run or apply mechanical selector rewrites across module YAML.
+    ///
+    /// Dry-run by default; `--apply` writes. Scope the run with
+    /// `--file`, `--module`, `--module-prefix`, or `--item`. Skipped
+    /// rows carry a machine-readable reason.
     #[command(name = "selector-codemod")]
     SelectorCodemod(SelectorCodemodArgs),
     /// Synthesize structural selectors for selected name-only members.
+    ///
+    /// Alias for `selector-codemod --rewrite
+    /// name-binding-to-source-match`: given module exports, produce a
+    /// forward-compatible `source_matches[]` selector that uniquely
+    /// selects them, proven with the production matcher. Prefers the
+    /// loosest readable unique form — holes and stable anchors over long
+    /// exact current-source bodies, which can be over-narrow even when
+    /// they match today. Automated forms: exact function/class
+    /// declarations, and `var`/`let`/`const` declaration groups with
+    /// non-target declarator runs collapsed to `DECLARATORS_BEFORE` /
+    /// `DECLARATORS_BETWEEN` / `DECLARATORS_AFTER`. Dry-run JSON
+    /// includes candidate count, matched top-level body index, group id,
+    /// rewritten holes, and skip reasons.
     #[command(name = "synthesize-selectors")]
     SynthesizeSelectors(SelectorCodemodArgs),
     /// Resolve a candidate `source_match` against a chunk and report what it
     /// binds: the matching items, whether it pins a unique target, and (unless
     /// `--no-slack`) which kept values could be holed further without losing
     /// uniqueness. The interactive prove-gate probe for selector authoring.
+    ///
+    /// Reports `unique` and `matches[]` (`{body_index, binding_name}`
+    /// for every top-level statement hit). Candidate selectors use the
+    /// public alpha-equivalent identifier policy.
     #[command(name = "match-selector")]
     MatchSelector(MatchSelectorArgs),
     /// Keep-going selector validation: report every selector problem
     /// (no-match, ambiguous, duplicate-claim, resolution error) in one
     /// machine-readable pass.
+    ///
+    /// The full mode is `debundle run` in dry-run keep-going mode: it
+    /// takes the same inputs (`--spec` / `--tree-config` + package
+    /// roots) and needs the full pipeline, not just the modules tree —
+    /// run it via the Bazel `:debundle` target, not the standalone
+    /// binary. `--fail-fast` stops at the first problem. The source-only
+    /// preflight mode (`--modules` plus `--source-file` or
+    /// `--source-root --chunk`) instead resolves module source selectors
+    /// against one chunk in-process — a fast preflight for sharding
+    /// selector repairs, without the global selector-assignment backend.
     Validate(ValidateArgs),
 }
 
@@ -304,7 +379,8 @@ pub struct MatchSelectorArgs {
     #[arg(long = "chunk")]
     pub chunk: Option<PathBuf>,
 
-    /// The candidate `source_match` `match` text to test.
+    /// The candidate `source_match` `match` text to test. Matched under
+    /// the public alpha-equivalent identifier policy.
     #[arg(long = "match")]
     pub match_source: String,
 
@@ -336,14 +412,50 @@ pub struct ModulesNs {
 #[derive(Debug, Subcommand)]
 enum ModulesNsCommand {
     /// Read, set, edit, or clear a module's top-level `comment:` field.
+    ///
+    /// Same modes as `bindings comment` (positional text / `--edit` /
+    /// `--clear`; bare invocation reads). A module-level comment emits
+    /// at the top of the generated module file and protects the module
+    /// from auto-delete when `bindings assign` drains its members.
     Comment(ModuleCommentArgs),
     /// Splice source module YAMLs into a target YAML and delete the sources.
+    ///
+    /// Concatenates `members:`, `source_matches:`, `annotations:`, and
+    /// `anonymous_statements:` into the target (created if needed);
+    /// source `comment:` fields concatenate into the target's with a
+    /// `--- from <source>:` divider, and `merged from: <sources>`
+    /// provenance lands in the target's `note:`. Validates the
+    /// post-merge partition with the realizability gate (requires
+    /// `--graph` unless `--no-verify`).
     Merge(MergeArgs),
     /// Delete one or more module YAML files. Refuses non-empty modules unless `--force`.
+    ///
+    /// "Non-empty" means any `members:`, `source_matches:`,
+    /// `annotations:`, or `anonymous_statements:`. Multiple paths delete
+    /// atomically: every path is validated up front; if any check fails,
+    /// nothing is deleted. All-empty deletions cannot change the
+    /// partition, so the gate is a no-op; `--force` deletions of
+    /// non-empty modules run the realizability gate against the
+    /// post-delete spec (requires `--graph` unless `--no-verify`).
     Delete(DeleteArgs),
     /// Emit module-assignment proposals derived from the atomic DAG.
+    ///
+    /// Read-only: surfaces *suggested* binding → module assignments +
+    /// diagnostics; applying them requires `bindings assign` (reviewed
+    /// proposal rows feed `bindings assign --batch` directly — see
+    /// docs/cli.md § "Batch atomicity"). With `--source-root`, JSON rows
+    /// carry `landable_today`, `unaddressable_anonymous_owner_ids`, and
+    /// `landability_notes` from full-JS-AST selector uniqueness.
+    /// `landable_today` is `false` both for proposals with unaddressable
+    /// anonymous statements and for `blocked_residual_dependency`
+    /// proposals (outgoing constraining edges into other residual cells)
+    /// — the latter need their closure grown or manual co-location
+    /// before they can land.
     Propose(PlanWorkArgs),
     /// List all modules in the spec with summary stats.
+    ///
+    /// Per-row: `member_count`, `anonymous_statement_count`, `residual`
+    /// flag, `has_comment`.
     List(ModulesListArgs),
 }
 
@@ -357,20 +469,61 @@ pub struct BindingsNs {
 #[derive(Debug, Subcommand)]
 enum BindingsNsCommand {
     /// Read, set, edit, or clear a binding's `comment:` field.
+    ///
+    /// Positional `"text"` replaces the comment; `--edit` opens
+    /// `$EDITOR` (fallback `$VISUAL`, then `vi`) on the current text;
+    /// `--clear` removes the field; with none of the three, prints the
+    /// current comment. An unset comment reads as `null` in JSON (an
+    /// empty line in text), distinct from an explicit `comment: ""`.
+    /// Member comments emit as JS comment blocks above the binding's
+    /// owner statement. Comments don't affect factorization, so
+    /// `--no-verify` is a no-op; `--dry-run` previews without writing.
     Comment(BindingCommentArgs),
     /// List every binding in the spec with home module + filters.
+    ///
+    /// Per-row: minified name, home module, readable name if any, and
+    /// `orphan` (sole member of its module) / `unrenamed` flags.
     List(BindingsListNsArgs),
     /// Rename a binding's readable `name:` without moving it.
+    ///
+    /// Validation is name-collision detection: no two bindings in the
+    /// chunk get the same readable name. A convenience over
+    /// `bindings assign` for the rename-without-move case; unlike
+    /// assign/unassign it also works on `source_matches[].bindings[]`
+    /// members.
     Rename(BindingsRenameArgs),
-    /// Move one or more bindings between modules atomically.
+    /// Move one or more bindings into named logical modules atomically.
+    ///
+    /// Each positional `<sym>:<module>[:<readable>]` moves a binding
+    /// and optionally renames it in the same step; `--batch` reads
+    /// moves as JSON. Validation runs on the *whole batch's* post-state
+    /// and includes the realizability + atom-split gate (the same
+    /// predicate `modules merge` / `modules delete --force` use), so a
+    /// multi-move refactor whose intermediate states would be invalid
+    /// can land in one shot; wanting refuse-intermediate-invalid
+    /// semantics means invoking once per move. Destination modules are
+    /// auto-created (paths canonicalized/lowercased); batch source
+    /// modules drained to zero members are deleted unless they carry a
+    /// module-level `comment:`, `source_matches:`, `annotations:`, or
+    /// `anonymous_statements:`. Does not yet support moving a
+    /// `source_matches[].bindings[]` member out of its claim.
+    /// Contract details: docs/cli.md § "Batch atomicity".
     Assign(BindingsAssignArgs),
     /// Remove one or more bindings from their current modules
     /// atomically; they fall through to residual.
+    ///
+    /// Residual is the default for an owner no spec module claims.
+    /// Same post-batch validation, gate, and drained-source-module
+    /// sweep as `bindings assign`. Splitting an atom by unassigning
+    /// only some of its members is rejected; unassigning a whole atom
+    /// together is accepted. Dry-run and apply share an exit code on
+    /// the same input.
     Unassign(BindingsUnassignArgs),
 }
 
 #[derive(Debug, ClapArgs)]
 pub struct BindingsListNsArgs {
+    /// Modules tree root.
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     pub modules_root: PathBuf,
     /// Restrict to bindings whose home module equals this path.
@@ -389,9 +542,10 @@ pub struct BindingsListNsArgs {
 
 #[derive(Debug, ClapArgs)]
 pub struct BindingsRenameArgs {
+    /// Modules tree root.
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     pub modules_root: PathBuf,
-    /// Current minified or readable name of the binding.
+    /// Current minified or readable name of the binding (must not contain `:`).
     pub original: String,
     /// New readable name (must not contain `:`).
     pub readable: String,
@@ -408,6 +562,7 @@ pub struct BindingsRenameArgs {
 
 #[derive(Debug, ClapArgs)]
 pub struct BindingsUnassignArgs {
+    /// Modules tree root.
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     pub modules_root: PathBuf,
     /// Binding symbols (minified or readable) to remove from their
@@ -436,14 +591,25 @@ pub struct BindingsUnassignArgs {
 
 #[derive(Debug, ClapArgs)]
 pub struct BindingsAssignArgs {
+    /// Modules tree root.
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     pub modules_root: PathBuf,
     /// Positional `<sym>:<module>[:<readable>]` triples. May be empty
     /// when `--batch` is supplied.
+    ///
+    /// `<sym>` accepts the minified or current readable name; the
+    /// optional third field sets the new readable `name:` (omitting it
+    /// preserves the current one). Neither `<sym>` nor `<readable>` may
+    /// contain `:` — use `--batch` JSON for such edge cases.
     pub triples: Vec<String>,
     /// Read additional moves from a JSON file (or `-` for stdin).
     /// Accepts explicit `{sym, module, readable?}` move arrays, plus
     /// reviewed binding-only `modules propose` rows.
+    ///
+    /// Moves are deduplicated on resolved member identity (duplicates
+    /// collapse with a stderr warning); contradictory destinations or
+    /// readable names for one member are rejected. Formats and the
+    /// propose-row admission rules: docs/cli.md § "Batch atomicity".
     #[arg(long)]
     pub batch: Option<String>,
     /// Validate but do not modify any file.
@@ -473,7 +639,11 @@ pub struct ModulesListArgs {
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     pub modules_root: PathBuf,
 
-    /// Restrict to modules with zero members.
+    /// Restrict to truly empty modules — no `members:`,
+    /// `source_matches:`, `annotations:`, or `anonymous_statements:` —
+    /// matching `modules delete`'s default-deletable predicate. A
+    /// module with only `source_matches:`, `annotations:`, or
+    /// `anonymous_statements:` is not empty and isn't reported.
     #[arg(long)]
     pub empty: bool,
 
@@ -481,16 +651,14 @@ pub struct ModulesListArgs {
     #[arg(long)]
     pub residual: bool,
 
-    /// Restrict to modules that contain bindings not present in any
-    /// other module — useful for finding modules that would be empty
-    /// if their bindings were re-assigned elsewhere.
+    /// Same predicate as `--empty`.
     #[arg(long = "unassigned-bindings")]
     pub unassigned_bindings: bool,
 
-    /// Restrict to auto-deletable modules: truly empty (no members and
-    /// no `anonymous_statements:`) AND no module-level `comment:`. This
-    /// is the subset safe to sweep with `modules delete` — a comment
-    /// would otherwise pin the module as a kept shell.
+    /// Restrict to auto-deletable modules: truly empty (the `--empty`
+    /// predicate) AND no module-level `comment:`. This is the subset
+    /// safe to sweep with `modules delete` — a comment would otherwise
+    /// pin the module as a kept shell.
     #[arg(long = "auto-deletable")]
     pub auto_deletable: bool,
 

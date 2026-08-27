@@ -1,0 +1,19 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "decision",
+    srcs = ["decision.py"],
+    visibility = ["//haku/console:__pkg__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_decision",
+    srcs = ["test_decision.py"],
+    deps = [
+        ":decision",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

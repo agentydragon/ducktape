@@ -52,6 +52,7 @@ from props.db.notifications import (
     SnapshotCreatedNotification,
 )
 from props.orchestration.agent_registry import AgentRunHandle, GraderPodInfo, ImageResolutionError, ResolvedImage
+from props.orchestration.executor import PodPhase
 
 if TYPE_CHECKING:
     from props.orchestration.agent_registry import AgentRegistry
@@ -265,7 +266,12 @@ class GraderSupervisor:
         for slug, plist in by_snapshot.items():
             # A keeper is one running pod, for a desired snapshot, on the current image.
             keeper = next(
-                (p for p in plist if slug in desired and p.phase == "running" and p.image_ref == resolved.oci_ref), None
+                (
+                    p
+                    for p in plist
+                    if slug in desired and p.phase == PodPhase.RUNNING and p.image_ref == resolved.oci_ref
+                ),
+                None,
             )
             for pod in plist:
                 if keeper is not None and pod.name == keeper.name:
@@ -276,10 +282,10 @@ class GraderSupervisor:
                 # merely-Running pod is NOT proof of health — it may still crash — so
                 # it never resets the count.
                 if slug in desired and pod.image_ref == resolved.oci_ref:
-                    if pod.phase == "failed":
+                    if pod.phase == PodPhase.FAILED:
                         self._record_failure(slug, now=now)
                         failed_this_cycle.add(slug)
-                    elif pod.phase == "succeeded":
+                    elif pod.phase == PodPhase.SUCCEEDED:
                         self._failures.pop(slug, None)
                 await self._reap(pod, desired=desired, image=resolved, tracked=handles_by_pod_name)
                 reaped += 1
@@ -337,7 +343,7 @@ class GraderSupervisor:
             else "wrong_image"
             if pod.image_ref != image.oci_ref
             else "terminal"
-            if pod.phase in ("succeeded", "failed")
+            if pod.phase in (PodPhase.SUCCEEDED, PodPhase.FAILED)
             else "duplicate"
         )
         handle = tracked.get(pod.name)

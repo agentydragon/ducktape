@@ -20,14 +20,16 @@ export type BootstrapNarration = {
  * It opens **expanded when nothing else is happening yet**: while the session is still
  * provisioning, and whenever the transcript is empty — including the session that died during
  * setup, where this is the entire account of what happened. Once the transcript has anything in it
- * that is what the operator came for, so the narration collapses out of its way.
+ * that is what the operator came for, so the narration collapses out of its way. The entries are
+ * the conversation's rather than the session's, so their emptiness is the caller's to say.
  */
 export function bootstrapNarration(
-  session: Pick<ConversationSession, "status" | "narration" | "items">
+  session: Pick<ConversationSession, "status" | "narration">,
+  conversationEmpty: boolean
 ): BootstrapNarration | null {
   if (session.narration.length === 0) return null;
   return {
     lines: [...session.narration].sort((left, right) => left.frame_seq - right.frame_seq),
-    startsExpanded: session.status === "provisioning" || session.items.length === 0,
+    startsExpanded: session.status === "provisioning" || conversationEmpty,
   };
 }

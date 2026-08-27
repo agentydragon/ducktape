@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import itertools
-from datetime import UTC, datetime
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from typing import cast
 from unittest.mock import patch
 from uuid import UUID, uuid4
@@ -17,12 +18,11 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 from more_itertools import one
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.chat_models import (
-    HARNESS_ORIGIN,
     OPEN_SESSION_STATUSES,
     SPA_ORIGIN,
     AuthoredEventKind,
@@ -34,6 +34,7 @@ from haku.console.chat_models import (
     ItemType,
     LeaseExpiryReason,
     MatrixOrigin,
+    PromptOriginKind,
     PromptRejection,
     RuntimeKind,
     SessionStatus,
@@ -41,14 +42,23 @@ from haku.console.chat_models import (
     ToolOutcome,
     TurnOutcome,
 )
+from haku.console.conversation_read_access import ConversationAccessDeniedError, ProfileScopedReads, UnrestrictedReads
 from haku.console.database_schema import (
     Conversation,
     ConversationEvent,
     ConversationItem,
     ConversationPrompt,
     ConversationTurn,
+    HttpGrantRow,
+    KubernetesGrantRow,
+    McpToolCall,
+    McpToolCallPrincipal,
     Session,
 )
+from haku.console.grant_principal import GrantPrincipalKind
+from haku.console.http_grant_models import HttpMethod, HttpScheme
+from haku.console.kubernetes_grant_models import KubernetesGrantStatus, KubernetesNamespacesGrantScope, KubernetesRule
+from haku.console.tool_calls import ToolCallStatus
 from haku.console.x.claude_code.testing.wire import assistant, result, text_block, text_delta
 from haku.console.x.conftest import age_lease, answers, attach_channel, lease_of, make_idle
 from haku.console.x.conversation_events import (
@@ -61,16 +71,23 @@ from haku.console.x.conversation_events import (
     ToolCallCompleted,
     ToolCallStarted,
 )
-from haku.console.x.conversation_records import (
-    FrameCursor,
+from haku.console.x.conversation_reads import (
+    FrameRecord,
+    FromFrames,
+    HarnessFrameRecord,
+    MessageEntry,
+    PromptEntry,
     SessionCursor,
-    TranscriptCursor,
+    ToolCallEntry,
+    ToolResultEntry,
     TurnAnsweredEnd,
     TurnCursor,
+    TurnEndEntry,
 )
+from haku.console.x.item_entries import entry_of
 from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
 from haku.console.x.session_events import PromptStartedBody, TurnAbortedBody, TurnAnsweredBody, TurnFailedBody
-from haku.console.x.session_notifications import SessionEventKind
+from haku.console.x.session_notifications import SessionEvent, SessionEventKind
 from haku.console.x.session_store import (
     ADOPTION_GRACE,
     REPLICA,
@@ -83,6 +100,12 @@ from haku.console.x.session_store import (
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 
 ROOM = "!room:example.org"
+
+
+def _harness(frames: Sequence[FrameRecord]) -> list[HarnessFrameRecord]:
+    """Narrow a frame page to the harness variant, which these reads are asserting about."""
+    assert all(isinstance(frame, HarnessFrameRecord) for frame in frames)
+    return cast(list[HarnessFrameRecord], list(frames))
 
 
 class _AlternateFrameVocabulary:
@@ -112,8 +135,8 @@ async def test_store_delegates_prompt_semantics_and_keeps_native_json_opaque(mig
     )
 
     assert await store.adopt_open_turn(view.session_id) is not None
-    frames = await store.read_frames(view.session_id, cursor=None, limit=25)
-    assert [frame.payload for frame in frames] == [
+    frames = await store.read_frames(view.session_id, cursor=None, limit=25, scope=UnrestrictedReads())
+    assert [frame.payload for frame in _harness(frames)] == [
         {"动作": "提问", "正文": "hello"},
         {"阶段": "碎片", "正文": "你"},
         {"阶段": "最终", "正文": "你好"},
@@ -229,6 +252,182 @@ async def test_failure_records_the_final_status_and_error_once(chat_store, migra
     assert (failed.status, failed.error) == (SessionStatus.FAILED, "runner failed")
 
 
+async def test_session_end_terminalizes_exact_session_grants(chat_store, migrated_sessions, operator_id) -> None:
+    agent_id = UUID("00000000-0000-4000-8000-000000000001")
+    reservation_id, binding_id = uuid4(), uuid4()
+    now = datetime.now(UTC)
+    async with migrated_sessions.begin() as db:
+        await db.execute(
+            text(
+                """
+                INSERT INTO agent_name_reservations (
+                    reservation_id, display_name, display_name_key, agent_id, created_at, activated_at
+                ) VALUES (:reservation_id, 'Session Grant Agent', 'session grant agent', :agent_id, :n, :n)
+                """
+            ),
+            {"reservation_id": reservation_id, "agent_id": agent_id, "n": now},
+        )
+        await db.execute(
+            text(
+                """
+                INSERT INTO agents (
+                    agent_id, owner_operator_id, current_name_reservation_id, status,
+                    created_at, updated_at, activated_at, access_profile_id
+                ) VALUES (
+                    :agent_id, :operator_id, :reservation_id, 'active', :n, :n, :n, 'no_auto_approval'
+                )
+                """
+            ),
+            {"agent_id": agent_id, "operator_id": operator_id, "reservation_id": reservation_id, "n": now},
+        )
+        await db.execute(
+            text(
+                """
+                INSERT INTO credential_bindings (
+                    binding_id, agent_id, kind, status, generation, created_at, updated_at,
+                    issued_at, activated_at
+                ) VALUES (:binding_id, :agent_id, 'static', 'active', 1, :n, :n, :n, :n)
+                """
+            ),
+            {"binding_id": binding_id, "agent_id": agent_id, "n": now},
+        )
+        await db.execute(
+            text(
+                """
+                INSERT INTO static_credentials (
+                    binding_id, secret_reference, credential_fingerprint, created_at
+                ) VALUES (:binding_id, :reference, :fingerprint, :n)
+                """
+            ),
+            {
+                "binding_id": binding_id,
+                "reference": f"env:SESSION_GRANT_{agent_id}",
+                "fingerprint": binding_id.bytes,
+                "n": now,
+            },
+        )
+    view, _ = await chat_store.create(operator_id, agent_id=agent_id, access_profile_id="no_auto_approval")
+    grant_id = uuid4()
+    async with migrated_sessions.begin() as db:
+        session = await db.get(Session, view.session_id)
+        assert session is not None
+        session.agent_binding_id = binding_id
+        session.bridge_connected_at = datetime.now(UTC)
+        session.lease_expires_at = datetime(2999, 1, 1, tzinfo=UTC)
+        await db.flush([session])
+        source_tool_call_id = f"tc_{uuid4().hex}"
+        db.add(
+            McpToolCall(
+                tool_call_id=source_tool_call_id,
+                server_id="kubernetes",
+                tool_name="create_grant",
+                status=ToolCallStatus.RUNNING,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+                arguments_json={},
+                rationale="session grant terminalization test",
+                title=None,
+                result_json=None,
+                error=None,
+                denial_reason=None,
+                withdrawal_reason=None,
+                approval_policy_id=None,
+                auto_approval_evaluation=None,
+                approved_at=datetime.now(UTC),
+            )
+        )
+        db.add(
+            McpToolCallPrincipal(
+                tool_call_id=source_tool_call_id, operator_id=None, binding_id=binding_id, session_id=view.session_id
+            )
+        )
+        await db.flush()
+        db.add(
+            KubernetesGrantRow(
+                grant_id=grant_id,
+                owner_agent_id=agent_id,
+                principal_kind=GrantPrincipalKind.SESSION,
+                principal_agent_id=None,
+                principal_session_id=view.session_id,
+                source_tool_call_id=source_tool_call_id,
+                scope=KubernetesNamespacesGrantScope(namespaces=("public-coder-agent",)),
+                rules=[KubernetesRule(api_groups=("",), resources=("pods/log",), verbs=("get",))],
+                status=KubernetesGrantStatus.ACTIVE,
+                created_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+                ended_at=None,
+                end_reason=None,
+            )
+        )
+
+    http_grant_id = uuid4()
+    async with migrated_sessions.begin() as db:
+        http_source_tool_call_id = f"tc_{uuid4().hex}"
+        db.add(
+            McpToolCall(
+                tool_call_id=http_source_tool_call_id,
+                server_id="http_grants",
+                tool_name="create_grant",
+                status=ToolCallStatus.RUNNING,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+                arguments_json={},
+                rationale="session grant terminalization test",
+                title=None,
+                result_json=None,
+                error=None,
+                denial_reason=None,
+                withdrawal_reason=None,
+                approval_policy_id=None,
+                auto_approval_evaluation=None,
+                approved_at=datetime.now(UTC),
+            )
+        )
+        db.add(
+            McpToolCallPrincipal(
+                tool_call_id=http_source_tool_call_id,
+                operator_id=None,
+                binding_id=binding_id,
+                session_id=view.session_id,
+            )
+        )
+        await db.flush()
+        db.add(
+            HttpGrantRow(
+                grant_id=http_grant_id,
+                owner_agent_id=agent_id,
+                principal_kind=GrantPrincipalKind.SESSION,
+                principal_agent_id=None,
+                principal_session_id=view.session_id,
+                source_tool_call_id=http_source_tool_call_id,
+                scheme=HttpScheme.HTTPS,
+                host="grocy.example",
+                port=443,
+                methods=frozenset({HttpMethod.GET}),
+                path_regex=None,
+                created_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+                released_at=None,
+                revoked_at=None,
+                end_reason=None,
+            )
+        )
+
+    await chat_store.fail(view.session_id, "runner failed")
+
+    async with migrated_sessions() as db:
+        grant = await db.get(KubernetesGrantRow, grant_id)
+        assert grant is not None
+        assert grant.status is KubernetesGrantStatus.REVOKED
+        assert grant.end_reason == "principal_ended"
+        assert grant.ended_at is not None
+        http_grant = await db.get(HttpGrantRow, http_grant_id)
+        assert http_grant is not None
+        assert http_grant.revoked_at is not None
+        assert http_grant.released_at is None
+        assert http_grant.end_reason == "principal_ended"
+
+
 async def test_the_cleanup_sweep_offers_ended_sessions_until_their_claim_is_recorded_gone(
     chat_store, operator_id
 ) -> None:
@@ -304,14 +503,14 @@ async def test_the_rollout_reads_back_in_wire_order_with_a_keyset_cursor(chat_st
             session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": kind}
         )
 
-    first = await chat_store.read_frames(str(session.session_id), cursor=None, limit=2)
+    first = await chat_store.read_frames(str(session.session_id), cursor=None, limit=2, scope=UnrestrictedReads())
     rest = await chat_store.read_frames(
-        str(session.session_id), cursor=FrameCursor(frame_seq=first[-1].frame_seq + 1), limit=2
+        str(session.session_id), cursor=first[-1].frame_seq + 1, limit=2, scope=UnrestrictedReads()
     )
 
     assert [frame.kind for frame in first] == ["harness_frame", "harness_frame"]
-    assert [frame.payload["type"] for frame in first] == ["user", "assistant"]
-    assert [frame.payload["type"] for frame in rest] == ["result"]
+    assert [frame.payload["type"] for frame in _harness(first)] == ["user", "assistant"]
+    assert [frame.payload["type"] for frame in _harness(rest)] == ["result"]
 
 
 async def test_the_kinds_filter_uses_only_hakus_outer_bridge_class(chat_store, operator_id) -> None:
@@ -321,17 +520,17 @@ async def test_the_kinds_filter_uses_only_hakus_outer_bridge_class(chat_store, o
         session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"阶段": "最终"}
     )
 
-    default = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25)
+    default = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, scope=UnrestrictedReads())
     setup = await chat_store.read_frames(
-        str(session.session_id), cursor=None, limit=25, kinds=[BridgeFrameKind.SETUP_OUTPUT]
+        str(session.session_id), cursor=None, limit=25, kinds=[BridgeFrameKind.SETUP_OUTPUT], scope=UnrestrictedReads()
     )
     harness = await chat_store.read_frames(
-        str(session.session_id), cursor=None, limit=25, kinds=[BridgeFrameKind.HARNESS_FRAME]
+        str(session.session_id), cursor=None, limit=25, kinds=[BridgeFrameKind.HARNESS_FRAME], scope=UnrestrictedReads()
     )
 
-    assert [(frame.kind, frame.payload) for frame in default] == [("harness_frame", {"阶段": "最终"})]
-    assert [(frame.kind, frame.payload) for frame in setup] == [("setup_output", {"text": "booting"})]
-    assert [(frame.kind, frame.payload) for frame in harness] == [("harness_frame", {"阶段": "最终"})]
+    assert [(frame.kind, frame.payload) for frame in _harness(default)] == [("harness_frame", {"阶段": "最终"})]
+    assert [(frame.kind, frame.text) for frame in setup] == [("setup_output", "booting")]
+    assert [(frame.kind, frame.payload) for frame in _harness(harness)] == [("harness_frame", {"阶段": "最终"})]
 
 
 async def test_method_only_native_frames_are_visible_and_filterable(chat_store, operator_id) -> None:
@@ -342,15 +541,13 @@ async def test_method_only_native_frames_are_visible_and_filterable(chat_store, 
         session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, inner
     )
 
-    default = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25)
-    exact = await chat_store.read_frame(session.session_id, recorded.frame_seq)
-    transcript = await chat_store.read_transcript(session.session_id, cursor=None, limit=25)
+    default = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, scope=UnrestrictedReads())
+    exact = await chat_store.read_frames(
+        session.session_id, cursor=recorded.frame_seq, limit=1, scope=UnrestrictedReads()
+    )
 
-    assert [frame.payload for frame in default] == [inner]
-    assert exact is not None
-    assert exact.payload == inner
-    assert transcript.entries == []
-    assert transcript.unreadable == {"codex/event/unknown": 1}
+    assert [frame.payload for frame in _harness(default)] == [inner]
+    assert [frame.payload for frame in _harness(exact)] == [inner]
 
 
 async def test_native_frames_without_a_known_discriminator_remain_in_the_default_and_exact_views(
@@ -363,15 +560,13 @@ async def test_native_frames_without_a_known_discriminator_remain_in_the_default
         session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, inner
     )
 
-    default = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25)
-    exact = await chat_store.read_frame(session.session_id, recorded.frame_seq)
-    transcript = await chat_store.read_transcript(session.session_id, cursor=None, limit=25)
+    default = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, scope=UnrestrictedReads())
+    exact = await chat_store.read_frames(
+        session.session_id, cursor=recorded.frame_seq, limit=1, scope=UnrestrictedReads()
+    )
 
-    assert [frame.payload for frame in default] == [inner]
-    assert exact is not None
-    assert exact.payload == inner
-    assert transcript.entries == []
-    assert transcript.unreadable == {"<undiscriminated>": 1}
+    assert [frame.payload for frame in _harness(default)] == [inner]
+    assert [frame.payload for frame in _harness(exact)] == [inner]
 
 
 async def test_a_replayed_frame_is_recorded_once(chat_store, operator_id) -> None:
@@ -392,9 +587,9 @@ async def test_a_replayed_frame_is_recorded_once(chat_store, operator_id) -> Non
         )
     ).fresh
 
-    frames = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25)
+    frames = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, scope=UnrestrictedReads())
     assert [frame.kind for frame in frames] == ["harness_frame"]
-    assert [frame.payload["type"] for frame in frames] == ["assistant"]
+    assert [frame.payload["type"] for frame in _harness(frames)] == ["assistant"]
 
 
 async def test_the_resume_cursor_is_the_highest_number_a_runner_gave_this_session(chat_store, operator_id) -> None:
@@ -462,7 +657,7 @@ async def test_frames_with_no_identity_are_never_collapsed(chat_store, operator_
         )
     ).fresh
 
-    frames = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25)
+    frames = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, scope=UnrestrictedReads())
     assert len(frames) == 2
 
 
@@ -476,10 +671,10 @@ async def test_the_raw_log_returns_every_native_frame_without_classifying_it(cha
         session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "result", "uuid": "r1"}
     )
 
-    default = await chat_store.read_frames(str(session_id), cursor=None, limit=25)
+    default = await chat_store.read_frames(str(session_id), cursor=None, limit=25, scope=UnrestrictedReads())
 
     assert [frame.kind for frame in default] == ["harness_frame", "harness_frame"]
-    assert [frame.payload["type"] for frame in default] == ["stream_event", "result"]
+    assert [frame.payload["type"] for frame in _harness(default)] == ["stream_event", "result"]
 
 
 async def test_one_session_never_reads_another_session_frames(chat_store, operator_id) -> None:
@@ -492,10 +687,10 @@ async def test_one_session_never_reads_another_session_frames(chat_store, operat
         theirs.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "result"}
     )
 
-    frames = await chat_store.read_frames(str(mine.session_id), cursor=None, limit=25)
+    frames = await chat_store.read_frames(str(mine.session_id), cursor=None, limit=25, scope=UnrestrictedReads())
 
     assert [frame.kind for frame in frames] == ["harness_frame"]
-    assert [frame.payload["type"] for frame in frames] == ["assistant"]
+    assert [frame.payload["type"] for frame in _harness(frames)] == ["assistant"]
 
 
 async def test_the_frame_inspector_opens_on_the_end_of_the_log_and_walks_back(chat_store, operator_id) -> None:
@@ -581,7 +776,7 @@ async def test_sessions_come_back_newest_first_with_the_channels_holding_their_t
     matrix, _ = await chat_store.create(operator_id)
     await attach_channel(migrated_sessions, matrix.session_id, "!room:example.org")
 
-    sessions = await chat_store.list_sessions(cursor=None, limit=10)
+    sessions = await chat_store.list_sessions(cursor=None, limit=10, scope=UnrestrictedReads())
 
     assert sessions[0].session_id == matrix.session_id
     assert sessions[0].runtime_kind == "claude_code"
@@ -598,9 +793,9 @@ async def test_a_session_created_between_two_pages_cannot_shift_what_the_second_
     newer, _ = await chat_store.create(operator_id)
 
     # Two rows for a page of one: the extra row is the one the tool's cursor names.
-    first, resume = await chat_store.list_sessions(cursor=None, limit=2)
+    first, resume = await chat_store.list_sessions(cursor=None, limit=2, scope=UnrestrictedReads())
     await chat_store.create(operator_id)
-    second = await chat_store.list_sessions(cursor=SessionCursor.of(resume), limit=1)
+    second = await chat_store.list_sessions(cursor=SessionCursor.of(resume), limit=1, scope=UnrestrictedReads())
 
     assert first.session_id == newer.session_id
     assert [session.session_id for session in second] == [older.session_id]
@@ -620,12 +815,73 @@ async def test_two_sessions_created_in_one_instant_are_paged_exactly_once_each(
             .values(created_at=datetime(2026, 8, 12, 9, 0, tzinfo=UTC))
         )
 
-    page, resume = await chat_store.list_sessions(cursor=None, limit=2)
-    rest = await chat_store.list_sessions(cursor=SessionCursor.of(resume), limit=10)
+    page, resume = await chat_store.list_sessions(cursor=None, limit=2, scope=UnrestrictedReads())
+    rest = await chat_store.list_sessions(cursor=SessionCursor.of(resume), limit=10, scope=UnrestrictedReads())
 
     assert [session.session_id for session in [page, *rest]] == sorted(
         [first.session_id, second.session_id], reverse=True
     )
+
+
+async def _pinned_agent(sessions, operator_id: UUID) -> UUID:
+    """A minimal durable Agent row a conversation's pinned identity can reference."""
+    agent_id, reservation_id = uuid4(), uuid4()
+    async with sessions.begin() as db:
+        # The reservation's agent FK is DEFERRED, so the pair lands in one transaction.
+        await db.execute(
+            text(
+                "INSERT INTO agent_name_reservations "
+                "(reservation_id, display_name, display_name_key, agent_id, created_at, activated_at) "
+                "VALUES (:reservation_id, :name, :name, :agent_id, now(), now())"
+            ),
+            {"reservation_id": reservation_id, "name": str(agent_id), "agent_id": agent_id},
+        )
+        await db.execute(
+            text(
+                "INSERT INTO agents "
+                "(agent_id, owner_operator_id, current_name_reservation_id, status, "
+                " created_at, updated_at, activated_at, access_profile_id) "
+                "VALUES (:agent_id, :operator_id, :reservation_id, 'active', now(), now(), now(), 'haku')"
+            ),
+            {"agent_id": agent_id, "operator_id": operator_id, "reservation_id": reservation_id},
+        )
+    return agent_id
+
+
+async def test_reads_are_fenced_by_the_conversations_pinned_profile(chat_store, migrated_sessions, operator_id) -> None:
+    """The profile-DAG scope is the row fence for every `haku_conversations` read.
+
+    The listing filters; a point read of a session or conversation outside the scope refuses
+    loudly; a conversation predating pinned identity is readable only by the unrestricted
+    (Operator) scope; and an unknown id stays an empty page rather than a denial.
+    """
+    agent_id = await _pinned_agent(migrated_sessions, operator_id)
+    pinned, _ = await chat_store.create(operator_id, agent_id=agent_id, access_profile_id="haku")
+    legacy, _ = await chat_store.create(operator_id)
+    haku_reads = ProfileScopedReads(readable_profile_ids=frozenset({"haku"}))
+    coder_reads = ProfileScopedReads(readable_profile_ids=frozenset({"public-coder"}))
+
+    listed = await chat_store.list_sessions(cursor=None, limit=10, scope=haku_reads)
+    assert [session.session_id for session in listed] == [pinned.session_id]
+    everything = await chat_store.list_sessions(cursor=None, limit=10, scope=UnrestrictedReads())
+    assert {session.session_id for session in everything} == {pinned.session_id, legacy.session_id}
+    assert await chat_store.list_sessions(cursor=None, limit=10, scope=ProfileScopedReads(frozenset())) == []
+
+    assert await chat_store.read_frames(pinned.session_id, cursor=None, limit=5, scope=haku_reads) == []
+    for denied_scope, session_id in ((coder_reads, pinned.session_id), (haku_reads, legacy.session_id)):
+        with pytest.raises(ConversationAccessDeniedError):
+            await chat_store.read_frames(session_id, cursor=None, limit=5, scope=denied_scope)
+        with pytest.raises(ConversationAccessDeniedError):
+            await chat_store.list_turns(session_id, cursor=None, limit=5, scope=denied_scope)
+    async with migrated_sessions() as db:
+        legacy_conversation = await db.scalar(
+            select(Session.conversation_id).where(Session.session_id == legacy.session_id)
+        )
+    with pytest.raises(ConversationAccessDeniedError):
+        await chat_store.read_item_rows(legacy_conversation, after_seq=None, limit=5, scope=haku_reads)
+
+    assert await chat_store.read_frames(uuid4(), cursor=None, limit=5, scope=coder_reads) == []
+    assert await chat_store.read_item_rows(uuid4(), after_seq=None, limit=5, scope=coder_reads) == []
 
 
 async def test_a_prompt_records_the_channel_events_it_was_folded_from(
@@ -669,8 +925,10 @@ async def test_exchanges_page_by_their_own_keyset(chat_store, operator_id) -> No
         await chat_store.end_turn(turn.turn_id, TurnAnsweredBody())
 
     # One row past the page, exactly as the tool asks: the cursor names the first row not returned.
-    *page, resume = await chat_store.list_turns(view.session_id, cursor=None, limit=3)
-    rest = await chat_store.list_turns(view.session_id, cursor=TurnCursor.of(resume), limit=5)
+    *page, resume = await chat_store.list_turns(view.session_id, cursor=None, limit=3, scope=UnrestrictedReads())
+    rest = await chat_store.list_turns(
+        view.session_id, cursor=TurnCursor.of(resume), limit=5, scope=UnrestrictedReads()
+    )
 
     assert len(page) == 2
     assert [turn.turn_id for turn in rest] == [resume.turn_id]
@@ -694,7 +952,7 @@ async def test_a_turn_ends_at_the_frame_it_names_rather_than_at_the_head_of_the_
 
     await chat_store.end_turn(turn.turn_id, TurnAnsweredBody(), last_frame_seq=ending.frame_seq)
 
-    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=5)
+    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=5, scope=UnrestrictedReads())
     assert record.last_frame_seq == ending.frame_seq
 
 
@@ -725,80 +983,220 @@ async def test_a_turn_that_ended_on_no_frame_is_bounded_by_the_ones_it_recorded(
 
     brackets = {
         record.turn_id: (record.first_frame_seq, record.last_frame_seq)
-        for record in await chat_store.list_turns(view.session_id, cursor=None, limit=5)
+        for record in await chat_store.list_turns(view.session_id, cursor=None, limit=5, scope=UnrestrictedReads())
     }
     assert brackets[silent.turn_id][1] is None, "it recorded nothing, and the frame before it is not its own"
     assert brackets[spoke.turn_id] == (answer.frame_seq, answer.frame_seq)
 
 
-async def test_the_transcript_reads_the_conversation_rather_than_the_protocol(chat_store, operator_id) -> None:
-    """What a session meant, with a way back to the frames it was read off."""
-    session, _ = await chat_store.create(operator_id)
-    await chat_store.record_frame(
-        session.session_id,
+async def _conversation_entries(chat_store, conversation_id, *, after_seq=None, limit=100):
+    """The store's page rows folded to entries, as `conversation_reader.ConversationReads` serves them."""
+    return [
+        entry_of(row)
+        for row in await chat_store.read_item_rows(
+            conversation_id, after_seq=after_seq, limit=limit, scope=UnrestrictedReads()
+        )
+    ]
+
+
+async def test_the_items_read_as_the_conversation_rather_than_the_protocol(chat_store, operator_id) -> None:
+    """What a conversation meant, with a way back to the frames it was read off."""
+    view, token = await chat_store.create(operator_id)
+    conversation_id = await chat_store.conversation_of(view.session_id)
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
+    started = await chat_store.next_prompt(view.session_id)
+    assert started is not None
+    spoke = await chat_store.record_frame(
+        view.session_id,
         FrameDirection.FROM_AGENT,
         BridgeFrameKind.HARNESS_FRAME,
-        assistant(text_block("hi"), message_id="msg_1"),
+        assistant(text_block("a bad config"), message_id="msg_1"),
     )
-    await chat_store.record_frame(
-        session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, result(uuid="r1")
+    where = FrameRange(spoke.frame_seq, spoke.frame_seq)
+    await chat_store.apply_frame(
+        view.session_id,
+        started.turn_id,
+        spoke.frame_seq,
+        [
+            MessageStarted(provenance=where),
+            ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text="a bad config", provenance=where),
+            MessageCompleted(backend_item_id="msg_1", provenance=where),
+        ],
     )
+    await chat_store.end_turn(started.turn_id, TurnAnsweredBody(), last_frame_seq=spoke.frame_seq)
 
-    transcript = await chat_store.read_transcript(session.session_id, cursor=None, limit=10)
+    entries = await _conversation_entries(chat_store, conversation_id, limit=10)
 
-    assert [entry.kind for entry in transcript.entries] == ["message", "turn_end"]
-    assert transcript.entries[0].text == "hi"
+    assert [entry.kind for entry in entries] == ["prompt", "message", "turn_end"]
+    said = entries[1]
+    assert isinstance(said, MessageEntry)
+    assert said.text == "a bad config"
+    assert isinstance(said.provenance, FromFrames)
+    assert said.provenance.session_id == view.session_id, "frames are session-level, so the appeal names whose"
     named = await chat_store.read_frames(
-        session.session_id,
-        cursor=FrameCursor(frame_seq=transcript.entries[0].provenance.first_frame_seq),
+        said.provenance.session_id,
+        cursor=said.provenance.first_frame_seq,
         limit=1,
         kinds=None,
+        scope=UnrestrictedReads(),
     )
-    assert named[0].payload["message"]["id"] == "msg_1", "provenance points at the complete inner frame it was read off"
+    assert _harness(named)[0].payload["message"]["id"] == "msg_1", (
+        "provenance points at the complete inner frame it was read off"
+    )
 
 
-async def test_a_transcript_page_holds_what_the_whole_session_holds_at_that_position(chat_store, operator_id) -> None:
-    """The fold runs from the session's first frame however far in the cursor is, so a page
-    boundary cannot close a message the whole session does not end there."""
-    session, _ = await chat_store.create(operator_id)
+async def test_the_items_read_hands_back_the_rows_the_writer_materialised(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """`conversation_item.text` is the writer's own fold of the log's segments, so a read of the
+    rows cannot disagree with the log — which a read re-derived from the frames could not promise,
+    because a change to the projection would move one of them and not the other."""
+    view, token = await chat_store.create(operator_id)
+    conversation_id = await chat_store.conversation_of(view.session_id)
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await _exchange(chat_store, operator_id, view.session_id, "first?", "one")
+    await _exchange(chat_store, operator_id, view.session_id, "second?", "two")
+
+    entries = await _conversation_entries(chat_store, conversation_id)
+
+    spoken = [entry.text for entry in entries if isinstance(entry, MessageEntry)]
+    assert spoken == await answers(migrated_sessions, view.session_id)
+
+
+async def test_an_item_page_resumes_at_its_cursor_without_refolding_the_thread(chat_store, operator_id) -> None:
+    """The cursor is a durable stream position, so pages concatenate to the whole read and a page
+    is served from its position alone — page N of a long conversation costs what page one does."""
+    view, token = await chat_store.create(operator_id)
+    conversation_id = await chat_store.conversation_of(view.session_id)
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     for index in range(3):
-        await chat_store.record_frame(
-            session.session_id,
-            FrameDirection.FROM_AGENT,
-            BridgeFrameKind.HARNESS_FRAME,
-            assistant(text_block(f"{index} "), message_id="msg_1"),
-        )
-        await chat_store.record_frame(
-            session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, result(uuid=f"r{index}")
-        )
+        await _exchange(chat_store, operator_id, view.session_id, f"ask {index}", f"answer {index}")
 
-    whole = await chat_store.read_transcript(session.session_id, cursor=None, limit=100)
-    first = await chat_store.read_transcript(session.session_id, cursor=None, limit=3)
-    rest = await chat_store.read_transcript(session.session_id, cursor=TranscriptCursor(index=3), limit=100)
+    whole = await _conversation_entries(chat_store, conversation_id)
+    first = await _conversation_entries(chat_store, conversation_id, limit=3)
+    rest = await _conversation_entries(chat_store, conversation_id, after_seq=whole[3].seq)
 
-    assert first.entries + rest.entries == whole.entries
-    assert [entry.index for entry in whole.entries] == list(range(len(whole.entries)))
+    assert first + rest == whole
+    assert [entry.seq for entry in whole] == sorted({entry.seq for entry in whole}), "defining positions are unique"
 
 
-async def test_deltas_are_not_on_the_transcript_at_all(chat_store, operator_id) -> None:
-    """They are recorded, and `read_rollout` still serves them by name — but the prose they carry
-    arrives again whole in the message that follows, so a reader of a finished conversation would
-    get it twice."""
-    session, _ = await chat_store.create(operator_id)
+async def test_a_frame_the_fold_never_committed_is_not_an_item(chat_store, operator_id) -> None:
+    """The entries are the conversation's record, so what is on them is what the fold committed —
+    never whatever the frame table happens to hold. `read_frames` still serves the frame by name."""
+    view, token = await chat_store.create(operator_id)
+    conversation_id = await chat_store.conversation_of(view.session_id)
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.record_frame(
-        session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, text_delta("h")
-    )
-    await chat_store.record_frame(
-        session.session_id,
-        FrameDirection.FROM_AGENT,
-        BridgeFrameKind.HARNESS_FRAME,
-        assistant(text_block("hi"), message_id="msg_1"),
+        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, text_delta("h")
     )
 
-    transcript = await chat_store.read_transcript(session.session_id, cursor=None, limit=10)
+    entries = await _conversation_entries(chat_store, conversation_id, limit=10)
+    frames = await chat_store.read_frames(view.session_id, cursor=None, limit=10, kinds=None, scope=UnrestrictedReads())
 
-    assert [entry.kind for entry in transcript.entries] == ["message"]
-    assert transcript.unreadable is None
+    assert entries == []
+    assert len(frames) == 1, "the frame is recorded and readable; it just never became a fact"
+
+
+async def test_a_call_and_its_answer_are_separate_entries_at_their_own_positions(chat_store, operator_id) -> None:
+    """A call's entry is written where the call opens — its arguments are whole by then — and its
+    answer where the call completes, joined by the id the protocol gave the ask."""
+    view, token = await chat_store.create(operator_id)
+    conversation_id = await chat_store.conversation_of(view.session_id)
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "look it up", SPA_ORIGIN)
+    started = await chat_store.next_prompt(view.session_id)
+    assert started is not None
+    asked = await chat_store.record_frame(
+        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "assistant"}
+    )
+    await chat_store.apply_frame(
+        view.session_id,
+        started.turn_id,
+        asked.frame_seq,
+        [
+            ToolCallStarted(
+                call_id="toolu_1",
+                tool_name="Bash",
+                arguments={"command": "ls"},
+                provenance=FrameRange(asked.frame_seq, asked.frame_seq),
+            )
+        ],
+    )
+    answered = await chat_store.record_frame(
+        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"}
+    )
+    await chat_store.apply_frame(
+        view.session_id,
+        started.turn_id,
+        answered.frame_seq,
+        [
+            ItemSegment(
+                item=CallRef(call_id="toolu_1"),
+                text="a.txt",
+                provenance=FrameRange(answered.frame_seq, answered.frame_seq),
+            ),
+            ToolCallCompleted(
+                item=CallRef(call_id="toolu_1"),
+                outcome=ToolOutcome.SUCCEEDED,
+                structured={"exit_code": 0},
+                provenance=FrameRange(answered.frame_seq, answered.frame_seq),
+            ),
+        ],
+    )
+
+    entries = await _conversation_entries(chat_store, conversation_id, limit=10)
+
+    assert [entry.kind for entry in entries] == ["prompt", "tool_call", "tool_result"]
+    call, result_entry = entries[1], entries[2]
+    assert isinstance(call, ToolCallEntry)
+    assert (call.tool_name, call.arguments) == ("Bash", {"command": "ls"})
+    assert isinstance(result_entry, ToolResultEntry)
+    assert result_entry.call_id == call.call_id
+    assert (result_entry.content, result_entry.structured) == ("a.txt", {"exit_code": 0})
+    assert call.seq < result_entry.seq, "the ask and the answer sit at their own stream positions"
+
+
+async def test_the_items_read_spans_replaced_sessions(chat_store, migrated_sessions, operator_id) -> None:
+    """A conversation outlives its runners, so the read that follows one thread does not stop
+    where a sandbox died; which session produced an entry is on its provenance."""
+    view, token = await chat_store.create(operator_id)
+    conversation_id = await chat_store.conversation_of(view.session_id)
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await _exchange(chat_store, operator_id, view.session_id, "first?", "one")
+    await chat_store.fail(view.session_id, "sandbox died")
+    replacement, replacement_token = await chat_store.create(operator_id, conversation_id=conversation_id)
+    assert replacement.session_id != view.session_id
+    assert await chat_store.authenticate_bridge(replacement.session_id, replacement_token) == (
+        BridgeAuthentication.ACCEPTED
+    )
+    await _exchange(chat_store, operator_id, replacement.session_id, "second?", "two")
+
+    entries = await _conversation_entries(chat_store, conversation_id)
+
+    spoken = [entry for entry in entries if isinstance(entry, MessageEntry)]
+    assert [entry.text for entry in spoken] == ["one", "two"]
+    assert [entry.provenance.session_id for entry in spoken if isinstance(entry.provenance, FromFrames)] == [
+        view.session_id,
+        replacement.session_id,
+    ]
+
+
+async def test_a_prompt_admitted_before_any_session_is_on_the_conversations_items(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """A prompt buys the sandbox, so it is accepted before a runner exists and the rows recording
+    it name no session at all. The read is keyed by the conversation, so the prompt is on it from
+    admission rather than from whenever a session claims it."""
+    view, _ = await chat_store.create_idle(operator_id)
+    conversation_id = await chat_store.conversation_of(view.session_id)
+    async with migrated_sessions.begin() as db:
+        await db.delete(await db.get(Session, view.session_id))
+    await chat_store.enqueue_conversation_prompt(operator_id, conversation_id, "start", SPA_ORIGIN)
+
+    entry = one(await _conversation_entries(chat_store, conversation_id, limit=10))
+    assert isinstance(entry, PromptEntry)
+    assert (entry.text, entry.origin) == ("start", PromptOriginKind.SPA)
 
 
 async def test_operator_conversation_read_surface_keeps_inventory_and_transcript_separate(
@@ -829,8 +1227,9 @@ async def test_operator_conversation_read_surface_keeps_inventory_and_transcript
     assert [attachment.address for attachment in detail.attachments] == [ROOM]
     assert detail.runtime_kind == "claude_code"
     assert detail.session.session_id == matrix.session_id
-    assert detail.session.items[0].text == "What is happening?"
-    assert detail.session.turns == []
+    asked = one(entry for entry in detail.entries if isinstance(entry, PromptEntry))
+    assert asked.text == "What is happening?"
+    assert detail.streaming == []
     assert detail.earlier_sessions == []
 
 
@@ -850,7 +1249,8 @@ async def test_a_conversation_a_channel_holds_takes_a_prompt_typed_in_the_browse
         operator_id, await chat_store.conversation_of(matrix.session_id)
     )
 
-    assert [item.text for item in detail.session.items] == ["typed into the tab"]
+    typed = one(entry for entry in detail.entries if isinstance(entry, PromptEntry))
+    assert typed.text == "typed into the tab"
     assert [attachment.address for attachment in detail.attachments] == [ROOM]
 
 
@@ -990,7 +1390,7 @@ async def test_one_prompt_in_flight_is_a_schema_property(chat_store, migrated_se
             opened_seq=100,
             closed_seq=102,
             item_text="second",
-            origin=SPA_ORIGIN.model_dump(mode="json"),
+            origin=SPA_ORIGIN,
             created_at=datetime.now(UTC),
             updated_at=datetime.now(UTC),
         )
@@ -1022,7 +1422,7 @@ async def test_a_prompt_item_with_no_queue_row_is_not_a_prompt(chat_store, migra
                 opened_seq=100,
                 closed_seq=102,
                 item_text="an item nothing queued",
-                origin=SPA_ORIGIN.model_dump(mode="json"),
+                origin=SPA_ORIGIN,
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
             )
@@ -1070,7 +1470,7 @@ async def test_a_session_that_ended_does_not_report_a_turn_it_left_open(
 
     assert await chat_store.expire_stale_leases() == 1
 
-    [record] = await chat_store.list_turns(str(view.session_id), cursor=None, limit=10)
+    [record] = await chat_store.list_turns(str(view.session_id), cursor=None, limit=10, scope=UnrestrictedReads())
     assert record.ended_at is None, "nothing ran to close it, and the record should say so"
     assert (await chat_store.get(operator_id, view.session_id)).status == SessionStatus.FAILED
 
@@ -1119,10 +1519,15 @@ async def test_abort_reaches_the_replica_running_the_turn(
             async_sessionmaker(other_engine, expire_on_commit=False),
             RuntimeRegistry({RuntimeKind.CLAUDE_CODE: cast(RuntimeAdapter, _AlternateFrameVocabulary())}),
         )
-        async with notifications.subscribe(SessionEventKind.ABORT, view.session_id) as aborted:
+        received: asyncio.Queue[SessionEvent] = asyncio.Queue()
+        with notifications.watch_session(view.session_id, received.put_nowait):
             assert await requesting.request_abort(view.session_id) is True
             async with asyncio.timeout(30):
-                await aborted.wait()
+                # Drained, not first: delivery is commit-ordered, so the update notifies committed
+                # by the setup above may still be in flight when the watch begins and then land
+                # ahead of the abort. The contract is that the abort arrives.
+                while (await received.get()).kind is not SessionEventKind.ABORT:
+                    pass
     finally:
         await other_engine.dispose()
 
@@ -1698,13 +2103,20 @@ async def test_an_update_carries_the_rows_the_events_after_a_position_name(chat_
     await _exchange(chat_store, operator_id, session_id, "second", "two")
     changes = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=held, limit=50)
 
-    assert [item.text for item in changes.items] == ["second", "two"]
-    assert [turn.end for turn in changes.turns] == [TurnAnsweredEnd()]
+    # The prompt precedes the boundary in the stream: it is admitted into the queue before the
+    # turn that answers it opens.
+    assert [entry.kind for entry in changes.entries] == ["prompt", "turn_started", "message", "turn_end"]
+    assert [entry.text for entry in changes.entries if isinstance(entry, PromptEntry | MessageEntry)] == [
+        "second",
+        "two",
+    ]
+    ended = one(entry for entry in changes.entries if isinstance(entry, TurnEndEntry))
+    assert ended.end == TurnAnsweredEnd()
     assert changes.position > held
-    # Re-reading the same position is the same answer: the merge is keyed on `item_id`, so a
+    # Re-reading the same position is the same answer: the merge is a union keyed on `seq`, so a
     # duplicate costs nothing and nothing about delivery has to be exactly-once.
     again = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=held, limit=50)
-    assert [item.item_id for item in again.items] == [item.item_id for item in changes.items]
+    assert [entry.seq for entry in again.entries] == [entry.seq for entry in changes.entries]
 
 
 async def test_an_update_carries_what_a_replaced_session_wrote_after_the_position(chat_store, operator_id) -> None:
@@ -1722,7 +2134,7 @@ async def test_an_update_carries_what_a_replaced_session_wrote_after_the_positio
     await _exchange(chat_store, operator_id, second.session_id, "after it was replaced", "answered again")
     changes = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=held, limit=50)
 
-    assert [item.text for item in changes.items] == [
+    assert [entry.text for entry in changes.entries if isinstance(entry, PromptEntry | MessageEntry)] == [
         "before the sandbox died",
         "answered",
         "after it was replaced",
@@ -1731,26 +2143,24 @@ async def test_an_update_carries_what_a_replaced_session_wrote_after_the_positio
     assert changes.session_id == second.session_id
 
 
-async def test_a_claim_reaches_a_reader_that_no_event_told(chat_store, operator_id) -> None:
-    """`next_prompt` takes the operator's question off the queue and writes no event of its own.
-
-    The address alone would leave a tab showing a thread that never started working, which is why
-    the newest turn's own rows ride along on every read rather than waiting to be named.
-    """
+async def test_a_claimed_prompt_reaches_a_reader_as_the_turn_it_opened(chat_store, operator_id) -> None:
+    """`next_prompt` takes the operator's question off the queue; the `turn_started` boundary it
+    writes is what tells a tab the thread started working."""
     view, token = await chat_store.create(operator_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     conversation_id = await chat_store.conversation_of(view.session_id)
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
     enqueued = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=0, limit=50)
-    assert [(row.item_type, row.text) for row in enqueued.items] == [(ItemType.PROMPT, "why did it fail?")]
-    assert enqueued.turns == []
+    assert [entry.kind for entry in enqueued.entries] == ["prompt"]
+    asked = one(entry for entry in enqueued.entries if isinstance(entry, PromptEntry))
+    assert asked.text == "why did it fail?"
 
     assert await chat_store.next_prompt(view.session_id) is not None
     claimed = await chat_store.read_operator_conversation_changes(
         operator_id, conversation_id, after=enqueued.position, limit=50
     )
 
-    assert [turn.ended_at for turn in claimed.turns] == [None], "the turn that opened is what says so"
+    assert [entry.kind for entry in claimed.entries] == ["turn_started"], "the turn that opened is what says so"
     assert claimed.status == SessionStatus.RESPONDING
 
 
@@ -1784,7 +2194,8 @@ async def test_an_update_over_its_limit_is_refused_rather_than_shortened(chat_st
         await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=0, limit=2)
 
     whole = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=0, limit=50)
-    assert len(whole.items) == 4
+    # Two exchanges of four entries each: the boundary, the prompt, the answer, and the end.
+    assert len(whole.entries) == 8
 
 
 async def test_the_update_refuses_a_conversation_another_operator_owns(chat_store, operator_id) -> None:
@@ -1814,11 +2225,10 @@ async def test_open_wake_turn_brackets_a_harness_initiated_exchange(chat_store, 
         session_row = await db.get(Session, view.session_id)
         assert session_row is not None
         assert session_row.projected_frame_seq == 6
-    prompt = one(
-        item for item in (await chat_store.get(operator_id, view.session_id)).items if item.item_type is ItemType.PROMPT
-    )
+    entries = await _conversation_entries(chat_store, await chat_store.conversation_of(view.session_id))
+    prompt = one(entry for entry in entries if isinstance(entry, PromptEntry))
     assert prompt.text == 'Background command "fetch" completed'
-    assert prompt.origin == HARNESS_ORIGIN
+    assert prompt.origin == PromptOriginKind.HARNESS
 
 
 async def test_open_wake_turn_refuses_a_session_that_ended(chat_store, operator_id) -> None:
