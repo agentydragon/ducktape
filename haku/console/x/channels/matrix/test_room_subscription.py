@@ -111,7 +111,6 @@ def notices(
         stream,
         conversations,
         notifications,
-        room.announce,
         room.project,
         room,
         room.bound,
@@ -264,7 +263,6 @@ async def test_a_restarted_reader_rebuilds_active_typing_from_the_stream(
         stream,
         conversations,
         notifications,
-        successor_room.announce,
         successor_room.project,
         successor_room,
         successor_room.bound,
@@ -313,7 +311,6 @@ async def test_a_restarted_reader_resumes_from_the_position_it_kept(
         stream,
         conversations,
         notifications,
-        successor_room.announce,
         successor_room.project,
         successor_room,
         successor_room.bound,
@@ -467,6 +464,67 @@ async def test_a_prompt_from_a_sibling_room_is_posted_because_the_address_differ
     assert room.said == [RELAYED_PROMPT + "next door"]
 
 
+async def test_a_relayed_prompt_the_room_already_shows_is_not_posted_again(
+    chat_store, operator_id, served, notices, room, room_copy, conversations
+) -> None:
+    """The relay rides the projection path now: its delivery is tied to the cursor and keyed by the
+    prompt-completed event, so a crash replay finds the room's own copy instead of saying the
+    operator's sentence twice."""
+    await notices.reconcile_once()
+    room.fail_project = True  # the send reached the homeserver; what died was everything after it
+    await chat_store.enqueue_prompt(operator_id, served, "from the console", SpaOrigin())
+    with pytest.raises(RuntimeError, match="homeserver refused"):
+        await notices.reconcile_once()
+    [(conversation_id, seq)] = room.projected
+    attachment_id = await conversations.attachment(MATRIX_ROOM)
+    assert attachment_id is not None
+    await room_copy.record(
+        [
+            ProjectedEvent(
+                room_id=MATRIX_ROOM,
+                event_id="$echoed",
+                source=ConversationEventSource(
+                    attachment_id=attachment_id, conversation_id=conversation_id, event_seq=seq
+                ),
+                origin_server_ts=1,
+                replaces_event_id=None,
+            )
+        ],
+        [],
+    )
+    room.fail_project = False
+
+    await notices.reconcile_once()
+
+    assert (room.said, len(room.projected)) == ([], 1)
+
+
+async def test_a_silence_notice_that_failed_to_send_is_replayed_with_the_same_source(
+    chat_store, operator_id, served, notices, room, migrated_sessions
+) -> None:
+    """The cursor follows the accepted effect for silence too: a failed send leaves the turn's
+    answered event owed, and the retry names the same durable source."""
+    await notices.reconcile_once()
+    before = await stored_position(migrated_sessions)
+    room.fail_project = True
+    await chat_store.enqueue_prompt(
+        operator_id, served, "do the thing", MatrixOrigin(address=MATRIX_ROOM, refs=("$asked",))
+    )
+    turn = await chat_store.next_prompt(served)
+    assert turn is not None
+    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody())
+
+    with pytest.raises(RuntimeError, match="homeserver refused"):
+        await notices.reconcile_once()
+    assert await stored_position(migrated_sessions) == before
+
+    room.fail_project = False
+    await notices.reconcile_once()
+
+    assert room.projected[-1] == room.projected[-2]
+    assert room.said == [NOTHING_SAID]
+
+
 async def test_an_unread_room_has_no_position_at_all(migrated_sessions) -> None:
     """Absent is "never read", not "at the start" — the distinction the seeding above turns on."""
     assert await RoomCursor(migrated_sessions, uuid4()).position() is None
@@ -551,7 +609,6 @@ async def test_a_replayed_projection_already_in_the_room_is_not_sent_again(
         stream,
         conversations,
         notifications,
-        successor_room.announce,
         successor_room.project,
         successor_room,
         successor_room.bound,

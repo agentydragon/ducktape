@@ -20,9 +20,10 @@ The same `/sync` also carries Haku's own events back. Ingress drops them; the mi
 them (`room_copy`) — recorded ahead of the watermark, never treated as input — and a second live
 copy of one projected notice is redacted here, where the credential is.
 
-It is also the only holder of a Matrix credential. Channel-owned notices go out through `announce`
-rather than a second login; runtime lifecycle is projected from durable conversation events. An
-answer — a row until it has been said — is drained into the room from here (`outbox`).
+It is also the only holder of a Matrix credential. The channel's own room-binding notices go out
+through `_queue_notice` rather than a second login; everything recorded is projected from durable
+conversation events. An answer — a row until it has been said — is drained into the room from here
+(`outbox`).
 
 """
 
@@ -337,18 +338,6 @@ class MatrixSyncService:
             await self._revisions.retire(showing.revision_id)
 
         self.pacer.send(retire)
-
-    async def announce(self, body: str, kind: RoomEventKind = RoomEventKind.LIFECYCLE) -> None:
-        """Post one channel-owned notice into the live room, if there is one.
-
-        Runtime lifecycle is projected from durable conversation events. This direct path remains
-        for Matrix's own room adoption/refusal notices. A no-op before any room is bound — there is
-        genuinely nowhere to say it.
-        """
-        if (binding := await self._conversations.bound_room()) is None:
-            logger.info("Matrix: no room bound yet, dropping notice: %s", body)
-            return
-        self._queue_notice(binding.room_id, body, kind)
 
     async def project_notice(
         self,

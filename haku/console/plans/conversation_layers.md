@@ -92,10 +92,10 @@ subscribe(conversation, from: position | nothing)
 ```
 
 That is the whole contract, and the point of naming it is that **the SPA and Matrix stop being two
-mechanisms**. The browser reads the record, and Matrix now does too for replies, live status and
-sealed notices. Matrix is still split between that subscriber and direct room pushes for session
-supervision, attachment notices, relayed prompts and silent turns (§ 8), so one fact can still have
-one recoverable projection and one process-local rendering. Under one subscription there is a
+mechanisms**. The browser reads the record, and Matrix now does too for replies, live status,
+sealed notices, relayed prompts and silent turns. Matrix is still split between that subscriber and
+direct room pushes for attachment notices (§ 8), so one fact can still have one recoverable
+projection and one process-local rendering. Under one subscription there is a
 single path from the record outward, and a channel differs only in two ways:
 
 - **How it renders what arrives.** A run of tool calls is a list in a tab and one folded notice in a
@@ -255,8 +255,9 @@ Three things follow, and they are why this is worth requiring rather than merely
 unreadable input, session adoption, setup narration, lease expiry and an operator-aborted turn. It
 appends rather than edits, tags the durable source, waits for delivery and only then advances the
 cursor. That is the accepted lesser feature, not a different architecture. Relayed prompts and
-silent turns still query item/turn state and enqueue an unrelated closure; reasoning, tool calls and
-full session lifecycle still need the bounded multi-event spans below.
+silent turns ride the same path, their bodies read from the record rather than folded from one
+event; reasoning, tool calls and full session lifecycle still need the bounded multi-event spans
+below.
 
 ### What a notice body may do
 
@@ -457,15 +458,14 @@ version of it is **the point rather than the cost** (§ 7).
 The conversation stream and the Matrix subscriber are real, but one bound room is still served by
 several mechanisms with different recovery properties.
 
-### The channel is five mechanisms with four durabilities
+### The channel is four mechanisms with three durabilities
 
-| What                             | Driven by                                                             | Recovery today                                                                                                                     |
-| -------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Assistant replies                | `RoomNotices` queues `matrix_outbox`; `RoomOutboxDrain` sends         | Durable row, ordered retries, stable outbox transaction id                                                                         |
-| Sealed notices                   | `RoomNotices` → `project_notice`, suppressed by `matrix_room_copy`    | Durable source, post-send cursor and recorded correspondence; duplicate-safe past the transaction cache, with observed repair      |
-| Status line and typing           | `RoomNotices` folds `LiveStatus`; `RevisionLog`/`RoomPacer` render it | Desired state is reconstructible; status event id is durable; the room's actual copy is not read back; typing deliberately expires |
-| Relayed prompts and silent turns | `RoomNotices` queries the completed item/turn, then calls `announce`  | Fact is durable; queued Matrix effect is not tied to the cursor and has no stable identity                                         |
-| Session and attachment narration | `MatrixSessionSupervisor` and `_handle_invite` call `_queue_notice`   | Some underlying facts are durable; delivery and process-local dedup are not                                                        |
+| What                                             | Driven by                                                             | Recovery today                                                                                                                     |
+| ------------------------------------------------ | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Assistant replies                                | `RoomNotices` queues `matrix_outbox`; `RoomOutboxDrain` sends         | Durable row, ordered retries, stable outbox transaction id                                                                         |
+| Sealed notices, relayed prompts and silent turns | `RoomNotices` → `project_notice`, suppressed by `matrix_room_copy`    | Durable source, post-send cursor and recorded correspondence; duplicate-safe past the transaction cache, with observed repair      |
+| Status line and typing                           | `RoomNotices` folds `LiveStatus`; `RevisionLog`/`RoomPacer` render it | Desired state is reconstructible; status event id is durable; the room's actual copy is not read back; typing deliberately expires |
+| Attachment narration                             | `_handle_invite` and room adoption call `_queue_notice`               | The room-binding facts have no row; delivery is process-local                                                                      |
 
 The replay-safe v0 removed the request/turn process from settled notice delivery, but it did not yet
 make one reconciler own the attachment. `MXSY` (ingress), `MXOB` (reply drain), `MXNT` (conversation
@@ -514,8 +514,7 @@ mixed into these PRs.
 
 2. **Turn notices into spans** (§ 4). Give the fold stable turn/session subjects and have it produce
    bounded `(subject, body, lifecycle)` output. Generalise the `LiveStatus` create/edit/retire path;
-   seal facts that should remain in scrollback and redact live state that is spent. Relayed prompts,
-   silent turns move off `_queue_notice` here. The pure fold and
+   seal facts that should remain in scrollback and redact live state that is spent. The pure fold and
    the Matrix effect stay separate and are tested separately.
 
 3. **Completed — session supervision is behind the conversation.** `ConversationRuntime` owns

@@ -452,7 +452,6 @@ def create_app(
             subscription.ConversationStream(db_sessions),
             matrix_conversation_store,
             session_notifications,
-            matrix_sync_service.announce,
             matrix_sync_service.project_notice,
             matrix_sync_service,
             matrix_sync_service.bound_room,

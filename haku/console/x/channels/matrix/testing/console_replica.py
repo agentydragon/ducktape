@@ -198,7 +198,6 @@ async def _serve() -> None:
         ConversationStream(sessions),
         conversations,
         notifications,
-        sync.announce,
         sync.project_notice,
         sync,
         sync.bound_room,

@@ -420,10 +420,9 @@ the test that reads it, as `test_diverse_session` has.
 answers, aborts, silence, setup narration, refusals, unreadable input, session handoffs and lease
 losses, plus prompts arriving through another surface, from one cursor and in one order. Only facts
 outside the conversation log — such as binding or adopting a room — are still announced directly.
-The position is kept after the batch, so a crash costs a replay rather than silence: a sealed
-notice is suppressed by the room's own recorded copy, a duplicate reply is refused by the outbox's
-unique subject, and only the direct `announce` path — relayed prompts, silent turns — can still say
-a thing twice.
+The position is kept after the batch, so a crash costs a replay rather than silence: a projected
+notice — relayed prompts and silent turns included — is suppressed by the room's own recorded copy,
+and a duplicate reply is refused by the outbox's unique subject.
 
 **A prompt is a conversation fact, so every attached surface shows it.** The prompt item's origin
 names the surface it arrived through, and the room compares it against its own address: a prompt

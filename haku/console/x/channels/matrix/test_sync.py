@@ -541,16 +541,6 @@ async def test_posting_a_queued_reply_says_it_as_text(service, matrix, sync_stor
     assert matrix.sent == [(MATRIX_ROOM, "the answer")]
 
 
-async def test_announce_posts_a_notice_into_the_live_room(service, matrix, sync_store, bound_room):
-    matrix.result = SyncResult("s2", (), ())
-    await sync_store.save_token(MATRIX_USER, "cached")
-
-    await service.announce("provisioning a sandbox")
-    await settled(service)
-
-    assert matrix.notices == [(MATRIX_ROOM, "provisioning a sandbox")]
-
-
 async def test_a_projected_notice_uses_its_durable_source_as_the_transaction(service, matrix, bound_room) -> None:
     attachment_id = UUID("11111111-2222-4333-8444-555555555555")
     conversation_id = UUID("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")
@@ -576,14 +566,6 @@ async def test_a_projected_notice_uses_its_durable_source_as_the_transaction(ser
         ]
         * 2
     )
-
-
-async def test_announce_is_a_no_op_with_no_room_bound(service, matrix):
-    matrix.result = SyncResult("s2", (), ())
-
-    await service.announce("provisioning a sandbox")
-
-    assert matrix.notices == []
 
 
 async def test_a_quiet_batch_advances_the_watermark(service, matrix, sync_store, bound_room):
@@ -898,8 +880,14 @@ async def test_each_kind_of_notice_says_which_it_is(service, matrix, bound_room)
 
     A refusal is not among them any more: it is a recorded row, and `RoomNotices` is what says it.
     """
-    await service.announce("provisioning a sandbox")
-    await service.announce("cloning haku-state", RoomEventKind.NARRATION)
+    attachment_id = UUID("11111111-2222-4333-8444-555555555555")
+    conversation_id = UUID("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")
+    await service.project_notice(
+        bound_room, attachment_id, "the session ended", RoomEventKind.LIFECYCLE, conversation_id, 17
+    )
+    await service.project_notice(
+        bound_room, attachment_id, "[sent from another surface] hi", RoomEventKind.NARRATION, conversation_id, 18
+    )
     await service.show_status("running Bash")
     await settled(service)
 

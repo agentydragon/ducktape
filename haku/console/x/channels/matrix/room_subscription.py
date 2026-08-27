@@ -26,8 +26,9 @@ the room's own copy first (`room_copy`): a source the room already shows is not 
 however long ago the crash was, so the event-derived Matrix transaction id only has to cover the
 gap between a send and its `/sync` echo. The right way round either way: a repeat is suppressed or
 refused, while a room never told is a message silently dropped. Relayed prompts and silent-turn
-narration still use the older queued path because their bodies require store queries rather than
-this PR's pure one-event projection.
+narration ride the same path: their bodies read the record (the prompt item's text, the turn's
+items) rather than being pure functions of one event, and a replay recomputes them from the same
+rows.
 """
 
 from __future__ import annotations
@@ -99,13 +100,8 @@ logger = logging.getLogger(__name__)
 # Distinct from the sync loop's lock, the runtime reconciler's, the outbox drain's and the OAuth sweep's.
 _NOTICES_ADVISORY_LOCK = 0x4D58_4E54  # "MXNT"
 
-# Saying one notice into a room. Wider than the channel's direct `announce` path because projected
-# and always means the same kind: what this renders spans several, and the kind is what the room
-# event states about itself.
-Notify = Callable[[str, RoomEventKind], Awaitable[None]]
-
-# A sealed notice projected from one durable conversation event. Returning means the homeserver
-# accepted the effect, so the caller may advance its cursor.
+# A sealed notice said under a durable conversation event's identity. Returning means the
+# homeserver accepted the effect, so the caller may advance its cursor.
 ProjectNotice = Callable[[str, UUID, str, RoomEventKind, UUID, int], Awaitable[None]]
 
 # A completed turn with no finished assistant message is legitimate, but silence looks like a lost
@@ -321,7 +317,6 @@ class RoomNotices:
         stream: ConversationStream,
         conversations: MatrixConversationStore,
         notifications: SessionNotifications,
-        announce: Notify,
         project: ProjectNotice,
         status: StatusFrontend,
         room: BoundRoom,
@@ -333,7 +328,6 @@ class RoomNotices:
         self._stream = stream
         self._conversations = conversations
         self._notifications = notifications
-        self._announce = announce
         self._project = project
         self._status_frontend = status
         self._room = room
@@ -385,36 +379,58 @@ class RoomNotices:
                 case PromptCompletedBody():
                     assert event.item_id is not None, "an item lifecycle row names its item"
                     if (relayed := await self._relayed(event.item_id, room_id)) is not None:
-                        await self._announce(relayed, RoomEventKind.NARRATION)
+                        await self._deliver(
+                            room_id,
+                            attachment_id,
+                            conversation_id,
+                            relayed,
+                            RoomEventKind.NARRATION,
+                            event.position.event_seq,
+                        )
                 case TurnAnsweredBody():
                     assert event.turn_id is not None, "a turn lifecycle row names its turn"
                     if await self._silent(event.turn_id):
-                        await self._announce(NOTHING_SAID, RoomEventKind.NARRATION)
+                        await self._deliver(
+                            room_id,
+                            attachment_id,
+                            conversation_id,
+                            NOTHING_SAID,
+                            RoomEventKind.NARRATION,
+                            event.position.event_seq,
+                        )
                 case _:
                     if (said := project_notice(event, conversation_id=conversation_id, room_id=room_id)) is not None:
-                        # Correspondence first, then send: a source the room already shows — found
-                        # via its own tag — is a replay of a send that succeeded before the cursor
-                        # could record it, and re-sending it is exactly the duplicate Synapse's
-                        # expired transaction cache would no longer refuse.
-                        if await self._room_copy.shows(attachment_id, said.source_event_seq):
-                            logger.info(
-                                "Matrix: %s already shows event %d of %s; not sending it again",
-                                room_id,
-                                said.source_event_seq,
-                                conversation_id,
-                            )
-                        else:
-                            await self._project(
-                                room_id,
-                                attachment_id,
-                                said.body,
-                                said.kind,
-                                said.conversation_id,
-                                said.source_event_seq,
-                            )
+                        await self._deliver(
+                            room_id, attachment_id, conversation_id, said.body, said.kind, said.source_event_seq
+                        )
         await self._live_status.reconcile(self._status_frontend)
         await subscription.keep(read.position)
         return read.more
+
+    async def _deliver(
+        self,
+        room_id: str,
+        attachment_id: UUID,
+        conversation_id: UUID,
+        body: str,
+        kind: RoomEventKind,
+        source_event_seq: int,
+    ) -> None:
+        """Project one notice under its durable source, unless the room already shows it.
+
+        Correspondence first, then send: a source the room already shows — found via its own tag —
+        is a replay of a send that succeeded before the cursor could record it, and re-sending it
+        is exactly the duplicate Synapse's expired transaction cache would no longer refuse.
+        """
+        if await self._room_copy.shows(attachment_id, source_event_seq):
+            logger.info(
+                "Matrix: %s already shows event %d of %s; not sending it again",
+                room_id,
+                source_event_seq,
+                conversation_id,
+            )
+            return
+        await self._project(room_id, attachment_id, body, kind, conversation_id, source_event_seq)
 
     async def _ensure_status(self, conversation_id: UUID) -> None:
         """Rebuild present-tense state once per leader/room from the durable stream."""
