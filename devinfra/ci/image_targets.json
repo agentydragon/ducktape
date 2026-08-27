@@ -90,6 +90,10 @@
       "target": "//haku/console:static_image",
       "test": "//haku/console/..."
     },
+    "haku-indexer": {
+      "target": "//haku/console:indexer_image",
+      "test": "//haku/console/..."
+    },
     "plaid-mcp-server": {
       "target": "//finance/plaid/link:server_image",
       "test": "//finance/plaid/..."

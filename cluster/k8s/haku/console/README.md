@@ -77,6 +77,33 @@ that release boundary.
 Stored values and cross-replica payloads have the analogous adjacent-release rule; the reader/writer
 vocabulary policy remains in <../../../../haku/console/README.md> § Vocabularies across a roll.
 
+## haku-indexer — recall-index maintenance, separately deployed
+
+`haku-indexer` (`indexer-deployment.yaml`, image `ghcr.io/agentydragon/haku-indexer` from
+`//haku/console:indexer_image`) runs both maintenance stages of
+`haku/console/recall_index_sync.py` — source sweeps and embedding — against the `recall_indexes`
+registry in the shared `haku-console-config` ConfigMap. The API pod keeps only the database
+readers behind `haku_index.search`/`index_status`, so index maintenance failing or rolling leaves
+search serving the last committed index state, with staleness visible in `index_status`.
+
+Replica counts are free on both sides: every logical index is maintained under its per-index
+Postgres advisory lock, so indexer replicas — and, during a rollout window, console replicas of a
+release that still ran the loop — only contend for the lock, never double-sync.
+
+Identity is deliberately narrow. The pod mounts no ServiceAccount token and none of the console's
+operator/agent auth, approval-ledger, connector, or Web Push credentials; it holds only the
+`haku-forgejo-git` read slots named by the registry and the `haku_indexer` database role. The role
+is declared on the CNPG Cluster (`db/postgres-cluster.yaml` `managed.roles`; password from the
+ESO-generated `haku-console-db-indexer` Secret). Its object grants are `indexer-role.sql` —
+recall-index tables read/write plus `SELECT` on `conversation_item`, nothing else — applied by the
+`haku-console-db-indexer-provisioner` Job in this app layer rather than `db/`, because the
+`recall_index` schema exists only after the migration Job.
+
+Schema compatibility follows the API's pattern at the worker's scope: startup does zero-row reads
+of exactly the tables the role may touch and exits on failure, so an incompatible indexer image
+crash-loops while the previous ReplicaSet keeps maintaining the index (`maxUnavailable: 0`). DDL
+stays owned by the console-image migration Job above.
+
 ## One-time bootstrap: the in-process `gmail` + `google_calendar` MCP servers
 
 The console's two Google-backed in-process MCP servers — `gmail` (`haku/console/tools/gmail.py` — Gmail

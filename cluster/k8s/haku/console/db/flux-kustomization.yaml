@@ -21,3 +21,6 @@ spec:
       namespace: ducktape-flux
     - name: local-path-provisioner
       namespace: ducktape-flux
+    # The haku_indexer managed-role password is an ESO-generated Secret.
+    - name: external-secrets-config
+      namespace: ducktape-flux

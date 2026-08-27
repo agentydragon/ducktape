@@ -307,7 +307,7 @@ class ToolCallApplicationService:
         self._kubernetes_authorization = kubernetes_authorization
         self._github_repository_visibility = github_repository_visibility
         self._auto_approval_policies = AutoApprovalPolicyRegistry(
-            load_console_config(settings),
+            load_console_config(settings.config_file),
             kubernetes_authorization=self._kubernetes_authorization,
             github_repository_visibility=self._github_repository_visibility,
         )

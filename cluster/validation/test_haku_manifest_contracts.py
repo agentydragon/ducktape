@@ -954,6 +954,79 @@ def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:
         assert all_image_policy_text.count(marker) == expected_count, f"missing or duplicated Flux marker: {marker}"
 
 
+def _secret_refs(container: dict[str, Any]) -> set[str]:
+    return {
+        entry["valueFrom"]["secretKeyRef"]["name"]
+        for entry in container["env"]
+        if "valueFrom" in entry and "secretKeyRef" in entry["valueFrom"]
+    }
+
+
+def test_haku_indexer_worker_contract(k8s_dir: Path) -> None:
+    """The indexer worker shares the console's registry and vector space but none of its authority."""
+    console_dir = k8s_dir / "haku" / "console"
+    deployment = yaml.safe_load((console_dir / "deployment.yaml").read_text(encoding="utf-8"))
+    indexer_raw = (console_dir / "indexer-deployment.yaml").read_text(encoding="utf-8")
+    indexer = yaml.safe_load(indexer_raw)
+    pod = indexer["spec"]["template"]["spec"]
+    container = one(pod["containers"])
+    server = one(c for c in deployment["spec"]["template"]["spec"]["containers"] if c["name"] == "server")
+
+    # A replacement that cannot start (schema-incompatible image) crash-loops while the previous
+    # replica keeps maintaining the index.
+    assert indexer["spec"]["strategy"]["rollingUpdate"]["maxUnavailable"] == 0
+
+    # Narrow identity: no ServiceAccount token, and no secret shared with the console API pod — in
+    # particular the API pod no longer holds any index Git credential.
+    assert pod["automountServiceAccountToken"] is False
+    assert _secret_refs(server).isdisjoint(_secret_refs(container))
+
+    # Both deployments read the one deploy-owned registry: the shared ConfigMap, mounted at the
+    # path the worker's config-file setting names.
+    env = {entry["name"]: entry for entry in container["env"]}
+    config_volume = one(volume for volume in pod["volumes"] if volume["name"] == "config")
+    server_config_volume = one(
+        volume for volume in deployment["spec"]["template"]["spec"]["volumes"] if volume["name"] == "config"
+    )
+    assert config_volume["configMap"]["name"] == server_config_volume["configMap"]["name"]
+    config_mount = one(mount for mount in container["volumeMounts"] if mount["name"] == "config")
+    assert env["HAKU_INDEXER_CONFIG_FILE"]["value"] == f"{config_mount['mountPath']}/config.yaml"
+
+    # Search joins `content_embeddings` on the model key this worker writes, so reader and writer
+    # must name the same model. (The endpoint address may legitimately differ; the model may not.)
+    server_env = {entry["name"]: entry for entry in server["env"]}
+    assert server_env["HAKU_CONSOLE_EMBEDDER__MODEL"]["value"] == env["HAKU_INDEXER_EMBEDDER__MODEL"]["value"]
+
+    # Every credential slot the registry names must be provided on the worker pod, from a Secret.
+    config = yaml.safe_load((console_dir / "config.yaml").read_text(encoding="utf-8"))
+    for index in config["recall_indexes"]:
+        for slot in ("username_env_var", "password_env_var"):
+            if (var := index.get(slot)) is not None:
+                assert "secretKeyRef" in env[var]["valueFrom"], f"registry slot {var} unbound on haku-indexer"
+
+    # Reloader watches exactly what the pod mounts.
+    annotations = indexer["metadata"]["annotations"]
+    assert annotations["configmap.reloader.stakater.com/reload"] == config_volume["configMap"]["name"]
+    assert set(annotations["secret.reloader.stakater.com/reload"].split(",")) == _secret_refs(container)
+
+    # The narrow database role, wired end to end: the Deployment consumes the ESO-generated
+    # Secret, CNPG syncs that Secret's password onto the managed role of the same name, and the
+    # provisioner SQL grants to that role.
+    db_secret = env["HAKU_INDEXER_DATABASE_URL"]["valueFrom"]["secretKeyRef"]["name"]
+    role_secret_docs = list(
+        yaml.safe_load_all((console_dir / "db" / "indexer-role-secret.yaml").read_text(encoding="utf-8"))
+    )
+    external_secret = one(doc for doc in role_secret_docs if doc["kind"] == "ExternalSecret")
+    assert external_secret["spec"]["target"]["name"] == db_secret
+    cluster_cr = yaml.safe_load((console_dir / "db" / "postgres-cluster.yaml").read_text(encoding="utf-8"))
+    role = one(role for role in cluster_cr["spec"]["managed"]["roles"] if role["passwordSecret"]["name"] == db_secret)
+    assert external_secret["spec"]["target"]["template"]["data"]["username"] == role["name"]
+    sql = (console_dir / "indexer-role.sql").read_text(encoding="utf-8")
+    assert f"TO {role['name']}" in sql
+
+    assert indexer_raw.count('# {"$imagepolicy": "flux-system:haku-indexer"}') == 1
+
+
 def test_haku_console_migration_release_gate(k8s_dir: Path) -> None:
     """Only the image-coupled, unprivileged Job owns Console DDL in a rollout."""
     console_dir = k8s_dir / "haku" / "console"

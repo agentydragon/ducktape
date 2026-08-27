@@ -1,0 +1,124 @@
+# The haku-indexer worker: recall-index maintenance (source sweeps + embedding),
+# extracted from the console API pod so index churn, embedder failures, and
+# index-code releases never roll or disrupt the Console perimeter. The console
+# keeps serving `haku_index.search`/`index_status` as database readers over the
+# last committed index state; staleness shows in `index_status`.
+#
+# Replicas may overlap freely — with each other, and with console replicas of a
+# release that still ran the loop: every logical index is maintained under its
+# per-index Postgres advisory lock, so co-existence costs a lost lock attempt,
+# never a double sync.
+#
+# Narrow identity by design: no ServiceAccount token, no operator/agent auth,
+# approval ledger, connector credentials, or Web Push identity. It holds only the
+# index Git-read credential slots named by the recall_indexes registry and the
+# haku_indexer database role (recall-index read/write + read-only chat source,
+# see indexer-role.sql).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haku-indexer
+  namespace: haku-console
+  labels:
+    app.kubernetes.io/name: haku-indexer
+  annotations:
+    # The registry (recall_indexes) and credential slots live in the shared console
+    # config; a config or credential change restarts only this worker's loops —
+    # search in the console API is a database reader and needs no restart.
+    configmap.reloader.stakater.com/reload: haku-console-config
+    secret.reloader.stakater.com/reload: haku-console-db-indexer,haku-forgejo-git
+spec:
+  replicas: 1
+  strategy:
+    # A replacement that cannot start (schema-incompatible image, bad config) crash-loops
+    # while the previous replica keeps maintaining the index; advisory locks make the
+    # surge overlap safe.
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-indexer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-indexer
+    spec:
+      # Same zone as the console's Postgres (cnpg_conventions R5). The embedder hop to
+      # Ollama on wyrm2 stays cross-zone either way; batch embedding tolerates it.
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: indexer
+          image: ghcr.io/agentydragon/haku-indexer:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:haku-indexer"}
+          imagePullPolicy: Always
+          env:
+            - name: HAKU_INDEXER_CONFIG_FILE
+              value: /etc/haku-console/config/config.yaml
+            # The narrow haku_indexer role (db/indexer-role-secret.yaml), never the
+            # application owner: the worker cannot read the approval ledger, identity,
+            # or OAuth state.
+            - name: HAKU_INDEXER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-db-indexer
+                  key: DATABASE_URL
+            # Where the shared embedding worker computes vectors: Ollama's
+            # OpenAI-compatible endpoint, ordinary cluster egress. `model` is the index's
+            # `model_key` and must equal the console API's — search joins vectors on it, so
+            # a mismatch writes a space search never reads. No query instruction here: the
+            # worker embeds documents, which instruction-aware models take plain.
+            - name: HAKU_INDEXER_EMBEDDER__BASE_URL
+              value: "http://ollama.ollama.svc.cluster.local:11434/v1"
+            - name: HAKU_INDEXER_EMBEDDER__MODEL
+              value: "qwen3-embedding:4b"
+            # The haku-state index's Git-read credential slots, named by the
+            # recall_indexes registry entries in config.yaml (username_env_var /
+            # password_env_var). This is Haku's own Forgejo account (operator,
+            # 2026-08-15) reflected in by tf/gitops/haku-state — a credential that
+            # *can* write haku-state, fetched read-only here; the cheaper-privilege
+            # alternative remains the read-only `claude` account. The console API pod
+            # no longer holds it. ducktape-public clones anonymously.
+            - name: HAKU_CONSOLE_HAKU_STATE_GIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: haku-forgejo-git
+                  key: username
+            - name: HAKU_CONSOLE_HAKU_STATE_GIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-forgejo-git
+                  key: password
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          volumeMounts:
+            # Bare Git mirrors (mirror_path in the registry) live on /tmp: losing the
+            # volume costs a clone, not an embedding — the chunk cache is
+            # content-addressed in Postgres.
+            - name: tmp
+              mountPath: /tmp
+            - name: config
+              mountPath: /etc/haku-console/config
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: config
+          configMap:
+            name: haku-console-config

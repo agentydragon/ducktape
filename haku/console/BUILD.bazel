@@ -153,6 +153,31 @@ py_library(
 )
 
 py_library(
+    name = "indexer",
+    srcs = ["indexer.py"],
+    deps = [
+        ":config",
+        ":database_migrate",
+        ":database_schema",
+        ":mcp_config",
+        ":recall_index_sync",
+        "//haku/recall_index:git_tree",
+        "//haku/recall_index:openai_embedder",
+        "//haku/recall_index:schema",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_binary(
+    name = "indexer_worker",
+    main_module = "haku.console.indexer",
+    deps = [":indexer"],
+)
+
+py_library(
     name = "recall_index_reader",
     srcs = ["recall_index_reader.py"],
     deps = [
@@ -1334,7 +1359,6 @@ py_library(
         ":provider_connection_registry",
         ":push_routes",
         ":recall_index_reader",
-        ":recall_index_sync",
         ":tool_call_service",
         ":web_push",
         "//haku/console/agents:authorization",
@@ -1367,7 +1391,6 @@ py_library(
         "//haku/console/x/channels/matrix:room_copy",
         "//haku/console/x/channels/matrix:conversation",
         "//haku/console/x/channels/matrix:sync",
-        "//haku/recall_index:git_tree",
         "//haku/recall_index:openai_embedder",
         "//haku/runtime/x/bridge:protocol",
         "//mcp_infra/authentik_auth:config",
@@ -1793,6 +1816,47 @@ oci_load(
     name = "server_load",
     image = ":server_image",
     repo_tags = ["haku-console:latest"],
+)
+
+# ── OCI image (the haku-indexer worker) ───────────────────────────────────────
+# The recall-index maintenance worker, deployed separately from the console API so
+# index churn and failures never roll or disrupt the Console perimeter. Same base and
+# CA bundle: libgit2 verifies the public ducktape HTTPS remote against the system store.
+
+aspect_py_binary(
+    name = "indexer_bin",
+    main = "indexer.py",
+    deps = [":indexer"],
+)
+
+py_image_layer(
+    name = "indexer_layers",
+    binary = ":indexer_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "indexer_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("indexer_bin"),
+    env = py_image_env(binary_name = "indexer_bin"),
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
+        "org.opencontainers.image.title": "haku-indexer",
+    },
+    tars = [
+        ":indexer_layers",
+        "//third_party/debian_slim:cacerts",
+    ],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "indexer_load",
+    image = ":indexer_image",
+    repo_tags = ["haku-indexer:latest"],
 )
 
 oci_image(

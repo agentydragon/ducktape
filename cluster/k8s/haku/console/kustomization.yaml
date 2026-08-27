@@ -12,6 +12,8 @@ resources:
   - node-daemon-rugged.sops.yaml
   - node-daemon-wyrm2.sops.yaml
   - httproute.yaml
+  - indexer-deployment.yaml
+  - indexer-role-provisioner-job.yaml
   - kube-api-proxy.yaml
   - kubernetes-authorization-rbac.yaml
   - routine-launch-token.sops.yaml
@@ -28,3 +30,6 @@ configMapGenerator:
       - haku_system_prompt.md.j2
       - public_coder_system_prompt.md.j2
       - chat_prompt_fragment.md.j2
+  - name: haku-console-db-indexer-sql
+    files:
+      - indexer-role.sql

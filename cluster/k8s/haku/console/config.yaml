@@ -712,10 +712,11 @@ mcp:
     # public Ducktape source, and Haku's own past conversations. Listing it here is what builds
     # the searcher, and the
     # console refuses to start unless an embedder is configured too (`HAKU_CONSOLE_EMBEDDER__*`,
-    # Ollama) — search embeds its query. The same process keeps both corpora current
-    # (haku/console/recall_index_sync.py): the conversations corpus from its own tables,
-    # haku-state through a read-only mirror it fetches with `HAKU_CONSOLE_HAKU_STATE_GIT__*`,
-    # and Ducktape from GitHub without a credential.
+    # Ollama) — search embeds its query. Keeping the corpora current is the separate
+    # haku-indexer Deployment (haku/console/indexer.py), which reads the same recall_indexes
+    # registry above: the conversations corpus from the console's tables, haku-state through a
+    # read-only mirror fetched with `HAKU_CONSOLE_HAKU_STATE_GIT_*`, and Ducktape from GitHub
+    # without a credential.
     - id: haku_index
       backend:
         kind: in_process

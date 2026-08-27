@@ -62,7 +62,7 @@ from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgen
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.chat_models import RuntimeKind
-from haku.console.config import MCP_PATH, EmbedderConfig, GitRecallIndexDefinition, Settings
+from haku.console.config import MCP_PATH, EmbedderConfig, Settings
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.http_decide_config import load_egress_decide
@@ -93,7 +93,6 @@ from haku.console.models import ChatLaunchOption, ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.recall_index_reader import PostgresIndexSearcher
-from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance
 from haku.console.tools import (
     gmail as gmail_tools,
     http_grants as http_grants_tools,
@@ -131,7 +130,6 @@ from haku.console.x.launch_identity import ChatLaunchAuthorizer
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_store import SessionStore
 from haku.console.x.system_prompt import SystemPromptTemplate
-from haku.recall_index.git_tree import configure_ca_trust
 from haku.recall_index.openai_embedder import OpenAIEmbedder
 from haku.runtime.x.bridge.protocol import KUBERNETES_PROXY_URL_ENV, RUNNER_SETUP_ENV
 from haku.sandbox.kubernetes_client import InClusterSandboxClient
@@ -213,12 +211,7 @@ def create_app(
     # Deploy-time console config file (non-secret): the MCP server catalog, static agents, and the
     # hostexec host map. `hostexec is not None` gates the hostexec in-process server, the login-time
     # offline_access request, and operator-Authentik-token persistence — computed once here.
-    console_config = load_console_config(settings)
-    if any(
-        isinstance(index, GitRecallIndexDefinition) and index.repo_url.startswith("https://")
-        for index in console_config.recall_indexes
-    ):
-        configure_ca_trust(console_config.git_ca_bundle)
+    console_config = load_console_config(settings.config_file)
     hostexec_config = console_config.hostexec
     # Postgres is required: it backs the approval ledger and the operator OAuth store, both always
     # constructed. Construction is lazy (no connect); migrations run once at startup (app.main /
@@ -592,10 +585,6 @@ def create_app(
     # standard queue), superseding the bespoke launch-routine capability tier. Same
     # `launch_routine` config/secret; independent of the Google connection above.
     routine_launcher = routine_tools.RoutineLauncher(settings.launch_routine) if settings.launch_routine else None
-    # Built alongside the index's search tools below, and None when a test injects its own
-    # in-process servers: a test that wants either background stage drives it itself.
-    index_maintenance: RecallIndexMaintenance | None = None
-    embedding_maintenance: RecallEmbeddingMaintenance | None = None
     sandbox_server: SandboxServerConfig | None = None
     if in_process_servers is None:
         # hostexec being configured implies a real Authentik operator OIDC, so deriving the token
@@ -620,24 +609,16 @@ def create_app(
                     f"MCP server {HAKU_INDEX_SERVER_ID!r} is configured but no embedder is: "
                     "search embeds its query, so it cannot run without one"
                 )
-            # Two clients over one configuration, differing only in patience. A search embeds one
-            # query on the request path and should fail rather than hang; the shared background
-            # worker embeds source-materialized content batches where waiting out a cold model is
-            # exactly what we want.
-            index_budget = settings.recall_index.chunk_budget
+            # A database reader only: the source and embedding maintenance stages run in the
+            # separately deployed haku-indexer worker (haku/console/indexer.py), so search keeps
+            # serving the last committed index state while maintenance fails or rolls. The
+            # request-path timeout applies: a search embeds one query and should fail rather
+            # than hang.
             index_searcher = PostgresIndexSearcher(
                 db_sessions,
                 _embedder(settings.embedder, timeout=settings.embedder.timeout_seconds),
                 indexes=console_config.recall_indexes,
-                budget=index_budget,
-            )
-            index_maintenance = RecallIndexMaintenance(
-                db_engine, db_sessions, indexes=console_config.recall_indexes, budget=index_budget
-            )
-            embedding_maintenance = RecallEmbeddingMaintenance(
-                db_engine,
-                db_sessions,
-                embedder=_embedder(settings.embedder, timeout=settings.embedder.sync_timeout_seconds),
+                budget=settings.recall_index.chunk_budget,
             )
         # Claims are created lazily on first use, so this holds no Kubernetes connection until an
         # Agent provisions; `aclose` below is what releases it.
@@ -749,16 +730,7 @@ def create_app(
         # Prompt demand is channel-neutral and durable. Start its elected reconciler only after
         # the notification listener is live; the first sweep is also the restart backstop.
         allocating = sandbox_allocator.run() if sandbox_allocator is not None else contextlib.nullcontext()
-        indexing = index_maintenance.run() if index_maintenance is not None else contextlib.nullcontext()
-        embedding = embedding_maintenance.run() if embedding_maintenance is not None else contextlib.nullcontext()
-        async with (
-            agent_authority.expiry_maintenance(),
-            oauth_maintenance.run(),
-            catalogs.run(),
-            matrix_running,
-            indexing,
-            embedding,
-        ):
+        async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), catalogs.run(), matrix_running:
             await console_event_hub.start()
             await session_notifications.start()
             try:

@@ -672,7 +672,9 @@ class OperatorToolProvider(Provider):
         self._context = context
         self._actor_resolver = actor_resolver
         self._catalog = catalog or OperatorServerCatalog(context)
-        self._auto_approval_policies = policies or AutoApprovalPolicyRegistry(load_console_config(context.settings))
+        self._auto_approval_policies = policies or AutoApprovalPolicyRegistry(
+            load_console_config(context.settings.config_file)
+        )
 
     def _is_passthrough(self, actor: ToolCallActor, server_id: str, tool_name: str) -> bool:
         return _is_passthrough(self._auto_approval_policies, actor, server_id, tool_name)
@@ -777,7 +779,7 @@ def build_console_mcp(
     catalog = OperatorServerCatalog(context)
     # One registry for both the generated proxies and `call_mcp_tool`, so the two can never disagree
     # about which payload shape a tool takes.
-    policies = AutoApprovalPolicyRegistry(load_console_config(context.settings))
+    policies = AutoApprovalPolicyRegistry(load_console_config(context.settings.config_file))
     mcp.add_provider(OperatorToolProvider(context, actor_resolver, catalog, policies))
     mcp.add_middleware(OperatorToolAvailabilityMiddleware(catalog, actor_resolver))
 

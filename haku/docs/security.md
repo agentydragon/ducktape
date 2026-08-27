@@ -330,8 +330,9 @@ bulk channels.
    the in-process `gmail` + `google_calendar` servers above) and an inventory update. In
    particular, `haku-mail-token` may mutate only the contents of
    Haku's `haku@allegedly.works` mailbox; it grants neither outbound mail nor server administration.
-3. The console renders **no** Haku-authored content, and the one haku-state credential it holds
-   (Haku's own, for the `haku_index` git corpus) it only ever fetches with; the
+3. The console renders **no** Haku-authored content. The one haku-state credential in its
+   namespace (Haku's own, for the `haku_index` git corpus) is mounted only by the haku-indexer
+   worker Deployment — not the console API pod — and is only ever fetched with; the
    litmus test for console code: _does it hold a secret, perform a privileged action, or
    define the trust boundary?_ If not, it belongs to Haku.
 4. Consent moments happen on trusted top-level/top-layer shell surfaces only (the capability

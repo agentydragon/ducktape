@@ -278,11 +278,16 @@ comparable thing in reach and has had far more exposure to real sessions than th
   migration fails, the new replica never becomes Ready, and `maxUnavailable: 0` leaves the running
   version serving — so a change to either side wants the `Database` CR reconciled first.
 
-- **Sync.** `haku/console/recall_index_sync.py` sweeps every configured index from the console
-  process. The current chat index runs every minute over the console's own tables; each configured
-  Git index runs every thirty seconds against its own bare mirror on the pod's `/tmp`. Each logical
-  index takes its own Postgres advisory lock, so exactly one replica syncs it and a slow fetch
-  never delays another index.
+- **Sync.** `haku/console/recall_index_sync.py` sweeps every configured index from the
+  separately deployed `haku-indexer` worker (`haku/console/indexer.py`,
+  `cluster/k8s/haku/console/indexer-deployment.yaml`) — the console process only reads the
+  committed index state for search and status, so index maintenance failing or rolling never
+  touches the console's own availability. The current chat index runs every minute over the
+  console's tables (which the worker's narrow database role may only read); each configured
+  Git index runs every thirty seconds against its own bare mirror on the worker pod's `/tmp`.
+  Each logical index takes its own Postgres advisory lock, so exactly one replica — of either
+  deployment, during a rollout that still has a loop-carrying console — syncs it and a slow
+  fetch never delays another index.
 
   **The git tick is an `ls-remote`, not a fetch.** One round trip returns refs and no objects, so
   the common case — nothing moved — costs almost nothing and can be asked often. The gate is
@@ -296,10 +301,11 @@ comparable thing in reach and has had far more exposure to real sessions than th
   reports it as `sessions_settling`. Nothing records the skip, so the next sweep still sees the
   session as changed — the only cost is the delay, and `index_status` therefore has a lag floor of
   the quiet window. Git credentials are per-index: `haku-state` uses **Haku's own Forgejo account**
-  (operator, 2026-08-15), so the console holds something that could write haku-state even though
-  nothing in it does. `ducktape-public` needs none: it clones the canonical public GitHub remote
-  anonymously. The Forgejo credential cost is recorded where it is paid: <../console/README.md>
-  and `tf/gitops/haku-state/main.tf`, which reflects the Secret into `haku-console`.
+  (operator, 2026-08-15), so the indexer worker holds something that could write haku-state even
+  though nothing in it does — the console API pod no longer mounts it. `ducktape-public` needs
+  none: it clones the canonical public GitHub remote anonymously. The Forgejo credential cost is
+  recorded where it is paid: `tf/gitops/haku-state/main.tf`, which reflects the Secret into
+  `haku-console`, and the indexer Deployment that consumes it.
 
 ## Not here yet
 

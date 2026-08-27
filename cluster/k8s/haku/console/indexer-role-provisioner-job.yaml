@@ -1,0 +1,61 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: haku-console-db-indexer-provisioner
+  namespace: haku-console
+  annotations:
+    description: "Applies the object GRANTs for haku_indexer (indexer-role.sql). The role itself is managed declaratively by CNPG (db/postgres-cluster.yaml managed.roles); this runs in the app layer because the recall_index schema exists only after the migration Job."
+    # Force enables Flux to recreate the Job on manifest changes (e.g. when
+    # indexer-role.sql is edited and kustomize re-hashes the ConfigMap).
+    # Without this, the Job is immutable after first apply.
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  # Single attempt — a failed pod is preserved so logs survive long enough
+  # to debug. Re-run by editing indexer-role.sql (kustomize bumps the
+  # ConfigMap hash; `kustomize.toolkit.fluxcd.io/force: enabled` then
+  # deletes+recreates the Job, since Job specs are otherwise immutable).
+  #
+  # No `ttlSecondsAfterFinished`: if the TTL controller deleted a
+  # successful Job, Flux would re-create it on the next reconcile,
+  # turning a change-driven script into an on-schedule one.
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-console-db-indexer-provisioner
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      automountServiceAccountToken: false
+      containers:
+        - name: psql
+          image: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+          command: ["psql"]
+          args: ["--set=ON_ERROR_STOP=1", "-f", "/sql/indexer-role.sql"]
+          terminationMessagePolicy: FallbackToLogsOnError
+          env:
+            # Run as the database owner. Object-level GRANTs only need owner
+            # privileges, not superuser.
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-db-app
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-db-app
+                  key: password
+            - name: PGHOST
+              value: haku-console-db-rw.haku-console.svc
+            - name: PGDATABASE
+              value: approval_store
+          volumeMounts:
+            - name: sql
+              mountPath: /sql
+              readOnly: true
+      volumes:
+        - name: sql
+          configMap:
+            name: haku-console-db-indexer-sql

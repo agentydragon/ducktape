@@ -104,11 +104,11 @@ resource "forgejo_collaborator" "claude" {
 #     haku-state-workloads Kustomization reconciles into haku-sandbox under a
 #     constrained SA (cluster/k8s/haku/workloads). Read-only pull — Flux never
 #     pushes; the haku user is just the only principal on the repo.
-#   - haku-console: the console fetches a read-only bare mirror of haku-state for the
-#     `haku_index` git corpus (haku/console/recall_index_sync.py). Haku's own credential rather
-#     than a second, read-only one (operator, 2026-08-15): the console is more trusted code than
-#     Haku, and Haku already holds this. It never pushes — but it *could*, which is why
-#     haku/console/README.md says "no write credential" no longer.
+#   - haku-console: the haku-indexer worker Deployment fetches a read-only bare mirror of
+#     haku-state for the `haku_index` git corpus (haku/console/recall_index_sync.py, run by
+#     haku/console/indexer.py); the console API pod no longer mounts it. Haku's own credential
+#     rather than a second, read-only one (operator, 2026-08-15): the indexer is more trusted
+#     code than Haku, and Haku already holds this. It never pushes — but it *could*.
 #   - haku-runtime-sandbox: the Console-owned Claude runner writes it into ~/.netrc and
 #     checks haku-state out into its workspace, so that session has Haku's manual. Same
 #     credential Haku already holds in haku-sandbox, not a second one: this is the same

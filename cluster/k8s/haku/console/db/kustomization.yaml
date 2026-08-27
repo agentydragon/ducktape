@@ -2,4 +2,6 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - approval-store-database.yaml
+  # Role passwordSecret before the Cluster that references it.
+  - indexer-role-secret.yaml
   - postgres-cluster.yaml

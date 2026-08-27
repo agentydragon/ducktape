@@ -1,11 +1,12 @@
-"""Keep every configured recall index current from inside the console.
+"""Keep every configured recall index current, from the haku-indexer worker (``indexer.py``).
 
 The deploy-owned recall-index registry says both *what* is indexed and how it is sourced.  A
 logical index is the unit of synchronization, advisory leadership, status, and — later — read
 authorization.  There are no implicit ``haku-state`` or conversations indexes in this module.
 
-A sweep never runs on the request path, so a failure is logged and retried on the next tick while
-search continues to serve the last published source revision.
+A sweep never runs on the request path — the console serves search from the last committed index
+state — so a failure is logged and retried on the next tick while search continues to serve the
+last published source revision.
 """
 
 from __future__ import annotations

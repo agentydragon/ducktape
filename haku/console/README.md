@@ -142,10 +142,12 @@ Built-ins are assembled in `in_process_servers.py`:
   Their tool schemas/descriptions are the API contract; `TODO.md` inventories intentionally
   unexposed provider affordances. Auto-approval policy lives in the reviewed deployment config.
 - `haku_index` searches only logical indexes granted by the Agent's access profile; direct Operator
-  calls may read every configured index. The `haku-state` mirror fetches with Haku's Forgejo
-  credential (capable of writes but used read-only here); public Ducktape is anonymous. Source
-  materialization and embedding are separate maintenance stages in `recall_index_sync.py`;
-  <../recall_index/README.md> owns the index design.
+  calls may read every configured index. In the console it is a database reader over the committed
+  index state (`recall_index_reader.py`). Source materialization and embedding are the separate
+  maintenance stages of `recall_index_sync.py`, run by the independently deployed `haku-indexer`
+  worker (`indexer.py`) — which is also what holds the `haku-state` Git credential (Haku's Forgejo
+  account, capable of writes but used read-only; public Ducktape is anonymous), so this API pod
+  carries no Git credential. <../recall_index/README.md> owns the index design.
 - `haku_conversations` exposes actor-scoped reads over the console's chat records; the runtime and
   record vocabulary are documented under <x/README.md>.
 - `haku_routine` launches the reviewed routine through ordinary approval.

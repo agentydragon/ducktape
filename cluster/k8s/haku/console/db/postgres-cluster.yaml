@@ -38,3 +38,16 @@ spec:
       database: approval_store
       owner: approval_store
       # CNPG auto-generates credentials in Secret haku-console-db-app.
+
+  managed:
+    roles:
+      # The haku-indexer worker's narrow credential: recall-index read/write plus read-only
+      # chat-source access. CNPG owns role existence and password sync; the object GRANTs are
+      # applied by the indexer-role provisioner Job in ../ (they target the recall_index schema,
+      # which exists only after the migration Job has run).
+      - name: haku_indexer
+        ensure: present
+        login: true
+        passwordSecret:
+          name: haku-console-db-indexer
+        comment: "haku-indexer worker: recall_index schema read/write + SELECT on conversation_item (see cluster/k8s/haku/console/indexer-role.sql)"

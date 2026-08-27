@@ -661,8 +661,8 @@ def server_tool_prefix(server_id: str) -> MCPMountPrefix:
     return MCPMountPrefix(sanitized)
 
 
-def load_console_config(settings: Settings) -> ConsoleConfigFile:
-    path = settings.config_file
+def load_console_config(path: Path) -> ConsoleConfigFile:
+    """Parse the deploy-owned console config file. Also the haku-indexer worker's registry read."""
     if not path.is_file():
         raise RuntimeError(f"haku-console config file does not exist: {path}")
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -670,7 +670,7 @@ def load_console_config(settings: Settings) -> ConsoleConfigFile:
 
 
 def _load_servers(settings: Settings) -> list[McpServerEntry]:
-    return load_console_config(settings).mcp.servers
+    return load_console_config(settings.config_file).mcp.servers
 
 
 def load_static_agents(settings: Settings) -> list[LoadedStaticAgent]:
@@ -680,7 +680,7 @@ def load_static_agents(settings: Settings) -> list[LoadedStaticAgent]:
     silently accepting no callers. Resolve once (create_app) and reuse; do not read per request."""
     loaded: list[LoadedStaticAgent] = []
     seen_tokens: set[str] = set()
-    for entry in load_console_config(settings).static_agents:
+    for entry in load_console_config(settings.config_file).static_agents:
         token = os.environ.get(entry.token_env_var)
         if not token:
             raise RuntimeError(f"missing token env var {entry.token_env_var} for Agent {entry.agent_id}")
