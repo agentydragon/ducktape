@@ -290,6 +290,31 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
 - **`textwrap.dedent`** for inline multiline strings (YAML, JSON, scripts) so test
   indentation stays readable.
 
+### Waiting
+
+**Never sleep for a duration; wait for the condition.** A blind delay is wrong in both
+directions at once: too short on a loaded CI runner, where it flakes, and too long on every
+run that did not need it. It also hides what is being awaited — the number is a guess nobody
+can check, so it only ever ratchets up.
+
+Wait for the thing itself. In Puppeteer that is `waitForSelector` (including
+`{ hidden: true }`), `waitForFunction`, `waitForNetworkIdle`, or `waitUntil: "networkidle0"`.
+For "the page finished rendering what it has", use `waitForStable` from
+<util/testing/frontend_visual/capture.mjs> — `document.fonts.ready`, images decoded, a painted
+frame — rather than a delay after mount.
+
+When the condition is app-internal (data arrived, a component mounted lazily), expose it as a
+flag, attribute or event and wait on that. Having nothing to wait on is the thing to fix, not
+to sleep past.
+
+In tests, assert **ordering, not elapsed time**. `assert(Date.now() - started >= 10)` after a
+10 ms wait measures the platform's timer rather than the code under test, and fails whenever
+`setTimeout` lands a hair early — measured, 25 of 4000 iterations.
+
+**Gotcha:** do not await `document.getAnimations()` in visual tests here.
+`DISABLE_ANIMATIONS_CSS` pins animations with `animation-play-state: paused`, and a paused
+animation's `finished` never settles, so awaiting it hangs rather than capturing.
+
 ## Documentation
 
 **Remove**: docstrings/comments that restate the name, signature, or next line; Args/

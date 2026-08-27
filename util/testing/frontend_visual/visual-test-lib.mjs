@@ -24,7 +24,7 @@ import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join, resolve } from "path";
 
-import { prepareDeterministicPage, screenshotElement, settle } from "./capture.mjs";
+import { prepareDeterministicPage, screenshotElement, settle, waitForStable } from "./capture.mjs";
 import { launchDeterministicBrowser } from "./launcher.mjs";
 import { upsertVisualReviewAsset } from "./visual-review-manifest.mjs";
 
@@ -44,7 +44,8 @@ const __dirname = dirname(__filename);
  *   https://github.com/agentydragon/ducktape/pull/3343 for the bug this guards against.
  *   outputName overrides the filename stem for the published PNG (defaults to scenarioName).
  *   colorScheme sets the `prefers-color-scheme` media feature (defaults to 'light').
- *   waitMs overrides the settle delay after `#app > *` appears (defaults to 200).
+ *   waitMs adds a blind delay after the page is stable, for a scene whose content arrives
+ *   after mount and has no condition of its own yet. Prefer giving it one.
  */
 export async function main(scenarioName, options) {
   if (!options?.element) {
@@ -106,7 +107,10 @@ export async function main(scenarioName, options) {
     console.log(`Testing: ${outputName} (page=${scenarioName})`);
     await page.goto(`${harnessUrl}?page=${scenarioName}`, { waitUntil: "networkidle0" });
     await page.waitForSelector("#app > *", { timeout: 5000 });
-    await settle(options.waitMs ?? 200);
+    await waitForStable(page);
+    // A scene whose content arrives after mount (a fetch, a lazily-built editor) still needs its
+    // own condition; waitMs is the leftover blind wait for scenes that have not got one yet.
+    if (options.waitMs) await settle(options.waitMs);
 
     const screenshot = await screenshotElement(page, options.element, { context: "main()" });
 
