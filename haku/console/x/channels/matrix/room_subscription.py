@@ -439,8 +439,7 @@ class RoomNotices:
             item = await db.get(ConversationItem, item_id)
             if item is None or item.origin is None:
                 return None
-            origin = PromptStartedBody.model_validate({"item_type": ItemType.PROMPT, "origin": item.origin}).origin
-            return None if _arrived_here(origin, room_id) else RELAYED_PROMPT + item.item_text
+            return None if _arrived_here(item.origin, room_id) else RELAYED_PROMPT + item.item_text
 
     def _wake(self, _session_id: UUID) -> None:
         """Note that some session's rows moved. Runs on the listener's reader task: no awaiting."""

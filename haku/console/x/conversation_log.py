@@ -266,7 +266,7 @@ class LogWriter:
                 opened_seq=self.conversation.next_event_seq,
                 closed_seq=self.conversation.next_event_seq + 2,
                 item_text=text,
-                origin=origin.model_dump(mode="json"),
+                origin=origin,
                 created_at=self.now,
                 updated_at=self.now,
             )
