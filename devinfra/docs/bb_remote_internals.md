@@ -146,10 +146,11 @@ base is HEAD and patches carry only uncommitted changes; in every other case
 A patchset of everything that differs between the base commit and the current
 working tree:
 
-1. `git diff <baseCommit>` — tracked modified files (text), as unified diff
-2. `git diff <baseCommit> --binary -- <files>` — binary modified files
-3. `git ls-files --others --exclude-standard` → for each untracked file,
-   `git diff --no-index /dev/null <file>` (synthetic "add file" patch)
+1. `git diff --binary <baseCommit>` — all tracked changes in one patch
+   (`--binary` is inert for text diffs and the only applyable form for binary
+   ones, deletions included)
+2. `git ls-files --others --exclude-standard` → for each untracked file,
+   `git diff --no-index --binary /dev/null <file>` (synthetic "add file" patch)
 
 Patches travel as `RepoState.Patch[]` in the `RunRequest`; the runner clones
 at the base commit/branch and `git apply`s each, reproducing your local
@@ -162,7 +163,7 @@ working tree.
   creates only `origin/devel`, so both `@{upstream}` and the
   `git rev-parse devel` fallback fail — `bazel-ci.yml` creates a local `devel`
   ref for PR builds. A stale `origin/devel` puts the diff base hundreds of
-  commits behind HEAD: a huge patchset — on stock `bb`, possibly an
+  commits behind HEAD: a huge patchset — on `bb` < 5.0.445, possibly an
   unappliable one (next bullet) — instead of the small diff you expect.
   `devinfra/bbr.py`'s `check_base_branch_freshness()` **refuses to run** when
   the tracked base looks stale (`BBR_ALLOW_STALE_BASE=1` overrides); it
@@ -171,18 +172,18 @@ working tree.
   current branch, if pushed, so bb can base on it directly) and retry. Session
   setup (`devinfra/claude/reconcile_bbr_remote.sh`) fetches once, at session
   start.
-- **A deleted binary file makes the patchset unappliable on stock `bb`**:
-  `generatePatches` runs `git diff --binary` only for files it detects as
-  _modified_ — `isBinaryFile` runs `file --mime` on the working-tree path,
+- **A deleted binary file made the patchset unappliable on `bb` < 5.0.445**:
+  `generatePatches` ran `git diff --binary` only for files it detected as
+  _modified_ — `isBinaryFile` ran `file --mime` on the working-tree path,
   which cannot classify a deleted file — so a binary file **deleted** since
-  the diff base lands in the plain-text patch as a content-less stub, and the
-  runner's `git apply` dies with
-  `cannot apply binary patch to '<file>' without full index line`. Every run
-  breaks during git setup, even on a fresh base, until the deleting commit is
-  pushed (moving the base past it). Upstream fix (unconditional `--binary`):
-  [buildbuddy#13067](https://github.com/buildbuddy-io/buildbuddy/pull/13067);
-  until a `bb` release carries it, the repo pins a patched build
-  (`5.0.387-pr13067`, <../../third_party/bb/README.md>).
+  the diff base landed in the plain-text patch as a content-less stub, and the
+  runner's `git apply` died with
+  `cannot apply binary patch to '<file>' without full index line`: every run
+  broke during git setup, even on a fresh base, until the deleting commit was
+  pushed (moving the base past it). Fixed upstream in
+  [buildbuddy#13067](https://github.com/buildbuddy-io/buildbuddy/pull/13067)
+  (unconditional `--binary`), released in `bb` 5.0.445; the repo consumes the
+  stock release.
 - **`--run_from_commit` disables patches**: the runner checks out exactly that
   commit. Patches are only generated when BOTH `--run_from_branch` and
   `--run_from_commit` are empty. Do NOT use `--run_from_commit` in wrapper
