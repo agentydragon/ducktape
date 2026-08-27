@@ -904,13 +904,7 @@ def build_console_mcp(
         ] = _DEFAULT_GET_TOOL_CALL_FIELDS,
         actor: ToolCallActor = current_actor_dependency,
     ) -> McpToolCallResponse:
-        """Read one tool call: status, selected payloads, terminal reason, and approval link.
-
-        By default this returns the downstream ``result`` but not the submitted arguments,
-        rationale, or caller. Pass ``fields=[]`` for a compact status poll, or add ``caller`` to see
-        who submitted the call. Payload fields are opaque whole blobs; nested selectors are not
-        supported.
-        """
+        """Read one tool call: status, selected payloads, terminal reason, and approval link."""
         try:
             record = await context.tool_calls.get(tool_call_id, actor=actor, fields=frozenset(fields))
         except (ToolCallNotFoundError, ToolCallStateConflictError) as error:
@@ -952,10 +946,6 @@ def build_console_mcp(
         """List recent tool calls (newest first by default), optionally filtered by status/since/
         auto_approved (true: only calls the reviewed policy auto-approved; false: only calls that
         went through manual or no approval; omitted: no filter).
-
-        The default response contains compact status summaries only. Request ``fields`` to include
-        whole opaque ``arguments``, ``caller``, ``rationale``, or ``result`` payloads; nested
-        selectors are not supported.
         """
         records = await context.tool_calls.list_tool_calls(
             actor=actor,

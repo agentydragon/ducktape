@@ -614,7 +614,7 @@ class PostgresToolCallLedger:
         # selected; unlike the payload fields it is never a literal column in `projection`.
         selected_payloads = {field.value for field in ToolCallPayloadField if field.value in projection}
         if ToolCallPayloadField.CALLER in cls._selected_fields(fields):
-            selected_payloads.add(ToolCallPayloadField.CALLER.value)
+            selected_payloads.add(ToolCallPayloadField.CALLER)
         fields_set = (
             set(ToolCallRecord.model_fields) - {field.value for field in ToolCallPayloadField} | selected_payloads
         )
