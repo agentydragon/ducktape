@@ -244,8 +244,8 @@ def project_notice(event: StreamedEvent, *, conversation_id: UUID, room_id: str)
 
     The shapes with a `None` arm are the ones the room shows some other way: an assistant message is
     an answer `reconcile_once` queues on the outbox rather than announces, and reasoning and tool
-    calls are what the work notice will summarise (<../../../plans/conversation_layers.md> § 4)
-    rather than a line each.
+    calls fold into the turn's live status line (`room_status.coarse_status`) rather than getting a
+    line each.
 
     `UnknownEventBody` is on that arm too, and it is a different statement: a kind a **newer**
     release wrote, which this one has no words for. The room says nothing about it and the cursor

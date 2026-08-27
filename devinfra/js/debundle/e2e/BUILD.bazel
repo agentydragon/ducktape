@@ -958,7 +958,7 @@ rust_test(
 # a member pinned by the member it reads (`obj.X`) — the stable identity of the
 # ~72 TS codegen helpers — resolves to the correct binding, lands in the right
 # module, and runs under Node, with fail-closed ambiguous/zero/unknown-object
-# cases. See plans/selector_constraint_model.md Phase G5.
+# cases.
 rust_test(
     name = "reads_member_lowering_test",
     srcs = ["reads_member_lowering_test.rs"],
@@ -977,8 +977,7 @@ rust_test(
 # pipeline: the first use-site selector — a member pinned by how it is consumed
 # (`mod.X`, `mod` an imported binding) — resolves to the correct binding, lands
 # in the right module, and runs under Node, including the empty-class/superclass
-# disambiguation and fail-closed ambiguous/zero/non-imported cases. See
-# plans/selector_constraint_model.md Phase G5.
+# disambiguation and fail-closed ambiguous/zero/non-imported cases.
 rust_test(
     name = "member_of_module_lowering_test",
     srcs = ["member_of_module_lowering_test.rs"],

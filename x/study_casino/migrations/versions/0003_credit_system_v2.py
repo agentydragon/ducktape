@@ -1,6 +1,6 @@
 """Credit system v2: millicredit units, token-economy rebalance, streak state.
 
-Three coordinated changes (see plans/credit_system_v2.md):
+Three coordinated changes:
 
 1. Credit columns reinterpreted as integer millicredits (credit value
    × 1000). Existing rows are whole credits, so ×1000 converts in place.

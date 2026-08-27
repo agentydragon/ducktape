@@ -303,6 +303,10 @@ py_test(
 
 py_test(
     name = "test_app",
+    # 49 HTTP tests against a per-test Postgres testcontainer: 53s of real
+    # work on RBE against small's 60s cap (timed out at 91% twice on
+    # 2026-08-27; passes recorded at 42-53s across devel commits).
+    size = "medium",
     srcs = ["test_app.py"],
     requires_docker = True,
     deps = [
