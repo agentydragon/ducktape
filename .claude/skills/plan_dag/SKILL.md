@@ -34,14 +34,18 @@ keeps done work visually far from the dashed planned nodes.
   `⛔` prefix on a blocking incident, `🧑` for human gates. A blocking incident
   gets its own class (GitHub danger red: `fill:#FFEBE9,color:#82071E,stroke:#CF222E`)
   and an edge into whatever it blocks.
-- **Link every node that names an entity**: wrap the `#NNNN` token in a plain
-  anchor — `["<a href='https://github.com/OWNER/REPO/pull/4691'>#4691</a> grant
-principals · PR"]` (single quotes inside the double-quoted label). Anchors
-  survive the label sanitizer; style them inherited so state colors hold:
+- **Link every node that names an entity — the whole label, not just the
+  token**: `["<a href='https://github.com/OWNER/REPO/pull/4691'>🔐 #4691 grant
+principals · PR</a>"]` (single quotes inside the double-quoted label). Anchors
+  survive the label sanitizer; inherit the state color, underline only on hover
+  — the `#NNNN` already marks it as an entity:
 
   ```css
   .board .mermaid a {
     color: inherit;
+    text-decoration: none;
+  }
+  .board .mermaid a:hover {
     text-decoration: underline;
   }
   ```
@@ -81,9 +85,26 @@ principals · PR"]` (single quotes inside the double-quoted label). Anchors
   linkStyle default stroke:#2F6F5E,stroke-width:1.4px
   ```
 
-- **Fixed paper card.** Because the SVG renders once with fixed colors, put it
-  on a card with an explicit light background that holds in both page themes;
-  keep the page chrome theme-aware around it.
+- **Background: transparent beats a paper card when the fills allow it.** The
+  GitHub state colors are label-chip pastels that read on light and dark
+  grounds alike, so the diagram container can sit directly on the page
+  background; make edges and arrowheads follow the page foreground with CSS
+  (both themes then just work):
+
+  ```css
+  .board .mermaid svg .edgePaths path {
+    stroke: var(--ink) !important;
+  }
+  .board .mermaid svg .marker {
+    fill: var(--ink) !important;
+    stroke: var(--ink) !important;
+  }
+  ```
+
+  Verify BOTH themes in the local render (Playwright `colorScheme: "dark"`).
+  Fall back to a fixed light card only when node fills genuinely fail on one
+  ground.
+
 - **Kill shrink-to-fit in CSS, not init.** `useMaxWidth:false` via `%%{init}%%`
   is not honored by the viewer; force natural size inside an
   `overflow-x: auto` card:
