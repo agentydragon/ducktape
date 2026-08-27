@@ -1384,7 +1384,11 @@ async def test_abort_reaches_the_replica_running_the_turn(
         with notifications.watch_session(view.session_id, received.put_nowait):
             assert await requesting.request_abort(view.session_id) is True
             async with asyncio.timeout(30):
-                assert (await received.get()).kind is SessionEventKind.ABORT
+                # Drained, not first: delivery is commit-ordered, so the update notifies committed
+                # by the setup above may still be in flight when the watch begins and then land
+                # ahead of the abort. The contract is that the abort arrives.
+                while (await received.get()).kind is not SessionEventKind.ABORT:
+                    pass
     finally:
         await other_engine.dispose()
 
