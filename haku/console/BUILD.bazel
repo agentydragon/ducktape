@@ -192,6 +192,7 @@ py_library(
         "//haku/console/tools:hostexec",
         "//haku/console/tools:hostexec_client",
         "//haku/console/tools:hostexec_token",
+        "//haku/console/tools:http",
         "//haku/console/tools:kubernetes",
         "//haku/console/tools:recall_index",
         "//haku/console/tools:routine",
@@ -244,6 +245,7 @@ py_library(
     deps = [
         ":chat_models",
         ":grant_principal",
+        ":http_grant_models",
         ":kubernetes_grant_models",
         ":node_daemon_models",
         ":operator_identity",
@@ -275,6 +277,69 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "http_grant_models",
+    srcs = ["http_grant_models.py"],
+    deps = [
+        ":grant_principal",
+        "@pypi//idna",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "http_grant_repository",
+    srcs = ["http_grant_repository.py"],
+    deps = [
+        ":chat_models",
+        ":database_schema",
+        ":grant_principal",
+        ":http_grant_models",
+        "//haku/console/agents:models",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "http_grant_service",
+    srcs = ["http_grant_service.py"],
+    deps = [
+        ":grant_principal",
+        ":http_grant_models",
+    ],
+)
+
+py_library(
+    name = "http_grant_routes",
+    srcs = ["http_grant_routes.py"],
+    deps = [
+        ":http_grant_models",
+        ":http_grant_service",
+        ":operator_auth",
+        "//haku/console/agents:enrollment",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_http_grant_routes",
+    srcs = ["test_http_grant_routes.py"],
+    deps = [
+        ":grant_principal",
+        ":http_grant_models",
+        ":http_grant_routes",
+        ":operator_auth",
+        ":tool_call_actor",
+        "//haku/console/agents:enrollment",
+        "//haku/console/agents:models",
+        "@pypi//fastapi",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
     ],
 )
 
@@ -1170,6 +1235,9 @@ py_library(
         ":console_events",
         ":database_migrate",
         ":deployment",
+        ":http_grant_repository",
+        ":http_grant_routes",
+        ":http_grant_service",
         ":in_process_servers",
         ":kube_proxy_authorization",
         ":kubernetes_authorization",
@@ -1203,6 +1271,7 @@ py_library(
         "//haku/console:chat_models",
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//haku/console/tools:gmail",
+        "//haku/console/tools:http",
         "//haku/console/tools:kubernetes",
         "//haku/console/tools:routine",
         "//haku/console/tools:sandbox",
@@ -1310,6 +1379,7 @@ py_library(
         "//grocy_mcp:batch_tools",
         "//grocy_mcp:client",
         "//grocy_mcp:mcp_types",
+        "//haku/console/tools:http",
         "//haku/console/tools:kubernetes",
         "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp_slim",
@@ -1920,6 +1990,31 @@ py_test(
 )
 
 py_test(
+    name = "test_http_grants",
+    srcs = ["test_http_grants.py"],
+    deps = [
+        ":grant_principal",
+        ":http_grant_models",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_http_grant_service",
+    srcs = ["test_http_grant_service.py"],
+    deps = [
+        ":grant_principal",
+        ":http_grant_models",
+        ":http_grant_service",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_kubernetes_grants",
     srcs = ["test_kubernetes_grants.py"],
     deps = [
@@ -1942,6 +2037,29 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_http_grant_repository",
+    size = "medium",
+    srcs = ["test_http_grant_repository.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":database_schema",
+        ":grant_principal",
+        ":http_grant_models",
+        ":http_grant_repository",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 

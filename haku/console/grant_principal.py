@@ -56,7 +56,8 @@ class RequestPrincipal(BaseModel):
 
     When ``session_id`` is present, the authentication boundary must already have
     verified that the globally unique session belongs to ``agent_id``. The access
-    profile remains standing-policy context; it is not a temporary grant principal.
+    profile remains standing-policy context; it is not an Agent-requestable temporary
+    grant principal.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -71,6 +72,23 @@ class RequestPrincipal(BaseModel):
         dropping the operator and credential-binding identity that applicability must not read."""
 
         return cls(agent_id=source.agent_id, session_id=source.session_id, access_profile_id=source.access_profile_id)
+
+
+def grant_principal_for(request_principal: RequestPrincipal, applies_to: GrantPrincipalKind) -> GrantPrincipal:
+    """Derive the grant principal an Agent-facing creation tool may mint.
+
+    ``applies_to`` selects only between the authenticated Agent and its exact live authenticated
+    session; callers never name arbitrary principal IDs.
+    """
+
+    match applies_to:
+        case GrantPrincipalKind.AGENT:
+            return AgentGrantPrincipal(agent_id=request_principal.agent_id)
+        case GrantPrincipalKind.SESSION:
+            if request_principal.session_id is None:
+                raise PermissionError("session-scoped grants require a live session-authenticated caller")
+            return SessionGrantPrincipal(session_id=request_principal.session_id)
+    assert_never(applies_to)
 
 
 def grant_principal_applies_to(grant_principal: GrantPrincipal, request_principal: RequestPrincipal) -> bool:

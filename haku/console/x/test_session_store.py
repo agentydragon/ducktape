@@ -49,12 +49,14 @@ from haku.console.database_schema import (
     ConversationItem,
     ConversationPrompt,
     ConversationTurn,
+    HttpGrantRow,
     KubernetesGrantRow,
     McpToolCall,
     McpToolCallPrincipal,
     Session,
 )
 from haku.console.grant_principal import GrantPrincipalKind
+from haku.console.http_grant_models import HttpGrantStatus, HttpScheme
 from haku.console.kubernetes_grant_models import KubernetesGrantStatus, KubernetesNamespacesGrantScope, KubernetesRule
 from haku.console.tool_calls import ToolCallStatus
 from haku.console.x.claude_code.testing.wire import assistant, result, text_block, text_delta
@@ -249,9 +251,7 @@ async def test_failure_records_the_final_status_and_error_once(chat_store, migra
     assert (failed.status, failed.error) == (SessionStatus.FAILED, "runner failed")
 
 
-async def test_session_end_terminalizes_exact_session_kubernetes_grants(
-    chat_store, migrated_sessions, operator_id
-) -> None:
+async def test_session_end_terminalizes_exact_session_grants(chat_store, migrated_sessions, operator_id) -> None:
     agent_id = UUID("00000000-0000-4000-8000-000000000001")
     reservation_id, binding_id = uuid4(), uuid4()
     now = datetime.now(UTC)
@@ -359,6 +359,57 @@ async def test_session_end_terminalizes_exact_session_kubernetes_grants(
             )
         )
 
+    http_grant_id = uuid4()
+    async with migrated_sessions.begin() as db:
+        http_source_tool_call_id = f"tc_{uuid4().hex}"
+        db.add(
+            McpToolCall(
+                tool_call_id=http_source_tool_call_id,
+                server_id="http",
+                tool_name="create_grant",
+                status=ToolCallStatus.RUNNING,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+                arguments_json={},
+                rationale="session grant terminalization test",
+                title=None,
+                result_json=None,
+                error=None,
+                denial_reason=None,
+                withdrawal_reason=None,
+                approval_policy_id=None,
+                auto_approval_evaluation=None,
+                approved_at=datetime.now(UTC),
+            )
+        )
+        db.add(
+            McpToolCallPrincipal(
+                tool_call_id=http_source_tool_call_id,
+                operator_id=None,
+                binding_id=binding_id,
+                session_id=view.session_id,
+            )
+        )
+        await db.flush()
+        db.add(
+            HttpGrantRow(
+                grant_id=http_grant_id,
+                owner_agent_id=agent_id,
+                principal_kind=GrantPrincipalKind.SESSION,
+                principal_agent_id=None,
+                principal_session_id=view.session_id,
+                source_tool_call_id=http_source_tool_call_id,
+                scheme=HttpScheme.HTTPS,
+                host="grocy.example",
+                port=443,
+                status=HttpGrantStatus.ACTIVE,
+                created_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+                ended_at=None,
+                end_reason=None,
+            )
+        )
+
     await chat_store.fail(view.session_id, "runner failed")
 
     async with migrated_sessions() as db:
@@ -367,6 +418,11 @@ async def test_session_end_terminalizes_exact_session_kubernetes_grants(
         assert grant.status is KubernetesGrantStatus.REVOKED
         assert grant.end_reason == "principal_ended"
         assert grant.ended_at is not None
+        http_grant = await db.get(HttpGrantRow, http_grant_id)
+        assert http_grant is not None
+        assert http_grant.status is HttpGrantStatus.REVOKED
+        assert http_grant.end_reason == "principal_ended"
+        assert http_grant.ended_at is not None
 
 
 async def test_the_cleanup_sweep_offers_ended_sessions_until_their_claim_is_recorded_gone(

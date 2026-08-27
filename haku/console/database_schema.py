@@ -18,6 +18,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Identity,
     Index,
+    Integer,
     LargeBinary,
     Text,
     UniqueConstraint,
@@ -56,6 +57,7 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.grant_principal import GrantPrincipalKind
+from haku.console.http_grant_models import HttpGrantStatus, HttpScheme
 from haku.console.kubernetes_grant_models import KubernetesGrantScope, KubernetesGrantStatus, KubernetesRule
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.operator_identity import OperatorStatus
@@ -574,6 +576,72 @@ class KubernetesGrantRow(Base):
     status: Mapped[KubernetesGrantStatus] = mapped_column(
         TextBackedStrEnumColumn(KubernetesGrantStatus), nullable=False
     )
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    end_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class HttpGrantRow(Base):
+    """One Agent-owned, principal-scoped, time-bounded exact-origin HTTP egress lease.
+
+    The origin is three relational columns because a v1 grant is exactly ``(scheme, host, port)``
+    — no open vocabulary to leave in JSONB. The domain canonicalizes the host to its lowercase
+    IDNA A-label before writing; the check constraint pins that persisted canonical LDH shape.
+    ``source_tool_call_id`` is retained as immutable provenance and must refer to the
+    Agent-authenticated source call. Lifecycle ownership and authorization applicability are
+    deliberately separate columns.
+    """
+
+    __tablename__ = "http_grants"
+    __table_args__ = (
+        CheckConstraint("btrim(source_tool_call_id) <> ''", name="ck_http_grants_source_tool_call_nonempty"),
+        CheckConstraint(
+            "(principal_kind = 'agent' AND principal_agent_id IS NOT NULL "
+            "AND principal_agent_id = owner_agent_id AND principal_session_id IS NULL) OR "
+            "(principal_kind = 'session' AND principal_agent_id IS NULL "
+            "AND principal_session_id IS NOT NULL)",
+            name="ck_http_grants_principal_shape",
+        ),
+        CheckConstraint(
+            "scheme IN ('http', 'https') AND port >= 1 AND port <= 65535 "
+            "AND char_length(host) <= 253 "
+            "AND host ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$'",
+            name="ck_http_grants_origin_shape",
+        ),
+        CheckConstraint("expires_at > created_at", name="ck_http_grants_expiration_after_creation"),
+        CheckConstraint(
+            "(status = 'active' AND ended_at IS NULL AND end_reason IS NULL) OR "
+            "(status IN ('released', 'revoked', 'expired') AND ended_at IS NOT NULL "
+            "AND end_reason IS NOT NULL AND btrim(end_reason) <> '')",
+            name="ck_http_grants_status_shape",
+        ),
+        Index("idx_http_grants_source_tool_call", "source_tool_call_id"),
+        Index("idx_http_grants_owner_status_expiry", "owner_agent_id", "status", "expires_at"),
+        Index("idx_http_grants_agent_principal_status_expiry", "principal_agent_id", "status", "expires_at"),
+        Index("idx_http_grants_session_principal_status_expiry", "principal_session_id", "status", "expires_at"),
+    )
+
+    grant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    owner_agent_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agents.agent_id", ondelete="RESTRICT"), nullable=False
+    )
+    principal_kind: Mapped[GrantPrincipalKind] = mapped_column(
+        TextBackedStrEnumColumn(GrantPrincipalKind), nullable=False
+    )
+    principal_agent_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agents.agent_id", ondelete="RESTRICT"), nullable=True
+    )
+    principal_session_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="RESTRICT"), nullable=True
+    )
+    source_tool_call_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("mcp_tool_calls.tool_call_id", ondelete="RESTRICT"), nullable=False
+    )
+    scheme: Mapped[HttpScheme] = mapped_column(TextBackedStrEnumColumn(HttpScheme), nullable=False)
+    host: Mapped[str] = mapped_column(Text, nullable=False)
+    port: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[HttpGrantStatus] = mapped_column(TextBackedStrEnumColumn(HttpGrantStatus), nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -15,6 +15,7 @@ import haku.console.tools.conversations as conversations_tools
 import haku.console.tools.gmail as gmail_tools
 import haku.console.tools.google_calendar as google_calendar_tools
 import haku.console.tools.hostexec as hostexec_tools
+import haku.console.tools.http as http_tools
 import haku.console.tools.kubernetes as kubernetes_tools
 import haku.console.tools.recall_index as recall_index_tools
 import haku.console.tools.routine as routine_tools
@@ -71,6 +72,7 @@ class InProcessServerDependencies:
     # `config.yaml` lists the server, which is also what requires an embedder to be configured.
     index: recall_index_tools.IndexSearcher | None = None
     kubernetes: kubernetes_tools.KubernetesToolsService | None = None
+    http: http_tools.HttpToolsService | None = None
     # The Agent Sandbox lifecycle client and the environment it hands out — set only when
     # `config.yaml` both lists the server and configures `agent_sandbox`.
     sandbox: SandboxServerConfig | None = None
@@ -118,6 +120,12 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
             builder=lambda _token: kubernetes_tools.build_mcp(kubernetes),
             credential_kind=InProcessCredentialKind.NONE,
             authorizer=in_process_access.authorizer_for(kubernetes_tools.KUBERNETES_SERVER_ID),
+        )
+    if (http := dependencies.http) is not None:
+        servers[http_tools.HTTP_SERVER_ID] = InProcessServerRegistration(
+            builder=lambda _token: http_tools.build_mcp(http),
+            credential_kind=InProcessCredentialKind.NONE,
+            authorizer=in_process_access.authorizer_for(http_tools.HTTP_SERVER_ID),
         )
     if (sandbox := dependencies.sandbox) is not None:
         servers[sandbox_tools.SANDBOX_SERVER_ID] = InProcessServerRegistration(

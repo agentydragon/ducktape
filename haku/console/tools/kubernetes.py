@@ -12,7 +12,7 @@ from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field
 
-from haku.console.grant_principal import AgentGrantPrincipal, GrantPrincipal, GrantPrincipalKind, SessionGrantPrincipal
+from haku.console.grant_principal import GrantPrincipalKind, grant_principal_for
 from haku.console.kubernetes_authorization import (
     AuthorizationRequest,
     AuthorizationResponse,
@@ -83,7 +83,7 @@ class KubernetesToolsService:
         now = datetime.datetime.now(datetime.UTC)
         return await self.grants.create_grants(
             owner_agent_id=principal.agent_id,
-            grant_principal=_grant_principal(context, applies_to),
+            grant_principal=grant_principal_for(principal, applies_to),
             source_tool_call_id=context.tool_call_id,
             grants=grants,
             expires_at=now + datetime.timedelta(seconds=duration_seconds),
@@ -127,15 +127,6 @@ class KubernetesToolsService:
             )
         )
         return [_can_i_result(decision) for decision in decisions]
-
-
-def _grant_principal(context: McpExecutionContext, applies_to: GrantPrincipalKind) -> GrantPrincipal:
-    principal = context.request_principal
-    if applies_to is GrantPrincipalKind.AGENT:
-        return AgentGrantPrincipal(agent_id=principal.agent_id)
-    if principal.session_id is None:
-        raise PermissionError("session-scoped Kubernetes grants require a live session-authenticated caller")
-    return SessionGrantPrincipal(session_id=principal.session_id)
 
 
 def _can_i_result(decision: AuthorizationResponse) -> CanIResult:
