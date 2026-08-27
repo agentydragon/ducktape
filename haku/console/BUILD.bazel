@@ -19,6 +19,8 @@ py_library(
     srcs = ["config.py"],
     deps = [
         ":chat_models",
+        ":http_url",
+        "//haku/console/x/codex_app_server:config",
         "//haku/recall_index:chunking",
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:config",
@@ -27,6 +29,11 @@ py_library(
         "@pypi//pydantic_settings",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "http_url",
+    srcs = ["http_url.py"],
 )
 
 py_library(
@@ -105,6 +112,7 @@ py_test(
         ":config",
         ":mcp_config",
         "//:conftest",
+        "//haku/console/x/codex_app_server:config",
         "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",

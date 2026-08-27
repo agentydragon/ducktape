@@ -40,12 +40,7 @@ from haku.console.chat_models import (
     ToolOutcome,
     TurnOutcome,
 )
-from haku.console.config import (
-    ChatRuntimesConfig,
-    ClaudeCodeImplementationConfig,
-    CodexAppServerImplementationConfig,
-    RuntimeRegistrationConfig,
-)
+from haku.console.config import ChatRuntimesConfig, ClaudeCodeImplementationConfig, RuntimeRegistrationConfig
 from haku.console.conftest import console_sessions
 from haku.console.database_schema import (
     Agent,
@@ -75,6 +70,7 @@ from haku.console.x.claude_code.testing.wire import (
     tool_use_block,
     tool_use_start,
 )
+from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from haku.console.x.conftest import age_lease, answers, attach_channel, configured_runtimes, lease_of, runtime_config
 from haku.console.x.conversation_events import (
     CallRef,

@@ -5,14 +5,9 @@ import pytest_bazel
 import yaml
 from pydantic import SecretStr
 
-from haku.console.config import (
-    ClaudeCodeImplementationConfig,
-    CodexAppServerImplementationConfig,
-    OperatorIdentityConfig,
-    OperatorOidcConfig,
-    Settings,
-)
+from haku.console.config import ClaudeCodeImplementationConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
 from haku.console.mcp_config import ConsoleConfigFile
+from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from util.bazel.runfiles import get_required_path
 
 

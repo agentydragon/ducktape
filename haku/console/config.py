@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
@@ -15,6 +14,8 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
 from haku.console.chat_models import RuntimeKind
+from haku.console.http_url import uncredentialed_http_url
+from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import PostgresPersistence
@@ -34,10 +35,6 @@ MCP_PATH = "/mcp"
 # pages live under it; every other path belongs to the framed haku-ui.
 _CONSOLE_ROOT_PATH = "/_console"
 
-# Claim-owned exact-session authority. Keep these names local to the deploy-config layer rather
-# than making schema/export binaries depend on the separately packaged runner implementation.
-_RESERVED_SESSION_CREDENTIAL_ENV_VARS = frozenset({"HAKU_AGENT_SDK_RUNNER_TOKEN", "HAKU_MCP_BEARER_TOKEN"})
-
 
 def _proxy_environment(*, proxy_url: str, no_proxy: str, ca_bundle: str, pip: bool = False) -> dict[str, str]:
     """Build the common explicit-proxy and CA environment without alias drift."""
@@ -50,19 +47,6 @@ def _proxy_environment(*, proxy_url: str, no_proxy: str, ca_bundle: str, pip: bo
     if pip:
         environment["PIP_CERT"] = ca_bundle
     return environment
-
-
-def _uncredentialed_http_url(value: str, *, field_name: str) -> str:
-    parsed = urlsplit(value)
-    if (
-        parsed.scheme not in {"http", "https"}
-        or not parsed.netloc
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.fragment
-    ):
-        raise ValueError(f"{field_name} must be an HTTP(S) URL without credentials or a fragment")
-    return value
 
 
 def tool_call_console_url(console_base_url: str, tool_call_id: str) -> str:
@@ -391,7 +375,7 @@ class RuntimeExecutionConfig(BaseModel):
     @field_validator("mcp_url")
     @classmethod
     def _uncredentialed_mcp_url(cls, value: str) -> str:
-        return _uncredentialed_http_url(value, field_name="mcp_url")
+        return uncredentialed_http_url(value, field_name="mcp_url")
 
     def proxy_environment(self, *, pip: bool = False) -> dict[str, str]:
         return _proxy_environment(proxy_url=self.https_proxy, no_proxy=self.no_proxy, ca_bundle=self.ca_bundle, pip=pip)
@@ -404,56 +388,6 @@ class ClaudeCodeImplementationConfig(BaseModel):
 
     kind: Literal[RuntimeKind.CLAUDE_CODE] = RuntimeKind.CLAUDE_CODE
     oauth_placeholder: str
-
-
-class CodexReasoningEffort(StrEnum):
-    """The named reasoning-effort wire values of the pinned Codex client.
-
-    A pinned third-party vocabulary (`ReasoningEffort` in
-    `codex-rs/protocol/src/openai_models.rs` at tag `rust-v0.144.1`), so an unknown value is
-    a config error, not a roll-tolerance case. Re-read that enum when the Codex image pin
-    moves.
-    """
-
-    NONE = "none"
-    MINIMAL = "minimal"
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    XHIGH = "xhigh"
-    MAX = "max"
-    ULTRA = "ultra"
-
-
-class CodexAppServerImplementationConfig(BaseModel):
-    """The settings that belong specifically to the Codex app-server implementation."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    kind: Literal[RuntimeKind.CODEX_APP_SERVER] = RuntimeKind.CODEX_APP_SERVER
-    model: str
-    # A field default rather than a required cluster config.yaml key: the ConfigMap applies
-    # ahead of the image, and on the previous image this extra="forbid" model would reject
-    # the unknown key at startup (the 2026-07-14 config/image-skew outage class,
-    # haku/TODO.md). Safe to set in YAML once an image carrying this field is deployed.
-    reasoning_effort: CodexReasoningEffort = CodexReasoningEffort.LOW
-    provider_id: str = Field(min_length=1)
-    provider_name: str = Field(min_length=1)
-    api_base_url: str
-    api_key_env_var: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
-    github_token_placeholder: str
-
-    @field_validator("api_key_env_var")
-    @classmethod
-    def _provider_key_must_not_alias_session_authority(cls, value: str) -> str:
-        if value in _RESERVED_SESSION_CREDENTIAL_ENV_VARS:
-            raise ValueError("provider key variable must not alias an exact-session credential")
-        return value
-
-    @field_validator("api_base_url")
-    @classmethod
-    def _uncredentialed_api_base_url(cls, value: str) -> str:
-        return _uncredentialed_http_url(value, field_name="api_base_url")
 
 
 type RuntimeImplementationConfig = Annotated[

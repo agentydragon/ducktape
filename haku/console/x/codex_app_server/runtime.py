@@ -12,9 +12,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from haku.console.chat_models import RuntimeKind
-from haku.console.config import CodexReasoningEffort
 from haku.console.x.codex_app_server import frames, projection
 from haku.console.x.codex_app_server.client import CodexClientFactory, CodexThread, app_server_over_websocket
+from haku.console.x.codex_app_server.config import CodexReasoningEffort
 from haku.console.x.conversation_events import TurnCompleted
 from haku.console.x.runtime import (
     EMPTY_TURN_PROJECTION_SEED,

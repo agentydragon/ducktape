@@ -15,12 +15,26 @@ py_library(
 )
 
 py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = [
+        "//haku/console:__pkg__",
+        "//haku/console/x:__pkg__",
+    ],
+    deps = [
+        "//haku/console:chat_models",
+        "//haku/console:http_url",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "client",
     srcs = ["client.py"],
     deps = [
+        ":config",
         ":frames",
         ":protocol",
-        "//haku/console:config",
         "//haku/console/x:runtime",
         "//haku/runtime/x/bridge:client",
         "//haku/runtime/x/bridge:protocol",
@@ -48,10 +62,10 @@ py_library(
     srcs = ["runtime.py"],
     deps = [
         ":client",
+        ":config",
         ":frames",
         ":projection",
         "//haku/console:chat_models",
-        "//haku/console:config",
         "//haku/console/x:conversation_events",
         "//haku/console/x:runtime",
         "//haku/runtime/x/bridge:client",
@@ -67,6 +81,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":client",
+        ":config",
         ":frames",
         ":protocol",
         "//haku/runtime/x/bridge:client",
@@ -98,8 +113,8 @@ py_test(
     srcs = ["test_client.py"],
     deps = [
         ":client",
+        ":config",
         "//:conftest",
-        "//haku/console:config",
         "//haku/runtime/x/bridge:client",
         "//haku/runtime/x/bridge:protocol",
         "@pypi//pytest",
@@ -134,11 +149,11 @@ py_test(
     srcs = ["test_runtime.py"],
     deps = [
         ":client",
+        ":config",
         ":projection",
         ":runtime",
         "//:conftest",
         "//haku/console:chat_models",
-        "//haku/console:config",
         "//haku/console/x:conversation_events",
         "//haku/console/x:runtime",
         "//haku/runtime/x/bridge:codex_options",

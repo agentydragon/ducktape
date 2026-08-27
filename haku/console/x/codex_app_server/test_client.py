@@ -9,8 +9,8 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from haku.console.config import CodexReasoningEffort
 from haku.console.x.codex_app_server.client import CodexAppServer, CodexAppServerError, CodexThread
+from haku.console.x.codex_app_server.config import CodexReasoningEffort
 from haku.runtime.x.bridge.client import RecordedFrame
 from haku.runtime.x.bridge.protocol import HarnessFrame
 

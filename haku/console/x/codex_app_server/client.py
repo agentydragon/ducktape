@@ -20,8 +20,8 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import uuid4
 
-from haku.console.config import CodexReasoningEffort
 from haku.console.x.codex_app_server import frames
+from haku.console.x.codex_app_server.config import CodexApprovalPolicy, CodexReasoningEffort, CodexSandboxMode
 from haku.console.x.codex_app_server.protocol import Notification, Request, RequestId, Response, parse_message
 from haku.console.x.runtime import RuntimeClient
 from haku.runtime.x.bridge.client import FrameSink, ReceivedFrame, SentPrompt
@@ -50,8 +50,10 @@ class CodexThread:
     model: str | None = None
     reasoning_effort: CodexReasoningEffort | None = None
     developer_instructions: str | None = None
-    approval_policy: str = "never"
-    sandbox: str = "danger-full-access"
+    approval_policy: CodexApprovalPolicy = CodexApprovalPolicy.NEVER
+    # The containment posture. Full access is deliberate for the runtime pod: the sandbox
+    # boundary is the pod itself, not Codex's own jail.
+    sandbox: CodexSandboxMode = CodexSandboxMode.DANGER_FULL_ACCESS
     ephemeral: bool = True
 
     def start_params(self) -> dict[str, Any]:

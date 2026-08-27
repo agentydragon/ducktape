@@ -20,6 +20,7 @@ from typing import Any
 
 from haku.console.x.codex_app_server import frames
 from haku.console.x.codex_app_server.client import CodexAppServer, CodexThread
+from haku.console.x.codex_app_server.config import CodexSandboxMode
 from haku.console.x.codex_app_server.protocol import Direction
 from haku.runtime.x.bridge.client import RecordedFrame
 from haku.runtime.x.bridge.protocol import HarnessFrame
@@ -286,7 +287,9 @@ async def capture(args: argparse.Namespace) -> None:
     client = CodexAppServer(
         channel,
         sink,
-        CodexThread(cwd=str(workspace), model=args.model, approval_policy="never", sandbox="workspaceWrite"),
+        # workspace-write: a capture runs a real Codex against a scratch workspace, so keep its
+        # own jail on rather than the runtime pod's full-access posture.
+        CodexThread(cwd=str(workspace), model=args.model, sandbox=CodexSandboxMode.WORKSPACE_WRITE),
         request_timeout=args.timeout_seconds,
     )
     try:
