@@ -125,6 +125,23 @@ Rejected here only because it costs a Bazel invocation — and therefore a runne
 VM — to learn what `testSummary` in the stream already says for free. Worth
 remembering if provenance ever stops being good enough.
 
+**Push from the plan job, dropping the per-image fan-out.** Tempting once the
+planner works: a merge typically needs zero or one image published, so `push`
+allocates a runner mostly to discover it has nothing to do, and its ~45-60s of
+checkout-and-devshell setup dwarfs the push. Rejected because the fan-out is not
+there for the typical merge. Each push job builds its image's OCI layout and
+downloads it before pushing, and that download is irreducible; one job doing it
+for every changed image serialises them onto one runner's disk. The burst is real
+and not hypothetical — 8 images in one run on 2026-08-27, after a string of
+superseded runs left their changes outstanding, and a base-image bump moves all 42. `fail-fast: false` also keeps one image's failing test gate from taking the
+other publishes down with it.
+
+The two modules stay separate for the same reason and no other: `plan_image_pushes`
+runs once, `push_image` runs per image, and what they share is already in
+`image_registry`, leaving one comparison line apiece. Reconsider if the
+`testSummary` gate below lands, which deletes the per-image `bb remote test` and
+so most of what the fan-out buys.
+
 **Shell out to `bbapi`.** `bbapi` reads the same stream and grew the same
 capability for humans. The planners must not call it: `bbapi` is itself one of
 the artifacts in `artifact_targets.json`, so a release planner depending on the
