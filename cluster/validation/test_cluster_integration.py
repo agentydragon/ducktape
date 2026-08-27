@@ -21,6 +21,7 @@ import pytest_bazel
 import yaml
 
 from cluster.validation.checks import (
+    check_cilium_policy_rules_nonempty,
     check_duplicate_external_secrets,
     check_goldilocks_explicit_decision,
     check_goldilocks_namespace_labels,
@@ -359,6 +360,12 @@ def test_goldilocks_namespace_labels(cluster: ParsedCluster) -> None:
 def test_goldilocks_explicit_decision(cluster: ParsedCluster) -> None:
     """Namespaces with workloads must explicitly set goldilocks enabled label."""
     errors = check_goldilocks_explicit_decision(cluster)
+    assert not errors, "\n".join(errors)
+
+
+def test_cilium_policy_rules_nonempty(cluster: ParsedCluster) -> None:
+    """No Cilium policy rule with all rule sections empty (Cilium rejects it, silently unenforced)."""
+    errors = check_cilium_policy_rules_nonempty(cluster)
     assert not errors, "\n".join(errors)
 
 

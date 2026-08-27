@@ -8,7 +8,11 @@ metadata:
   namespace: haku-runtime-sandbox
 spec:
   endpointSelector: {}
-  ingress: []
+  # The empty rule element is load-bearing: it allows nothing while putting selected endpoints
+  # into ingress default-deny (Cilium docs § "Ingress/Egress Default Deny"). A bare `ingress: []`
+  # is rejected by Cilium's rule validation (Valid=False) and enforces nothing.
+  ingress:
+    - {}
 ---
 # Public-coder runners establish bridge/MCP through Console, use the shared exact-session
 # Kubernetes proxy, and reach GitHub/LiteLLM only through their own least-credential proxy.

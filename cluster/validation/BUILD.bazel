@@ -163,6 +163,18 @@ py_test(
 )
 
 py_test(
+    name = "test_checks",
+    srcs = ["test_checks.py"],
+    deps = [
+        ":checks",
+        ":cluster",
+        ":k8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_postbuild_substitutions",
     srcs = ["test_postbuild_substitutions.py"],
     deps = [

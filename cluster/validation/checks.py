@@ -6,7 +6,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from cluster.validation.cluster import ParsedCluster
-from cluster.validation.k8s import HelmReleaseResource, K8sResource, SecretResource
+from cluster.validation.k8s import CiliumPolicyResource, HelmReleaseResource, K8sResource, SecretResource
 from cluster.validation.kustomize import KustomizeBuildResult
 
 
@@ -54,7 +54,7 @@ def check_duplicate_external_secrets(build_results: list[KustomizeBuildResult]) 
 def check_goldilocks_namespace_labels(cluster: ParsedCluster) -> list[str]:
     """Check that namespaces with a goldilocks vpa-update-mode label also have goldilocks enabled."""
     errors = []
-    for origin, resource in _goldilocks_check_resources(cluster):
+    for origin, resource in _rendered_or_source_resources(cluster):
         if resource.kind != "Namespace":
             continue
         labels = resource.metadata.labels
@@ -73,8 +73,8 @@ _WORKLOAD_KINDS = {"Deployment", "StatefulSet", "DaemonSet"}
 _GOLDILOCKS_ENABLED_LABEL = "goldilocks.fairwinds.com/enabled"
 
 
-def _goldilocks_check_resources(cluster: ParsedCluster) -> list[tuple[Path, K8sResource]]:
-    """Use rendered resources when available so namespace patches are included."""
+def _rendered_or_source_resources(cluster: ParsedCluster) -> list[tuple[Path, K8sResource]]:
+    """Use rendered resources when available so patches are included."""
     if cluster.build_results:
         return [
             (result.kustomization_path, resource) for result in cluster.build_results for resource in result.resources
@@ -88,7 +88,7 @@ def _goldilocks_check_resources(cluster: ParsedCluster) -> list[tuple[Path, K8sR
 def check_goldilocks_explicit_decision(cluster: ParsedCluster) -> list[str]:
     """Every namespace with workloads must explicitly set goldilocks enabled label."""
     errors = []
-    resources = [resource for _, resource in _goldilocks_check_resources(cluster)]
+    resources = [resource for _, resource in _rendered_or_source_resources(cluster)]
 
     workload_namespaces: set[str] = set()
     for resource in resources:
@@ -139,4 +139,29 @@ def check_sops_decryption_blocks(cluster: ParsedCluster, k8s_dir: Path) -> list[
                 f"Secret's ENC[...] ciphertext is applied literally. Add a secretRef pointing at "
                 f"sops-age-cluster-secrets."
             )
+    return errors
+
+
+def check_cilium_policy_rules_nonempty(cluster: ParsedCluster) -> list[str]:
+    """Every Cilium policy rule must have a non-empty rule section.
+
+    Mirrors Cilium's `Rule.Sanitize`: a rule whose `ingress`, `ingressDeny`, `egress`
+    and `egressDeny` are all empty is schema-valid but rejected at import
+    ("rule must have at least one of Ingress, IngressDeny, Egress, EgressDeny"),
+    leaving the policy `Valid=False` and silently unenforced — a fail-open shape that
+    widens exposure instead of breaking traffic (#4923). Default-deny is spelled as a
+    single empty rule element (`ingress: [{}]`), which allows nothing while putting
+    selected endpoints into default deny."""
+    errors = []
+    for origin, resource in _rendered_or_source_resources(cluster):
+        if not isinstance(resource, CiliumPolicyResource):
+            continue
+        for index, rule in enumerate(resource.rules):
+            if not (rule.ingress or rule.ingress_deny or rule.egress or rule.egress_deny):
+                errors.append(
+                    f"{origin}: {resource.kind} '{resource.name}' rule {index} has no non-empty "
+                    f"ingress/ingressDeny/egress/egressDeny section — Cilium rejects it (Valid=False) "
+                    f"and enforces nothing. For default-deny use one empty rule element, e.g. "
+                    f"`ingress: [{{}}]`, never an empty list."
+                )
     return errors
