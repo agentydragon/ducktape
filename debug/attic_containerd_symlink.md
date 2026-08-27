@@ -70,51 +70,6 @@ v2.2.2 was tagged on 2026-03-10, two days before the cherry-pick landed on 2026-
 | wyrm2          | 2.2.1 (nixpkgs) | 1.24 | **Yes**   |
 | rugged         | 2.2.1 (nixpkgs) | 1.24 | **Yes**   |
 
-## Options
-
-### A. Build containerd from `release/2.2` branch HEAD
-
-Pin the Nix overlay to commit `66751400...` (or later) on `release/2.2`.
-Need to compute the correct `fetchFromGitHub` hash and also override `ldflags`
-or `vendorHash` if the vendor directory changed.
-
-**Pros**: Targeted fix, stays on 2.2.x release branch.
-**Cons**: Building from an untagged commit; need to update when v2.2.3 drops.
-
-### B. Build a non-NixOS attic image
-
-Build attic as a static Rust binary, package in Alpine/distroless. Avoids the
-NixOS absolute-symlink pattern entirely.
-
-**Pros**: Permanent fix, no containerd version dependency.
-**Cons**: Needs CI pipeline for custom image build; attic doesn't officially
-publish non-NixOS images.
-
-### C. Wait for containerd v2.2.3
-
-Do nothing, wait for the next containerd patch release which will include the fix.
-Then update the Nix overlay to that version.
-
-**Pros**: Clean tagged release.
-**Cons**: Unknown timeline; nix cache is down until then.
-
-### D. Revert containerd overlay, pin Go to 1.23 for containerd build
-
-Override the Go version used to build containerd to 1.23, avoiding the strict
-symlink check entirely.
-
-**Pros**: Simple, doesn't need unreleased containerd code.
-**Cons**: Go 1.23 is older; may miss security fixes.
-
-### E. Schedule on Talos nodes
-
-Add a toleration + nodeSelector to schedule attic on a Talos CP node (containerd
-2.1.6, Go 1.23). CP nodes have `NoSchedule` taints.
-
-**Pros**: No containerd changes needed.
-**Cons**: Runs workload on CP node (bad practice); Talos CP nodes shouldn't run
-user workloads.
-
 ## Next Steps
 
 - [ ] Once nixos-25.11 bumps containerd to ≥2.2.3, remove the overlay from `k8s-worker.nix`
