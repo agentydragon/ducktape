@@ -89,7 +89,7 @@ class OAuthAssociationMaintenance:
         )
         candidates = [
             select(
-                literal(OAuthAssociationKind.REMOTE_MCP.value).label("kind"),
+                literal(OAuthAssociationKind.REMOTE_MCP).label("kind"),
                 McpOperatorOAuthAssociation.server_id.label("name"),
                 OAuthTokenState.operator_id,
             )
@@ -97,7 +97,7 @@ class OAuthAssociationMaintenance:
             .join(Operator, OAuthTokenState.operator_id == Operator.operator_id)
             .where(*refreshable),
             select(
-                literal(OAuthAssociationKind.PROVIDER.value).label("kind"),
+                literal(OAuthAssociationKind.PROVIDER).label("kind"),
                 ProviderConnection.connection_name.label("name"),
                 OAuthTokenState.operator_id,
             )
@@ -108,7 +108,7 @@ class OAuthAssociationMaintenance:
         if self._refresh_authentik_tokens:
             candidates.append(
                 select(
-                    literal(OAuthAssociationKind.OPERATOR_LOGIN.value).label("kind"),
+                    literal(OAuthAssociationKind.OPERATOR_LOGIN).label("kind"),
                     sql_cast(literal(None), Text).label("name"),
                     OAuthTokenState.operator_id,
                 )

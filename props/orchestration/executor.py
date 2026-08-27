@@ -12,6 +12,8 @@ from enum import StrEnum
 from typing import Protocol
 
 
+# TODO: "Pod" is k8s vocabulary — a runtime-agnostic phase deserves a runtime-agnostic
+# name (e.g. ExecutionPhase); PodInfo likewise.
 class PodPhase(StrEnum):
     """Runtime-agnostic pod lifecycle phase. Maps k8s pod phases directly; the Docker
     executor maps container states onto the same set."""

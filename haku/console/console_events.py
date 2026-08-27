@@ -40,6 +40,7 @@ router = APIRouter(tags=["console-events"])
 OPERATOR_SESSION_EXPIRED_CLOSE_CODE = 4001
 
 
+# TODO: maybe this should be a bool (`connected: bool`) rather than a two-member enum.
 class ConnectionStatus(StrEnum):
     CONNECTED = "connected"
     DISCONNECTED = "disconnected"

@@ -31,6 +31,9 @@ from haku.console.mcp_guidance import SERVER_INSTRUCTIONS
 
 class HistorySender(StrEnum):
     OPERATOR = "operator"
+    # Provenance only: the message came from the harness/console side of the recorded
+    # conversation. It does NOT mean the message went out under the provider LLM API's
+    # `assistant` role — rendered history rides inside the system prompt.
     ASSISTANT = "assistant"
 
 

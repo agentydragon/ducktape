@@ -511,6 +511,8 @@ async def disconnect_provider_connection(
 ) -> ProviderUnconnected:
     operator_id = actor.operator_id
     status = await store.disconnect(connection=connection, operator_id=operator_id)
+    # Maybe later: separate operator-connected / operator-disconnected event kinds instead
+    # of one event carrying a status field.
     await event_hub.broadcast(
         operator_id, [OperatorConnectionChangedEvent(connection=connection, status=ConnectionStatus.DISCONNECTED)]
     )
