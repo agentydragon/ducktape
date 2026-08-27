@@ -315,7 +315,7 @@ resources:
   - paperless/cache/flux-kustomization.yaml
   - paperless/app/flux-kustomization.yaml
 
-  # --- retired activitywatch ---
+  # --- activitywatch ---
   - x/activitywatch/flux-kustomization.yaml
 
   # --- grocy ---
