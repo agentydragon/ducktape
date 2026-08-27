@@ -91,7 +91,8 @@ let
       # NixOS uses systemd-resolved in stub mode, so /etc/resolv.conf has
       # nameserver 127.0.0.53. Point kubelet at the real upstream resolv.conf
       # so all pods (including dnsPolicy:Default like CoreDNS) get real
-      # upstreams instead of the stub. See debug/coredns-loop-nixos.md.
+      # upstreams instead of the stub (else CoreDNS forwards to itself and
+      # crash-loops; incident details on the kubelet restartTriggers below).
       resolvConf = "/run/systemd/resolve/resolv.conf";
     }
   );
