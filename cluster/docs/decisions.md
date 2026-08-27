@@ -76,33 +76,28 @@ The `lifecycle { ignore_changes = [disk] }` rule on the wyrm2 VM is back since
 state would remap live disks. Deliberately detach them, then delete the rule so the
 declared `disk` blocks become authoritative again.
 
-## Cilium Gateway API `Programmed=False`
+## Public Exposure: hostNetwork Gateway, No LB/VIP
 
-Upstream bug [cilium/cilium#42786](https://github.com/cilium/cilium/issues/42786):
-hostNetwork mode leaves the Gateway status as `Programmed=False` /
-`AddressNotAssigned`, even when Cilium has generated the `CiliumEnvoyConfig`,
-Envoy listeners are present on the selected nodes, and routes work — traffic
-flows through the hostNetwork Envoy listeners. Fixed upstream by
-[cilium/cilium#46350](https://github.com/cilium/cilium/pull/46350) (merged
-2026-06-22, backported to the 1.18/1.19 branches); the pinned Cilium 1.19.2
-(released 2026-03-23) predates the fix, so the status anomaly persists here
-until a Cilium upgrade.
+**Decision**: the public `cluster-gateway` runs Cilium Gateway API in
+`gatewayAPI.hostNetwork.enabled` mode — Envoy binds 80/443 directly on the OVH
+nodes, and Route 53 wildcard/apex records point at those node IPs. There is no
+provider `LoadBalancer`/VIP. Setting `Gateway.spec.addresses` to static node
+IPs is not a substitute for one: it would not add failover or change internet
+routing.
 
-**Decision**: keep the hostNetwork Gateway plus Route 53 wildcard/apex records
-pointing directly at the public OVH Kubernetes node IPs. Do not alert solely on
-`Programmed=False` for `gateway-system/cluster-gateway`; use blackbox probes
-against the public node IPs and Cilium/Envoy programming signals instead.
-Setting `Gateway.spec.addresses` to static OVH node IPs is not a real
-replacement for a routed VIP/LB; it may help status only if Cilium supports
-that shape, but it would not add failover or change internet routing.
+(Historical: upstream
+[cilium/cilium#42786](https://github.com/cilium/cilium/issues/42786) left
+hostNetwork Gateways reporting `Programmed=False`/`AddressNotAssigned` while
+traffic worked, so Gateway status was suppressed from alerting for months;
+fixed by [cilium/cilium#46350](https://github.com/cilium/cilium/pull/46350),
+picked up here with the 1.19.6 upgrade (#4912) — Gateway status is trustworthy
+again.)
 
-Revisit on the Cilium upgrade that picks up the #46350 fix (the
-status-suppression half of the decision stops being needed), or if we introduce
-a normal external exposure layer. The latter stays attractive independent of
-the status bug: with Route 53 pointing directly at node IPs, a downed node's
-share of packets is simply lost until the record set is edited — the current
-hostNetwork shape has no failover and cannot provide it. More normal Cilium
-exposure models, if we decide to leave hostNetwork mode:
+Revisit if we introduce a normal external exposure layer: with Route 53
+pointing directly at node IPs, a downed node's share of packets is simply lost
+until the record set is edited — the hostNetwork shape has no failover and
+cannot provide it. More normal Cilium exposure models, if we decide to leave
+hostNetwork mode:
 
 1. Provider-managed load balancer: public OVH LB IP -> Kubernetes
    `LoadBalancer`/`NodePort` Service -> Cilium service handling -> Envoy ->
