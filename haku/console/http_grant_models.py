@@ -29,6 +29,10 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, PlainSerialize
 
 from haku.console.grant_principal import AgentGrantPrincipal, GrantPrincipal
 
+# One spelling for the inert credential-handle slug, shared with the deploy-config registry
+# (`http_decide_config.EgressCredentialEntry.handle`) that grants redeem from.
+CREDENTIAL_HANDLE_PATTERN = r"^[a-z][a-z0-9-]*$"
+
 
 class HttpGrantStatus(StrEnum):
     ACTIVE = "active"
@@ -118,7 +122,7 @@ class HttpGrantSpec(BaseModel):
     credential_handle: str | None = Field(
         default=None,
         max_length=64,
-        pattern=r"^[a-z][a-z0-9-]*$",
+        pattern=CREDENTIAL_HANDLE_PATTERN,
         description=(
             "Console-owned egress credential this grant redeems at its origin, named by its "
             "deploy-config handle (`egress_decide.credentials`). The sandbox holds only the "

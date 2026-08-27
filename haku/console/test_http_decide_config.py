@@ -40,7 +40,7 @@ def test_egress_decide_config_requires_distinct_env_references() -> None:
             proxy_token_env_var="EGRESS_TOKEN",
             fence_credentials=[EgressFenceCredentialEntry(agent_id=_AGENT, token_env_var="EGRESS_TOKEN")],
         )
-    with pytest.raises(ValueError, match="distinct"):
+    with pytest.raises(ValueError, match="identity secrets"):
         EgressDecideConfig(
             proxy_token_env_var="EGRESS_TOKEN", credentials=[_credential_entry(value_env_var="EGRESS_TOKEN")]
         )
@@ -95,6 +95,30 @@ def test_load_egress_decide_reads_env_references_and_fails_loud(monkeypatch: pyt
     (credential,) = loaded.fence_credentials
     assert credential.agent_id == _AGENT
     assert credential.token.get_secret_value() == _FENCE
+
+
+def test_second_presentation_shares_the_value_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One credential, two presentations: two entries over one env reference, each with its own
+    handle, placeholder, and match headers."""
+    config = EgressDecideConfig(
+        proxy_token_env_var="EGRESS_PROXY_TOKEN",
+        credentials=[
+            _credential_entry(),
+            _credential_entry(
+                handle="github-bot-api-key",
+                placeholder="github-api-key-placeholder",
+                match_headers=frozenset({"x-api-key"}),
+            ),
+        ],
+    )
+    monkeypatch.setenv("EGRESS_PROXY_TOKEN", _PROXY_TOKEN)
+    monkeypatch.setenv("EGRESS_CREDENTIAL_GITHUB_BOT", "ghp-real-value")
+
+    bearer, api_key = load_egress_decide(config).credentials
+
+    assert bearer.value.get_secret_value() == api_key.value.get_secret_value() == "ghp-real-value"
+    assert (bearer.placeholder, api_key.placeholder) == ("github-token-placeholder", "github-api-key-placeholder")
+    assert api_key.match_headers == frozenset({"x-api-key"})
 
 
 def test_load_egress_credentials_reads_env_references_and_fails_loud(monkeypatch: pytest.MonkeyPatch) -> None:
