@@ -46,7 +46,7 @@ from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import (
     Agent,
     Conversation,
-    ConversationEvent,
+    ConversationEventRow,
     ConversationItem,
     ConversationTurn,
     Session,
@@ -801,9 +801,9 @@ async def _frames_behind(sessions, item_id) -> tuple[int | None, int | None]:
     async with sessions() as db:
         rows = (
             await db.scalars(
-                select(ConversationEvent)
-                .where(ConversationEvent.item_id == item_id)
-                .order_by(ConversationEvent.event_seq)
+                select(ConversationEventRow)
+                .where(ConversationEventRow.item_id == item_id)
+                .order_by(ConversationEventRow.event_seq)
             )
         ).all()
     firsts = [row.source_first_frame_seq for row in rows if row.source_first_frame_seq is not None]

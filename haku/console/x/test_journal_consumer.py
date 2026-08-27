@@ -26,7 +26,7 @@ from haku.console.chat_models import (
     ToolOutcome,
     TurnOutcome,
 )
-from haku.console.database_schema import ConversationEvent, ConversationTurn, Session, SessionFrame, SubmittedPrompt
+from haku.console.database_schema import ConversationEventRow, ConversationTurn, Session, SessionFrame, SubmittedPrompt
 from haku.console.x import prompt_inbox
 from haku.console.x.conftest import session_items
 from haku.console.x.journal_consumer import JournalConsumer, JournalViolationError
@@ -107,12 +107,12 @@ async def _submit(
         )
 
 
-async def _events(sessions: async_sessionmaker[AsyncSession], conversation_id: UUID) -> list[ConversationEvent]:
+async def _events(sessions: async_sessionmaker[AsyncSession], conversation_id: UUID) -> list[ConversationEventRow]:
     async with sessions() as db:
         rows = await db.scalars(
-            select(ConversationEvent)
-            .where(ConversationEvent.conversation_id == conversation_id)
-            .order_by(ConversationEvent.event_seq)
+            select(ConversationEventRow)
+            .where(ConversationEventRow.conversation_id == conversation_id)
+            .order_by(ConversationEventRow.event_seq)
         )
         return list(rows.all())
 

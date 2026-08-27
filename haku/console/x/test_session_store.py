@@ -45,7 +45,7 @@ from haku.console.chat_models import (
 from haku.console.conversation_read_access import ConversationAccessDeniedError, ProfileScopedReads, UnrestrictedReads
 from haku.console.database_schema import (
     Conversation,
-    ConversationEvent,
+    ConversationEventRow,
     ConversationItem,
     ConversationPrompt,
     ConversationTurn,
@@ -1562,19 +1562,19 @@ async def _items(migrated_sessions, session_id: UUID) -> list[UUID]:
         )
 
 
-async def item_events(migrated_sessions, session_id: UUID) -> list[ConversationEvent]:
+async def item_events(migrated_sessions, session_id: UUID) -> list[ConversationEventRow]:
     """Every row of *session_id*'s stream that is about an item, oldest first."""
     async with migrated_sessions() as db:
         return list(
             await db.scalars(
-                select(ConversationEvent)
-                .where(ConversationEvent.session_id == session_id, ConversationEvent.item_id.isnot(None))
-                .order_by(ConversationEvent.event_seq)
+                select(ConversationEventRow)
+                .where(ConversationEventRow.session_id == session_id, ConversationEventRow.item_id.isnot(None))
+                .order_by(ConversationEventRow.event_seq)
             )
         )
 
 
-async def authored_events(migrated_sessions, session_id: UUID) -> list[ConversationEvent]:
+async def authored_events(migrated_sessions, session_id: UUID) -> list[ConversationEventRow]:
     """Every row of *session_id*'s stream that is about the session rather than about an item.
 
     The authored arm alone is not the distinction any more: a prompt is authored too, because it is
@@ -1583,16 +1583,16 @@ async def authored_events(migrated_sessions, session_id: UUID) -> list[Conversat
     async with migrated_sessions() as db:
         return list(
             await db.scalars(
-                select(ConversationEvent)
-                .where(ConversationEvent.session_id == session_id, ConversationEvent.item_id.is_(None))
-                .order_by(ConversationEvent.event_seq)
+                select(ConversationEventRow)
+                .where(ConversationEventRow.session_id == session_id, ConversationEventRow.item_id.is_(None))
+                .order_by(ConversationEventRow.event_seq)
             )
         )
 
 
 async def authored_events_of_kind(
     migrated_sessions, session_id: UUID, kind: AuthoredEventKind
-) -> list[ConversationEvent]:
+) -> list[ConversationEventRow]:
     return [event for event in await authored_events(migrated_sessions, session_id) if event.kind == kind]
 
 
@@ -1961,9 +1961,9 @@ async def test_a_frames_events_land_as_rows_with_the_cursor_that_says_they_did(
         rows = list(
             (
                 await db.scalars(
-                    select(ConversationEvent)
-                    .where(ConversationEvent.session_id == session_id)
-                    .order_by(ConversationEvent.event_seq)
+                    select(ConversationEventRow)
+                    .where(ConversationEventRow.session_id == session_id)
+                    .order_by(ConversationEventRow.event_seq)
                 )
             ).all()
         )
@@ -2008,7 +2008,7 @@ async def test_an_event_row_cannot_be_written_without_a_provenance_union(
     item_id = one(await _items(migrated_sessions, view.session_id))
     seq = itertools.count(1_000)
 
-    def event(**overrides) -> ConversationEvent:
+    def event(**overrides) -> ConversationEventRow:
         values = {
             "conversation_id": conversation_id,
             "event_seq": next(seq),
@@ -2022,7 +2022,7 @@ async def test_an_event_row_cannot_be_written_without_a_provenance_union(
             "body": {"item_type": "reasoning"},
             "created_at": datetime.now(UTC),
         }
-        return ConversationEvent(**(values | overrides))
+        return ConversationEventRow(**(values | overrides))
 
     for unwritable in (
         event(source_first_frame_seq=None, source_last_frame_seq=None),

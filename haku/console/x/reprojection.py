@@ -51,7 +51,7 @@ from haku.console.chat_models import (
 )
 from haku.console.database_schema import (
     Conversation,
-    ConversationEvent,
+    ConversationEventRow,
     ConversationItem,
     ConversationTurn,
     Session,
@@ -242,14 +242,14 @@ async def check_item_text(db: AsyncSession, session_id: UUID) -> tuple[ItemTextM
     """
     folded = (
         select(
-            ConversationEvent.item_id.label("item_id"),
+            ConversationEventRow.item_id.label("item_id"),
             func.string_agg(
-                ConversationEvent.body["text"].astext,
-                aggregate_order_by(literal_column("''"), ConversationEvent.event_seq),
+                ConversationEventRow.body["text"].astext,
+                aggregate_order_by(literal_column("''"), ConversationEventRow.event_seq),
             ).label("text"),
         )
-        .where(ConversationEvent.kind == ConversationEventKind.ITEM_SEGMENT)
-        .group_by(ConversationEvent.item_id)
+        .where(ConversationEventRow.kind == ConversationEventKind.ITEM_SEGMENT)
+        .group_by(ConversationEventRow.item_id)
         .subquery()
     )
     rows = await db.execute(
@@ -280,11 +280,12 @@ async def _check_turn(
     # against the fold would report drift on every turn.
     rows = (
         await db.scalars(
-            select(ConversationEvent)
+            select(ConversationEventRow)
             .where(
-                ConversationEvent.turn_id == turn.turn_id, ConversationEvent.provenance == EventProvenance.FRAME_RANGE
+                ConversationEventRow.turn_id == turn.turn_id,
+                ConversationEventRow.provenance == EventProvenance.FRAME_RANGE,
             )
-            .order_by(ConversationEvent.event_seq)
+            .order_by(ConversationEventRow.event_seq)
         )
     ).all()
     projected = _expected(frames, runtime_kind=runtime_kind, runtimes=runtimes)
@@ -304,7 +305,7 @@ def _outcome(
     projected: dict[int, tuple[ProjectedRow, ...]],
     *,
     within: Sequence[int],
-    rows: Sequence[ConversationEvent],
+    rows: Sequence[ConversationEventRow],
     cursor: int | None,
 ) -> Outcome:
     """One turn's outcome: the skip first, because an era is not a disagreement."""
@@ -312,7 +313,7 @@ def _outcome(
         return Skipped(reason=SkipReason.CURSOR_NEVER_REACHED)
     assert cursor is not None
     findings: list[Finding] = []
-    stored: defaultdict[int, list[ConversationEvent]] = defaultdict(list)
+    stored: defaultdict[int, list[ConversationEventRow]] = defaultdict(list)
     for row in rows:
         # `ck_conversation_event_provenance_frames` puts a range on exactly the arm this selects.
         assert row.source_first_frame_seq is not None
@@ -337,7 +338,9 @@ def _outcome(
     return Drifted(findings=tuple(findings)) if findings else Agrees()
 
 
-def _aligned(frame_seq: int, projected: Sequence[ProjectedRow], stored: Sequence[ConversationEvent]) -> list[Finding]:
+def _aligned(
+    frame_seq: int, projected: Sequence[ProjectedRow], stored: Sequence[ConversationEventRow]
+) -> list[Finding]:
     """One frame's rows against one frame's projection, in order.
 
     Position is the alignment, because both sequences come out of the same fold over the same
@@ -352,7 +355,7 @@ def _aligned(frame_seq: int, projected: Sequence[ProjectedRow], stored: Sequence
     ]
 
 
-def _differences(projected: ProjectedRow, stored: ConversationEvent) -> list[FieldDifference]:
+def _differences(projected: ProjectedRow, stored: ConversationEventRow) -> list[FieldDifference]:
     """The columns a re-projection can speak for, compared.
 
     The event carries the exact range it was read from. Comparing both ends matters for composed
@@ -432,7 +435,7 @@ async def _turn_frames(db: AsyncSession, turn: ConversationTurn, *, ends_before:
     return (await db.scalars(query)).all()
 
 
-def _kinds(rows: Sequence[ProjectedRow] | Sequence[ConversationEvent]) -> tuple[StoredEventKind | UnknownValue, ...]:
+def _kinds(rows: Sequence[ProjectedRow] | Sequence[ConversationEventRow]) -> tuple[StoredEventKind | UnknownValue, ...]:
     """A row of a kind this release has no words for is reported like any other difference.
 
     It is genuine drift from where this check stands: the fold here cannot have produced it, so

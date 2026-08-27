@@ -34,7 +34,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.database_schema import ConversationEvent
+from haku.console.database_schema import ConversationEventRow
 from haku.console.x import session_events
 
 # How many rows one read takes. A ceiling on the work a woken subscriber does in one pass rather
@@ -129,12 +129,12 @@ class ConversationStream:
         async with self._sessions() as db:
             rows = (
                 await db.scalars(
-                    select(ConversationEvent)
+                    select(ConversationEventRow)
                     .where(
-                        ConversationEvent.conversation_id == conversation_id,
-                        ConversationEvent.event_seq > after.event_seq,
+                        ConversationEventRow.conversation_id == conversation_id,
+                        ConversationEventRow.event_seq > after.event_seq,
                     )
-                    .order_by(ConversationEvent.event_seq)
+                    .order_by(ConversationEventRow.event_seq)
                     # One past the limit, so "there is more" is read rather than guessed from a
                     # full page — which would be wrong exactly when the stream ends on one.
                     .limit(limit + 1)
@@ -158,12 +158,12 @@ async def stream_head(db: AsyncSession, conversation_id: UUID) -> StreamPosition
     the subscriber rather than reaching neither.
     """
     highest: int | None = await db.scalar(
-        select(func.max(ConversationEvent.event_seq)).where(ConversationEvent.conversation_id == conversation_id)
+        select(func.max(ConversationEventRow.event_seq)).where(ConversationEventRow.conversation_id == conversation_id)
     )
     return StreamPosition(event_seq=highest or START.event_seq)
 
 
-def _streamed(row: ConversationEvent) -> StreamedEvent:
+def _streamed(row: ConversationEventRow) -> StreamedEvent:
     return StreamedEvent(
         position=StreamPosition(event_seq=row.event_seq),
         session_id=row.session_id,

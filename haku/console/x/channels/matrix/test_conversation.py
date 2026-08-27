@@ -26,7 +26,7 @@ from haku.console.chat_models import (
     RuntimeKind,
 )
 from haku.console.conftest import console_sessions
-from haku.console.database_schema import Conversation, ConversationEvent, ConversationItem, Session
+from haku.console.database_schema import Conversation, ConversationEventRow, ConversationItem, Session
 from haku.console.x import session_events
 from haku.console.x.channels.matrix.client import InboundMessage, UnmappableEvent
 from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM
@@ -520,9 +520,9 @@ async def test_a_batch_records_the_room_events_it_was_folded_from(
         assert prompt is not None
         assert (prompt.item_type, prompt.item_text) == (ItemType.PROMPT, "first\nsecond")
         asked = await db.scalar(
-            select(ConversationEvent).where(
-                ConversationEvent.item_id == offered.item_id,
-                ConversationEvent.kind == ConversationEventKind.ITEM_STARTED,
+            select(ConversationEventRow).where(
+                ConversationEventRow.item_id == offered.item_id,
+                ConversationEventRow.kind == ConversationEventKind.ITEM_STARTED,
             )
         )
     assert asked is not None

@@ -165,7 +165,7 @@ them.
 
 ## 2. The tables
 
-The schema itself lives in <../database_schema.py> — `Conversation`, `ConversationEvent`,
+The schema itself lives in <../database_schema.py> — `Conversation`, `ConversationEventRow`,
 `ConversationItem`, `ConversationTurn`, `ConversationPrompt`, `ChatAttachment`, `ChannelCursor`,
 `Session`, `SessionFrame`, and the Matrix channel's own tables — with every column, constraint and
 index documented where it is declared. The stored event kinds and their provenance arms are

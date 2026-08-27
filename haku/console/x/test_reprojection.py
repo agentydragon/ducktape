@@ -15,7 +15,7 @@ from more_itertools import one
 from sqlalchemy import delete, update
 
 from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, ConversationEventKind, FrameDirection, ItemType
-from haku.console.database_schema import ConversationEvent, ConversationItem, Session
+from haku.console.database_schema import ConversationEventRow, ConversationItem, Session
 from haku.console.x import reprojection
 from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.claude_code.testing.wire import content_block_stop, input_json_delta, tool_use_start
@@ -139,11 +139,11 @@ async def test_a_row_whose_body_was_edited_is_reported_against_its_frame(
     )
     async with migrated_sessions() as db:
         await db.execute(
-            update(ConversationEvent)
+            update(ConversationEventRow)
             .where(
-                ConversationEvent.session_id == session_id,
-                ConversationEvent.kind == ConversationEventKind.ITEM_STARTED,
-                ConversationEvent.body["item_type"].astext == "tool_call",
+                ConversationEventRow.session_id == session_id,
+                ConversationEventRow.kind == ConversationEventKind.ITEM_STARTED,
+                ConversationEventRow.body["item_type"].astext == "tool_call",
             )
             .values(body={"item_type": "tool_call", "call_id": "toolu_1", "tool_name": "Write", "arguments": {}})
         )
@@ -174,10 +174,10 @@ async def test_a_row_that_is_gone_is_a_count_mismatch_rather_than_a_silent_pass(
     )
     async with migrated_sessions() as db:
         await db.execute(
-            delete(ConversationEvent).where(
-                ConversationEvent.session_id == session_id,
-                ConversationEvent.kind == ConversationEventKind.ITEM_STARTED,
-                ConversationEvent.body["item_type"].astext == "tool_call",
+            delete(ConversationEventRow).where(
+                ConversationEventRow.session_id == session_id,
+                ConversationEventRow.kind == ConversationEventKind.ITEM_STARTED,
+                ConversationEventRow.body["item_type"].astext == "tool_call",
             )
         )
         await db.commit()
@@ -202,7 +202,7 @@ async def test_a_turn_with_frames_and_no_rows_is_drift(chat_store, migrated_sess
         chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
     )
     async with migrated_sessions() as db:
-        await db.execute(delete(ConversationEvent).where(ConversationEvent.session_id == session_id))
+        await db.execute(delete(ConversationEventRow).where(ConversationEventRow.session_id == session_id))
         await db.commit()
         report = await reprojection.check_session(db, session_id, runtimes=RUNTIMES)
 

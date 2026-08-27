@@ -46,13 +46,10 @@ from haku.console.conversation_read_access import (
     ConversationReadScope,
     ProfileScopedReads,
 )
-
-# The ORM row and the neutral vocabulary's union share a name; the row is aliased so both can
-# be named here, as `session_events` does.
 from haku.console.database_schema import (
     ChatAttachment,
     Conversation,
-    ConversationEvent as ConversationEventRow,
+    ConversationEventRow,
     ConversationItem,
     ConversationPrompt,
     ConversationTurn,

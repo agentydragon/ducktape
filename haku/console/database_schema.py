@@ -1309,7 +1309,7 @@ class Session(Base):
         ).label("status")
 
 
-class ConversationEvent(Base):
+class ConversationEventRow(Base):
     """The record. Every fact about a conversation is written here, once.
 
     Everything else in this file's chat half is either derived from these rows or belongs to a

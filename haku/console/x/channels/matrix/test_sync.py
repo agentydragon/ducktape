@@ -19,7 +19,7 @@ from pydantic import SecretStr
 from sqlalchemy import select
 
 from haku.console.chat_models import AuthoredEventKind, MatrixOrigin, PromptRejection, StoredEventKind
-from haku.console.database_schema import ConversationEvent
+from haku.console.database_schema import ConversationEventRow
 from haku.console.x.channels.matrix.client import (
     ConversationEventSource,
     EventTag,
@@ -219,11 +219,13 @@ async def recorded(sessions) -> list[tuple[StoredEventKind, dict[str, Any]]]:
     async with sessions() as db:
         rows = (
             await db.scalars(
-                select(ConversationEvent)
+                select(ConversationEventRow)
                 .where(
-                    ConversationEvent.kind.in_((AuthoredEventKind.PROMPT_REJECTED, AuthoredEventKind.UNREADABLE_INPUT))
+                    ConversationEventRow.kind.in_(
+                        (AuthoredEventKind.PROMPT_REJECTED, AuthoredEventKind.UNREADABLE_INPUT)
+                    )
                 )
-                .order_by(ConversationEvent.event_seq)
+                .order_by(ConversationEventRow.event_seq)
             )
         ).all()
     return [(row.kind, row.body) for row in rows]
