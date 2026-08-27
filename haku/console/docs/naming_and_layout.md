@@ -328,6 +328,11 @@ Directionality notes, verified against `devel`:
 - **the two host-side daemons carry zero console Python** by language (Go, Rust); their only coupling
   is the HTTP surface, and `haku/console/hostexecd/` is the console-side coordinator for the Rust
   `haku/hostexec/hostexecd/` — one concept, one name, two locations.
+- **one binary, one config.** A binary's config surface mirrors its entitlement column the way its
+  BUILD deps do: `ConsoleConfigFile` is the console server's alone; the indexer parses only its
+  narrow `IndexerConfigFile` slice of the shared YAML (§6 C13, the first instance); the egress proxy
+  is env-only by design; the runner takes its launch config over the bridge. No binary parses
+  another's config model.
 
 ## 6. Burn-down strategy
 
