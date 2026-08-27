@@ -47,12 +47,11 @@ provider "litellm" {
 locals {
   # Model names must match generated model_name entries in
   # cluster/k8s/litellm/app/proxy-config.yaml. During the #4823 staged rename each
-  # renamed lane lists its legacy names first, then its lane-prefixed names (the
-  # derivations in cluster/k8s/litellm/app/model_rosters.py); a lane's legacy rows
-  # drop once its consumers move. Spelled out rather than built with a
-  # for-expression so the names are greppable and so the test can compare
-  # structurally -- HCL2 returns a for-expression as unevaluated source text, not a
-  # list.
+  # list carries the legacy names first, then the {provider}-{shape}-{model} names
+  # (derivations in cluster/k8s/litellm/app/model_rosters.py); the legacy rows drop
+  # once their consumers move. Spelled out rather than built with a for-expression
+  # so the names are greppable and so the test can compare structurally -- HCL2
+  # returns a for-expression as unevaluated source text, not a list.
   #
   # The Codex-subscription models on LiteLLM's Responses surface, for Codex CLI clients
   # (haku oai zone, codex-pod, agent-workspaces-codex) -- served by CLIProxyAPI; see
@@ -65,15 +64,22 @@ locals {
     "gpt-5.6-terra-chatgpt",
     "gpt-5.6-luna-chatgpt",
     "gpt-5.3-codex-spark-chatgpt",
-    "chatgpt-responses-gpt-5.4",
-    "chatgpt-responses-gpt-5.5",
-    "chatgpt-responses-gpt-5.6-sol",
-    "chatgpt-responses-gpt-5.6-terra",
-    "chatgpt-responses-gpt-5.6-luna",
-    "chatgpt-responses-gpt-5.3-codex-spark",
+    "chatgpt/responses/gpt-5.4",
+    "chatgpt/responses/gpt-5.5",
+    "chatgpt/responses/gpt-5.6-sol",
+    "chatgpt/responses/gpt-5.6-terra",
+    "chatgpt/responses/gpt-5.6-luna",
+    "chatgpt/responses/gpt-5.3-codex-spark",
   ]
-  # Tana-UI models fronted through tana-litellm (_TANA_MODELS in test_litellm_config.py).
-  tana_client_models = ["tana-claude-sonnet-4-6", "tana-claude-opus-4-6", "tana-claude-haiku-4-5"]
+  # Tana-UI models fronted through tana-litellm (TANA_MODELS in model_rosters.py).
+  tana_client_models = [
+    "tana-claude-sonnet-4-6",
+    "tana-claude-opus-4-6",
+    "tana-claude-haiku-4-5",
+    "tana/messages/claude-sonnet-4-6",
+    "tana/messages/claude-opus-4-6",
+    "tana/messages/claude-haiku-4-5",
+  ]
   # Codex-subscription models on the Anthropic Messages surface, fronted through
   # CLIProxyAPI (_cliproxy_messages_entries) -- Claude Code clients.
   codex_client_models = [
@@ -83,12 +89,12 @@ locals {
     "codex-gpt-5.6-terra",
     "codex-gpt-5.6-luna",
     "codex-gpt-5.3-codex-spark",
-    "chatgpt-messages-gpt-5.4",
-    "chatgpt-messages-gpt-5.5",
-    "chatgpt-messages-gpt-5.6-sol",
-    "chatgpt-messages-gpt-5.6-terra",
-    "chatgpt-messages-gpt-5.6-luna",
-    "chatgpt-messages-gpt-5.3-codex-spark",
+    "chatgpt/messages/gpt-5.4",
+    "chatgpt/messages/gpt-5.5",
+    "chatgpt/messages/gpt-5.6-sol",
+    "chatgpt/messages/gpt-5.6-terra",
+    "chatgpt/messages/gpt-5.6-luna",
+    "chatgpt/messages/gpt-5.3-codex-spark",
   ]
   # Gemini embeddings (GEMINI_EMBEDDING_MODELS in test_litellm_config.py). Granted to
   # agents whose egress cannot reach api.openai.com: the main openclaw gateway holds
@@ -98,8 +104,8 @@ locals {
   embedding_client_models = [
     "gemini-embedding-2",
     "gemini-embedding-001",
-    "google-gemini-embedding-2",
-    "google-gemini-embedding-001",
+    "google/embeddings/gemini-embedding-2",
+    "google/embeddings/gemini-embedding-001",
   ]
   # Google Gemini models (GEMINI_MODELS in model_rosters.py) fronted through the
   # `gemini/` provider. Current generation only -- see that module for why the
@@ -110,9 +116,9 @@ locals {
     "gemini-3.1-pro-preview",
     "gemini-3.7-flash",
     "gemini-3.5-flash-lite",
-    "google-gemini-3.1-pro-preview",
-    "google-gemini-3.7-flash",
-    "google-gemini-3.5-flash-lite",
+    "google/chat/gemini-3.1-pro-preview",
+    "google/chat/gemini-3.7-flash",
+    "google/chat/gemini-3.5-flash-lite",
   ]
 }
 
