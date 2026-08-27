@@ -40,6 +40,13 @@
 
 ## Infrastructure
 
+- Decide the fate of the agent image push. The `props-agents` job in
+  <.github/workflows/push-images.yml> is disabled: it failed on every devel push against the
+  down registry. Either props comes back and the job is re-enabled (delete the `false &&`),
+  or it is not coming back and the job, `//props/agents:push_images`, and the
+  `PROPS_REGISTRY_*` CI secrets go with it. Leaving it disabled indefinitely is the one
+  outcome to avoid — a job that never runs stops being maintained but still looks live.
+
 - Sane story for applying migrations without full `db recreate` (direct `alembic upgrade head`)
 - Bulk specimen sync in `props db sync` from Bazel bundle artifacts (currently one-by-one via `sync-specimen`)
 - GLM per-model pricing. `cluster/k8s/props/app/config.toml` assigns all 7 z.ai GLM models

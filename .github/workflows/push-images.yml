@@ -235,7 +235,18 @@ jobs:
   # failures — only a props test failure blocks it.
   props-agents:
     name: Push props agent images
-    if: github.ref_name == 'devel'
+    # DISABLED(added 2026-08-27): props is deliberately down, so `Push agent images` fails
+    # against its unreachable registry on every devel push and reds the run — the publish
+    # half of CI has been permanently red on a service nobody is waiting for. The job is
+    # kept rather than deleted because whether props comes back is an open question, and
+    # the push scheme here (critic variants, digest+tag) is not obvious to reconstruct.
+    #
+    # Re-enable by deleting `false &&`. Delete the job outright if props is not coming back.
+    #
+    # This does NOT quiet props in CI generally: bazel-ci runs `//...` on devel, so
+    # //props/... still builds and tests there, and //props/llm_proxy:test_budget currently
+    # times out. That is a separate failure with a separate fix.
+    if: false && github.ref_name == 'devel'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
