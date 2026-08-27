@@ -32,7 +32,7 @@ import asyncio
 import contextlib
 import datetime
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from uuid import UUID
 
@@ -385,7 +385,7 @@ class MatrixSyncService:
 
         self.pacer.send(post)
 
-    def _serviced[T: (InboundMessage, UnmappableEvent)](self, events: tuple[T, ...], live_room: str | None) -> list[T]:
+    def _serviced[T: (InboundMessage, UnmappableEvent)](self, events: Sequence[T], live_room: str | None) -> list[T]:
         """The events of a batch that are ours to act on — read or report.
 
         Haku's own posts are already gone: `MatrixClient._read` drops everything the bot sent.
@@ -441,7 +441,7 @@ class MatrixSyncService:
         await self._store.advance(self._config.user_id, result.next_batch, recorded)
 
     async def _record_own_copy(
-        self, projected: tuple[ProjectedEvent, ...], redactions: tuple[Redaction, ...], live_room: str | None
+        self, projected: Sequence[ProjectedEvent], redactions: Sequence[Redaction], live_room: str | None
     ) -> None:
         """Keep what this batch showed of the room's own copy, and repair what it revealed.
 
@@ -493,7 +493,7 @@ class MatrixSyncService:
             logger.info("Matrix: %d re-delivered event(s) the record already carries", len(carried))
         return [message for message in messages if message.event_id not in carried]
 
-    async def _live_room(self, token: str, messages: tuple[InboundMessage, ...]) -> str | None:
+    async def _live_room(self, token: str, messages: Sequence[InboundMessage]) -> str | None:
         """The room being serviced, adopting one from traffic when nothing is bound.
 
         Membership already required an operator invite, so a room Haku is joined to and being
