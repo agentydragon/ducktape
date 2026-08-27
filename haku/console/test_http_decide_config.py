@@ -207,7 +207,8 @@ def test_github_spike_standing_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """The #4943 GitHub spike shape: Agent haku reaches api.github.com + github.com under standing
     policy, redeeming the bot credential at both — Bearer on the API, git-over-HTTPS Basic on
     github.com (one registry entry: both are Authorization presentations of one placeholder).
-    Live deployment wiring (env values, the real config.yaml section) lands with #4942."""
+    The deployed section lives in cluster/k8s/haku/console/config.yaml; its coherence with the
+    registry is asserted over the real file in test_deployment_config.py."""
     haku = UUID("8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2")
     config = EgressDecideConfig.model_validate(
         yaml.safe_load(

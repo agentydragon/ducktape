@@ -304,7 +304,9 @@ enumerate every Console destination; deferred until that set is pinned.
 
 The traffic **cutover** — repointing the Kyverno `inject-haku-egress-proxy` `HTTP_PROXY` from the
 port-8080 iron fence to `haku-egress-proxy.haku-console.svc:8888` — is the adoption step, gated on the
-first spike (#4943). Iron-fence retirement (which carries the shared CA out of
+first spike (#4943). The spike's routing variant is the `haku-egress-spike` SandboxTemplate
+(`../workspaces/app/sandboxtemplate-haku-egress-spike.yaml`); the operator procedure is
+<../../../../haku/egress/docs/github_spike.md>. Iron-fence retirement (which carries the shared CA out of
 `cluster/k8s/agents/haku-egress-proxy/`), minted per-claim fence credentials (one shared bearer today),
 and the embedded runner's `stream_large_bodies` + h2/gRPC handling for broad adoption (dind layer pulls
 OOM-killed the iron fence without the former; the sidecar is sized `1Gi` for the small-body spike until

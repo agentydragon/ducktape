@@ -42,7 +42,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from cluster.validation.kyverno.apply import apply_policy, apply_twice
+from cluster.validation.kyverno.apply import apply_policy, apply_twice, assert_not_mutated
 from util.bazel.runfiles import get_required_path
 
 # What every proxy-injection policy must inject. Split into the two halves it is
@@ -179,6 +179,47 @@ def test_injection_is_idempotent_under_reinvocation(reinvoked: dict) -> None:
         assert _dupes([m["name"] for m in container["volumeMounts"]]) == [], container["name"]
         assert _dupes([m["mountPath"] for m in container["volumeMounts"]]) == [], container["name"]
         assert _dupes([e["name"] for e in container["env"]]) == [], container["name"]
+
+
+def test_pod_carrying_its_own_wiring_is_left_alone(tmp_path: Path) -> None:
+    """A pod that already holds the policy's proxy wiring is skipped whole, env included.
+
+    Every rule preconditions on the thing it appends being absent — the volume rule on the CA
+    volume, the env-and-mount rules on the CA volumeMount — so a pod template that ships the
+    complete wiring itself gets no injection at all. That is what lets a template point its own
+    `HTTP_PROXY` at a different listener: env is last-entry-wins, so an appended fleet value would
+    otherwise override the template's. The #4943 egress-spike template
+    (cluster/k8s/haku/workspaces/app/sandboxtemplate-haku-egress-spike.yaml) routes through the
+    colocated Console proxy exactly this way.
+    """
+    resource = tmp_path / "pod.yaml"
+    resource.write_text(
+        textwrap.dedent("""
+            apiVersion: v1
+            kind: Pod
+            metadata:
+              name: self-wired-probe
+              namespace: haku-sandbox
+            spec:
+              containers:
+                - name: app
+                  image: curlimages/curl:latest
+                  env:
+                    - name: HTTP_PROXY
+                      value: http://haku-egress-proxy.haku-console.svc.cluster.local:8888
+                    - name: HTTPS_PROXY
+                      value: http://haku-egress-proxy.haku-console.svc.cluster.local:8888
+                  volumeMounts:
+                    - name: haku-egress-proxy-ca-cert
+                      mountPath: /egress-proxy-ca
+                      readOnly: true
+              volumes:
+                - name: haku-egress-proxy-ca-cert
+                  configMap:
+                    name: haku-egress-proxy-ca-cert
+            """)
+    )
+    assert_not_mutated(get_required_path("_main/cluster/k8s/kyverno/policies/inject-haku-egress-proxy.yaml"), resource)
 
 
 def _env(container: dict) -> dict[str, str]:

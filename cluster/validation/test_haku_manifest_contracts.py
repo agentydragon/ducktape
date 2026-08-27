@@ -151,6 +151,82 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     assert not any(name.startswith("HAKU_CONSOLE_CLAUDE_RUNTIME__") for name in env_names)
 
 
+def test_egress_spike_template_targets_the_colocated_listener(k8s_dir: Path) -> None:
+    """The #4943 spike box differs from the fleet fence in exactly one thing: which proxy.
+
+    The template dodges the fleet Kyverno injection by carrying the policy's own wiring — same CA
+    volume name, same mount — which is what every rule's precondition checks for (the skip itself
+    is pinned in kyverno/test_proxy_injection.py). This pins the relations that make that safe:
+    the carried wiring really is the policy's own (else injection resumes, and its appended env
+    wins last-entry-wins), everything but the proxy URL matches what the policy would inject
+    (else the spike measures a second variable), and the URL names the colocated listener that
+    the Service publishes and the force-proxy CCNP admits.
+    """
+    template = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-egress-spike.yaml").read_text())
+    assert template["metadata"]["namespace"] == "haku-sandbox"
+    # Unmanaged keeps the Agent Sandbox controller from stamping its own RFC1918 policy over the
+    # namespace fence, same as every other template here.
+    assert template["spec"]["networkPolicyManagement"] == "Unmanaged"
+    pod = template["spec"]["podTemplate"]["spec"]
+    assert pod["automountServiceAccountToken"] is False
+    container = one(pod["containers"])
+    env = {entry["name"]: entry["value"] for entry in container["env"]}
+
+    policy = yaml.safe_load((k8s_dir / "kyverno/policies/inject-haku-egress-proxy.yaml").read_text())
+    rules = {rule["name"]: rule for rule in policy["spec"]["rules"]}
+    injected_volume = one(yaml.safe_load(rules["add-proxy-volume"]["mutate"]["patchesJson6902"]))["value"]
+    container_foreach = one(rules["add-proxy-env-and-mount-containers"]["mutate"]["foreach"])
+    patches = yaml.safe_load(container_foreach["patchesJson6902"])
+    injected_env = {p["value"]["name"]: p["value"]["value"] for p in patches if p["path"].endswith("/env/-")}
+    injected_mount = one(p["value"] for p in patches if p["path"].endswith("/volumeMounts/-"))
+
+    template_volume = one(v for v in pod["volumes"] if v["name"] == injected_volume["name"])
+    assert template_volume["configMap"]["name"] == injected_volume["configMap"]["name"]
+    template_mount = one(m for m in container["volumeMounts"] if m["name"] == injected_volume["name"])
+    assert template_mount["mountPath"] == injected_mount["mountPath"]
+    assert f"name=='{injected_volume['name']}'" in one(container_foreach["preconditions"]["all"])["key"]
+
+    assert set(env) >= set(injected_env)
+    differing = {name for name in injected_env if env[name] != injected_env[name]}
+    assert differing == {"HTTP_PROXY", "HTTPS_PROXY"}
+    assert env["HTTP_PROXY"] == env["HTTPS_PROXY"]
+
+    service = yaml.safe_load((k8s_dir / "haku/console/egress-proxy-service.yaml").read_text())
+    port = one(service["spec"]["ports"])
+    listener = (
+        f"http://{service['metadata']['name']}.{service['metadata']['namespace']}.svc.cluster.local:{port['port']}"
+    )
+    assert env["HTTPS_PROXY"] == listener
+    ccnp = yaml.safe_load((k8s_dir / "agents/haku-egress-proxy/ccnp-haku-proxy-egress.yaml").read_text())
+    colocated_rule = one(
+        rule
+        for rule in ccnp["spec"]["egress"]
+        if any(
+            peer["matchLabels"].get("k8s:io.kubernetes.pod.namespace") == service["metadata"]["namespace"]
+            for peer in rule.get("toEndpoints", [])
+        )
+    )
+    peer_labels = one(colocated_rule["toEndpoints"])["matchLabels"]
+    assert peer_labels["k8s:app.kubernetes.io/name"] == service["spec"]["selector"]["app.kubernetes.io/name"]
+    assert one(one(colocated_rule["toPorts"])["ports"]) == {"port": str(port["port"]), "protocol": "TCP"}
+
+    # The positive spike path is admitted end to end: a standing entry for the fence credential's
+    # Agent covers both GitHub origins and names a credential whose placeholder the box holds.
+    config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())
+    egress = config["egress_decide"]
+    fence_agent = one(egress["fence_credentials"])["agent_id"]
+    registry = {entry["handle"]: entry for entry in egress["credentials"]}
+    covered = {
+        (origin["host"], origin["port"])
+        for entry in egress["standing_policies"]
+        if fence_agent in entry["agent_ids"]
+        and (handle := entry.get("credential_handle")) is not None
+        and registry[handle]["placeholder"] == env["GITHUB_TOKEN"]
+        for origin in entry["origins"]
+    }
+    assert {("api.github.com", 443), ("github.com", 443)} <= covered
+
+
 def test_harness_runtimes_share_capacity_but_not_agent_resources(k8s_dir: Path) -> None:
     """Claude and Codex share one namespace/image, but retain Agent-owned resources."""
     namespace = yaml.safe_load((k8s_dir / "haku/runtime-namespace/namespace.yaml").read_text())
