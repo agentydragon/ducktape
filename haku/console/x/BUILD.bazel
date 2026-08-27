@@ -108,7 +108,7 @@ py_library(
         "//haku/console:chat_models",
         "//haku/console:database_schema",
         "//haku/runtime/x/bridge:protocol",
-        "//util:sqlalchemy_types",
+        "//util:enum_vocab",
         "@pypi//sqlalchemy",
     ],
 )
@@ -132,7 +132,7 @@ py_library(
         ":conversation_events",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
-        "//util:sqlalchemy_types",
+        "//util:enum_vocab",
         "@pypi//pydantic",
     ],
 )
@@ -342,7 +342,7 @@ py_library(
     name = "session_notifications",
     srcs = ["session_notifications.py"],
     deps = [
-        "//util:sqlalchemy_types",
+        "//util:enum_vocab",
         "@pypi//asyncpg",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
@@ -432,7 +432,7 @@ py_test(
         ":session_notifications",
         "//:conftest",
         "//haku/console:conftest",
-        "//util:sqlalchemy_types",
+        "//util:enum_vocab",
         "@pypi//asyncpg",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
@@ -592,7 +592,7 @@ py_test(
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
-        "//util:sqlalchemy_types",
+        "//util:enum_vocab",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -610,7 +610,7 @@ py_test(
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
-        "//util:sqlalchemy_types",
+        "//util:enum_vocab",
         "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pytest_bazel",

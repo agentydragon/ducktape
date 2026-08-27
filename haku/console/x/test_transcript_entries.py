@@ -27,7 +27,7 @@ from haku.console.chat_models import (
 from haku.console.database_schema import ConversationEvent as ConversationEventRow
 from haku.console.x import conversation_records, session_events, transcript_entries
 from haku.console.x.conversation_events import FrameRange
-from util.sqlalchemy_types import UnknownValue
+from util.enum_vocab import UnknownValue
 
 CONVERSATION = UUID("00000000-0000-4000-8000-00000000c0de")
 SESSION = UUID("00000000-0000-4000-8000-0000000005e5")

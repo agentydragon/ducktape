@@ -94,16 +94,35 @@ py_library(
 )
 
 py_library(
+    name = "enum_vocab",
+    srcs = ["enum_vocab.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_enum_vocab",
+    srcs = ["test_enum_vocab.py"],
+    deps = [
+        ":enum_vocab",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "sqlalchemy_types",
     srcs = ["sqlalchemy_types.py"],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//sqlalchemy"],
+    deps = [
+        ":enum_vocab",
+        "@pypi//sqlalchemy",
+    ],
 )
 
 py_test(
     name = "test_sqlalchemy_types",
     srcs = ["test_sqlalchemy_types.py"],
     deps = [
+        ":enum_vocab",
         ":sqlalchemy_types",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

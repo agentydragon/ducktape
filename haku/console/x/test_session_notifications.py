@@ -31,7 +31,7 @@ from haku.console.x.session_notifications import (
     notify_conversation,
     notify_raw,
 )
-from util.sqlalchemy_types import UnknownValue
+from util.enum_vocab import UnknownValue
 
 
 @pytest.fixture

@@ -51,7 +51,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from util.sqlalchemy_types import UnknownValue, member_or_unknown
+from util.enum_vocab import UnknownValue, member_or_unknown
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +96,9 @@ class SessionEvent(BaseModel):
     kind: SessionEventKind | UnknownValue
     session_id: UUID = Field(description="The session the wake is about. Every kind here names one.")
 
+    # TODO: this decorator/classmethod/return quartet is duplicated on `ConversationWakeEvent` for
+    #   its own enum. An `Annotated[Kind | UnknownValue, BeforeValidator(partial(member_or_unknown,
+    #   Kind))]` alias minted once per enum should collapse both validators into the field's type.
     @field_validator("kind", mode="before")
     @classmethod
     def _a_kind_from_a_newer_release_is_a_value(cls, value: object) -> object:
