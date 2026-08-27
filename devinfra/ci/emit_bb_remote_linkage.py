@@ -124,6 +124,25 @@ def buildbuddy_linkage(parsed: ParsedLog) -> dict[str, Any]:
     return result
 
 
+def write_step_output(record: Mapping[str, Any], github_output: str | None) -> None:
+    """Publish the inner Bazel invocation ids so later jobs can read that build.
+
+    They are the handle onto everything the build produced — its outputs, their
+    content digests, and its per-target test verdicts all live in BuildBuddy under
+    these ids, which is what lets a downstream job consult the build instead of
+    repeating it.
+    """
+    if not github_output:
+        return
+    ids = ",".join(
+        invocation["invocation_id"]
+        for invocation in record["buildbuddy"]["bazel_invocations"]
+        if invocation.get("invocation_id")
+    )
+    with Path(github_output).open("a") as f:
+        f.write(f"bazel_invocation_ids={ids}\n")
+
+
 def build_record(
     *, log_text: str, log_path: Path, roles: list[str], env: Mapping[str, str], bb_remote_exit_code: int | None
 ) -> dict[str, Any]:
@@ -163,6 +182,7 @@ def main() -> None:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
     print(args.out)
+    write_step_output(record, os.environ.get("GITHUB_OUTPUT"))
 
 
 if __name__ == "__main__":

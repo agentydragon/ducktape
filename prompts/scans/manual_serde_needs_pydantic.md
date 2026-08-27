@@ -370,28 +370,6 @@ Build tool that flags dataclasses with manual serde methods:
 
 Strong coding LLM can build this from description. Use output as discovery only - some manual serde is legitimate.
 
-## Examples from This Codebase
-
-### agent_server/persist/sqlite.py
-
-```python
-# Current pattern:
-mcp_config=MCPConfig.model_validate(json.loads(r["specs"]))
-    if r["specs"]
-    else MCPConfig(),
-metadata=meta_val,
-
-# Could be improved with nested Pydantic:
-class AgentRowDB(BaseModel):
-    id: str
-    created_at: datetime
-    specs: MCPConfig = Field(default_factory=MCPConfig)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-# Then just:
-row = AgentRowDB.model_validate(db_row_dict)
-```
-
 ## Fix Strategy
 
 ### Step 1: Identify the data structure

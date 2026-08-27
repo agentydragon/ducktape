@@ -67,8 +67,8 @@ builds — recorded so the next frontend to migrate does not re-derive it.
 
 ## Rollout
 
-`finance/augur/frontend` followed. The remaining TypeScript — `airlock/frontend`,
-`props/frontend`, `x/agent_server/web` — is Svelte and stays on `svelte_check_test`: `ts_project`
+`finance/augur/frontend` followed. The remaining TypeScript in `airlock/frontend` and
+`props/frontend` is Svelte and stays on `svelte_check_test`: `ts_project`
 cannot process `.svelte`, and those packages never had the second list this pattern removes
 (`svelte_check` checks components and their `.ts` as one program, driven by the tsconfig globs off
 the `:app` library graph). The pattern is written up in `STYLE.md`.
@@ -88,8 +88,9 @@ Augur added two findings of its own:
 
 ## Not addressed
 
-- **ESLint never covered haku-console, before or after.** `eslint.config.js`'s `projectGlobs` lists
-  augur, props, airlock, and `x/agent_server` — not `haku/console/frontend`. The lint aspect does
+- **ESLint never covered haku-console, before or after.** `eslint.config.js`'s `projectGlobs` listed
+  augur, props, airlock, and the now-retired agent-server frontend — not
+  `haku/console/frontend`. The lint aspect does
   visit `ts_project` targets, since that kind is in `lint_eslint_aspect`'s default `rule_kinds`,
   so the conversion loses nothing; there was simply nothing configured to match. Separate gap,
   separate change.

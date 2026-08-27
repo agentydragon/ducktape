@@ -23,7 +23,7 @@ Can be invoked in two modes:
    - Comprehensive cross-referencing
 
 2. **Scoped verification**: `verify-docs <path or component>`
-   - Example: `verify-docs agent_server/`
+   - Example: `verify-docs haku/console/`
    - Focuses on specific directory or component
    - Faster, targeted verification
 
@@ -83,9 +83,9 @@ Each subagent receives:
 **Example agent spawning:**
 
 ```
-Subagent 1: agent_server/
-- Verify agent_server/AGENTS.md, agent_server/README.md
-- Verify all docstrings in agent_server/src/
+Subagent 1: haku/console/
+- Verify haku/console/AGENTS.md, haku/console/README.md
+- Verify all docstrings under haku/console/
 - Flag any claims about mcp_infra/ for cross-verification
 
 Subagent 2: mcp_infra/
@@ -145,7 +145,7 @@ Verification:
 
    ```
    CROSS-REF NEEDED:
-   - Source: agent_server/AGENTS.md:26
+   - Source: haku/console/AGENTS.md:26
    - Claim: "See docker/AGENTS.md for image build"
    - Target chunk: docker/
    - Question: Does docker/AGENTS.md exist and describe image building?

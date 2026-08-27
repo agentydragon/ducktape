@@ -31,7 +31,7 @@ spec:
       containers:
         - name: provisioner
           # Script baked in via Bazel (//cluster/provisioners/grocy_user_perms:image).
-          image: git.allegedly.works/ducktape-ci/grocy-user-perms-provisioner:devel-20260820161059-9259fc4 # {"$imagepolicy": "flux-system:grocy-user-perms-provisioner"}
+          image: git.allegedly.works/ducktape-ci/grocy-user-perms-provisioner:devel-20260827003537-e17981e # {"$imagepolicy": "flux-system:grocy-user-perms-provisioner"}
           imagePullPolicy: Always
           args:
             - --policy

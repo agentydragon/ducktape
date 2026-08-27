@@ -4,12 +4,12 @@
 #
 # Two phases:
 #
-#   plan  — one `bb remote build` materializes every image's `.digest` sibling (the
-#           ~70-byte `<name>.json.sha256` that `rules_oci`'s `oci_image` macro
-#           generates, reproducible across rebuilds), then one pass over the
-#           registries compares each against the newest `devel-*` tag — the tag Flux
-#           ImagePolicy currently picks. Emits a `matrix.include` of just the images
-#           that differ. See devinfra/ci/plan_image_pushes.py.
+#   plan  — builds nothing. bazel-ci already built every image's `.digest` sibling
+#           on this commit, so this asks that invocation's build event stream where
+#           each `<name>.json.sha256` is and fetches it (~70 bytes apiece), then
+#           compares against the newest `devel-*` tag — the tag Flux ImagePolicy
+#           picks. Emits a `matrix.include` of just the images that differ.
+#           See devinfra/ci/plan_image_pushes.py.
 #
 #   push  — per changed image: run its tests, `bb remote build` the OCI layout,
 #           `crane push` a new pinned tag and move `latest`. A failing test fails
@@ -33,6 +33,14 @@ on:
     inputs:
       rbe_image:
         description: "Override RBE container image (optional)"
+        required: false
+        type: string
+        default: ""
+      bazel_invocation_ids:
+        description: >
+          Comma-separated BuildBuddy invocation ids from bazel-ci, whose build event
+          stream says what this commit produced. Empty means the planner can prove
+          nothing and pushes everything.
         required: false
         type: string
         default: ""
@@ -93,22 +101,6 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
-      - name: Resolve digest targets
-        id: targets
-        if: env.PUBLISH == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "targets=$(python3 devinfra/ci/plan_image_pushes.py targets)" >> "$GITHUB_OUTPUT"
-
-      # One invocation for every image's digest.
-      - name: bb remote build digests
-        if: env.PUBLISH == 'true'
-        uses: ./.github/actions/bb-remote
-        with:
-          args: build ${{ steps.targets.outputs.targets }}
-          rbe_image: ${{ inputs.rbe_image }}
-
       - uses: imjasonh/setup-crane@v0.7
         if: env.PUBLISH == 'true'
 
@@ -124,6 +116,8 @@ jobs:
       - name: Plan pushes
         id: plan
         shell: bash
+        env:
+          INVOCATIONS: ${{ inputs.bazel_invocation_ids }}
         run: |
           set -euo pipefail
           if [ "$PUBLISH" != "true" ]; then
@@ -131,7 +125,7 @@ jobs:
             { echo 'matrix={"include":[]}'; echo "count=0"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          python3 devinfra/ci/plan_image_pushes.py plan
+          python3 -m devinfra.ci.plan_image_pushes --invocations "$INVOCATIONS"
 
   push:
     needs: [plan]

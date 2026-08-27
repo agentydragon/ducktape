@@ -31,7 +31,7 @@ inputs:
       GOTCHA: these are placed BEFORE `--config=rbe --config=ci`, and Bazel's
       last-one-wins ordering means anything those configs set silently overrides
       what you pass here. `--remote_download_outputs=toplevel` used to be passed
-      by two callers and never took effect once — the build log says so:
+      by four callers and never took effect once — the build log says so:
       "option '--remote_download_minimal' (source expanded from --config=rbe) was
       expanded and now overrides the explicit option
       --remote_download_outputs=toplevel". Use `script` when you need a flag to win.
@@ -99,6 +99,12 @@ outputs:
   linkage_json_path:
     description: "Path to the emitted bb remote linkage JSON on the GitHub Actions runner"
     value: ${{ steps.bb-remote.outputs.linkage_json_path }}
+  bazel_invocation_ids:
+    description: >
+      Comma-separated BuildBuddy invocation ids of the Bazel builds this step ran.
+      A later job can read what those builds produced — output digests, per-target
+      test verdicts — instead of building the same targets again.
+    value: ${{ steps.bb-remote.outputs.bazel_invocation_ids }}
 
 runs:
   using: composite

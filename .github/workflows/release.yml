@@ -2,10 +2,11 @@
 #
 # Two phases:
 #
-#   matrix  — one `bb remote build` materializes every default-config release's
-#             artifacts, then their content hashes are diffed against the published
-#             release tags. Emits a `matrix.include` of just the releases that
-#             changed. See devinfra/ci/plan_releases.py.
+#   matrix  — builds nothing. bazel-ci already built every default-config release
+#             on this commit, so this reads that invocation's build event stream,
+#             derives each release's content hash from the digests it reports, and
+#             diffs those against the published tags. Emits a `matrix.include` of
+#             just the releases that changed. See devinfra/ci/plan_releases.py.
 #
 #   release — per changed release: run its tests, rebuild stamped, `gh release
 #             create`. Unchanged; the planner is purely a filter in front of it, and
@@ -26,6 +27,14 @@ on:
     inputs:
       rbe_image:
         description: "Override RBE container image (optional)"
+        required: false
+        type: string
+        default: ""
+      bazel_invocation_ids:
+        description: >
+          Comma-separated BuildBuddy invocation ids from bazel-ci, whose build
+          event stream says what this commit produced. Empty means the planner
+          can prove nothing and releases everything.
         required: false
         type: string
         default: ""
@@ -67,28 +76,16 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
-      - name: Resolve default-config targets
-        id: targets
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "targets=$(python3 -m devinfra.ci.plan_releases targets)" >> "$GITHUB_OUTPUT"
-
-      # One invocation for every release built under the default Bazel config.
-      - name: bb remote build release artifacts
-        uses: ./.github/actions/bb-remote
-        with:
-          args: build ${{ steps.targets.outputs.targets }}
-          rbe_image: ${{ inputs.rbe_image }}
-
       - name: Plan releases
         id: plan
         shell: bash
         env:
           GH_TOKEN: ${{ env.GH_RELEASE_PAT }}
+          INVOCATIONS: ${{ inputs.bazel_invocation_ids }}
         run: |
           set -euo pipefail
-          python3 -m devinfra.ci.plan_releases plan \
+          python3 -m devinfra.ci.plan_releases \
+            --invocations "$INVOCATIONS" \
             --commit-subject "$(git log -1 --format=%s)"
 
   release:

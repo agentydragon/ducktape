@@ -49,6 +49,10 @@ jobs:
     needs: [bazel-ci]
     if: always() && !cancelled() && github.event_name == 'push'
     uses: ./.github/workflows/release.yml
+    with:
+      # What bazel-ci already built. Empty if it was skipped or died before Bazel
+      # ran, which release.yml turns into "publish everything" rather than "nothing".
+      bazel_invocation_ids: ${{ needs.bazel-ci.outputs.bazel_invocation_ids }}
     secrets: inherit
 
   # push-images also pushes the props agent images (props-agents job) to the
@@ -57,4 +61,6 @@ jobs:
     needs: [bazel-ci]
     if: always() && !cancelled() && github.event_name == 'push'
     uses: ./.github/workflows/push-images.yml
+    with:
+      bazel_invocation_ids: ${{ needs.bazel-ci.outputs.bazel_invocation_ids }}
     secrets: inherit

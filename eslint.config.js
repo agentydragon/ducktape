@@ -32,7 +32,7 @@ const unusedVarsOptions = { argsIgnorePattern: "^_", varsIgnorePattern: "^_" };
 // runs on it. Listing it here would be dead config implying coverage that does
 // not exist — re-add once it's Bazelized (per-file ts_library).
 const reactProjects = ["finance/augur/frontend/**", "haku/console/frontend/**"];
-const svelteProjects = ["props/frontend/src/**", "x/agent_server/web/src/**", "airlock/frontend/**"];
+const svelteProjects = ["props/frontend/src/**", "airlock/frontend/**"];
 const projectGlobs = [...reactProjects, ...svelteProjects];
 
 // All projects' .ts/.tsx get the shared TS rules. .svelte (+ .svelte.ts) come

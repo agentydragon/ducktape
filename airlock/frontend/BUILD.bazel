@@ -128,7 +128,7 @@ filegroup(
 
 visual_test_matrix(pages = ["OAuthPage"])
 
-# Type-check the Svelte app, as props/frontend and x/agent_server/web already do. Without it the
+# Type-check the Svelte app, as props/frontend already does. Without it the
 # esbuild bundle strips types without checking them, so nothing here was verified at all.
 svelte_check_bin.svelte_check_test(
     name = "svelte_check_test",

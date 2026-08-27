@@ -309,10 +309,21 @@ dumps, config snapshots) via `util.testing.undeclared_outputs.undeclared_outputs
 not test stdout/stderr. They upload to BuildBuddy and download to
 `bazel-testlogs/<target>/test.outputs/`.
 
-**Test timeouts mean hangs, not slowness**: a timeout means something is wedged
-(deadlock, container never ready, port nothing listens on) — do NOT bump
-`size`/`timeout`. Trace the blockage: `--test_output=streamed --test_arg=-s`, fixture
-logging, `docker ps`.
+**A timeout is not a request for more time.** It usually means the test stopped making
+progress and is waiting for something that will never arrive — a gate signal the
+sequencing never sends, a container that never comes up, a port nothing listens on. A
+test that orchestrates several processes and pushes them through gates by hand fails
+this way whenever the ordering is wrong, and it looks exactly like slowness at the
+moment the clock runs out. Raising `size`/`timeout` there buys the same wedge at the new
+duration, and the next run spends all of it before telling you anything. Trace the
+blockage: `--test_output=streamed --test_arg=-s`, fixture logging, `docker ps`.
+
+**Sizes are still meant to match the work.** A test that genuinely spends minutes on
+bounded work belongs at `medium` or `large`; a `py_test` here defaults to
+`size = "small"` (60s, <devinfra/python/defs.bzl>). So raise one only on evidence that
+the test was **actively working** when the clock ran out and would have finished shortly
+— `bbapi target history` timings across commits, plus a local pass on the same tree.
+"It timed out, so it needs longer" is the reasoning this rule exists to stop.
 
 **Localizing test failures**: `bbapi target history` gives the pass/fail timeline —
 faster than `git bisect` since BuildBuddy already has the results. Recipes:

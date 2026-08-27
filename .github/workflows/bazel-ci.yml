@@ -43,6 +43,14 @@ on:
         required: false
         type: boolean
         default: false
+    outputs:
+      bazel_invocation_ids:
+        description: >
+          The Bazel invocations this run performed. Publish planners read what
+          these built — output digests, per-target test verdicts — rather than
+          rebuilding the same targets. Empty when the job did not run, which
+          callers must treat as "prove nothing", not "nothing changed".
+        value: ${{ jobs.bazel-ci.outputs.bazel_invocation_ids }}
   workflow_dispatch:
 
 concurrency:
@@ -58,6 +66,8 @@ env:
 jobs:
   bazel-ci:
     name: Test & Build
+    outputs:
+      bazel_invocation_ids: ${{ steps.bb-remote.outputs.bazel_invocation_ids }}
     environment: ${{ inputs.environment || null }}
     runs-on: ubuntu-latest
     env:

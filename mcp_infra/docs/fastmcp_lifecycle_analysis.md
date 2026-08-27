@@ -1,38 +1,56 @@
-# FastMCP Resource Lifecycle and Cancellation Analysis
+# FastMCP in-process lifecycle cancellation finding
 
-> **Status:** Research complete. Key finding documented; see also `x/agent_server/docs/async_cancellation_deep_dive.md` for detailed explanation.
+> **Status:** Historical regression warning preserved from the retired
+> `x/agent_server` experiment. Re-verify the implementation after FastMCP or
+> AnyIO upgrades before relying on the exact call path.
 
-## Key Finding
+## Key finding
 
-FastMCP uses **aggressive cancellation** when clients disconnect from in-process servers. `FastMCPTransport.connect_session()` creates a task group and **always calls `tg.cancel_scope.cancel()`** in its `finally` block. This cancels all async operations running in the server, including cleanup code in `finally` blocks.
+The pinned FastMCP version used by the experiment applied **aggressive
+cancellation** when an in-process client disconnected.
+`FastMCPTransport.connect_session()` entered the server lifespan inside an AnyIO
+task group and unconditionally called `tg.cancel_scope.cancel()` from its
+`finally` block. That parent cancel scope also covered lifespan teardown.
 
-**Consequence:** Async operations in lifespan `finally` blocks are cancelled during client disconnect. Docker container cleanup must use synchronous operations or be shielded from cancellation.
+Consequently, an async `finally` block could start in an already-cancelled
+scope: its next `await` raised `CancelledError`, so explicit cleanup of external
+resources such as Docker containers never ran. Mounted in-process servers shared
+the parent server's cancellation fate.
 
-## Server vs Session Lifecycle
+`asyncio.shield()` was not sufficient because it protects against asyncio task
+cancellation, not an enclosing AnyIO cancel scope.
 
-- **Server-scoped** (`lifespan` context manager): resources shared across all sessions. Cleanup runs when the last session disconnects.
-- **Session-scoped** (`session_manager`): per-client resources. Cleanup runs on disconnect -- inside the cancel scope.
+## Observed disconnect path
 
-Both lifespans run inside `connect_session()`'s cancel scope, so both are subject to cancellation.
+1. The FastMCP client signalled its in-process session runner to stop.
+2. The transport exited its client-session context.
+3. `connect_session()` cancelled its task group's cancel scope.
+4. The server lifespan exited inside that cancelled scope.
+5. The first awaited Docker lookup/stop/remove operation raised
+   `CancelledError`, leaving the container running.
 
-## Cancellation Path
+The historical reproducer involved a Docker-backed mounted server, but the
+boundary was generic FastMCP lifecycle code rather than application-specific
+logic.
 
-1. Client disconnects (EOF on read stream)
-2. `connect_session()` exits, entering `finally` block
-3. `tg.cancel_scope.cancel()` fires
-4. All pending `await` points raise `CancelledError`
-5. Lifespan `__aexit__` tries to run cleanup
-6. Any `await` in cleanup raises `CancelledError` -- cleanup fails
+## Design guidance
 
-Mounted servers share the same cancellation fate as the parent server (nested `AsyncExitStack`).
+Critical external-resource cleanup must not assume that an async MCP lifespan
+gets a graceful, uncancelled teardown window. Prefer, in order:
 
-## Fixes for Critical Cleanup
+1. own the external resource outside the in-process transport/lifespan and clean
+   it up from an uncancelled caller;
+2. use an explicitly shielded AnyIO cancel scope with a bounded timeout, after
+   proving the behavior with a disconnect test;
+3. use a short synchronous cleanup fallback when leaking the resource is worse
+   than briefly blocking the event loop.
 
-| Option                                | Approach                               | Tradeoffs                                   |
-| ------------------------------------- | -------------------------------------- | ------------------------------------------- |
-| **Synchronous cleanup**               | Use sync Docker SDK calls              | Simple, reliable, blocks event loop briefly |
-| **Move lifecycle out**                | Manage containers outside lifespan     | Cleaner architecture, more refactoring      |
-| **`anyio.move_on_after` with shield** | Shield cleanup from cancellation       | Fragile, depends on anyio internals         |
-| **Synchronous fallback**              | Try async, fall back to sync on cancel | Best of both worlds, more code              |
+Do not fire-and-forget cleanup into an unowned background task: process or event
+loop shutdown can still abandon it.
 
-**Recommendation:** Use synchronous cleanup for Docker containers (short-term), move container management outside lifespan (long-term).
+## Regression test requirement
+
+Any lifecycle helper that owns a container, subprocess, lease, or similar
+external resource should have a test that disconnects the in-process client and
+asserts the resource is gone before teardown returns. A setup/cleanup happy-path
+test without forced disconnect does not cover this failure mode.

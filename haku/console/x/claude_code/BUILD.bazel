@@ -166,6 +166,7 @@ py_test(
 
 py_test(
     name = "test_diverse_session",
+    size = "medium",
     srcs = ["test_diverse_session.py"],
     data = ["testdata/diverse_session.jsonl"],
     deps = [
@@ -201,6 +202,7 @@ py_test(
 
 py_test(
     name = "test_wake",
+    size = "medium",
     srcs = ["test_wake.py"],
     data = [
         "testdata/background_wake.jsonl",
@@ -221,6 +223,7 @@ py_test(
 
 py_test(
     name = "test_projection",
+    size = "medium",
     srcs = ["test_projection.py"],
     deps = [
         ":projection",

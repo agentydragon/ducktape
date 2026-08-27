@@ -143,8 +143,9 @@ These do not block H1-H3:
 | D1: public-client abuse controls | Add Haku-side enrollment/registration rate limits and transaction quotas if public DCR remains enabled. FastMCP retains redirect/CIMD mechanics and protocol TTLs; Haku retains interaction/activation expiry.             |
 
 Retiring Airlock's remaining OAuth grants is a separate credential-migration program. Its removed
-MCP proxy and approval queue must not be revived as part of that migration. `<../x/agent_server/>`
-remains design archaeology, not an implementation base or cleanup prerequisite.
+MCP proxy and approval queue must not be revived as part of that migration. The retired
+`x/agent_server` experiment remains design archaeology in Git history, not an implementation base
+or cleanup prerequisite.
 
 ## Future-change guardrails
 

@@ -83,9 +83,6 @@ importers:
       highlight.js:
         specifier: ^11.12.0
         version: 11.12.0
-      json-formatter-js:
-        specifier: ^2.5.23
-        version: 2.5.23
       jsonc-parser:
         specifier: 3.3.1
         version: 3.3.1
@@ -356,55 +353,6 @@ importers:
       puppeteer:
         specifier: ^23.11.1
         version: 23.11.1(typescript@5.8.3)
-
-  x/agent_server/web:
-    dependencies:
-      '@modelcontextprotocol/sdk':
-        specifier: ^1.30.0
-        version: 1.30.0(zod@4.4.3)
-      dompurify:
-        specifier: ^3.4.14
-        version: 3.4.14
-      highlight.js:
-        specifier: ^11.12.0
-        version: 11.12.0
-      json-formatter-js:
-        specifier: 2.5.23
-        version: 2.5.23
-      marked:
-        specifier: ^12.0.2
-        version: 12.0.2
-      marked-highlight:
-        specifier: ^2.1.1
-        version: 2.2.4(marked@12.0.2)
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
-    devDependencies:
-      '@types/dompurify':
-        specifier: ^2.3.3
-        version: 2.4.0
-      esbuild:
-        specifier: '>=0.21.0'
-        version: 0.25.12
-      esbuild-plugin-tailwindcss:
-        specifier: ^2.0.3
-        version: 2.2.0
-      esbuild-svelte:
-        specifier: ^0.9.4
-        version: 0.9.4(esbuild@0.25.12)(svelte@5.55.2)
-      svelte:
-        specifier: ^5.38.1
-        version: 5.55.2
-      tailwindcss:
-        specifier: ^4.1.18
-        version: 4.2.2
-      typescript:
-        specifier: ~5.8.3
-        version: 5.8.3
-      vitest:
-        specifier: ^2.1.1
-        version: 2.1.9(@types/node@22.19.17)(happy-dom@20.11.6)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   x/rspcache/admin_ui: {}
 
@@ -3400,9 +3348,6 @@ packages:
 
   json-buffer@3.0.1:
     resolution: {integrity: sha512-4bV5BfR2mqfQTJm+V5tPPdf+ZpuhiIvTuAB5g8kcrXOZpTT/QwwVRWBywX1ozr6lEuPdbHxwaJlm9G6mI2sfSQ==}
-
-  json-formatter-js@2.5.23:
-    resolution: {integrity: sha512-Cbm8wHXjo/C56aCePP1VuKvjxoMEmL7g7Ckss1oWFFlCsvOEEbye1kTeaNNaqba1Cl6YpIOYAnK65pUQ8mDIUQ==}
 
   json-parse-even-better-errors@2.3.1:
     resolution: {integrity: sha512-xyFwyhro/JEof6Ghe2iz2NcXoj2sloNsWr/XsERDK/oiPCfaNhl5ONfp+jQdAZRQQ0IJWNzH9zIZF7li91kh2w==}
@@ -8189,8 +8134,6 @@ snapshots:
   jsesc@3.1.0: {}
 
   json-buffer@3.0.1: {}
-
-  json-formatter-js@2.5.23: {}
 
   json-parse-even-better-errors@2.3.1: {}
 

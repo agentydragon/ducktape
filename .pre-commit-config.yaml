@@ -116,7 +116,6 @@ repos:
   # NOTE: ESLint and svelte-check are handled by Bazel:
   # - ESLint: bazel build //... (lint aspects run by default)
   # - svelte-check: bazel test //props/frontend:svelte_check_test
-  #                 bazel test //x/agent_server/web:svelte_check_test
 
   # Buildifier - Bazel/Starlark formatting and linting — buildifier provided by devShell / web-session via Nix
   - repo: local

@@ -2,7 +2,7 @@
 
 ## Goals
 
-1. **Bazel builds all 3 JS frontends** (props/frontend, agent_server/web, rspcache/admin_ui)
+1. **Bazel builds every registered JS frontend** (see `pnpm-workspace.yaml`)
 2. **Tests work under Bazel**, including visual regression tests that generate PNG snapshots
 3. **Minimal duplication** - single source of truth for package versions
 4. **Frontends may share code in future** - don't bake in independence assumption
@@ -14,13 +14,14 @@
 - **Toolchain flexibility** - can switch bundlers, dev servers, test runners
 - **Package manager doesn't matter** - pnpm, npm, bun, whatever works with Bazel
 - **Dev server is nice-to-have** - not required
-- **Frameworks stay as-is** (Svelte for 2, React for 1) - rewriting UI code is out of scope
+- **Frameworks stay as-is** - rewriting UI code is out of scope
 
 ## Current State
 
-- 3 independent JS frontends:
+- Independent JS frontends include:
   - **props/frontend**: SvelteKit (file-based routing, SSR disabled, static adapter)
-  - **agent_server/web**: Plain Svelte + Vite (main.ts entry, App.svelte root)
+  - **airlock/frontend**: Plain Svelte compiled with esbuild
+  - **study_casino/frontend**: React
   - **rspcache/admin_ui**: React + Mantine (not Svelte)
 - pnpm workspace with per-project package.json files
 - aspect_rules_js for Bazel integration

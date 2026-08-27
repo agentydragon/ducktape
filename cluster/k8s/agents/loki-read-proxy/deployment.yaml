@@ -27,7 +27,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: proxy
-          image: ghcr.io/agentydragon/loki-read-proxy:devel-20260820155429-7d1b05b # {"$imagepolicy": "flux-system:loki-read-proxy"}
+          image: ghcr.io/agentydragon/loki-read-proxy:devel-20260827003040-e17981e # {"$imagepolicy": "flux-system:loki-read-proxy"}
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false

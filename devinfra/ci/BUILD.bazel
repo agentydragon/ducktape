@@ -63,7 +63,16 @@ py_library(
         "//skills:skills_registry.json",
     ],
     visibility = ["//:__subpackages__"],
-    deps = [":release_content_hash"],
+    deps = [
+        ":bes",
+        ":release_content_hash",
+    ],
+)
+
+py_library(
+    name = "bes",
+    srcs = ["bes.py"],
+    visibility = ["//:__subpackages__"],
 )
 
 py_library(
@@ -89,6 +98,7 @@ py_library(
     srcs = ["plan_image_pushes.py"],
     data = ["image_targets.json"],
     visibility = ["//:__subpackages__"],
+    deps = [":bes"],
 )
 
 py_library(
@@ -151,7 +161,18 @@ py_test(
     name = "test_plan_releases",
     srcs = ["test_plan_releases.py"],
     deps = [
+        ":bes",
         ":plan_releases",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_bes",
+    srcs = ["test_bes.py"],
+    deps = [
+        ":bes",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -198,6 +219,7 @@ py_test(
     name = "test_plan_image_pushes",
     srcs = ["test_plan_image_pushes.py"],
     deps = [
+        ":bes",
         ":plan_image_pushes",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

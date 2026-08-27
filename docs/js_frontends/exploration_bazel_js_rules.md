@@ -137,7 +137,7 @@ npm.npm_translate_lock(
 The ducktape repository currently uses aspect_rules_js for:
 
 - **Props frontend** (SvelteKit): Vite build, svelte-check, storybook, playwright visual tests
-- **agent_server web** (Svelte): Vite build, svelte-check, vitest unit tests
+- **Airlock frontend** (Svelte): esbuild, svelte-check, playwright visual tests
 - **rspcache admin_ui** (React): Vite build
 
 All use cases work well for bundling and dev servers, but Playwright test runner hits the module identity issue (#1).

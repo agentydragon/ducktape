@@ -1,5 +1,4 @@
 packages:
-  - "x/agent_server/web"
   - "x/study_casino/frontend"
   - "airlock/frontend"
   - "x/rspcache/admin_ui"

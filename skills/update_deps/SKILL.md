@@ -349,7 +349,6 @@ PR description but do not let it block you.
 
 TODOs added by this PR (grep for them in the diff):
 
-- `x/agent_server/TODO.md`: drop `async_depends` wrapper after fastapi 0.116
 - `TODO.md`: evaluate new ruff rules from 0.9
 
 ### Not Tracked by Renovate
