@@ -135,7 +135,7 @@ instead, so they load on demand.
   <3 files gets flattened.
 - **Sets for unordered collections** (`set[T]`); lists only when order or duplicates
   matter.
-- **Prefer maintained mechanisms**: a solved problem uses the library the repo already
+- **Don't reinvent the wheel**: a solved problem uses the library the repo already
   carries, never hand-rolled arithmetic — retry/backoff is `tenacity`; iteration
   shapes are `more_itertools` (`one()` when more than one match is a bug, `first()`
   when many are valid and you want the first) or `itertools.batched` over manual
