@@ -75,6 +75,13 @@ principals · PR</a>"]` (single quotes inside the double-quoted label). Anchors
 - An edge means "cannot start/land before", nothing softer — "touches the same
   file" is not an edge (AGENTS.md § Splitting Work Into PRs). Note the few
   deliberate serializations in prose under the chart, with why.
+- **Edge direction is always dependency → dependent**: the arrow leaves the
+  thing that must land first and enters the work waiting on it, so "no unmet
+  incoming edge" ⇔ dispatchable, uniformly. An umbrella/tracking issue
+  **depends on its parts landing** — parts point into it (it is a sink of its
+  parts), never out of it. An umbrella fanning out to its parts reverses the
+  read and makes ready work look gated; audit every edge against this rule
+  before publishing.
 
 ## Graph structure
 
