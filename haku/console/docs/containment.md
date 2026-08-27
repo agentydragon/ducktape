@@ -4,7 +4,8 @@ The realized design for the agent-authored console: the trusted shell frames Hak
 service and owns nothing but the boundary. This is the **current contract**, in present
 tense — the design narrative and build history live in git. Haku's full security model
 (threat model, enforcement inventory, invariants) is <../../docs/security.md>; this doc is
-the console-side detail behind its inventory rows #10–#11.
+the console-side detail behind its _Console iframe containment_ and _Console
+privileged-action tier_ inventory entries.
 
 ## The shape
 

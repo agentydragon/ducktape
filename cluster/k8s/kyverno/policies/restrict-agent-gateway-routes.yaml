@@ -23,7 +23,7 @@ metadata:
       `allowedRoutes` is affected by Cilium bug #42159 (see
       cluster/docs/plan.md), and the Selector approach would require labeling the
       built-in `default` and `flux-system` namespaces that host critical routes.
-      For Haku this is enforcement inventory #4 in haku/docs/security.md.
+      For Haku this is an enforcement inventory entry in haku/docs/security.md.
 spec:
   admission: true
   # background: false because the policy scopes by namespace only (no subject

@@ -51,9 +51,12 @@ exits:
 - the Operator approves it (`pending_approval` → `running`) or denies it (`denied`);
 - the submitting Agent withdraws its own still-pending request (`withdrawn`).
 
-Withdrawal records retraction, not human judgment and not deletion. It is scoped to the canonical
-Agent, races approval under the row lock, and can only move work away from execution. Agents never
-receive an approval tool. Approved execution revalidates the exact credential binding recorded at
+Withdrawal records retraction, not human judgment and not deletion: the row persists in the audit
+ledger (`GET /api/tool-calls`) as `withdrawn` with its `withdrawal_reason`, so a prompt-injected
+Agent can pull an ask out of the approval queue before the Operator scrutinises it but cannot erase
+that it was made. It is scoped to the canonical Agent (a sibling Agent under the same Operator sees
+only `not found`), races approval under the row lock, and can only move work away from execution.
+Agents never receive an approval tool. Approved execution revalidates the exact credential binding recorded at
 submission, so queued work cannot transfer to a replacement credential.
 
 The browser reads pending calls and the audit ledger through `/api/approvals/pending` and
