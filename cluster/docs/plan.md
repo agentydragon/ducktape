@@ -563,9 +563,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       gate until the replacement topology is tested end to end.
 - [ ] Ollama: per-user auth (Authentik JWTs or LiteLLM proxy)
 - [ ] LiteLLM: `ollama/` provider drops `tool_calls` — use `openai-chat` variants for now
-- [ ] Harbor terraform: switch to robot accounts
-- [ ] Harbor CI robot: scope per-namespace pull secrets to read-only per project
-- [ ] Harbor proxy cache: add GHCR credentials for private repos (403 on `openclaw/openclaw`)
 - [ ] Verify ntfy.sh notifications
 - [ ] ActivityWatch: Gatus health check (`activitywatch-readonly:5600/api/0/info`)
 - [ ] ActivityWatch: replace reflected persistent agent OAuth credentials with
@@ -606,8 +603,8 @@ workloads.
 3. Can schedule on OVH nodes
 4. All upstream dependencies also pass 1-3
 
-**Proxmox-dependent services** (tolerate downtime by design): Harbor,
-Nix cache, BuildBuddy, Ollama, InvenTree, ActivityWatch.
+**Proxmox-dependent services** (tolerate downtime by design): Nix cache,
+BuildBuddy, Ollama, InvenTree, ActivityWatch.
 
 ### Proxmox CSI removed (2026-07-16)
 
@@ -796,7 +793,7 @@ this Proxmox-only gap.)
 
 ### Velero PVC Backup
 
-Scheduled backups of PVCs (Harbor, Forgejo, Loki, Postgres). No backup strategy currently.
+Scheduled backups of PVCs (Forgejo, Loki, Postgres). No backup strategy currently.
 
 ### CiliumNetworkPolicy Rollout
 
@@ -806,7 +803,7 @@ Most services lack network policies. Goal: default-deny per namespace.
 
 **Priority 2 -- Application services**:
 
-- [ ] Harbor, Ollama, Grafana, Alertmanager, Forgejo, Tempo, Langfuse, Headlamp
+- [ ] Ollama, Grafana, Alertmanager, Forgejo, Tempo, Langfuse, Headlamp
 
 **Priority 3 -- Remaining**:
 
@@ -852,7 +849,7 @@ Start `warn`, promote to `enforce`.
 ### Scheduling Priorities
 
 Motivated by 2026-03-17 OOM cascade. Deploy PriorityClasses: `system-critical`
-(DNS/ingress/Authentik), `important` (Forgejo/Harbor/monitoring), `batch`
+(DNS/ingress/Authentik), `important` (Forgejo/monitoring), `batch`
 (OpenClaw/props/BuildBuddy). Plus Descheduler, PDBs, ResourceQuota + LimitRange.
 
 **TODO (basic-infra reliability sweep)**: do a deliberate pass over the core
@@ -989,7 +986,7 @@ storage-heavy services that tolerate home downtime.
 | Location | Services                                                               | Rationale                         |
 | -------- | ---------------------------------------------------------------------- | --------------------------------- |
 | OVH      | Authentik, Grafana, Gateway, DNS, cert-mgr                             | Always-on, critical path          |
-| Home     | Harbor, Ollama                                                         | Storage-heavy, tolerates downtime |
+| Home     | Ollama                                                                 | Storage-heavy, tolerates downtime |
 | OVH      | SeaweedFS, attic-db, Forgejo, Nix cache chunks + Loki/Mimir/Tempo (S3) | Replicated across 2 kimsufi nodes |
 
 CNPG: individual clusters per app. Two profiles: OVH-HA (2 instances, OVH

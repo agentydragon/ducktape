@@ -65,17 +65,16 @@ lives in `nebula-mesh.json` at the repo root. To add or remove a node, see
 Key services (curated — this table is not the SSOT; the full set is the
 HTTPRoutes under `k8s/` and `k8s/authentik/proxy-routes/`):
 
-| Service        | URL                                | Purpose                 |
-| -------------- | ---------------------------------- | ----------------------- |
-| Authentik      | <https://auth.allegedly.works>     | SSO provider            |
-| Forgejo        | <https://git.allegedly.works>      | Git hosting             |
-| Harbor         | <https://registry.allegedly.works> | Container registry      |
-| Matrix/Element | <https://chat.allegedly.works>     | Chat                    |
-| Grafana        | <https://grafana.allegedly.works>  | Monitoring              |
-| Nix Cache      | <https://cache.allegedly.works>    | Binary cache            |
-| Gatus          | <https://status.allegedly.works>   | Health monitoring       |
-| Ollama         | <https://ollama.allegedly.works>   | LLM inference (GPU)     |
-| Airlock        | <https://airlock.allegedly.works>  | OAuth credential broker |
+| Service        | URL                               | Purpose                 |
+| -------------- | --------------------------------- | ----------------------- |
+| Authentik      | <https://auth.allegedly.works>    | SSO provider            |
+| Forgejo        | <https://git.allegedly.works>     | Git hosting             |
+| Matrix/Element | <https://chat.allegedly.works>    | Chat                    |
+| Grafana        | <https://grafana.allegedly.works> | Monitoring              |
+| Nix Cache      | <https://cache.allegedly.works>   | Binary cache            |
+| Gatus          | <https://status.allegedly.works>  | Health monitoring       |
+| Ollama         | <https://ollama.allegedly.works>  | LLM inference (GPU)     |
+| Airlock        | <https://airlock.allegedly.works> | OAuth credential broker |
 
 Credentials: `get-passwords` (requires direnv in cluster directory).
 
