@@ -2,8 +2,7 @@
 
 `--remote_executor=""` is **never required for correctness** — every workflow in
 this repo runs on RBE. The root `AGENTS.md` rule ("RBE is the expected default — do
-not disable it") holds for all of these. Full evidence and per-workflow source
-analysis: <../../debug/rbe-compatibility/audit.md>.
+not disable it") holds for all of these.
 
 The mechanics the table cites:
 

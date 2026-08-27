@@ -45,8 +45,7 @@ Live example: <../k8s/agents/manifold-mcp/app/networkpolicy.yaml>.
    reveals the identity Cilium assigned to that source.
 3. Match the policy `fromEntities`/`fromEndpoints` to the actual identity.
 
-Origin: manifold-mcp deployment (2026-04-30). Full incident write-up:
-<../../debug/manifold_mcp_cnp_cilium_envoy_identity.md>.
+Origin: manifold-mcp deployment (2026-04-30).
 
 ## Egress to a ClusterIP: allow the backend targetPort, not the Service port
 

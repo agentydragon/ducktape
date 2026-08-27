@@ -1,12 +1,27 @@
 # GNOME Shell keybindings for Pop Shell on horizontal workspaces.
 #
-# The Pop Shell nix package installs the extension but does NOT run its
-# configure.sh script, which clears GNOME defaults that conflict with Pop
-# Shell's shortcuts. We replicate that conflict resolution here via dconf,
-# adapted for horizontal workspaces (GNOME 40+ default, no V-Shell).
+# Pop Shell registers shortcuts through two mechanisms: its own GSettings
+# schema (org.gnome.shell.extensions.pop-shell, bound at runtime via
+# Main.wm.addKeybinding in src/keybindings.ts), and an installation-time
+# configure.sh that clears the GNOME defaults conflicting with them. The nix
+# package installs the extension but does NOT run configure.sh; this module
+# replicates that conflict resolution via dconf.
 #
-# configure.sh was designed for Pop!_OS vertical workspaces — we deviate
-# from it for workspace navigation (Super+Arrow instead of Super+Ctrl+j/k).
+# Deviations from configure.sh (designed for Pop!_OS vertical workspaces):
+# workspace navigation is Super+Arrow (horizontal workspaces, the GNOME 40+
+# default, no V-Shell) instead of Super+Ctrl+j/k, and Pop Shell focus keeps
+# hjkl only — its arrow variants are stripped to free Super+Arrow.
+#
+# Iterating: dconf changes from home-manager apply immediately (dconf load
+# over the live D-Bus session, which GNOME Shell watches) — no logout needed.
+# Keys removed from this module get `dconf reset` on the next switch:
+# home-manager tracks the keys it manages in its state file (confirmed
+# 2026-03-28).
+#
+# Gotcha: a nested `dbus-run-session gnome-shell --devkit --wayland` session
+# cannot test shortcuts — the outer compositor grabs keybindings before they
+# reach the nested instance. Fine for visual/extension testing; test
+# shortcuts in the real session.
 #
 # References:
 #   https://github.com/pop-os/shell/blob/master_noble/scripts/configure.sh

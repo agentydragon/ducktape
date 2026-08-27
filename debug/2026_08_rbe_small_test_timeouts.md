@@ -140,8 +140,10 @@ the pair and missed the twin, which is the one that actually measures slow.
 
 `bbapi target {history,stats,flakes}` return empty for this repo, so localizing this by
 per-target history was not an option and the investigation above had to re-run CI and watch
-instead. The cause is a BuildBuddy runner detail, independent of test sizing, and is chased
-separately in <2026_08_buildbuddy_target_tracking.md>.
+instead. The cause is a BuildBuddy runner detail, independent of test sizing: `bb remote
+--script` runs are classified as hosted bazel, which turns target tracking off — the
+mechanism, and the push-only re-enable, live in the target-tracking comment in
+<../devinfra/ci/bazel_ci.sh>.
 
 ## Open question
 

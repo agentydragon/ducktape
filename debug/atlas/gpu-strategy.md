@@ -251,6 +251,5 @@ separately (Option C debugging) without blocking the primary use case.
 ## Related Debug Files
 
 - <black_screen_lockup.md> — chipset PCIe fabric instability (incidents 1–10)
-- <locked-gpus/NOTES.md> — VFIO IOMMU misconfiguration discovery + fix
 - <wyrm_gpu_lockup.md> — GPU lockwatch timeouts under VFIO
 - <ethernet_recurring/README.md> — network drops (cable issue, separate)

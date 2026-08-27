@@ -81,9 +81,9 @@ passed; `test_container_e2e` passed all three uncached runs.
 
 ## Relation to 2026-03 Incident
 
-`debug/session-start-hook-race-2026-03.md` documented a Python daemon TOCTOU
-race where concurrent hook processes could start multiple daemons because the
-installed wheel lacked the intended FileLock.
+A 2026-03 incident hit a Python daemon TOCTOU race where concurrent hook
+processes could start multiple daemons because the installed wheel lacked the
+intended FileLock.
 
 This June incident is not the same implementation bug. It is the same failure
 class: daemon startup state was visible to another process before the associated
