@@ -1,0 +1,23 @@
+# Fenced-workload-facing listener of the colocated egress proxy sidecar (#4942). Selects the
+# Console pod (the sidecar shares its network namespace) and targets the proxy container port, so
+# a fenced sandbox reaches the proxy at haku-egress-proxy.haku-console.svc.cluster.local:8888.
+# Separate Service from haku-console so the sandbox-facing proxy and the trusted Console API stay
+# distinct names with distinct CCNP rules. The loopback decide oracle (:8079) is deliberately NOT
+# published by any Service — that is the structural half of #4670's oracle constraint (acceptance
+# criterion 14).
+apiVersion: v1
+kind: Service
+metadata:
+  name: haku-egress-proxy
+  namespace: haku-console
+  labels:
+    app.kubernetes.io/name: haku-egress-proxy
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: haku-console
+  ports:
+    - name: proxy
+      port: 8888
+      targetPort: proxy
+      protocol: TCP

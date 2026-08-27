@@ -36,7 +36,7 @@ metadata:
     # do NOT use reloader's blanket auto mode: the projected static-image metadata
     # changes on every frontend release and must not restart API/MCP/background work.
     configmap.reloader.stakater.com/reload: haku-console-config
-    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-matrix-bot-password,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials
+    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-matrix-bot-password,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token
 spec:
   replicas: 2
   strategy:
@@ -85,6 +85,27 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+      initContainers:
+        # mitmproxy reads its interception CA from confdir/mitmproxy-ca.pem (key+cert
+        # concatenated). Assemble it once from the shared egress-interception CA so the colocated
+        # proxy (below) serves leaves fenced sandboxes already trust via haku-egress-proxy-ca-cert
+        # — the same shape as the iron/mitmproxy fence's own CA init.
+        - name: egress-proxy-ca-init
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - cat /egress-proxy-ca/tls.key /egress-proxy-ca/tls.crt > /egress-proxy-confdir/mitmproxy-ca.pem
+          volumeMounts:
+            - name: egress-proxy-ca
+              mountPath: /egress-proxy-ca
+              readOnly: true
+            - name: egress-proxy-confdir
+              mountPath: /egress-proxy-confdir
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
       containers:
         - name: server
           image: ghcr.io/agentydragon/haku-console:devel-20260827154453-2bf05aa # {"$imagepolicy": "flux-system:haku-console"}
@@ -379,6 +400,34 @@ spec:
             # issuers above (both providers are provisioned with sub_mode=user_id).
             - name: HAKU_CONSOLE_OPERATOR_IDENTITY__TRUST_DOMAIN
               value: auth.allegedly.works/authentik-user-id/v1
+            # Colocated egress fence (#4942, #4670). config.yaml's `egress_decide` section names
+            # these env vars; `load_egress_decide` reads them at startup and the decide endpoint
+            # (loopback :8079, served by app._serve) resolves them per request. Values are shared
+            # with the egress-proxy sidecar below where the sidecar must present the same bearer:
+            #   - proxy identity bearer the sidecar presents (proxy_token_env_var)
+            - name: HAKU_EGRESS_PROXY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-egress-proxy-identity
+                  key: proxy-token
+            #   - the haku Agent's fence credential the endpoint resolves to that Agent
+            #     (egress_decide.fence_credentials[].token_env_var)
+            - name: HAKU_EGRESS_FENCE_HAKU
+              valueFrom:
+                secretKeyRef:
+                  name: haku-egress-proxy-identity
+                  key: fence-credential-haku
+            #   - the github-bot registry credential's real value (#4951 EgressCredentialEntry
+            #     value_env_var). The Console holds it and substitutes it into decide responses;
+            #     the sandbox only ever presents the inert `github-token-placeholder`. Synced from
+            #     the same operator account the retiring iron fence used (haku-egress-github-token
+            #     ESO). Not optional: `egress_decide.credentials` naming a handle whose env is unset
+            #     fails startup by design — a wired credential must resolve.
+            - name: HAKU_EGRESS_CREDENTIAL_GITHUB_BOT
+              valueFrom:
+                secretKeyRef:
+                  name: haku-egress-github-token
+                  key: token
           resources:
             requests:
               cpu: 50m
@@ -423,6 +472,56 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+        # Colocated egress proxy (#4942): the embedded mitmproxy adapter (haku/egress) gating every
+        # fenced-workload request against Console's decide endpoint. It reaches that endpoint over
+        # the shared pod loopback (127.0.0.1:8079) — no Service exposes it, so no sandbox has a
+        # route to the oracle (acceptance criterion 14). Same pod as Console, so the two roll as one
+        # release unit and the decide API needs no versioning (#4670 § Topology). Fails closed on
+        # any decision-path error; the fenced-workload-facing listener is 8888, published by
+        # egress-proxy-service.yaml for the force-proxy fence.
+        - name: egress-proxy
+          image: ghcr.io/agentydragon/haku-egress-proxy:devel-20260101000000-0000000 # {"$imagepolicy": "flux-system:haku-egress-proxy"}
+          imagePullPolicy: Always
+          env:
+            - name: HAKU_EGRESS_DECIDE_URL
+              value: http://127.0.0.1:8079
+            - name: HAKU_EGRESS_LISTEN_PORT
+              value: "8888"
+            - name: HAKU_EGRESS_CONFDIR
+              value: /egress-proxy-confdir
+            # The proxy-identity bearer Console authenticates, and the haku Agent's fence credential
+            # Console resolves to that Agent — the same two values the server container reads above.
+            - name: HAKU_EGRESS_PROXY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-egress-proxy-identity
+                  key: proxy-token
+            - name: HAKU_EGRESS_FENCE_CREDENTIAL
+              valueFrom:
+                secretKeyRef:
+                  name: haku-egress-proxy-identity
+                  key: fence-credential-haku
+          ports:
+            - name: proxy
+              containerPort: 8888
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              # Sized for the first github-only spike (#4943); the embedded runner does not yet set
+              # mitmproxy's stream_large_bodies, so broad adoption (dind layer pulls) needs that plus
+              # a higher ceiling — see this directory's README § Colocated egress proxy.
+              memory: 1Gi
+          volumeMounts:
+            # Writable: mitmproxy derives its public CA files and caches per-host leaves in confdir.
+            - name: egress-proxy-confdir
+              mountPath: /egress-proxy-confdir
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
       volumes:
         - name: tmp
           emptyDir: {}
@@ -432,3 +531,11 @@ spec:
         - name: static-metadata
           configMap:
             name: haku-console-static-metadata
+        # The shared egress-interception CA (key+cert), reflected from the haku-egress-proxy
+        # Certificate into this namespace; the init container turns it into confdir/mitmproxy-ca.pem.
+        - name: egress-proxy-ca
+          secret:
+            secretName: haku-egress-proxy-ca
+        # mitmproxy confdir: the assembled CA plus the dynamic per-host leaves it caches at runtime.
+        - name: egress-proxy-confdir
+          emptyDir: {}

@@ -11,6 +11,7 @@ wires that router and serves the config endpoint. It can also mount the built SP
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import datetime
 import logging
@@ -859,9 +860,12 @@ def create_app(
     # Machine-to-machine, bearer-forwarding contract for the separate Kubernetes proxy. The
     # endpoint remains fail-closed unless standing SAR policy is configured.
     app.include_router(kube_proxy_authorization.router)
-    # Machine-to-machine decision contract for the colocated egress proxy (#4670): proxy-identity
-    # bearer plus body fence credential, fail-closed unless egress_decide config wires both.
-    app.include_router(http_decide_routes.router)
+    # The colocated egress proxy's decision endpoint is deliberately NOT on this network app.
+    # It is the oracle that turns placeholders into real credentials, so it must never be routable
+    # from a sandbox workload — and every sandbox can reach this app through the haku-console
+    # Service (the force-proxy CCNP admits `toEntities: cluster`). `main()` serves it instead on a
+    # loopback-only listener (`build_internal_decide_app`) that no Service exposes, so sandbox
+    # unreachability is structural, not a NetworkPolicy (#4670 § Topology, acceptance criterion 14).
 
     @app.get("/api/deployment", dependencies=operator_only)
     async def deployment() -> DeploymentInfo:
@@ -933,14 +937,49 @@ def create_app(
     return app
 
 
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    settings = Settings()
-    loaded_static_agents = load_static_agents(settings)
-    # DDL belongs to the image-coupled release Job. Before binding a port, prove this image can
-    # read the already-migrated schema so an incompatible rollout never becomes Ready.
-    verify_schema(settings.database_url.get_secret_value())
-    app = create_app(settings, loaded_static_agents=loaded_static_agents)
+# The colocated egress proxy reaches the decision oracle here (#4942). Loopback and a fixed port,
+# matching the sidecar's HAKU_EGRESS_DECIDE_URL: no Service targets it, so it is unreachable from
+# any other pod — the structural half of acceptance criterion 14 (the proxy-identity bearer is the
+# other). Keep both in step with the console deployment's proxy sidecar env.
+INTERNAL_DECIDE_HOST = "127.0.0.1"
+INTERNAL_DECIDE_PORT = 8079
+
+
+class _SecondaryServer(uvicorn.Server):
+    """A uvicorn server sharing the process with the network server, which owns the signals.
+
+    The network server installs the SIGTERM/SIGINT handlers that reach the lifespan shutdown; a
+    second installer would overwrite them in the loop's signal registry, so this one installs none
+    and is asked to exit once the network server has.
+    """
+
+    def install_signal_handlers(self) -> None:
+        return None
+
+
+def build_internal_decide_app(http_decide: HttpDecideService) -> FastAPI:
+    """Loopback-only ASGI app carrying just the egress decision endpoint (#4942).
+
+    Colocation binds the oracle here rather than on the network app ``create_app`` builds: the
+    colocated proxy sidecar reaches it over the shared pod loopback, while a sandbox — which can
+    reach Console only through its Service — has no route to this listener at all (#4670 §
+    Topology). The proxy-identity bearer still authenticates every call; the localhost bind is
+    defense in depth, not a replacement for authentication.
+    """
+    internal = FastAPI(title="Haku console egress oracle")
+    internal.state.http_decide = http_decide
+    internal.include_router(http_decide_routes.router)
+    return internal
+
+
+async def _serve(app: FastAPI) -> None:
+    """Serve the network app, plus the loopback decision oracle when ``egress_decide`` is wired.
+
+    Both run in this one process and event loop so they share the single ``HttpDecideService`` and
+    its Postgres-backed grant lookups. The network server owns the process signal handlers and the
+    graceful-shutdown bound; the oracle installs none of its own and is asked to exit once the
+    network server has.
+    """
     # host/port are fixed, not env-driven: under the HAKU_CONSOLE_ prefix a `port`
     # setting would read the kubelet's HAKU_CONSOLE_PORT service-link var (a URL),
     # not an int. The cluster-wide Kyverno default keeps that legacy variable out.
@@ -952,7 +991,39 @@ def main() -> None:
     # handed back and the sweep fails it.
     # Bounding the wait makes uvicorn cancel the handlers and reach the lifespan, where the chat
     # service hands its leases back. Keep it below the deployment's terminationGracePeriodSeconds.
-    uvicorn.run(app, host="0.0.0.0", port=8080, log_level="info", timeout_graceful_shutdown=10)
+    network = uvicorn.Server(
+        uvicorn.Config(app, host="0.0.0.0", port=8080, log_level="info", timeout_graceful_shutdown=10)
+    )
+    http_decide = app.state.http_decide
+    if http_decide is None:
+        await network.serve()
+        return
+    oracle = _SecondaryServer(
+        uvicorn.Config(
+            build_internal_decide_app(http_decide),
+            host=INTERNAL_DECIDE_HOST,
+            port=INTERNAL_DECIDE_PORT,
+            log_level="warning",
+            timeout_graceful_shutdown=10,
+        )
+    )
+    oracle_task = asyncio.create_task(oracle.serve())
+    try:
+        await network.serve()
+    finally:
+        oracle.should_exit = True
+        await oracle_task
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    settings = Settings()
+    loaded_static_agents = load_static_agents(settings)
+    # DDL belongs to the image-coupled release Job. Before binding a port, prove this image can
+    # read the already-migrated schema so an incompatible rollout never becomes Ready.
+    verify_schema(settings.database_url.get_secret_value())
+    app = create_app(settings, loaded_static_agents=loaded_static_agents)
+    asyncio.run(_serve(app))
 
 
 def run_command(argv: list[str]) -> None:

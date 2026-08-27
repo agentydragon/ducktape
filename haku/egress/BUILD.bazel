@@ -1,4 +1,7 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_library(
     name = "addon",
@@ -52,6 +55,58 @@ py_library(
         ":decide_client",
         ":decision",
     ],
+)
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    deps = [
+        ":localhost_decide_client",
+        ":runner",
+        "@pypi//pydantic",
+    ],
+)
+
+# ── OCI image (the colocated egress proxy sidecar, #4942) ─────────────────────
+# Same slim-base + cacerts packaging as //haku/console:server_image: the proxy
+# validates the real upstream certificate with the system trust store, so it
+# needs the CA bundle layer. The interception CA it presents downstream is the
+# deploy-managed shared CA, mounted at HAKU_EGRESS_CONFDIR, not baked in.
+
+aspect_py_binary(
+    name = "proxy_bin",
+    main = "main.py",
+    deps = [":main"],
+)
+
+py_image_layer(
+    name = "proxy_layers",
+    binary = ":proxy_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "proxy_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("proxy_bin"),
+    env = py_image_env(binary_name = "proxy_bin"),
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
+        "org.opencontainers.image.title": "haku-egress-proxy",
+    },
+    tars = [
+        ":proxy_layers",
+        "//third_party/debian_slim:cacerts",
+    ],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "proxy_load",
+    image = ":proxy_image",
+    repo_tags = ["haku-egress-proxy:latest"],
 )
 
 py_library(

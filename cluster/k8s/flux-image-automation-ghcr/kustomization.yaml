@@ -53,6 +53,8 @@ resources:
   - grocy-mcp-oidc-server-image-policy.yaml
   - haku-console-image-repository.yaml
   - haku-console-image-policy.yaml
+  - haku-egress-proxy-image-repository.yaml
+  - haku-egress-proxy-image-policy.yaml
   - haku-kube-api-proxy-image-repository.yaml
   - haku-kube-api-proxy-image-policy.yaml
   - haku-console-static-image-repository.yaml

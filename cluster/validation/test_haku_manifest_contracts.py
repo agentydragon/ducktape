@@ -756,7 +756,14 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
 
     console_dir = k8s_dir / "haku" / "console"
     deployment = yaml.safe_load((console_dir / "deployment.yaml").read_text())
-    assert {entry["name"] for entry in deployment["spec"]["template"]["spec"]["containers"]} == {"server"}
+    console_containers = {entry["name"]: entry for entry in deployment["spec"]["template"]["spec"]["containers"]}
+    # The colocated egress proxy sidecar (#4942) rolls with Console. It reaches Console's decision
+    # oracle over the shared pod loopback — never a Service — which is the structural half of
+    # #4670's oracle constraint (acceptance criterion 14): a sidecar pointed at the Service would
+    # make the oracle sandbox-reachable through it.
+    assert set(console_containers) == {"server", "egress-proxy"}
+    egress_env = {entry["name"]: entry for entry in console_containers["egress-proxy"]["env"]}
+    assert egress_env["HAKU_EGRESS_DECIDE_URL"]["value"].startswith("http://127.0.0.1:")
     assert not (console_dir / "codex-runner-service.yaml").exists()
 
     shared_config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())

@@ -1,0 +1,26 @@
+# The agentydragon-agent GitHub PAT for the Console-owned egress credential registry (#4951,
+# #4942). The Console holds the real credential and substitutes it into the colocated egress
+# proxy's decide responses for the `github-bot` handle; a sandbox only ever presents the inert
+# placeholder `github-token-placeholder`. Same remote secret the retiring iron fence reads
+# (cluster/k8s/agents/haku-egress-proxy/claude-github-token-eso.yaml) — one operator account,
+# delivered separately into the trusted Console namespace so retiring the iron fence does not take
+# it with them.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: haku-egress-github-token
+  namespace: haku-console
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-claude-sandbox-secret-store
+  target:
+    name: haku-egress-github-token
+    creationPolicy: Owner
+    deletionPolicy: Retain
+  data:
+    - secretKey: token
+      remoteRef:
+        key: github-token
+        property: token

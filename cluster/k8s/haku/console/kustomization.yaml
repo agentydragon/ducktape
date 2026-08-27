@@ -23,6 +23,11 @@ resources:
   - static-metadata.yaml
   - static-service.yaml
   - web-push-vapid.sops.yaml
+  # Colocated egress proxy (#4942): sidecar listener Service, its shared proxy/fence bearers, and
+  # the github-bot credential the Console substitutes for the egress credential registry.
+  - egress-proxy-service.yaml
+  - haku-egress-proxy-identity.sops.yaml
+  - haku-egress-github-token-eso.yaml
 
 configMapGenerator:
   - name: haku-console-config

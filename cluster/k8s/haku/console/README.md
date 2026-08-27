@@ -229,3 +229,128 @@ enforcement-inventory entry.
 server. The encrypted account PAT is reflected only into the `haku-console` namespace and injected
 only into this deployment; the inner Haku workload sees the proxied tool surface, never the PAT.
 The public Tana OAuth facade remains available for external MCP clients but is not on Haku's path.
+
+## Colocated egress proxy (#4942, #4670)
+
+The Console-authorized HTTP egress fence's proxy runs as the `egress-proxy` **sidecar** in this
+Deployment — the embedded mitmproxy adapter (`haku/egress`, image
+`ghcr.io/agentydragon/haku-egress-proxy`) gating every fenced-workload request against Console's
+decision endpoint. Colocation is #4670's ruled topology, and the deployment shapes make its two
+central guarantees structural:
+
+- **The oracle is loopback-bound.** `POST /api/internal/http/decide` is served on `127.0.0.1:8079`
+  by `app._serve` / `build_internal_decide_app`, **not** on the network app `create_app` builds. No
+  Service targets `:8079`, so nothing answers on the pod IP there — the sidecar reaches it over the
+  shared pod loopback, and no sandbox has a route to it (acceptance criterion 14). This matters
+  because the force-proxy CCNP admits `toEntities: cluster`, so a sandbox _can_ reach this pod's
+  Service; the loopback bind, not a NetworkPolicy, is what keeps the oracle unreachable. The
+  proxy-identity bearer still authenticates every call — defense in depth, not either/or.
+- **Proxy and Console roll as one release unit.** One image commit ships both, so the decide call
+  is an internal same-release contract needing no versioning. A Console roll severs in-flight
+  tunnels — the accepted trade for not running a separately-versioned, separately-fenced proxy
+  Deployment.
+
+The fenced-workload-facing proxy listener is `:8888`, published by `egress-proxy-service.yaml`
+(`haku-egress-proxy.haku-console.svc`).
+
+### Secret wiring
+
+`config.yaml`'s `egress_decide` section names env vars the server container resolves at startup
+(`load_egress_decide`); absent, the endpoint stays `503` and the proxy fails closed.
+
+- **`haku-egress-proxy-identity`** (SOPS) — `proxy-token` and `fence-credential-haku`, opaque
+  bearers **shared** by the server and the sidecar: the sidecar presents them, the server
+  authenticates the first and resolves the second to the `haku` Agent. Minted here; rotate either
+  by re-`sops`-ing a fresh value (both containers read the one Secret).
+- **`haku-egress-github-token`** (ESO) — the bot GitHub token for the `github-bot` credential
+  registry entry (#4951). The Console holds the real value and substitutes it into decide
+  responses; the sandbox only ever holds `github-token-placeholder`. Synced from the same operator
+  account (`github-token`) the retiring iron fence reads, via the shared claude-sandbox
+  ClusterSecretStore, now admitting `haku-console`.
+- **Shared interception CA** — the sidecar reuses `haku-egress-proxy-ca` (reflected into this
+  namespace), so fenced sandboxes already trust its leaves via `haku-egress-proxy-ca-cert`. An init
+  container assembles it into `confdir/mitmproxy-ca.pem`.
+
+### The Cilium ceiling — design call
+
+#4670 wants the proxy pod's Cilium policy to be a _ceiling_: public internet on explicit dial
+ports, never private/cluster/node/metadata. **Colocation forces a choice here**, because the sidecar
+shares the _trusted_ Console pod's network namespace, and Console needs broad cluster-internal
+egress (Postgres, Matrix, Ollama, Authentik/Gateway, GitHub/Google/Anthropic, Forgejo). The options:
+
+- **A — app-layer boundary (operator-ruled, in effect here).** No restrictive egress CCNP on the
+  Console pod; the destination boundary is the decide service's resolved-address-class validation
+  (#4954 `_prohibited_address_class` + `egress_decide.prohibited_cidrs`), which rejects any answer
+  touching loopback/link-local/multicast/private/RFC1918/ULA or a configured cluster CIDR _before_
+  consulting grants. Under colocation the app layer, not Cilium, is where private/cluster/metadata
+  denial lives; Cilium stays the coarse ceiling Console already has.
+- **B — separate proxy Deployment with its own tight ceiling.** Restores a network-layer
+  public-only ceiling but reintroduces exactly what the ruling rejected: endpoint authentication, a
+  NetworkPolicy fencing the oracle, and a roll-safe versioned contract. Fallback if data-plane load
+  or a hard network-ceiling requirement dominates.
+- **C — colocation plus an enumerated Console egress CCNP.** A default-deny + allowlist policy on
+  the Console pod that bounds public egress to the proxy's dial ports while permitting Console's
+  specific cluster destinations. The "true" ceiling, but it flips the trusted Console pod to
+  default-deny egress and must enumerate every Console destination — high breakage risk, deferred
+  until the Console egress set is pinned.
+
+The operator has ruled **A**: under colocation the app layer is the destination boundary, and the
+Console pod carries no restrictive egress CCNP (one would break Console egress). B and C above are
+the recorded rejected alternatives — B reintroduces endpoint auth, an oracle NetworkPolicy, and a
+versioned contract; C stays deferred until the Console egress set is pinned. Revisit only if the
+spike shows the app-layer boundary is insufficient.
+
+### Adoption — what this repoints vs leaves
+
+- **Repointed:** the force-proxy CCNP (`ccnp-haku-proxy-egress.yaml`) now names the colocated
+  listener explicitly, so fenced sandboxes can _reach_ `haku-console:8888`.
+- **Left (deferred):** the Kyverno `inject-haku-egress-proxy` `HTTP_PROXY` still points sandbox
+  clients at the port-8080 iron/mitmproxy fence. The cutover (repoint `HTTP_PROXY` to
+  `haku-egress-proxy.haku-console.svc:8888`) is the adoption step, gated on the first spike (#4943).
+  The iron/mitmproxy fence retires at #4670's end state — deferred, and it carries the shared CA's
+  ownership out of `cluster/k8s/agents/haku-egress-proxy/` when it goes.
+
+### Rollout
+
+1. Merge (DRAFT until the prerequisites below resolve). `push-images` builds and pushes
+   `haku-egress-proxy` on the first `devel` merge; Flux's `haku-egress-proxy` ImagePolicy then
+   rewrites the placeholder tag in `deployment.yaml` to the real digest.
+2. The Console rolls with the sidecar. `maxUnavailable: 0` keeps the running version serving if the
+   new pod never becomes Ready.
+3. Verify: the server logs no `load_egress_decide` startup error; the sidecar logs `egress proxy
+listening on 0.0.0.0:8888`; a decide probe from inside the pod
+   (`curl -s -XPOST 127.0.0.1:8079/api/internal/http/decide` with the proxy bearer) returns a
+   verdict, and the same path against the pod IP or Service is refused/unreachable.
+
+**Prerequisites (operator, before un-drafting):**
+
+- Confirm the `haku-egress-github-token` ExternalSecret syncs into `haku-console` (the
+  claude-sandbox ClusterSecretStore now lists the namespace). If it cannot, the server crash-loops
+  on the missing `HAKU_EGRESS_CREDENTIAL_GITHUB_BOT` — temporarily drop the `github-bot` entry from
+  `egress_decide.credentials` until the token is delivered; the endpoint still serves reachability
+  verdicts without it.
+
+### Recovery
+
+The fence is fail-closed by construction: any decision-path error (server `503`/unreachable,
+timeout, malformed response, denied destination, address-class rejection) makes the proxy refuse,
+never forward. So a wedged decide endpoint denies egress rather than leaking it — recover by fixing
+the server, not by bypassing the proxy.
+
+- **All egress denied through the colocated proxy:** check the server container for a
+  `load_egress_decide` error or an `HttpDecideUnavailableError` (grant-authority/DB failure); the
+  sidecar's own logs show per-request `deny …: <reason>`.
+- **TLS failures in fenced workloads:** the sidecar's `mitmproxy-ca.pem` must derive from
+  `haku-egress-proxy-ca`; if the reflected Secret is missing, the init container fails and the pod
+  never starts.
+- **Observability gap (carried over from the iron fence):** the embedded runner has no flow-log UI.
+  Per-request allow/deny is in the sidecar's structured logs (credential values never logged); a
+  full-fidelity audit stream is a separate #4670 work item.
+
+### Deferred (stated deliberately)
+
+Broad adoption beyond the github-only spike needs the embedded runner to set mitmproxy's
+`stream_large_bodies` (dind layer pulls OOM-killed the iron fence without it) and h2/gRPC handling
+for `bbr` → BuildBuddy; the sidecar is sized (`1Gi`) for the small-body spike until then. Minted
+per-claim fence credentials (one shared bearer today) and iron-fence retirement are #4670 work
+items, not this PR.

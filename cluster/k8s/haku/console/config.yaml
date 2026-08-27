@@ -448,6 +448,43 @@ kubernetes_authorization:
 # in that call shares one start and expiry. This deploy-owned bound is authoritative even if a
 # client constructs a wider duration than the tool schema recommends.
 kubernetes_grant_max_lifetime_seconds: 3600
+# The colocated egress fence's decision endpoint (#4670, #4942). Absent keeps it fail-closed (503)
+# and the proxy denying; wiring it here turns on Console-authorized egress. Secret values stay in
+# env references (haku/console/deployment.yaml); handles, placeholders, match headers and
+# prohibited CIDRs are inert and committable by design.
+egress_decide:
+  # The static proxy-identity bearer the colocated sidecar presents on every localhost decide call.
+  proxy_token_env_var: HAKU_EGRESS_PROXY_TOKEN
+  # Agent-bound fence credentials the endpoint resolves to an Agent. First and only: the haku
+  # Agent, whose one fence credential the single shared proxy presents. Per #4670, minted per-claim
+  # fence credentials replace this static wiring later.
+  fence_credentials:
+    - agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
+      token_env_var: HAKU_EGRESS_FENCE_HAKU
+  # Console-owned egress credential registry (#4951): a grant redeems a credential by naming its
+  # handle, and the endpoint returns the placeholder->value substitution only for an Agent in
+  # `agent_ids` at an origin in `origins`. First entry: the bot GitHub token (mirrors the retiring
+  # iron fence's substitution). The sandbox only ever holds `github-token-placeholder`.
+  credentials:
+    - handle: github-bot
+      placeholder: github-token-placeholder
+      value_env_var: HAKU_EGRESS_CREDENTIAL_GITHUB_BOT
+      match_headers: [authorization]
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: https
+          host: api.github.com
+          port: 443
+        - scheme: https
+          host: github.com
+          port: 443
+        - scheme: https
+          host: codeload.github.com
+          port: 443
+  # Cluster pod + service CIDRs, denied in resolved answers on top of the always-prohibited classes
+  # (loopback, link-local, multicast, private/RFC1918/ULA — which already cover 10/8). Named per the
+  # field's contract so the internal boundary is legible and survives a re-IP off 10/8.
+  prohibited_cidrs: [10.42.0.0/16, 10.244.0.0/16]
 #
 # The one Agent Sandbox environment the `sandbox` server hands out: the Haku pool in
 # cluster/k8s/haku/workspaces/ and the reviewed bootstrap each claim runs. Each claim records the

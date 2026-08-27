@@ -1,0 +1,42 @@
+# Internal bearers shared by the Console API and its colocated egress proxy sidecar (#4942).
+# proxy-token: the static proxy-identity bearer the sidecar presents on every localhost decide
+#   call; the Console's egress_decide.proxy_token_env_var resolves the same value to authenticate
+#   it. fence-credential-haku: the Agent-bound fence credential the sidecar presents; the Console
+#   derives the haku Agent (8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2) from it via
+#   egress_decide.fence_credentials. Both are endpoint-scoped opaque bearers (never MCP/session
+#   credentials); minted here and rotatable independently — a fresh value on either key just needs
+#   the Console and sidecar to read the same Secret, which they do. Not the credentials the proxy
+#   redeems for upstreams: those are the egress credential registry (github-bot via ESO).
+apiVersion: v1
+kind: Secret
+metadata:
+    name: haku-egress-proxy-identity
+    namespace: haku-console
+type: Opaque
+stringData:
+    proxy-token: ENC[AES256_GCM,data:OIaLBWa4IVBvhr21Zh8JO+8KSxGI7Xi2allwbsyTaJbWsCwCt5noPddOGMPn2Uy5I1oBv/Ht/5bOS7X6NmONqA==,iv:VvcLh3Re/fH4xIYIlUX54Gin0kYBiEUYLkB7UFppfj0=,tag:keP/IBFKUIk7JkZd6Cd/Rg==,type:str]
+    fence-credential-haku: ENC[AES256_GCM,data:M+CV2VR70oeKOt+gR3bTg2GGjc18Ft57TOV/sxMv/Sqxq+M4Vp170sNxTBB+BvCUzzoNhO+fWZbAtEgcsYcrYA==,iv:X30t/I8p+U7PfBa1sXeMyyE7H6GsAcJVzFQUrsbPgFM=,tag:g9OXSP9O6Itp9PNZO9dbjg==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBzaThKdFZtellxcWt6Q3hO
+            dUZ4ZU9TUE5yUWNWMm91UExyaFhEbzloT0VBCnlXSnlUWnFNYVAzMkIxOC9rOHNk
+            TFRiY3l2TUVwUGo2NnNnRzlsR3VySFkKLS0tIEQ2UXNlaGpPWFFDa1gvT09BVFA1
+            aTVqM25VQUZjZXRJdmZ2N3g5NERSNWsKmqG+tASG8YLPTW+qFIDsx/EVBUK5byYm
+            2cDqasaM1ww8HyXmf8yn8CgHnR2rXMTOq16iupwRlGgtK2X4NVCVZw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBkcmlHQVpuaFV5ejV3endi
+            ZDVLYjhzSG5mRFcvMUtEdGVRNTczbmF2QUFrCnZwUE4zL0pHNDdVd2t0Q0NqNHJL
+            SnRtLy9vWUFWODlNV214cjUveXRJU0kKLS0tIGxwY0NpZnN5a2JlSm5KelgyREtN
+            WTZsWnZzUWQ3aUpCRjN6TkdPN1p3MU0KLzJmbnMhaZz01cbB8or/DAS8hTP6uHqz
+            OS/bXkHCkke1QFDJ9GIhwxfp4eG8HSV/vKrZhot/ysLMe/SN9+hwXw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-08-27T14:03:32Z"
+    mac: ENC[AES256_GCM,data:gFubVLZO3qTWxS6st3adJNUXWKbIZHYXNidzerT2DppBF3ZSUs8fDyfQ8CnjRj9ZIGtpx27xacUF/1/l1ZNoeA1f8tyjkqFGolo7gBKXaAYhFClB7IJoSCQtKxE+Inf6vx+qX3jifL5GCmqZjjMt3NXvjFJA/5baFOaH+fx8xvM=,iv:62s3r2b3anYRFrjIQUwAkxxaQ1J5rNGWsdrIuwHOxiM=,tag:ww0hmOeXYdgjYVVmOb5xfA==,type:str]
+    version: 3.13.3
