@@ -3,10 +3,10 @@
 Status: **PARKED (2026-07-04).** The cloud control-plane objects
 (environment/agent/vault/static_bearer credential/deployment) were deleted at
 Anthropic by the operator, and `cluster/k8s/haku/cloud-agent-tf` is suspended
-(`suspend: true`). See <PLAN.md> for the reason and the resume decision
-(recreate via the Terraform provider vs. retire it). What follows describes the
-**v0 architecture as it was built**, before parking — historical until the plan
-is resumed:
+(`suspend: true`). Resuming starts with the decision in
+[Resuming](#resuming-recreate-via-the-provider-vs-retire-it) below. What follows
+describes the **v0 architecture as it was built**, before parking — historical
+until resumed:
 
 - **Terraform root:** <../../../../tf/gitops/haku-cloud-agent> — the
   `claude-managed-agents` provider, pinned + hash-locked.
@@ -24,7 +24,41 @@ is resumed:
 
 This doc is the **architecture + forward direction** beyond v0. Before parking,
 the agent only ran a connectivity test (lists `haku-sandbox` pods); the
-ephemeral-compute run loop below was never built — see <PLAN.md>.
+ephemeral-compute run loop below was never built.
+
+## Resuming: recreate via the provider vs retire it
+
+Before rebuilding, decide whether to keep using the `claude-managed-agents`
+OpenTofu provider at all. It has bitten in three distinct ways:
+
+1. **No `self_hosted` support** — `networking` is `Required` but the API rejects
+   it for `type=self_hosted`, which forced the self-hosted agent off TF entirely
+   (back to imperative `ant`, PR #2780).
+2. **`Read` doesn't detect deletions** — after the objects were deleted,
+   tofu-controller kept reporting `Plan no changes`/Ready against phantom state;
+   recovery needs `state rm`/`-replace`, not a normal reconcile.
+3. **Supply-chain caution** — a single-maintainer, low-download third party
+   holding an org API key; every version bump needs a manual source-diff review.
+
+**Option A — `state rm` + unsuspend + recreate via the provider.** Lowest
+immediate effort; fresh IDs refresh the `haku-cloud-agent-ids` output Secret and
+unblock the parked shared-vault cutover (PR #2788). Keeps GitOps declarative
+reconciliation for the cloud agent — and all three liabilities, drift-blindness
+included.
+
+**Option B — retire the provider; manage the cloud agent imperatively**, as the
+self-hosted agent already is (`provision.sh` + `ant`). Drops the provider, its
+supply-chain surface, and the repin-review burden. Cost: the cloud agent loses
+declarative reconciliation. Coupling: PR #2788's shared vault lives _in the TF
+module_ and self-hosted reads its ID from the TF output Secret, so retiring the
+provider also unwinds vault-in-TF — the shared vault moves to imperative
+provisioning too. The SSOT/parity test (`//haku/base:test_agent_config_ssot`)
+stays valid either way.
+
+**Lean: B** — the provider has produced two silent-failure bugs and the
+imperative path is proven for self-hosted — unless declarative GitOps for the
+cloud agent specifically is worth the ongoing liability. Option A is acceptable
+as a stopgap to get a working baseline first.
 
 ## Why cloud (vs the self-hosted worker)
 
@@ -63,6 +97,13 @@ Haku spin up its own compute _inside_ the perimeter:
   data-source MCP separately. Kyverno injects the `haku-egress-proxy` egress + RBAC +
   quota **by namespace**, so agent-created pods inherit the same fence (and PSS
   constrains what the agent can create — no privileged, runAsNonRoot).
+
+Secrets the pod uses **locally** — git creds for the `haku-state` clone, possibly
+the SOPS age key — must be in-cluster k8s Secrets mounted into the pod, not vault
+`environment_variable` credentials: vault env-var substitution is **egress-only**,
+so anything consuming a secret in-pod sees the opaque placeholder, not the real
+value. Vault credentials are only for the MCP bearer (and any
+verbatim-in-outbound-request API keys).
 
 Net: **Anthropic cloud brain + one `haku`-scoped k8s MCP + a trivial tools
 image.** Arbitrary in-cluster compute still runs in `haku-sandbox` behind the same

@@ -96,13 +96,16 @@ and the whole plan is deleted once fully done — at most a short tombstone whil
 active compatibility boundary needs a pointer.
 
 **Nothing outside a plan may cite one** — no code comment, `SPEC.md`, or doc pointing at
-a plan's numbered requirement or step. A citation pins the entry permanently; needing a
-stable identifier is the signal the content is not plan content.
+a plan's numbered requirement or step: plans are ephemeral, so such a citation either
+pins the entry permanently or dangles. Citing a doc is fine — needing a stable citable
+identifier is the signal that content is ready to graduate out of the plan.
 
 **Durable content goes somewhere durable**: the invariant at the code site, the
-guarantee in `SPEC.md`, the design in a doc under `<dir>/docs/`. The goal the plan
-exists to reach _is_ plan content — a rule the code does not hold to yet leaves with the
-last step that achieves it. The test is whether the statement outlives the work.
+guarantee in `SPEC.md`, the design in a doc under `<dir>/docs/`. Graduating (parts of)
+a plan into one or more docs is the normal end of plan content, not a failure of the
+plan. The goal the plan exists to reach _is_ plan content — a rule the code does not
+hold to yet leaves with the last step that achieves it. The test is whether the
+statement outlives the work.
 
 ### `debug/`
 

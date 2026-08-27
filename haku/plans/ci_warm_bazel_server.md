@@ -1,374 +1,73 @@
 # haku-ci: a warm Bazel server across PRs
 
-Design for keeping a **warm Bazel server** — the JVM daemon with its Skyframe loading +
-analysis graph resident in RAM — alive across CI jobs on the in-cluster `haku-ci` runner, so
-successive PRs skip loading, analysis, and unchanged-action execution instead of paying a
-full cold build every time.
+Design for keeping a **warm Bazel server** — the JVM daemon with its Skyframe loading + analysis
+graph resident in RAM — alive across CI jobs on the in-cluster `haku-ci` runner, so successive
+PRs skip loading, analysis, and unchanged-action execution instead of paying a full cold build
+every time. Founding constraint: no BuildBuddy/RBE or any external CI — `haku-state` source never
+leaves the cluster (`cluster/k8s/haku-ci/README.md`).
 
-**Status:** Tier 1 (persistent disk cache) and **Tier 1.5** (validate folded into the `bazel`
-job) have **landed** — both zero-isolation-cost, and together they bank most of the cheap win
-(see [Results so far](#results-so-far-landed)). The **warm-server-across-PRs** design below
-(Tier 2) remains a proposal; it asks for one operator decision — the shared-workspace isolation
-trade-off ([The isolation decision](#the-isolation-decision)) — but the prior question is
-whether to build it at all: **[recommendation: defer](#tier-2-build-it-now)**. Manifests live
-in `cluster/k8s/haku-ci/` (this repo); workflow edits live in `haku-state` (`.forgejo/`).
+## Status: Tier 1/1.5 landed; Tier 2 deferred
 
-## Why
+The runner runs every CI job in a fresh, ephemeral job container, so all Bazel state — the
+server, the output base, the `--disk_cache`, the repo cache — is discarded per job. Tier 1
+(persistent output-base/disk/repo cache on a PVC; ducktape #3467) and Tier 1.5 (`validate` folded
+into the `bazel` job so one warm server serves both; haku-state #24 + ducktape #3474, ~40 s/run
+saved) landed and took the `bazel` job from ~500–575 s cold to ~59–132 s. Even with caches warm,
+each run still pays one serial ~45 s load+analyze phase (profile-confirmed; latency-bound, not
+resource-bound) — exactly what a server kept warm across runs (Tier 2) would remove.
 
-The runner runs every job in a **fresh, ephemeral job container** (`catthehacker/ubuntu`,
-spawned by the `dind` sidecar and destroyed when the job ends). Bazel runs _inside_ that
-container, so the Bazel server, the output base (`~/.cache/bazel`), the `--disk_cache`, and
-the bzlmod repository cache — including a fresh clone of the in-cluster ducktape mirror on
-_every_ invocation — are all thrown away per job. `cluster/k8s/haku-ci/config.yaml` also sets
-`cache: enabled: false`, so the `actions/cache@v4` step in the runner-setup composite has no
-backend and silently persists nothing.
+Current state is `cluster/k8s/haku-ci/`: the KEDA `ScaledJob` migration (one job per pod,
+ducktape #3861) later traded Tier 1's cross-job PVC for a pod-local `emptyDir`, so cache warmth
+now spans only the Bazel invocations within one CI job — that README § "What this costs: Bazel
+cache locality" records the trade and names the fix if it proves too slow (a shared
+`--disk_cache` on a real volume).
 
-The result is a flat cold-build cost on every run (measured from consecutive `main` runs,
-Forgejo `/api/v1/repos/haku/haku-state/actions/tasks`):
+## Tier 2: decided — defer, don't drop
 
-| Job         | Wall time  | Work                                                       |
-| ----------- | ---------- | ---------------------------------------------------------- |
-| `bazel`     | ~500-575 s | `bazel test //...` + `bazel build //...` (image build)     |
-| `validate`  | ~215-240 s | only `bazel run //tools:validate_state` + `freshness_lint` |
-| `linkcheck` | ~55-85 s   | dind `docker build` + lychee                               |
-| `lint`      | ~56-61 s   | dind `docker build` + ruff                                 |
-
-`validate` spending ~220 s every run to execute a tiny Python validator, and `bazel` never
-once dropping to an incremental number, are the tell: nothing is reused between runs.
-`capacity: 1` serializes, and a PR into `main` fires `bazel` + `validate` + `linkcheck` (push
-and PR each), so ~3 cold jobs queue back-to-back — ~13 min wall for one PR.
-
-## Results so far (landed)
-
-Two changes shipped, both with **zero isolation cost**, measured against live runs:
-
-- **Tier 1 — persistent Bazel cache** (`cluster/k8s/haku-ci/`, ducktape #3467): warms the
-  output base + `--disk_cache` + repo cache across the ephemeral job containers.
-- **Single-cert egress-CA import** (`tools/ci/trust_egress_ca.sh`, haku-state #22): the setup
-  had imported all ~144 certs in the mounted bundle with one `keytool` JVM per cert
-  (~90 s/job); now it imports only the egress-proxy CA (`CN=haku-egress-proxy-root-ca`,
-  `openssl`-filtered) in one call. Applies to `validate` and `bazel` alike (shared
-  `bazel-runner-setup`).
-- **Tier 1.5 — `validate` folded into the `bazel` job** (haku-state #24 + ducktape #3474):
-  `validate_state` + `freshness_lint` moved from the standalone `validate-state` workflow (its
-  own ephemeral container + **cold** Bazel) into the `bazel` job's first steps, so the opening
-  `bazel run //tools:validate_state` warms the server and the following `bazel test //...`
-  reuses the resident Skyframe graph. The `validate-state` workflow was retired and its
-  required branch-protection context dropped (ducktape #3474); the image gate (test/build/push)
-  is now per-step path-gated so data-only commits still validate but don't rebuild the image.
-  **Measured:** folding validate in added only **~2 s** to the `bazel` job (a cache-heavy run
-  went 59 → 61 s) while eliminating the separate ~40–47 s `validate` job — **≈40 s saved per
-  PR / code-push**, a fixed saving independent of diff size; data-only pushes stay ~44 s.
-
-| Job        | Before (cold every run) | After (warm, both fixes) |
-| ---------- | ----------------------- | ------------------------ |
-| `bazel`    | ~500–575 s              | ~59–132 s                |
-| `validate` | ~220 s                  | ~44 s                    |
-
-**Where the remaining `bazel` time goes** (from the workflow's own `--profile` artifact + a
-live `kubectl top`): it is **latency-bound, not resource-bound**. The JVM heap peaks ~435 MB
-of the 6 GiB limit and CPU averages ~1.5–1.9 of its 3 cores (brief peaks only) — so more
-RAM/CPU wouldn't help. The cost is the **serial "load + analyze" phase** (~45 s of bzlmod
-module resolution + Skyframe analysis, single-threaded) plus fixed per-job overhead. That
-analysis phase is exactly what a warm server (below) removes.
-
-A related egress question — could the proxy allow only specific GitHub repos? — was
-investigated separately: <../docs/egress_proxy_repo_filtering.md>.
-
-## Tier 2: build it now?
-
-With Tier 1 + 1.5 landed, the **isolation-free** wins are banked. Tier 1.5 removed the
-_duplicate_ cold `load+analyze` (validate's, ~40 s). What remains is **one** cold load+analyze
-per run — the ~45 s serial bzlmod-resolution + Skyframe-analysis phase in the surviving `bazel`
-job (the profile-confirmed floor above). Tier 2 (a server kept warm _across_ runs) is what
-removes that last ~45 s.
-
-**Payoff vs. cost.** The prize is ~45 s/run — the same order as what Tier 1.5 just banked, but
-now bought with materially more machinery: a custom builder image, a long-lived dind container
-holding a persistent workspace + output base on a node-pinned PVC, a `ci-build.sh` dispatch
-path, a periodic bounce, and `--disk_cache` GC — plus the **cross-PR isolation exposure** this
-doc's [isolation decision](#the-isolation-decision) exists to weigh. Tiers 1 and 1.5 cost a PVC
-and a workflow edit at _zero_ isolation cost; Tier 2 is a step-change in both ongoing
-operational surface and risk model for a single, fixed ~45 s.
-
-**Recommendation: defer (don't drop).** For a single-tenant, personal-infra CI at current PR
-volume, ~45 s/run does not justify standing up and babysitting a persistent cross-PR Bazel
-server — Skyframe staleness, workspace lifecycle _outside_ the ephemeral job container, cache
-GC, and foothold-bounce cadence are all new, always-on failure modes. Keep this design as the
-ready plan and revisit when a **trigger** fires:
+For a single-tenant, personal-infra CI at current PR volume, ~45 s/run does not justify standing
+up and babysitting a persistent cross-PR Bazel server — Skyframe staleness, workspace lifecycle
+outside the ephemeral job container, cache GC, and foothold-bounce cadence are all new, always-on
+failure modes. Everything below is the plan of record, to build when a trigger fires:
 
 - PR / code-push volume grows enough that ~45 s/run aggregates to real wall-clock pain (the
-  `capacity: 1` serial runner makes head-of-line blocking compound it).
+  serial runner makes head-of-line blocking compound it).
 - The analysis phase itself grows — a much larger `MODULE.bazel` graph or target count pushes
   load+analyze well past ~45 s.
 - The isolation calculus changes (e.g. `haku-ci` ever runs non-Haku-authored code), which would
   independently force a rethink.
 
-Until a trigger fires, everything below is the **plan of record for Tier 2**, not an active
-build.
+## Tier 2 design
 
-## Goal / non-goals
+A long-lived **dind builder container** — a dind container, not a pod sidecar, because the job's
+`docker` CLI is pointed at the dind daemon and can only `exec` into containers dind manages.
+Created lazily (create-if-missing by the first job of the pod's life, so no Deployment change),
+running `sleep infinity` so the Bazel server one job starts survives for the next. Its workspace
+and `~/.cache` (output base, disk cache, repo cache) live on a `local-path` PVC — node-pinned,
+acceptable for a regenerable cache (a stranded PV means delete, re-provision, eat one cold
+build). Jobs dispatch with `docker exec … ci-build.sh <sha> <targets>`; the script fetches the
+sha from the in-cluster Forgejo and `git clean -fdx`s the workspace between PRs, while the output
+base outside the workspace stays warm. The builder image bakes bazelisk + a JDK with the
+egress-proxy CA already in the JVM truststore, built and stored in-cluster. **Push credentials
+never enter the builder**: credentialed steps (registry push, git push) stay in the ephemeral job
+container.
 
-**Goal (Tier 2):** a Bazel server reused across PRs, so a no-op-diff `bazel test //...` returns
-in seconds (Skyframe warm, only genuinely-changed actions execute). Post-Tier-1.5 baseline is a
-single `bazel` job at ~60–130 s (paying one cold load+analyze); Tier 2's target is to drop the
-warm case toward ~10–30 s by removing that remaining analysis phase.
+## The isolation call
 
-**Non-goals:** introducing BuildBuddy/RBE or any external CI — the founding constraint is that
-`haku-state` source never leaves the cluster (`cluster/k8s/haku-ci/README.md`,
-`haku/console/docs/containment.md`). Widening the runner's trust perimeter (own namespace, no
-Haku RBAC, egress-fenced, no cluster creds, off the control planes) is also out of scope; this
-design stays inside it.
+Tier 2 removes the fresh-container-per-job property: a long-lived builder whose workspace and
+cache are shared across every PR's build. The exposure is strictly **cross-PR within the same
+perimeter** — same namespace, no Haku RBAC, same egress fence, no cluster creds — and `haku-ci`
+is single-tenant, so the threat is "prompt-injected Haku poisons a later Haku build". Acceptable
+**with** the mitigations: clean checkout per sha, credentials stay in the job container, a
+periodic builder bounce to cap foothold longevity, and a cache-size cap (`--disk_cache` has no
+auto-eviction).
 
-## Background: three lifetimes
+## Alternatives
 
-```text
-ephemeral job container   ⊂   long-lived runner pod (runner + dind)   ⊂   node
-  dies after each job          up 9 days; capacity:1; Recreate            8 CPU / 32 GiB
-  ← Bazel runs HERE today       ← state must move to HERE (or a PVC)
-```
-
-The runner _pod_ is already long-lived — "recycling the runner" is not the missing piece. The
-state is discarded one layer down, in the per-job container. Tier 2 moves Bazel out of that
-layer into a process that outlives it.
-
-## Design
-
-### Shape
-
-A **long-lived Bazel-builder container**, created idempotently by the CI job, holding its
-workspace + `~/.cache` (output base, disk cache, repo cache) on a persistent volume, running
-`sleep infinity` so the Bazel server it spawns survives between jobs. CI jobs dispatch builds
-into it with `docker exec`.
-
-**Deviation from the usual "sidecar" instinct:** the builder is a **dind container**, _not_ a
-pod container. The job's `docker` CLI is pointed at the dind daemon
-(`DOCKER_HOST=tcp://host.docker.internal:2375`, set in `config.yaml`), so it can only `exec`
-into containers dind manages — a pod-sibling container is invisible to it, a dind container is
-not. Creating it lazily (create-if-missing) also means **no Deployment change to run it**: the
-first job of the pod's life creates it, later jobs reuse it.
-
-### Warm-server mechanics
-
-The Bazel server is a JVM daemon started by the first `bazel` command and kept alive
-(`--max_idle_secs`, default 3 h) as long as its container lives. Because the builder container
-is `sleep infinity`, the server started by one job's `bazel test` keeps running, and the next
-job's `docker exec … bazel test` is a thin client that connects to that **already-warm
-server** — loading and analysis are incremental (Skyframe in RAM), and only changed actions
-execute.
-
-### What survives what
-
-| State                                              | Across jobs | Across pod restart     |
-| -------------------------------------------------- | ----------- | ---------------------- |
-| Server RAM (Skyframe loading + analysis)           | ✅ warm     | ❌ inherent — new dind |
-| Output base + `--disk_cache` + repo cache (on PVC) | ✅          | ✅ (on a PVC)          |
-
-Server-RAM warmth is inherently pod-lifetime (a new pod is a new dind is a new builder is a
-cold server). Backing `~/.cache` with a **PVC** means even a cold server after a pod restart
-skips re-execution and re-download and only re-analyzes. A docker _named volume_ is the
-simpler alternative but is pod-lifetime only (`docker-data` is `emptyDir`); prefer the PVC.
-
-### Dispatch flow (the CI job step)
-
-```bash
-# Ensure the warm builder exists (idempotent; the pod's first job creates it).
-docker inspect haku-bazel-builder >/dev/null 2>&1 || docker run -d \
-  --name haku-bazel-builder \
-  -e HTTP_PROXY -e HTTPS_PROXY -e NO_PROXY \
-  -v haku-bazel-cache:/root/.cache \
-  git.allegedly.works/haku/bazel-builder:latest sleep infinity
-
-# Dispatch the checked-out commit into the warm server.
-docker exec -e GITHUB_SHA="$GITHUB_SHA" haku-bazel-builder \
-  /usr/local/bin/ci-build.sh "$GITHUB_SHA" "//..."
-```
-
-The job container already has the docker CLI + `DOCKER_HOST` + the proxy env, so it can both
-create and drive the builder with no new privileges.
-
-### `ci-build.sh` (inside the builder)
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-sha="$1"; shift
-targets="${*:-//...}"
-ws=/workspace/haku-state
-[ -d "$ws/.git" ] || git clone http://haku:${MIRROR_TOKEN}@forgejo-http.forgejo:3000/haku/haku-state.git "$ws"
-cd "$ws"
-git fetch --quiet origin "$sha"
-git checkout --quiet --force "$sha"
-git clean -fdx                     # workspace only; ~/.cache (output base) is untouched
-bazel test  --config=ci $targets
-bazel build --config=ci $targets
-```
-
-`git clean -fdx` scrubs the workspace between PRs; the output base lives under `~/.cache`,
-outside the workspace, so it is _not_ cleaned — that is what stays warm.
-
-### Builder image
-
-A small custom image baking bazelisk + a JDK, the egress-proxy CA already imported into the
-JVM truststore, and a prepared `~/.bazelrc` (`--host_jvm_args` truststore + `--disk_cache`).
-This also retires the per-run `tools/ci/trust_egress_ca.sh` keytool dance (a standing TODO in
-both `.bazelrc` and `config.yaml`). The image is built and stored in the in-cluster Forgejo
-registry — source and toolchain stay in-cluster.
-
-### Source fetch / git auth
-
-The builder fetches `haku-state` from the in-cluster Forgejo
-(`forgejo-http.forgejo:3000/haku/haku-state.git`) with a repo-read token, mirroring the
-existing `DUCKTAPE_MIRROR_READ_TOKEN` pattern in `bazel-runner-setup/action.yml`. All
-in-cluster, all behind the egress fence.
-
-### What changes, by file
-
-- **`cluster/k8s/haku-ci/scaledjob.yaml`** (this repo): add a PVC (`local-path-ovh-hdd`,
-  ~30–50 GiB) mounted into the `dind` container; back `haku-bazel-cache` with it. **Deviation**
-  from the repo's `seaweedfs-ovh` default (`cluster/AGENTS.md` § Storage Selection): the cache
-  is regenerable and latency-sensitive, so node-local wins — exactly the case the default
-  carves out. **Tier gotcha:** the runner is fenced onto the KS-5 workers, labeled
-  `storage.allegedly.works/tier=hdd`; the NVMe `-ssd` tier lives on the KS-GAME **control-plane**
-  nodes the runner is pinned off of, so an `-ssd` PVC would never bind here. The cache is
-  therefore HDD-backed; if it proves I/O-bound, re-tiering the worker or attaching a dedicated
-  disk is the follow-up. Bump the `dind` limits — the warm JVM server + build actions run
-  inside dind's cgroup; start at cpu `"6"` / mem `12Gi` (node has 8 CPU / 32 GiB headroom).
-- **`cluster/k8s/haku-ci/config.yaml`** (this repo): no new job-container `-v` mounts needed —
-  the builder holds the cache, not the job container. Most of the per-job CA/proxy env can
-  eventually move into the builder image; keep it for now.
-- **`haku-state` `.forgejo/actions/bazel-runner-setup/action.yml`**: replace "install bazelisk
-  - `actions/cache` + trust CA" with "ensure the warm builder exists" (the `docker inspect ||
-docker run` above).
-- **`haku-state` `.forgejo/workflows/{bazel-ci,validate-state}.yaml`**: replace the in-job
-  `bazel test/build …` steps with `docker exec haku-bazel-builder ci-build.sh …`. **Keep the
-  credentialed push steps in the ephemeral job container** (see the isolation decision) — the
-  builder produces the image tarball with `bazel build //ui:image`; the job container, which
-  holds `REGISTRY_PUSH_TOKEN`, does the crane push of that tar.
-- **new** `haku-state tools/ci/ci-build.sh` + a `Dockerfile` for the builder image.
-
-### Gotcha: PVC node-affinity coupling
-
-`local-path` PVCs are node-pinned. The runner Deployment is node-affinity'd to region `hil`
-workers with `Recreate`, so the PV binds to whichever worker the pod first lands on; a
-reschedule to a _different_ node strands the PVC (local-path can't migrate). For a regenerable
-cache this is acceptable — delete the PVC, re-provision, eat one cold build. `seaweedfs` (RWX,
-networked) would move but is far too slow for a Bazel cache. Recommend `local-path-ovh-hdd`
-and accept the coupling.
-
-## The isolation decision
-
-This is the one call the operator has to make.
-
-### Current model
-
-Per `cluster/k8s/haku-ci/README.md` and `haku/console/docs/containment.md`, the runner
-executes **Haku-authored** build steps (the workflow + Dockerfile in `haku-state`). A
-prompt-injected Haku could author a hostile build, so the runner is contained to roughly
-Haku's existing sandbox blast radius: own namespace with **no Haku RBAC**, egress-fenced, no
-cluster creds (`automountServiceAccountToken: false`), pinned off the control planes,
-`capacity: 1`. Crucially, a **fresh job container per job** means each build starts from a
-clean ephemeral filesystem and nothing bleeds between jobs.
-
-### What Tier 2 changes
-
-It removes the "fresh container per job" property. The warm builder is a **long-lived
-container with a persistent workspace + output base, shared across every PR's build**:
-
-- **Cross-PR state bleed.** PR A's build actions (genrules, tests — arbitrary code) run in the
-  same container and write to the same output base / disk cache that PR B then builds against.
-- **Persistent foothold.** A compromised build could leave a process running in the builder
-  that survives into later jobs (vs. today's per-job teardown).
-- **Resource / DoS.** A build could fill the cache PVC or pin the warm server's RAM.
-
-### What stays contained (unchanged)
-
-- Still the `haku-ci` namespace, no Haku RBAC, egress-fenced, no cluster creds, off the
-  control planes. The builder reaches nothing the job container couldn't — same egress door,
-  same in-cluster-only perimeter.
-- The new exposure is strictly **cross-PR, within that same perimeter** — not a widening of
-  the outer boundary.
-- **Push credentials never enter the builder** (design refinement above): credentialed steps
-  stay in the ephemeral job container, so a hostile build in the builder does not gain
-  `REGISTRY_PUSH_TOKEN` or the git-push creds.
-- `haku-ci` is **single-tenant**: only Haku/operator author PRs. The threat is therefore
-  "prompt-injected Haku poisons a later Haku build," not a public multi-tenant CI.
-
-### Mitigations
-
-- `git clean -fdx` (or a fresh `git worktree` per sha) so workspace files don't leak between
-  PRs.
-- Keep credentialed (push) steps in the ephemeral job, not the builder.
-- Periodic builder bounce (recreate daily / every N builds) to cap foothold longevity and
-  cache drift.
-- Resource limits on dind and a cache-size cap — `--disk_cache` has **no auto-eviction**, so
-  add a periodic prune (or adopt an in-cluster `bazel-remote`, which does LRU; see
-  alternatives).
-- The disk cache is content-addressed (keyed by action hash), so poisoning a _specific_
-  downstream build is hard; a paranoid option is a read-only disk cache, but that kills the
-  win.
-
-### The call
-
-Because `haku-ci` is single-tenant and already treated as adversarial-but-contained, the
-marginal risk is "prompt-injected Haku poisons a later Haku build" — bounded to the same
-perimeter, no outer-boundary widening, and mitigatable (clean checkout, creds stay in the job,
-periodic bounce). **Recommendation: acceptable _with_ the mitigations, given single-tenancy;
-revisit if `haku-ci` ever runs non-Haku-authored code.**
-
-## Alternatives considered
-
-- **Tier 1 — bind-mount the disk cache only, keep the fresh job container.** Warms disk + repo
-  cache but not the server (no analysis reuse) → `bazel` ~60–150 s. Zero isolation cost; full
-  per-job isolation preserved. Lower ceiling, but a good substrate Tier 2 builds on, and it
-  can ship independently and immediately. **Landed** in `cluster/k8s/haku-ci/` (`pvc.yaml` +
-  the `-v /bazel-cache:/root/.cache` job-container mount in `config.yaml`): a
-  `local-path-ovh-hdd` PVC mounted into dind and bind-mounted onto every job container's
-  `~/.cache`, so the output base + `--disk_cache` + repo cache persist across job containers.
-- **Tier 1.5 — run `validate` + `bazel` in one job/container. ✅ Landed** (haku-state #24,
-  ducktape #3474; see [Results so far](#results-so-far-landed)). They were separate workflows,
-  so on a PR each spun up a fresh container and a **cold** Bazel server, re-paying the ~45 s
-  load+analyze twice. Merging them into one job shares the checkout/setup **and one warm
-  server** — `validate`'s `bazel run //tools:validate_state` warms it, and the following
-  `bazel test //...` reuses the resident Skyframe graph. Captured much of Tier 2's analysis win
-  **within a single job, so no cross-PR isolation cost** (measured ≈40 s/run). The caveat —
-  `validate-state` was path-**un**filtered (runs on every data commit) while `bazel-ci` is
-  scoped to code/config — was handled by gating the `bazel test/build/push` steps per-step on
-  changed paths, so data-only commits still validate but don't pay for the image build.
-- **Tier 3 — in-cluster `bazel-remote` gRPC cache.** Persistent, LRU-evicting,
-  concurrency-safe, survives node moves; honors source-in-cluster (only content-addressed CAS
-  blobs go to it, never source). Complements Tier 2 (remote cache for execution, warm server
-  for analysis) but gives no warm RAM on its own.
-- **Fix `cache: enabled` and keep `actions/cache`.** The tar → upload → download → untar tax
-  rivals the build itself for a multi-GB Bazel cache. Strictly worse than a bind-mount; not
-  recommended.
-
-## Rollout
-
-Tier 2 rollout, **if/when a trigger fires** ([above](#tier-2-build-it-now)). Step 1 is done;
-the rest are unbuilt.
-
-1. ~~Land the **Tier 1 substrate** (PVC + cache mount).~~ ✅ Done (ducktape #3467); Tier 1.5
-   (folding `validate` into the `bazel` job) also landed (haku-state #24). These are the
-   substrate Tier 2 builds on.
-2. Build and publish the **builder image** to the in-cluster registry.
-3. Add lazy-create + `docker exec` dispatch in a **non-gating** workflow first; measure warm
-   vs. cold.
-4. Flip the `bazel` job's `test`/`build` steps to `docker exec haku-bazel-builder ci-build.sh`
-   (`validate` now runs inside that same job, so it rides along) — keeping the credentialed
-   push in the ephemeral job container.
-5. Add the periodic builder bounce + cache GC.
-
-**Rollback:** revert the workflow steps to in-job `bazel`; delete the builder container + PVC.
-The output base and disk cache are regenerable.
-
-## Validation
-
-- Confirm act_runner does **not** reap the named `haku-bazel-builder` container between jobs
-  (it should only remove the job containers it created).
-- Measure first (cold) vs. second (warm) wall time; confirm "Starting local Bazel server" is
-  **absent** on warm runs and the `--profile` trace shows ~0 analysis time on a no-op diff.
-- Confirm push credentials never appear in the builder's environment.
+- **Tier 3 — in-cluster `bazel-remote` gRPC cache**: LRU-evicting, survives node moves,
+  complements Tier 2 (remote cache for execution, warm server for analysis) — but no warm RAM on
+  its own.
+- **`actions/cache`**: the tar/upload/download/untar tax rivals the build itself for a multi-GB
+  Bazel cache; rejected.
 
 ## Open questions
 
@@ -378,3 +77,10 @@ The output base and disk cache are regenerable.
   `bazel-remote`.
 - **Bounce cadence** for the builder (foothold longevity vs. warmth).
 - **Server memory budget** — start at ~4 GiB inside the dind limit, tune from the profile.
+
+## Validation (the non-obvious checks)
+
+- act_runner must not reap the named builder container between jobs — it should only remove the
+  job containers it created.
+- "Starting local Bazel server" must be absent on warm runs, and the `--profile` trace should
+  show ~0 analysis time on a no-op diff.

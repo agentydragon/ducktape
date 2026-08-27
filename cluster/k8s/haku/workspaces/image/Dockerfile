@@ -6,7 +6,8 @@
 # --spawn_strategy=local, no BuildBuddy/RBE — the source must never leave the
 # cluster), so this image bakes the full local toolchain, not an RBE client.
 #
-# Deliberately minimal (cf. haku/plans/ci_warm_bazel_server.md "Builder image"):
+# Deliberately minimal (the haku-ci warm-builder image, if ever built under
+# haku/plans/ci_warm_bazel_server.md, is a separate image):
 # bazelisk + a JDK (keytool + the Bazel server JVM) + git/curl/openssl + kubectl + ruff. NO
 # nix, NO docker (bazel's //ui:image uses hermetic rules_oci), NO browser/Rust/GHC deps.
 # kubectl earns its place because the pod runs as the `haku` ServiceAccount (full CRUD
