@@ -78,7 +78,7 @@ from haku.console.x.channels.matrix.revisions import Revision, RevisionLog
 from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.channels.matrix.spans import Span, SpanKind
 from haku.console.x.conversation_log import writer_for
-from haku.console.x.session_notifications import SessionNotifications
+from haku.console.x.conversation_wakes import ConversationWakes
 from haku.console.x.subscription import ConversationStream
 
 logger = logging.getLogger(__name__)
@@ -182,7 +182,7 @@ class MatrixSyncService:
         outbox_wakes: OutboxWakes,
         sessions: async_sessionmaker[AsyncSession],
         stream: ConversationStream,
-        notifications: SessionNotifications,
+        notifications: ConversationWakes,
     ):
         # Taken separately from `config`, which carries it as optional: the service is only ever
         # constructed once the password is known to be there.

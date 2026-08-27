@@ -68,8 +68,8 @@ from haku.console.x.conversation_views import (
     ConversationSnapshot,
     ConversationView,
 )
+from haku.console.x.conversation_wakes import ConversationWakeEvent, ConversationWakes, RecheckHeld
 from haku.console.x.sandbox_claims import SandboxProvisioningView
-from haku.console.x.session_notifications import ConversationWakeEvent, RecheckHeld, SessionNotifications
 from haku.console.x.session_store import PositionUnusableError, SessionStore
 
 router = APIRouter(tags=["conversations"])
@@ -126,7 +126,7 @@ class ConversationFollow:
         self,
         store: SessionStore,
         reader: ConversationReader,
-        notifications: SessionNotifications,
+        notifications: ConversationWakes,
         *,
         window: timedelta = COALESCE_WINDOW,
         sandbox_poll: timedelta = SANDBOX_POLL,
@@ -167,7 +167,7 @@ class ConversationFollow:
                 case RecheckHeld():
                     follower.woken.set()
 
-        with self._notifications.watch_conversations(on_wake):
+        with self._notifications.watch(on_wake):
             # Registered before the first read, so a change landing during it wakes this follower
             # rather than being missed. A wake it did not need costs one read.
             if after is None:

@@ -65,6 +65,7 @@ from haku.console.x.channels.matrix.conversation import RoomAttachment
 from haku.console.x.channels.matrix.outbox import RoomOutbox
 from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.channels.matrix.spans import LiveSpans, RetireSpan, RoomFrontend, SealSpan
+from haku.console.x.conversation_wakes import ConversationWakeEvent, ConversationWakes, RecheckHeld
 from haku.console.x.session_events import (
     LeaseExpiredBody,
     MessageCompletedBody,
@@ -88,7 +89,6 @@ from haku.console.x.session_events import (
     UnknownEventBody,
     UnreadableInputBody,
 )
-from haku.console.x.session_notifications import ConversationWakeEvent, RecheckHeld, SessionNotifications
 from haku.console.x.subscription import ConversationStream, StreamedEvent, StreamPosition, Subscription, Unstarted
 
 logger = logging.getLogger(__name__)
@@ -287,7 +287,7 @@ class ConversationSubscriber:
         self,
         sessions: async_sessionmaker[AsyncSession],
         stream: ConversationStream,
-        notifications: SessionNotifications,
+        notifications: ConversationWakes,
         project: ProjectNotice,
         frontend: RoomFrontend,
         binding: RoomAttachment,
@@ -514,7 +514,7 @@ class ConversationSubscriber:
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
-        with self._notifications.watch_conversations(self._wake):
+        with self._notifications.watch(self._wake):
             task = asyncio.create_task(self._run(), name=f"matrix-room-notices-{self._binding.attachment_id}")
             try:
                 yield

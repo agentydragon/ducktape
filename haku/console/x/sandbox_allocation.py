@@ -23,9 +23,9 @@ from datetime import timedelta
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from haku.console.x.session_notifications import SessionEvent, SessionEventKind, SessionNotifications
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import REPLICA, SessionStore
+from haku.console.x.session_wakes import SessionEvent, SessionEventKind, SessionWakes
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +38,7 @@ FAILURE_BACKOFF = timedelta(seconds=60)
 class SandboxAllocator:
     """Give every idle session with queued work its sandbox, whichever surface created it."""
 
-    def __init__(
-        self, service: SessionService, store: SessionStore, notifications: SessionNotifications, engine: AsyncEngine
-    ):
+    def __init__(self, service: SessionService, store: SessionStore, notifications: SessionWakes, engine: AsyncEngine):
         self._service = service
         self._store = store
         self._notifications = notifications

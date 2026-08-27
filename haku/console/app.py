@@ -126,9 +126,10 @@ from haku.console.x.channels.matrix import (
 from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.conversation_live_updates import ConversationLiveUpdates
+from haku.console.x.conversation_wakes import ConversationWakes
 from haku.console.x.launch_identity import ChatLaunchAuthorizer
-from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_store import SessionStore
+from haku.console.x.session_wakes import SessionWakes
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.recall_index.openai_embedder import OpenAIEmbedder
 from haku.runtime.x.bridge.protocol import KUBERNETES_PROXY_URL_ENV, RUNNER_SETUP_ENV
@@ -236,12 +237,16 @@ def create_app(
         profile.id: set(profile.allowed_chat_runtimes) for profile in console_config.access_profiles
     }
     launchable_agent_ids = {entry.agent_id for entry in console_config.launchable_agents}
-    session_notifications = SessionNotifications(database_url)
+    # Each layer owns its own LISTEN connection on its own channel: a session and a conversation
+    # are different layers, so their wakes share no wire, no connection, and no module. Two
+    # connections is the accepted cost of that separation.
+    session_wakes = SessionWakes(database_url)
+    conversation_wakes = ConversationWakes(database_url)
     # Conversation changes reach open tabs over the console socket the shell already holds,
     # coalesced per conversation. Constructed unconditionally: it listens on the conversation
     # channel and sends on the console one, neither of which depends on this replica running a
     # Claude runtime.
-    conversation_live_updates = ConversationLiveUpdates(session_notifications, console_event_hub, db_sessions)
+    conversation_live_updates = ConversationLiveUpdates(conversation_wakes, console_event_hub, db_sessions)
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
         db_sessions,
@@ -450,7 +455,7 @@ def create_app(
             matrix_outbox_wake.OutboxWakes(database_url),
             db_sessions,
             subscription.ConversationStream(db_sessions),
-            session_notifications,
+            conversation_wakes,
         )
     # Execution exists only when a launch-capable adapter was configured. Read-only replicas keep
     # the same registry in their store above but expose no session-creation runtime service.
@@ -483,7 +488,7 @@ def create_app(
         session_service = session_runtime.SessionService(
             runtime_registry,
             session_store,
-            session_notifications,
+            session_wakes,
             conversation_history=ConversationHistory(db_sessions),
             launch_authorizer=authorize_chat_launch,
             default_agent_id=default_chat_agent_id,
@@ -496,12 +501,12 @@ def create_app(
     else:
         session_service = None
     sandbox_allocator = (
-        sandbox_allocation.SandboxAllocator(session_service, session_store, session_notifications, db_engine)
+        sandbox_allocation.SandboxAllocator(session_service, session_store, session_wakes, db_engine)
         if session_service is not None
         else None
     )
     runtime_supervisor = (
-        conversation_runtime.ConversationRuntime(session_service, session_store, session_notifications, db_engine)
+        conversation_runtime.ConversationRuntime(session_service, session_store, conversation_wakes, db_engine)
         if session_service is not None
         else None
     )
@@ -511,7 +516,7 @@ def create_app(
     follow = (
         None
         if session_service is None
-        else conversation_follow.ConversationFollow(session_store, session_service, session_notifications)
+        else conversation_follow.ConversationFollow(session_store, session_service, conversation_wakes)
     )
     if static_agent_definitions is not None:
         static_agent_fingerprints = tuple(definition.token_fingerprint for definition in static_agent_definitions)
@@ -732,7 +737,8 @@ def create_app(
         allocating = sandbox_allocator.run() if sandbox_allocator is not None else contextlib.nullcontext()
         async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), catalogs.run(), matrix_running:
             await console_event_hub.start()
-            await session_notifications.start()
+            await session_wakes.start()
+            await conversation_wakes.start()
             try:
                 # Pre-warm the OIDCProxy client-state store so the first OAuth request isn't slowed by a
                 # cold connect (see mcp_infra/oauth_facade/server.py). The OAuth variant always carries
@@ -752,7 +758,8 @@ def create_app(
                 await github_repository_visibility.aclose()
                 if session_service is not None:
                     await session_service.aclose()
-                await session_notifications.aclose()
+                await session_wakes.aclose()
+                await conversation_wakes.aclose()
                 await console_event_hub.aclose()
                 await approval_notifier.aclose()
 
@@ -781,7 +788,7 @@ def create_app(
     app.state.authentik_operator_token_store = authentik_operator_token_store
     app.state.console_event_hub = console_event_hub
     app.state.session_store = session_store
-    app.state.session_notifications = session_notifications
+    app.state.session_wakes = session_wakes
     app.state.conversation_follow = follow
     app.state.session_service = session_service
     app.state.in_process_servers = in_process_servers

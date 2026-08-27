@@ -51,12 +51,13 @@ from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.conversation_runtime import ConversationRuntime
+from haku.console.x.conversation_wakes import ConversationWakes
 from haku.console.x.runtime_catalog import execution_registry, runtime_registration
 from haku.console.x.sandbox_allocation import SandboxAllocator
 from haku.console.x.sandbox_claims import SandboxProvisioningView
-from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService, internal_router
 from haku.console.x.session_store import SessionStore
+from haku.console.x.session_wakes import SessionWakes
 from haku.console.x.subscription import ConversationStream
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.console.x.testing.recording_claims import fixed_provisioning_view
@@ -158,8 +159,10 @@ async def _serve() -> None:
 
     engine = create_async_engine(database_url, pool_pre_ping=True)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
-    notifications = SessionNotifications(database_url)
-    await notifications.start()
+    session_wakes = SessionWakes(database_url)
+    conversation_wakes = ConversationWakes(database_url)
+    await session_wakes.start()
+    await conversation_wakes.start()
     claims = FileSandboxClaims(Path(_environment("HAKU_E2E_CLAIMS_DIR")))
     runtimes = execution_registry(
         runtime_registration(
@@ -189,12 +192,12 @@ async def _serve() -> None:
         OutboxWakes(database_url),
         sessions,
         ConversationStream(sessions),
-        notifications,
+        conversation_wakes,
         armed=Path(_environment("HAKU_E2E_REFUSE_NEXT_REPLY")),
     )
-    service = SessionService(runtimes, store, notifications, conversation_history=ConversationHistory(sessions))
-    supervisor = ConversationRuntime(service, store, notifications, engine)
-    allocator = SandboxAllocator(service, store, notifications, engine)
+    service = SessionService(runtimes, store, session_wakes, conversation_history=ConversationHistory(sessions))
+    supervisor = ConversationRuntime(service, store, conversation_wakes, engine)
+    allocator = SandboxAllocator(service, store, session_wakes, engine)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -204,7 +207,8 @@ async def _serve() -> None:
                 yield
         finally:
             await service.aclose()
-            await notifications.aclose()
+            await session_wakes.aclose()
+            await conversation_wakes.aclose()
             await engine.dispose()
 
     app = FastAPI(lifespan=lifespan)

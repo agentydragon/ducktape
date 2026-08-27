@@ -39,11 +39,11 @@ async def test_a_prompt_commit_survives_before_any_allocator_runs(
 
 
 async def test_a_new_allocator_recovers_demand_left_by_a_stopped_replica(
-    chat_service, chat_store, notifications, recording_claims, migrated_engine, operator_id
+    chat_service, chat_store, session_wakes, recording_claims, migrated_engine, operator_id
 ) -> None:
     view = await chat_service.create(operator_id)
     await chat_service.enqueue_prompt(operator_id, view.session_id, "still here", SPA_ORIGIN)
-    restarted = SandboxAllocator(chat_service, chat_store, notifications, migrated_engine)
+    restarted = SandboxAllocator(chat_service, chat_store, session_wakes, migrated_engine)
 
     await restarted.allocate_once()
 
@@ -74,10 +74,10 @@ async def test_allocator_is_compatible_with_the_previous_request_path_during_rol
 
 
 async def test_prompt_notification_wakes_one_elected_allocator(
-    allocator, chat_service, chat_store, notifications, recording_claims, migrated_engine, operator_id
+    allocator, chat_service, chat_store, session_wakes, recording_claims, migrated_engine, operator_id
 ) -> None:
     """Two live replicas watch, one holds SBOX, and demand does not wait for the 10-second sweep."""
-    other = SandboxAllocator(chat_service, chat_store, notifications, migrated_engine)
+    other = SandboxAllocator(chat_service, chat_store, session_wakes, migrated_engine)
     view = await chat_service.create(operator_id)
     first_sweep = asyncio.Event()
     sessions_awaiting_sandbox = chat_store.sessions_awaiting_sandbox

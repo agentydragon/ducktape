@@ -17,3 +17,14 @@ py_library(
     name = "waiting",
     srcs = ["waiting.py"],
 )
+
+py_library(
+    name = "wake_probes",
+    srcs = ["wake_probes.py"],
+    deps = [
+        "//haku/console/x:pg_wake",
+        "@pypi//asyncpg",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+    ],
+)

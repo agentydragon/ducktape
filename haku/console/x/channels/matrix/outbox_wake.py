@@ -3,7 +3,7 @@
 Channel-internal on purpose. An outbox row is this channel's delivery state, not a conversation
 fact, so its wake rides a channel of the channel's own rather than the conversation wire — the
 layers above have no reason to hear it, and nothing here reaches them. What it keeps from the
-shared wake discipline (<../../session_notifications.py>, whose `notify_raw` is the one `pg_notify`
+shared wake discipline (<../../pg_wake.py>, whose `notify_raw` is the one `pg_notify`
 emission this reuses):
 
 - **The emission stays inside the inserting transaction.** `pg_notify` delivers on commit, so the
@@ -30,7 +30,7 @@ from typing import Any
 import asyncpg
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.x.session_notifications import libpq_dsn, notify_raw
+from haku.console.x.pg_wake import libpq_dsn, notify_raw
 
 logger = logging.getLogger(__name__)
 

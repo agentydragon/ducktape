@@ -20,11 +20,11 @@ from datetime import timedelta
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from haku.console.x.session_notifications import (
+from haku.console.x.conversation_wakes import (
     ConversationWakeEvent,
     ConversationWakeKind,
+    ConversationWakes,
     RecheckHeld,
-    SessionNotifications,
 )
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import REPLICA, SessionStore
@@ -41,7 +41,7 @@ class ConversationRuntime:
     """Create or replace sessions for durable conversation demand and maintain them globally."""
 
     def __init__(
-        self, service: SessionService, store: SessionStore, notifications: SessionNotifications, engine: AsyncEngine
+        self, service: SessionService, store: SessionStore, notifications: ConversationWakes, engine: AsyncEngine
     ) -> None:
         self._service = service
         self._store = store
@@ -116,7 +116,7 @@ class ConversationRuntime:
     @contextlib.asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
         """Run the elected reconciler and register this replica's low-latency demand wake."""
-        with self._notifications.watch_conversations(self._wake):
+        with self._notifications.watch(self._wake):
             task = asyncio.create_task(self._run(), name="conversation-runtime")
             try:
                 yield

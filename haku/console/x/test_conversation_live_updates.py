@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.console_events import ConsoleEvent, ConsoleEventHub
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.conversation_live_updates import ConversationLiveUpdates
-from haku.console.x.session_notifications import ConversationWakeKind, SessionNotifications, notify_conversation
+from haku.console.x.conversation_wakes import ConversationWakeKind, ConversationWakes, notify_conversation
 from haku.console.x.session_store import SessionStore
 
 # Long enough that several notifications land inside one window on a loaded machine, short enough
@@ -82,9 +82,9 @@ async def hub(
 
 @pytest.fixture
 async def live_updates(
-    notifications: SessionNotifications, hub: ConsoleEventHub, migrated_sessions: async_sessionmaker[AsyncSession]
+    conversation_wakes: ConversationWakes, hub: ConsoleEventHub, migrated_sessions: async_sessionmaker[AsyncSession]
 ) -> AsyncIterator[ConversationLiveUpdates]:
-    updates = ConversationLiveUpdates(notifications, hub, migrated_sessions, window=WINDOW)
+    updates = ConversationLiveUpdates(conversation_wakes, hub, migrated_sessions, window=WINDOW)
     async with updates.run():
         yield updates
 
@@ -232,7 +232,7 @@ async def test_a_conversation_this_database_does_not_have_is_dropped(
 
 
 async def test_a_failed_flush_does_not_stop_the_next_one(
-    notifications: SessionNotifications,
+    conversation_wakes: ConversationWakes,
     migrated_db_url: str,
     migrated_identity_store: PostgresOperatorIdentityStore,
     chat_store: SessionStore,
@@ -247,7 +247,7 @@ async def test_a_failed_flush_does_not_stop_the_next_one(
     conversation_id = await chat_store.conversation_of(view.session_id)
     socket = await _tab(flaky, operator_id)
     try:
-        async with ConversationLiveUpdates(notifications, flaky, migrated_sessions, window=WINDOW).run():
+        async with ConversationLiveUpdates(conversation_wakes, flaky, migrated_sessions, window=WINDOW).run():
             async with migrated_sessions.begin() as db:
                 await notify_conversation(db, ConversationWakeKind.UPDATE, conversation_id)
             assert await socket.conversation_events(within=WINDOW * 3) == []

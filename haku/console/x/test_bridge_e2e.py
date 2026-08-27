@@ -33,9 +33,9 @@ from haku.console.x import conversation_reads
 from haku.console.x.conftest import configured_runtimes, runtime_config
 from haku.console.x.conversation_reads import MessageEntry, PromptEntry, SetupOutputRecord, TurnAnsweredEnd
 from haku.console.x.item_entries import entry_of
-from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService, internal_router
 from haku.console.x.session_store import SessionStore
+from haku.console.x.session_wakes import SessionWakes
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 from haku.console.x.testing.recording_claims import RecordingClaims
 from util.bazel.runfiles import get_required_path
@@ -57,16 +57,16 @@ def _console_app(database_url: str, workspace: Path) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine = create_async_engine(database_url, pool_pre_ping=True)
-        notifications = SessionNotifications(database_url)
-        await notifications.start()
+        session_wakes = SessionWakes(database_url)
+        await session_wakes.start()
         claims = RecordingClaims()
         runtimes = configured_runtimes(claims, config=runtime_config(cwd=str(workspace)))
         store = SessionStore(async_sessionmaker(engine, expire_on_commit=False), runtimes)
-        app.state.session_service = SessionService(runtimes, store, notifications)
+        app.state.session_service = SessionService(runtimes, store, session_wakes)
         try:
             yield
         finally:
-            await notifications.aclose()
+            await session_wakes.aclose()
             await engine.dispose()
 
     app = FastAPI(lifespan=lifespan)

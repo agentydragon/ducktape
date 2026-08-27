@@ -98,16 +98,11 @@ from haku.console.x.conversation_views import (
     session_view,
     setup_narration,
 )
+from haku.console.x.conversation_wakes import ConversationWakeKind, notify_conversation, notify_update
 from haku.console.x.item_entries import ConversationPageRow, entry_of, turn_end_of
 from haku.console.x.launch_identity import LaunchAgentRejectedError, LaunchAuthorizer
 from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
-from haku.console.x.session_notifications import (
-    ConversationWakeKind,
-    SessionEventKind,
-    notify,
-    notify_conversation,
-    notify_update,
-)
+from haku.console.x.session_wakes import SessionEventKind, notify
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 from haku.console.x.subscription import stream_head
 from haku.runtime.x.bridge.client import ReceivedFrame, RecordedFrame

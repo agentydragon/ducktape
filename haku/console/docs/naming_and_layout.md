@@ -86,7 +86,7 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
     provider_connection*.py  oauth_token_state.py  oauth_connection_result.py  oauth_*.py
 
   notifications/       # Web Push pending-approval domain (README Notifications section as a package)
-    web_push.py  push_routes.py  console_events.py  connection_metrics.py  session_notifications.py
+    web_push.py  push_routes.py  console_events.py  connection_metrics.py  pg_wake.py  session_wakes.py  conversation_wakes.py
 
   hostexecd/           # console-side registry / machine-API for the hostexecd fleet — NOT node_daemons (§3)
     node_daemons.py  node_daemon_models.py

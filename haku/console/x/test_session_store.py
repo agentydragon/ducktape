@@ -84,7 +84,6 @@ from haku.console.x.conversation_reads import (
 from haku.console.x.item_entries import entry_of
 from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
 from haku.console.x.session_events import PromptStartedBody, TurnAbortedBody, TurnAnsweredBody, TurnFailedBody
-from haku.console.x.session_notifications import SessionEvent, SessionEventKind
 from haku.console.x.session_store import (
     ADOPTION_GRACE,
     REPLICA,
@@ -94,6 +93,7 @@ from haku.console.x.session_store import (
     SessionStore,
     TurnState,
 )
+from haku.console.x.session_wakes import SessionEvent, SessionEventKind
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 
 ROOM = "!room:example.org"
@@ -1499,7 +1499,7 @@ async def test_abort_is_refused_until_a_turn_is_actually_running(chat_store, ope
 
 
 async def test_abort_reaches_the_replica_running_the_turn(
-    migrated_db_url, chat_store, notifications, operator_id
+    migrated_db_url, chat_store, session_wakes, operator_id
 ) -> None:
     """The two ends of an abort are on different pods, so it has to cross the database: the abort
     event belongs to whichever replica holds the runner's bridge websocket, while `POST .../abort`
@@ -1518,7 +1518,7 @@ async def test_abort_reaches_the_replica_running_the_turn(
             RuntimeRegistry({RuntimeKind.CLAUDE_CODE: cast(RuntimeAdapter, _AlternateFrameVocabulary())}),
         )
         received: asyncio.Queue[SessionEvent] = asyncio.Queue()
-        with notifications.watch_session(view.session_id, received.put_nowait):
+        with session_wakes.watch_session(view.session_id, received.put_nowait):
             assert await requesting.request_abort(view.session_id) is True
             async with asyncio.timeout(30):
                 # Drained, not first: delivery is commit-ordered, so the update notifies committed

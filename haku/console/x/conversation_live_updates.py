@@ -7,10 +7,10 @@
 already emits a wake on the conversation channel inside the transaction that makes the change
 (`notify_conversation` fires on commit), so a change that rolled back never announces itself. This
 module only listens — the same registration every conversation subscriber holds
-(`watch_conversations`), with the console socket as this consumer's transport.
+(`ConversationWakes.watch`), with the console socket as this consumer's transport.
 
 **No second channel and no second NOTIFY.** `LISTEN` is broadcast, so every replica's
-`SessionNotifications` already hears every `conversation_wakes` notification. Each replica
+`ConversationWakes` already hears every `conversation_wakes` notification. Each replica
 therefore turns what it hears into sends on the console sockets **it** holds; relaying through
 `ConsoleEventHub.broadcast` would `NOTIFY` a second time for one change and deliver it twice.
 
@@ -45,7 +45,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.console_events import ConsoleEventHub, ConversationChangedEvent
 from haku.console.database_schema import Conversation
-from haku.console.x.session_notifications import ConversationWakeEvent, RecheckHeld, SessionNotifications
+from haku.console.x.conversation_wakes import ConversationWakeEvent, ConversationWakes, RecheckHeld
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ class ConversationLiveUpdates:
 
     def __init__(
         self,
-        notifications: SessionNotifications,
+        notifications: ConversationWakes,
         hub: ConsoleEventHub,
         db_sessions: async_sessionmaker[AsyncSession],
         *,
@@ -80,7 +80,7 @@ class ConversationLiveUpdates:
 
     @contextlib.asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
-        with self._notifications.watch_conversations(self._record):
+        with self._notifications.watch(self._record):
             publishing = asyncio.create_task(self._publish_loop())
             try:
                 yield

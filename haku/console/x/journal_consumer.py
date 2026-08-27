@@ -38,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.database_schema import ConversationItem, ConversationTurn, Session, SubmittedPrompt
 from haku.console.x import conversation_log, session_events
 from haku.console.x.conversation_log import LogWriter, UnknownItemError
-from haku.console.x.session_notifications import notify_update
+from haku.console.x.conversation_wakes import notify_update
 from haku.runtime.x.bridge import neutral_operations
 from haku.runtime.x.bridge.neutral_operations import (
     GENERATION,

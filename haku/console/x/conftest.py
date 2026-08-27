@@ -26,15 +26,17 @@ from haku.console.database_schema import ChatAttachment, ConversationItem, Sessi
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.claude_code.client import cli_over_websocket
 from haku.console.x.conversation_views import SessionView
+from haku.console.x.conversation_wakes import ConversationWakes
 from haku.console.x.launch_identity import LaunchAuthorizer
 from haku.console.x.runtime import RuntimeClientFactory, RuntimeRegistry
 from haku.console.x.runtime_catalog import execution_registry, projection_registry, runtime_registration
 from haku.console.x.sandbox_allocation import SandboxAllocator
-from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import SessionStore
+from haku.console.x.session_wakes import SessionWakes
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.console.x.testing.recording_claims import RecordingClaims
+from haku.console.x.testing.wake_probes import raw_payloads
 
 OPERATOR_SUBJECT = "authentik-user-id"
 
@@ -117,32 +119,40 @@ def chat_store(migrated_sessions: async_sessionmaker[AsyncSession]) -> _Provisio
 
 
 @pytest.fixture
-async def notifications(migrated_db_url: str) -> AsyncIterator[SessionNotifications]:
+async def session_wakes(migrated_db_url: str) -> AsyncIterator[SessionWakes]:
     """A real listener against the test database — the plumbing is the thing under test."""
-    channel = SessionNotifications(migrated_db_url)
-    await channel.start()
+    wakes = SessionWakes(migrated_db_url)
+    await wakes.start()
     try:
-        yield channel
+        yield wakes
     finally:
-        await channel.aclose()
+        await wakes.aclose()
+
+
+@pytest.fixture
+async def conversation_wakes(migrated_db_url: str) -> AsyncIterator[ConversationWakes]:
+    """A real listener against the test database — the plumbing is the thing under test."""
+    wakes = ConversationWakes(migrated_db_url)
+    await wakes.start()
+    try:
+        yield wakes
+    finally:
+        await wakes.aclose()
 
 
 @pytest.fixture
 def chat_service(
-    chat_store: SessionStore, recording_claims: RecordingClaims, notifications: SessionNotifications
+    chat_store: SessionStore, recording_claims: RecordingClaims, session_wakes: SessionWakes
 ) -> SessionService:
-    return SessionService(configured_runtimes(recording_claims), chat_store, notifications)
+    return SessionService(configured_runtimes(recording_claims), chat_store, session_wakes)
 
 
 @pytest.fixture
 def allocator(
-    chat_service: SessionService,
-    chat_store: SessionStore,
-    notifications: SessionNotifications,
-    migrated_engine: AsyncEngine,
+    chat_service: SessionService, chat_store: SessionStore, session_wakes: SessionWakes, migrated_engine: AsyncEngine
 ) -> SandboxAllocator:
     """The channel-neutral demand reconciler over the same database the test writes."""
-    return SandboxAllocator(chat_service, chat_store, notifications, migrated_engine)
+    return SandboxAllocator(chat_service, chat_store, session_wakes, migrated_engine)
 
 
 @pytest.fixture

@@ -29,8 +29,8 @@ from haku.console.x.conversation_views import (
     ConversationUpdate,
     ConversationView,
 )
+from haku.console.x.conversation_wakes import ConversationWakes
 from haku.console.x.session_events import TurnAnsweredBody
-from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import SessionStore
 from haku.console.x.testing.recording_claims import RecordingClaims
@@ -46,9 +46,9 @@ PATIENCE = WINDOW * 8
 
 @pytest.fixture
 def following(
-    chat_store: SessionStore, chat_service: SessionService, notifications: SessionNotifications
+    chat_store: SessionStore, chat_service: SessionService, conversation_wakes: ConversationWakes
 ) -> ConversationFollow:
-    return ConversationFollow(chat_store, chat_service, notifications, window=WINDOW, sandbox_poll=SANDBOX_POLL)
+    return ConversationFollow(chat_store, chat_service, conversation_wakes, window=WINDOW, sandbox_poll=SANDBOX_POLL)
 
 
 async def _next(messages: AsyncIterator[ConversationFollowMessage]) -> ConversationFollowMessage:

@@ -136,7 +136,7 @@ async def binding(conversations: MatrixConversationStore, operator_id: UUID) -> 
 def notices(
     migrated_sessions: async_sessionmaker[AsyncSession],
     stream: ConversationStream,
-    notifications,
+    conversation_wakes,
     room: Room,
     binding: RoomAttachment,
     outbox: RoomOutbox,
@@ -144,7 +144,15 @@ def notices(
     clock: Clock,
 ) -> ConversationSubscriber:
     return ConversationSubscriber(
-        migrated_sessions, stream, notifications, room.project_notice, room, binding, outbox, room_copy, clock=clock
+        migrated_sessions,
+        stream,
+        conversation_wakes,
+        room.project_notice,
+        room,
+        binding,
+        outbox,
+        room_copy,
+        clock=clock,
     )
 
 
@@ -265,7 +273,7 @@ async def test_turn_typing_is_derived_by_the_room_subscriber(chat_store, operato
 
 
 async def test_a_restarted_reader_rebuilds_active_typing_from_the_stream(
-    chat_store, operator_id, served, notices, room, migrated_sessions, stream, binding, notifications, outbox
+    chat_store, operator_id, served, notices, room, migrated_sessions, stream, binding, conversation_wakes, outbox
 ) -> None:
     await notices.reconcile_once()
     await chat_store.enqueue_prompt(
@@ -278,7 +286,7 @@ async def test_a_restarted_reader_rebuilds_active_typing_from_the_stream(
     successor = ConversationSubscriber(
         migrated_sessions,
         stream,
-        notifications,
+        conversation_wakes,
         successor_room.project_notice,
         successor_room,
         binding,
@@ -301,7 +309,7 @@ async def test_what_the_room_has_been_told_is_not_told_again(chat_store, operato
 
 
 async def test_a_restarted_reader_resumes_from_the_position_it_kept(
-    chat_store, operator_id, served, notices, room, migrated_sessions, stream, binding, notifications, outbox
+    chat_store, operator_id, served, notices, room, migrated_sessions, stream, binding, conversation_wakes, outbox
 ) -> None:
     """The whole reason this position is durable: the room's copy outlives the process that wrote
     into it, so a replica that goes away mid-conversation must not re-say what its predecessor did
@@ -314,7 +322,7 @@ async def test_a_restarted_reader_resumes_from_the_position_it_kept(
     successor = ConversationSubscriber(
         migrated_sessions,
         stream,
-        notifications,
+        conversation_wakes,
         successor_room.project_notice,
         successor_room,
         binding,
@@ -583,7 +591,7 @@ async def test_a_sibling_rooms_subscriber_reads_only_its_own_conversation(
     room,
     migrated_sessions,
     stream,
-    notifications,
+    conversation_wakes,
     outbox,
     room_copy,
 ) -> None:
@@ -594,7 +602,7 @@ async def test_a_sibling_rooms_subscriber_reads_only_its_own_conversation(
     sibling = ConversationSubscriber(
         migrated_sessions,
         stream,
-        notifications,
+        conversation_wakes,
         sibling_room.project_notice,
         sibling_room,
         sibling_binding,
@@ -632,7 +640,17 @@ async def test_keeping_an_older_position_cannot_rewind_the_room(migrated_session
 
 
 async def test_a_replayed_projection_already_in_the_room_is_not_sent_again(
-    chat_store, operator_id, served, notices, room, room_copy, binding, migrated_sessions, stream, notifications, outbox
+    chat_store,
+    operator_id,
+    served,
+    notices,
+    room,
+    room_copy,
+    binding,
+    migrated_sessions,
+    stream,
+    conversation_wakes,
+    outbox,
 ) -> None:
     """Restart after Synapse's transaction cache would have expired.
 
@@ -667,7 +685,7 @@ async def test_a_replayed_projection_already_in_the_room_is_not_sent_again(
     successor = ConversationSubscriber(
         migrated_sessions,
         stream,
-        notifications,
+        conversation_wakes,
         successor_room.project_notice,
         successor_room,
         binding,

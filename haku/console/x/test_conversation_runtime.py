@@ -26,7 +26,7 @@ async def test_first_conversation_prompt_creates_one_session_then_one_sandbox(
     chat_store,
     chat_service,
     allocator,
-    notifications,
+    conversation_wakes,
     migrated_engine,
     migrated_sessions,
     operator_id,
@@ -39,7 +39,7 @@ async def test_first_conversation_prompt_creates_one_session_then_one_sandbox(
         await db.delete(await db.get(Session, view.session_id))
 
     item_id = await chat_store.enqueue_conversation_prompt(operator_id, conversation_id, "start", SPA_ORIGIN)
-    runtime = ConversationRuntime(chat_service, chat_store, notifications, migrated_engine)
+    runtime = ConversationRuntime(chat_service, chat_store, conversation_wakes, migrated_engine)
 
     await runtime.reconcile_once()
     await runtime.reconcile_once()
@@ -63,7 +63,8 @@ async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_tra
     migrated_db_url,
     migrated_sessions,
     migrated_identity_store,
-    notifications,
+    session_wakes,
+    conversation_wakes,
     migrated_engine,
     operator_id,
     recording_claims,
@@ -112,7 +113,7 @@ async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_tra
     runtimes = configured_runtimes(recording_claims)
     store = SessionStore(migrated_sessions, runtimes)
     service = SessionService(
-        runtimes, store, notifications, launch_authorizer=authorize, default_agent_id=expected_agent_id
+        runtimes, store, session_wakes, launch_authorizer=authorize, default_agent_id=expected_agent_id
     )
     first = await service.create(operator_id)
     conversation_id = await store.conversation_of(first.session_id)
@@ -120,7 +121,7 @@ async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_tra
         await db.delete(await db.get(Session, first.session_id))
     await store.enqueue_conversation_prompt(operator_id, conversation_id, "replace", SPA_ORIGIN)
 
-    await ConversationRuntime(service, store, notifications, migrated_engine).reconcile_once()
+    await ConversationRuntime(service, store, conversation_wakes, migrated_engine).reconcile_once()
 
     async with migrated_sessions() as db:
         replacements = list(await db.scalars(select(Session).where(Session.conversation_id == conversation_id)))
@@ -130,15 +131,15 @@ async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_tra
 
 
 async def test_new_runtime_and_rolling_old_creator_converge_on_one_session(
-    chat_store, chat_service, notifications, migrated_engine, migrated_sessions, operator_id
+    chat_store, chat_service, conversation_wakes, migrated_engine, migrated_sessions, operator_id
 ) -> None:
     view, _ = await chat_store.create_idle(operator_id)
     conversation_id = await chat_store.conversation_of(view.session_id)
     async with migrated_sessions.begin() as db:
         await db.delete(await db.get(Session, view.session_id))
     await chat_store.enqueue_conversation_prompt(operator_id, conversation_id, "once", SPA_ORIGIN)
-    first = ConversationRuntime(chat_service, chat_store, notifications, migrated_engine)
-    second = ConversationRuntime(chat_service, chat_store, notifications, migrated_engine)
+    first = ConversationRuntime(chat_service, chat_store, conversation_wakes, migrated_engine)
+    second = ConversationRuntime(chat_service, chat_store, conversation_wakes, migrated_engine)
 
     await asyncio.gather(
         first.reconcile_once(),
@@ -154,7 +155,7 @@ async def test_new_runtime_and_rolling_old_creator_converge_on_one_session(
 
 
 async def test_unclaimed_prompt_moves_to_replacement_after_a_stale_lease(
-    chat_store, chat_service, notifications, migrated_engine, migrated_sessions, operator_id, recording_claims
+    chat_store, chat_service, conversation_wakes, migrated_engine, migrated_sessions, operator_id, recording_claims
 ) -> None:
     first, token = await chat_store.create(operator_id)
     assert await chat_store.authenticate_bridge(first.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -165,7 +166,7 @@ async def test_unclaimed_prompt_moves_to_replacement_after_a_stale_lease(
         assert row is not None
         row.lease_expires_at = datetime.now(UTC) - ADOPTION_GRACE - timedelta(seconds=1)
 
-    await ConversationRuntime(chat_service, chat_store, notifications, migrated_engine).reconcile_once()
+    await ConversationRuntime(chat_service, chat_store, conversation_wakes, migrated_engine).reconcile_once()
 
     async with migrated_sessions() as db:
         sessions = list(

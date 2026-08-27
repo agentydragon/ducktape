@@ -61,7 +61,6 @@ from haku.console.x.runtime import (
 )
 from haku.console.x.sandbox_claims import SandboxProvisioningView
 from haku.console.x.session_events import TurnAbortedBody, TurnAnsweredBody, TurnEndedBody, TurnFailedBody
-from haku.console.x.session_notifications import SessionEvent, SessionEventKind, SessionNotifications
 from haku.console.x.session_store import (
     LEASE_RENEW_INTERVAL,
     BridgeAuthentication,
@@ -73,6 +72,7 @@ from haku.console.x.session_store import (
     TurnStart,
     WakeTurn,
 )
+from haku.console.x.session_wakes import SessionEvent, SessionEventKind, SessionWakes
 from haku.console.x.system_prompt import HistoryMessage, HistorySender, SessionIntroduction
 from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE
 from haku.runtime.x.bridge.client import ReceivedFrame, RecordedFrame
@@ -246,7 +246,7 @@ class SessionService:
         self,
         runtimes: RuntimeRegistry,
         store: SessionStore,
-        notifications: SessionNotifications,
+        notifications: SessionWakes,
         *,
         conversation_history: ConversationHistory | None = None,
         launch_authorizer: LaunchAuthorizer | None = None,
@@ -1010,14 +1010,14 @@ def _store(request: Request) -> SessionStore:
     return store
 
 
-def _notifications(request: Request) -> SessionNotifications:
-    notifications = cast(SessionNotifications | None, request.app.state.session_notifications)
-    if notifications is None:
+def _session_wakes(request: Request) -> SessionWakes:
+    session_wakes = cast(SessionWakes | None, request.app.state.session_wakes)
+    if session_wakes is None:
         raise HTTPException(status_code=503, detail="the session runtime is not configured")
-    return notifications
+    return session_wakes
 
 
-SessionNotificationsDep = Annotated[SessionNotifications, Depends(_notifications)]
+SessionWakesDep = Annotated[SessionWakes, Depends(_session_wakes)]
 SessionServiceDep = Annotated[SessionService, Depends(_service)]
 SessionStoreDep = Annotated[SessionStore, Depends(_store)]
 

@@ -71,8 +71,8 @@ py_library(
         ":launch_identity",
         ":runtime",
         ":sandbox_claims",
-        ":session_notifications",
         ":session_store",
+        ":session_wakes",
         ":setup_output",
         ":system_prompt",
         "//haku/console:chat_models",
@@ -132,8 +132,8 @@ py_library(
     srcs = ["journal_consumer.py"],
     deps = [
         ":conversation_log",
+        ":conversation_wakes",
         ":session_events",
-        ":session_notifications",
         "//haku/console:database_schema",
         "//haku/runtime/x/bridge:neutral_operations",
         "@pypi//sqlalchemy",
@@ -180,12 +180,13 @@ py_library(
         ":conversation_log",
         ":conversation_reads",
         ":conversation_views",
+        ":conversation_wakes",
         ":item_entries",
         ":launch_identity",
         ":runtime",
         ":runtime_catalog",
         ":session_events",
-        ":session_notifications",
+        ":session_wakes",
         ":setup_output",
         ":subscription",
         "//haku/cli_protocol:frame_identity",
@@ -274,9 +275,9 @@ py_library(
     name = "sandbox_allocation",
     srcs = ["sandbox_allocation.py"],
     deps = [
-        ":session_notifications",
         ":session_runtime",
         ":session_store",
+        ":session_wakes",
         "@pypi//sqlalchemy",
     ],
 )
@@ -285,7 +286,7 @@ py_library(
     name = "conversation_runtime",
     srcs = ["conversation_runtime.py"],
     deps = [
-        ":session_notifications",
+        ":conversation_wakes",
         ":session_runtime",
         ":session_store",
         "@pypi//sqlalchemy",
@@ -297,8 +298,8 @@ py_library(
     srcs = ["conversation_follow.py"],
     deps = [
         ":conversation_views",
+        ":conversation_wakes",
         ":sandbox_claims",
-        ":session_notifications",
         ":session_store",
         "//haku/console:chat_models",
         "//haku/console:console_events",
@@ -311,7 +312,7 @@ py_library(
     name = "conversation_live_updates",
     srcs = ["conversation_live_updates.py"],
     deps = [
-        ":session_notifications",
+        ":conversation_wakes",
         "//haku/console:console_events",
         "//haku/console:database_schema",
         "@pypi//sqlalchemy",
@@ -347,7 +348,6 @@ py_test(
     deps = [
         ":conftest",
         ":sandbox_allocation",
-        ":session_notifications",
         ":session_runtime",
         ":session_store",
         "//:conftest",
@@ -363,11 +363,33 @@ py_test(
 )
 
 py_library(
-    name = "session_notifications",
-    srcs = ["session_notifications.py"],
+    name = "pg_wake",
+    srcs = ["pg_wake.py"],
     deps = [
-        "//util:enum_vocab",
         "@pypi//asyncpg",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "session_wakes",
+    srcs = ["session_wakes.py"],
+    deps = [
+        ":pg_wake",
+        "//util:enum_vocab",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "conversation_wakes",
+    srcs = ["conversation_wakes.py"],
+    deps = [
+        ":pg_wake",
+        ":session_wakes",
+        "//util:enum_vocab",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
@@ -384,15 +406,17 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":conversation_wakes",
         ":launch_identity",
         ":sandbox_allocation",
-        ":session_notifications",
         ":session_runtime",
         ":session_store",
+        ":session_wakes",
         "//haku/console:config",
         "//haku/console:database_schema",
         "//haku/console:operator_identity_store",
         "//haku/console/x/testing:recording_claims",
+        "//haku/console/x/testing:wake_probes",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
@@ -409,7 +433,7 @@ py_test(
         ":conversation_follow",
         ":conversation_reads",
         ":conversation_views",
-        ":session_notifications",
+        ":conversation_wakes",
         ":session_runtime",
         ":session_store",
         "//:conftest",
@@ -432,7 +456,7 @@ py_test(
     deps = [
         ":conftest",
         ":conversation_live_updates",
-        ":session_notifications",
+        ":conversation_wakes",
         ":session_store",
         "//:conftest",
         "//haku/console:conftest",
@@ -447,20 +471,35 @@ py_test(
 )
 
 py_test(
-    name = "test_session_notifications",
+    name = "test_session_wakes",
     size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_session_notifications.py"],
+    srcs = ["test_session_wakes.py"],
     deps = [
         ":conftest",
-        ":session_notifications",
+        ":session_wakes",
         "//:conftest",
         "//haku/console:conftest",
+        "//haku/console/x/testing:wake_probes",
         "//util:enum_vocab",
-        "@pypi//asyncpg",
-        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_conversation_wakes",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_conversation_wakes.py"],
+    deps = [
+        ":conftest",
+        ":conversation_wakes",
+        ":session_wakes",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console/x/testing:wake_probes",
+        "//util:enum_vocab",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -478,9 +517,9 @@ py_test(
         ":reprojection",
         ":runtime",
         ":sandbox_claims",
-        ":session_notifications",
         ":session_runtime",
         ":session_store",
+        ":session_wakes",
         ":system_prompt",
         "//:conftest",
         "//haku/console:chat_models",
@@ -580,8 +619,8 @@ py_test(
         ":item_entries",
         ":runtime",
         ":session_events",
-        ":session_notifications",
         ":session_store",
+        ":session_wakes",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
@@ -706,9 +745,9 @@ py_test(
         ":conftest",
         ":conversation_reads",
         ":item_entries",
-        ":session_notifications",
         ":session_runtime",
         ":session_store",
+        ":session_wakes",
         ":setup_output",
         "//:conftest",
         "//haku/console:chat_models",
