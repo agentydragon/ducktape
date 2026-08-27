@@ -47,6 +47,15 @@ transient by design: a merged PR wears it for at most the update that reports
 the merge, then leaves the board (see the flush rule above); its steady-state
 occupants are ruled gates and completed phases still anchoring fresh work.
 
+- **A gate states its unblock predicate verifiably, at authoring time.** A
+  bare "gated on rolls" rots: weeks later nobody — including the author with
+  fresh-context gone — can tell whether it fired, and unblocked work sits.
+  Write the exact condition and how to check it, tombstone-style, on the node
+  or in the notes: "unblocks when the deployment's `$imagepolicy` tag names a
+  commit ≥ <sha> and the rollout is green", "when PR #N merges (that merge
+  deletes <file>)", "when the <name> canary is green on current names". On
+  every update, CHECK the stated predicates instead of trusting memory — a
+  met predicate flips the node to dispatchable in the same pass.
 - A gate names **whose** action unblocks it, compressed with a human glyph:
   `🧑 Codex canary`, `🧑 #4667 verdict` — never a vague "pending".
 - Unicode over words where a glyph reads faster: `✓` suffix on merged nodes,
