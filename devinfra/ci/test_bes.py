@@ -1,7 +1,7 @@
 import pytest
 import pytest_bazel
 
-from devinfra.ci.bes import BuildBuddyError, parse
+from devinfra.ci.bes import BuildBuddyError, merge, parse
 
 # Shaped exactly as BuildBuddy serves it. "outer" nests "inner" because Bazel
 # shares file subsets between targets instead of repeating their contents.
@@ -84,6 +84,41 @@ def test_an_unusable_stream_raises_rather_than_reading_as_empty() -> None:
         parse(b"<html>502 Bad Gateway</html>")
     with pytest.raises(BuildBuddyError):
         parse(b'{"not": "a list"}')
+
+
+def test_merge_of_nothing_is_nothing() -> None:
+    assert merge([]) is None
+
+
+def test_a_file_reachable_through_two_sets_is_one_output() -> None:
+    """Bazel shares subsets between targets, so one target can reach a file twice.
+
+    `by_label` groups into lists, so a duplicate would hand a caller one file
+    twice and read as an ambiguity that isn't there.
+    """
+    shared = b"""[
+     {"id":{"namedSet":{"id":"a"}},
+      "namedSetOfFiles":{"files":[
+        {"pathPrefix":["bazel-out"],"name":"pkg/image.json.sha256",
+         "uri":"bytestream://h/blobs/ccc/7","digest":"ccc","length":"7"}]}},
+     {"id":{"namedSet":{"id":"b"}},
+      "namedSetOfFiles":{"files":[
+        {"pathPrefix":["bazel-out"],"name":"pkg/image.json.sha256",
+         "uri":"bytestream://h/blobs/ccc/7","digest":"ccc","length":"7"}]}},
+     {"id":{"targetCompleted":{"label":"//pkg:image.digest"}},
+      "completed":{"success":true,
+       "outputGroup":[{"name":"default","fileSets":[{"id":"a"},{"id":"b"}]}]}}
+    ]"""
+    assert len(parse(shared).by_label()["//pkg:image.digest"]) == 1
+
+
+def test_merging_the_test_and_build_invocations_collapses_what_both_report() -> None:
+    """bazel-ci reports two invocations per commit, both naming every target it built."""
+    one = parse(STREAM)
+    both = merge([one, parse(STREAM)])
+    assert both is not None
+    assert both.outputs == one.outputs
+    assert both.test_status == one.test_status
 
 
 if __name__ == "__main__":

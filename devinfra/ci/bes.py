@@ -33,11 +33,13 @@ fail the plan on an unrecognised flag.
 from __future__ import annotations
 
 import dataclasses
+import http.client
 import json
 import os
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Iterable
 
 DEFAULT_BASE_URL = "https://app.buildbuddy.io"
 
@@ -100,7 +102,7 @@ def _get(url: str, api_key: str, timeout: float) -> bytes:
             # urlopen is typed as returning Any, so narrow it here rather than
             # letting an unchecked value reach the parser.
             return bytes(response.read())
-    except (urllib.error.URLError, OSError, TimeoutError) as e:
+    except (urllib.error.URLError, OSError, TimeoutError, http.client.HTTPException) as e:
         raise BuildBuddyError(f"GET {url.split('?', maxsplit=1)[0]} failed: {e}") from e
 
 
@@ -125,6 +127,24 @@ def fetch_blob(
 
 def _full_path(file: dict) -> str:
     return "/".join([*(file.get("pathPrefix") or []), file["name"]])
+
+
+def _dedup(outputs: Iterable[Output]) -> list[Output]:
+    """The same output, listed twice, is one output. Order is preserved.
+
+    Duplicates arise two ways and neither means anything: one target can reach a
+    file through two branches of the file-set DAG (proto virtual imports do this),
+    and `bazel-ci`'s test and build invocations both report every non-test target
+    they built. `by_path` collapsed them for free by being a dict; `by_label`
+    groups into lists and would otherwise hand a caller one file twice.
+    """
+    seen: set[Output] = set()
+    unique = []
+    for output in outputs:
+        if output not in seen:
+            seen.add(output)
+            unique.append(output)
+    return unique
 
 
 def parse(raw: bytes) -> Invocation:
@@ -175,7 +195,24 @@ def parse(raw: bytes) -> Invocation:
                 )
                 for file in files_in(group.get("fileSets") or [])
             )
-    return Invocation(outputs=outputs, test_status=test_status)
+    return Invocation(outputs=_dedup(outputs), test_status=test_status)
+
+
+def merge(invocations: Iterable[Invocation]) -> Invocation | None:
+    """One view of several streams, or None if there are none.
+
+    `bazel-ci` reports two for one commit — `bazel test //...` then
+    `bazel build //...` — and each reports the same outputs for every non-test
+    target it built, so the result is deduplicated.
+    """
+    outputs: list[Output] = []
+    test_status: dict[str, str] = {}
+    empty = True
+    for invocation in invocations:
+        empty = False
+        outputs.extend(invocation.outputs)
+        test_status.update(invocation.test_status)
+    return None if empty else Invocation(outputs=_dedup(outputs), test_status=test_status)
 
 
 def read(invocation_id: str, **kwargs) -> Invocation:

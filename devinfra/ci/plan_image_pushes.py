@@ -47,7 +47,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Protocol
 
-from devinfra.ci.bes import BuildBuddyError, Invocation, Output, fetch_blob, read
+from devinfra.ci.bes import BuildBuddyError, Invocation, Output, fetch_blob, merge, read
 
 DIGEST_SUFFIX = ".json.sha256"
 
@@ -98,9 +98,15 @@ def digest_uri(image: Image, by_label: Mapping[str, list[Output]]) -> str | None
     if not candidates:
         return None
     if len(candidates) > 1:
-        raise RuntimeError(
-            f"{image.digest_label} produced {len(candidates)} digest files: {[c.path for c in candidates]}"
+        # Genuinely two different files under one label, so which one is the
+        # image's digest is unknown. Push it rather than fail the plan: one
+        # ambiguous image must not decide anything about the other forty-one.
+        print(
+            f"::warning::{image.digest_label} names {len(candidates)} digest files "
+            f"({[c.path for c in candidates]}); pushing it",
+            file=sys.stderr,
         )
+        return None
     return candidates[0].uri
 
 
@@ -235,23 +241,15 @@ def _write_github_output(**values: str) -> None:
 
 def _read_invocations(ids: list[str]) -> Invocation | None:
     """Merge the invocations bazel-ci reported, or None if none can be read."""
-    merged: Invocation | None = None
+    readable = []
     for invocation_id in ids:
         try:
-            current = read(invocation_id)
+            readable.append(read(invocation_id))
         except BuildBuddyError as e:
             print(
                 f"::warning::could not read invocation {invocation_id} ({e}); pushing more than needed", file=sys.stderr
             )
-            continue
-        merged = (
-            current
-            if merged is None
-            else Invocation(
-                outputs=merged.outputs + current.outputs, test_status={**merged.test_status, **current.test_status}
-            )
-        )
-    return merged
+    return merge(readable)
 
 
 def main(argv: list[str] | None = None) -> int:

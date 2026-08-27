@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.ci.bes import BuildBuddyError, Invocation, Output
+from devinfra.ci.bes import BuildBuddyError, Invocation, Output, merge
 from devinfra.ci.plan_image_pushes import (
     DEVEL_TAG_RE,
     REGISTRY_PREFIX,
@@ -79,13 +79,24 @@ def test_an_image_the_build_never_produced_has_no_uri() -> None:
     assert digest_uri(image(target="@repo//:image"), invocation().by_label()) is None
 
 
-def test_two_digest_files_for_one_label_is_a_bug() -> None:
+def test_the_same_digest_file_reported_twice_is_one_file() -> None:
+    """bazel-ci reports two invocations and both name every non-test target."""
+    same = digest_output("//airlock:image.digest", f"{BIN}/airlock/image.json.sha256")
+    inv = merge([invocation(same), invocation(same)])
+    assert inv is not None
+    assert digest_uri(image(), inv.by_label()) == same.uri
+
+
+def test_two_different_digest_files_for_one_label_pushes_that_image() -> None:
+    """Which file is the digest is unknowable, so this image cannot be skipped.
+
+    It must not decide anything about the others: the planner keeps going.
+    """
     inv = invocation(
         digest_output("//airlock:image.digest", f"{BIN}/airlock/image.json.sha256"),
         digest_output("//airlock:image.digest", f"{BIN}/other/image.json.sha256"),
     )
-    with pytest.raises(RuntimeError, match="produced 2 digest files"):
-        digest_uri(image(), inv.by_label())
+    assert digest_uri(image(), inv.by_label()) is None
 
 
 def test_the_digest_is_the_file_contents_not_the_file_digest() -> None:
