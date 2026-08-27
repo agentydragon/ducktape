@@ -265,12 +265,12 @@ async def test_a_batch_is_offered_as_one_prompt(service, matrix, turns, bound_ro
 
 
 async def carried_prompt(
-    chat_store: SessionStore, operator_id: UUID, ledger: IngressLedger, event_id: str, body: str
+    session_store: SessionStore, operator_id: UUID, ledger: IngressLedger, event_id: str, body: str
 ) -> UUID:
     """A prompt in the record carrying *event_id*, as an accepted batch leaves one behind."""
-    view, token = await chat_store.create(operator_id)
-    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(
+    view, token = await session_store.create(operator_id)
+    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await session_store.enqueue_prompt(
         operator_id,
         view.session_id,
         f"[{event_id}] {body}",
@@ -281,13 +281,13 @@ async def carried_prompt(
 
 
 async def test_a_re_delivered_message_is_dropped_from_the_batch(
-    service, matrix, turns, sync_store, chat_store, operator_id, ledger, bound_room
+    service, matrix, turns, sync_store, session_store, operator_id, ledger, bound_room
 ):
     """The crash this closes: the prompt committed, the watermark did not, and `/sync` hands the
     same event back. Offering it again would ask twice — and be refused, since the first copy is
     still queued, so the room would report a message as undelivered that the session is about to
     answer."""
-    await carried_prompt(chat_store, operator_id, ledger, "$a", "hello")
+    await carried_prompt(session_store, operator_id, ledger, "$a", "hello")
     matrix.result = SyncResult("s2", (_message("hello", event_id="$a"),), ())
 
     await service.sync_once("tok")
@@ -299,10 +299,10 @@ async def test_a_re_delivered_message_is_dropped_from_the_batch(
 
 
 async def test_only_the_re_delivered_half_of_a_batch_is_dropped(
-    service, matrix, turns, chat_store, operator_id, ledger, bound_room
+    service, matrix, turns, session_store, operator_id, ledger, bound_room
 ):
     """A restart can land the crashed batch and what was said since in one response."""
-    await carried_prompt(chat_store, operator_id, ledger, "$a", "hello")
+    await carried_prompt(session_store, operator_id, ledger, "$a", "hello")
     matrix.result = SyncResult("s2", (_message("hello", event_id="$a"), _message("and this", event_id="$b")), ())
 
     await service.sync_once("tok")

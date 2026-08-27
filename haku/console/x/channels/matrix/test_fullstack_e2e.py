@@ -63,7 +63,7 @@ async def deployment(
     operator_user_id: str,
     migrated_db_url: str,
     migrated_sessions: async_sessionmaker[AsyncSession],
-    chat_store: SessionStore,
+    session_store: SessionStore,
     tmp_path: Path,
     request: pytest.FixtureRequest,
 ) -> AsyncIterator[Deployment]:
@@ -75,7 +75,7 @@ async def deployment(
         operator_user_id=operator_user_id,
         database_url=migrated_db_url,
         sessions=migrated_sessions,
-        store=chat_store,
+        store=session_store,
         state=tmp_path,
     )
     try:

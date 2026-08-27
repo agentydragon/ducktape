@@ -41,33 +41,33 @@ def _tool_result(call_id: str, text: str) -> dict[str, Any]:
     }
 
 
-async def _turn_through_the_write_path(chat_store, operator_id, frames: list[dict[str, Any]]) -> tuple[UUID, UUID]:
+async def _turn_through_the_write_path(session_store, operator_id, frames: list[dict[str, Any]]) -> tuple[UUID, UUID]:
     """One session and one open turn, with *frames* recorded and projected as the turn loop does."""
-    view, token = await chat_store.create(operator_id)
+    view, token = await session_store.create(operator_id)
     session_id = view.session_id
-    assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, session_id, "what is in here?", SPA_ORIGIN)
-    started = await chat_store.next_prompt(session_id)
+    assert await session_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    await session_store.enqueue_prompt(operator_id, session_id, "what is in here?", SPA_ORIGIN)
+    started = await session_store.next_prompt(session_id)
     assert started is not None
     handler = ClaudeRuntimeAdapter().turn_handler()
     for payload in frames:
         frame = payload
-        recorded = await chat_store.record_frame(
+        recorded = await session_store.record_frame(
             session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, frame
         )
         effects = handler.apply(frame_seq=recorded.frame_seq, frame=HarnessFrame(frame=payload))
         if effects.checkpoint is Checkpoint.ADVANCE:
-            await chat_store.apply_frame(session_id, started.turn_id, recorded.frame_seq, effects.events)
+            await session_store.apply_frame(session_id, started.turn_id, recorded.frame_seq, effects.events)
         else:
             assert not effects.events
     return session_id, started.turn_id
 
 
 async def test_a_session_the_write_path_projected_agrees_with_itself(
-    chat_store, migrated_sessions, operator_id
+    session_store, migrated_sessions, operator_id
 ) -> None:
     session_id, turn_id = await _turn_through_the_write_path(
-        chat_store,
+        session_store,
         operator_id,
         [
             _assistant({"type": "thinking", "thinking": "which files"}),
@@ -93,10 +93,10 @@ async def test_a_session_the_write_path_projected_agrees_with_itself(
 
 
 async def test_a_streamed_tool_declaration_agrees_with_its_multiframe_provenance(
-    chat_store, migrated_sessions, operator_id
+    session_store, migrated_sessions, operator_id
 ) -> None:
     session_id, _ = await _turn_through_the_write_path(
-        chat_store,
+        session_store,
         operator_id,
         [
             tool_use_start("toolu_1", "Bash", index=1),
@@ -112,15 +112,15 @@ async def test_a_streamed_tool_declaration_agrees_with_its_multiframe_provenance
     assert one(report.turns).outcome == reprojection.Agrees()
 
 
-async def test_an_aborted_turn_still_agrees_with_its_frames(chat_store, migrated_sessions, operator_id) -> None:
+async def test_an_aborted_turn_still_agrees_with_its_frames(session_store, migrated_sessions, operator_id) -> None:
     """The authored arm is out of scope, and `turn_started`/`turn_ended` are the members of it that
     name a turn, so the per-turn read excludes it: no frame projects to a row nothing sent, and
     comparing it against a re-fold would report drift on every turn.
     """
     session_id, turn_id = await _turn_through_the_write_path(
-        chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
+        session_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
     )
-    await chat_store.end_turn(turn_id, TurnAbortedBody())
+    await session_store.end_turn(turn_id, TurnAbortedBody())
 
     async with migrated_sessions() as db:
         report = await reprojection.check_session(db, session_id, runtimes=RUNTIMES)
@@ -129,11 +129,11 @@ async def test_an_aborted_turn_still_agrees_with_its_frames(chat_store, migrated
 
 
 async def test_a_row_whose_body_was_edited_is_reported_against_its_frame(
-    chat_store, migrated_sessions, operator_id
+    session_store, migrated_sessions, operator_id
 ) -> None:
     """The comparison's whole purpose: a stored row the frames do not project to any more."""
     session_id, _ = await _turn_through_the_write_path(
-        chat_store,
+        session_store,
         operator_id,
         [_assistant({"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": "ls"}})],
     )
@@ -160,10 +160,10 @@ async def test_a_row_whose_body_was_edited_is_reported_against_its_frame(
 
 
 async def test_a_row_that_is_gone_is_a_count_mismatch_rather_than_a_silent_pass(
-    chat_store, migrated_sessions, operator_id
+    session_store, migrated_sessions, operator_id
 ) -> None:
     session_id, _ = await _turn_through_the_write_path(
-        chat_store,
+        session_store,
         operator_id,
         [
             _assistant(
@@ -195,11 +195,11 @@ async def test_a_row_that_is_gone_is_a_count_mismatch_rather_than_a_silent_pass(
     assert finding.stored == (ConversationEventKind.ITEM_STARTED, ConversationEventKind.ITEM_SEGMENT)
 
 
-async def test_a_turn_with_frames_and_no_rows_is_drift(chat_store, migrated_sessions, operator_id) -> None:
+async def test_a_turn_with_frames_and_no_rows_is_drift(session_store, migrated_sessions, operator_id) -> None:
     """No writer leaves a projected frame without its rows, so a turn with none is reported against
     the frame that should have written them, exactly as a single missing row is."""
     session_id, _ = await _turn_through_the_write_path(
-        chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
+        session_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
     )
     async with migrated_sessions() as db:
         await db.execute(delete(ConversationEventRow).where(ConversationEventRow.session_id == session_id))
@@ -217,13 +217,13 @@ async def test_a_turn_with_frames_and_no_rows_is_drift(chat_store, migrated_sess
 
 
 async def test_a_turn_the_cursor_never_reached_is_skipped_rather_than_re_projected(
-    chat_store, migrated_sessions, operator_id
+    session_store, migrated_sessions, operator_id
 ) -> None:
     """A session whose cursor was never advanced: its frames were projected by *something*, since
     the rows are there, but re-projecting them would compare against a position no writer claimed.
     """
     session_id, _ = await _turn_through_the_write_path(
-        chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
+        session_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
     )
     async with migrated_sessions() as db:
         await db.execute(update(Session).where(Session.session_id == session_id).values(projected_frame_seq=0))
@@ -236,15 +236,15 @@ async def test_a_turn_the_cursor_never_reached_is_skipped_rather_than_re_project
 
 
 async def test_a_frame_recorded_past_the_cursor_is_counted_and_not_reported(
-    chat_store, migrated_sessions, operator_id
+    session_store, migrated_sessions, operator_id
 ) -> None:
     """A replica that died between recording a frame and projecting it is not drift: the cursor says
     so and adoption will still redo the frame, so it is coverage rather than a finding.
     """
     session_id, _ = await _turn_through_the_write_path(
-        chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
+        session_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
     )
-    await chat_store.record_frame(
+    await session_store.record_frame(
         session_id,
         FrameDirection.FROM_AGENT,
         BridgeFrameKind.HARNESS_FRAME,
@@ -260,13 +260,13 @@ async def test_a_frame_recorded_past_the_cursor_is_counted_and_not_reported(
 
 
 async def test_an_items_text_edited_out_from_under_its_segments_is_a_finding(
-    chat_store, migrated_sessions, operator_id
+    session_store, migrated_sessions, operator_id
 ) -> None:
     """The check the old shape could not be given. `conversation_item.text` is a fold of the item's
     segments and never a second authority for them, so a row that stopped agreeing with the log that
     produced it is drift rather than a disagreement nobody can adjudicate."""
     session_id, _ = await _turn_through_the_write_path(
-        chat_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
+        session_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
     )
     async with migrated_sessions() as db:
         await db.execute(

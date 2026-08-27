@@ -114,7 +114,7 @@ class _ProvisioningTestStore(SessionStore):
 
 
 @pytest.fixture
-def chat_store(migrated_sessions: async_sessionmaker[AsyncSession]) -> _ProvisioningTestStore:
+def session_store(migrated_sessions: async_sessionmaker[AsyncSession]) -> _ProvisioningTestStore:
     return _ProvisioningTestStore(migrated_sessions, projection_registry())
 
 
@@ -142,17 +142,17 @@ async def conversation_wakes(migrated_db_url: str) -> AsyncIterator[Conversation
 
 @pytest.fixture
 def chat_service(
-    chat_store: SessionStore, recording_claims: RecordingClaims, session_wakes: SessionWakes
+    session_store: SessionStore, recording_claims: RecordingClaims, session_wakes: SessionWakes
 ) -> SessionService:
-    return SessionService(configured_runtimes(recording_claims), chat_store, session_wakes)
+    return SessionService(configured_runtimes(recording_claims), session_store, session_wakes)
 
 
 @pytest.fixture
 def allocator(
-    chat_service: SessionService, chat_store: SessionStore, session_wakes: SessionWakes, migrated_engine: AsyncEngine
+    chat_service: SessionService, session_store: SessionStore, session_wakes: SessionWakes, migrated_engine: AsyncEngine
 ) -> SandboxAllocator:
     """The channel-neutral demand reconciler over the same database the test writes."""
-    return SandboxAllocator(chat_service, chat_store, session_wakes, migrated_engine)
+    return SandboxAllocator(chat_service, session_store, session_wakes, migrated_engine)
 
 
 @pytest.fixture

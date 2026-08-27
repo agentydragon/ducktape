@@ -92,10 +92,10 @@ def consumer(migrated_sessions: async_sessionmaker[AsyncSession]) -> JournalCons
 
 
 @pytest.fixture
-async def journal_session(chat_store: SessionStore, operator_id: UUID) -> tuple[UUID, UUID]:
+async def journal_session(session_store: SessionStore, operator_id: UUID) -> tuple[UUID, UUID]:
     """One session and its conversation, as `(session_id, conversation_id)`."""
-    view, _token = await chat_store.create(operator_id)
-    return view.session_id, await chat_store.conversation_of(view.session_id)
+    view, _token = await session_store.create(operator_id)
+    return view.session_id, await session_store.conversation_of(view.session_id)
 
 
 async def _submit(
@@ -387,7 +387,7 @@ async def test_lifecycle_violations_reject_the_batch_atomically(
 
 async def test_fail_preserves_streamed_text_and_ends_the_journal(
     consumer: JournalConsumer,
-    chat_store: SessionStore,
+    session_store: SessionStore,
     journal_session: tuple[UUID, UUID],
     migrated_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -403,7 +403,7 @@ async def test_fail_preserves_streamed_text_and_ends_the_journal(
         ),
     )
 
-    await chat_store.fail(session_id, "runner lost")
+    await session_store.fail(session_id, "runner lost")
 
     (message,) = await session_items(migrated_sessions, session_id)
     assert (message.status, message.item_text) == (ItemStatus.FAILED, "half an ans")

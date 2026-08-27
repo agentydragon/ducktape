@@ -48,21 +48,21 @@ def attachment_id(binding: RoomAttachment) -> UUID:
 
 
 @pytest.fixture
-async def session_id(chat_store: SessionStore, binding: RoomAttachment, operator_id: UUID) -> UUID:
+async def session_id(session_store: SessionStore, binding: RoomAttachment, operator_id: UUID) -> UUID:
     """A live Matrix session for `MATRIX_ROOM`, since an outbox row is one of its children.
 
     Started on the conversation the room is attached to, the way the supervisor starts one.
     """
-    view, token = await chat_store.create(operator_id, conversation_id=binding.conversation_id)
-    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    view, token = await session_store.create(operator_id, conversation_id=binding.conversation_id)
+    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     return view.session_id
 
 
 @pytest.fixture
-async def turn_id(chat_store: SessionStore, operator_id: UUID, session_id: UUID) -> UUID:
+async def turn_id(session_store: SessionStore, operator_id: UUID, session_id: UUID) -> UUID:
     """The exchange these replies are produced in."""
-    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?", SPA_ORIGIN)
-    turn = await chat_store.next_prompt(session_id)
+    await session_store.enqueue_prompt(operator_id, session_id, "why did it fail?", SPA_ORIGIN)
+    turn = await session_store.next_prompt(session_id)
     assert turn is not None
     return turn.turn_id
 
@@ -133,7 +133,7 @@ async def _said(sessions: async_sessionmaker[AsyncSession], session_id: UUID) ->
 
 
 async def _enqueue(
-    chat_store: SessionStore,
+    session_store: SessionStore,
     sessions: async_sessionmaker[AsyncSession],
     outbox: RoomOutbox,
     attachment_id: UUID,
@@ -145,7 +145,7 @@ async def _enqueue(
     way the room's subscriber does when it reads those completions off the log."""
     for frame_seq, body in enumerate(bodies, start=1):
         where = FrameRange(frame_seq, frame_seq)
-        await chat_store.apply_frame(
+        await session_store.apply_frame(
             session_id,
             turn_id,
             frame_seq,
@@ -160,13 +160,13 @@ async def _enqueue(
 
 
 async def test_a_reply_is_said_once_and_then_never_again(
-    chat_store, migrated_sessions, outbox, binding, session_id, turn_id, attachment_id
+    session_store, migrated_sessions, outbox, binding, session_id, turn_id, attachment_id
 ) -> None:
     """The half of `exactly once` a redrive could break: a row the homeserver accepted is `sent_at`
     and never claimed again."""
     homeserver = _Homeserver()
     pacer, drain = _unpaced(binding, outbox, homeserver)
-    await _enqueue(chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
+    await _enqueue(session_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
 
     async with pacer.run():
         assert await drain.drain_once()
@@ -179,14 +179,14 @@ async def test_a_reply_is_said_once_and_then_never_again(
 
 
 async def test_replies_are_said_in_the_order_they_were_produced(
-    chat_store, migrated_sessions, outbox, binding, session_id, turn_id, attachment_id
+    session_store, migrated_sessions, outbox, binding, session_id, turn_id, attachment_id
 ) -> None:
     """A turn that narrates, works and reports back is three rows, and the room reads top to
     bottom: out of order they describe a different turn."""
     homeserver = _Homeserver()
     pacer, drain = _unpaced(binding, outbox, homeserver)
     await _enqueue(
-        chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "looking now", "found it", "fixed"
+        session_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "looking now", "found it", "fixed"
     )
 
     async with pacer.run():
@@ -197,7 +197,7 @@ async def test_replies_are_said_in_the_order_they_were_produced(
 
 
 async def test_a_refused_send_leaves_the_row_for_the_next_attempt(
-    chat_store, migrated_sessions, outbox, binding, session_id, turn_id, attachment_id
+    session_store, migrated_sessions, outbox, binding, session_id, turn_id, attachment_id
 ) -> None:
     """A failed send leaves the row unsent and claimable again once its backoff passes.
 
@@ -205,7 +205,7 @@ async def test_a_refused_send_leaves_the_row_for_the_next_attempt(
     """
     homeserver = _Homeserver(refuses={"the answer"})
     pacer, drain = _unpaced(binding, outbox, homeserver)
-    await _enqueue(chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
+    await _enqueue(session_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
 
     async with pacer.run():
         assert await drain.drain_once()
@@ -218,13 +218,13 @@ async def test_a_refused_send_leaves_the_row_for_the_next_attempt(
 
 
 async def test_a_reply_the_room_refused_is_said_once_the_homeserver_relents(
-    chat_store, migrated_sessions, outbox, binding, session_id, turn_id, attachment_id
+    session_store, migrated_sessions, outbox, binding, session_id, turn_id, attachment_id
 ) -> None:
     """A produced reply is retried rather than lost. The wait is skipped by hand: what is under
     test is that the row comes back at all, not how long it waits first."""
     homeserver = _Homeserver(refuses={"the answer"})
     pacer, drain = _unpaced(binding, outbox, homeserver)
-    await _enqueue(chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
+    await _enqueue(session_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
 
     async with pacer.run():
         assert await drain.drain_once()
@@ -239,7 +239,7 @@ async def test_a_reply_the_room_refused_is_said_once_the_homeserver_relents(
 
 
 async def test_a_refused_reply_holds_up_the_one_behind_it(
-    chat_store, migrated_sessions, outbox, binding, session_id, turn_id, attachment_id
+    session_store, migrated_sessions, outbox, binding, session_id, turn_id, attachment_id
 ) -> None:
     """Order survives a retry, which is the half of this that a due-rows-only query would lose.
 
@@ -249,7 +249,7 @@ async def test_a_refused_reply_holds_up_the_one_behind_it(
     homeserver = _Homeserver(refuses={"found it"})
     pacer, drain = _unpaced(binding, outbox, homeserver)
     await _enqueue(
-        chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "found it", "and fixed it"
+        session_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "found it", "and fixed it"
     )
 
     async with pacer.run():
@@ -265,7 +265,7 @@ async def test_a_refused_reply_holds_up_the_one_behind_it(
 
 
 async def test_a_reply_out_of_attempts_is_left_alone_rather_than_retried_forever(
-    chat_store, migrated_sessions, outbox, binding, session_id, turn_id, attachment_id, caplog
+    session_store, migrated_sessions, outbox, binding, session_id, turn_id, attachment_id, caplog
 ) -> None:
     """A room that has refused the same message eight times is not going to take the ninth.
 
@@ -275,7 +275,7 @@ async def test_a_reply_out_of_attempts_is_left_alone_rather_than_retried_forever
     homeserver = _Homeserver(refuses={"the answer"})
     pacer, drain = _unpaced(binding, outbox, homeserver)
     await _enqueue(
-        chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer", "and the next one"
+        session_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer", "and the next one"
     )
 
     async with pacer.run():
@@ -295,13 +295,13 @@ async def test_a_reply_out_of_attempts_is_left_alone_rather_than_retried_forever
 
 
 async def test_one_item_is_queued_once_however_often_a_subscriber_sees_it_complete(
-    chat_store, migrated_sessions, outbox, session_id, turn_id, attachment_id
+    session_store, migrated_sessions, outbox, session_id, turn_id, attachment_id
 ) -> None:
     """A subscriber that crashed between sending and keeping its position sees the same completion
     again, and so does a runner replaying its rollout into a replacement replica. Without the
     partial unique index that would be a second row for one item, and the room would read the answer
     twice."""
-    await _enqueue(chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
+    await _enqueue(session_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
     item_id = one(await _said(migrated_sessions, session_id))
 
     for _ in range(3):
@@ -312,12 +312,12 @@ async def test_one_item_is_queued_once_however_often_a_subscriber_sees_it_comple
 
 
 async def test_an_item_that_said_nothing_is_not_a_reply(
-    chat_store, migrated_sessions, outbox, session_id, turn_id, attachment_id
+    session_store, migrated_sessions, outbox, session_id, turn_id, attachment_id
 ) -> None:
     """A turn that only ran tools said nothing, and an empty room event would be the console
     reporting that as an answer."""
     where = FrameRange(1, 1)
-    await chat_store.apply_frame(
+    await session_store.apply_frame(
         session_id,
         turn_id,
         1,
@@ -329,7 +329,7 @@ async def test_an_item_that_said_nothing_is_not_a_reply(
 
 
 async def test_an_enqueued_reply_wakes_the_outbox_wire(
-    chat_store, migrated_sessions, outbox_wakes, outbox, session_id, turn_id, attachment_id
+    session_store, migrated_sessions, outbox_wakes, outbox, session_id, turn_id, attachment_id
 ) -> None:
     """The wake rides the enqueue's own transaction, so it cannot precede the row it announces.
 
@@ -340,16 +340,16 @@ async def test_an_enqueued_reply_wakes_the_outbox_wire(
 
     with outbox_wakes.watch(woken.set):
         woken.clear()  # the registration-time state does not count; only the enqueue's wake does
-        await _enqueue(chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
+        await _enqueue(session_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
         async with asyncio.timeout(10):
             await woken.wait()
 
 
 async def test_a_duplicate_enqueue_wakes_nobody(
-    chat_store, migrated_sessions, outbox_wakes, outbox, session_id, turn_id, attachment_id
+    session_store, migrated_sessions, outbox_wakes, outbox, session_id, turn_id, attachment_id
 ) -> None:
     """The enqueue that inserted the row already woke the drain; a conflict announces nothing new."""
-    await _enqueue(chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
+    await _enqueue(session_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
     item_id = one(await _said(migrated_sessions, session_id))
     woken = asyncio.Event()
 
@@ -381,7 +381,7 @@ async def test_a_reconnected_wire_wakes_its_registrations(migrated_sessions, out
 
 
 async def test_an_enqueue_wakes_the_running_drain(
-    chat_store, migrated_sessions, outbox_wakes, outbox, binding, session_id, turn_id, attachment_id
+    session_store, migrated_sessions, outbox_wakes, outbox, binding, session_id, turn_id, attachment_id
 ) -> None:
     """End to end off the wake alone: the backstop here is minutes, so a drain that still needed
     its poll to find work would time this test out rather than say the reply."""
@@ -394,7 +394,7 @@ async def test_an_enqueue_wakes_the_running_drain(
             # An enqueue landing before the drain's first pass is found by that pass; one landing
             # after it is parked behind the wake wait, where only the wake can deliver it inside
             # this timeout — the clear-before-pass ordering covers the mid-pass interleaving.
-            await _enqueue(chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
+            await _enqueue(session_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
             await homeserver.said.wait()
 
     assert homeserver.posted == ["the answer"]

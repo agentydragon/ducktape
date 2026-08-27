@@ -111,13 +111,13 @@ async def _wait_until(
 
 
 async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_saw_the_end_of(
-    chat_store: SessionStore, migrated_db_url: str, operator_id: UUID, tmp_path: Path
+    session_store: SessionStore, migrated_db_url: str, operator_id: UUID, tmp_path: Path
 ) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     stub_state = tmp_path / "stub"
     stub_state.mkdir()
-    view, token = await chat_store.create(operator_id)
+    view, token = await session_store.create(operator_id)
     session_id = view.session_id
     # One port for both consoles: the runner redials the address its claim was created with, so
     # surviving a roll means surviving on that address rather than being told a new one.
@@ -142,11 +142,11 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     )
 
     async def finished_turns() -> list[conversation_reads.TurnEnd | None]:
-        turns = await chat_store.list_turns(session_id, cursor=None, limit=10, scope=UnrestrictedReads())
+        turns = await session_store.list_turns(session_id, cursor=None, limit=10, scope=UnrestrictedReads())
         return [turn.end for turn in sorted(turns, key=lambda turn: turn.started_at) if turn.ended_at]
 
     async def bridge_connected() -> bool:
-        return await chat_store.status(session_id) == SessionStatus.READY
+        return await session_store.status(session_id) == SessionStatus.READY
 
     async def first_turn_finished() -> bool:
         return len(await finished_turns()) == 1
@@ -160,19 +160,19 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     try:
         async with serve_app(_console_app(migrated_db_url, workspace), port=port):
             await _wait_until("the runner's bridge handshake", bridge_connected, runner=runner)
-            await chat_store.enqueue_prompt(operator_id, session_id, "first question", SPA_ORIGIN)
+            await session_store.enqueue_prompt(operator_id, session_id, "first question", SPA_ORIGIN)
             await _wait_until("the first turn to finish", first_turn_finished, runner=runner)
             # `[hold]` is the stub's direction to answer and then wait, which is what strands this
             # turn in flight while the console below goes away.
-            await chat_store.enqueue_prompt(operator_id, session_id, "second question [hold]", SPA_ORIGIN)
+            await session_store.enqueue_prompt(operator_id, session_id, "second question [hold]", SPA_ORIGIN)
             await _wait_until("the CLI to receive the second prompt", the_cli_has_the_second_prompt, runner=runner)
 
         # The console is gone with the exchange unfinished. The sandbox is not: its CLI is still
         # holding an answer, which is the whole reason the runner outlives a connection.
-        assert await chat_store.status(session_id) in OPEN_SESSION_STATUSES, "a roll is not a session ending"
+        assert await session_store.status(session_id) in OPEN_SESSION_STATUSES, "a roll is not a session ending"
         [in_flight] = [
             turn
-            for turn in await chat_store.list_turns(session_id, cursor=None, limit=10, scope=UnrestrictedReads())
+            for turn in await session_store.list_turns(session_id, cursor=None, limit=10, scope=UnrestrictedReads())
             if turn.ended_at is None
         ]
 
@@ -187,12 +187,12 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
 
     assert await finished_turns() == [TurnAnsweredEnd(), TurnAnsweredEnd()]
     turns = sorted(
-        await chat_store.list_turns(session_id, cursor=None, limit=10, scope=UnrestrictedReads()),
+        await session_store.list_turns(session_id, cursor=None, limit=10, scope=UnrestrictedReads()),
         key=lambda turn: turn.started_at,
     )
     assert turns[1].turn_id == in_flight.turn_id, "the second console finished that turn rather than opening its own"
-    rows = await chat_store.read_item_rows(
-        await chat_store.conversation_of(session_id), after_seq=None, limit=100, scope=UnrestrictedReads()
+    rows = await session_store.read_item_rows(
+        await session_store.conversation_of(session_id), after_seq=None, limit=100, scope=UnrestrictedReads()
     )
     assert [
         (entry.kind, entry.text) for entry in map(entry_of, rows) if isinstance(entry, PromptEntry | MessageEntry)
@@ -207,7 +207,7 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     # The sandbox's own account of itself, durable only because it is in the rollout: the pod's log
     # is reaped with the sandbox. Whole path — the CLI's stderr, the runner's forwarding, the
     # `setup_output` frame, and the transport reassembling it into a line.
-    narration = await chat_store.read_session_frames(
+    narration = await session_store.read_session_frames(
         session_id, cursor=None, limit=10, kinds=[SETUP_OUTPUT_KIND], scope=UnrestrictedReads()
     )
     assert [frame.text for frame in narration if isinstance(frame, SetupOutputRecord)] == [GREETING]
@@ -218,7 +218,7 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     # reaches projection, including native classes with no payload-level id.
     numbered = await _runner_seqs(migrated_db_url, session_id)
     assert numbered == sorted(set(numbered)), "a frame was recorded twice, or out of the order it was sent in"
-    assert await chat_store.highest_runner_seq(session_id) == numbered[-1]
+    assert await session_store.highest_runner_seq(session_id) == numbered[-1]
 
 
 if __name__ == "__main__":

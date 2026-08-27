@@ -157,20 +157,20 @@ def notices(
 
 
 @pytest.fixture
-async def served(chat_store: SessionStore, operator_id: UUID, binding: RoomAttachment) -> UUID:
+async def served(session_store: SessionStore, operator_id: UUID, binding: RoomAttachment) -> UUID:
     """A ready session serving the bound room, on the conversation the room is attached to."""
-    view, token = await chat_store.create(operator_id, conversation_id=binding.conversation_id)
-    await chat_store.authenticate_bridge(view.session_id, token)
+    view, token = await session_store.create(operator_id, conversation_id=binding.conversation_id)
+    await session_store.authenticate_bridge(view.session_id, token)
     return view.session_id
 
 
-async def abort_a_turn(chat_store: SessionStore, operator_id: UUID, session_id: UUID) -> None:
-    await chat_store.enqueue_prompt(
+async def abort_a_turn(session_store: SessionStore, operator_id: UUID, session_id: UUID) -> None:
+    await session_store.enqueue_prompt(
         operator_id, session_id, "do the thing", MatrixOrigin(address=MATRIX_ROOM, refs=("$asked",))
     )
-    turn = await chat_store.next_prompt(session_id)
+    turn = await session_store.next_prompt(session_id)
     assert turn is not None
-    await chat_store.end_turn(turn.turn_id, TurnAbortedBody())
+    await session_store.end_turn(turn.turn_id, TurnAbortedBody())
 
 
 async def stored_position(sessions: async_sessionmaker[AsyncSession]) -> StreamPosition | None:
@@ -181,41 +181,41 @@ async def stored_position(sessions: async_sessionmaker[AsyncSession]) -> StreamP
 
 
 async def test_a_room_that_has_never_read_takes_the_head_and_says_nothing(
-    chat_store, operator_id, served, notices, room, stream, migrated_sessions
+    session_store, operator_id, served, notices, room, stream, migrated_sessions
 ) -> None:
     """A room the console has been servicing since before it kept a position already shows what was
     said in it, so a first pass must not replay the conversation into it."""
-    await abort_a_turn(chat_store, operator_id, served)
+    await abort_a_turn(session_store, operator_id, served)
 
     assert await notices.reconcile_once() is False
     assert room.said == []
-    assert await stored_position(migrated_sessions) == await stream.head(await chat_store.conversation_of(served))
+    assert await stored_position(migrated_sessions) == await stream.head(await session_store.conversation_of(served))
 
 
 async def test_an_abort_recorded_after_the_room_started_reading_becomes_a_notice(
-    chat_store, operator_id, served, notices, room
+    session_store, operator_id, served, notices, room
 ) -> None:
     """An abort recorded while the room was reading becomes a notice."""
     await notices.reconcile_once()
 
-    await abort_a_turn(chat_store, operator_id, served)
+    await abort_a_turn(session_store, operator_id, served)
     await notices.reconcile_once()
 
     assert room.said == [ABORTED_BY_OPERATOR]
 
 
 async def test_a_failed_turn_tells_the_room_what_the_runtime_said(
-    chat_store, operator_id, served, notices, room
+    session_store, operator_id, served, notices, room
 ) -> None:
     """A failure is the one ending the room cannot infer: no answer arrives and nothing else is
     said, so the reason has to be carried in the runtime's own words or it reaches nobody here."""
     await notices.reconcile_once()
-    await chat_store.enqueue_prompt(
+    await session_store.enqueue_prompt(
         operator_id, served, "do the thing", MatrixOrigin(address=MATRIX_ROOM, refs=("$asked",))
     )
-    turn = await chat_store.next_prompt(served)
+    turn = await session_store.next_prompt(served)
     assert turn is not None
-    await chat_store.end_turn(turn.turn_id, TurnFailedBody(failure="upstream is at capacity"))
+    await session_store.end_turn(turn.turn_id, TurnFailedBody(failure="upstream is at capacity"))
 
     await notices.reconcile_once()
 
@@ -223,15 +223,15 @@ async def test_a_failed_turn_tells_the_room_what_the_runtime_said(
 
 
 async def test_an_answered_turn_without_a_message_becomes_a_silence_notice(
-    chat_store, operator_id, served, notices, room
+    session_store, operator_id, served, notices, room
 ) -> None:
     await notices.reconcile_once()
-    await chat_store.enqueue_prompt(
+    await session_store.enqueue_prompt(
         operator_id, served, "do the thing", MatrixOrigin(address=MATRIX_ROOM, refs=("$asked",))
     )
-    turn = await chat_store.next_prompt(served)
+    turn = await session_store.next_prompt(served)
     assert turn is not None
-    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody())
+    await session_store.end_turn(turn.turn_id, TurnAnsweredBody())
 
     await notices.reconcile_once()
 
@@ -240,46 +240,46 @@ async def test_an_answered_turn_without_a_message_becomes_a_silence_notice(
 
 
 async def test_an_answered_turn_with_a_message_needs_no_silence_notice(
-    chat_store, operator_id, served, notices, room
+    session_store, operator_id, served, notices, room
 ) -> None:
     await notices.reconcile_once()
-    await chat_store.enqueue_prompt(
+    await session_store.enqueue_prompt(
         operator_id, served, "do the thing", MatrixOrigin(address=MATRIX_ROOM, refs=("$asked",))
     )
-    turn = await chat_store.next_prompt(served)
+    turn = await session_store.next_prompt(served)
     assert turn is not None
-    await chat_store.close_answer(served, turn.turn_id, final_text="done", frame_seq=1)
-    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody(), last_frame_seq=1, projected_frame_seq=1)
+    await session_store.close_answer(served, turn.turn_id, final_text="done", frame_seq=1)
+    await session_store.end_turn(turn.turn_id, TurnAnsweredBody(), last_frame_seq=1, projected_frame_seq=1)
 
     await notices.reconcile_once()
 
     assert room.said == []
 
 
-async def test_turn_typing_is_derived_by_the_room_subscriber(chat_store, operator_id, served, notices, room) -> None:
+async def test_turn_typing_is_derived_by_the_room_subscriber(session_store, operator_id, served, notices, room) -> None:
     await notices.reconcile_once()
-    await chat_store.enqueue_prompt(
+    await session_store.enqueue_prompt(
         operator_id, served, "do the thing", MatrixOrigin(address=MATRIX_ROOM, refs=("$asked",))
     )
-    turn = await chat_store.next_prompt(served)
+    turn = await session_store.next_prompt(served)
     assert turn is not None
 
     await notices.reconcile_once()
     assert room.typing[-1] is True
 
-    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody())
+    await session_store.end_turn(turn.turn_id, TurnAnsweredBody())
     await notices.reconcile_once()
     assert room.typing[-1] is False
 
 
 async def test_a_restarted_reader_rebuilds_active_typing_from_the_stream(
-    chat_store, operator_id, served, notices, room, migrated_sessions, stream, binding, conversation_wakes, outbox
+    session_store, operator_id, served, notices, room, migrated_sessions, stream, binding, conversation_wakes, outbox
 ) -> None:
     await notices.reconcile_once()
-    await chat_store.enqueue_prompt(
+    await session_store.enqueue_prompt(
         operator_id, served, "do the thing", MatrixOrigin(address=MATRIX_ROOM, refs=("$asked",))
     )
-    assert await chat_store.next_prompt(served) is not None
+    assert await session_store.next_prompt(served) is not None
     await notices.reconcile_once()
 
     successor_room = Room()
@@ -298,9 +298,9 @@ async def test_a_restarted_reader_rebuilds_active_typing_from_the_stream(
     assert successor_room.typing[-1] is True
 
 
-async def test_what_the_room_has_been_told_is_not_told_again(chat_store, operator_id, served, notices, room) -> None:
+async def test_what_the_room_has_been_told_is_not_told_again(session_store, operator_id, served, notices, room) -> None:
     await notices.reconcile_once()
-    await abort_a_turn(chat_store, operator_id, served)
+    await abort_a_turn(session_store, operator_id, served)
 
     await notices.reconcile_once()
     await notices.reconcile_once()
@@ -309,13 +309,13 @@ async def test_what_the_room_has_been_told_is_not_told_again(chat_store, operato
 
 
 async def test_a_restarted_reader_resumes_from_the_position_it_kept(
-    chat_store, operator_id, served, notices, room, migrated_sessions, stream, binding, conversation_wakes, outbox
+    session_store, operator_id, served, notices, room, migrated_sessions, stream, binding, conversation_wakes, outbox
 ) -> None:
     """The whole reason this position is durable: the room's copy outlives the process that wrote
     into it, so a replica that goes away mid-conversation must not re-say what its predecessor did
     — nor skip what was recorded while nobody was reading."""
     await notices.reconcile_once()
-    await abort_a_turn(chat_store, operator_id, served)
+    await abort_a_turn(session_store, operator_id, served)
     await notices.reconcile_once()
 
     successor_room = Room()
@@ -332,19 +332,19 @@ async def test_a_restarted_reader_resumes_from_the_position_it_kept(
     await successor.reconcile_once()
     assert successor_room.said == []
 
-    await abort_a_turn(chat_store, operator_id, served)
+    await abort_a_turn(session_store, operator_id, served)
     await successor.reconcile_once()
     assert successor_room.said == [ABORTED_BY_OPERATOR]
 
 
 async def author(
     sessions: async_sessionmaker[AsyncSession],
-    chat_store: SessionStore,
+    session_store: SessionStore,
     session_id: UUID,
     body: session_events.AuthoredBody,
 ) -> None:
     """Write one of the console's own facts about *session_id*, as its own writer would."""
-    conversation_id = await chat_store.conversation_of(session_id)
+    conversation_id = await session_store.conversation_of(session_id)
     async with sessions() as db, db.begin():
         writer = await conversation_log.writer_for(
             db, conversation_id, session_id=session_id, turn_id=None, now=datetime.datetime.now(datetime.UTC)
@@ -353,14 +353,14 @@ async def author(
 
 
 async def test_a_refused_prompt_is_said_from_its_row_rather_than_by_ingress(
-    chat_store, operator_id, served, notices, room, migrated_sessions
+    session_store, operator_id, served, notices, room, migrated_sessions
 ) -> None:
     """The row ingress wrote with the watermark is the notice: the sync loop records and this says
     it, so one refusal is not both recorded and pushed."""
     await notices.reconcile_once()
     await author(
         migrated_sessions,
-        chat_store,
+        session_store,
         served,
         session_events.PromptRejectedBody(reason=PromptRejection.TURN_IN_FLIGHT, text="and this"),
     )
@@ -372,12 +372,12 @@ async def test_a_refused_prompt_is_said_from_its_row_rather_than_by_ingress(
 
 
 async def test_setup_narration_edits_the_session_line_rather_than_posting_a_notice(
-    chat_store, operator_id, served, notices, room, migrated_sessions, clock
+    session_store, operator_id, served, notices, room, migrated_sessions, clock
 ) -> None:
     """The bootstrap narration is the loudest sender the room used to have — one notice per line.
     Folded into the session's span it is one line, edited."""
     await notices.reconcile_once()
-    await author(migrated_sessions, chat_store, served, session_events.SetupNarrationBody(text="cloning haku-state"))
+    await author(migrated_sessions, session_store, served, session_events.SetupNarrationBody(text="cloning haku-state"))
     clock.tick(STATUS_EDIT_INTERVAL)
 
     await notices.reconcile_once()
@@ -388,10 +388,10 @@ async def test_setup_narration_edits_the_session_line_rather_than_posting_a_noti
 
 
 async def test_something_haku_cannot_read_is_said_from_its_row(
-    chat_store, operator_id, served, notices, room, migrated_sessions
+    session_store, operator_id, served, notices, room, migrated_sessions
 ) -> None:
     await notices.reconcile_once()
-    await author(migrated_sessions, chat_store, served, session_events.UnreadableInputBody(media_type="m.image"))
+    await author(migrated_sessions, session_store, served, session_events.UnreadableInputBody(media_type="m.image"))
 
     await notices.reconcile_once()
 
@@ -400,7 +400,7 @@ async def test_something_haku_cannot_read_is_said_from_its_row(
 
 
 async def test_a_session_ending_is_sealed_into_the_line_its_life_was_shown_on(
-    chat_store, operator_id, served, notices, room, migrated_sessions
+    session_store, operator_id, served, notices, room, migrated_sessions
 ) -> None:
     """Both are caused by a session and are conversation facts: what the operator needs is to know
     why the room went quiet. Adoption edits the session's one line, and the lease expiry seals it —
@@ -408,13 +408,13 @@ async def test_a_session_ending_is_sealed_into_the_line_its_life_was_shown_on(
     await notices.reconcile_once()
     await author(
         migrated_sessions,
-        chat_store,
+        session_store,
         served,
         session_events.SessionAdoptedBody(previous_holder="pod-a", holder="pod-b"),
     )
     await author(
         migrated_sessions,
-        chat_store,
+        session_store,
         served,
         session_events.LeaseExpiredBody(reason=LeaseExpiryReason.HOLDER_GONE, last_holder="pod-b"),
     )
@@ -427,19 +427,19 @@ async def test_a_session_ending_is_sealed_into_the_line_its_life_was_shown_on(
 
 
 async def test_a_lease_expiry_with_no_line_up_is_sealed_as_its_own_span(
-    chat_store, operator_id, served, notices, room, migrated_sessions
+    session_store, operator_id, served, notices, room, migrated_sessions
 ) -> None:
     """The degenerate seal: the session line was retired when its first turn started, so the ending
     posts as a one-event span — the sealed notice of the pre-span rendering, deduplicated the same
     way."""
     await notices.reconcile_once()
-    await abort_a_turn(chat_store, operator_id, served)
+    await abort_a_turn(session_store, operator_id, served)
     await notices.reconcile_once()
     assert room.spans, "the session line was shown"
     assert room.retired, "the turn retired the session line"
     await author(
         migrated_sessions,
-        chat_store,
+        session_store,
         served,
         session_events.LeaseExpiredBody(reason=LeaseExpiryReason.UNADOPTED, last_holder="pod-a"),
     )
@@ -451,13 +451,15 @@ async def test_a_lease_expiry_with_no_line_up_is_sealed_as_its_own_span(
     assert subject not in {shown for shown, _ in room.spans}, "a span of its own, not the retired line"
 
 
-async def test_the_first_turn_retires_the_pre_turn_session_line(chat_store, operator_id, served, notices, room) -> None:
+async def test_the_first_turn_retires_the_pre_turn_session_line(
+    session_store, operator_id, served, notices, room
+) -> None:
     """A conversation that is moving is its own evidence of life, so the lifecycle line is spent
     the moment the first turn opens."""
     await notices.reconcile_once()
     assert [body for _, body in room.spans] == [PROVISIONING_STATUS]
-    await chat_store.enqueue_prompt(operator_id, served, "go", MatrixOrigin(address=MATRIX_ROOM, refs=("$go",)))
-    assert await chat_store.next_prompt(served) is not None
+    await session_store.enqueue_prompt(operator_id, served, "go", MatrixOrigin(address=MATRIX_ROOM, refs=("$go",)))
+    assert await session_store.next_prompt(served) is not None
 
     await notices.reconcile_once()
 
@@ -475,12 +477,12 @@ async def test_stale_span_lines_are_swept_once_per_takeover(served, notices, roo
 
 
 async def test_a_prompt_sent_from_another_surface_is_posted_into_the_room(
-    chat_store, operator_id, served, notices, room
+    session_store, operator_id, served, notices, room
 ) -> None:
     """A prompt is a conversation fact, so every attached surface shows it — including the one it
     did not arrive through."""
     await notices.reconcile_once()
-    await chat_store.enqueue_prompt(operator_id, served, "from the console", SpaOrigin())
+    await session_store.enqueue_prompt(operator_id, served, "from the console", SpaOrigin())
 
     await notices.reconcile_once()
 
@@ -489,12 +491,12 @@ async def test_a_prompt_sent_from_another_surface_is_posted_into_the_room(
 
 
 async def test_a_prompt_typed_into_this_room_is_not_posted_back_into_it(
-    chat_store, operator_id, served, notices, room
+    session_store, operator_id, served, notices, room
 ) -> None:
     """The prompt item's origin is what decides: the message is already in the timeline above, so
     posting it again would show the operator their own sentence twice."""
     await notices.reconcile_once()
-    await chat_store.enqueue_prompt(
+    await session_store.enqueue_prompt(
         operator_id, served, "typed here", MatrixOrigin(address=MATRIX_ROOM, refs=("$here",))
     )
 
@@ -504,12 +506,12 @@ async def test_a_prompt_typed_into_this_room_is_not_posted_back_into_it(
 
 
 async def test_a_prompt_from_a_sibling_room_is_posted_because_the_address_differs(
-    chat_store, operator_id, served, notices, room
+    session_store, operator_id, served, notices, room
 ) -> None:
     """An equality test against the address, not a look inside one: a bare event id could not tell
     a sibling room's copy from this room's."""
     await notices.reconcile_once()
-    await chat_store.enqueue_prompt(
+    await session_store.enqueue_prompt(
         operator_id, served, "next door", MatrixOrigin(address="!other:allegedly.works", refs=("$there",))
     )
 
@@ -519,14 +521,14 @@ async def test_a_prompt_from_a_sibling_room_is_posted_because_the_address_differ
 
 
 async def test_a_relayed_prompt_the_room_already_shows_is_not_posted_again(
-    chat_store, operator_id, served, notices, room, room_copy, binding
+    session_store, operator_id, served, notices, room, room_copy, binding
 ) -> None:
     """The relay rides the projection path now: its delivery is tied to the cursor and keyed by the
     prompt-completed event, so a crash replay finds the room's own copy instead of saying the
     operator's sentence twice."""
     await notices.reconcile_once()
     room.fail_project = True  # the send reached the homeserver; what died was everything after it
-    await chat_store.enqueue_prompt(operator_id, served, "from the console", SpaOrigin())
+    await session_store.enqueue_prompt(operator_id, served, "from the console", SpaOrigin())
     with pytest.raises(RuntimeError, match="homeserver refused"):
         await notices.reconcile_once()
     [(conversation_id, seq)] = room.projected
@@ -552,19 +554,19 @@ async def test_a_relayed_prompt_the_room_already_shows_is_not_posted_again(
 
 
 async def test_a_silence_notice_that_failed_to_send_is_replayed_with_the_same_source(
-    chat_store, operator_id, served, notices, room, migrated_sessions
+    session_store, operator_id, served, notices, room, migrated_sessions
 ) -> None:
     """The cursor follows the accepted effect for silence too: a failed send leaves the turn's
     answered event owed, and the retry names the same durable source."""
     await notices.reconcile_once()
     before = await stored_position(migrated_sessions)
     room.fail_project = True
-    await chat_store.enqueue_prompt(
+    await session_store.enqueue_prompt(
         operator_id, served, "do the thing", MatrixOrigin(address=MATRIX_ROOM, refs=("$asked",))
     )
-    turn = await chat_store.next_prompt(served)
+    turn = await session_store.next_prompt(served)
     assert turn is not None
-    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody())
+    await session_store.end_turn(turn.turn_id, TurnAnsweredBody())
 
     with pytest.raises(RuntimeError, match="homeserver refused"):
         await notices.reconcile_once()
@@ -583,7 +585,7 @@ async def test_an_unread_room_has_no_position_at_all(migrated_sessions) -> None:
 
 
 async def test_a_sibling_rooms_subscriber_reads_only_its_own_conversation(
-    chat_store,
+    session_store,
     operator_id,
     conversations,
     served,
@@ -612,7 +614,7 @@ async def test_a_sibling_rooms_subscriber_reads_only_its_own_conversation(
     await notices.reconcile_once()
     await sibling.reconcile_once()
 
-    await abort_a_turn(chat_store, operator_id, served)
+    await abort_a_turn(session_store, operator_id, served)
     await notices.reconcile_once()
     await sibling.reconcile_once()
 
@@ -640,7 +642,7 @@ async def test_keeping_an_older_position_cannot_rewind_the_room(migrated_session
 
 
 async def test_a_replayed_projection_already_in_the_room_is_not_sent_again(
-    chat_store,
+    session_store,
     operator_id,
     served,
     notices,
@@ -661,7 +663,7 @@ async def test_a_replayed_projection_already_in_the_room_is_not_sent_again(
     """
     await notices.reconcile_once()
     room.fail_project = True  # the send reached the homeserver; what died was everything after it
-    await abort_a_turn(chat_store, operator_id, served)
+    await abort_a_turn(session_store, operator_id, served)
     with pytest.raises(RuntimeError, match="homeserver refused"):
         await notices.reconcile_once()
     [(conversation_id, seq)] = room.projected
@@ -701,14 +703,14 @@ async def test_a_replayed_projection_already_in_the_room_is_not_sent_again(
 
 
 async def test_a_failed_projection_is_replayed_with_the_same_source_identity(
-    chat_store, operator_id, served, notices, room, migrated_sessions
+    session_store, operator_id, served, notices, room, migrated_sessions
 ) -> None:
     """The cursor follows the accepted effect. A failed send leaves the row owed, and the retry
     names the same durable source for Matrix transaction deduplication."""
     await notices.reconcile_once()
     before = await stored_position(migrated_sessions)
     room.fail_project = True
-    await abort_a_turn(chat_store, operator_id, served)
+    await abort_a_turn(session_store, operator_id, served)
 
     with pytest.raises(RuntimeError, match="homeserver refused"):
         await notices.reconcile_once()

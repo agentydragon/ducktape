@@ -46,9 +46,9 @@ PATIENCE = WINDOW * 8
 
 @pytest.fixture
 def following(
-    chat_store: SessionStore, chat_service: SessionService, conversation_wakes: ConversationWakes
+    session_store: SessionStore, chat_service: SessionService, conversation_wakes: ConversationWakes
 ) -> ConversationFollow:
-    return ConversationFollow(chat_store, chat_service, conversation_wakes, window=WINDOW, sandbox_poll=SANDBOX_POLL)
+    return ConversationFollow(session_store, chat_service, conversation_wakes, window=WINDOW, sandbox_poll=SANDBOX_POLL)
 
 
 async def _next(messages: AsyncIterator[ConversationFollowMessage]) -> ConversationFollowMessage:
@@ -68,23 +68,25 @@ def _prose(entries: list[ConversationEntry]) -> list[str]:
     return [entry.text for entry in entries if isinstance(entry, PromptEntry | MessageEntry)]
 
 
-async def _started(chat_store: SessionStore, operator_id: UUID) -> tuple[UUID, UUID]:
-    view, token = await chat_store.create(operator_id)
-    await chat_store.authenticate_bridge(view.session_id, token)
-    return view.session_id, await chat_store.conversation_of(view.session_id)
+async def _started(session_store: SessionStore, operator_id: UUID) -> tuple[UUID, UUID]:
+    view, token = await session_store.create(operator_id)
+    await session_store.authenticate_bridge(view.session_id, token)
+    return view.session_id, await session_store.conversation_of(view.session_id)
 
 
-async def _exchange(chat_store: SessionStore, operator_id: UUID, session_id: UUID, prompt: str, answer: str) -> None:
+async def _exchange(session_store: SessionStore, operator_id: UUID, session_id: UUID, prompt: str, answer: str) -> None:
     """One prompt through to one finished answer, with the frames it took, as the loop writes them."""
-    await chat_store.enqueue_prompt(operator_id, session_id, prompt, SPA_ORIGIN)
-    turn = await chat_store.next_prompt(session_id)
+    await session_store.enqueue_prompt(operator_id, session_id, prompt, SPA_ORIGIN)
+    turn = await session_store.next_prompt(session_id)
     assert turn is not None
-    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"})
-    spoke = await chat_store.record_frame(
+    await session_store.record_frame(
+        session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"}
+    )
+    spoke = await session_store.record_frame(
         session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "assistant"}
     )
     where = FrameRange(spoke.frame_seq, spoke.frame_seq)
-    await chat_store.apply_frame(
+    await session_store.apply_frame(
         session_id,
         turn.turn_id,
         spoke.frame_seq,
@@ -94,34 +96,34 @@ async def _exchange(chat_store: SessionStore, operator_id: UUID, session_id: UUI
             MessageCompleted(backend_item_id=None, provenance=where),
         ],
     )
-    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody(), last_frame_seq=spoke.frame_seq)
+    await session_store.end_turn(turn.turn_id, TurnAnsweredBody(), last_frame_seq=spoke.frame_seq)
 
 
 async def test_a_follow_opens_with_the_conversation_whole(
-    following: ConversationFollow, chat_store: SessionStore, operator_id: UUID
+    following: ConversationFollow, session_store: SessionStore, operator_id: UUID
 ) -> None:
     """A follower that has never read one is given the state, not an empty stream it must go and
     fill in itself. The position it carries is what everything after it continues from."""
-    session_id, conversation_id = await _started(chat_store, operator_id)
-    await _exchange(chat_store, operator_id, session_id, "first", "one")
+    session_id, conversation_id = await _started(session_store, operator_id)
+    await _exchange(session_store, operator_id, session_id, "first", "one")
 
     opened = await _next(following.follow(operator_id, conversation_id))
 
     assert isinstance(opened, ConversationSnapshot)
     assert _prose(opened.conversation.entries) == ["first", "one"]
-    assert opened.position == await chat_store.conversation_position(conversation_id)
+    assert opened.position == await session_store.conversation_position(conversation_id)
 
 
 async def test_what_moves_after_the_snapshot_arrives_as_an_update(
-    following: ConversationFollow, chat_store: SessionStore, operator_id: UUID
+    following: ConversationFollow, session_store: SessionStore, operator_id: UUID
 ) -> None:
     """What an update drops is the history — the part that grows without bound."""
-    session_id, conversation_id = await _started(chat_store, operator_id)
-    await _exchange(chat_store, operator_id, session_id, "first", "one")
+    session_id, conversation_id = await _started(session_store, operator_id)
+    await _exchange(session_store, operator_id, session_id, "first", "one")
     messages = following.follow(operator_id, conversation_id)
     assert isinstance(await _next(messages), ConversationSnapshot)
 
-    await _exchange(chat_store, operator_id, session_id, "second", "two")
+    await _exchange(session_store, operator_id, session_id, "second", "two")
     update = await _next(messages)
 
     assert isinstance(update, ConversationUpdate)
@@ -130,21 +132,21 @@ async def test_what_moves_after_the_snapshot_arrives_as_an_update(
 
 
 async def test_a_change_landing_during_the_snapshot_is_carried_by_the_update_after_it(
-    following: ConversationFollow, chat_store: SessionStore, operator_id: UUID, monkeypatch: pytest.MonkeyPatch
+    following: ConversationFollow, session_store: SessionStore, operator_id: UUID, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The window every list-then-watch client gets wrong, closed here once.
 
     The position is taken before the state is read, so a row written between the two is newer than
     the position the follower leaves with — and reaches it next, rather than falling in the gap.
     """
-    session_id, conversation_id = await _started(chat_store, operator_id)
-    whole = chat_store.get_operator_conversation
+    session_id, conversation_id = await _started(session_store, operator_id)
+    whole = session_store.get_operator_conversation
 
     async def write_while_reading(operator: UUID, conversation: UUID) -> ConversationView:
-        await chat_store.enqueue_prompt(operator_id, session_id, "written mid-read", SPA_ORIGIN)
+        await session_store.enqueue_prompt(operator_id, session_id, "written mid-read", SPA_ORIGIN)
         return await whole(operator, conversation)
 
-    monkeypatch.setattr(chat_store, "get_operator_conversation", write_while_reading)
+    monkeypatch.setattr(session_store, "get_operator_conversation", write_while_reading)
     messages = following.follow(operator_id, conversation_id)
     snapshot = await _next(messages)
     monkeypatch.undo()
@@ -157,14 +159,14 @@ async def test_a_change_landing_during_the_snapshot_is_carried_by_the_update_aft
 
 
 async def test_a_resume_is_told_what_it_missed_at_once(
-    following: ConversationFollow, chat_store: SessionStore, operator_id: UUID
+    following: ConversationFollow, session_store: SessionStore, operator_id: UUID
 ) -> None:
     """A reconnect is the same operation with the position the last message carried, so what
     happened while the socket was down arrives without waiting for the next thing to happen."""
-    session_id, conversation_id = await _started(chat_store, operator_id)
-    await _exchange(chat_store, operator_id, session_id, "first", "one")
-    held = await chat_store.conversation_position(conversation_id)
-    await _exchange(chat_store, operator_id, session_id, "second", "two")
+    session_id, conversation_id = await _started(session_store, operator_id)
+    await _exchange(session_store, operator_id, session_id, "first", "one")
+    held = await session_store.conversation_position(conversation_id)
+    await _exchange(session_store, operator_id, session_id, "second", "two")
 
     resumed = await _next(following.follow(operator_id, conversation_id, after=held))
 
@@ -173,13 +175,13 @@ async def test_a_resume_is_told_what_it_missed_at_once(
 
 
 async def test_a_position_the_log_cannot_answer_from_is_answered_with_the_conversation_whole(
-    following: ConversationFollow, chat_store: SessionStore, operator_id: UUID
+    following: ConversationFollow, session_store: SessionStore, operator_id: UUID
 ) -> None:
     """Snapshot-or-resume is the server's decision, which is why a client has no repair path to get
     wrong: an unusable position is not an error it has to recognise and recover from."""
-    session_id, conversation_id = await _started(chat_store, operator_id)
-    await _exchange(chat_store, operator_id, session_id, "first", "one")
-    beyond = await chat_store.conversation_position(conversation_id) + 1_000
+    session_id, conversation_id = await _started(session_store, operator_id)
+    await _exchange(session_store, operator_id, session_id, "first", "one")
+    beyond = await session_store.conversation_position(conversation_id) + 1_000
 
     opened = await _next(following.follow(operator_id, conversation_id, after=beyond))
 
@@ -188,22 +190,22 @@ async def test_a_position_the_log_cannot_answer_from_is_answered_with_the_conver
 
 
 async def test_a_streaming_turns_segments_become_one_update(
-    following: ConversationFollow, chat_store: SessionStore, operator_id: UUID
+    following: ConversationFollow, session_store: SessionStore, operator_id: UUID
 ) -> None:
     """An item's `text` is rewritten in place as its segments land, so every update re-sends the
     open item whole. Coalescing is what keeps that from costing bytes quadratic in the answer's
     length — and the follower still lands on the prose so far, marked as still being written."""
-    session_id, conversation_id = await _started(chat_store, operator_id)
-    await chat_store.enqueue_prompt(operator_id, session_id, "explain", SPA_ORIGIN)
-    turn = await chat_store.next_prompt(session_id)
+    session_id, conversation_id = await _started(session_store, operator_id)
+    await session_store.enqueue_prompt(operator_id, session_id, "explain", SPA_ORIGIN)
+    turn = await session_store.next_prompt(session_id)
     assert turn is not None
     messages = following.follow(operator_id, conversation_id)
     assert isinstance(await _next(messages), ConversationSnapshot)
 
     where = FrameRange(1, 1)
-    await chat_store.apply_frame(session_id, turn.turn_id, 1, [MessageStarted(provenance=where)])
+    await session_store.apply_frame(session_id, turn.turn_id, 1, [MessageStarted(provenance=where)])
     for seq, word in enumerate(("the ", "answer ", "so ", "far"), start=2):
-        await chat_store.apply_frame(
+        await session_store.apply_frame(
             session_id,
             turn.turn_id,
             seq,
@@ -220,18 +222,18 @@ async def test_a_streaming_turns_segments_become_one_update(
 
 
 async def test_a_replacement_sessions_rows_reach_a_follower_that_never_named_it(
-    following: ConversationFollow, chat_store: SessionStore, operator_id: UUID
+    following: ConversationFollow, session_store: SessionStore, operator_id: UUID
 ) -> None:
     """What addressing the thread rather than the runner buys. A session lives only as long as its
     sandbox, so a follower that had to name one would be reading a dead log after every replacement.
     """
-    first, conversation_id = await _started(chat_store, operator_id)
+    first, conversation_id = await _started(session_store, operator_id)
     messages = following.follow(operator_id, conversation_id)
     assert isinstance(await _next(messages), ConversationSnapshot)
 
-    replacement, token = await chat_store.create(operator_id, conversation_id=conversation_id)
-    await chat_store.authenticate_bridge(replacement.session_id, token)
-    await _exchange(chat_store, operator_id, replacement.session_id, "carry on", "carrying on")
+    replacement, token = await session_store.create(operator_id, conversation_id=conversation_id)
+    await session_store.authenticate_bridge(replacement.session_id, token)
+    await _exchange(session_store, operator_id, replacement.session_id, "carry on", "carrying on")
     update = await _next(messages)
 
     assert isinstance(update, ConversationUpdate)
@@ -247,15 +249,15 @@ async def test_a_replacement_sessions_rows_reach_a_follower_that_never_named_it(
 
 
 async def test_what_the_sandbox_says_while_coming_up_reaches_a_follower_when_it_is_said(
-    following: ConversationFollow, chat_store: SessionStore, operator_id: UUID
+    following: ConversationFollow, session_store: SessionStore, operator_id: UUID
 ) -> None:
     """A session that dies during setup has narration instead of a transcript, so it cannot wait
     for the next event: there will not be one."""
-    session_id, conversation_id = await _started(chat_store, operator_id)
+    session_id, conversation_id = await _started(session_store, operator_id)
     messages = following.follow(operator_id, conversation_id)
     assert isinstance(await _next(messages), ConversationSnapshot)
 
-    await chat_store.narrate(session_id, "pulling the sandbox image")
+    await session_store.narrate(session_id, "pulling the sandbox image")
     update = await _next(messages)
 
     assert isinstance(update, ConversationUpdate)
@@ -264,27 +266,27 @@ async def test_what_the_sandbox_says_while_coming_up_reaches_a_follower_when_it_
 
 
 async def test_a_follower_is_not_woken_by_another_conversation(
-    following: ConversationFollow, chat_store: SessionStore, operator_id: UUID
+    following: ConversationFollow, session_store: SessionStore, operator_id: UUID
 ) -> None:
     """The wake channel is broadcast, so every replica hears every session: what keeps a follower to
     its own thread is this replica's own routing, not what it was told."""
-    _, conversation_id = await _started(chat_store, operator_id)
-    elsewhere, _ = await _started(chat_store, operator_id)
+    _, conversation_id = await _started(session_store, operator_id)
+    elsewhere, _ = await _started(session_store, operator_id)
     messages = following.follow(operator_id, conversation_id)
     assert isinstance(await _next(messages), ConversationSnapshot)
 
-    await _exchange(chat_store, operator_id, elsewhere, "not yours", "indeed not")
+    await _exchange(session_store, operator_id, elsewhere, "not yours", "indeed not")
 
     await _nothing_more(messages)
     await messages.aclose()
 
 
 async def test_a_conversation_another_operator_owns_cannot_be_followed(
-    following: ConversationFollow, chat_store: SessionStore, operator_id: UUID
+    following: ConversationFollow, session_store: SessionStore, operator_id: UUID
 ) -> None:
     """The socket is operator-scoped by being the store's own read; a follow can see exactly what a
     read of the same conversation can, and nothing more."""
-    _, conversation_id = await _started(chat_store, operator_id)
+    _, conversation_id = await _started(session_store, operator_id)
 
     with pytest.raises(KeyError):
         await _next(following.follow(uuid4(), conversation_id))
@@ -292,20 +294,20 @@ async def test_a_conversation_another_operator_owns_cannot_be_followed(
 
 async def test_an_update_carries_the_channels_holding_the_conversation(
     following: ConversationFollow,
-    chat_store: SessionStore,
+    session_store: SessionStore,
     operator_id: UUID,
     migrated_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     """A tab watching a thread a room later joins would otherwise show an attachment list from
     whenever it connected — a UI disagreeing with the database until someone reloads it."""
-    session_id, conversation_id = await _started(chat_store, operator_id)
+    session_id, conversation_id = await _started(session_store, operator_id)
     messages = following.follow(operator_id, conversation_id)
     opened = await _next(messages)
     assert isinstance(opened, ConversationSnapshot)
     assert opened.conversation.attachments == []
 
     await attach_channel(migrated_sessions, session_id, "!room:example.org")
-    await _exchange(chat_store, operator_id, session_id, "hello from the room", "hello back")
+    await _exchange(session_store, operator_id, session_id, "hello from the room", "hello back")
     update = await _next(messages)
 
     assert isinstance(update, ConversationUpdate)
@@ -314,13 +316,13 @@ async def test_an_update_carries_the_channels_holding_the_conversation(
 
 
 async def test_a_sandbox_still_coming_up_is_read_again_with_no_wake_to_carry_it(
-    following: ConversationFollow, chat_store: SessionStore, operator_id: UUID, recording_claims: RecordingClaims
+    following: ConversationFollow, session_store: SessionStore, operator_id: UUID, recording_claims: RecordingClaims
 ) -> None:
     """Kubernetes writes no `session_events` row when a pod goes ready, so a follower waiting only
     for wakes would show a provisioning panel frozen at whatever it opened on — during exactly the
     phase that panel exists for."""
-    view, _ = await chat_store.create(operator_id)
-    conversation_id = await chat_store.conversation_of(view.session_id)
+    view, _ = await session_store.create(operator_id)
+    conversation_id = await session_store.conversation_of(view.session_id)
     messages = following.follow(operator_id, conversation_id)
 
     opened = await _next(messages)
@@ -337,12 +339,12 @@ async def test_a_sandbox_still_coming_up_is_read_again_with_no_wake_to_carry_it(
 
 
 async def test_a_session_past_provisioning_is_not_polled(
-    following: ConversationFollow, chat_store: SessionStore, operator_id: UUID, recording_claims: RecordingClaims
+    following: ConversationFollow, session_store: SessionStore, operator_id: UUID, recording_claims: RecordingClaims
 ) -> None:
     """The poll is for the one field whose truth lives outside the log, and stops being paid for
     the moment that field is `None`: a live transcript must not put a cluster read on its hot path.
     """
-    _, conversation_id = await _started(chat_store, operator_id)
+    _, conversation_id = await _started(session_store, operator_id)
     messages = following.follow(operator_id, conversation_id)
     opened = await _next(messages)
     assert isinstance(opened, ConversationSnapshot)

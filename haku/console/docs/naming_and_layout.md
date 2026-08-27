@@ -167,9 +167,11 @@ conversation bodies into `conversation/conversation_event.py` and frees `session
 to mean what it says.
 
 **"Entry" and "chat" leave the vocabulary.** Nothing is a _chat_ — the layers are sessions,
-conversations, channels, frames, items. `chat_models.py`, `ChatSurface`, `chat_attachment`,
-`ChatAttachment`, `chat_runtimes` (config key), `SessionStore.chat_store` (param), and the
-`chat_layers.md`/`chat_runtime_facts.md` docs each rename to the layer word they mean. An _entry_
+conversations, channels, frames, items. `ChatSurface`, `chat_attachment`, `ChatAttachment`,
+`chat_runtimes` (config key), `SessionStore.chat_store` (param), and the
+`chat_layers.md`/`chat_runtime_facts.md` docs each rename to the layer word they mean;
+`chat_models.py` has none — a grab-bag spanning every layer, it is scattered enum-by-enum and
+deleted rather than renamed (§6). An _entry_
 (`*Entry` in `conversation_reads.py`, built by `item_entries.py`) is a third name for the item
 concept beside the row and the neutral op; it becomes the item read model in
 `conversation/item_reads.py` — private to the conversation read surface (beside the store/reader that
@@ -382,13 +384,26 @@ conversation-domain quiet gap.
 - **C1 · `reason` → `failure`** _(mechanical)_ — folds into the #4667 cutover.
 - **C2 · `ConversationEventRow` at definition** _(mechanical)_ — one class rename in
   `database_schema.py` + delete 5 import aliases and their duplicated comments.
-- **C4 · de-"chat" sweep** _(mixed, split three ways)_: **C4a** code-only `chat_models.py` module rename
-  - `chat_store` param _(mechanical)_; **C4b** `ChatSurface` → `ChannelSurface` member-drop +
-    `chat_attachment` → `channel_attachment` table/ORM _(semantic — CHECK + table migration)_; **C4c**
-    `chat_runtimes` → `harnesses` config key _(semantic — deploy-coordinated, ConfigMap ahead of
-    image)_: expand landed (#4977 — loader canonical field `harnesses`, `chat_runtimes` a tombstoned
-    alias, both-set rejected); contract = flip the ConfigMap key + drop the alias + loud-reject
-    `chat_runtimes`, after the expand image is rolled out.
+- **C4 · de-"chat" sweep** _(mixed, split three ways)_: **C4a** `chat_store` → `session_store` param
+  rename _(mechanical)_ — the param holds a `SessionStore`, so it takes the session layer's word;
+  **C4b** `ChatSurface` → `ChannelSurface` member-drop + `chat_attachment` → `channel_attachment`
+  table/ORM _(semantic — CHECK + table migration)_; **C4c** `chat_runtimes` → `harnesses` config
+  key _(semantic — deploy-coordinated, ConfigMap ahead of image)_: expand landed (#4977 — loader
+  canonical field `harnesses`, `chat_runtimes` a tombstoned alias, both-set rejected); contract =
+  flip the ConfigMap key + drop the alias + loud-reject `chat_runtimes`, after the expand image is
+  rolled out. The `chat_models.py` **module** is deliberately **not** renamed by C4a: a transitional
+  grab-bag whose ~20 enums span every layer, it has no single layer word, so it is **deleted**
+  rather than renamed. Its survival _is_ the tracked cleanup item — the #4772 reorg is not done
+  until it is gone, each enum scattered to its true home:
+  - `SessionStatus`, `LeaseExpiryReason` (+ the session-status frozensets) → `session/` (C7-adjacent)
+  - `ConversationEventKind`, `AuthoredEventKind`, `EventProvenance`, `TurnOutcome`, `ReasoningDisclosure`
+    → `conversation/conversation_event.py` (C5, gated on the #4667 cutover)
+  - `ItemType`, `ItemStatus`, `ToolOutcome` → `conversation/item_reads.py` (C6)
+  - `ChatSurface` → `ChannelSurface` (C4b)
+  - `RuntimeKind` → `harnesses/kind.py` as `HarnessKind` (C4d)
+  - `BridgeFrameKind`, `FrameDirection` → the session-frames home (`session/session_frames.py`)
+  - the prompt-origin models (`SpaOrigin`/`MatrixOrigin`/`HarnessOrigin`/`PromptOriginKind`) and
+    `PromptRejection` → the prompt vocabulary (conversation lane)
 - **C4d · `runtime_kind` → `harness_kind`** _(semantic — coordinated stored + wire + OpenAPI)_ — the
   harness-kind discriminator (§3.1). #4431 made it a closed, published, read-only wire field, so the
   rename rides expand/contract with its schema consumers, same care as C4b/C4c. The console harness

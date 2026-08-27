@@ -265,12 +265,12 @@ class MatrixTurns:
     def __init__(
         self,
         config: MatrixConfig,
-        chat_store: SessionStore,
+        session_store: SessionStore,
         identities: PostgresOperatorIdentityStore,
         ledger: IngressLedger,
     ):
         self._config = config
-        self._chat_store = chat_store
+        self._session_store = session_store
         self._identities = identities
         self._ledger = ledger
 
@@ -285,7 +285,7 @@ class MatrixTurns:
     async def _enqueue(self, binding: RoomAttachment, prompt_text: str, event_ids: tuple[str, ...]) -> Admission:
         operator_id = await self._identities.resolve_configured_external_user_key(self._config.operator_subject)
         try:
-            item_id = await self._chat_store.enqueue_conversation_prompt(
+            item_id = await self._session_store.enqueue_conversation_prompt(
                 operator_id,
                 binding.conversation_id,
                 prompt_text,

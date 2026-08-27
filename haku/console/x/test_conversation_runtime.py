@@ -23,7 +23,7 @@ from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, S
 
 
 async def test_first_conversation_prompt_creates_one_session_then_one_sandbox(
-    chat_store,
+    session_store,
     chat_service,
     allocator,
     conversation_wakes,
@@ -32,14 +32,14 @@ async def test_first_conversation_prompt_creates_one_session_then_one_sandbox(
     operator_id,
     recording_claims,
 ) -> None:
-    view, _ = await chat_store.create_idle(operator_id)
-    conversation_id = await chat_store.conversation_of(view.session_id)
+    view, _ = await session_store.create_idle(operator_id)
+    conversation_id = await session_store.conversation_of(view.session_id)
     # Model a conversation created or attached without a runtime session.
     async with migrated_sessions.begin() as db:
         await db.delete(await db.get(Session, view.session_id))
 
-    item_id = await chat_store.enqueue_conversation_prompt(operator_id, conversation_id, "start", SPA_ORIGIN)
-    runtime = ConversationRuntime(chat_service, chat_store, conversation_wakes, migrated_engine)
+    item_id = await session_store.enqueue_conversation_prompt(operator_id, conversation_id, "start", SPA_ORIGIN)
+    runtime = ConversationRuntime(chat_service, session_store, conversation_wakes, migrated_engine)
 
     await runtime.reconcile_once()
     await runtime.reconcile_once()
@@ -56,7 +56,7 @@ async def test_first_conversation_prompt_creates_one_session_then_one_sandbox(
     await allocator.allocate_once()
 
     assert recording_claims.created == [sessions[0].session_id]
-    assert await chat_store.status(sessions[0].session_id) == SessionStatus.PROVISIONING
+    assert await session_store.status(sessions[0].session_id) == SessionStatus.PROVISIONING
 
 
 async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_transaction(
@@ -131,20 +131,20 @@ async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_tra
 
 
 async def test_new_runtime_and_rolling_old_creator_converge_on_one_session(
-    chat_store, chat_service, conversation_wakes, migrated_engine, migrated_sessions, operator_id
+    session_store, chat_service, conversation_wakes, migrated_engine, migrated_sessions, operator_id
 ) -> None:
-    view, _ = await chat_store.create_idle(operator_id)
-    conversation_id = await chat_store.conversation_of(view.session_id)
+    view, _ = await session_store.create_idle(operator_id)
+    conversation_id = await session_store.conversation_of(view.session_id)
     async with migrated_sessions.begin() as db:
         await db.delete(await db.get(Session, view.session_id))
-    await chat_store.enqueue_conversation_prompt(operator_id, conversation_id, "once", SPA_ORIGIN)
-    first = ConversationRuntime(chat_service, chat_store, conversation_wakes, migrated_engine)
-    second = ConversationRuntime(chat_service, chat_store, conversation_wakes, migrated_engine)
+    await session_store.enqueue_conversation_prompt(operator_id, conversation_id, "once", SPA_ORIGIN)
+    first = ConversationRuntime(chat_service, session_store, conversation_wakes, migrated_engine)
+    second = ConversationRuntime(chat_service, session_store, conversation_wakes, migrated_engine)
 
     await asyncio.gather(
         first.reconcile_once(),
         second.reconcile_once(),
-        chat_store.create_idle(operator_id, conversation_id=conversation_id),
+        session_store.create_idle(operator_id, conversation_id=conversation_id),
     )
 
     async with migrated_sessions() as db:
@@ -155,18 +155,20 @@ async def test_new_runtime_and_rolling_old_creator_converge_on_one_session(
 
 
 async def test_unclaimed_prompt_moves_to_replacement_after_a_stale_lease(
-    chat_store, chat_service, conversation_wakes, migrated_engine, migrated_sessions, operator_id, recording_claims
+    session_store, chat_service, conversation_wakes, migrated_engine, migrated_sessions, operator_id, recording_claims
 ) -> None:
-    first, token = await chat_store.create(operator_id)
-    assert await chat_store.authenticate_bridge(first.session_id, token) == BridgeAuthentication.ACCEPTED
-    conversation_id = await chat_store.conversation_of(first.session_id)
-    item_id = await chat_store.enqueue_conversation_prompt(operator_id, conversation_id, "do not lose me", SPA_ORIGIN)
+    first, token = await session_store.create(operator_id)
+    assert await session_store.authenticate_bridge(first.session_id, token) == BridgeAuthentication.ACCEPTED
+    conversation_id = await session_store.conversation_of(first.session_id)
+    item_id = await session_store.enqueue_conversation_prompt(
+        operator_id, conversation_id, "do not lose me", SPA_ORIGIN
+    )
     async with migrated_sessions.begin() as db:
         row = await db.get(Session, first.session_id)
         assert row is not None
         row.lease_expires_at = datetime.now(UTC) - ADOPTION_GRACE - timedelta(seconds=1)
 
-    await ConversationRuntime(chat_service, chat_store, conversation_wakes, migrated_engine).reconcile_once()
+    await ConversationRuntime(chat_service, session_store, conversation_wakes, migrated_engine).reconcile_once()
 
     async with migrated_sessions() as db:
         sessions = list(

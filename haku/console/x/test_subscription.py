@@ -51,26 +51,26 @@ def stream(migrated_sessions) -> ConversationStream:
     return ConversationStream(migrated_sessions)
 
 
-async def a_thread(chat_store: SessionStore, operator_id: UUID, *said: str) -> Thread:
+async def a_thread(session_store: SessionStore, operator_id: UUID, *said: str) -> Thread:
     """A ready session whose conversation holds one prompt item per prompt."""
-    view, token = await chat_store.create(operator_id)
-    await chat_store.authenticate_bridge(view.session_id, token)
-    thread = Thread(conversation_id=await chat_store.conversation_of(view.session_id), session_id=view.session_id)
+    view, token = await session_store.create(operator_id)
+    await session_store.authenticate_bridge(view.session_id, token)
+    thread = Thread(conversation_id=await session_store.conversation_of(view.session_id), session_id=view.session_id)
     for prompt in said:
-        await say(chat_store, operator_id, thread, prompt)
+        await say(session_store, operator_id, thread, prompt)
     return thread
 
 
-async def say(chat_store: SessionStore, operator_id: UUID, thread: Thread, prompt: str) -> None:
+async def say(session_store: SessionStore, operator_id: UUID, thread: Thread, prompt: str) -> None:
     """Enqueue one prompt and let a turn claim it.
 
     Admission refuses a second prompt while one is queued, so each has to be claimed before the
     next is accepted; the turn ends answered, which records nothing of its own.
     """
-    await chat_store.enqueue_prompt(operator_id, thread.session_id, prompt, SPA_ORIGIN)
-    turn = await chat_store.next_prompt(thread.session_id)
+    await session_store.enqueue_prompt(operator_id, thread.session_id, prompt, SPA_ORIGIN)
+    turn = await session_store.next_prompt(thread.session_id)
     assert turn is not None
-    await chat_store.end_turn(turn.turn_id, TurnAnsweredBody())
+    await session_store.end_turn(turn.turn_id, TurnAnsweredBody())
 
 
 def prompts(read: Read) -> list[str]:
@@ -82,11 +82,11 @@ def prompts(read: Read) -> list[str]:
 
 
 async def test_two_subscribers_at_different_positions_read_only_what_each_has_not_seen(
-    chat_store, operator_id, stream
+    session_store, operator_id, stream
 ) -> None:
     """One conversation, two readers, no agreement needed between them and nothing stored about
     either."""
-    thread = await a_thread(chat_store, operator_id, "one", "two", "three")
+    thread = await a_thread(session_store, operator_id, "one", "two", "three")
     whole = await stream.read(thread.conversation_id, after=START)
     said_one = one(event.position for event in whole.events if getattr(event.body, "text", None) == "one")
 
@@ -98,24 +98,24 @@ async def test_two_subscribers_at_different_positions_read_only_what_each_has_no
 
 
 async def test_a_client_held_subscriber_resumes_from_whatever_position_it_sends(
-    chat_store, operator_id, stream
+    session_store, operator_id, stream
 ) -> None:
     """A tab's position survives nothing but the tab, so a reload reads from wherever its next
     request says — including from the start, which is the whole transcript and not an error."""
-    thread = await a_thread(chat_store, operator_id, "one", "two")
+    thread = await a_thread(session_store, operator_id, "one", "two")
     caught_up = await stream.read(thread.conversation_id, after=START)
 
     resumed = Subscription(stream, ClientHeldCursor(caught_up.position), thread.conversation_id)
     assert prompts(await resumed.read()) == []
 
-    await say(chat_store, operator_id, thread, "three")
+    await say(session_store, operator_id, thread, "three")
     assert prompts(await resumed.read()) == ["three"]
 
 
-async def test_keeping_a_client_held_position_stores_nothing(chat_store, operator_id, stream) -> None:
+async def test_keeping_a_client_held_position_stores_nothing(session_store, operator_id, stream) -> None:
     """`keep` is where a durable subscriber writes its row; this one has nowhere to write it, which
     is what makes several tabs on one conversation cost the console no state at all."""
-    thread = await a_thread(chat_store, operator_id, "one")
+    thread = await a_thread(session_store, operator_id, "one")
     subscription = Subscription(stream, ClientHeldCursor(START), thread.conversation_id)
     read = await subscription.read()
     assert isinstance(read, Backlog)
@@ -124,7 +124,7 @@ async def test_keeping_a_client_held_position_stores_nothing(chat_store, operato
     assert prompts(await subscription.read()) == ["one"]
 
 
-async def test_a_conversations_positions_are_its_own_and_contiguous(chat_store, operator_id, stream) -> None:
+async def test_a_conversations_positions_are_its_own_and_contiguous(session_store, operator_id, stream) -> None:
     """`event_seq` counts within the conversation, so another thread writing between two of ours
     takes none of our numbers.
 
@@ -132,9 +132,9 @@ async def test_a_conversations_positions_are_its_own_and_contiguous(chat_store, 
     after N" can tell a gap from an end, so a lost row is a fact it can act on instead of one
     nothing could distinguish from silence.
     """
-    ours = await a_thread(chat_store, operator_id, "first")
-    theirs = await a_thread(chat_store, operator_id, "not ours")
-    await say(chat_store, operator_id, ours, "second")
+    ours = await a_thread(session_store, operator_id, "first")
+    theirs = await a_thread(session_store, operator_id, "not ours")
+    await say(session_store, operator_id, ours, "second")
 
     read = await stream.read(ours.conversation_id, after=START)
 
@@ -144,10 +144,10 @@ async def test_a_conversations_positions_are_its_own_and_contiguous(chat_store, 
     assert prompts(await stream.read(theirs.conversation_id, after=START)) == ["not ours"]
 
 
-async def test_a_position_stays_put_when_nothing_has_moved(chat_store, operator_id, stream) -> None:
+async def test_a_position_stays_put_when_nothing_has_moved(session_store, operator_id, stream) -> None:
     """An empty read hands back the position it was asked from, never the head — so keeping it
     cannot carry a subscriber past a row committed between the read and the keep."""
-    thread = await a_thread(chat_store, operator_id, "one")
+    thread = await a_thread(session_store, operator_id, "one")
     caught_up = await stream.read(thread.conversation_id, after=START)
 
     again = await stream.read(thread.conversation_id, after=caught_up.position)
@@ -155,8 +155,8 @@ async def test_a_position_stays_put_when_nothing_has_moved(chat_store, operator_
     assert (again.events, again.position, again.more) == ((), caught_up.position, False)
 
 
-async def test_a_read_that_stops_at_its_limit_says_there_is_more(chat_store, operator_id, stream) -> None:
-    thread = await a_thread(chat_store, operator_id, "one", "two", "three")
+async def test_a_read_that_stops_at_its_limit_says_there_is_more(session_store, operator_id, stream) -> None:
+    thread = await a_thread(session_store, operator_id, "one", "two", "three")
 
     first = await stream.read(thread.conversation_id, after=START, limit=1)
     assert (len(first.events), first.more) == (1, True)
@@ -165,19 +165,19 @@ async def test_a_read_that_stops_at_its_limit_says_there_is_more(chat_store, ope
     assert (prompts(rest), rest.more) == (["one", "two", "three"], False)
 
 
-async def test_a_replacement_session_continues_the_same_stream(chat_store, operator_id, stream) -> None:
+async def test_a_replacement_session_continues_the_same_stream(session_store, operator_id, stream) -> None:
     """The stream is keyed by the thread, so a subscriber holding a position from before the sandbox
     died reads on into its replacement's rows."""
-    thread = await a_thread(chat_store, operator_id, "before")
-    replacement, token = await chat_store.create(operator_id, conversation_id=thread.conversation_id)
-    await chat_store.authenticate_bridge(replacement.session_id, token)
-    await chat_store.enqueue_prompt(operator_id, replacement.session_id, "after", SPA_ORIGIN)
+    thread = await a_thread(session_store, operator_id, "before")
+    replacement, token = await session_store.create(operator_id, conversation_id=thread.conversation_id)
+    await session_store.authenticate_bridge(replacement.session_id, token)
+    await session_store.enqueue_prompt(operator_id, replacement.session_id, "after", SPA_ORIGIN)
 
     assert prompts(await stream.read(thread.conversation_id, after=START)) == ["before", "after"]
 
 
 async def test_a_kind_this_release_has_no_words_for_is_read_past_rather_than_raised_on(
-    chat_store, operator_id, stream, migrated_sessions
+    session_store, operator_id, stream, migrated_sessions
 ) -> None:
     """The roll this stream is exposed to, staged: the console rolls with `maxUnavailable: 0`, so
     the replica on the previous image reads rows the new one wrote, and this read filters no kind in
@@ -188,7 +188,7 @@ async def test_a_kind_this_release_has_no_words_for_is_read_past_rather_than_rai
     The row is read, not skipped: it keeps its position, so the prompts around it are still
     delivered and a subscriber's kept position advances over what it was handed.
     """
-    thread = await a_thread(chat_store, operator_id, "before")
+    thread = await a_thread(session_store, operator_id, "before")
     async with migrated_sessions() as db, db.begin():
         await db.execute(
             text(
@@ -203,7 +203,7 @@ async def test_a_kind_this_release_has_no_words_for_is_read_past_rather_than_rai
             text("UPDATE conversation SET next_event_seq = next_event_seq + 1 WHERE conversation_id = :id"),
             {"id": thread.conversation_id},
         )
-    await say(chat_store, operator_id, thread, "after")
+    await say(session_store, operator_id, thread, "after")
 
     read = await stream.read(thread.conversation_id, after=START)
 
@@ -212,10 +212,10 @@ async def test_a_kind_this_release_has_no_words_for_is_read_past_rather_than_rai
     assert [type(event.body) for event in read.events].count(PromptStartedBody) == 2
 
 
-async def test_a_new_conversation_already_records_its_session_provisioning(chat_store, operator_id, stream) -> None:
+async def test_a_new_conversation_already_records_its_session_provisioning(session_store, operator_id, stream) -> None:
     """Starting the session is the first durable fact, before an operator or runner says anything."""
-    view, _ = await chat_store.create(operator_id)
-    conversation_id = await chat_store.conversation_of(view.session_id)
+    view, _ = await session_store.create(operator_id)
+    conversation_id = await session_store.conversation_of(view.session_id)
 
     read = await stream.read(conversation_id, after=START)
 
@@ -223,8 +223,8 @@ async def test_a_new_conversation_already_records_its_session_provisioning(chat_
     assert await stream.head(conversation_id) == read.position
 
 
-async def test_the_head_is_where_a_caught_up_reader_would_be(chat_store, operator_id, stream) -> None:
-    thread = await a_thread(chat_store, operator_id, "one", "two")
+async def test_the_head_is_where_a_caught_up_reader_would_be(session_store, operator_id, stream) -> None:
+    thread = await a_thread(session_store, operator_id, "one", "two")
 
     read = await stream.read(thread.conversation_id, after=START)
 

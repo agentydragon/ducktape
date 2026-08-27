@@ -19,17 +19,17 @@ from haku.console.x.session_store import BridgeAuthentication
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 
 
-async def _detail(chat_store, operator_id, session_id):
+async def _detail(session_store, operator_id, session_id):
     """The conversation this session runs, read as the browser reads it."""
-    return await chat_store.get_operator_conversation(operator_id, await chat_store.conversation_of(session_id))
+    return await session_store.get_operator_conversation(operator_id, await session_store.conversation_of(session_id))
 
 
-async def test_narration_reads_back_in_the_order_the_sandbox_produced_it(chat_store, operator_id) -> None:
-    session, _ = await chat_store.create(operator_id)
+async def test_narration_reads_back_in_the_order_the_sandbox_produced_it(session_store, operator_id) -> None:
+    session, _ = await session_store.create(operator_id)
     for line in ("Cloning into 'haku-state'...", "done.", "Starting Claude Code."):
-        await chat_store.narrate(session.session_id, line)
+        await session_store.narrate(session.session_id, line)
 
-    detail = await _detail(chat_store, operator_id, session.session_id)
+    detail = await _detail(session_store, operator_id, session.session_id)
 
     assert [line.text for line in detail.session.narration] == [
         "Cloning into 'haku-state'...",
@@ -41,53 +41,53 @@ async def test_narration_reads_back_in_the_order_the_sandbox_produced_it(chat_st
     )
 
 
-async def test_two_identical_narration_lines_are_two_lines(chat_store, operator_id) -> None:
+async def test_two_identical_narration_lines_are_two_lines(session_store, operator_id) -> None:
     """The rows carry no frame identity, so nothing may collapse a repeat into a replay: a
     bootstrap that says "retrying" twice retried twice."""
-    session, _ = await chat_store.create(operator_id)
+    session, _ = await session_store.create(operator_id)
     for _ in range(2):
-        await chat_store.narrate(session.session_id, "retrying")
+        await session_store.narrate(session.session_id, "retrying")
 
-    detail = await _detail(chat_store, operator_id, session.session_id)
+    detail = await _detail(session_store, operator_id, session.session_id)
 
     assert [line.text for line in detail.session.narration] == ["retrying", "retrying"]
     assert len({line.frame_seq for line in detail.session.narration}) == 2
 
 
-async def test_narration_carries_only_this_session_and_only_setup_output(chat_store, operator_id) -> None:
-    session, _ = await chat_store.create(operator_id)
-    other, _ = await chat_store.create(operator_id)
-    await chat_store.narrate(session.session_id, "mine")
-    await chat_store.narrate(other.session_id, "theirs")
-    await chat_store.record_frame(
+async def test_narration_carries_only_this_session_and_only_setup_output(session_store, operator_id) -> None:
+    session, _ = await session_store.create(operator_id)
+    other, _ = await session_store.create(operator_id)
+    await session_store.narrate(session.session_id, "mine")
+    await session_store.narrate(other.session_id, "theirs")
+    await session_store.record_frame(
         session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "result", "uuid": "r1"}
     )
 
-    detail = await _detail(chat_store, operator_id, session.session_id)
+    detail = await _detail(session_store, operator_id, session.session_id)
 
     assert [line.text for line in detail.session.narration] == ["mine"]
 
 
-async def test_a_session_that_narrated_nothing_reports_no_narration(chat_store, operator_id) -> None:
-    session, _ = await chat_store.create(operator_id)
+async def test_a_session_that_narrated_nothing_reports_no_narration(session_store, operator_id) -> None:
+    session, _ = await session_store.create(operator_id)
 
-    detail = await _detail(chat_store, operator_id, session.session_id)
+    detail = await _detail(session_store, operator_id, session.session_id)
 
     assert detail.session.narration == []
 
 
-async def test_a_calls_output_reads_back_as_the_items_text(chat_store, operator_id) -> None:
+async def test_a_calls_output_reads_back_as_the_items_text(session_store, operator_id) -> None:
     """A call's showable output is its segments like any other item's prose, and a call that printed
     nothing is an empty item rather than an absent one — which is what a reader needs to tell "it
     said nothing" from "it has not answered yet"."""
-    view, token = await chat_store.create(operator_id)
-    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "list the files", SPA_ORIGIN)
-    started = await chat_store.next_prompt(view.session_id)
+    view, token = await session_store.create(operator_id)
+    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await session_store.enqueue_prompt(operator_id, view.session_id, "list the files", SPA_ORIGIN)
+    started = await session_store.next_prompt(view.session_id)
     assert started is not None
 
     for frame_seq, (call_id, output) in enumerate([("toolu_text", "a.py\nb.py"), ("toolu_empty", "")], start=7):
-        await chat_store.apply_frame(
+        await session_store.apply_frame(
             view.session_id,
             started.turn_id,
             frame_seq,
@@ -101,7 +101,7 @@ async def test_a_calls_output_reads_back_as_the_items_text(chat_store, operator_
             ).events,
         )
 
-    detail = await _detail(chat_store, operator_id, view.session_id)
+    detail = await _detail(session_store, operator_id, view.session_id)
     calls = [entry for entry in detail.entries if isinstance(entry, ToolCallEntry)]
 
     assert {entry.call_id: entry.content for entry in calls} == {"toolu_text": "a.py\nb.py", "toolu_empty": ""}

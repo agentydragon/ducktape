@@ -96,15 +96,15 @@ async def _tab(hub: ConsoleEventHub, operator_id: UUID) -> RecordingSocket:
 
 
 async def test_a_write_that_changes_a_conversation_reaches_the_owning_operators_tab(
-    live_updates: ConversationLiveUpdates, hub: ConsoleEventHub, chat_store: SessionStore, operator_id: UUID
+    live_updates: ConversationLiveUpdates, hub: ConsoleEventHub, session_store: SessionStore, operator_id: UUID
 ) -> None:
     """Through an ordinary store write, not a hand-rolled notify: the publish belongs to the
     transaction that makes the change, so a change that rolled back announces nothing."""
-    view, _ = await chat_store.create(operator_id)
-    conversation_id = await chat_store.conversation_of(view.session_id)
+    view, _ = await session_store.create(operator_id)
+    conversation_id = await session_store.conversation_of(view.session_id)
     socket = await _tab(hub, operator_id)
 
-    await chat_store.request_close(operator_id, view.session_id)
+    await session_store.request_close(operator_id, view.session_id)
 
     assert await socket.conversation_events(within=WINDOW * 3) == [
         {"event_type": "conversation_changed", "conversation_id": str(conversation_id)}
@@ -114,14 +114,14 @@ async def test_a_write_that_changes_a_conversation_reaches_the_owning_operators_
 async def test_the_event_says_only_which_conversation_changed(
     live_updates: ConversationLiveUpdates,
     hub: ConsoleEventHub,
-    chat_store: SessionStore,
+    session_store: SessionStore,
     migrated_sessions: async_sessionmaker[AsyncSession],
     operator_id: UUID,
 ) -> None:
     """The wire shape is the contract: an invalidation, never the record itself, which would make
     the socket a second source of truth for what a conversation holds."""
-    view, _ = await chat_store.create(operator_id)
-    conversation_id = await chat_store.conversation_of(view.session_id)
+    view, _ = await session_store.create(operator_id)
+    conversation_id = await session_store.conversation_of(view.session_id)
     socket = await _tab(hub, operator_id)
 
     async with migrated_sessions.begin() as db:
@@ -135,14 +135,14 @@ async def test_the_event_says_only_which_conversation_changed(
 async def test_a_burst_of_changes_becomes_one_invalidation(
     live_updates: ConversationLiveUpdates,
     hub: ConsoleEventHub,
-    chat_store: SessionStore,
+    session_store: SessionStore,
     migrated_sessions: async_sessionmaker[AsyncSession],
     operator_id: UUID,
 ) -> None:
     """A streaming turn changes a conversation per delta, and each event costs a tab a refetch —
     so coalescing is what keeps the notification cheaper than what it triggers."""
-    view, _ = await chat_store.create(operator_id)
-    conversation_id = await chat_store.conversation_of(view.session_id)
+    view, _ = await session_store.create(operator_id)
+    conversation_id = await session_store.conversation_of(view.session_id)
     socket = await _tab(hub, operator_id)
 
     async with migrated_sessions.begin() as db:
@@ -155,15 +155,15 @@ async def test_a_burst_of_changes_becomes_one_invalidation(
 async def test_two_conversations_changing_together_are_invalidated_separately(
     live_updates: ConversationLiveUpdates,
     hub: ConsoleEventHub,
-    chat_store: SessionStore,
+    session_store: SessionStore,
     migrated_sessions: async_sessionmaker[AsyncSession],
     operator_id: UUID,
 ) -> None:
     """One window collapses a conversation's own changes, never two conversations into one event."""
-    first, _ = await chat_store.create(operator_id)
-    second, _ = await chat_store.create(operator_id)
-    first_conversation = await chat_store.conversation_of(first.session_id)
-    second_conversation = await chat_store.conversation_of(second.session_id)
+    first, _ = await session_store.create(operator_id)
+    second, _ = await session_store.create(operator_id)
+    first_conversation = await session_store.conversation_of(first.session_id)
+    second_conversation = await session_store.conversation_of(second.session_id)
     socket = await _tab(hub, operator_id)
 
     async with migrated_sessions.begin() as db:
@@ -177,14 +177,14 @@ async def test_two_conversations_changing_together_are_invalidated_separately(
 async def test_every_wake_kind_invalidates(
     live_updates: ConversationLiveUpdates,
     hub: ConsoleEventHub,
-    chat_store: SessionStore,
+    session_store: SessionStore,
     migrated_sessions: async_sessionmaker[AsyncSession],
     operator_id: UUID,
 ) -> None:
     """A prompt queued into a conversation with no open session emits only `runtime_demand`, and
     the queued prompt is a row the list shows — so filtering to `update` would go stale there."""
-    view, _ = await chat_store.create(operator_id)
-    conversation_id = await chat_store.conversation_of(view.session_id)
+    view, _ = await session_store.create(operator_id)
+    conversation_id = await session_store.conversation_of(view.session_id)
     socket = await _tab(hub, operator_id)
 
     async with migrated_sessions.begin() as db:
@@ -196,7 +196,7 @@ async def test_every_wake_kind_invalidates(
 async def test_an_update_is_not_delivered_to_another_operators_tab(
     live_updates: ConversationLiveUpdates,
     hub: ConsoleEventHub,
-    chat_store: SessionStore,
+    session_store: SessionStore,
     migrated_sessions: async_sessionmaker[AsyncSession],
     migrated_identity_store: PostgresOperatorIdentityStore,
     operator_id: UUID,
@@ -204,8 +204,8 @@ async def test_an_update_is_not_delivered_to_another_operators_tab(
     """`ConversationWakeEvent` carries no operator, so the routing rests entirely on the
     conversation's row."""
     other_operator = await migrated_identity_store.resolve_configured_external_user_key("another-authentik-user-id")
-    view, _ = await chat_store.create(operator_id)
-    conversation_id = await chat_store.conversation_of(view.session_id)
+    view, _ = await session_store.create(operator_id)
+    conversation_id = await session_store.conversation_of(view.session_id)
     mine = await _tab(hub, operator_id)
     theirs = await _tab(hub, other_operator)
 
@@ -235,7 +235,7 @@ async def test_a_failed_flush_does_not_stop_the_next_one(
     conversation_wakes: ConversationWakes,
     migrated_db_url: str,
     migrated_identity_store: PostgresOperatorIdentityStore,
-    chat_store: SessionStore,
+    session_store: SessionStore,
     migrated_sessions: async_sessionmaker[AsyncSession],
     operator_id: UUID,
 ) -> None:
@@ -243,8 +243,8 @@ async def test_a_failed_flush_does_not_stop_the_next_one(
     updates again, so the loop has to outlive what fails inside it."""
     flaky = FlakyHub(migrated_db_url, operator_identity_store=migrated_identity_store)
     await flaky.start()
-    view, _ = await chat_store.create(operator_id)
-    conversation_id = await chat_store.conversation_of(view.session_id)
+    view, _ = await session_store.create(operator_id)
+    conversation_id = await session_store.conversation_of(view.session_id)
     socket = await _tab(flaky, operator_id)
     try:
         async with ConversationLiveUpdates(conversation_wakes, flaky, migrated_sessions, window=WINDOW).run():
