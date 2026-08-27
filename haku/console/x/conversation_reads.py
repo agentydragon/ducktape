@@ -1,12 +1,11 @@
-"""The records a conversation read hands back, and the cursors that page them.
+"""What the conversation reads hand back, and the cursors that page them.
 
-The store produces these — a session row, a frame, a turn, a conversation entry — and
+The store produces these — a session, a frame, a turn, a conversation entry — and
 <../tools/conversations.py> is the MCP surface that serialises them. They live at the runtime level
 because the store is their only producer.
 
-**A record, not a page.** How records are handed out — the `Page` envelope every listing shares,
-the byte budget a page spends, and the clipping that budget forces — belongs to the tool. What is
-here is what one read produced.
+**What one read produced, not a page.** How reads are handed out — the `Page` envelope every
+listing shares — belongs to the tool.
 
 **Pydantic rather than dataclasses, because the boundary needs it.** Every model here is either an
 MCP tool's return type, whose JSON schema is generated from the class, or a cursor that arrives
@@ -22,7 +21,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from haku.console.chat_models import BridgeFrameKind, PromptOriginKind, RuntimeKind
+from haku.console.chat_models import FrameDirection, PromptOriginKind, RuntimeKind
 
 
 class ChannelAttachment(BaseModel):
@@ -79,38 +78,38 @@ class SessionCursor(BaseModel):
         return cls(created_at=session.created_at, session_id=session.session_id)
 
 
-class FrameRecord(BaseModel):
-    """One bridge record containing a named harness's wire, not the neutral conversation.
+class HarnessFrameRecord(BaseModel):
+    """One frame of the session's wire log that a named harness sent or was sent.
 
-    ``kind`` is Haku's bridge class. ``payload`` is the authoritative complete inner harness frame
-    and a conversation entry is what its native payload projected to. No generic reader derives a
-    discriminator from that payload: a harness is free to use any JSON shape at all.
+    A **named** harness's own wire — Claude Code's today, since that is the adapter there is —
+    verbatim and whole, never the neutral conversation; a conversation entry is what this frame
+    projected to. No generic reader derives a discriminator from ``payload``: a harness is free to
+    use any JSON shape at all.
     """
 
+    kind: Literal["harness_frame"] = "harness_frame"
     frame_seq: int
-    direction: str = Field(description="`to_agent` for what the console sent, `from_agent` for what came back.")
-    kind: BridgeFrameKind = Field(description="The outer Haku bridge class.")
+    direction: FrameDirection = Field(
+        description="`to_agent` for what the console sent, `from_agent` for what came back."
+    )
     created_at: datetime.datetime
-    payload: dict[str, Any] | None = Field(
-        description="The frame exactly as it crossed the wire, or absent when it was clipped for size."
-    )
-    clipped_bytes: int | None = Field(
-        default=None, description="Set instead of `payload` when the frame was too large to return; its size in bytes."
-    )
+    payload: dict[str, Any] = Field(description="The frame exactly as it crossed the wire, whole.")
 
 
-class FrameCursor(BaseModel):
-    """Where a read of the frame log starts — inclusively, so this is a frame that exists.
+class SetupOutputRecord(BaseModel):
+    """One line the sandbox printed while coming up, recorded in the same per-session log.
 
-    Inclusive rather than "after this one" so that an entry's `first_frame_seq` is already a
-    cursor: appealing a normalization to the frames behind it needs no arithmetic.
+    Console-authored: no harness wire stands behind it, which is why it is its own variant with
+    the line as typed text rather than a payload a reader must know not to read as protocol.
     """
 
+    kind: Literal["setup_output"] = "setup_output"
     frame_seq: int
+    created_at: datetime.datetime
+    text: str
 
-    @classmethod
-    def of(cls, frame: FrameRecord) -> FrameCursor:
-        return cls(frame_seq=frame.frame_seq)
+
+type FrameRecord = Annotated[HarnessFrameRecord | SetupOutputRecord, Field(discriminator="kind")]
 
 
 class TurnRecord(BaseModel):
@@ -148,9 +147,9 @@ class FromFrames(BaseModel):
     others": a message whose frames are interrupted by a tool result spans the interruption too,
     and that is the honest reading of a range rather than a defect in it.
 
-    This is the appeal path. `read_frames(session_id, cursor={"frame_seq": first_frame_seq})`
-    walks the span, and with `limit=1` returns the first frame whole however large. Frames are
-    session-level while a conversation spans replaced sessions, so the range names its session.
+    This is the appeal path. `read_frames(session_id, cursor=first_frame_seq)` walks the span,
+    and with `limit=1` returns exactly the first frame. Frames are session-level while a
+    conversation spans replaced sessions, so the range names its session.
     """
 
     kind: Literal["frames"] = "frames"
@@ -269,12 +268,7 @@ class ToolResultEntry(_EntryBase):
         "`provenance` names the frames to read the original blocks from."
     )
     structured: Any = Field(
-        default=None, description="The call's structured output, verbatim; absent when it had none or was clipped."
-    )
-    clipped_bytes: int | None = Field(
-        default=None,
-        description="Set instead of `structured` when this entry alone overran a page's budget; its size in bytes. "
-        "`provenance` names the frames to read it from.",
+        default=None, description="The call's structured output, verbatim; absent when it had none."
     )
     outcome: Outcome
 
@@ -310,21 +304,8 @@ type ConversationEntry = Annotated[
 ]
 
 
-class ItemCursor(BaseModel):
-    """A position in the conversation's event stream, where a page of entries starts — inclusively.
-
-    A keyset on `event_seq`, which is dense per conversation and append-only, so the cursor is a
-    durable position rather than an offset: rows landing at the stream's end move no entry already
-    handed out, and a page is served from this position by indexed reads of the materialised
-    rows — per-page work is bounded by the page's own content, never by how long the conversation
-    has run.
-
-    The position is the *defining row's*, not an entry ordinal: a console-authored entry has no
-    frame to key by, but every entry — authored or folded — is defined by exactly one stream row.
-    """
-
-    seq: int
-
-    @classmethod
-    def of(cls, entry: ConversationEntry) -> ItemCursor:
-        return cls(seq=entry.seq)
+# The item read's cursor is the plain stream position (`ConversationEntry.seq`): `event_seq` is
+# dense per conversation and append-only, so an `int` is already a durable keyset position —
+# inclusive, naming the first entry a page did not return — and a page is served from it by
+# indexed reads of the materialised rows, never by refolding the thread. A single integral key
+# wears no wrapper; the composite keysets (`SessionCursor`, `TurnCursor`) keep their types.

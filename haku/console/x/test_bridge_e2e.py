@@ -28,9 +28,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.chat_models import OPEN_SESSION_STATUSES, SPA_ORIGIN, ItemType, SessionStatus
 from haku.console.database_schema import SessionFrame
-from haku.console.x import conversation_records
+from haku.console.x import conversation_reads
 from haku.console.x.conftest import configured_runtimes, runtime_config
-from haku.console.x.conversation_records import TurnAnsweredEnd
+from haku.console.x.conversation_reads import SetupOutputRecord, TurnAnsweredEnd
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService, internal_router
 from haku.console.x.session_store import SessionStore
@@ -139,7 +139,7 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
         },
     )
 
-    async def finished_turns() -> list[conversation_records.TurnEnd | None]:
+    async def finished_turns() -> list[conversation_reads.TurnEnd | None]:
         turns = await chat_store.list_turns(session_id, cursor=None, limit=10)
         return [turn.end for turn in sorted(turns, key=lambda turn: turn.started_at) if turn.ended_at]
 
@@ -197,7 +197,8 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     # is reaped with the sandbox. Whole path — the CLI's stderr, the runner's forwarding, the
     # `setup_output` frame, and the transport reassembling it into a line.
     narration = await chat_store.read_frames(session_id, cursor=None, limit=10, kinds=[SETUP_OUTPUT_KIND])
-    assert [frame.payload for frame in narration] == [{"kind": SETUP_OUTPUT_KIND, "text": GREETING}]
+    assert [frame.text for frame in narration if isinstance(frame, SetupOutputRecord)] == [GREETING]
+    assert len(narration) == 1
     # The resume cursor, end to end. The second console computed it from the rows the first left
     # and sent it on `start`, so the runner replayed only what was above it. Without a cursor the
     # whole retained window comes back; runner position still makes every replay a no-op before it

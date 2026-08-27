@@ -40,6 +40,7 @@ from haku.console.chat_models import (
     PromptRejection,
     RuntimeKind,
     SessionStatus,
+    TurnOutcome,
 )
 
 # The ORM row and the neutral vocabulary's union share a name; the row is aliased so both can
@@ -54,7 +55,7 @@ from haku.console.database_schema import (
     Session,
     SessionFrame,
 )
-from haku.console.x import conversation_log, item_entries, session_events
+from haku.console.x import conversation_log, session_events
 from haku.console.x.conversation_events import (
     ConversationEvent,
     FrameRange,
@@ -63,15 +64,18 @@ from haku.console.x.conversation_events import (
     MessageStarted,
     OpenRef,
 )
-from haku.console.x.conversation_records import (
+from haku.console.x.conversation_reads import (
     ChannelAttachment,
-    ConversationEntry,
-    FrameCursor,
     FrameRecord,
-    ItemCursor,
+    HarnessFrameRecord,
     SessionCursor,
     SessionRecord,
+    SetupOutputRecord,
+    TurnAbortedEnd,
+    TurnAnsweredEnd,
     TurnCursor,
+    TurnEnd,
+    TurnFailedEnd,
     TurnRecord,
 )
 from haku.console.x.launch_identity import LaunchAgentRejectedError, LaunchAuthorizer
@@ -405,6 +409,49 @@ class PositionUnusableError(Exception):
     would carry most of a snapshot anyway. Never reaches a client — `ConversationFollow` answers
     with a snapshot, which is what makes snapshot-or-resume the server's decision.
     """
+
+
+@dataclass(frozen=True, slots=True)
+class OpenedCall:
+    """A tool call at its opening row — the one entry written before its item completes."""
+
+    item: ConversationItem
+    defining: ConversationEventRow
+
+
+@dataclass(frozen=True, slots=True)
+class CompletedItem:
+    """Any completed item at its closing row."""
+
+    item: ConversationItem
+    defining: ConversationEventRow
+
+
+@dataclass(frozen=True, slots=True)
+class EndedTurn:
+    """An ended turn at its `turn_ended` row."""
+
+    turn: ConversationTurn
+
+
+type ConversationPageRow = OpenedCall | CompletedItem | EndedTurn
+
+
+def turn_end_of(turn: ConversationTurn) -> TurnEnd | None:
+    """How *turn* ended, or None while it is still running.
+
+    `ck_conversation_turn_failure` is what makes the failed arm's reason always present.
+    """
+    match turn.outcome:
+        case None:
+            return None
+        case TurnOutcome.ANSWERED:
+            return TurnAnsweredEnd()
+        case TurnOutcome.ABORTED:
+            return TurnAbortedEnd()
+        case TurnOutcome.FAILED:
+            assert turn.failure is not None, "ck_conversation_turn_failure"
+            return TurnFailedEnd(failure=turn.failure)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1529,7 +1576,7 @@ class SessionStore:
                 last_frame_seq=row.last_frame_seq,
                 started_at=row.started_at,
                 ended_at=row.ended_at,
-                end=item_entries.turn_end_of(row),
+                end=turn_end_of(row),
             )
             for row in rows
         ]
@@ -1692,12 +1739,7 @@ class SessionStore:
         ]
 
     async def read_frames(
-        self,
-        session_id: UUID,
-        *,
-        cursor: FrameCursor | None,
-        limit: int,
-        kinds: Sequence[BridgeFrameKind] | None = None,
+        self, session_id: UUID, *, cursor: int | None, limit: int, kinds: Sequence[BridgeFrameKind] | None = None
     ) -> list[FrameRecord]:
         """One page of a session's frame log, in wire order, from the start of the log onwards.
 
@@ -1708,41 +1750,32 @@ class SessionStore:
         """
         query = _bridge_frames(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
         if cursor is not None:
-            query = query.where(SessionFrame.frame_seq >= cursor.frame_seq)
+            query = query.where(SessionFrame.frame_seq >= cursor)
         async with self._sessions() as db:
             rows = (await db.scalars(query.order_by(SessionFrame.frame_seq).limit(limit))).all()
-        return [
-            FrameRecord(
-                frame_seq=row.frame_seq,
-                direction=row.direction,
-                kind=row.kind,
-                created_at=row.created_at,
-                payload=row.payload,
-            )
-            for row in rows
-        ]
+        return [_frame_record(row) for row in rows]
 
-    async def read_conversation_items(
-        self, conversation_id: UUID, *, cursor: ItemCursor | None, limit: int
-    ) -> list[ConversationEntry]:
-        """One page of the conversation's entries, oldest first, across every session of the thread.
+    async def read_item_rows(
+        self, conversation_id: UUID, *, after_seq: int | None, limit: int
+    ) -> list[ConversationPageRow]:
+        """One page of the rows that define the conversation's entries, oldest first.
 
         **The materialised rows, not a fold of the log.** `conversation_item` and
         `conversation_turn` are folds the writer keeps, so reading them cannot disagree with the
         log they were folded from — and it is what keeps a page's cost the page's own: three keyset
-        reads on the rows' defining positions (a tool call's `opened_seq`, a completed item's
+        branches on the rows' defining positions (a tool call's `opened_seq`, a completed item's
         `closed_seq`, an ended turn's `last_seq`), merged on that position, plus a point lookup of
-        each item entry's defining `conversation_event` row for its provenance. A conversation's
+        each item row's defining `conversation_event` row for its provenance. A conversation's
         length buys its reader nothing to refold, so page N of a long thread costs what page one
         does. The price is the fold's price still: a projection fix does not reach a conversation
         that already happened, and <reprojection.py> is what says where re-reading the frames would
         now differ.
 
         Conversation-keyed on purpose: a session is one runner's life and the thread outlives it,
-        so the read that follows one thread must not stop where a sandbox died. Which session
-        produced an entry is on its provenance, which is also what keys the frame appeal.
+        so the read that follows one thread must not stop where a sandbox died. What the rows fold
+        to on the wire is the MCP server's business (`item_entries.entry_of`), not this store's.
         """
-        threshold = cursor.seq if cursor is not None else 0
+        threshold = after_seq if after_seq is not None else 0
         async with self._sessions() as db:
             calls = (
                 await db.scalars(
@@ -1792,17 +1825,15 @@ class SessionStore:
                     )
                 )
             }
-        entries: list[ConversationEntry] = []
+        rows: list[ConversationPageRow] = []
         for seq, row, opening in page:
             if isinstance(row, ConversationTurn):
-                entries.append(item_entries.turn_end_entry(row))
+                rows.append(EndedTurn(turn=row))
                 continue
             if (event := defining.get(seq)) is None:
                 raise ValueError(f"an item names a stream position its conversation's log does not hold: {seq=}")
-            entries.append(
-                item_entries.opened_entry(row, event) if opening else item_entries.completed_entry(row, event)
-            )
-        return entries
+            rows.append(OpenedCall(item=row, defining=event) if opening else CompletedItem(item=row, defining=event))
+        return rows
 
     async def read_operator_frames(
         self,
@@ -2265,6 +2296,21 @@ def _expiry_detail(reason: LeaseExpiryReason, holder: str | None) -> str:
             return "a runner never attached"
 
 
+def _frame_record(row: SessionFrame) -> FrameRecord:
+    """One stored frame as its wire variant, told apart by the row's own kind."""
+    match row.kind:
+        case BridgeFrameKind.HARNESS_FRAME:
+            return HarnessFrameRecord(
+                frame_seq=row.frame_seq, direction=row.direction, created_at=row.created_at, payload=row.payload
+            )
+        case BridgeFrameKind.SETUP_OUTPUT:
+            text = row.payload.get("text")
+            if not isinstance(text, str):
+                # Console-authored, so the shape is ours; a row without its line is corruption.
+                raise ValueError(f"a setup narration row carries no text: {row.frame_seq=}")
+            return SetupOutputRecord(frame_seq=row.frame_seq, created_at=row.created_at, text=text)
+
+
 def _closed_seq(item: ConversationItem) -> int:
     """A completed item's closing position, which `ck_conversation_item_open` makes present."""
     assert item.closed_seq is not None, "ck_conversation_item_open"
@@ -2459,10 +2505,7 @@ async def _moved_rows(db: AsyncSession, record: Session, *, after: int, limit: i
         items=[item_view(item) for item in items],
         turns=[
             ConversationTurnView(
-                turn_id=turn.turn_id,
-                started_at=turn.started_at,
-                ended_at=turn.ended_at,
-                end=item_entries.turn_end_of(turn),
+                turn_id=turn.turn_id, started_at=turn.started_at, ended_at=turn.ended_at, end=turn_end_of(turn)
             )
             for turn in turns
         ],

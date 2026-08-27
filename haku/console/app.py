@@ -98,6 +98,7 @@ from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import (
     conversation_follow,
     conversation_runtime,
+    item_entries,
     runtime as console_runtime,
     runtime_catalog,
     sandbox_allocation,
@@ -637,7 +638,9 @@ def create_app(
                 configured_recall_index_ids=tuple(index.index_id for index in console_config.recall_indexes),
                 # Only with an executable runtime: otherwise nothing writes sessions, so the read
                 # tools would reflect an always-empty corpus.
-                conversations=session_store if runtime_registry.configured_kinds else None,
+                conversations=(
+                    item_entries.ConversationReads(session_store) if runtime_registry.configured_kinds else None
+                ),
                 sandbox=sandbox_server,
                 kubernetes=(
                     kubernetes_tools.KubernetesToolsService(

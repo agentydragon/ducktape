@@ -29,7 +29,7 @@ from haku.console.chat_models import (
     ToolOutcome,
 )
 from haku.console.database_schema import ConversationItem, Session, SessionFrame
-from haku.console.x.conversation_records import ChannelAttachment, TurnAbortedEnd, TurnAnsweredEnd, TurnFailedEnd
+from haku.console.x.conversation_reads import ChannelAttachment, TurnAbortedEnd, TurnAnsweredEnd, TurnFailedEnd
 from haku.console.x.sandbox_claims import SandboxProvisioningView
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 

@@ -22,20 +22,13 @@ from haku.console.mcp_execution import (
     mcp_execution_request_meta,
 )
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
-from haku.console.tools.conversations import (
-    HAKU_CONVERSATIONS_SERVER_ID,
-    MAX_PAGE_BYTES,
-    ItemPage,
-    SessionPage,
-    build_mcp,
-)
-from haku.console.x.conversation_records import (
+from haku.console.tools.conversations import HAKU_CONVERSATIONS_SERVER_ID, FramePage, ItemPage, SessionPage, build_mcp
+from haku.console.x.conversation_reads import (
     ChannelAttachment,
     ConversationEntry,
-    FrameCursor,
     FrameRecord,
     FromFrames,
-    ItemCursor,
+    HarnessFrameRecord,
     MessageEntry,
     Outcome,
     SessionCursor,
@@ -86,9 +79,9 @@ def _items(result: CallToolResult) -> ItemPage:
     return ItemPage.model_validate(result.structured_content)
 
 
-def _big_frame(seq: int) -> FrameRecord:
-    """Two of these overrun one page's budget; one does not."""
-    return _frame(seq, kind="user", payload={"type": "user", "content": "x" * (MAX_PAGE_BYTES * 2 // 3)})
+def _frames(result: CallToolResult) -> FramePage:
+    """The page as its own declared model — `result.data` leaves union members as plain dicts."""
+    return FramePage.model_validate(result.structured_content)
 
 
 def _session(session_id: UUID, created_at: datetime.datetime) -> SessionRecord:
@@ -102,11 +95,10 @@ def _session(session_id: UUID, created_at: datetime.datetime) -> SessionRecord:
     )
 
 
-def _frame(seq: int, kind: str = "assistant", payload: dict | None = None) -> FrameRecord:
-    return FrameRecord(
+def _frame(seq: int, kind: str = "assistant", payload: dict | None = None) -> HarnessFrameRecord:
+    return HarnessFrameRecord(
         frame_seq=seq,
         direction="from_agent",
-        kind=BridgeFrameKind.HARNESS_FRAME,
         created_at=NOW,
         payload=payload if payload is not None else {"type": kind},
     )
@@ -137,8 +129,8 @@ def _tool_result(seq: int, *, structured: object) -> ToolResultEntry:
 class _Reader:
     """A `ConversationReader` over lists, recording how it was queried."""
 
-    def __init__(self, *frames: FrameRecord, entries: Sequence[ConversationEntry] = ()):
-        self._frames = list(frames)
+    def __init__(self, *frames: HarnessFrameRecord, entries: Sequence[ConversationEntry] = ()):
+        self._frames: list[FrameRecord] = list(frames)
         self._entries = list(entries)
         self.queries: list[dict] = []
         self.session_cursors: list[SessionCursor | None] = []
@@ -154,17 +146,12 @@ class _Reader:
         ][:limit]
 
     async def read_frames(
-        self,
-        session_id: UUID,
-        *,
-        cursor: FrameCursor | None,
-        limit: int,
-        kinds: Sequence[BridgeFrameKind] | None = None,
+        self, session_id: UUID, *, cursor: int | None, limit: int, kinds: Sequence[BridgeFrameKind] | None = None
     ) -> list[FrameRecord]:
         self.queries.append({"session_id": session_id, "cursor": cursor, "limit": limit, "kinds": kinds})
         selected = [frame for frame in self._frames if kinds is None or frame.kind in kinds]
         if cursor is not None:
-            selected = [frame for frame in selected if frame.frame_seq >= cursor.frame_seq]
+            selected = [frame for frame in selected if frame.frame_seq >= cursor]
         return selected[:limit]
 
     async def list_turns(self, session_id: UUID, *, cursor: TurnCursor | None, limit: int) -> list[TurnRecord]:
@@ -176,10 +163,10 @@ class _Reader:
         ][:limit]
 
     async def read_conversation_items(
-        self, conversation_id: UUID, *, cursor: ItemCursor | None, limit: int
+        self, conversation_id: UUID, *, cursor: int | None, limit: int
     ) -> list[ConversationEntry]:
         self.queries.append({"conversation_id": conversation_id, "cursor": cursor, "limit": limit})
-        selected = self._entries if cursor is None else [entry for entry in self._entries if entry.seq >= cursor.seq]
+        selected = self._entries if cursor is None else [entry for entry in self._entries if entry.seq >= cursor]
         return selected[:limit]
 
 
@@ -293,8 +280,9 @@ async def test_a_cursor_names_the_first_row_the_page_did_not_return() -> None:
     async with Client(_mcp(reader)) as client:
         result = await _call(client, "read_frames", {"session_id": str(SESSION), "limit": 2})
 
-    assert [frame.frame_seq for frame in result.data.items] == [1, 2]
-    assert result.data.next_cursor.frame_seq == 3
+    page = _frames(result)
+    assert [frame.frame_seq for frame in page.items] == [1, 2]
+    assert page.next_cursor == 3
 
 
 async def test_a_short_page_is_the_last_one() -> None:
@@ -304,7 +292,7 @@ async def test_a_short_page_is_the_last_one() -> None:
     async with Client(_mcp(reader)) as client:
         result = await _call(client, "read_frames", {"session_id": str(SESSION), "limit": 25})
 
-    assert result.data.next_cursor is None
+    assert _frames(result).next_cursor is None
 
 
 async def test_frames_return_discriminator_free_native_json_unchanged() -> None:
@@ -314,7 +302,9 @@ async def test_frames_return_discriminator_free_native_json_unchanged() -> None:
     async with Client(_mcp(reader)) as client:
         result = await _call(client, "read_frames", {"session_id": str(SESSION)})
 
-    assert result.data.items[0].payload == native
+    [only] = _frames(result).items
+    assert isinstance(only, HarnessFrameRecord)
+    assert only.payload == native
 
 
 async def test_the_cursor_reaches_the_store_rather_than_being_filtered_here() -> None:
@@ -323,79 +313,31 @@ async def test_the_cursor_reaches_the_store_rather_than_being_filtered_here() ->
     reader = _Reader(*(_frame(seq) for seq in (1, 2, 3)))
 
     async with Client(_mcp(reader)) as client:
-        await _call(
-            client, "read_frames", {"session_id": str(SESSION), "cursor": {"frame_seq": 2}, "kinds": ["harness_frame"]}
-        )
+        await _call(client, "read_frames", {"session_id": str(SESSION), "cursor": 2, "kinds": ["harness_frame"]})
 
     # 26 rather than 25: the extra row is how the page tells "exactly full" from "more to come".
     assert reader.queries == [
-        {
-            "session_id": SESSION,
-            "cursor": FrameCursor(frame_seq=2),
-            "limit": 26,
-            "kinds": [BridgeFrameKind.HARNESS_FRAME],
-        }
+        {"session_id": SESSION, "cursor": 2, "limit": 26, "kinds": [BridgeFrameKind.HARNESS_FRAME]}
     ]
 
 
-async def test_a_page_stops_on_its_byte_budget_and_says_where() -> None:
-    """A row limit alone does not bound a response: one tool result can be a whole file. The
-    frame that would overrun starts the next page rather than being dropped from this one."""
-    reader = _Reader(_big_frame(1), _big_frame(2), _frame(3))
-
-    async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_frames", {"session_id": str(SESSION), "limit": 25})
-
-    assert [frame.frame_seq for frame in result.data.items] == [1]
-    assert result.data.next_cursor.frame_seq == 2, "the overrunning frame is where the reader resumes"
-    assert result.data.items[0].clipped_bytes is None, "a frame that fits is never clipped"
-
-
-async def test_a_frame_larger_than_a_whole_page_is_clipped_rather_than_wedging_the_cursor() -> None:
-    """Skipping it would leave the cursor unable to advance past it, and a reader looping on the
-    same page forever. It goes out with its size instead, for a `limit=1` page to fetch."""
-    reader = _Reader(_frame(1, payload={"type": "user", "content": "x" * (MAX_PAGE_BYTES * 2)}), _frame(2))
-
-    async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_frames", {"session_id": str(SESSION), "limit": 25})
-
-    [only] = result.data.items
-    assert only.payload is None
-    assert only.clipped_bytes > MAX_PAGE_BYTES
-    assert result.data.next_cursor.frame_seq == 2
-
-
-async def test_an_oversized_last_frame_ends_the_walk() -> None:
-    """The clipped frame is the last one there is, so there is nothing to resume at. Naming it as
-    the cursor would send the reader back for a page it has already seen."""
-    reader = _Reader(_frame(1, payload={"type": "user", "content": "x" * (MAX_PAGE_BYTES * 2)}))
-
-    async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_frames", {"session_id": str(SESSION), "limit": 25})
-
-    assert result.data.items[0].clipped_bytes > MAX_PAGE_BYTES
-    assert result.data.next_cursor is None
-
-
-async def test_a_one_frame_page_is_the_named_frame_whole_however_large() -> None:
-    """A page of one is a whole-row read, so the budget yields to the caller that named the row
-    rather than clipping the only thing the page holds."""
-    big = _frame(1, payload={"type": "user", "content": "x" * (MAX_PAGE_BYTES * 2)})
+async def test_a_one_frame_page_is_the_named_frame_whole() -> None:
+    """The exact-frame recipe an entry's provenance hands out: cursor at the frame, `limit=1`."""
+    big = _frame(1, payload={"type": "user", "content": "x" * 500_000})
     reader = _Reader(big, _frame(2))
 
     async with Client(_mcp(reader)) as client:
-        result = await _call(
-            client, "read_frames", {"session_id": str(SESSION), "cursor": {"frame_seq": 1}, "limit": 1}
-        )
+        result = await _call(client, "read_frames", {"session_id": str(SESSION), "cursor": 1, "limit": 1})
 
-    [only] = result.data.items
+    page = _frames(result)
+    [only] = page.items
+    assert isinstance(only, HarnessFrameRecord)
     assert only.payload == big.payload
-    assert only.clipped_bytes is None
-    assert result.data.next_cursor.frame_seq == 2
+    assert page.next_cursor == 2
 
 
-async def test_a_one_frame_page_reads_any_bridge_class_whole() -> None:
-    """Setup narration and any native JSON shape stay reachable as exact forensic evidence."""
+async def test_a_one_frame_page_reads_any_native_json_shape() -> None:
+    """Any native JSON shape stays reachable as exact forensic evidence."""
     frame = _frame(
         8,
         kind="codex/event/unknown",
@@ -404,12 +346,10 @@ async def test_a_one_frame_page_reads_any_bridge_class_whole() -> None:
     reader = _Reader(frame)
 
     async with Client(_mcp(reader)) as client:
-        result = await _call(
-            client, "read_frames", {"session_id": str(SESSION), "cursor": {"frame_seq": 8}, "limit": 1}
-        )
+        result = await _call(client, "read_frames", {"session_id": str(SESSION), "cursor": 8, "limit": 1})
 
-    [only] = result.data.items
-    assert only.kind == BridgeFrameKind.HARNESS_FRAME
+    [only] = _frames(result).items
+    assert isinstance(only, HarnessFrameRecord)
     assert only.payload == frame.payload
 
 
@@ -451,10 +391,10 @@ async def test_an_entrys_provenance_is_a_frame_read_with_no_arithmetic() -> None
         span = await _call(
             client,
             "read_frames",
-            {"session_id": str(entry.provenance.session_id), "cursor": {"frame_seq": entry.provenance.first_frame_seq}},
+            {"session_id": str(entry.provenance.session_id), "cursor": entry.provenance.first_frame_seq},
         )
 
-    assert [frame.frame_seq for frame in span.data.items] == [3, 4]
+    assert [frame.frame_seq for frame in _frames(span).items] == [3, 4]
 
 
 async def test_an_item_cursor_resumes_where_the_page_stopped() -> None:
@@ -463,46 +403,13 @@ async def test_an_item_cursor_resumes_where_the_page_stopped() -> None:
     async with Client(_mcp(reader)) as client:
         first = await _call(client, "read_conversation_items", {"conversation_id": str(CONVERSATION), "limit": 2})
         second = await _call(
-            client, "read_conversation_items", {"conversation_id": str(CONVERSATION), "limit": 2, "cursor": {"seq": 6}}
+            client, "read_conversation_items", {"conversation_id": str(CONVERSATION), "limit": 2, "cursor": 6}
         )
 
     assert [entry.seq for entry in _items(first).items] == [2, 4]
-    assert _items(first).next_cursor == ItemCursor(seq=6)
+    assert _items(first).next_cursor == 6
     assert [entry.seq for entry in _items(second).items] == [6, 8]
     assert _items(second).next_cursor is None
-
-
-async def test_an_oversized_tool_result_loses_its_structured_half_not_its_provenance() -> None:
-    """`structured` is the part that is routinely a whole file. Dropping it keeps the entry — and
-    the frames it came from — readable, which a page that simply refused it would not."""
-    reader = _Reader(entries=[_tool_result(1, structured={"stdout": "x" * (MAX_PAGE_BYTES * 2)})])
-
-    async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_conversation_items", {"conversation_id": str(CONVERSATION)})
-
-    entry = one(_items(result).items)
-    assert isinstance(entry, ToolResultEntry)
-    assert entry.structured is None
-    assert entry.clipped_bytes is not None
-    assert entry.clipped_bytes > MAX_PAGE_BYTES
-    assert entry.provenance == FromFrames(session_id=SESSION, first_frame_seq=2, last_frame_seq=2)
-
-
-async def test_a_one_entry_page_is_the_named_entry_whole_however_large() -> None:
-    """The same escape hatch the frame read has, so a clipped `structured` payload stays
-    reachable without a second tool."""
-    structured = {"stdout": "x" * (MAX_PAGE_BYTES * 2)}
-    reader = _Reader(entries=[_tool_result(1, structured=structured)])
-
-    async with Client(_mcp(reader)) as client:
-        result = await _call(
-            client, "read_conversation_items", {"conversation_id": str(CONVERSATION), "cursor": {"seq": 1}, "limit": 1}
-        )
-
-    entry = one(_items(result).items)
-    assert isinstance(entry, ToolResultEntry)
-    assert entry.structured == structured
-    assert entry.clipped_bytes is None
 
 
 async def test_a_page_size_above_the_cap_is_refused() -> None:

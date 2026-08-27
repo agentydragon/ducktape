@@ -1,6 +1,6 @@
 """One conversation's read entries, built from the materialised rows rather than a fold.
 
-<conversation_records.py> is what `read_conversation_items` hands back; this module is how one
+<conversation_reads.py> is what `read_conversation_items` hands back; this module is how one
 materialised row becomes one of those entries. An entry is the wire shape of one conversation
 item — or of a turn's end — as `read_conversation_items` serves it: neither the ORM row nor a
 stream event, but the folded item with its prose whole and its provenance attached. The rows are
@@ -18,29 +18,41 @@ positions are `opened_seq`, `closed_seq` and `last_seq` on the rows, so the stor
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from uuid import UUID
+
 from pydantic import TypeAdapter
 
-from haku.console.chat_models import EventProvenance, ItemType, PromptOrigin, ReasoningDisclosure, TurnOutcome
+from haku.console.chat_models import BridgeFrameKind, EventProvenance, ItemType, PromptOrigin, ReasoningDisclosure
 
 # The ORM row and the neutral vocabulary's union share a name; the row is aliased so a reader can
 # tell them apart, as `session_store` does.
 from haku.console.database_schema import ConversationEvent as ConversationEventRow, ConversationItem, ConversationTurn
-from haku.console.x.conversation_records import (
+from haku.console.x.conversation_reads import (
     ConsoleAuthored,
     ConversationEntry,
     EntryProvenance,
+    FrameRecord,
     FromFrames,
     MessageEntry,
     Outcome,
     PromptEntry,
     ReasoningEntry,
+    SessionCursor,
+    SessionRecord,
     ToolCallEntry,
     ToolResultEntry,
-    TurnAbortedEnd,
-    TurnAnsweredEnd,
-    TurnEnd,
+    TurnCursor,
     TurnEndEntry,
-    TurnFailedEnd,
+    TurnRecord,
+)
+from haku.console.x.session_store import (
+    CompletedItem,
+    ConversationPageRow,
+    EndedTurn,
+    OpenedCall,
+    SessionStore,
+    turn_end_of,
 )
 
 _PROMPT_ORIGIN = TypeAdapter[PromptOrigin](PromptOrigin)
@@ -112,23 +124,6 @@ def completed_entry(item: ConversationItem, event: ConversationEventRow) -> Conv
             )
 
 
-def turn_end_of(turn: ConversationTurn) -> TurnEnd | None:
-    """How *turn* ended, or None while it is still running.
-
-    `ck_conversation_turn_failure` is what makes the failed arm's reason always present.
-    """
-    match turn.outcome:
-        case None:
-            return None
-        case TurnOutcome.ANSWERED:
-            return TurnAnsweredEnd()
-        case TurnOutcome.ABORTED:
-            return TurnAbortedEnd()
-        case TurnOutcome.FAILED:
-            assert turn.failure is not None, "ck_conversation_turn_failure"
-            return TurnFailedEnd(failure=turn.failure)
-
-
 def turn_end_entry(turn: ConversationTurn) -> TurnEndEntry:
     """The entry an ended turn's `turn_ended` row writes.
 
@@ -140,3 +135,43 @@ def turn_end_entry(turn: ConversationTurn) -> TurnEndEntry:
     if end is None or turn.last_seq is None:
         raise ValueError(f"a running turn has no end entry: {turn.turn_id=}")
     return TurnEndEntry(seq=turn.last_seq, provenance=ConsoleAuthored(), end=end)
+
+
+def entry_of(row: ConversationPageRow) -> ConversationEntry:
+    """The wire entry one page row folds to."""
+    match row:
+        case OpenedCall(item=item, defining=defining):
+            return opened_entry(item, defining)
+        case CompletedItem(item=item, defining=defining):
+            return completed_entry(item, defining)
+        case EndedTurn(turn=turn):
+            return turn_end_entry(turn)
+
+
+class ConversationReads:
+    """The `haku_conversations` reader: the store's rows, folded to the wire at the MCP seam.
+
+    The store speaks items, turns and frames; the entry vocabulary is the MCP server's. This
+    adapter is where the two meet, so the fold happens beside its one consumer rather than at the
+    store layer, and the other three reads pass through untouched.
+    """
+
+    def __init__(self, store: SessionStore) -> None:
+        self._store = store
+
+    async def list_sessions(self, *, cursor: SessionCursor | None, limit: int) -> list[SessionRecord]:
+        return await self._store.list_sessions(cursor=cursor, limit=limit)
+
+    async def read_frames(
+        self, session_id: UUID, *, cursor: int | None, limit: int, kinds: Sequence[BridgeFrameKind] | None = None
+    ) -> list[FrameRecord]:
+        return await self._store.read_frames(session_id, cursor=cursor, limit=limit, kinds=kinds)
+
+    async def list_turns(self, session_id: UUID, *, cursor: TurnCursor | None, limit: int) -> list[TurnRecord]:
+        return await self._store.list_turns(session_id, cursor=cursor, limit=limit)
+
+    async def read_conversation_items(
+        self, conversation_id: UUID, *, cursor: int | None, limit: int
+    ) -> list[ConversationEntry]:
+        rows = await self._store.read_item_rows(conversation_id, after_seq=cursor, limit=limit)
+        return [entry_of(row) for row in rows]

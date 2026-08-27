@@ -133,13 +133,13 @@ on every path, so that split is a seam and not a leaf.
 | `session_views.py` | The read models the API returns for a session or a conversation, and the projection that assembles one out of the session row, its transcript and its rollout. |
 | `room_status.py`   | The per-turn status driver: what the room is shown while a turn runs, and when. It is handed two coroutines and never learns which room it speaks to.          |
 
-### The records a read hands back — `conversation_records.py`
+### What a read hands back — `conversation_reads.py`
 
-What a conversation read produces: a session row, a rollout frame, a turn, a transcript entry, and
-the cursors that page them. Here rather than in <../tools/conversations.py>, the MCP server that
-reads it, because the store is what produces them. The line the split draws is **record versus
-page**: what one read produced is here, and how it is handed out — the `Page` envelope, the byte
-budget a page spends, and the clipping that budget forces — stays with the tool.
+What a conversation read produces: a session, a frame, a turn, a conversation entry, and the
+cursors that page them. Here rather than in <../tools/conversations.py>, the MCP server that
+reads it, because the store is what produces them. The line the split draws is **read model versus
+page**: what one read produced is here, and how it is handed out — the `Page` envelope — stays
+with the tool.
 
 **It is the one edge that runs stable → experimental**, so it is worth knowing before it surprises:
 everything else outside `x/` that names a module inside it is the composition root (<../app.py>).
@@ -250,10 +250,11 @@ batch boundary is not an ending, and the wire facts every rule in it answers. It
 here; what follows is who reads it and what is not yet on it.
 
 **The live turn loop is the only thing that folds frames.** A stored conversation is read from the
-rows that fold materialised: `SessionStore.read_conversation_items` pages `conversation_item` and
-`conversation_turn` by their defining stream positions and `item_entries.py` maps each row onto the
-read models in `conversation_records.py`, so `haku_conversations` needs neither an adapter nor the
-session's `runtime_kind` to answer what was said — and a page of a long thread costs the page, not
+rows that fold materialised: `SessionStore.read_item_rows` pages `conversation_item` and
+`conversation_turn` by their defining stream positions, and `item_entries.ConversationReads` folds
+each row onto the wire models in `conversation_reads.py` at the MCP seam — the store speaks items
+and turns, never the entry vocabulary. So `haku_conversations` needs neither an adapter nor the
+session's `runtime_kind` to answer what was said, and a page of a long thread costs the page, not
 the thread. There is no whole-log projection any more — no `project_log` on the adapter, and no
 `finish` that declares a stream over — so an item the frames left open stays open, and only a frame
 closes one. A capture is still folded in tests, through the same reducer one frame at a time

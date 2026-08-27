@@ -21,7 +21,7 @@ from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection
 from haku.console.x.conftest import attach_channel
 from haku.console.x.conversation_events import FrameRange, ItemSegment, MessageCompleted, MessageStarted, OpenRef
 from haku.console.x.conversation_follow import ConversationFollow
-from haku.console.x.conversation_records import TurnAnsweredEnd
+from haku.console.x.conversation_reads import TurnAnsweredEnd
 from haku.console.x.session_events import TurnAnsweredBody
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService

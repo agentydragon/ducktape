@@ -20,7 +20,7 @@ from haku.console.chat_models import (
 )
 from haku.console.database_schema import ConversationEvent as ConversationEventRow, ConversationItem, ConversationTurn
 from haku.console.x import item_entries
-from haku.console.x.conversation_records import (
+from haku.console.x.conversation_reads import (
     ConsoleAuthored,
     FromFrames,
     PromptEntry,
