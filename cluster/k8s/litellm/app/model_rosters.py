@@ -118,7 +118,9 @@ ANTHROPIC_MODELS: list[str] = ["claude-opus-5", "claude-sonnet-5", "claude-fable
 # The subset exposed in OpenClaw's model picker. OpenClaw's bundled LiteLLM
 # provider does not query the proxy's authenticated /v1/models endpoint.
 OPENCLAW_CLIPROXY_MODELS: list[str] = ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]
-OPENCLAW_CODEX_MODELS: list[str] = [legacy_messages_name(model) for model in OPENCLAW_CLIPROXY_MODELS]
+OPENCLAW_CODEX_MODELS: list[str] = [
+    exposed_name(Provider.CHATGPT, ApiShape.ANT_MESSAGES, model) for model in OPENCLAW_CLIPROXY_MODELS
+]
 
 # Google AI (Gemini). Key from the GEMINI_API_KEY env var (litellm-gemini-key
 # secret). Current-generation lineup only (Gemini 3.x) -- the 2.5 generation,
