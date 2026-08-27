@@ -79,7 +79,7 @@ PAGED_TOOLS: tuple[tuple[str, dict[str, str]], ...] = (
     ("list_sessions", {}),
     ("list_turns", {"session_id": str(SESSION)}),
     ("read_conversation_items", {"conversation_id": str(CONVERSATION)}),
-    ("read_frames", {"session_id": str(SESSION)}),
+    ("read_session_frames", {"session_id": str(SESSION)}),
 )
 
 
@@ -159,7 +159,7 @@ class _Reader:
             if cursor is None or (session.created_at, session.session_id) <= (cursor.created_at, cursor.session_id)
         ][:limit]
 
-    async def read_frames(
+    async def read_session_frames(
         self,
         session_id: UUID,
         *,
@@ -222,7 +222,7 @@ async def test_tool_surface() -> None:
     async with Client(_mcp(_Reader())) as client:
         tools = {tool.name for tool in await client.list_tools()}
 
-    assert tools == {"list_sessions", "list_turns", "read_conversation_items", "read_frames"}
+    assert tools == {"list_sessions", "list_turns", "read_conversation_items", "read_session_frames"}
     assert HAKU_CONVERSATIONS_SERVER_ID == "haku_conversations"
 
 
@@ -334,7 +334,7 @@ async def test_a_cursor_names_the_first_row_the_page_did_not_return() -> None:
     reader = _Reader(*(_frame(seq) for seq in (1, 2, 3, 4)))
 
     async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_frames", {"session_id": str(SESSION), "limit": 2})
+        result = await _call(client, "read_session_frames", {"session_id": str(SESSION), "limit": 2})
 
     page = _frames(result)
     assert [frame.frame_seq for frame in page.items] == [1, 2]
@@ -346,7 +346,7 @@ async def test_a_short_page_is_the_last_one() -> None:
     reader = _Reader(_frame(1), _frame(2))
 
     async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_frames", {"session_id": str(SESSION), "limit": 25})
+        result = await _call(client, "read_session_frames", {"session_id": str(SESSION), "limit": 25})
 
     assert _frames(result).next_cursor is None
 
@@ -356,7 +356,7 @@ async def test_frames_return_discriminator_free_native_json_unchanged() -> None:
     reader = _Reader(_frame(1, payload=native))
 
     async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_frames", {"session_id": str(SESSION)})
+        result = await _call(client, "read_session_frames", {"session_id": str(SESSION)})
 
     [only] = _frames(result).items
     assert isinstance(only, HarnessFrameRecord)
@@ -369,7 +369,9 @@ async def test_the_cursor_reaches_the_store_rather_than_being_filtered_here() ->
     reader = _Reader(*(_frame(seq) for seq in (1, 2, 3)))
 
     async with Client(_mcp(reader)) as client:
-        await _call(client, "read_frames", {"session_id": str(SESSION), "cursor": 2, "kinds": ["harness_frame"]})
+        await _call(
+            client, "read_session_frames", {"session_id": str(SESSION), "cursor": 2, "kinds": ["harness_frame"]}
+        )
 
     # 26 rather than 25: the extra row is how the page tells "exactly full" from "more to come".
     assert reader.queries == [
@@ -383,7 +385,7 @@ async def test_a_one_frame_page_is_the_named_frame_whole() -> None:
     reader = _Reader(big, _frame(2))
 
     async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_frames", {"session_id": str(SESSION), "cursor": 1, "limit": 1})
+        result = await _call(client, "read_session_frames", {"session_id": str(SESSION), "cursor": 1, "limit": 1})
 
     page = _frames(result)
     [only] = page.items
@@ -402,7 +404,7 @@ async def test_a_one_frame_page_reads_any_native_json_shape() -> None:
     reader = _Reader(frame)
 
     async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_frames", {"session_id": str(SESSION), "cursor": 8, "limit": 1})
+        result = await _call(client, "read_session_frames", {"session_id": str(SESSION), "cursor": 8, "limit": 1})
 
     [only] = _frames(result).items
     assert isinstance(only, HarnessFrameRecord)
@@ -446,7 +448,7 @@ async def test_an_entrys_provenance_is_a_frame_read_with_no_arithmetic() -> None
         assert isinstance(entry.provenance, FromFrames)
         span = await _call(
             client,
-            "read_frames",
+            "read_session_frames",
             {"session_id": str(entry.provenance.session_id), "cursor": entry.provenance.first_frame_seq},
         )
 
@@ -471,7 +473,9 @@ async def test_an_item_cursor_resumes_where_the_page_stopped() -> None:
 async def test_a_page_size_above_the_cap_is_refused() -> None:
     """The cap is the only thing keeping a read from being a dump."""
     async with Client(_mcp(_Reader())) as client:
-        result = await _call(client, "read_frames", {"session_id": str(SESSION), "limit": 10_000}, raise_on_error=False)
+        result = await _call(
+            client, "read_session_frames", {"session_id": str(SESSION), "limit": 10_000}, raise_on_error=False
+        )
 
     assert result.is_error
 
@@ -481,7 +485,7 @@ async def test_a_session_id_that_is_not_an_id_is_refused_here() -> None:
     is never handed something it would have to validate."""
     reader = _Reader()
     async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_frames", {"session_id": "not-an-id"}, raise_on_error=False)
+        result = await _call(client, "read_session_frames", {"session_id": "not-an-id"}, raise_on_error=False)
 
     assert result.is_error
     assert reader.queries == []

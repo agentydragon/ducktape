@@ -132,7 +132,7 @@ async def test_store_delegates_prompt_semantics_and_keeps_native_json_opaque(mig
     )
 
     assert await store.adopt_open_turn(view.session_id) is not None
-    frames = await store.read_frames(view.session_id, cursor=None, limit=25, scope=UnrestrictedReads())
+    frames = await store.read_session_frames(view.session_id, cursor=None, limit=25, scope=UnrestrictedReads())
     assert [frame.payload for frame in _harness(frames)] == [
         {"动作": "提问", "正文": "hello"},
         {"阶段": "碎片", "正文": "你"},
@@ -500,8 +500,10 @@ async def test_the_rollout_reads_back_in_wire_order_with_a_keyset_cursor(chat_st
             session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": kind}
         )
 
-    first = await chat_store.read_frames(str(session.session_id), cursor=None, limit=2, scope=UnrestrictedReads())
-    rest = await chat_store.read_frames(
+    first = await chat_store.read_session_frames(
+        str(session.session_id), cursor=None, limit=2, scope=UnrestrictedReads()
+    )
+    rest = await chat_store.read_session_frames(
         str(session.session_id), cursor=first[-1].frame_seq + 1, limit=2, scope=UnrestrictedReads()
     )
 
@@ -517,11 +519,13 @@ async def test_the_kinds_filter_uses_only_hakus_outer_bridge_class(chat_store, o
         session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"阶段": "最终"}
     )
 
-    default = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, scope=UnrestrictedReads())
-    setup = await chat_store.read_frames(
+    default = await chat_store.read_session_frames(
+        str(session.session_id), cursor=None, limit=25, scope=UnrestrictedReads()
+    )
+    setup = await chat_store.read_session_frames(
         str(session.session_id), cursor=None, limit=25, kinds=[BridgeFrameKind.SETUP_OUTPUT], scope=UnrestrictedReads()
     )
-    harness = await chat_store.read_frames(
+    harness = await chat_store.read_session_frames(
         str(session.session_id), cursor=None, limit=25, kinds=[BridgeFrameKind.HARNESS_FRAME], scope=UnrestrictedReads()
     )
 
@@ -538,8 +542,10 @@ async def test_method_only_native_frames_are_visible_and_filterable(chat_store, 
         session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, inner
     )
 
-    default = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, scope=UnrestrictedReads())
-    exact = await chat_store.read_frames(
+    default = await chat_store.read_session_frames(
+        str(session.session_id), cursor=None, limit=25, scope=UnrestrictedReads()
+    )
+    exact = await chat_store.read_session_frames(
         session.session_id, cursor=recorded.frame_seq, limit=1, scope=UnrestrictedReads()
     )
 
@@ -557,8 +563,10 @@ async def test_native_frames_without_a_known_discriminator_remain_in_the_default
         session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, inner
     )
 
-    default = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, scope=UnrestrictedReads())
-    exact = await chat_store.read_frames(
+    default = await chat_store.read_session_frames(
+        str(session.session_id), cursor=None, limit=25, scope=UnrestrictedReads()
+    )
+    exact = await chat_store.read_session_frames(
         session.session_id, cursor=recorded.frame_seq, limit=1, scope=UnrestrictedReads()
     )
 
@@ -584,7 +592,9 @@ async def test_a_replayed_frame_is_recorded_once(chat_store, operator_id) -> Non
         )
     ).fresh
 
-    frames = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, scope=UnrestrictedReads())
+    frames = await chat_store.read_session_frames(
+        str(session.session_id), cursor=None, limit=25, scope=UnrestrictedReads()
+    )
     assert [frame.kind for frame in frames] == ["harness_frame"]
     assert [frame.payload["type"] for frame in _harness(frames)] == ["assistant"]
 
@@ -654,7 +664,9 @@ async def test_frames_with_no_identity_are_never_collapsed(chat_store, operator_
         )
     ).fresh
 
-    frames = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, scope=UnrestrictedReads())
+    frames = await chat_store.read_session_frames(
+        str(session.session_id), cursor=None, limit=25, scope=UnrestrictedReads()
+    )
     assert len(frames) == 2
 
 
@@ -668,7 +680,7 @@ async def test_the_raw_log_returns_every_native_frame_without_classifying_it(cha
         session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "result", "uuid": "r1"}
     )
 
-    default = await chat_store.read_frames(str(session_id), cursor=None, limit=25, scope=UnrestrictedReads())
+    default = await chat_store.read_session_frames(str(session_id), cursor=None, limit=25, scope=UnrestrictedReads())
 
     assert [frame.kind for frame in default] == ["harness_frame", "harness_frame"]
     assert [frame.payload["type"] for frame in _harness(default)] == ["stream_event", "result"]
@@ -684,7 +696,9 @@ async def test_one_session_never_reads_another_session_frames(chat_store, operat
         theirs.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "result"}
     )
 
-    frames = await chat_store.read_frames(str(mine.session_id), cursor=None, limit=25, scope=UnrestrictedReads())
+    frames = await chat_store.read_session_frames(
+        str(mine.session_id), cursor=None, limit=25, scope=UnrestrictedReads()
+    )
 
     assert [frame.kind for frame in frames] == ["harness_frame"]
     assert [frame.payload["type"] for frame in _harness(frames)] == ["assistant"]
@@ -864,10 +878,10 @@ async def test_reads_are_fenced_by_the_conversations_pinned_profile(chat_store, 
     assert {session.session_id for session in everything} == {pinned.session_id, legacy.session_id}
     assert await chat_store.list_sessions(cursor=None, limit=10, scope=ProfileScopedReads(frozenset())) == []
 
-    assert await chat_store.read_frames(pinned.session_id, cursor=None, limit=5, scope=haku_reads) == []
+    assert await chat_store.read_session_frames(pinned.session_id, cursor=None, limit=5, scope=haku_reads) == []
     for denied_scope, session_id in ((coder_reads, pinned.session_id), (haku_reads, legacy.session_id)):
         with pytest.raises(ConversationAccessDeniedError):
-            await chat_store.read_frames(session_id, cursor=None, limit=5, scope=denied_scope)
+            await chat_store.read_session_frames(session_id, cursor=None, limit=5, scope=denied_scope)
         with pytest.raises(ConversationAccessDeniedError):
             await chat_store.list_turns(session_id, cursor=None, limit=5, scope=denied_scope)
     async with migrated_sessions() as db:
@@ -877,7 +891,7 @@ async def test_reads_are_fenced_by_the_conversations_pinned_profile(chat_store, 
     with pytest.raises(ConversationAccessDeniedError):
         await chat_store.read_item_rows(legacy_conversation, after_seq=None, limit=5, scope=haku_reads)
 
-    assert await chat_store.read_frames(uuid4(), cursor=None, limit=5, scope=coder_reads) == []
+    assert await chat_store.read_session_frames(uuid4(), cursor=None, limit=5, scope=coder_reads) == []
     assert await chat_store.read_item_rows(uuid4(), after_seq=None, limit=5, scope=coder_reads) == []
 
 
@@ -1030,7 +1044,7 @@ async def test_the_items_read_as_the_conversation_rather_than_the_protocol(chat_
     assert said.text == "a bad config"
     assert isinstance(said.provenance, FromFrames)
     assert said.provenance.session_id == view.session_id, "frames are session-level, so the appeal names whose"
-    named = await chat_store.read_frames(
+    named = await chat_store.read_session_frames(
         said.provenance.session_id,
         cursor=said.provenance.first_frame_seq,
         limit=1,
@@ -1081,7 +1095,7 @@ async def test_an_item_page_resumes_at_its_cursor_without_refolding_the_thread(c
 
 async def test_a_frame_the_fold_never_committed_is_not_an_item(chat_store, operator_id) -> None:
     """The entries are the conversation's record, so what is on them is what the fold committed —
-    never whatever the frame table happens to hold. `read_frames` still serves the frame by name."""
+    never whatever the frame table happens to hold. `read_session_frames` still serves the frame by name."""
     view, token = await chat_store.create(operator_id)
     conversation_id = await chat_store.conversation_of(view.session_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -1090,7 +1104,9 @@ async def test_a_frame_the_fold_never_committed_is_not_an_item(chat_store, opera
     )
 
     entries = await _conversation_entries(chat_store, conversation_id, limit=10)
-    frames = await chat_store.read_frames(view.session_id, cursor=None, limit=10, kinds=None, scope=UnrestrictedReads())
+    frames = await chat_store.read_session_frames(
+        view.session_id, cursor=None, limit=10, kinds=None, scope=UnrestrictedReads()
+    )
 
     assert entries == []
     assert len(frames) == 1, "the frame is recorded and readable; it just never became a fact"

@@ -34,7 +34,7 @@ class ConversationReads:
     ) -> list[SessionRecord]:
         return await self._store.list_sessions(cursor=cursor, limit=limit, scope=scope)
 
-    async def read_frames(
+    async def read_session_frames(
         self,
         session_id: UUID,
         *,
@@ -43,7 +43,7 @@ class ConversationReads:
         scope: ConversationReadScope,
         kinds: Sequence[BridgeFrameKind] | None = None,
     ) -> list[FrameRecord]:
-        return await self._store.read_frames(session_id, cursor=cursor, limit=limit, scope=scope, kinds=kinds)
+        return await self._store.read_session_frames(session_id, cursor=cursor, limit=limit, scope=scope, kinds=kinds)
 
     async def list_turns(
         self, session_id: UUID, *, cursor: TurnCursor | None, limit: int, scope: ConversationReadScope

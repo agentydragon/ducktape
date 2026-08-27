@@ -122,7 +122,7 @@ class TurnRecord(BaseModel):
     """One exchange of a session, as a range over that session's frames."""
 
     turn_id: UUID
-    first_frame_seq: int = Field(description="Pass to `read_frames` as `cursor` to read this exchange.")
+    first_frame_seq: int = Field(description="Pass to `read_session_frames` as `cursor` to read this exchange.")
     last_frame_seq: int | None = Field(
         description="Inclusive end of the range. Absent while the exchange is still running, "
         "and on a finished one that recorded no frames at all."
@@ -153,14 +153,14 @@ class FromFrames(BaseModel):
     others": a message whose frames are interrupted by a tool result spans the interruption too,
     and that is the honest reading of a range rather than a defect in it.
 
-    This is the appeal path. `read_frames(session_id, cursor=first_frame_seq)` walks the span,
+    This is the appeal path. `read_session_frames(session_id, cursor=first_frame_seq)` walks the span,
     and with `limit=1` returns exactly the first frame. Frames are session-level while a
     conversation spans replaced sessions, so the range names its session.
     """
 
     kind: Literal["frames"] = "frames"
     session_id: UUID = Field(
-        description="Whose wire log the range indexes — pass to `read_frames` unchanged. A conversation's "
+        description="Whose wire log the range indexes — pass to `read_session_frames` unchanged. A conversation's "
         "entries span replaced sessions, and a frame number means nothing without its session."
     )
     first_frame_seq: int

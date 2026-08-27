@@ -1751,7 +1751,7 @@ class SessionStore:
             for row, agent_id, access_profile_id, runtime_kind in sessions
         ]
 
-    async def read_frames(
+    async def read_session_frames(
         self,
         session_id: UUID,
         *,
@@ -1812,7 +1812,7 @@ class SessionStore:
     ) -> SessionFramePage:
         """The tail of an Operator-owned session's rollout, for the console's frame inspector.
 
-        Two things differ from `read_frames`, which serves the MCP reader. It is scoped, because a
+        Two things differ from `read_session_frames`, which serves the MCP reader. It is scoped, because a
         browser surface must never read another Operator's session. And its keyset runs backwards:
         the frames an operator opens this for are a session's *last* ones — an answer that was cut
         off, a turn that died — so paging forward from frame one to reach them punishes a long

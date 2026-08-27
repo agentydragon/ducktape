@@ -694,7 +694,7 @@ async def test_generic_turn_loop_is_opaque_to_a_discriminator_free_harness(
     await service._run_turn(client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event())
 
     assert await answers(migrated_sessions, view.session_id) == ["你好!"]
-    raw = await chat_store.read_frames(view.session_id, cursor=None, limit=25, scope=UnrestrictedReads())
+    raw = await chat_store.read_session_frames(view.session_id, cursor=None, limit=25, scope=UnrestrictedReads())
     assert [frame.payload for frame in raw] == [
         {"动作": "输入", "正文": "say hello"},
         {"阶段": "碎片", "正文": "你"},

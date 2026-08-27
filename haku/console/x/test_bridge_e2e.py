@@ -207,7 +207,7 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     # The sandbox's own account of itself, durable only because it is in the rollout: the pod's log
     # is reaped with the sandbox. Whole path — the CLI's stderr, the runner's forwarding, the
     # `setup_output` frame, and the transport reassembling it into a line.
-    narration = await chat_store.read_frames(
+    narration = await chat_store.read_session_frames(
         session_id, cursor=None, limit=10, kinds=[SETUP_OUTPUT_KIND], scope=UnrestrictedReads()
     )
     assert [frame.text for frame in narration if isinstance(frame, SetupOutputRecord)] == [GREETING]

@@ -362,7 +362,7 @@ auto_approval_policies:
   # Reading back what happened and what is written down: the frames of a past session, and
   # semantic search over the same sessions plus haku-state. One atom because they are one
   # authority — every tool here reads a corpus Haku can already reach (it has a haku-state clone,
-  # and `read_frames` spans every session in its read scope), so search adds discoverability
+  # and `read_session_frames` spans every session in its read scope), so search adds discoverability
   # rather than reachability. Both cross rooms and sessions but are fenced identically per
   # conversation by the profile-DAG read scope over `can_read_profiles`
   # (haku/recall_index/README.md § Read scoping).
@@ -373,7 +373,7 @@ auto_approval_policies:
         - list_sessions
         - list_turns
         - read_conversation_items
-        - read_frames
+        - read_session_frames
       haku_index:
         - search
         - index_status

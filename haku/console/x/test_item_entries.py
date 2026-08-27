@@ -74,7 +74,7 @@ def test_an_entry_is_the_row_at_its_opening_position_with_its_lifecycle() -> Non
 
 def test_a_frame_derived_entry_names_the_session_whose_frames_it_was_read_off() -> None:
     """A conversation's entries span replaced sessions, so a frame range without its session
-    could not be appealed — `read_frames` is session-keyed."""
+    could not be appealed — `read_session_frames` is session-keyed."""
     entry = item_entries.entry_of(_row(ItemType.MESSAGE, text="hi"))
 
     assert entry.provenance == FromFrames(session_id=SESSION, first_frame_seq=3, last_frame_seq=4)
