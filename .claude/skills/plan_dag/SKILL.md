@@ -12,6 +12,13 @@ action** is the unblocker. Keep it current: republish the same file path (same
 URL) whenever a PR opens or merges, a gate resolves, or the plan resequences,
 and date-stamp the subtitle each time.
 
+The board shows pending and in-flight work, not history: **flush merged PRs off
+the board on the update after they land** — the tracker and git are the archive
+— naming the flushed PRs once in the subtitle so removals read as deliberate.
+Their downstream nodes simply become roots. A completed non-PR node (a ruled
+gate, a finished recon phase) may outlive its moment, but only while it anchors
+fresh in-flight work; flush it once its outgoing edges stop explaining anything.
+
 ## Node taxonomy
 
 Four classes, styled explicitly (see gotchas), plus one hard shape rule:
@@ -21,12 +28,14 @@ Four classes, styled explicitly (see gotchas), plus one hard shape rule:
 ["#4832 extract indexer · ready"]:::ready   PR ready to merge — solid green
 {{"operator: #4667 verdict"}}:::gate        human decision gate — rust hexagon
 ["#4772 vocabulary collapse"]:::next        planned, undispatched — dashed
-["#4850 clipping removal · merged"]:::done  merged — GitHub purple
+["#4710·0 fence recon ✓"]:::done            done phase / ruled gate — GitHub purple
 ```
 
 PR states wear GitHub's colors (open green, merged purple, solid merge-button
-green for "ready"), so PR standing reads without the legend; merged purple also
-keeps done work visually far from the dashed planned nodes.
+green for "ready"), so PR standing reads without the legend. The done class is
+transient by design: a merged PR wears it for at most the update that reports
+the merge, then leaves the board (see the flush rule above); its steady-state
+occupants are ruled gates and completed phases still anchoring fresh work.
 
 - A gate names **whose** action unblocks it, compressed with a human glyph:
   `🧑 Codex canary`, `🧑 #4667 verdict` — never a vague "pending".
