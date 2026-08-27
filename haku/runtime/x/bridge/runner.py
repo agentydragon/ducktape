@@ -23,7 +23,7 @@ from tenacity import AsyncRetrying, before_sleep_log, retry_if_exception, stop_a
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
-from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE, MCP_CREDENTIAL_VARIABLE, CliBackend
+from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE, CliBackend
 from haku.runtime.x.bridge.backend_registry import BackendFactory, runner_backends
 from haku.runtime.x.bridge.protocol import (
     CONSOLE_TO_RUNNER,
@@ -249,7 +249,7 @@ def _materialize_proxy_kubeconfig(launch: HarnessLaunch, bearer_token: str | Non
         return launch
     # The claim-owned credential always wins. Launch-selected environment is topology/options,
     # never authority, and must not be able to replace the bearer inherited by this runner Pod.
-    token = bearer_token or os.environ.get(BRIDGE_CREDENTIAL_VARIABLE) or os.environ.get(MCP_CREDENTIAL_VARIABLE)
+    token = bearer_token or os.environ.get(BRIDGE_CREDENTIAL_VARIABLE)
     if not token:
         raise RuntimeError(f"{KUBERNETES_PROXY_URL_ENV} requires a bridge bearer")
 

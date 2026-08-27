@@ -104,14 +104,12 @@ def test_the_runner_runs_the_launch_the_console_sent(tmp_path: Path) -> None:
 def test_environment_exposes_the_claim_owned_session_credential(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CLAUDECODE", "parent")
     monkeypatch.setenv("HAKU_AGENT_SDK_RUNNER_TOKEN", "session-secret")
-    monkeypatch.setenv("HAKU_MCP_BEARER_TOKEN", "session-secret")
     launch = HarnessLaunch(
         arguments=(),
         cwd="/workspace",
         environment={
             "CLAUDECODE": "injected-parent",
             "HAKU_AGENT_SDK_RUNNER_TOKEN": "injected-secret",
-            "HAKU_MCP_BEARER_TOKEN": "injected-secret",
             "SAFE": "value",
         },
     )
@@ -120,7 +118,6 @@ def test_environment_exposes_the_claim_owned_session_credential(monkeypatch: pyt
 
     assert environment["CLAUDECODE"] == "injected-parent"
     assert environment["HAKU_AGENT_SDK_RUNNER_TOKEN"] == "session-secret"
-    assert environment["HAKU_MCP_BEARER_TOKEN"] == "session-secret"
     assert environment["SAFE"] == "value"
 
 
@@ -190,7 +187,6 @@ def test_proxy_kubeconfig_uses_claim_owned_bearer_not_launch_environment(
         cwd=str(tmp_path),
         environment={
             KUBERNETES_PROXY_URL_ENV: "https://haku-kube-api-proxy.haku-console:8443",
-            "HAKU_MCP_BEARER_TOKEN": "launch-selected-secret",
             "HAKU_AGENT_SDK_RUNNER_TOKEN": "launch-selected-secret",
         },
     )

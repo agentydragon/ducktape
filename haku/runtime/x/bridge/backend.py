@@ -18,15 +18,10 @@ from typing import Protocol
 
 from haku.runtime.x.bridge.protocol import HarnessLaunch
 
-# The exact-session credential used by the runner bridge and by the Agent at Console MCP.
+# The exact-session credential used by the runner bridge and by the Agent at Console MCP. The
+# runner keeps the claim-owned value out of launch overlays, and the console's deploy config
+# refuses the name as a provider API-key variable.
 BRIDGE_CREDENTIAL_VARIABLE = "HAKU_AGENT_SDK_RUNNER_TOKEN"
-# A rolling-compatible alias for the same bearer. The previous runner image strips the bridge-named
-# variable from children, but does not know this name; injecting both lets a new Console launch
-# Claude through either runner version without minting a second authority.
-MCP_CREDENTIAL_VARIABLE = "HAKU_MCP_BEARER_TOKEN"
-# Every name of that one bearer: the runner keeps these claim-owned values out of launch overlays,
-# and the console's deploy config refuses them as provider API-key names.
-SESSION_CREDENTIAL_VARIABLES = frozenset({BRIDGE_CREDENTIAL_VARIABLE, MCP_CREDENTIAL_VARIABLE})
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,7 +47,7 @@ def child_environment(launch: HarnessLaunch) -> dict[str, str]:
     """Overlay launch values while retaining the claim-owned exact-session credential."""
     return {
         **os.environ,
-        **{key: value for key, value in launch.environment.items() if key not in SESSION_CREDENTIAL_VARIABLES},
+        **{key: value for key, value in launch.environment.items() if key != BRIDGE_CREDENTIAL_VARIABLE},
     }
 
 

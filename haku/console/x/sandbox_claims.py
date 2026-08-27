@@ -24,7 +24,7 @@ from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict
 
-from haku.runtime.x.bridge.backend import MCP_CREDENTIAL_VARIABLE
+from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE
 from util.kubernetes import CustomObjectsClient
 
 logger = logging.getLogger(__name__)
@@ -165,8 +165,7 @@ class KubernetesSandboxClaims:
                 "env": [
                     *({"name": name, "value": value} for name, value in self._spec.runner_environment.items()),
                     {"name": "HAKU_RUNNER_SESSION_ID", "value": str(session_id)},
-                    {"name": "HAKU_AGENT_SDK_RUNNER_TOKEN", "value": bridge_token},
-                    {"name": MCP_CREDENTIAL_VARIABLE, "value": bridge_token},
+                    {"name": BRIDGE_CREDENTIAL_VARIABLE, "value": bridge_token},
                 ],
             },
         }

@@ -74,7 +74,7 @@ from haku.console.x.session_views import (
     SessionView,
 )
 from haku.console.x.system_prompt import HistoryMessage, HistorySender, SessionIntroduction
-from haku.runtime.x.bridge.backend import MCP_CREDENTIAL_VARIABLE
+from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE
 from haku.runtime.x.bridge.client import ReceivedFrame, RecordedFrame
 from haku.runtime.x.bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, HarnessFrame, TextWebSocket
 
@@ -588,7 +588,7 @@ class SessionService:
                 cwd=resources.cwd,
                 environment=resources.environment,
                 mcp_servers={
-                    name: RuntimeMcpServer(url=url, bearer_environment_variable=MCP_CREDENTIAL_VARIABLE)
+                    name: RuntimeMcpServer(url=url, bearer_environment_variable=BRIDGE_CREDENTIAL_VARIABLE)
                     for name, url in resources.mcp_server_urls.items()
                 },
                 appended_system_prompt=appended,

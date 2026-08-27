@@ -25,7 +25,7 @@ def _launch(**overrides: Any) -> RuntimeLaunch:
         "environment": {"CODEX_HOME": "/codex-home"},
         "mcp_servers": {
             "haku-console": RuntimeMcpServer(
-                url="https://console.test/mcp", bearer_environment_variable="HAKU_MCP_BEARER_TOKEN"
+                url="https://console.test/mcp", bearer_environment_variable="HAKU_AGENT_SDK_RUNNER_TOKEN"
             )
         },
         "appended_system_prompt": "you are Haku",
@@ -73,7 +73,7 @@ def test_codex_builds_process_and_thread_configuration_from_the_same_neutral_lau
         'wire_api = "responses"}}',
         "-c",
         'mcp_servers = {haku-console = {url = "https://console.test/mcp", '
-        'bearer_token_env_var = "HAKU_MCP_BEARER_TOKEN"}}',
+        'bearer_token_env_var = "HAKU_AGENT_SDK_RUNNER_TOKEN"}}',
         "app-server",
         "--listen",
         "stdio://",

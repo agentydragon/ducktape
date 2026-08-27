@@ -9,9 +9,8 @@ metadata:
   namespace: haku-runtime-sandbox
 spec:
   networkPolicyManagement: Unmanaged
-  # Claims inject the session id and exact-session bearer under the runner name plus an MCP alias
-  # carrying the same value. Agent Sandbox v0.5.1 cold-starts claims with env. The alias keeps
-  # old/new runner rolls compatible while Claude, curl, or another CLI use the same authority.
+  # Claims inject the session id and the exact-session bearer. Agent Sandbox v0.5.1 cold-starts
+  # claims with env; Claude, curl, or another CLI in the sandbox use the same authority.
   envVarsInjectionPolicy: Allowed
   podTemplate:
     metadata:

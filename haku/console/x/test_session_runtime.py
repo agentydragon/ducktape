@@ -443,10 +443,9 @@ def test_runtime_registration_schema_exposes_the_implementation_discriminator() 
     assert len(implementation["oneOf"]) == 2
 
 
-@pytest.mark.parametrize("api_key_env_var", ["HAKU_MCP_BEARER_TOKEN", "HAKU_AGENT_SDK_RUNNER_TOKEN"])
-def test_codex_runtime_rejects_session_authority_as_the_provider_key(api_key_env_var: str) -> None:
+def test_codex_runtime_rejects_session_authority_as_the_provider_key() -> None:
     with pytest.raises(ValidationError, match="exact-session credential"):
-        _codex_runtime_config(api_key_env_var=api_key_env_var)
+        _codex_runtime_config(api_key_env_var="HAKU_AGENT_SDK_RUNNER_TOKEN")
 
 
 @pytest.mark.parametrize("field", ["api_base_url", "mcp_url"])
@@ -953,7 +952,7 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
             "haku-console": {
                 "type": "http",
                 "url": "http://haku-console.test:9090/mcp",
-                "headers": {"Authorization": "Bearer ${HAKU_MCP_BEARER_TOKEN}"},
+                "headers": {"Authorization": "Bearer ${HAKU_AGENT_SDK_RUNNER_TOKEN}"},
             }
         }
     }
