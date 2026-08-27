@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import logging
+import math
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
@@ -26,6 +27,10 @@ _REFRESH_CLAIM_TTL = datetime.timedelta(seconds=30)
 _REFRESH_CLAIM_POLL_SECONDS = 0.05
 _REFRESH_RETRY_BASE = datetime.timedelta(seconds=30)
 _REFRESH_RETRY_MAX = datetime.timedelta(minutes=15)
+# Doublings at which the backoff saturates at _REFRESH_RETRY_MAX. The exponent must be clamped to
+# it: a long failure episode otherwise grows 2**attempts past float range (2**1024 already fails
+# int-to-float conversion), and the OverflowError would roll back every further failure record.
+_REFRESH_RETRY_MAX_DOUBLINGS = math.ceil(math.log2(_REFRESH_RETRY_MAX / _REFRESH_RETRY_BASE))
 _FAILURE_MESSAGE_LIMIT = 1024
 
 
@@ -267,7 +272,8 @@ class PostgresOAuthTokenStateStore:
             state.refresh_failure_action = action
             if action == OAuthRefreshFailureAction.RETRYING:
                 delay_seconds = min(
-                    _REFRESH_RETRY_BASE.total_seconds() * 2 ** (state.refresh_failure_count - 1),
+                    _REFRESH_RETRY_BASE.total_seconds()
+                    * 2 ** min(state.refresh_failure_count - 1, _REFRESH_RETRY_MAX_DOUBLINGS),
                     _REFRESH_RETRY_MAX.total_seconds(),
                 )
                 state.refresh_retry_at = now + datetime.timedelta(seconds=delay_seconds)
