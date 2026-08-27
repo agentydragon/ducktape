@@ -1,6 +1,10 @@
 ---
 name: flux_reconcile_audit
-description: Audit every Flux Kustomization + HelmRelease over a window (default 7d) and classify each into Broken / Slow-but-converges / Miswired-but-converges / Propagating / Suspended / Healthy. Per non-healthy item, surface the underlying-resource culprit (parsed from Flux's own condition message), the in-window failure/success counts, the p99 reconcile duration, and a label-selector probe of objects this Kustomization manages. Use when the user asks "what's slow", "what's stuck", "what's been broken this week", or wants targeted attribution of reconciliation lag.
+description: >-
+  Audit every Flux Kustomization and HelmRelease over a window (default 7d):
+  classify broken / slow / miswired / propagating / suspended / healthy with
+  per-item culprit, failure counts, and p99 reconcile duration. Use for
+  "what's slow / stuck / been broken this week".
 ---
 
 # Flux Reconcile Audit

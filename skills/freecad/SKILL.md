@@ -1,6 +1,10 @@
 ---
 name: freecad-sketcher
-description: Use this skill for parametric 2D/3D technical drawings using FreeCAD Sketcher and TechDraw. Triggers when the user wants constrained parametric floor plans, mechanical sketches, layout diagrams, or any drawing where dimensions drive geometry. Also use when the user mentions FreeCAD, .FCStd files, Sketcher, TechDraw, parametric CAD, or technical drawings. Use this skill even for seemingly simple 2D layouts — the parametric constraint approach prevents coordinate drift and makes edits safe. Always read this skill before writing any FreeCAD scripting code.
+description: >-
+  Parametric 2D/3D technical drawings with FreeCAD Sketcher and TechDraw —
+  constraint-driven floor plans, mechanical sketches, dimension-driven
+  layouts. Use for anything FreeCAD/.FCStd, even seemingly simple 2D layouts,
+  and read before writing any FreeCAD scripting code.
 ---
 
 # FreeCAD Sketcher + TechDraw Skill

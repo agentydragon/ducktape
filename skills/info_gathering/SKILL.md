@@ -1,13 +1,10 @@
 ---
 name: info-gathering
-description: >
-  Optimal information gathering under uncertainty. Use when the main bottleneck is
-  missing information and the right next step is to reduce uncertainty efficiently:
-  research, compare options, design an experiment, elicit preferences, or decide what
-  questions to ask next. Trigger on requests like "help me figure this out", "what
-  should I find out", "what do I need to know to decide", or any situation where
-  targeted questions, searches, data collection, or experiments would materially improve
-  the answer.
+description: >-
+  Optimal information gathering under uncertainty: pick the research step,
+  experiment, comparison, or question that reduces uncertainty fastest. Use
+  when missing information is the bottleneck — "help me figure this out",
+  "what do I need to know to decide".
 ---
 
 # Optimal Information Gathering

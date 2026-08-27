@@ -1,14 +1,10 @@
 ---
 name: debundle_stabilize
-description: >
-  Author forward-compatible `source_match` selectors for a debundle spec:
-  convert fragile minified-name (`binding.name`) pins into stable structural
-  selectors by choosing anchors tied to each entity's purpose, not the cheapest
-  incidental unique token. The debundler proves validity/uniqueness;
-  forward-compatibility is your judgment. Use when stabilizing a debundle spec's
-  selectors, replacing name pins, or making a spec survive future bundle
-  rebuilds. Does NOT rename symbols (that is debundle_mint_names) or redraw
-  module boundaries (that is debundle_architect).
+description: >-
+  Author forward-compatible `source_match` selectors for a debundle spec,
+  replacing fragile minified-name pins with structural anchors tied to each
+  entity's purpose. Not for renaming symbols (debundle_mint_names) or moving
+  module boundaries (debundle_architect).
 ---
 
 # Debundle Stabilize

@@ -1,13 +1,10 @@
 ---
 name: workspace-gc
-description: >
-  Inspect and safely clean stale local development state: old or unused Git
-  worktrees, merged local branches, and orphaned Bazel output bases. Use when
-  the user asks to clean up or remove old, merged, dead, or unused worktrees or
-  branches; prune stale workspaces; clean Bazel output bases; reclaim Bazel
-  development disk; or inspect what local workspace state can be removed. Drive
-  the `workspace-gc` tool for the clear-cut candidates and apply repository and
-  PR judgment to REVIEW items.
+description: >-
+  Inspect and safely clean stale local dev state: unused Git worktrees, merged
+  branches, orphaned Bazel output bases. Use for pruning worktrees/branches or
+  reclaiming Bazel disk — drive the `workspace-gc` tool and apply PR judgment
+  to REVIEW items.
 ---
 
 # Clean Workspaces

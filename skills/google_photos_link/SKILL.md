@@ -1,16 +1,10 @@
 ---
 name: google-photos-link
 description: >-
-  Access, download, and view images from a PUBLIC Google Photos share link —
-  either a short photos.app.goo.gl/XXXX link or a full
-  photos.google.com/share/ALBUM_ID?key=KEY link. Use this whenever the user
-  pastes a Google Photos link and asks you to view, open, download, describe, or
-  analyze the photos, OR when a Google Photos link appears and you need the
-  actual image content (web_fetch alone only returns album metadata, not the
-  pixels). Resolves the link, scrapes each photo's direct googleusercontent.com
-  URL, downloads at a chosen resolution, and leaves JPEGs on disk ready to open
-  with the view tool. Only works for link-shared (public) albums, not albums
-  shared privately to specific Google accounts.
+  Download and view photos from a public Google Photos share link
+  (photos.app.goo.gl or photos.google.com/share). Use whenever a Google
+  Photos link should be viewed, described, or analyzed — web_fetch alone
+  returns album metadata, never the pixels.
 ---
 
 # Google Photos Link Access

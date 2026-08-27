@@ -1,13 +1,10 @@
 ---
 name: web_selfcheck
-description: >
-  Diagnose the health of a Claude Code session (CLI or web) by running the
-  observable acceptance criteria in the hook daemon SPEC against the live
-  session. Also runs out-of-SPEC diagnostics (web_setup.sh freshness,
-  claude-hooks pin staleness, bbr runner recycling, git hook origin-URL
-  issues). Use when the user asks "did setup go ok", "why isn't bbr
-  working", "check credentials", "selfcheck", "why do my commits fail", or
-  any question about session health.
+description: >-
+  Diagnose a Claude Code session's health against the hook daemon SPEC's
+  acceptance criteria, plus setup/pin/bbr-runner/git-hook diagnostics. Use
+  for "did setup go ok", "why isn't bbr working", "why do my commits fail",
+  "selfcheck".
 ---
 
 # Session Selfcheck

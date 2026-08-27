@@ -1,16 +1,10 @@
 ---
 name: ikea-3d-models
 description: >-
-  Find an IKEA product by name and produce an STL mesh of it, ready to import
-  into FreeCAD. Use whenever the user wants an IKEA item (furniture, storage,
-  chairs, tables, BESTÅ/PAX/etc.) as a 3D/CAD model, a .glb downloaded from
-  IKEA, or an IKEA model in FreeCAD. Covers the whole pipeline: search IKEA's
-  public structured API for the item number, download the product's GLB (no
-  login or cookies needed), Draco-decompress it, and convert it to a
-  correctly-scaled (meters→mm) binary STL. Also handles a bare .glb the user
-  already has — the convert step works on any glb. Triggers on "IKEA model",
-  "get me the 3D model of <IKEA product>", "import this IKEA chair into
-  FreeCAD", or a raw IKEA/.glb file that needs to become an STL.
+  Find an IKEA product and produce a correctly-scaled STL mesh ready for
+  FreeCAD (search → GLB download → Draco-decompress → STL; also converts a
+  bare .glb). Use when the user wants an IKEA item as a 3D/CAD model or a
+  .glb turned into an STL.
 ---
 
 # IKEA 3D models → STL

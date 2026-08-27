@@ -1,14 +1,10 @@
 ---
 name: pave
-description: >
-  Iteratively pave a fiddly procedure into a verified runbook. Use when the user
-  wants to "pave" something, or wants to figure out and document a complex,
-  fiddly procedure (deploys, recoveries, env setup, vendor APIs, scraping,
-  bootstrap sequences) that has rough edges and needs hands-on experimentation
-  to get right — not just dry research. The loop: execute the current draft →
-  observe friction → amend the draft (and extract small tools where useful) →
-  repeat until a clean run requires zero improvisation. Triggers on phrases
-  like "pave this", "let's figure out and document", "make a runbook for X".
+description: >-
+  Iteratively pave a fiddly procedure (deploys, recoveries, env setup, vendor
+  APIs) into a verified runbook: execute the draft, observe friction, amend,
+  repeat until a clean run needs zero improvisation. Trigger on "pave this"
+  or "let's figure out and document X".
 ---
 
 # Pave a Runbook

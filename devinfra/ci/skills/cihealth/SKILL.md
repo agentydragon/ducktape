@@ -1,12 +1,10 @@
 ---
 name: cihealth
-description: >
-  Check the health of the CI/CD pipeline — devel branch status, per-commit
-  checks, release artifacts, artifact pin staleness, image publishing, scheduled
-  jobs, repinning cadence. Autonomously creates fix PRs for trivial issues
-  (formatting, etc.) or proposes a diagnosis plan for deeper problems. Use when
-  you suspect CI is broken, main is red, releases are lagging, repinning is
-  stuck, or images are falling behind.
+description: >-
+  Check CI/CD pipeline health: devel status, per-commit checks, release
+  artifacts, pin staleness, image publishing, scheduled jobs. Fixes trivial
+  issues as PRs, proposes diagnosis plans for deeper ones. Use when CI seems
+  broken, red, lagging, or stuck.
 ---
 
 # CI Health Check
