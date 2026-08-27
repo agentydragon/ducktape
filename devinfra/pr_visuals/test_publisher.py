@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,7 @@ from devinfra.pr_visuals.publisher import (
     error_comment_body,
     find_test_invocations,
     list_ci_failures,
+    main,
     no_visual_comment_body,
     refresh_stale_pull_request_comment,
     success_comment_body,
@@ -404,6 +406,54 @@ def test_refresh_stale_pull_request_comment(
 
     assert edits == (["replacement"] if expected_edit else [])
     assert created == []
+
+
+def test_a_cancelled_run_publishes_nothing_and_leaves_the_comment_alone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`bazel-ci` cancels a superseded run, so a cancelled conclusion describes a head
+    the branch has already moved past. The comment is a singleton: speaking here would
+    replace the previous run's real review with a warning about an abandoned build."""
+    checks: list[dict[str, object]] = []
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", lambda **kwargs: checks.append(kwargs))
+
+    def forbid(name: str) -> Callable[..., None]:
+        return lambda **_kwargs: pytest.fail(f"a cancelled run must not reach {name}")
+
+    for forbidden in ("upsert_pull_request_comment", "refresh_stale_pull_request_comment", "download_visual_tests"):
+        monkeypatch.setattr(f"devinfra.pr_visuals.publisher.{forbidden}", forbid(forbidden))
+    monkeypatch.setenv("GITHUB_TOKEN", "token")
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "publisher",
+            "--linkage-dir",
+            str(tmp_path / "linkage"),
+            "--work-dir",
+            str(tmp_path / "work"),
+            "--sha",
+            "0123456789abcdef0123456789abcdef01234567",
+            "--repository",
+            "agentydragon/ducktape",
+            "--endpoint",
+            "https://s3.example",
+            "--bucket",
+            "pr-visuals",
+            "--public-base-url",
+            "https://s3.example/pr-visuals",
+            "--ci-conclusion",
+            "cancelled",
+            "--pull-request",
+            "4858",
+        ],
+    )
+
+    main()
+
+    assert len(checks) == 1, "the announced in-progress check must still be terminated"
+    assert checks[0]["conclusion"] == "neutral"
+    assert checks[0]["commit_sha"] == "0123456789abcdef0123456789abcdef01234567"
+    assert "uperseded" in str(checks[0]["summary"])
 
 
 def test_upload_publishes_all_indexes_last(tmp_path: Path) -> None:

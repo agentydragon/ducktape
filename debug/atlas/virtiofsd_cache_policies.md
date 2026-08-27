@@ -1,4 +1,32 @@
-# virtiofsd Cache Policies
+# virtiofsd Cache Policies (atlas VMs)
+
+Applies to every virtiofs mount on atlas VMs — wyrm2 (wyrm's successor)
+still carries them. **Operational lesson** (from the wyrm VM 100 OOM saga,
+which recurred on wyrm2 when the fix wasn't carried over): `cache=auto` /
+`cache=metadata` grow FDs and shared memory unboundedly under
+directory-scanning workloads (git, indexers, language servers) — 450k FDs /
+tens of GB shmem until the host OOM-kills the KVM process. `cache=never` on
+all mounts fixed it both times.
+
+**Diagnose growth** (on atlas): `pgrep virtiofsd`, then per worker PID check
+`ls /proc/<pid>/fd | wc -l` and `ps -p <pid> -o rss=`. Healthy mounts sit at
+tens of FDs; >10k means the leak is back (check `qm config <vmid> | grep
+virtiofs` for the cache policy).
+
+## The host-memory accounting behind the OOMs
+
+The leak was the trigger, not the whole story: the host was structurally
+overcommitted, so any growth tipped it. At the worst point the demand was
+136 GB of VM allocations + 12 GB ZFS ARC + ~4 GB host overhead against 128 GB
+physical with no swap — and the OOM killer took the biggest process (the wyrm
+KVM) every time.
+
+**ZFS ARC is a standing competitor to VM memory.** It grows to `zfs_arc_max`
+and holds it, and on a VM host that RAM is better spent on the VMs than on
+disk cache. atlas now caps it at 8 GiB (`zfs_arc_max` in `ansible/atlas.yaml`)
+— when host memory runs tight, check the ARC's actual size and cap first
+(`arcstats` `size`/`c_max` vs `/sys/module/zfs/parameters/zfs_arc_max`). How
+much of the host wyrm2 can safely take is the live question in #4851.
 
 **Source**: virtiofsd v1.13.3 (`/code/gitlab.com/virtio-fs/virtiofsd`)
 
@@ -120,9 +148,30 @@ Use `cache=metadata` if:
 
 Use NFS instead of virtiofs if:
 
-- Need MAP_SHARED mmap support (devenv, Nix)
+- Need MAP_SHARED mmap support (see below) — NFS and the CephFS kernel
+  client support it fully; FUSE-based transports (virtiofs, ceph-fuse) do not
 - Want predictable memory usage
 - Can accept slightly higher latency (~50µs vs ~10µs)
+
+## mmap and the transport choice (tankshare)
+
+Investigated for running git/devenv workloads on the share: MAP_SHARED mmap —
+what devenv/Nix and libgit2-based tooling hit — fails on virtiofs with
+`ENODEV`, because FUSE rejects `VM_MAYSHARE` mappings unless the server opts
+in (`FUSE_DIRECT_IO_ALLOW_MMAP`); virtiofsd doesn't. The constraint is the
+transport class, not the filesystem:
+
+| Transport              | Type          | MAP_SHARED |
+| ---------------------- | ------------- | ---------- |
+| NFS                    | native kernel | ✅         |
+| CephFS (kernel client) | native kernel | ✅         |
+| CephFS (ceph-fuse)     | FUSE          | ❌         |
+| virtiofs               | FUSE          | ❌         |
+
+tankshare is still exported over virtiofs today. If it ever needs to serve
+MAP_SHARED consumers, NFS is the simplest working replacement (full POSIX mmap
+via `generic_file_mmap_prepare`), the CephFS kernel client also works, and
+ceph-fuse would trade one FUSE limitation for the same one.
 
 ## Proxmox Configuration
 

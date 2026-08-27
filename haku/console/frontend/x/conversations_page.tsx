@@ -21,7 +21,7 @@ import {
   launchKey,
   shouldShowLaunchSelector,
 } from "../conversation_launch";
-import { changedSessionId, useConsoleEvents } from "../console_events";
+import { changedConversationId, useConsoleEvents } from "../console_events";
 import { useFollowedConversation } from "./conversation_follow";
 import { conversationPath, CONVERSATIONS_PATH, navigateToConsolePath, sessionFramesPath } from "../routing";
 import { bootstrapNarration, type BootstrapNarration } from "./bootstrap_narration";
@@ -262,11 +262,12 @@ function ConversationListPage() {
     }
   });
 
-  // The initial read, a re-read when any session changes, and one more on every reconnect. A row
-  // carries `item_count` and `last_activity_at`, so it goes stale for the same reason a
-  // transcript does, and the event does not say which row moved.
+  // The initial read, a re-read when any conversation changes, and one more on every reconnect. A
+  // row carries `item_count` and `last_activity_at`, so it goes stale for the same reason a
+  // transcript does — and a change also reorders the list, so the newest page is refetched rather
+  // than one row patched.
   useConsoleEvents((event) => {
-    if (event.event_type === "sync" || changedSessionId(event) !== null) refresh();
+    if (event.event_type === "sync" || changedConversationId(event) !== null) refresh();
   });
 
   async function loadOlder() {

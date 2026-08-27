@@ -40,6 +40,12 @@ attention past that.
 
 - **Enter async early**: a single `asyncio.run(async_main(...))` at the top of `main()`;
   never scattered or nested deeper in the call stack.
+- **`main()` returns `None`**: an entry point raises on failure and lets the traceback
+  and Python's own exit code say so — no `return 0`/`return 1`, no `sys.exit(main())`,
+  no catching an exception to turn it into a number. Where a specific code genuinely is
+  the contract (a shell gate, a `git` driver, a linter's "found findings" convention),
+  `raise SystemExit(2)` at the point that decides it and name the caller that reads it;
+  the signature still says `None`, because the code is raised and not returned.
 - **No large code blobs in YAML/JSON**: any embedded script/config block longer than ~5
   lines lives in its native file (`.py`, `.sh`) and is mounted via `configMapGenerator`
   or a `ConfigMap` file reference, so it stays lintable and type-checkable.

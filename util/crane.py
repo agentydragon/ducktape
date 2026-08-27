@@ -20,13 +20,9 @@ import os
 import shutil
 import subprocess
 import tempfile
-from collections.abc import Callable
 from pathlib import Path
-from typing import TypeVar
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T")
 
 # crane's way of saying "that repository/tag has never been pushed to". Distinct
 # from a transport or auth failure, which must not be read as "absent": callers
@@ -110,29 +106,21 @@ class Crane:
         return self._run("digest", image_ref)
 
     def digest_or_none(self, image_ref: str) -> str | None:
-        """Remote digest of `image_ref`, or None when the tag/repo doesn't exist yet."""
-        return self._absent_as_none(lambda: self._run("digest", image_ref))
+        """Remote digest of `image_ref`, or None when the tag/repo doesn't exist yet.
 
-    def ls(self, repo: str) -> list[str]:
-        return self._run("ls", repo).splitlines()
-
-    def ls_or_none(self, repo: str) -> list[str] | None:
-        """Tags in `repo`, or None when the repository doesn't exist yet."""
-        return self._absent_as_none(lambda: self._run("ls", repo).splitlines())
-
-    @staticmethod
-    def _absent_as_none(read: Callable[[], T]) -> T | None:
-        """`read()`, with crane's "never pushed" answer as None rather than an error.
-
-        Every other crane failure (auth, transport, 5xx) propagates — see
-        ABSENT_MARKERS for why that distinction has to hold.
+        For content-dedup before a push: an unpublished tag or repo means "nothing
+        there, push it". Any other crane failure (auth, transport, 5xx) re-raises —
+        see ABSENT_MARKERS for why a real error must not be read as "absent".
         """
         try:
-            return read()
+            return self._run("digest", image_ref)
         except RuntimeError as e:
             if any(marker in str(e) for marker in ABSENT_MARKERS):
                 return None
             raise
+
+    def ls(self, repo: str) -> list[str]:
+        return self._run("ls", repo).splitlines()
 
     def push(self, image_dir: Path, ref: str) -> None:
         self._run("push", str(image_dir), ref)

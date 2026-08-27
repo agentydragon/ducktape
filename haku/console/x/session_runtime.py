@@ -51,7 +51,7 @@ from haku.console.x.runtime import (
 )
 from haku.console.x.sandbox_claims import SandboxProvisioningView
 from haku.console.x.session_events import TurnAbortedBody, TurnAnsweredBody, TurnEndedBody, TurnFailedBody
-from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
+from haku.console.x.session_notifications import SessionEvent, SessionEventKind, SessionNotifications
 from haku.console.x.session_store import (
     LEASE_RENEW_INTERVAL,
     BridgeAuthentication,
@@ -663,15 +663,15 @@ class SessionService:
                                 if watcher is None:
                                     watcher = runtime.wake_watcher()
                                 if watcher is None:
-                                    # Wait for a LISTEN/NOTIFY instead of polling.
-                                    await self._notifications.wait(
-                                        SessionEventKind.PROMPT, session_id, timeout_seconds=30.0
-                                    )
+                                    # Wait for a LISTEN/NOTIFY instead of polling. Any kind about
+                                    # this session wakes it; the loop re-checks the queue, so a
+                                    # wake it did not need costs one query.
+                                    await self._notifications.wait(session_id, timeout_seconds=30.0)
                                     continue
                                 if pending_frame is None:
                                     pending_frame = asyncio.ensure_future(anext(frames))
                                 prompted = asyncio.ensure_future(
-                                    self._notifications.wait(SessionEventKind.PROMPT, session_id, timeout_seconds=30.0)
+                                    self._notifications.wait(session_id, timeout_seconds=30.0)
                                 )
                                 await asyncio.wait([pending_frame, prompted], return_when=asyncio.FIRST_COMPLETED)
                                 prompted.cancel()
@@ -807,13 +807,19 @@ class SessionService:
         """Set *abort_event* every time this session is told to abort, until cancelled.
 
         The operator's abort lands on whichever replica the Service picks, rarely the one holding
-        this session's websocket, so it arrives over NOTIFY rather than in process.
+        this session's websocket, so it arrives over NOTIFY rather than in process. An abort is an
+        edge with no row to re-check, so this dispatches on the delivered kind rather than taking
+        a plain wake — which is also what stops a listener reconnect (which wakes every waiter)
+        from aborting an innocent turn. An abort emitted during a reconnect gap is lost, and the
+        operator aborting again is the recovery.
         """
-        async with self._notifications.subscribe(SessionEventKind.ABORT, session_id) as notified:
-            while True:
-                await notified.wait()
-                notified.clear()
+
+        def on_event(event: SessionEvent) -> None:
+            if event.kind is SessionEventKind.ABORT:
                 abort_event.set()
+
+        with self._notifications.watch_session(session_id, on_event):
+            await asyncio.Event().wait()
 
     async def _run_turn(
         self,

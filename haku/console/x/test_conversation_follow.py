@@ -44,12 +44,10 @@ PATIENCE = WINDOW * 8
 
 
 @pytest.fixture
-async def following(
+def following(
     chat_store: SessionStore, chat_service: SessionService, notifications: SessionNotifications
-) -> AsyncIterator[ConversationFollow]:
-    follow = ConversationFollow(chat_store, chat_service, notifications, window=WINDOW, sandbox_poll=SANDBOX_POLL)
-    async with follow.run():
-        yield follow
+) -> ConversationFollow:
+    return ConversationFollow(chat_store, chat_service, notifications, window=WINDOW, sandbox_poll=SANDBOX_POLL)
 
 
 async def _next(messages: AsyncIterator[ConversationFollowMessage]) -> ConversationFollowMessage:

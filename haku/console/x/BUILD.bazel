@@ -109,7 +109,7 @@ py_library(
         "//haku/console:chat_models",
         "//haku/console:database_schema",
         "//haku/runtime/x/bridge:protocol",
-        "//util:sqlalchemy_types",
+        "//util:enum_vocab",
         "@pypi//sqlalchemy",
     ],
 )
@@ -133,7 +133,7 @@ py_library(
         ":conversation_events",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
-        "//util:sqlalchemy_types",
+        "//util:enum_vocab",
         "@pypi//pydantic",
     ],
 )
@@ -285,11 +285,9 @@ py_library(
 )
 
 py_library(
-    name = "session_live_updates",
-    srcs = ["session_live_updates.py"],
+    name = "conversation_live_updates",
+    srcs = ["conversation_live_updates.py"],
     deps = [
-        ":runtime",
-        ":runtime_catalog",
         ":session_notifications",
         "//haku/console:console_events",
         "//haku/console:database_schema",
@@ -345,7 +343,7 @@ py_library(
     name = "session_notifications",
     srcs = ["session_notifications.py"],
     deps = [
-        "//util:sqlalchemy_types",
+        "//util:enum_vocab",
         "@pypi//asyncpg",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
@@ -406,12 +404,12 @@ py_test(
 )
 
 py_test(
-    name = "test_session_live_updates",
+    name = "test_conversation_live_updates",
     size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_session_live_updates.py"],
+    srcs = ["test_conversation_live_updates.py"],
     deps = [
         ":conftest",
-        ":session_live_updates",
+        ":conversation_live_updates",
         ":session_notifications",
         ":session_store",
         "//:conftest",
@@ -435,7 +433,9 @@ py_test(
         ":session_notifications",
         "//:conftest",
         "//haku/console:conftest",
+        "//util:enum_vocab",
         "@pypi//asyncpg",
+        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -597,7 +597,7 @@ py_test(
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
-        "//util:sqlalchemy_types",
+        "//util:enum_vocab",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -615,7 +615,7 @@ py_test(
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
-        "//util:sqlalchemy_types",
+        "//util:enum_vocab",
         "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pytest_bazel",

@@ -22,7 +22,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: manifold-mcp-server
-          image: ghcr.io/agentydragon/manifold-mcp-server:devel-20260827062820-c77d12b # {"$imagepolicy": "flux-system:manifold-mcp-server"}
+          image: ghcr.io/agentydragon/manifold-mcp-server:devel-20260827074237-56f146a # {"$imagepolicy": "flux-system:manifold-mcp-server"}
           imagePullPolicy: Always
           ports:
             - name: bridge

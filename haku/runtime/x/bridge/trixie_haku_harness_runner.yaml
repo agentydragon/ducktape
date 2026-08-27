@@ -16,4 +16,6 @@ archs:
   - "amd64"
 
 packages:
+  # `bubblewrap` gives the Codex sandbox a system bwrap instead of its bundled fallback.
+  - "bubblewrap"
   - "git"

@@ -7,7 +7,8 @@ from enum import StrEnum
 import pytest
 import pytest_bazel
 
-from util.sqlalchemy_types import TextBackedStrEnumUnionColumn, TolerantTextBackedStrEnumUnionColumn, UnknownValue
+from util.enum_vocab import UnknownValue
+from util.sqlalchemy_types import TextBackedStrEnumUnionColumn, TolerantTextBackedStrEnumUnionColumn
 
 
 class Fruit(StrEnum):

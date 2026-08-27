@@ -26,7 +26,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: runner
-          image: ghcr.io/agentydragon/haku-harness-runner:devel-20260827062742-c77d12b # {"$imagepolicy": "flux-system:haku-harness-runner"}
+          image: ghcr.io/agentydragon/haku-harness-runner:devel-20260827072551-1878670 # {"$imagepolicy": "flux-system:haku-harness-runner"}
           imagePullPolicy: Always
           args: ["--harness", "codex-app-server"]
           workingDir: /workspace
