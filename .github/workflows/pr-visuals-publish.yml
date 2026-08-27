@@ -40,7 +40,11 @@ jobs:
       - name: Announce visual review
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.workflow_run.pull_requests[0].head.sha }}
+          # The run's own head, never `pull_requests[0].head.sha`: that field is
+          # resolved when the event is delivered, so it reports whatever the PR's
+          # head is by then. Push twice in quick succession and the older run's
+          # events arrive describing the newer commit. See the `publish` job.
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           bb run //devinfra/pr_visuals:check_run_bin -- \
             --repository "$GITHUB_REPOSITORY" \
@@ -97,8 +101,16 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.PR_VISUALS_SECRET_KEY }}
           AWS_REGION: us-east-1
           GITHUB_TOKEN: ${{ github.token }}
-          # PR run → comment on the PR. Devel push → publish the bundle, no comment.
-          HEAD_SHA: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].head.sha || github.event.workflow_run.head_sha }}
+          # The commit this run actually tested, for both event kinds.
+          #
+          # This was `pull_requests[0].head.sha` on the PR path, which is not that:
+          # GitHub resolves it at delivery time, so it names the PR's head *now*. A
+          # run cancelled by a newer push therefore reported its `cancelled` against
+          # the commit that superseded it, and — worse than the wrong title — uploaded
+          # its bundle under that commit's S3 key, making the newer commit's baseline
+          # the older commit's images. `workflow_run.head_sha` is the PR head the run
+          # was triggered on (not a merge sha) and never moves.
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           # PR run → the base devel commit whose published bundle is the diff baseline.
           BASE_SHA: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].base.sha || '' }}
           PR_NUMBER: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number || '' }}
