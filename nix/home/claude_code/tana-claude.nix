@@ -12,7 +12,7 @@ in
 import ./gateway.nix { inherit pkgs lib; } "tana-claude" {
   baseUrl = "https://litellm.allegedly.works";
   authTokenEnvVar = "TANA_LITELLM_KEY";
-  model = "tana-claude-sonnet-4-6";
-  haikuModel = "tana-claude-haiku-4-5";
+  model = "tana/ant-messages/claude-sonnet-4-6";
+  haikuModel = "tana/ant-messages/claude-haiku-4-5";
   gatewayDiscovery = true;
 }
