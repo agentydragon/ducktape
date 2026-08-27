@@ -13,6 +13,21 @@ all mounts fixed it both times.
 tens of FDs; >10k means the leak is back (check `qm config <vmid> | grep
 virtiofs` for the cache policy).
 
+## The host-memory accounting behind the OOMs
+
+The leak was the trigger, not the whole story: the host was structurally
+overcommitted, so any growth tipped it. At the worst point the demand was
+136 GB of VM allocations + 12 GB ZFS ARC + ~4 GB host overhead against 128 GB
+physical with no swap — and the OOM killer took the biggest process (the wyrm
+KVM) every time.
+
+**ZFS ARC is a standing competitor to VM memory.** It grows to `zfs_arc_max`
+and holds it, and on a VM host that RAM is better spent on the VMs than on
+disk cache. atlas now caps it at 8 GiB (`zfs_arc_max` in `ansible/atlas.yaml`)
+— when host memory runs tight, check the ARC's actual size and cap first
+(`arcstats` `size`/`c_max` vs `/sys/module/zfs/parameters/zfs_arc_max`). How
+much of the host wyrm2 can safely take is the live question in #4851.
+
 **Source**: virtiofsd v1.13.3 (`/code/gitlab.com/virtio-fs/virtiofsd`)
 
 ## Available Policies
