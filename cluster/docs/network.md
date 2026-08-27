@@ -92,11 +92,12 @@ Nebula endpoints and you get a tunnel-in-tunnel amplification loop. Incident:
    that node's mesh link, so do etcd voters sequentially (workers first, the
    etcd+DB-primary node last) and confirm etcd quorum + node Ready after each:
    `tofu apply -target='talos_machine_configuration_apply.kimsufi["<key>"]'`.
-2. **Cilium** (`MTU`): `null_resource.cilium_bootstrap` has no triggers, so `tofu`
-   won't re-run it. Run the committed `helm upgrade` directly — **without
-   `--wait`/`--atomic`** if any node is down (a Pending DaemonSet pod on a down node,
-   e.g. `wyrm2`, never reports "updated", so `--wait` times out and `--atomic` rolls
-   back). The DaemonSet rolls the healthy nodes; monitor manually.
+2. **Cilium** (`MTU`): `null_resource.cilium_bootstrap` is recreated when the
+   chart version or `cilium-values.yaml` changes. Apply it directly with
+   `tofu apply -target=null_resource.cilium_bootstrap`. Its Helm upgrade deliberately
+   omits `--wait`/`--atomic`: a Pending DaemonSet pod on a down node, e.g. `wyrm2`,
+   never reports "updated", so `--wait` times out and `--atomic` rolls back. The
+   DaemonSet rolls the healthy nodes; monitor manually.
 3. **Verify** with a DF-ping ladder from a `hostNetwork` pod (nebula path) and a
    normal pod-to-pod ping (overlay path). Recreate test pods after a Cilium MTU
    change — existing pods keep their old veth MTU until recreated.
