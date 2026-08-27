@@ -51,7 +51,9 @@ instead, so they load on demand.
   provenance goes in inert `#` comments next to the data, not schema fields (`note:`);
   delete write-only fields that survived refactors.
 - **No redundant derived fields**: don't return a collection plus a trivially computable
-  function of it (a list and its `len()`).
+  function of it (a list and its `len()`) — storing or returning `x` alongside
+  `trivial_function(x)` invites drift and leaves open which layer of the stack adds the
+  derivation.
 - **No unnecessary aliasing**: no import renames, fixture re-assignment, or convenience
   re-exports (`AgentEvent = EventType`). Aliases only at public API boundaries
   (`__init__.py` re-exports) or to avoid collisions, with a comment.
@@ -171,9 +173,10 @@ old_field: str | None = None
 administrative DDL, or when the ORM equivalent would be markedly less readable.
 
 **Store facts, derive state.** A status column computable from stored facts
-(`revoked_at`, `valid_until`) is derived in queries or properties, never stored — a
-materialized status is a cache that can lie and demands a sweeper. Materialize only for
-a measured query-cost reason, stated where it happens.
+(`revoked_at`, `valid_until`) is derived in queries or properties, never stored — the
+persistence form of no-redundant-derived-fields (§ General): a materialized status is a
+cache that can lie and demands a sweeper. Materialize only for a measured query-cost
+reason, stated where it happens.
 
 ## Build System (Bazel)
 
