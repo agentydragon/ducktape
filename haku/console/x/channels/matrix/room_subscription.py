@@ -278,6 +278,12 @@ def project_notice(event: StreamedEvent, *, conversation_id: UUID, room_id: str)
             # it is said here — on the one outcome of three that the operator caused.
             body = ABORTED_BY_OPERATOR
             kind = RoomEventKind.LIFECYCLE
+        case TurnFailedBody(failure=failure):
+            # The one ending a room cannot read from what it was sent. An answered turn arrives as
+            # the answer and an aborted one as the line above; a failure produces no message at all,
+            # so without this the conversation just stops mid-exchange and never says why.
+            body = f"the turn failed — {failure}"
+            kind = RoomEventKind.LIFECYCLE
         case (
             MessageStartedBody()
             | ReasoningStartedBody()
@@ -289,7 +295,6 @@ def project_notice(event: StreamedEvent, *, conversation_id: UUID, room_id: str)
             | PromptCompletedBody()
             | TurnStartedBody()
             | TurnAnsweredBody()
-            | TurnFailedBody()
             | SessionProvisioningBody()
             | SessionEndedBody()
             | UnknownEventBody()
