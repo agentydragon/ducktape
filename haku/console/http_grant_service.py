@@ -222,3 +222,20 @@ class HttpGrantService:
             return HttpRequestDenied(reason="no active HTTP grant covers the request")
         grant = min(matching, key=lambda item: item.expires_at)
         return HttpRequestAllowed(grant_id=grant.grant_id, expires_at=grant.expires_at)
+
+    async def match_tunnel(self, *, request_principal: RequestPrincipal, origin: HttpOrigin) -> HttpGrantDecision:
+        """Match a CONNECT tunnel, which has no inner request yet: any active grant at the exact
+        origin admits it, and method/path coverage binds each later decrypted request through
+        :meth:`match_request` instead (#4884's CONNECT scoping ruling)."""
+
+        matching = [
+            grant
+            for grant in await self._repository.active_for_request_principal(
+                request_principal=request_principal, now=self._now()
+            )
+            if grant.spec.origin == origin
+        ]
+        if not matching:
+            return HttpRequestDenied(reason="no active HTTP grant covers the origin")
+        grant = min(matching, key=lambda item: item.expires_at)
+        return HttpRequestAllowed(grant_id=grant.grant_id, expires_at=grant.expires_at)

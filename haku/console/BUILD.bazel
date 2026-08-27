@@ -282,6 +282,29 @@ py_test(
 )
 
 py_library(
+    name = "http_decide_routes",
+    srcs = ["http_decide_routes.py"],
+    deps = [
+        ":http_decide_service",
+        "//haku/egress:decision",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
+    name = "http_decide_service",
+    srcs = ["http_decide_service.py"],
+    deps = [
+        ":grant_principal",
+        ":http_grant_models",
+        ":http_grant_service",
+        ":mcp_config",
+        "//haku/egress:decision",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "http_grant_models",
     srcs = ["http_grant_models.py"],
     deps = [
@@ -1245,6 +1268,8 @@ py_library(
         ":console_events",
         ":database_migrate",
         ":deployment",
+        ":http_decide_routes",
+        ":http_decide_service",
         ":http_grant_repository",
         ":http_grant_routes",
         ":http_grant_service",
@@ -1995,6 +2020,36 @@ py_test(
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_http_decide_routes",
+    srcs = ["test_http_decide_routes.py"],
+    deps = [
+        ":http_decide_routes",
+        ":http_decide_service",
+        "//haku/egress:decision",
+        "@pypi//fastapi",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_http_decide_service",
+    srcs = ["test_http_decide_service.py"],
+    deps = [
+        ":grant_principal",
+        ":http_decide_service",
+        ":http_grant_models",
+        ":http_grant_service",
+        ":mcp_config",
+        "//:conftest",
+        "//haku/egress:decision",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],
 )

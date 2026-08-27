@@ -117,8 +117,8 @@ class HttpGrantSpec(BaseModel):
         min_length=1,
         max_length=512,
         description=(
-            "Optional regex the request URL's path (query excluded) must fully match, e.g. "
-            "'/repos/agentydragon/.*'. Absent means every path at the origin."
+            "Optional regex the request path plus query — exactly as the proxy sends it — must "
+            "fully match, e.g. '/repos/agentydragon/.*'. Absent means every path at the origin."
         ),
     )
 

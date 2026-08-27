@@ -210,6 +210,52 @@ async def test_match_requires_an_absolute_path() -> None:
         )
 
 
+async def test_tunnel_matches_the_exact_origin_ignoring_method_and_path_coverage() -> None:
+    service = HttpGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    await service.create_grants(
+        owner_agent_id=_AGENT,
+        grant_principal=_GRANT_PRINCIPAL,
+        source_tool_call_id="tool-call-1",
+        grants=(HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.POST}), path_regex="/api/.*"),),
+        expires_at=_NOW + timedelta(minutes=5),
+    )
+
+    admitted = await service.match_tunnel(request_principal=_request_principal(), origin=_ORIGIN)
+    assert admitted.allowed
+    for principal, origin in [
+        (_request_principal(agent_id=_OTHER_AGENT), _ORIGIN),
+        (_request_principal(), _OTHER_ORIGIN),
+        (_request_principal(), _ORIGIN.model_copy(update={"scheme": HttpScheme.HTTP, "port": 80})),
+    ]:
+        decision = await service.match_tunnel(request_principal=principal, origin=origin)
+        assert not decision.allowed
+        assert decision.reason == "no active HTTP grant covers the origin"
+
+
+async def test_tunnel_admission_carries_the_earliest_expiry() -> None:
+    service = HttpGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    (earlier,) = await service.create_grants(
+        owner_agent_id=_AGENT,
+        grant_principal=_GRANT_PRINCIPAL,
+        source_tool_call_id="tool-call-1",
+        grants=(_SPEC,),
+        expires_at=_NOW + timedelta(minutes=5),
+    )
+    await service.create_grants(
+        owner_agent_id=_AGENT,
+        grant_principal=_GRANT_PRINCIPAL,
+        source_tool_call_id="tool-call-2",
+        grants=(_SPEC,),
+        expires_at=_NOW + timedelta(minutes=50),
+    )
+
+    decision = await service.match_tunnel(request_principal=_request_principal(), origin=_ORIGIN)
+
+    assert decision.allowed
+    assert decision.grant_id == earlier.grant_id
+    assert decision.expires_at == earlier.expires_at
+
+
 async def test_principal_lifecycle_inherits_agent_grants_without_crossing_sessions() -> None:
     repo = FakeRepository()
     service = HttpGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
