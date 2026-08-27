@@ -63,6 +63,13 @@ Kept to rejections a future author might plausibly re-try; the full survey and
 candidate table are in git history (`credential_proxy_options.md`, which this
 file distills).
 
+One direction is rejected only as today's fence, not as an end state: an HTTP
+egress control plane where **haku-console makes the per-request decision** and
+a proxy merely enforces it (a mitmproxy-style addon was one candidate engine)
+is an in-progress track —
+[#4670](https://github.com/agentydragon/ducktape/issues/4670), design under
+<../../cluster/docs/plans/agent_egress_proxy_options.md>.
+
 - **Our mitmproxy addon** — worked and was smaller; lost narrowly because
   iron-proxy expresses the same host+method+path policy as YAML from a
   maintained project and handles git's Basic shape, which the Bearer-only addon
