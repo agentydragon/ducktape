@@ -44,8 +44,8 @@ when/how session-start-adjacent things fire. Specifically:
   **Unverified against Build ID `0b86a2a0` — re-check before relying on the
   details.** The gating above was established on an earlier binary. In the
   current one the `anthropic` envtype is garbled package `CWddODOS8sH` (see
-  <web*env/re/environment_manager/degarble_map.md>) and its `Initialize` grew
-  from 103 to 157 symbols, but \_what* changed has not been established — the
+  <web_env/re/environment_manager/degarble_map.md>) and its `Initialize` grew
+  from 103 to 157 symbols, but what changed has not been established — the
   mode gating may well still hold exactly as described.
 
   What is established: `Initialize` now wraps seven phases in identical timing
@@ -55,9 +55,8 @@ when/how session-start-adjacent things fire. Specifically:
   **not** evidence of a seventh lifecycle step — the instrumentation need not
   partition the steps one-to-one.
 
-  Note the previous version of this text cited VMA `0x1fbb074`. Addresses here
-  are per-build: garble re-randomizes every symbol, so a VMA never survives a
-  version bump. Re-derive addresses with `gosymtab` (recipe in
+  Addresses here are per-build: garble re-randomizes every symbol, so a VMA
+  never survives a version bump. Re-derive addresses with `gosymtab` (recipe in
   <web_env/re/environment_manager/README.md>) rather than carrying them forward.
 
 - **`process_api` (PID 1) lifecycle**, WebSocket ports, orphan monitor, OOM killers:
