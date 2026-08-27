@@ -153,16 +153,15 @@ async def operator_id(migrated_identity_store: PostgresOperatorIdentityStore) ->
 
 
 async def make_idle(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> None:
-    """Put a test session in the writer state the next rollout will create.
+    """Return a `_ProvisioningTestStore` session to the unallocated state production creates in.
 
-    Production deliberately has no idle writer in this compatibility release. Tests use a direct
-    row transition so the readers and allocation paths can be proven before that writer lands.
+    Clearing the credential and its lease is the whole transition: idle is what those facts derive.
     """
     async with sessions.begin() as db:
         await db.execute(
             update(Session)
             .where(Session.session_id == session_id)
-            .values(status="idle", bridge_token_fingerprint=None, lease_expires_at=None)
+            .values(bridge_token_fingerprint=None, lease_expires_at=None)
         )
 
 

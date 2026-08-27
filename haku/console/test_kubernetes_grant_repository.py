@@ -308,7 +308,9 @@ def test_repository_matches_agent_and_exact_session_principals(make_client: Any)
 
             async with sessions.begin() as session:
                 await session.execute(
-                    text("UPDATE sessions SET status = 'failed' WHERE session_id = :session_id"),
+                    text(
+                        "UPDATE sessions SET ended_at = now(), error = 'runner failed' WHERE session_id = :session_id"
+                    ),
                     {"session_id": session_id},
                 )
             ended_source = await insert_approved_tool_call(

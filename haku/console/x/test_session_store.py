@@ -301,7 +301,7 @@ async def test_session_end_terminalizes_exact_session_kubernetes_grants(
         session = await db.get(Session, view.session_id)
         assert session is not None
         session.agent_binding_id = binding_id
-        session.status = SessionStatus.READY
+        session.bridge_connected_at = datetime.now(UTC)
         session.lease_expires_at = datetime(2999, 1, 1, tzinfo=UTC)
         await db.flush([session])
         source_tool_call_id = f"tc_{uuid4().hex}"

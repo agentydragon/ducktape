@@ -12,6 +12,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    ColumnElement,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -20,10 +21,13 @@ from sqlalchemy import (
     LargeBinary,
     Text,
     UniqueConstraint,
+    case,
     text,
     text as sql_text,
+    type_coerce,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from haku.console.agents.models import (
@@ -1077,7 +1081,16 @@ class ChannelCursor(Base):
 
 
 class Session(Base):
-    """One Operator-owned agent conversation and its Agent Sandbox rendezvous."""
+    """One Operator-owned agent conversation and its Agent Sandbox rendezvous.
+
+    **`status` is derived, never stored** (root STYLE.md § SQLAlchemy): the row records the facts —
+    allocation, attachment, the close request, the end — and the vocabulary every consumer speaks
+    is computed from them in one place, the `status` hybrid below. Extending the vocabulary is
+    therefore a fact change, and the decision-value roll rule (<../README.md> § Vocabularies across
+    a roll) lands on the derivation: the release that derives a new member from a new fact column
+    ships that derivation one release before anything writes the fact, because an older replica's
+    derivation reads the row as whichever old member its facts spell.
+    """
 
     __tablename__ = "sessions"
 
@@ -1095,7 +1108,6 @@ class Session(Base):
     agent_binding_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("credential_bindings.binding_id", ondelete="RESTRICT"), nullable=True
     )
-    status: Mapped[SessionStatus] = mapped_column(TextBackedStrEnumColumn(SessionStatus), nullable=False)
     # The verifier for this session's sandbox credential — SHA-256 of a bearer minted once at
     # allocation and never stored. The runner presents it on every rendezvous and the sandbox Agent
     # presents it to Console MCP; both resolve to this exact session. Admissibility is the status,
@@ -1120,6 +1132,15 @@ class Session(Base):
     # **`0` is "nothing here has ever projected"**, which no frame's `frame_seq` can be, so the
     # bound needs no absent state; it arrives by the server default.
     projected_frame_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("0"))
+    # The operator asked this session to end. Stamped once and never cleared — ending is one-way —
+    # which is what derives `closing` until `ended_at` lands.
+    close_requested_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The session is over as of this instant, whatever ended it; NULL is a session that can still
+    # run. With `error` it spells the terminal member: ended with an error is `failed`, without one
+    # `closed`.
+    ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Why it ended badly. NULL until `ended_at`, and NULL forever on a clean close
+    # (`ck_sessions_error_ended`).
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Renewed by whichever replica currently holds this session's runner websocket: a replica that
     # dies mid-turn otherwise leaves the row claiming a turn is in flight forever. Absent only while
@@ -1138,28 +1159,69 @@ class Session(Base):
     __table_args__ = (
         UniqueConstraint("bridge_token_fingerprint", name="uq_sessions_bridge_token_fingerprint"),
         UniqueConstraint("session_id", "agent_binding_id", name="uq_sessions_session_agent_binding"),
+        # The fact shapes the derivation reads, held by the database so no writer can record a
+        # combination the vocabulary cannot say. An error is how an ended session ended;
+        CheckConstraint("error IS NULL OR ended_at IS NOT NULL", name="ck_sessions_error_ended"),
+        # a runner can only ever have attached to a session that was allocated a credential;
         CheckConstraint(
-            "status IN ('idle','provisioning','ready','responding','closing','closed','failed')",
-            name="ck_sessions_status",
+            "bridge_connected_at IS NULL OR bridge_token_fingerprint IS NOT NULL",
+            name="ck_sessions_connected_allocated",
         ),
+        # and while a session can still run, allocation and its lease arrive together — idle holds
+        # neither, an allocated session both, so "live but unreclaimable" is unwritable.
         CheckConstraint(
-            "(status = 'idle' AND bridge_token_fingerprint IS NULL) OR "
-            "(status <> 'idle' AND (bridge_token_fingerprint IS NOT NULL OR status IN ('closing','closed','failed')))",
-            name="ck_sessions_idle_bridge_token",
+            "ended_at IS NOT NULL OR close_requested_at IS NOT NULL "
+            "OR ((bridge_token_fingerprint IS NULL) = (lease_expires_at IS NULL))",
+            name="ck_sessions_allocation_lease",
         ),
-        CheckConstraint(
-            "(status = 'idle' AND lease_expires_at IS NULL) OR "
-            "(status <> 'idle' AND (lease_expires_at IS NOT NULL OR status IN ('closing','closed','failed')))",
-            name="ck_sessions_idle_lease",
-        ),
+        # Claim cleanup is only ever recorded against a session that has ended.
+        CheckConstraint("claim_cleaned_at IS NULL OR ended_at IS NOT NULL", name="ck_sessions_claim_cleanup_ended"),
         Index("idx_sessions_operator", "operator_id", "created_at"),
         Index("idx_sessions_conversation", "conversation_id", "created_at"),
         Index(
             "idx_sessions_expired_lease",
             "lease_expires_at",
-            postgresql_where=text("status IN ('provisioning','ready','responding')"),
+            postgresql_where=text(
+                "ended_at IS NULL AND close_requested_at IS NULL AND bridge_token_fingerprint IS NOT NULL"
+            ),
         ),
     )
+
+    @hybrid_property
+    def status(self) -> SessionStatus:
+        """The lifecycle vocabulary, derived from the row's facts at the moment of asking.
+
+        One derivation for Python reads and, via the expression below, SQL filters — so no writer
+        maintains a summary that could disagree with the facts it summarizes. `RESPONDING` is
+        deliberately not derived here: whether a turn is open is `conversation_turn`'s fact, and
+        `session_views.live_status` layers it on top of this member.
+        """
+        if self.ended_at is not None:
+            return SessionStatus.FAILED if self.error is not None else SessionStatus.CLOSED
+        if self.close_requested_at is not None:
+            return SessionStatus.CLOSING
+        if self.bridge_token_fingerprint is None:
+            return SessionStatus.IDLE
+        if self.bridge_connected_at is None:
+            return SessionStatus.PROVISIONING
+        return SessionStatus.READY
+
+    @status.inplace.expression
+    @classmethod
+    def _status_expression(cls) -> ColumnElement[SessionStatus]:
+        # `type_coerce` rather than a bare CASE so a selected status decodes to the enum exactly as
+        # the stored column did.
+        return type_coerce(
+            case(
+                (cls.ended_at.is_not(None) & cls.error.is_not(None), SessionStatus.FAILED),
+                (cls.ended_at.is_not(None), SessionStatus.CLOSED),
+                (cls.close_requested_at.is_not(None), SessionStatus.CLOSING),
+                (cls.bridge_token_fingerprint.is_(None), SessionStatus.IDLE),
+                (cls.bridge_connected_at.is_(None), SessionStatus.PROVISIONING),
+                else_=SessionStatus.READY,
+            ),
+            TextBackedStrEnumColumn(SessionStatus),
+        )
 
 
 class ConversationEvent(Base):

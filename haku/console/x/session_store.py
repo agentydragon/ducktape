@@ -452,16 +452,20 @@ class SessionStore:
         return hashlib.sha256(token.encode()).digest()
 
     @staticmethod
-    async def _end_session(
-        db: AsyncSession, chat: Session, *, status: SessionStatus, error: str | None, now: datetime
-    ) -> None:
-        """Persist one final session state and its durable account in the same transaction."""
-        if status not in {SessionStatus.CLOSED, SessionStatus.FAILED}:
-            raise ValueError(f"a session may only end closed or failed, not {status}")
+    async def _end_session(db: AsyncSession, chat: Session, *, error: str | None, now: datetime) -> None:
+        """Persist the facts that end a session and its durable account in the same transaction.
+
+        *error* is the whole decision: an end with one is `failed`, without one `closed` — the pair
+        of a terminal member and a disagreeing error is not expressible. The event body carries the
+        member the facts derive, so the stream and the row cannot say different things.
+        """
+        chat.ended_at = now
+        chat.error = error
+        chat.updated_at = now
         writer = await conversation_log.writer_for(
             db, chat.conversation_id, session_id=chat.session_id, turn_id=None, now=now
         )
-        writer.authored(session_events.SessionEndedBody(status=status, error=error))
+        writer.authored(session_events.SessionEndedBody(status=chat.status, error=error))
         session_principal = (
             KubernetesGrantRow.principal_kind == GrantPrincipalKind.SESSION,
             KubernetesGrantRow.principal_session_id == chat.session_id,
@@ -483,9 +487,6 @@ class SessionStore:
             .where(*session_principal, KubernetesGrantRow.status == KubernetesGrantStatus.ACTIVE)
             .values(status=KubernetesGrantStatus.REVOKED, ended_at=now, end_reason="principal_ended")
         )
-        chat.status = status
-        chat.error = error
-        chat.updated_at = now
 
     async def create(
         self,
@@ -612,7 +613,6 @@ class SessionStore:
                         operator_id=operator_id,
                         conversation_id=conversation_id,
                         agent_binding_id=agent_binding_id,
-                        status=SessionStatus.IDLE,
                         bridge_token_fingerprint=None,
                         bridge_connected_at=None,
                         error=None,
@@ -710,7 +710,6 @@ class SessionStore:
                     operator_id=operator_id,
                     conversation_id=conversation_id,
                     agent_binding_id=agent_binding_id,
-                    status=SessionStatus.IDLE,
                     bridge_token_fingerprint=None,
                     bridge_connected_at=None,
                     error=None,
@@ -785,7 +784,6 @@ class SessionStore:
                     session_id=session_id,
                     operator_id=operator_id,
                     conversation_id=conversation_id,
-                    status=SessionStatus.PROVISIONING,
                     bridge_token_fingerprint=self._fingerprint(bridge_token),
                     bridge_connected_at=None,
                     error=None,
@@ -805,10 +803,10 @@ class SessionStore:
         """Start provisioning an idle session once its conversation has work queued.
 
         The row lock is the allocation mutex. A prompt request and the runtime reconciler may both
-        observe the same accepted prompt, but exactly one moves ``idle`` to ``provisioning`` and
-        receives a credential with which to create the SandboxClaim. The prompt, status, bridge
-        fingerprint, provisioning lease and lifecycle event are therefore durable before the
-        external Kubernetes write begins.
+        observe the same accepted prompt, but exactly one moves ``idle`` to ``provisioning`` — the
+        credential fingerprint *is* that transition — and receives a credential with which to
+        create the SandboxClaim. The prompt, bridge fingerprint, provisioning lease and lifecycle
+        event are therefore durable before the external Kubernetes write begins.
 
         Returns ``None`` when the session is already allocated or no prompt has created demand yet.
         """
@@ -824,7 +822,6 @@ class SessionStore:
             if chat.status != SessionStatus.IDLE or await _queued_prompt(db, chat.conversation_id) is None:
                 return None
             bridge_token = secrets.token_urlsafe(32)
-            chat.status = SessionStatus.PROVISIONING
             chat.bridge_token_fingerprint = self._fingerprint(bridge_token)
             chat.lease_expires_at = now + PROVISION_LEASE
             chat.updated_at = now
@@ -1134,10 +1131,11 @@ class SessionStore:
                 return BridgeAuthentication.REJECTED
             if record.status in ENDED_SESSION_STATUSES:
                 return BridgeAuthentication.TERMINAL
-            first_attach = record.status == SessionStatus.PROVISIONING and record.bridge_connected_at is None
+            # `provisioning` *is* "allocated and never attached", so the stamp below is the whole
+            # transition to `ready`.
+            first_attach = record.status == SessionStatus.PROVISIONING
             if first_attach:
                 record.bridge_connected_at = now
-                record.status = SessionStatus.READY
             elif (
                 record.lease_holder not in (None, REPLICA)
                 and record.lease_expires_at is not None
@@ -1288,7 +1286,7 @@ class SessionStore:
                 return
             chat.claim_cleaned_at = now
             if chat.status == SessionStatus.CLOSING:
-                await self._end_session(db, chat, status=SessionStatus.CLOSED, error=None, now=now)
+                await self._end_session(db, chat, error=None, now=now)
                 await notify(db, SessionEventKind.UPDATE, session_id)
             else:
                 chat.updated_at = now
@@ -2012,7 +2010,7 @@ class SessionStore:
                 SessionStatus.CLOSED,
                 SessionStatus.FAILED,
             }:
-                await self._end_session(db, chat, status=SessionStatus.FAILED, error=error, now=now)
+                await self._end_session(db, chat, error=error, now=now)
                 await notify(db, SessionEventKind.UPDATE, session_id)
             # An item still open when the session died says so on its own row: `failed` is one of
             # the three lifecycle states, so a half-written answer is neither lost nor shown as if
@@ -2043,7 +2041,8 @@ class SessionStore:
                 raise KeyError(session_id)
             if chat.status in {SessionStatus.CLOSED, SessionStatus.FAILED}:
                 return
-            chat.status = SessionStatus.CLOSING
+            if chat.close_requested_at is None:
+                chat.close_requested_at = datetime.now(UTC)
             chat.updated_at = datetime.now(UTC)
             await notify(db, SessionEventKind.PROMPT, session_id)
             await notify(db, SessionEventKind.UPDATE, session_id)
@@ -2220,9 +2219,7 @@ class SessionStore:
                     db, chat.conversation_id, session_id=session_id, turn_id=None, now=now
                 )
                 writer.authored(session_events.LeaseExpiredBody(reason=reason, last_holder=chat.lease_holder))
-                await self._end_session(
-                    db, chat, status=SessionStatus.FAILED, error=f"console session ended: {detail}", now=now
-                )
+                await self._end_session(db, chat, error=f"console session ended: {detail}", now=now)
                 await notify(db, SessionEventKind.UPDATE, session_id)
             return len(expired)
 
@@ -2231,7 +2228,7 @@ class SessionStore:
             chat = await db.get(Session, session_id, with_for_update=True)
             if chat is not None and chat.status not in {SessionStatus.CLOSED, SessionStatus.FAILED}:
                 now = datetime.now(UTC)
-                await self._end_session(db, chat, status=SessionStatus.CLOSED, error=None, now=now)
+                await self._end_session(db, chat, error=None, now=now)
                 await notify(db, SessionEventKind.UPDATE, session_id)
 
     async def session_exists(self, operator_id: UUID, session_id: UUID) -> bool:

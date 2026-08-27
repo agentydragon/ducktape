@@ -364,9 +364,9 @@ real state and a position cannot express "this one failed three times and is bac
 
 `sessions` and `session_frames` keep their shape. The frame log is the record of runner↔console
 traffic, addressed by the session that produced it, and its own numbering and vocabulary are a
-separate design. `sessions.status` is likewise left alone: replacing it with the timestamps that
-actually happened is a session-lifecycle change and bundling it here would double the blast radius
-for no shared benefit.
+separate design. A session's `status` is likewise the session lifecycle's business, not this
+design's: the row stores the facts that happened — allocation, attachment, the close request, the
+end — and `database_schema.Session.status` derives the vocabulary from them at read time.
 
 ### What is derived from what
 

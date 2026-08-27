@@ -266,15 +266,16 @@ async def insert_live_session(sessions: async_sessionmaker[AsyncSession], *, bin
             ),
             {"conversation_id": conversation_id, "operator_id": operator_id, "n": now},
         )
+        # `ready` is these facts: an allocated credential, an attached runner, a live lease.
         await session.execute(
             text(
                 """
                 INSERT INTO sessions (
-                    session_id, operator_id, conversation_id, agent_binding_id, status,
-                    bridge_token_fingerprint, lease_expires_at, created_at, updated_at
+                    session_id, operator_id, conversation_id, agent_binding_id,
+                    bridge_token_fingerprint, bridge_connected_at, lease_expires_at, created_at, updated_at
                 ) VALUES (
-                    :session_id, :operator_id, :conversation_id, :binding_id, 'ready',
-                    :fingerprint, :lease, :n, :n
+                    :session_id, :operator_id, :conversation_id, :binding_id,
+                    :fingerprint, :n, :lease, :n, :n
                 )
                 """
             ),

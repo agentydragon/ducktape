@@ -148,11 +148,11 @@ def test_session_bearers_and_tool_attribution_are_exactly_session_scoped(db_url:
                 text(
                     """
                     INSERT INTO sessions (
-                        session_id, operator_id, conversation_id, agent_binding_id, status,
-                        bridge_token_fingerprint, lease_expires_at, created_at, updated_at
+                        session_id, operator_id, conversation_id, agent_binding_id,
+                        bridge_token_fingerprint, bridge_connected_at, lease_expires_at, created_at, updated_at
                     ) VALUES (
-                        :session_id, :operator_id, :conversation_id, :binding_id, 'ready',
-                        :fingerprint, :n, :n, :n
+                        :session_id, :operator_id, :conversation_id, :binding_id,
+                        :fingerprint, :n, :n, :n, :n
                     )
                     """
                 ),
@@ -187,11 +187,11 @@ def test_session_bearers_and_tool_attribution_are_exactly_session_scoped(db_url:
                 text(
                     """
                     INSERT INTO sessions (
-                        session_id, operator_id, conversation_id, agent_binding_id, status,
-                        bridge_token_fingerprint, lease_expires_at, created_at, updated_at
+                        session_id, operator_id, conversation_id, agent_binding_id,
+                        bridge_token_fingerprint, bridge_connected_at, lease_expires_at, created_at, updated_at
                     ) VALUES (
-                        :session_id, :operator_id, :conversation_id, :binding_id, 'ready',
-                        :fingerprint, :n, :n, :n
+                        :session_id, :operator_id, :conversation_id, :binding_id,
+                        :fingerprint, :n, :n, :n, :n
                     )
                     """
                 ),

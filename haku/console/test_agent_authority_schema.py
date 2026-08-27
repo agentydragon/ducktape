@@ -1398,15 +1398,15 @@ def test_a_chat_session_cannot_be_written_without_a_lease(db_url: str) -> None:
                 ),
                 {"conversation_id": conversation_id, "operator_id": operator_id, "now": now},
             )
-        with pytest.raises(IntegrityError, match="lease_expires_at"), engine.begin() as conn:
+        with pytest.raises(IntegrityError, match="ck_sessions_allocation_lease"), engine.begin() as conn:
             conn.execute(
                 text(
                     """
                     INSERT INTO sessions (
-                        session_id, operator_id, conversation_id, status, bridge_token_fingerprint,
+                        session_id, operator_id, conversation_id, bridge_token_fingerprint,
                         bridge_connected_at, error, lease_expires_at, created_at, updated_at
                     ) VALUES (
-                        :session_id, :operator_id, :conversation_id, 'responding', :fingerprint,
+                        :session_id, :operator_id, :conversation_id, :fingerprint,
                         NULL, NULL, NULL, :now, :now
                     )
                     """

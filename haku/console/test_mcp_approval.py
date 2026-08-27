@@ -39,7 +39,7 @@ from haku.console.agents.models import (
     CredentialKind,
     EnrollmentPhase,
 )
-from haku.console.chat_models import RuntimeKind, SessionStatus
+from haku.console.chat_models import RuntimeKind
 from haku.console.conftest import operator_id, write_config
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
@@ -664,7 +664,6 @@ async def test_session_agent_tool_call_retains_exact_session_attribution(
                     operator_id=static_actor.operator_id,
                     conversation_id=conversation_id,
                     agent_binding_id=static_actor.binding_id,
-                    status=SessionStatus.READY,
                     bridge_token_fingerprint=session_id.bytes,
                     bridge_connected_at=now,
                     lease_expires_at=now + datetime.timedelta(minutes=1),

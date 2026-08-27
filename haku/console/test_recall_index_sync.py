@@ -13,7 +13,7 @@ import pytest_bazel
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ItemStatus, ItemType, RuntimeKind, SessionStatus
+from haku.console.chat_models import ItemStatus, ItemType, RuntimeKind
 from haku.console.config import ChatRecallIndexDefinition, GitRecallIndexDefinition, RecallIndexSettings
 from haku.console.database_schema import Conversation, ConversationItem, Operator, Session
 from haku.console.mcp_config import ConsoleConfigFile
@@ -165,9 +165,9 @@ async def say(sessions: async_sessionmaker[AsyncSession], operator_id: UUID, con
                 session_id=session_id,
                 operator_id=operator_id,
                 conversation_id=conversation_id,
-                status=SessionStatus.CLOSED,
                 bridge_token_fingerprint=b"fingerprint",
                 lease_expires_at=_NOW,
+                ended_at=_NOW,
                 created_at=_NOW,
                 updated_at=_NOW,
             )

@@ -326,8 +326,8 @@ class SessionProvisioningView(BaseModel):
         description="The immutable runner implementation pinned by this session's conversation."
     )
     status: SessionStatus = Field(
-        description="The session's stored status. `responding` never appears here: it is derived "
-        "from an open turn by `session_view` and is not on the row."
+        description="The session's row-derived status. `responding` never appears here: it is "
+        "derived from an open turn by `session_view`, which the row cannot spell."
     )
     sandbox: SandboxProvisioningView | None = Field(
         description="The cluster's account of this session's sandbox. Null only while the session "
@@ -443,7 +443,7 @@ def live_status(record: Session, *, responding: bool) -> SessionStatus:
     """The status a reader is told, with `responding` derived from an open turn.
 
     `status` is the frontend's contract (`frontend/x/conversations_page.tsx` switches on it); the
-    column underneath carries no turn state. The session's own lifecycle — provisioning, closing,
+    session row's facts carry no turn state. The session's own lifecycle — provisioning, closing,
     closed, failed — always wins, because a turn left open by a dead replica says nothing about a
     session the sweep has since failed.
     """

@@ -1734,19 +1734,24 @@ py_test(
 )
 
 py_test(
-    name = "test_session_claim_cleaned_at",
+    name = "test_session_status_derivation",
     size = "medium",
-    srcs = ["test_session_claim_cleaned_at.py"],
+    srcs = ["test_session_status_derivation.py"],
     data = [
         "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],
     requires_docker = True,
     deps = [
+        ":chat_models",
         ":conftest",
-        ":database_migrate",
+        ":database_schema",
+        ":operator_identity_store",
         "//:conftest",
+        "//haku/console/x:session_views",
         "@pypi//psycopg",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -1816,26 +1821,6 @@ py_test(
     name = "test_conversation_agent_identity_migration",
     size = "medium",
     srcs = ["test_conversation_agent_identity_migration.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":database_migrate",
-        "//:conftest",
-        "@pypi//psycopg",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_session_status_constraint",
-    size = "medium",
-    srcs = ["test_session_status_constraint.py"],
     data = [
         "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",

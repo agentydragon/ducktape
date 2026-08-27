@@ -443,7 +443,6 @@ version of it is **the point rather than the cost** (§ 7).
 - **Which editable spans exist, and what does each summarise?** The settled one-event notice set is
   now code (§ 4). One work span per turn and one lifecycle span per session remain the candidate,
   along with retire-or-seal for each.
-- **Does `sessions.status` survive?** § 10.
 - **Which slash-command namespace survives the client?** Element consumes leading-slash verbs it
   recognises and errors on ones it does not — `/me`, `/html`, `/plain`, `/join`, `/invite`, `/op`
   and friends never reach the room — so the choice is a compatibility question rather than a taste
@@ -544,35 +543,21 @@ mixed into these PRs.
 **Dependencies.** Steps 2 and 3 precede 4. Steps 5 and 6 can otherwise proceed independently. The
 channel-neutral allocator is already complete and is not a step in this plan.
 
-**Independent runtime work.** `sessions.status` (§ 10) and the duplicated read models (§ 13) are
-not channel dependencies. Bridge v3 already made the frame payload harness-neutral; any remaining
+**Independent runtime work.** The `provisioning` refinement (§ 10) and the duplicated read models
+(§ 13) are not channel dependencies. Bridge v3 already made the frame payload harness-neutral; any remaining
 numbering/contract cleanup stays in that runtime stack. The
 `session_runtime.py` split and its abort wait can land with #4431 or step 5 on their own merits, not
 as incidental channel-reconciler edits.
 
-## 10. `sessions.status` is derived, and lossy
+## 10. `provisioning` is lossy
 
-**Derived.** `responding` already is: no path writes it to the column, and `session_view` computes
-it from an open `conversation_turn` row — the SPA switches on the API field, so the column stopped
-carrying it with no frontend release. Of the rest, `provisioning`/`ready` follow from
-`bridge_connected_at`, and `failed` from `error IS NOT NULL`. Only `closing` and `closed` have no
-evidence in the row today.
-
-**Lossy, which is the stronger argument.** `provisioning` stands for several distinct facts — claim
-submitted, pod scheduled, sandbox running, runner dialled back — and the row records exactly one of
-them. So a session that never came up reports `failed` plus free text, where the operator wants
-"the claim was never satisfied" told apart from "the sandbox ran and the runner never dialled".
-
-**The shape that replaces it** is the timestamps that actually happened — `claim_submitted_at`,
-`sandbox_ready_at`, `bridge_connected_at`, `close_requested_at`, `ended_at` — with the enum computed
-in one place and kept as the wire vocabulary. Two things fall out: the invalid states the current
-shape permits (`closed` beside an open turn, `ready` beside a non-null `error`) stop being
-representable, and `idx_sessions_expired_lease`'s partial predicate stops listing statuses, so
-adding a member no longer edits an index.
-
-**Split it.** Adding the terminal timestamps and deriving `closing`/`closed`/`failed` is one change;
-dropping the column is the follow-up once every member computes. Both are expand/contract on the
-hottest table.
+The status column is gone — the row stores facts and `database_schema.Session.status` derives the
+vocabulary — but `provisioning` still stands for several distinct facts: claim submitted, pod
+scheduled, sandbox running, runner dialled back, and the row records only the first and last. So a
+session that never came up reports `failed` plus free text, where the operator wants "the claim was
+never satisfied" told apart from "the sandbox ran and the runner never dialled". The refinement is
+more fact timestamps (`claim_submitted_at`, `sandbox_ready_at`) each deriving a finer member,
+shipped derivation-first per the decision-value roll rule.
 
 ## 11. What it looks like when it is done
 
@@ -655,14 +640,8 @@ inspector for forensic review.
 
 ### What still disappears
 
-**Column**
-
-| Gone              | Replaced by                                    |
-| ----------------- | ---------------------------------------------- |
-| `sessions.status` | the timestamps of § 10, with the enum computed |
-
-`matrix_conversation` and `sessions.surface` have already been removed in favour of
-`chat_attachment`; they are no longer plan items. Not gone, and deliberately:
+`matrix_conversation`, `sessions.surface` and `sessions.status` have already been removed; they
+are no longer plan items. Not gone, and deliberately:
 `matrix_sync_watermark`, `conversation_event`, `session_frames` and the lease. `matrix_outbox` stays
 too: it is the channel's retry state against a flaky homeserver, which is not derivable from the
 record (§ 5).

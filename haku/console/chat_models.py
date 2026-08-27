@@ -11,16 +11,17 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class SessionStatus(StrEnum):
-    # Rollout half of lazy sandbox allocation: this release admits and parses `idle`, but no writer
-    # assigns it yet. `sessions.status` is parsed rather than treated as an open string, and old and
-    # new replicas serve together during a roll, so the writer must land only after this enum and
-    # migration have reached every replica. Admission and allocation already understand the value;
-    # the follow-up makes newly created sessions `idle`, then deletes this comment.
+    """A session's lifecycle, derived from the row's facts rather than stored.
+
+    `database_schema.Session.status` computes every member but one from the fact columns; the wire
+    and event vocabulary is this enum, so consumers are untouched by where a member comes from.
+    """
+
     IDLE = "idle"
     PROVISIONING = "provisioning"
     READY = "ready"
-    # Derived, never stored: `session_views.session_view` reports it for a live session with an
-    # open `session_turns` row, and no path writes it to `sessions.status`.
+    # The one member the row cannot spell: whether a turn is open is `conversation_turn`'s fact,
+    # and `session_views.live_status` derives it on top of the row's member.
     RESPONDING = "responding"
     CLOSING = "closing"
     CLOSED = "closed"
@@ -287,9 +288,9 @@ class AuthoredEventKind(StrEnum):
     # A sandbox is being provisioned for this thread. The only account of it today is the Matrix
     # supervisor's stack frame, so a thread whose session failed before a room was bound has none.
     SESSION_PROVISIONING = "session_provisioning"
-    # How a session ended, with the reason it ended for. `sessions.status` and `sessions.error` hold
-    # the current values and the next transition overwrites them, so without this row "when did this
-    # fail, and why" has no answer once the session has been replaced.
+    # How a session ended, with the reason it ended for. The session row states only its own end,
+    # so without this row the conversation's account of why a *replaced* predecessor died lives
+    # nowhere a reader of the stream can see.
     SESSION_ENDED = "session_ended"
     # One line the sandbox printed while coming up. A `SetupOutput` envelope does cross the wire, but
     # what is stored is one decoded line of it rather than the frame, so the console is the witness

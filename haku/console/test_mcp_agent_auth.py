@@ -27,7 +27,7 @@ from haku.console.agents.authorization import (
     StaticAgentRejectedError,
     fingerprint_static_token,
 )
-from haku.console.chat_models import RuntimeKind, SessionStatus
+from haku.console.chat_models import RuntimeKind
 from haku.console.config import McpOAuthConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
 from haku.console.conftest import console_sessions, operator_id
 from haku.console.database_schema import Agent, Conversation, Operator, Session
@@ -284,7 +284,6 @@ async def test_session_bearer_resolves_the_pinned_agent_profile_and_session(
                 operator_id=resolved_operator_id,
                 conversation_id=conversation_id,
                 agent_binding_id=authorization.binding_id,
-                status=SessionStatus.READY,
                 bridge_token_fingerprint=fingerprint_static_token(session_token),
                 bridge_connected_at=now,
                 lease_expires_at=now + datetime.timedelta(minutes=1),
@@ -330,14 +329,7 @@ async def test_session_bearer_resolves_the_pinned_agent_profile_and_session(
     async with migrated_sessions.begin() as db:
         row = await db.get(Session, session_id)
         assert row is not None
-        row.status = SessionStatus.PROVISIONING
-    assert await auth.provider.verify_token(session_token) is None
-    assert await bearer_authority.authenticate(session_token) is None
-
-    async with migrated_sessions.begin() as db:
-        row = await db.get(Session, session_id)
-        assert row is not None
-        row.status = SessionStatus.READY
+        # Un-attach the runner: the row derives `provisioning` again, and the bearer is refused.
         row.bridge_connected_at = None
     assert await auth.provider.verify_token(session_token) is None
     assert await bearer_authority.authenticate(session_token) is None
@@ -445,11 +437,12 @@ async def test_session_bearer_is_rejected_after_its_session_ends(
                 operator_id=resolved_operator_id,
                 conversation_id=conversation_id,
                 agent_binding_id=authorization.binding_id,
-                status=SessionStatus.CLOSED,
                 bridge_token_fingerprint=fingerprint_static_token(session_token),
                 bridge_connected_at=now,
                 lease_expires_at=now + datetime.timedelta(minutes=1),
                 lease_holder="test-replica",
+                # Ended without an error — `closed` — with everything else still live-shaped.
+                ended_at=now,
                 created_at=now,
                 updated_at=now,
             )
