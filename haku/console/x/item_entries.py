@@ -1,10 +1,13 @@
 """One conversation's read entries, built from the materialised rows rather than a fold.
 
-<conversation_records.py> is what `read_items` hands back; this module is how one materialised row
-becomes one of those entries. The rows are `conversation_item` and `conversation_turn` — themselves
-folds of the log, asserted so by <reprojection.py> — which is what lets a page be served by keyset
-reads instead of refolding the conversation from its first row: an entry needs nothing the row and
-its one defining `conversation_event` row do not carry.
+<conversation_records.py> is what `read_conversation_items` hands back; this module is how one
+materialised row becomes one of those entries. An entry is the wire shape of one conversation
+item — or of a turn's end — as `read_conversation_items` serves it: neither the ORM row nor a
+stream event, but the folded item with its prose whole and its provenance attached. The rows are
+`conversation_item` and `conversation_turn` — themselves folds of the log, asserted so by
+<reprojection.py> — which is what lets a page be served by keyset reads instead of refolding the
+conversation from its first row: an entry needs nothing the row and its one defining
+`conversation_event` row do not carry.
 
 **An entry is defined by exactly one stream position.** A tool call's entry is written where the
 call opens — its arguments are whole by then — and every other item's entry where the item

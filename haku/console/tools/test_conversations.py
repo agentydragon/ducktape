@@ -72,7 +72,7 @@ ACCESS = InProcessServerAccessPolicy(
 PAGED_TOOLS: tuple[tuple[str, dict[str, str]], ...] = (
     ("list_sessions", {}),
     ("list_turns", {"session_id": str(SESSION)}),
-    ("read_items", {"conversation_id": str(CONVERSATION)}),
+    ("read_conversation_items", {"conversation_id": str(CONVERSATION)}),
     ("read_frames", {"session_id": str(SESSION)}),
 )
 
@@ -175,7 +175,7 @@ class _Reader:
             )
         ][:limit]
 
-    async def read_items(
+    async def read_conversation_items(
         self, conversation_id: UUID, *, cursor: ItemCursor | None, limit: int
     ) -> list[ConversationEntry]:
         self.queries.append({"conversation_id": conversation_id, "cursor": cursor, "limit": limit})
@@ -204,7 +204,7 @@ async def test_tool_surface() -> None:
     async with Client(_mcp(_Reader())) as client:
         tools = {tool.name for tool in await client.list_tools()}
 
-    assert tools == {"list_sessions", "list_turns", "read_items", "read_frames"}
+    assert tools == {"list_sessions", "list_turns", "read_conversation_items", "read_frames"}
     assert HAKU_CONVERSATIONS_SERVER_ID == "haku_conversations"
 
 
@@ -248,7 +248,7 @@ async def test_every_listing_answers_in_the_same_shape() -> None:
 
 async def test_a_session_names_its_thread_and_the_channels_holding_a_copy_of_it() -> None:
     """The thread rather than a surface enum: what a reader groups sessions by, what keys
-    `read_items`, and what tells it where the same conversation is also being read."""
+    `read_conversation_items`, and what tells it where the same conversation is also being read."""
     async with Client(_mcp(_Reader())) as client:
         result = await _call(client, "list_sessions", {})
 
@@ -429,7 +429,7 @@ async def test_an_item_entry_reads_as_the_conversation_rather_than_the_protocol(
     reader = _Reader(entries=[_message(7, first_frame_seq=3, last_frame_seq=5)])
 
     async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_items", {"conversation_id": str(CONVERSATION)})
+        result = await _call(client, "read_conversation_items", {"conversation_id": str(CONVERSATION)})
 
     entry = one(_items(result).items)
     assert isinstance(entry, MessageEntry)
@@ -444,7 +444,9 @@ async def test_an_entrys_provenance_is_a_frame_read_with_no_arithmetic() -> None
     reader = _Reader(_frame(3), _frame(4), entries=[_message(7, first_frame_seq=3, last_frame_seq=4)])
 
     async with Client(_mcp(reader)) as client:
-        entry = one(_items(await _call(client, "read_items", {"conversation_id": str(CONVERSATION)})).items)
+        entry = one(
+            _items(await _call(client, "read_conversation_items", {"conversation_id": str(CONVERSATION)})).items
+        )
         assert isinstance(entry.provenance, FromFrames)
         span = await _call(
             client,
@@ -459,9 +461,9 @@ async def test_an_item_cursor_resumes_where_the_page_stopped() -> None:
     reader = _Reader(entries=[_message(seq, first_frame_seq=seq) for seq in (2, 4, 6, 8)])
 
     async with Client(_mcp(reader)) as client:
-        first = await _call(client, "read_items", {"conversation_id": str(CONVERSATION), "limit": 2})
+        first = await _call(client, "read_conversation_items", {"conversation_id": str(CONVERSATION), "limit": 2})
         second = await _call(
-            client, "read_items", {"conversation_id": str(CONVERSATION), "limit": 2, "cursor": {"seq": 6}}
+            client, "read_conversation_items", {"conversation_id": str(CONVERSATION), "limit": 2, "cursor": {"seq": 6}}
         )
 
     assert [entry.seq for entry in _items(first).items] == [2, 4]
@@ -476,7 +478,7 @@ async def test_an_oversized_tool_result_loses_its_structured_half_not_its_proven
     reader = _Reader(entries=[_tool_result(1, structured={"stdout": "x" * (MAX_PAGE_BYTES * 2)})])
 
     async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_items", {"conversation_id": str(CONVERSATION)})
+        result = await _call(client, "read_conversation_items", {"conversation_id": str(CONVERSATION)})
 
     entry = one(_items(result).items)
     assert isinstance(entry, ToolResultEntry)
@@ -494,7 +496,7 @@ async def test_a_one_entry_page_is_the_named_entry_whole_however_large() -> None
 
     async with Client(_mcp(reader)) as client:
         result = await _call(
-            client, "read_items", {"conversation_id": str(CONVERSATION), "cursor": {"seq": 1}, "limit": 1}
+            client, "read_conversation_items", {"conversation_id": str(CONVERSATION), "cursor": {"seq": 1}, "limit": 1}
         )
 
     entry = one(_items(result).items)

@@ -756,7 +756,7 @@ async def test_the_items_read_as_the_conversation_rather_than_the_protocol(chat_
     )
     await chat_store.end_turn(started.turn_id, TurnAnsweredBody(), last_frame_seq=spoke.frame_seq)
 
-    entries = await chat_store.read_items(conversation_id, cursor=None, limit=10)
+    entries = await chat_store.read_conversation_items(conversation_id, cursor=None, limit=10)
 
     assert [entry.kind for entry in entries] == ["prompt", "message", "turn_end"]
     said = entries[1]
@@ -782,7 +782,7 @@ async def test_the_items_read_hands_back_the_rows_the_writer_materialised(
     await _exchange(chat_store, operator_id, view.session_id, "first?", "one")
     await _exchange(chat_store, operator_id, view.session_id, "second?", "two")
 
-    entries = await chat_store.read_items(conversation_id, cursor=None, limit=100)
+    entries = await chat_store.read_conversation_items(conversation_id, cursor=None, limit=100)
 
     spoken = [entry.text for entry in entries if isinstance(entry, MessageEntry)]
     assert spoken == await answers(migrated_sessions, view.session_id)
@@ -797,9 +797,9 @@ async def test_an_item_page_resumes_at_its_cursor_without_refolding_the_thread(c
     for index in range(3):
         await _exchange(chat_store, operator_id, view.session_id, f"ask {index}", f"answer {index}")
 
-    whole = await chat_store.read_items(conversation_id, cursor=None, limit=100)
-    first = await chat_store.read_items(conversation_id, cursor=None, limit=3)
-    rest = await chat_store.read_items(conversation_id, cursor=ItemCursor(seq=whole[3].seq), limit=100)
+    whole = await chat_store.read_conversation_items(conversation_id, cursor=None, limit=100)
+    first = await chat_store.read_conversation_items(conversation_id, cursor=None, limit=3)
+    rest = await chat_store.read_conversation_items(conversation_id, cursor=ItemCursor(seq=whole[3].seq), limit=100)
 
     assert first + rest == whole
     assert [entry.seq for entry in whole] == sorted({entry.seq for entry in whole}), "defining positions are unique"
@@ -815,7 +815,7 @@ async def test_a_frame_the_fold_never_committed_is_not_an_item(chat_store, opera
         view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, text_delta("h")
     )
 
-    entries = await chat_store.read_items(conversation_id, cursor=None, limit=10)
+    entries = await chat_store.read_conversation_items(conversation_id, cursor=None, limit=10)
     frames = await chat_store.read_frames(view.session_id, cursor=None, limit=10, kinds=None)
 
     assert entries == []
@@ -869,7 +869,7 @@ async def test_a_call_and_its_answer_are_separate_entries_at_their_own_positions
         ],
     )
 
-    entries = await chat_store.read_items(conversation_id, cursor=None, limit=10)
+    entries = await chat_store.read_conversation_items(conversation_id, cursor=None, limit=10)
 
     assert [entry.kind for entry in entries] == ["prompt", "tool_call", "tool_result"]
     call, result_entry = entries[1], entries[2]
@@ -896,7 +896,7 @@ async def test_the_items_read_spans_replaced_sessions(chat_store, migrated_sessi
     )
     await _exchange(chat_store, operator_id, replacement.session_id, "second?", "two")
 
-    entries = await chat_store.read_items(conversation_id, cursor=None, limit=100)
+    entries = await chat_store.read_conversation_items(conversation_id, cursor=None, limit=100)
 
     spoken = [entry for entry in entries if isinstance(entry, MessageEntry)]
     assert [entry.text for entry in spoken] == ["one", "two"]
@@ -918,7 +918,7 @@ async def test_a_prompt_admitted_before_any_session_is_on_the_conversations_item
         await db.delete(await db.get(Session, view.session_id))
     await chat_store.enqueue_conversation_prompt(operator_id, conversation_id, "start", SPA_ORIGIN)
 
-    entry = one(await chat_store.read_items(conversation_id, cursor=None, limit=10))
+    entry = one(await chat_store.read_conversation_items(conversation_id, cursor=None, limit=10))
     assert isinstance(entry, PromptEntry)
     assert (entry.text, entry.origin) == ("start", PromptOriginKind.SPA)
 

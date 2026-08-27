@@ -1722,7 +1722,7 @@ class SessionStore:
             for row in rows
         ]
 
-    async def read_items(
+    async def read_conversation_items(
         self, conversation_id: UUID, *, cursor: ItemCursor | None, limit: int
     ) -> list[ConversationEntry]:
         """One page of the conversation's entries, oldest first, across every session of the thread.

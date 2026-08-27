@@ -195,7 +195,7 @@ class _EntryBase(BaseModel):
 
     seq: int = Field(
         description="The position in the conversation's event stream of the row that defines this entry. "
-        "`read_items`'s `cursor` names one; entries are sparse in it, since most stream rows build an "
+        "`read_conversation_items`'s `cursor` names one; entries are sparse in it, since most stream rows build an "
         "entry rather than being one."
     )
     provenance: EntryProvenance

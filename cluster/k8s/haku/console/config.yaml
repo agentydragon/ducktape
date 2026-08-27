@@ -370,7 +370,7 @@ auto_approval_policies:
       haku_conversations:
         - list_sessions
         - list_turns
-        - read_items
+        - read_conversation_items
         - read_frames
       haku_index:
         - search

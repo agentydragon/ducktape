@@ -250,7 +250,7 @@ batch boundary is not an ending, and the wire facts every rule in it answers. It
 here; what follows is who reads it and what is not yet on it.
 
 **The live turn loop is the only thing that folds frames.** A stored conversation is read from the
-rows that fold materialised: `SessionStore.read_items` pages `conversation_item` and
+rows that fold materialised: `SessionStore.read_conversation_items` pages `conversation_item` and
 `conversation_turn` by their defining stream positions and `item_entries.py` maps each row onto the
 read models in `conversation_records.py`, so `haku_conversations` needs neither an adapter nor the
 session's `runtime_kind` to answer what was said — and a page of a long thread costs the page, not
@@ -336,7 +336,7 @@ Four things to know before changing it:
   ends such a turn as failed rather than resuming it. No session that can still acquire a frame is
   in that state.
 
-**`read_items` never touches this cursor, or any frame.** It reads the rows the writer
+**`read_conversation_items` never touches this cursor, or any frame.** It reads the rows the writer
 materialised, from a durable stream position — so a projection change reaches conversations still
 to run and leaves the ones that already happened saying what was recorded of them.
 

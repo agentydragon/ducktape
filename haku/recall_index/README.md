@@ -360,7 +360,7 @@ What settling it touches:
   `chat_attachment` on the session's conversation, which means the search joins those tables (or
   `chat_chunks` denormalizes both).
 - **`haku/console/tools/conversations.py`** — `list_sessions`, `list_turns`,
-  `read_items` and `read_frames` are unscoped by the same open decision. Scoping search but not the drilldown it
+  `read_conversation_items` and `read_frames` are unscoped by the same open decision. Scoping search but not the drilldown it
   hands off to would be theatre: the message ids in a hit are exactly what `read_frames` takes.
 - **Whatever identity the scope keys on.** An Agent's canonical identity and owning Operator come
   from `haku/console/agents/authorization.py` and `mcp_agent_auth.py`; a room-scoped rule instead

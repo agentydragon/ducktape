@@ -8,7 +8,7 @@ and `session_frames`, the verbatim wire they were read off. A tool call and the 
 are in both — which the room is not.
 
 **Each read is named and keyed by the layer it reads** (<../docs/chat_layers.md>): a session has
-frames; a conversation has events, which fold into items. `read_items` is what a conversation
+frames; a conversation has events, which fold into items. `read_conversation_items` is what a conversation
 *meant* — prompts, messages, reasoning, tool calls and their results, as one vocabulary that says
 nothing about which agent backend produced them, keyed by the conversation because the thread
 outlives every session that ran it. `read_frames` is the frames a **named** backend actually sent,
@@ -33,7 +33,7 @@ A page whose shape matched but whose cursor lied about the order underneath woul
 the heterogeneity it replaced.
 
 **`list_` finds, `read_` reads.** `list_sessions` and `list_turns` are inventories: rows you
-scan to pick the one worth opening, each carrying enough accounting to choose. `read_items` and
+scan to pick the one worth opening, each carrying enough accounting to choose. `read_conversation_items` and
 `read_frames` return the thing itself. The split is not paged-versus-whole — the reads page too.
 
 **Every frame is recorded whole**, so a page's byte budget protects nothing but the reader's
@@ -175,7 +175,7 @@ class ConversationReader(Protocol):
 
     async def list_turns(self, session_id: UUID, *, cursor: TurnCursor | None, limit: int) -> list[TurnRecord]: ...
 
-    async def read_items(
+    async def read_conversation_items(
         self, conversation_id: UUID, *, cursor: ItemCursor | None, limit: int
     ) -> list[ConversationEntry]: ...
 
@@ -248,7 +248,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         name=HAKU_CONVERSATIONS_SERVER_ID,
         instructions=(
             "Read Haku's past conversations: start with `list_sessions`, then `list_turns`, then "
-            "`read_items`. Follow an entry's `provenance` into `read_frames` when normalization "
+            "`read_conversation_items`. Follow an entry's `provenance` into `read_frames` when normalization "
             "needs checking. Every listing returns `items` and `next_cursor`; pass the cursor back "
             "as `cursor`. Read-only."
         ),
@@ -290,7 +290,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         return TurnPage(items=turns, next_cursor=TurnCursor.of(more) if more is not None else None)
 
     @mcp.tool
-    async def read_items(
+    async def read_conversation_items(
         conversation_id: Annotated[UUID, Field(description="From `list_sessions`; the thread, not one runner's life.")],
         cursor: Annotated[
             ItemCursor | None,
@@ -310,7 +310,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         """
         require_conversation_access(execution)
         entries, more = take_page(
-            await reader.read_items(conversation_id, cursor=cursor, limit=limit + 1),
+            await reader.read_conversation_items(conversation_id, cursor=cursor, limit=limit + 1),
             limit=limit,
             size=entry_bytes,
             clip=clip_entry,
