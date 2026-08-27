@@ -1,4 +1,69 @@
-"""Shared model rosters referenced by LiteLLM cross-configuration tests."""
+"""Shared model rosters and lane-name derivations referenced by LiteLLM cross-configuration tests.
+
+Lane naming (#4823): an exposed `model_name` is `{lane}-{upstream model}`. The lane
+prefix names the upstream account, extended with the wire surface where one account is
+exposed on more than one wire:
+
+- `chatgpt-messages-*` — ChatGPT/Codex subscription via CLIProxyAPI, Anthropic Messages
+  wire (Claude Code clients)
+- `chatgpt-responses-*` — the same account, OpenAI Responses wire (Codex clients)
+- `tana-*` — Tana account via tana-litellm
+- `google-*` — Google AI key (Gemini chat + embeddings)
+
+The lane rides in front, not behind, because key allowlists match `model_name` prefixes
+(the `claude-*` wildcard in tf/gitops/litellm-keys/main.tf): a suffix-shaped Anthropic
+lane name would begin with `claude-` and silently join every `claude-*` allowlist.
+Deliberately bare: the direct-API `claude-*` entries (Claude Code names those slugs
+itself, and the client keys' `claude-*` wildcard admits them), the groq entries, and the
+self-hosted Ollama entries, whose `-openai-chat`/`-ollama-native` wire suffixes have no
+account to name.
+"""
+
+
+def chatgpt_messages_name(model: str) -> str:
+    """Anthropic Messages lane via CLIProxyAPI — the wire Claude Code clients speak."""
+    return f"chatgpt-messages-{model}"
+
+
+def chatgpt_responses_name(model: str) -> str:
+    """OpenAI Responses lane via CLIProxyAPI — the wire Codex clients speak."""
+    return f"chatgpt-responses-{model}"
+
+
+def google_name(model: str) -> str:
+    return f"google-{model}"
+
+
+# CLEANUP(added 2026-08-27): pre-#4823 lane names, still what every deployed consumer
+# calls (haku-console config.yaml, the baked workspace/codex-pod images, openclaw.json,
+# props config.toml, laptop wrappers). Consumers move lane by lane under #4823; when a
+# lane's last consumer moves, drop its legacy derivation together with its
+# proxy-config.yaml entries and tf/gitops/litellm-keys allowlist rows.
+def legacy_messages_name(model: str) -> str:
+    """Pre-#4823 Messages-lane name — the #4822 trap: says Codex, serves Claude Code."""
+    return f"codex-{model}"
+
+
+def legacy_responses_name(model: str) -> str:
+    """Pre-#4823 Responses-lane name — the suffix names the account, not the wire."""
+    return f"{model}-chatgpt"
+
+
+def legacy_google_name(model: str) -> str:
+    """Pre-#4823 Google-lane name — the bare upstream id, no lane marker."""
+    return model
+
+
+# ChatGPT/Codex-subscription models behind CLIProxyAPI, each exposed on both wire
+# surfaces (the chatgpt-* lane derivations above).
+CLIPROXY_MODELS: list[str] = [
+    "gpt-5.4",
+    "gpt-5.5",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-5.3-codex-spark",
+]
 
 # Real Anthropic API roster verified against the authenticated /v1/models
 # endpoint. These names are mirrored into Haku OpenClaw and Terraform.
@@ -6,7 +71,8 @@ ANTHROPIC_MODELS: list[str] = ["claude-opus-5", "claude-sonnet-5", "claude-fable
 
 # The subset exposed in OpenClaw's model picker. OpenClaw's bundled LiteLLM
 # provider does not query the proxy's authenticated /v1/models endpoint.
-OPENCLAW_CODEX_MODELS: list[str] = ["codex-gpt-5.6-luna", "codex-gpt-5.6-terra", "codex-gpt-5.6-sol"]
+OPENCLAW_CLIPROXY_MODELS: list[str] = ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]
+OPENCLAW_CODEX_MODELS: list[str] = [legacy_messages_name(model) for model in OPENCLAW_CLIPROXY_MODELS]
 
 # Google AI (Gemini). Key from the GEMINI_API_KEY env var (litellm-gemini-key
 # secret). Current-generation lineup only (Gemini 3.x) -- the 2.5 generation,

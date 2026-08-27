@@ -4,11 +4,14 @@ import yaml
 
 from cluster.k8s.litellm.app.model_rosters import (
     ANTHROPIC_MODELS,
+    CLIPROXY_MODELS,
     GEMINI_CONTEXT_WINDOW,
     GEMINI_MAX_OUTPUT_TOKENS,
     GEMINI_MODELS,
     GEMINI_NON_REASONING_MODELS,
+    OPENCLAW_CLIPROXY_MODELS,
     OPENCLAW_CODEX_MODELS,
+    legacy_messages_name,
 )
 from util.bazel.runfiles import get_required_path
 
@@ -65,12 +68,13 @@ def _litellm_models() -> dict[str, dict]:
 
 def test_litellm_config_has_a_route_per_declared_codex_model() -> None:
     """Every model the agents may name must exist in the committed LiteLLM config."""
+    assert set(OPENCLAW_CLIPROXY_MODELS) <= set(CLIPROXY_MODELS)
     litellm_models = _litellm_models()
-    for model_id in OPENCLAW_CODEX_MODELS:
-        assert litellm_models[model_id] == {
-            "model_name": model_id,
+    for model in OPENCLAW_CLIPROXY_MODELS:
+        assert litellm_models[legacy_messages_name(model)] == {
+            "model_name": legacy_messages_name(model),
             "litellm_params": {
-                "model": f"anthropic/{model_id.removeprefix('codex-')}",
+                "model": f"anthropic/{model}",
                 "api_base": "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317",
                 "api_key": "os.environ/CLIPROXY_CLIENT_KEY",
             },
