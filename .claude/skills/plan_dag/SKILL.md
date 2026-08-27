@@ -12,10 +12,11 @@ action** is the unblocker. Keep it current: republish the same file path (same
 URL) whenever a PR opens or merges, a gate resolves, or the plan resequences,
 and date-stamp the subtitle each time.
 
-The board shows pending and in-flight work, not history: **flush merged PRs off
-the board on the update after they land** — the tracker and git are the archive
-— naming the flushed PRs once in the subtitle so removals read as deliberate.
-Their downstream nodes simply become roots. A completed non-PR node (a ruled
+The board shows pending and in-flight work by default, not history: **on the
+update after a PR lands, flush it from the live view** — naming the flushed PRs
+once in the subtitle so removals read as deliberate — and **move it into the
+completed layer** (§ Completed-work toggle) rather than deleting it, keeping
+its real dependency edges. Live-view downstream nodes simply become roots. A completed non-PR node (a ruled
 gate, a finished recon phase) may outlive its moment, but only while it anchors
 fresh in-flight work; flush it once its outgoing edges stop explaining anything.
 
@@ -52,8 +53,11 @@ occupants are ruled gates and completed phases still anchoring fresh work.
   `⛔` prefix on a blocking incident, `🧑` for human gates. A blocking incident
   gets its own class (GitHub danger red: `fill:#FFEBE9,color:#82071E,stroke:#CF222E`)
   and an edge into whatever it blocks.
-- **Link every node that names an entity — the whole label, not just the
-  token**: `["<a href='https://github.com/OWNER/REPO/pull/4691'>🔐 #4691 grant
+- **Every node links to its best URL — the whole label, not just the token.**
+  A node naming a PR/issue links to it; a granular stage node without its own
+  entity links to the nearest tracking URL (its umbrella issue, the expand PR
+  a contract step completes, the design-doc's issue). A node with genuinely no
+  URL is the exception, not the default. Example: `["<a href='https://github.com/OWNER/REPO/pull/4691'>🔐 #4691 grant
 principals · PR</a>"]` (single quotes inside the double-quoted label). Anchors
   survive the label sanitizer; inherit the state color, underline only on hover
   — the `#NNNN` already marks it as an entity:
@@ -82,6 +86,40 @@ principals · PR</a>"]` (single quotes inside the double-quoted label). Anchors
   parts), never out of it. An umbrella fanning out to its parts reverses the
   read and makes ready work look gated; audit every edge against this rule
   before publishing.
+
+## Completed-work toggle
+
+The page carries **two views behind one switch**: the default **live view**
+(pending/in-flight only) and a **provenance view** that adds completed work as
+`done`-class nodes with their real dependency edges — useful for onboarding,
+retros, and seeing why the current roots are where they are.
+
+- Implement as two sibling mermaid blocks (`.board-live`, `.board-full`) and a
+  checkbox styled as a switch; pure CSS does the swap:
+
+  ```css
+  body:has(#showdone:checked) .board-live,
+  body:not(:has(#showdone:checked)) .board-full {
+    position: absolute;
+    left: -300vw;
+    top: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  ```
+
+- **Never hide the inactive view with `display:none`** — a mermaid block that
+  is display:none at load renders zero-size (verified). Off-screen absolute
+  positioning keeps layout so both views render; verify BOTH states in the
+  local render (flip `checked` on a temp copy).
+- The full view is the live view plus the completed layer — completed nodes
+  wear `:::done` and a `✓`, and umbrella/sink edges from landed parts stay, so
+  the provenance chains read (e.g. landed prerequisites → the merged
+  integration PR → the running spike).
+- Prune a completed node once nothing live traces to it through any path —
+  the provenance view explains the present, it is not an archive; git is.
+- The flush-and-restore-at-the-source rule applies to both layers: a node
+  moves to the completed layer only on verified merge state.
 
 ## Graph structure
 
