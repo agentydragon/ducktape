@@ -284,11 +284,9 @@ py_library(
 )
 
 py_library(
-    name = "session_live_updates",
-    srcs = ["session_live_updates.py"],
+    name = "conversation_live_updates",
+    srcs = ["conversation_live_updates.py"],
     deps = [
-        ":runtime",
-        ":runtime_catalog",
         ":session_notifications",
         "//haku/console:console_events",
         "//haku/console:database_schema",
@@ -405,12 +403,12 @@ py_test(
 )
 
 py_test(
-    name = "test_session_live_updates",
+    name = "test_conversation_live_updates",
     size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_session_live_updates.py"],
+    srcs = ["test_conversation_live_updates.py"],
     deps = [
         ":conftest",
-        ":session_live_updates",
+        ":conversation_live_updates",
         ":session_notifications",
         ":session_store",
         "//:conftest",

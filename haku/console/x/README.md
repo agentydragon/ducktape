@@ -611,9 +611,10 @@ only thing the three share is the mechanism.
 session and any kind wakes it — a waiter re-checks the durable state it waits on, so a wake it did
 not need costs one query. `watch_session` hands one session's events to a consumer whose fact is
 edge-triggered and has no row to re-check (the abort watcher). `watch` hands over every session
-event, for `session_live_updates.py` and the allocator, which have to hear about sessions nothing
-told them to expect. `watch_conversations` is the shape every conversation-scoped consumer
-registers with — the follow socket, the Matrix subscriber, the runtime supervisor — and hands over
+event, for the allocator, which has to hear about sessions nothing told it to expect.
+`watch_conversations` is the shape every conversation-scoped consumer
+registers with — the follow socket, the Matrix subscriber, the runtime supervisor, the console-tab
+invalidation fan-out — and hands over
 the wake payload or `RecheckHeld` ("re-check what you hold"), which the wire never carries: a
 listener reconnect synthesizes it, because the notifications committed during the gap are gone.
 On that reconnect `_wake_everyone` also wakes every waiter; a session _watcher_ gets nothing —
@@ -644,30 +645,38 @@ so a woken waiter proves nothing about which name woke it. Tests and production 
 healthy with the new path entirely broken, right up until the old one is deleted. Cover the new path
 end to end on its own before contracting — a test driving `pg_notify` on exactly one channel.
 
-## `session_live_updates.py` — telling open tabs, over the socket they already hold
+## `conversation_live_updates.py` — telling open tabs, over the socket they already hold
 
 The console's own live channel (<../console_events.py>) reaches every tab the operator has open,
-and this is what puts session changes on it: a `SessionChangedEvent` naming the session whose rows
-moved. **An invalidation, not a payload** — the surfaces reading it hold a list and refetch it, so
-a tab that missed events lands correct by reading again and no consumer has to decide whether the
-socket or the API is the truth. A surface that holds a transcript and a position follows the
-conversation instead (below); this is for the ones that hold neither.
+and this is what puts conversation changes on it: a `ConversationChangedEvent` naming the
+conversation whose record moved. **An invalidation, not a payload** — the surfaces reading it hold
+a list and refetch it, so a tab that missed events lands correct by reading again and no consumer
+has to decide whether the socket or the API is the truth. A surface that holds a transcript and a
+position follows the conversation instead (below); this is for the ones that hold neither.
 
-What it is deliberate about:
+The module is one more `watch_conversations` registration — the same subscription every
+conversation consumer holds, with the console socket as its transport rather than a room or a
+follow socket. What it is deliberate about:
 
-- **Nothing publishes anything new.** Every write that changes a session already notifies `UPDATE`
-  inside its own transaction, so the announcement belongs to the commit rather than to a sweep.
-- **No second `NOTIFY`.** `LISTEN` is broadcast, so each replica already hears every session
-  event and turns what it hears into sends on the console sockets **it** holds
+- **Nothing publishes anything new.** Every write that changes what a conversation shows already
+  wakes the conversation channel inside its own transaction, so the announcement belongs to the
+  commit rather than to a sweep.
+- **No second `NOTIFY`.** `LISTEN` is broadcast, so each replica already hears every conversation
+  wake and turns what it hears into sends on the console sockets **it** holds
   (`ConsoleEventHub.deliver_locally`). Relaying through `broadcast` would notify twice for one
   change and deliver it to every tab twice.
-- **Coalescing is the point, not tidiness.** `UPDATE` fires per stream delta, and each event costs
+- **Every kind invalidates.** A wake means "re-check", never "act", and filtering would go stale
+  besides: a prompt queued into a conversation with no open session emits only `runtime_demand`,
+  and the queued prompt is a row the list shows. `RecheckHeld` alone forwards nothing — it names
+  no conversation, and every tab already re-reads on its own bounded timer and on reconnect.
+- **Coalescing is the point, not tidiness.** `update` fires per stream delta, and each event costs
   every listening tab a whole list read — far more than the notification that triggered it. One
-  event per session per `COALESCE_WINDOW` (500ms) is what keeps the invalidation cheaper than the
-  read it triggers.
+  event per conversation per `COALESCE_WINDOW` (500ms) is what keeps the invalidation cheaper than
+  the read it triggers.
 
-Routing costs a lookup: `SessionEvent` carries no operator and the hub delivers per operator, so
-the session's owner is resolved once per session and kept (a session's owner never changes).
+Routing costs a lookup: `ConversationWakeEvent` carries no operator and the hub delivers per
+operator, so the conversation's owner is resolved once per conversation and kept (a conversation's
+owner never changes).
 
 ## `subscription.py` — reading a conversation from a position
 

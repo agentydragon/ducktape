@@ -118,8 +118,8 @@ from haku.console.x.channels.matrix import (
 )
 from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.conversation_history import ConversationHistory
+from haku.console.x.conversation_live_updates import ConversationLiveUpdates
 from haku.console.x.launch_identity import ChatLaunchAuthorizer
-from haku.console.x.session_live_updates import SessionLiveUpdates
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_store import SessionStore
 from haku.console.x.system_prompt import SystemPromptTemplate
@@ -236,10 +236,11 @@ def create_app(
     }
     launchable_agent_ids = {entry.agent_id for entry in console_config.launchable_agents}
     session_notifications = SessionNotifications(database_url)
-    # Session changes reach open tabs over the console socket the shell already holds, coalesced
-    # per session. Constructed unconditionally: it listens on the session channel and sends on the
-    # console one, neither of which depends on this replica running a Claude runtime.
-    session_live_updates = SessionLiveUpdates(session_notifications, console_event_hub, db_sessions)
+    # Conversation changes reach open tabs over the console socket the shell already holds,
+    # coalesced per conversation. Constructed unconditionally: it listens on the conversation
+    # channel and sends on the console one, neither of which depends on this replica running a
+    # Claude runtime.
+    conversation_live_updates = ConversationLiveUpdates(session_notifications, console_event_hub, db_sessions)
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
         db_sessions,
@@ -750,7 +751,7 @@ def create_app(
                 # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
                 if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
                     await mcp_auth.storage.setup()
-                async with session_live_updates.run(), supervising, allocating, mcp_asgi.lifespan(app):
+                async with conversation_live_updates.run(), supervising, allocating, mcp_asgi.lifespan(app):
                     yield
             finally:
                 # Cancel in-flight approved-call executions (each marks its row cancelled) before the
