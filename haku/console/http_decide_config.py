@@ -16,6 +16,7 @@ policy the decide service enforces on resolved answers beyond its always-on proh
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from ipaddress import IPv4Network, IPv6Network
@@ -24,6 +25,8 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from haku.console.http_grant_models import CREDENTIAL_HANDLE_PATTERN, HttpOrigin, HttpRequestCoverage
+
+logger = logging.getLogger(__name__)
 
 _HEADER_NAME = re.compile(r"[a-z0-9-]+")
 _ENV_VAR_PATTERN = r"^[A-Z][A-Z0-9_]*$"
@@ -241,14 +244,22 @@ class LoadedEgressDecide(BaseModel):
 
 
 def load_egress_decide(config: EgressDecideConfig) -> LoadedEgressDecide:
-    """Read the decide endpoint's env-referenced secrets; a missing var fails loud at startup.
+    """Read the decide endpoint's env-referenced secrets.
+
+    The identity secrets fail loud at startup: an unset proxy-token or fence-credential var raises,
+    because without the proxy token no decide call authenticates and each fence credential binds a
+    named Agent. A registry credential (``config.credentials``) whose value var is unset is instead
+    skipped with a warning, and the endpoint still serves reachability verdicts and every other
+    credential. This is fail-safe, not fail-open: a fenced sandbox only ever holds the inert
+    placeholder, so a request whose credential was skipped simply sends the placeholder upstream —
+    which the upstream rejects — and nothing leaks.
 
     A duplicate identity-secret value would make one secret authenticate two identities — the
-    proxy and an Agent, or two Agents — so those duplicates are refused like a missing var,
-    without echoing values, and an egress credential value may not equal any of them. Egress
-    credential values may repeat among themselves (two presentations of one credential), but a
-    value equal to any configured placeholder would make the "inert" placeholder itself the
-    secret, so that is refused the same way.
+    proxy and an Agent, or two Agents — so those duplicates are refused, without echoing values,
+    and a present egress credential value may not equal any of them. Egress credential values may
+    repeat among themselves (two presentations of one credential), but a value equal to any
+    configured placeholder would make the "inert" placeholder itself the secret, so that is
+    refused the same way.
     """
     proxy_token = os.environ.get(config.proxy_token_env_var)
     if not proxy_token:
@@ -268,9 +279,13 @@ def load_egress_decide(config: EgressDecideConfig) -> LoadedEgressDecide:
     for credential in config.credentials:
         value = os.environ.get(credential.value_env_var)
         if not value:
-            raise RuntimeError(
-                f"missing egress credential env var {credential.value_env_var} for handle {credential.handle}"
+            # Skipped, not fatal (see docstring): fail-safe because the sandbox only ever holds the
+            # inert placeholder, so a request that would have redeemed this credential passes the
+            # placeholder through unchanged and it is worthless upstream (#4884 ruling).
+            logger.warning(
+                "skipping egress credential %s: value env var %s is unset", credential.handle, credential.value_env_var
             )
+            continue
         if value in identity_tokens:
             raise RuntimeError("duplicate egress decide credential values")
         if value in placeholders:

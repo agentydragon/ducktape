@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import textwrap
 from ipaddress import IPv4Network, IPv6Network
 from typing import Any
@@ -264,12 +265,12 @@ def test_github_spike_standing_config(monkeypatch: pytest.MonkeyPatch) -> None:
         assert entry.origins <= credential.origins
 
 
-def test_load_egress_credentials_reads_env_references_and_fails_loud(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_egress_credentials_present_value_conflicts_fail_loud(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Absence is tolerated (see the skip test), but a present-but-conflicting registry value is a
+    misconfiguration or attack and still raises: it may not duplicate an identity secret nor equal a
+    configured placeholder."""
     config = EgressDecideConfig(proxy_token_env_var="EGRESS_PROXY_TOKEN", credentials=[_credential_entry()])
     monkeypatch.setenv("EGRESS_PROXY_TOKEN", _PROXY_TOKEN)
-    monkeypatch.delenv("EGRESS_CREDENTIAL_GITHUB_BOT", raising=False)
-    with pytest.raises(RuntimeError, match="EGRESS_CREDENTIAL_GITHUB_BOT"):
-        load_egress_decide(config)
 
     monkeypatch.setenv("EGRESS_CREDENTIAL_GITHUB_BOT", _PROXY_TOKEN)
     with pytest.raises(RuntimeError, match="duplicate"):
@@ -288,6 +289,36 @@ def test_load_egress_credentials_reads_env_references_and_fails_loud(monkeypatch
     assert loaded.match_headers == frozenset({"authorization"})
     assert loaded.agent_ids == frozenset({_AGENT})
     assert loaded.origins == frozenset({_ORIGIN})
+
+
+def test_load_egress_decide_skips_credential_with_unset_env_var(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A registry credential whose value env var is unset is skipped with a warning, not fatal: the
+    endpoint still loads the proxy token and every credential whose var is set."""
+    config = EgressDecideConfig(
+        proxy_token_env_var="EGRESS_PROXY_TOKEN",
+        credentials=[
+            _credential_entry(),
+            _credential_entry(
+                handle="gitlab-bot",
+                placeholder="gitlab-token-placeholder",
+                value_env_var="EGRESS_CREDENTIAL_GITLAB_BOT",
+            ),
+        ],
+    )
+    monkeypatch.setenv("EGRESS_PROXY_TOKEN", _PROXY_TOKEN)
+    monkeypatch.setenv("EGRESS_CREDENTIAL_GITHUB_BOT", "ghp-real-value")
+    monkeypatch.delenv("EGRESS_CREDENTIAL_GITLAB_BOT", raising=False)
+
+    with caplog.at_level(logging.WARNING):
+        loaded = load_egress_decide(config)
+
+    assert [credential.handle for credential in loaded.credentials] == ["github-bot"]
+    assert any(
+        record.levelno == logging.WARNING and "EGRESS_CREDENTIAL_GITLAB_BOT" in record.getMessage()
+        for record in caplog.records
+    )
 
 
 if __name__ == "__main__":
