@@ -34,6 +34,10 @@ instead, so they load on demand.
 
 ## General
 
+**Correct, then short.** Short is not terminal: map the code to the domain, test what
+matters to pin down, comment what reading alone won't yield, and spend no tokens or
+attention past that.
+
 - **Enter async early**: a single `asyncio.run(async_main(...))` at the top of `main()`;
   never scattered or nested deeper in the call stack.
 - **No large code blobs in YAML/JSON**: any embedded script/config block longer than ~5
