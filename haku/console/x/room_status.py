@@ -164,6 +164,14 @@ class LiveStatus:
                     self._turn_started_at = None
                     self._state = None
                     self._open_items.clear()
+                # The session guard is load-bearing for `session_ended`: a `CLOSING` session has
+                # already left `OPEN_SESSION_STATUSES`, so a replacement session may start — and
+                # write its events — while the old session's `session_ended` waits on its claim
+                # cleanup (`request_close` writes no event; `complete_claim_cleanup` does). That
+                # late ending must not wipe the successor's live state. `lease_expired` alone could
+                # never arrive late: the sweep expires only leased statuses, all of which are open,
+                # an open session blocks every replacement path, and the event commits in the
+                # transaction that ends the session.
                 case SessionEndedBody() | LeaseExpiredBody() if event.session_id == self._session_id:
                     self._session_id = None
                     self._turn_id = None

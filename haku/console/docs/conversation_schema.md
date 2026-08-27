@@ -394,14 +394,15 @@ for no shared benefit.
 The invariant worth checking on its own is `item.text = concat(segments)`, because it is what the
 whole streaming path depends on and it is cheap to state.
 
-**Reads fold the log too, and the agent-facing transcript is one of them.**
-`haku_conversations.read_transcript` folds a session's rows into neutral entries; it does not
-re-read `session_frames` through an adapter. So a transcript cannot disagree with the items and
-turns derived beside it, a reader of it needs neither the session's `runtime_kind` nor any harness
-vocabulary, and a session that ran before a projection fix keeps the history it had rather than
-acquiring a new one on the next read. What such a reader can fail to read is therefore a **log
-kind** — a row written by a newer release, reported as that tool's `unreadable` count — and not a
-frame class the adapter had no rule for.
+**Reads hand out what the fold materialised, and the agent-facing item read is one of them.**
+`haku_conversations.read_items` pages `conversation_item` and `conversation_turn` by their
+defining stream positions; it re-reads neither `session_frames` through an adapter nor the log
+through a second fold. So the entries cannot disagree with the items and turns the writer derived,
+a reader of them needs neither a session's `runtime_kind` nor any harness vocabulary, a
+conversation that ran before a projection fix keeps the history it had rather than acquiring a new
+one on the next read — and a page's cost is the page's rows, not the conversation's length. What
+such a reader can fail to read is therefore a value in the schema it owns — an `item_type` a newer
+release minted — which the strict decode refuses loudly rather than skipping.
 
 ## 3. How a channel resumes
 

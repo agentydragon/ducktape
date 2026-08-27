@@ -154,6 +154,7 @@ py_library(
         ":conversation_events",
         ":conversation_log",
         ":conversation_records",
+        ":item_entries",
         ":launch_identity",
         ":runtime",
         ":runtime_catalog",
@@ -162,7 +163,6 @@ py_library(
         ":session_views",
         ":setup_output",
         ":subscription",
-        ":transcript_entries",
         "//haku/cli_protocol:frame_identity",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
@@ -195,13 +195,13 @@ py_library(
 )
 
 py_library(
-    name = "transcript_entries",
-    srcs = ["transcript_entries.py"],
+    name = "item_entries",
+    srcs = ["item_entries.py"],
     deps = [
         ":conversation_records",
-        ":session_events",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
+        "@pypi//pydantic",
     ],
 )
 
@@ -598,19 +598,15 @@ py_test(
 )
 
 py_test(
-    name = "test_transcript_entries",
-    srcs = ["test_transcript_entries.py"],
+    name = "test_item_entries",
+    srcs = ["test_item_entries.py"],
     deps = [
-        ":conversation_events",
         ":conversation_records",
-        ":session_events",
-        ":transcript_entries",
+        ":item_entries",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
-        "//util:sqlalchemy_types",
-        "@pypi//more_itertools",
-        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

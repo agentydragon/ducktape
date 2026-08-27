@@ -648,11 +648,11 @@ job — so it reaches no channel and breaks no invariant.
 
 **The trap the audit left behind, worth carrying because it will recur:** a name-based search does
 not establish that a field has no reader when a projection renames it at a layer boundary. The
-count an agent receives changes name on its way out — `Transcript.unreadable`,
-`TranscriptSlice.unreadable`, `TranscriptPage.unreadable` — so grepping any one spelling finds
-tests and little else. `unprojected` itself now reaches none of them: the transcript is folded from
-the log, so it counts log kinds it cannot read, and the adapter's count of frame classes it could
-not map is asserted by the capture tests and shown to nobody.
+`unreadable` count an agent used to receive changed name on its way out — `Transcript.unreadable`,
+`TranscriptSlice.unreadable`, `TranscriptPage.unreadable` — so grepping any one spelling found
+tests and little else. That chain is gone with the fold-backed read; `unprojected` reaches no
+surface either, and the adapter's count of frame classes it could not map is asserted by the
+capture tests and shown to nobody.
 
 **The runtime seam now enforces the rule.** `RuntimeAdapter.turn_handler()` returns a provider-owned,
 typed stateful reducer, and each native frame crosses back into generic Console code only as neutral

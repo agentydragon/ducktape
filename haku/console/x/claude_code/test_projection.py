@@ -509,8 +509,8 @@ def test_a_batch_running_out_is_not_a_message_ending():
     state, second = state.advance([recorded(2, assistant(text_block("the migration."), message_id="msg_A"))])
 
     assert [type(event) for event in second.events] == [ItemSegment]
-    # And nothing closes it: an item the frames left open stays open, here and in the log, and a
-    # transcript does not print one (<../transcript_entries.py>).
+    # And nothing closes it: an item the frames left open stays open, here and in the log, and an
+    # item that never completed is not an entry (<../item_entries.py>).
     assert state.open_message == OpenItem(opened_at_frame_seq=1, last_frame_seq=2, backend_item_id="msg_A")
 
 

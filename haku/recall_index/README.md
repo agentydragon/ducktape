@@ -325,7 +325,7 @@ would have to change.
 
 **The chat corpus is unscoped: every session, whichever room or operator it served.**
 That inherits the Matrix channel's own rule (<../console/x/channels/matrix/SPEC.md> § The agent's
-own view), which leaves the policy deliberately open for `list_sessions`/`read_rollout` — the
+own view), which leaves the policy deliberately open for `list_sessions`/`read_frames` — the
 eventual policy about which Haku may read which past conversation is not settled, and guessing at
 one here would be a scoping rule nobody stated.
 
@@ -360,8 +360,8 @@ What settling it touches:
   `chat_attachment` on the session's conversation, which means the search joins those tables (or
   `chat_chunks` denormalizes both).
 - **`haku/console/tools/conversations.py`** — `list_sessions`, `list_turns`,
-  `read_transcript` and `read_rollout` are unscoped by the same open decision. Scoping search but not the drilldown it
-  hands off to would be theatre: the message ids in a hit are exactly what `read_rollout` takes.
+  `read_items` and `read_frames` are unscoped by the same open decision. Scoping search but not the drilldown it
+  hands off to would be theatre: the message ids in a hit are exactly what `read_frames` takes.
 - **Whatever identity the scope keys on.** An Agent's canonical identity and owning Operator come
   from `haku/console/agents/authorization.py` and `mcp_agent_auth.py`; a room-scoped rule instead
   needs the calling session's own conversation, which the in-process server would have to be told.
@@ -384,7 +384,7 @@ and the result it got both appear. Two reasons to do the
 messages first and the frames later, both of which should be re-checked against a real index
 rather than argued:
 
-- **A frame's payload is unbounded.** `read_rollout` already bounds a page in bytes because one
+- **A frame's payload is unbounded.** `read_frames` already bounds a page in bytes because one
   `tool_result` can be an entire file (`haku/console/tools/conversations.py`). Embedding those
   verbatim means vectors over file dumps, a corpus that grows with tool volume rather than with
   conversation, and retrieval that returns the file rather than the reasoning about it.

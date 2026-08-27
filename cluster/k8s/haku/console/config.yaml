@@ -358,10 +358,10 @@ auto_approval_policies:
     type: gmail_label_namespace
     server: gmail
     label_prefix: haku/
-  # Reading back what happened and what is written down: the rollout of a past session, and
+  # Reading back what happened and what is written down: the frames of a past session, and
   # semantic search over the same sessions plus haku-state. One atom because they are one
   # authority — every tool here reads a corpus Haku can already reach (it has a haku-state clone,
-  # and `read_rollout` already spans every session), so search adds discoverability rather than
+  # and `read_frames` already spans every session), so search adds discoverability rather than
   # reachability. Worth knowing that both are unscoped across rooms and operators
   # (haku/recall_index/README.md § Read scoping).
   - id: haku_recall_reads
@@ -370,9 +370,8 @@ auto_approval_policies:
       haku_conversations:
         - list_sessions
         - list_turns
-        - read_transcript
-        - read_rollout
-        - read_frame
+        - read_items
+        - read_frames
       haku_index:
         - search
         - index_status

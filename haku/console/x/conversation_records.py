@@ -1,6 +1,6 @@
 """The records a conversation read hands back, and the cursors that page them.
 
-The store produces these — a session row, a rollout frame, a turn, a transcript entry — and
+The store produces these — a session row, a frame, a turn, a conversation entry — and
 <../tools/conversations.py> is the MCP surface that serialises them. They live at the runtime level
 because the store is their only producer.
 
@@ -10,8 +10,7 @@ here is what one read produced.
 
 **Pydantic rather than dataclasses, because the boundary needs it.** Every model here is either an
 MCP tool's return type, whose JSON schema is generated from the class, or a cursor that arrives
-back as a tool argument and is parsed out of the wire. `TranscriptSlice` is the one exception:
-nothing serialises it, and it is the store's hand-off to the tool's byte budget.
+back as a tool argument and is parsed out of the wire.
 """
 
 from __future__ import annotations
@@ -80,11 +79,11 @@ class SessionCursor(BaseModel):
         return cls(created_at=session.created_at, session_id=session.session_id)
 
 
-class RolloutFrame(BaseModel):
+class FrameRecord(BaseModel):
     """One bridge record containing a named harness's wire, not the neutral conversation.
 
     ``kind`` is Haku's bridge class. ``payload`` is the authoritative complete inner harness frame
-    and a transcript entry is what its native payload projected to. No generic reader derives a
+    and a conversation entry is what its native payload projected to. No generic reader derives a
     discriminator from that payload: a harness is free to use any JSON shape at all.
     """
 
@@ -103,14 +102,14 @@ class RolloutFrame(BaseModel):
 class FrameCursor(BaseModel):
     """Where a read of the frame log starts — inclusively, so this is a frame that exists.
 
-    Inclusive rather than "after this one" so that a transcript entry's `first_frame_seq` is
-    already a cursor: appealing a normalization to the frames behind it needs no arithmetic.
+    Inclusive rather than "after this one" so that an entry's `first_frame_seq` is already a
+    cursor: appealing a normalization to the frames behind it needs no arithmetic.
     """
 
     frame_seq: int
 
     @classmethod
-    def of(cls, frame: RolloutFrame) -> FrameCursor:
+    def of(cls, frame: FrameRecord) -> FrameCursor:
         return cls(frame_seq=frame.frame_seq)
 
 
@@ -118,7 +117,7 @@ class TurnRecord(BaseModel):
     """One exchange of a session, as a range over that session's frames."""
 
     turn_id: UUID
-    first_frame_seq: int = Field(description="Pass to `read_rollout` as `cursor` to read this exchange.")
+    first_frame_seq: int = Field(description="Pass to `read_frames` as `cursor` to read this exchange.")
     last_frame_seq: int | None = Field(
         description="Inclusive end of the range. Absent while the exchange is still running, "
         "and on a finished one that recorded no frames at all."
@@ -149,12 +148,16 @@ class FromFrames(BaseModel):
     others": a message whose frames are interrupted by a tool result spans the interruption too,
     and that is the honest reading of a range rather than a defect in it.
 
-    This is the appeal path. `read_frame(session_id, first_frame_seq)` returns the first one
-    whole however large; `read_rollout(session_id, cursor={"frame_seq": first_frame_seq})` walks
-    the span.
+    This is the appeal path. `read_frames(session_id, cursor={"frame_seq": first_frame_seq})`
+    walks the span, and with `limit=1` returns the first frame whole however large. Frames are
+    session-level while a conversation spans replaced sessions, so the range names its session.
     """
 
     kind: Literal["frames"] = "frames"
+    session_id: UUID = Field(
+        description="Whose wire log the range indexes — pass to `read_frames` unchanged. A conversation's "
+        "entries span replaced sessions, and a frame number means nothing without its session."
+    )
     first_frame_seq: int
     last_frame_seq: int
 
@@ -188,10 +191,12 @@ class Outcome(StrEnum):
 
 
 class _EntryBase(BaseModel):
-    """What every transcript entry carries: where it sits, and where it came from."""
+    """What every conversation entry carries: where it sits, and where it came from."""
 
-    index: int = Field(
-        description="This entry's position in the session's transcript. `read_transcript`'s `cursor` names one."
+    seq: int = Field(
+        description="The position in the conversation's event stream of the row that defines this entry. "
+        "`read_items`'s `cursor` names one; entries are sparse in it, since most stream rows build an "
+        "entry rather than being one."
     )
     provenance: EntryProvenance
 
@@ -299,42 +304,27 @@ class TurnEndEntry(_EntryBase):
 
 type TurnEnd = TurnAnsweredEnd | TurnAbortedEnd | TurnFailedEnd
 
-type TranscriptEntry = Annotated[
+type ConversationEntry = Annotated[
     PromptEntry | MessageEntry | ReasoningEntry | ToolCallEntry | ToolResultEntry | TurnEndEntry,
     Field(discriminator="kind"),
 ]
 
 
-class TranscriptCursor(BaseModel):
-    """A position in a session's transcript, by ordinal.
+class ItemCursor(BaseModel):
+    """A position in the conversation's event stream, where a page of entries starts — inclusively.
 
-    An ordinal rather than a keyset, and safe here for the one reason an offset is ever safe: this
-    order only ever grows at its *end*. The conversation log is append-only and dense, and the
-    transcript is a deterministic left-to-right fold of it in which an entry is written by the row
-    that finishes its item — so entry *n* is the same entry on every read, and an entry already
-    handed out does not change when the turn it belongs to goes on.
+    A keyset on `event_seq`, which is dense per conversation and append-only, so the cursor is a
+    durable position rather than an offset: rows landing at the stream's end move no entry already
+    handed out, and a page is served from this position by indexed reads of the materialised
+    rows — per-page work is bounded by the page's own content, never by how long the conversation
+    has run.
 
-    A keyset on the frame the entry came from would not do: a console-authored entry has no frames
-    at all (see `ConsoleAuthored`) and so has no position in that key.
+    The position is the *defining row's*, not an entry ordinal: a console-authored entry has no
+    frame to key by, but every entry — authored or folded — is defined by exactly one stream row.
     """
 
-    index: int
+    seq: int
 
     @classmethod
-    def of(cls, entry: TranscriptEntry) -> TranscriptCursor:
-        return cls(index=entry.index)
-
-
-class TranscriptSlice(BaseModel):
-    """What the store hands back for one `read_transcript` call, before the page's byte budget.
-
-    Up to `limit + 1` entries, like every other read here: the extra row is what tells a full page
-    from the last one, and it is the row the returned cursor names.
-
-    `unreadable` counts, by their stored `kind`, the session's log rows this release has no reading
-    for — over the whole session rather than this page, so paging cannot hide one. None where there
-    were none, never an empty map standing in for it.
-    """
-
-    entries: list[TranscriptEntry]
-    unreadable: dict[str, int] | None
+    def of(cls, entry: ConversationEntry) -> ItemCursor:
+        return cls(seq=entry.seq)
