@@ -2,7 +2,7 @@
 
 The vocabulary every surface renders and every backend adapter produces. Nothing in it is
 Claude-shaped: no `assistant`, no content block, no `msg_…`, no `tool_use_result`. The Claude
-adapter is <claude_code/projection.py> (<README.md> § The neutral projection).
+adapter is <claude_code/projection.py>.
 
 **Everything is an item, and an item is a type and three events**: started, then any number of
 segments, then completed. Both stream-native harness protocols reached that decomposition

@@ -598,7 +598,7 @@ class SessionService:
                 StarletteTextWebSocket(websocket),
                 # The cursor is read here, per connection, off the session's own rows — so a replica
                 # adopting a session mid-turn asks for what it is missing rather than being handed the
-                # runner's whole replay window (<README.md> § `session_store.py` and `session_runtime.py`).
+                # runner's whole replay window (`SessionStore.highest_runner_seq`).
                 launch,
                 self._progress_reporter(session_id),
                 RolloutRecorder(self._store, session_id),
@@ -837,7 +837,7 @@ class SessionService:
         **Project, then act.** Every frame goes through the selected runtime adapter and this loop
         acts on the neutral events that come back, so what it knows about is prose, messages, tool calls
         and a completed turn rather than any harness's native frame vocabulary
-        (<README.md> § The neutral projection).
+        (<conversation_events.py>).
 
         *frames* belongs to the session, not to this call — see `handle_runner`. This call is the
         turn's span and the only thing that closes it, so a turn left open means no code got to
@@ -850,7 +850,7 @@ class SessionService:
         (`SessionStore.apply_frame`), and `complete_frame` does the same for the terminal frame and
         turn close. A process dying anywhere therefore leaves the items saying what happened and
         the session saying which frame it got through — what makes adoption a replay from a durable
-        position and its effects exactly-once (<README.md> § The cursor).
+        position and its effects exactly-once (`SessionStore.apply_frame`).
         """
         runtime = await self._runtime(session_id)
         turn_id = turn.turn_id
@@ -981,7 +981,7 @@ async def _replaying(
 
     **This is what makes adoption and steady state one call.** The turn loop consumes one iterator
     and cannot tell which half a frame came from, so a turn whose ending is among the recorded
-    frames closes without the socket being consulted (<README.md> § The cursor).
+    frames closes without the socket being consulted (`SessionStore.apply_frame`).
     """
     for frame in recorded:
         yield frame

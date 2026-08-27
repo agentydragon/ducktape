@@ -9,7 +9,7 @@ foreground keeps answering. None of them is in the recorded corpus that
 the fold does with a shape, never that the CLI emits exactly that shape. Where a shape is a
 hypothesis — the forwarded subagent frame above all — the test says so, and
 <claude_code/testdata/> is where the capture that settles it will land
-(<README.md> § Recording a session as a fixture).
+(<claude_code/frame_export_main.py>).
 
 **The fold under test is the write path's.** `RuntimeTurnHandler.apply` is what `_run_turn`
 drives frame by frame, and what it emits is what the log gets a row for; <claude_code/testing/fold.py>

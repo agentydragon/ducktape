@@ -333,7 +333,7 @@ class ResumedTurn:
     `replay` is the rest of that account — the frames recorded past the session's projection
     cursor, whose effects therefore did not commit. Feeding them to the turn loop ahead of the live
     stream is what makes adoption the same call as steady state with a cursor that happens to be
-    behind (<README.md> § The cursor). Empty for a session with no cursor, where adoption falls
+    behind (see `apply_frame`). Empty for a session with no cursor, where adoption falls
     back to reading the frames itself.
 
     `streaming` is the message the departed holder left open, which the adopting fold has to be
@@ -1681,7 +1681,9 @@ class SessionStore:
         reading it replays its whole window.
 
         It is a **floor**, and the runner treats it as one (`OutboundLog.seed`). Console-authored
-        `setup_output` rows do not participate in this native-frame cursor.
+        `setup_output` rows do not participate in this native-frame cursor, so holes in the
+        recorded runner numbers are expected — a gap is not evidence of loss, and nothing yet
+        checks for one.
         """
         async with self._sessions() as db:
             return await db.scalar(
@@ -1831,7 +1833,7 @@ class SessionStore:
         and `sessions.projected_frame_seq` commit or do not commit as one, which is what makes those
         effects exactly-once: a process that dies anywhere leaves the cursor naming the last frame
         whose effects are durable, so whoever adopts the session redoes exactly the frames whose
-        effects did not commit (<README.md> § The cursor).
+        effects did not commit.
 
         **Nothing is queued for a channel here.** The turn writes the log and stops; a channel reads
         forward from its own cursor and decides what it owes. That is the seam this method used to

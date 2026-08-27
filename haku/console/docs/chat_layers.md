@@ -80,6 +80,19 @@ that re-derived everything would silently delete every fact no frame carries.
 
 ## Placing something new
 
+- **A module** goes to the directory of the one axis it varies on. Under `../x/` those are the
+  channel-neutral, harness-neutral runtime (`x/*.py`), one channel (`x/channels/<name>/`), and one
+  CLI harness each in a directory named for the product whose binary it launches (`x/claude_code/`,
+  `x/codex_app_server/` — the harness and the model behind it are different axes). The test is what
+  the module would take with it if the other axis were replaced: a second channel must reuse
+  everything at the runtime level unchanged, and a module that cannot compile without `matrix-nio`
+  is the channel's. Imports do not decide the harder cases — what the module's output is _for_
+  does. `channels/matrix/spans.py` imports no `matrix-nio` and reads only the neutral stream, yet
+  belongs to the channel, because what it folds the stream into is Matrix's own rendering and a
+  second channel writes its own fold; `x/sandbox_claims.py` mints `claude-`-prefixed claim names
+  but is Kubernetes provisioning any harness uses, so it is runtime. A vocabulary genuinely owned
+  by two axes is two modules: the CLI's own top-level `type` values are `x/claude_code/frames.py`,
+  and the bridge envelope's `kind` with the row the console authors under it is `x/setup_output.py`.
 - **A table** goes to the layer that outlives what it holds. State only one messaging service can
   interpret — retry budgets, transport ids, an addressable copy's revision — is that channel's own,
   lives below the channel boundary and is named after the channel. State that must survive a runner
