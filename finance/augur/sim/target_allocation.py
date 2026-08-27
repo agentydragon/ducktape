@@ -38,9 +38,9 @@ costs. A withdrawn draft carried a `spend_quanta` field that this policy always 
 reserved for a tier-aware policy to fill later — a field with no reader, which is dead
 payload however well-intentioned the reservation.
 
-Nor is `SleeveOrders` the general action vocabulary from <plans/actor_actions.md>. That
-vocabulary is `Pay`/`Buy`/`Sell` per INSTRUMENT, it is what every policy will eventually
-emit, and its shape is deliberately unsettled until a policy emits through it. This type is
+Nor is `SleeveOrders` the general action vocabulary (`Pay`/`Buy`/`Sell` per INSTRUMENT)
+that every policy will eventually emit, whose shape is deliberately unsettled until a
+policy emits through it. This type is
 one policy's output, in the units its executor already consumes. Promoting a single
 policy's output shape to a boundary is exactly the mistake #3745 was closed for.
 """
@@ -98,7 +98,7 @@ class SleeveOrders(NamedTuple):
     """What this policy wants done this month, batched over rollouts.
 
     Both are `(sleeve, rollout)` in `SleeveUniverse` order, **in whole quanta** — the unit
-    the lots are held in. Orders are units-only per <plans/actor_actions.md>: a
+    the lots are held in. Orders are units-only: a
     dollar-denominated order would leave the ENGINE to divide by a price and round, which is
     the engine choosing how much to trade rather than executing what it was told. Doing the
     division here makes the rounding rule a decision with a name and a test.

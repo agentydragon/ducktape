@@ -349,7 +349,7 @@ creation_rules:
   # Combined NixOS+HM file: NixOS daemon decrypts via host key for
   # /etc/nix/attic-netrc; home-manager decrypts via user key for
   # ~/.config/attic/config.toml. Auto-rotated by attic-token-rotation
-  # CronJobs in the cluster (see plans/token-minting-i-think-scalable-moth.md).
+  # CronJobs in the cluster.
   # Must precede the broader `secrets/hosts/<host>-.*\.yaml$` rules below.
   - path_regex: secrets/hosts/wyrm2-attic\.yaml$
     key_groups:

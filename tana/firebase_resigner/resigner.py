@@ -15,8 +15,6 @@ Firebase session is dead, this sidecar:
    routes the URL into the running renderer, which signs in via
    `signInWithCustomToken(...)` — Firebase issues a fresh refresh token at
    the renderer side and persists it to IndexedDB.
-
-See cluster/docs/plans/tana_mcp_sane_signin.md for the wider design.
 """
 
 import asyncio

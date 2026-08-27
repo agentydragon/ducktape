@@ -97,10 +97,9 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
   rebuild. The `codex-*` entries stay on `anthropic/` → `/v1/messages` for Claude Code;
   the two lanes are the same pod reached through the wire each client speaks natively.
 
-- **Harbor**: `harbor-{namespace,secrets,db,agent-rbac,ci,oidc-config,props,proxy-cache,servicemonitor}` —
-  parked 2026-06-11. It was mostly a registry for props, which now use the Forgejo
-  registry for backing. (`harbor-db` spec already moved to `local-path-ovh` /
-  `region=hil` should it ever be revived.)
+- **Harbor**: **removed 2026-08-11** (#3967) after two months parked — it was mostly a
+  registry for props, which use the Forgejo registry; the replacement track is the
+  lighter-registry item under Next Actions (`oci-cache`).
 - **InvenTree**: `inventree-{namespace,secrets,token-provisioner}`,
   `authentik-blueprint-inventree-secret` — nice-to-have, parked under capacity pressure.
 - **OpenClaw / OpenShell**: **removed 2026-07-31**, manifests deleted rather than
@@ -127,10 +126,9 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
 Suspended only because the home Proxmox host is offline; should auto-recover when it
 returns (not independently parked):
 
-- **proxmox-proxy** — the Proxmox API proxy; needs `atlas`.
-- **sdr**, **scanner** — waiting on `atlas` (sdr also needs the radio re-set-up post-relocation).
-- Not suspended in git, but non-functional while `wyrm2` (GPU) is down: **ollama**,
-  **nvidia-device-plugin**.
+- **sdr** — waiting on `atlas` (also needs the radio re-set-up post-relocation).
+- Not suspended in git, but non-functional while the Proxmox hosts are down:
+  **proxmox-proxy** (needs `atlas`); **ollama**, **nvidia-device-plugin** (need `wyrm2`).
 
 ## Next Actions
 
@@ -500,8 +498,8 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       promtail) — unsatisfying because it suppresses all readiness checking. Full
       options, analysis, and the long-term fix (auto-remove stale NotReady nodes):
       <plans/offline_node_daemonset_health.md>.
-- [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `scanner`,
-      `proxmox-proxy`, `props`/`props-registry`)
+- [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `proxmox-proxy`,
+      `props`/`props-registry`)
 - [ ] Cilium Gateway `Programmed: False` (upstream bug `cilium/cilium#42786`):
       hostNetwork gateways currently report `AddressNotAssigned` even though traffic
       works through the hostNetwork Envoy listeners. Current workaround is Route 53

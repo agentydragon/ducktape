@@ -1,7 +1,7 @@
 # The conversation record
 
 What a thread is, as tables: the log every fact is written to, the entities materialised from it,
-the state each channel keeps beside it, and the single migration that reaches this shape.
+and the state each channel keeps beside it.
 
 <chat_layers.md> holds the layer invariant — a channel talks only to the conversation, a session
 talks only to the conversation, never to each other — and is not restated here. This is the schema
@@ -415,109 +415,3 @@ the log, none of which holds under a schema where prose is a mutated column:
 **Read, act, then keep.** A cursor is advanced after the channel has done what the events oblige it
 to do, so a crash in that window replays rather than skips. A transport with no idempotency key
 turns that replay into a genuine duplicate, which is the channel's own problem to declare and mark.
-
-## 4. The cutover
-
-One migration. Existing conversation data is discarded rather than migrated, which is what makes
-this affordable and is also the only reason it can be done once.
-
-**It creates the target tables outright; it never alters an old one.** Nothing is carried across, so
-there is no `ALTER` to write, and the migration's `upgrade()` is the target schema stated once —
-which is also what lets it become the baseline (below) with no second authoring.
-
-### It becomes the baseline, in two steps because a stamped database allows no fewer
-
-The chain is a single baseline plus one revision (`0081`, `0082`), and this should not stack a third
-on it indefinitely: the end state is one file that creates the target schema from nothing. Getting
-there is two steps, and the reason is worth stating so the second is not read as an oversight.
-
-1. **The cut lands as a revision on `0082`.** Production is stamped there, and a stamped database
-   reaches a new schema only by applying something. A file that no-ops for a stamped database
-   cannot also transform it, so the transformation is a revision like any other.
-2. **Once it has rolled, the three collapse into one.** `0081`, `0082` and the cut merge into a
-   single baseline rooted at the cut's own revision — the same move that produced `0081`, now over
-   three files instead of seventy, against a production already stamped at the new root.
-
-Step 2 inherits step 1's verification rather than a lighter one: the schema alembic can diff is not
-the schema, and `compare_metadata` sees no CHECK constraint, function, trigger, constraint name or
-identity sequence. Both steps are checked by building one database through the old path and one
-through the new and comparing `pg_dump --schema-only` output — the check that caught a `SERIAL`
-where the chain had a `smallint`, and 34 function bodies differing only in indentation.
-
-**Purge live sessions first, while the claim sweep can still reap their sandboxes.** The sweep finds
-its work through `sessions`; once the chat tables are gone it cannot, and every sandbox claim is
-orphaned. So `DELETE FROM sessions` runs before the migration, not inside it.
-
-**`conversation` and `chat_attachment` rows survive.** Deleting conversations would cascade to every
-attachment, and every Matrix room would lose its binding and need re-inviting for nothing. The
-threads stay; what hangs beneath them goes.
-
-| Change        | Tables                                                                                                                                                                                                                            |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Dropped**   | `session_messages`, `session_prompts`, `session_turns`, `session_turn_prompts`, `session_events`, `session_outbox`, `chat_delivery`, `matrix_room_cursor`, `matrix_ingress_event`                                                 |
-| **Created**   | `conversation_event`, `conversation_item`, `conversation_turn`, `conversation_prompt`, `channel_cursor`, `matrix_revision`, `matrix_outbox`, and `matrix_ingress_event` re-pointed at a prompt item                               |
-| **Emptied**   | `sessions` and `session_frames` — every row, the tables kept                                                                                                                                                                      |
-| **Untouched** | `conversation`, `chat_attachment`, `matrix_sync_watermark`, `matrix_access_token`, the approval ledger, the agent authority graph, the OAuth and operator tables, push subscriptions, node daemons, the recall index's own tables |
-
-### The chat surface is unavailable for the length of the roll
-
-`maxUnavailable: 0` means the previous image serves against the new schema until the roll finishes,
-and it selects tables that no longer exist. This is the accepted cost, and it is stated here so that
-it is planned for rather than discovered.
-
-**Down for the roll**: the conversation list, the transcript, the follow socket, prompt admission
-from the browser, the Matrix sync loop in both directions, any turn a surviving replica is still
-running, and the recall index's chat sweep.
-
-**Serving throughout**: the approval queue and the tool-call history — `mcp_tool_calls` shares no
-column with any chat table — along with agent enrollment and authority, operator login, the OAuth
-connection surfaces and their refresh sweep, Web Push, the node daemons, `/api/capabilities`, and
-the frame inspector, which serves an emptied table until new sessions run.
-
-The recall index repairs itself without intervention: its sweep computes the sessions it holds
-minus the sessions the source still shows and forgets the difference before indexing anything.
-
-## 5. What changes with it
-
-A map, not a diff.
-
-**Rewritten.** `x/session_store.py` splits along the seams it currently hides — a log writer, a
-conversation read, the prompt queue, session lifecycle. `x/session_events.py` becomes the log's one
-encoder. `x/conversation_events.py` takes the item shape. Provider-owned `RuntimeTurnHandler`s (Claude's in
-`x/claude_code/runtime.py`) emit neutral items and segments through `FrameEffects`.
-`x/session_runtime.py`'s turn loop stops holding message identity and stops writing the transcript
-on paths the log does not see.
-`x/session_views.py`, `x/transcript_entries.py`, `x/conversation_records.py` and `x/subscription.py`
-read items instead of messages. `x/conversation_follow.py` sends appends instead of whole rows.
-`x/reprojection.py` becomes the two-fold checker. In the Matrix channel, `outbox.py`,
-`room_subscription.py`, `conversation.py` and `sync.py` move onto the attachment-keyed cursor and
-the derived outbox. The frontend's conversation page and its generated types follow the read models.
-
-**Deleted.** `SessionStore.begin_assistant`, `update_assistant`, `enqueue_turn_reply` and
-`set_message_source_frames` — the independent writers whose absence from the log is what this
-redesign exists to end — along with `_enqueue_reply` and the branch by which the conversation's
-writer named a channel's address. `delivery_log`'s per-message writes go with the table's narrowing.
-The migration tests pinned to dropped tables go with the tables.
-
-**Untouched.** `x/sandbox_claims.py`, `x/session_notifications.py` — the wake carries an id and
-nothing else, so it survives a re-keying of everything it wakes — `x/setup_output.py`,
-`x/system_prompt.py`, and the Matrix channel's `client.py`, `pacer.py`, `formatted_body.py` and
-`ingress_ledger.py`. The approval, agent-authority, OAuth, push and node-daemon halves of the
-console are not involved.
-
-**One consumer lives outside the chat runtime and a scoped sweep misses it.**
-<../../recall_index/chat_source.py> selects the console's transcript directly, so it reads
-`conversation_item` — and it is the reason that table keeps a stable per-item id, its type, its text
-and its timestamps in queryable columns rather than folding them into the log alone.
-
-## 6. What this makes of the work in flight
-
-The chain that began with the conversation-keyed log — the writers supplying `conversation_id`, the
-`SET NOT NULL` that follows them, and the separate writers for turn lifecycle, setup narration and
-session provisioning — is retargeted rather than abandoned. **The five authored kinds' semantics are
-this design's content; only the landing vehicle changes**, from an incremental widening of
-`session_events` to the log this document specifies. A reviewer closing those should read them as
-merged into the cutover, not as work dropped.
-
-The `SET NOT NULL` step is the one with nothing to carry forward: it re-runs a backfill on a table
-that is dropped.
