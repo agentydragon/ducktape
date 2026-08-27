@@ -1,23 +1,33 @@
 """The haku-indexer worker: recall-index maintenance outside the console process.
 
-Runs the two maintenance stages of `recall_index_sync` — source materialization and embedding —
-against the deploy-owned recall-index registry in the shared console config file. The console
-keeps serving `haku_index.search`/`index_status` as database readers, so this worker failing or
-rolling leaves search on the last committed index state, with staleness visible in `index_status`.
+One binary, two roles selected by ``--role``, each running one maintenance stage of
+`recall_index_sync` in its own Deployment:
 
-Any number of replicas may run beside any number of console replicas still carrying the loop:
-each logical index is maintained under its per-index Postgres advisory lock, so co-existence
-costs a lost lock attempt, never a double sync.
+- ``chunk`` sweeps every configured source in the deploy-owned recall-index registry and
+  materializes chunks. Replicas — and console replicas of a release that still carried the loop —
+  may overlap freely: each logical index is maintained under its per-index Postgres advisory
+  lock, so co-existence costs a lost lock attempt, never a double sync.
+- ``embed`` drains the shared embedding queue. Replicas share the queue in disjoint batches
+  (`embed_pending` claims ``FOR UPDATE SKIP LOCKED``), so overlap scales the drain instead of
+  double-embedding.
 
-The worker's database role is deliberately narrow — recall-index read/write plus read-only
-chat-source access — and its environment holds only index Git credentials and embedder egress.
+The console keeps serving `haku_index.search`/`index_status` as database readers, so either role
+failing or rolling leaves search on the last committed index state, with staleness visible in
+`index_status`.
+
+Each role's settings model requires only that role's credentials — the chunk pod holds index Git
+credentials and no embedder endpoint, the embed pod holds the embedder endpoint and no Git
+credential — so a pod cannot start with the other role's secrets missing *or* present-but-unused.
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
 import signal
+from contextlib import AbstractAsyncContextManager
+from enum import StrEnum
 from pathlib import Path
 
 from openai import AsyncOpenAI
@@ -38,8 +48,15 @@ from haku.recall_index.schema import Base as RecallIndexBase
 logger = logging.getLogger(__name__)
 
 
-class IndexerSettings(BaseSettings):
-    """Runtime settings for the indexer worker (env-driven, prefix ``HAKU_INDEXER_``).
+class IndexerRole(StrEnum):
+    """Which maintenance stage this process runs."""
+
+    CHUNK = "chunk"
+    EMBED = "embed"
+
+
+class _WorkerSettings(BaseSettings):
+    """Env-driven settings shared by both roles (prefix ``HAKU_INDEXER_``).
 
     Deliberately not the console's ``Settings``: the worker must be startable without operator
     OIDC, Web Push, routine, or connector credentials — requiring those here would re-grow the
@@ -50,23 +67,34 @@ class IndexerSettings(BaseSettings):
 
     # The worker's narrow role, not the console's application owner.
     database_url: SecretStr
+
+
+class ChunkSettings(_WorkerSettings):
+    """The chunk role: source sweeps against the deploy-owned registry."""
+
     # The shared deploy-owned console config file: `recall_indexes` is the registry of what this
-    # worker maintains, and one file keeps the console's readers and this worker's writers on the
+    # role materializes, and one file keeps the console's readers and this role's writers on the
     # same registry and Git credential slots.
     config_file: Path
+    recall_index: RecallIndexSettings = Field(default_factory=RecallIndexSettings)
+
+
+class EmbedSettings(_WorkerSettings):
+    """The embed role: drain the shared content queue into one model's vector space."""
+
     # Embedding endpoint for the shared content queue. The batch loop uses the config's
     # `sync_timeout_seconds`: off the request path, waiting out a cold model load is correct.
     embedder: EmbedderConfig
-    recall_index: RecallIndexSettings = Field(default_factory=RecallIndexSettings)
 
 
 def verify_worker_schema(database_url: str) -> None:
     """Fail startup if this image cannot read the tables its role may touch. Never applies DDL.
 
-    Narrower than the console's whole-metadata check on purpose: the worker's role holds only
-    recall-index read/write plus read-only chat-source access, so probing any other console table
-    would fail on permissions rather than on schema compatibility. An incompatible image therefore
-    crash-loops here and the previous ReplicaSet keeps maintaining the index.
+    Narrower than the console's whole-metadata check on purpose: both process roles run as the
+    one `haku_indexer` database role, which holds only recall-index read/write plus read-only
+    chat-source access, so probing any other console table would fail on permissions rather than
+    on schema compatibility. An incompatible image therefore crash-loops here and the previous
+    ReplicaSet keeps maintaining the index.
     """
     engine = create_engine(sync_database_url(database_url))
     try:
@@ -78,38 +106,43 @@ def verify_worker_schema(database_url: str) -> None:
         engine.dispose()
 
 
-async def async_main(settings: IndexerSettings) -> None:
-    console_config = load_console_config(settings.config_file)
-    if any(
-        isinstance(index, GitRecallIndexDefinition) and index.repo_url.startswith("https://")
-        for index in console_config.recall_indexes
-    ):
-        configure_ca_trust(console_config.git_ca_bundle)
+async def async_main(settings: ChunkSettings | EmbedSettings) -> None:
     engine = create_async_engine(settings.database_url.get_secret_value(), pool_pre_ping=True)
     try:
         sessions = async_sessionmaker(engine, expire_on_commit=False)
-        maintenance = RecallIndexMaintenance(
-            engine, sessions, indexes=console_config.recall_indexes, budget=settings.recall_index.chunk_budget
-        )
-        embedding = RecallEmbeddingMaintenance(
-            engine,
-            sessions,
-            embedder=OpenAIEmbedder(
-                AsyncOpenAI(
-                    base_url=settings.embedder.base_url,
-                    api_key=settings.embedder.api_key.get_secret_value(),
-                    timeout=settings.embedder.sync_timeout_seconds,
+        stage: AbstractAsyncContextManager[None]
+        if isinstance(settings, ChunkSettings):
+            console_config = load_console_config(settings.config_file)
+            if any(
+                isinstance(index, GitRecallIndexDefinition) and index.repo_url.startswith("https://")
+                for index in console_config.recall_indexes
+            ):
+                configure_ca_trust(console_config.git_ca_bundle)
+            stage = RecallIndexMaintenance(
+                engine, sessions, indexes=console_config.recall_indexes, budget=settings.recall_index.chunk_budget
+            ).run()
+            logger.info(
+                "haku-indexer chunking %s", ", ".join(index.index_id for index in console_config.recall_indexes)
+            )
+        else:
+            stage = RecallEmbeddingMaintenance(
+                sessions,
+                embedder=OpenAIEmbedder(
+                    AsyncOpenAI(
+                        base_url=settings.embedder.base_url,
+                        api_key=settings.embedder.api_key.get_secret_value(),
+                        timeout=settings.embedder.sync_timeout_seconds,
+                    ),
+                    model=settings.embedder.model,
+                    query_instruction=settings.embedder.query_instruction,
                 ),
-                model=settings.embedder.model,
-                query_instruction=settings.embedder.query_instruction,
-            ),
-        )
+            ).run()
+            logger.info("haku-indexer embedding for model %s", settings.embedder.model)
         stopping = asyncio.Event()
         loop = asyncio.get_running_loop()
         for signum in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(signum, stopping.set)
-        logger.info("haku-indexer maintaining %s", ", ".join(index.index_id for index in console_config.recall_indexes))
-        async with maintenance.run(), embedding.run():
+        async with stage:
             await stopping.wait()
         logger.info("haku-indexer stopping")
     finally:
@@ -118,9 +151,18 @@ async def async_main(settings: IndexerSettings) -> None:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    settings = IndexerSettings()
+    parser = argparse.ArgumentParser(description="haku-indexer recall-index maintenance worker")
+    parser.add_argument(
+        "--role",
+        type=IndexerRole,
+        choices=tuple(IndexerRole),
+        required=True,
+        help="chunk: sweep configured sources into chunks; embed: drain the shared embedding queue",
+    )
+    role: IndexerRole = parser.parse_args().role
+    settings = ChunkSettings() if role is IndexerRole.CHUNK else EmbedSettings()
     # DDL belongs to the console's image-coupled release Job. Prove this image can read the
-    # already-migrated schema before taking any advisory lock.
+    # already-migrated schema before doing any maintenance work.
     verify_worker_schema(settings.database_url.get_secret_value())
     asyncio.run(async_main(settings))
 

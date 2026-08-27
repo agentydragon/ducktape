@@ -3,9 +3,11 @@
 import pytest
 import pytest_bazel
 import yaml
+from more_itertools import one
 from pydantic import SecretStr
 
 from haku.console.config import ClaudeCodeImplementationConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
+from haku.console.indexer import ChunkSettings, EmbedSettings, IndexerRole
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from util.bazel.runfiles import get_required_path
@@ -97,6 +99,32 @@ def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest
     assert codex.mcp_url == "http://haku-console.haku-console.svc.cluster.local:9090/mcp"
     assert codex.https_proxy == ("http://public-coder-codex-runner-proxy.public-coder-agent.svc.cluster.local:8080")
     assert "litellm.litellm.svc.cluster.local" not in codex.no_proxy
+
+
+def _indexer_deployment_env(filename: str, role: IndexerRole) -> dict[str, str]:
+    """The literal env of the role's Deployment, checking the manifest names a role this binary has."""
+    deployment = yaml.safe_load(get_required_path(f"ducktape/cluster/k8s/haku/console/{filename}").read_text())
+    container = one(deployment["spec"]["template"]["spec"]["containers"])
+    assert IndexerRole(one(container["args"]).removeprefix("--role=")) is role
+    return {item["name"]: item["value"] for item in container["env"] if "value" in item}
+
+
+def test_deployed_chunk_role_env_satisfies_its_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The chunk pod starts from exactly its manifest env — no embedder configuration required."""
+    for name, value in _indexer_deployment_env("indexer-deployment.yaml", IndexerRole.CHUNK).items():
+        monkeypatch.setenv(name, value)
+    # The one secret env the manifest binds by reference rather than value.
+    monkeypatch.setenv("HAKU_INDEXER_DATABASE_URL", "postgresql+asyncpg://haku_indexer@db.test/approval_store")
+    assert ChunkSettings().config_file.name == "config.yaml"
+
+
+def test_deployed_embed_role_env_satisfies_its_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The embed pod starts from exactly its manifest env — no registry or Git configuration required."""
+    for name, value in _indexer_deployment_env("indexer-embed-deployment.yaml", IndexerRole.EMBED).items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("HAKU_INDEXER_DATABASE_URL", "postgresql+asyncpg://haku_indexer@db.test/approval_store")
+    settings = EmbedSettings()
+    assert settings.embedder.base_url.startswith("http")
 
 
 if __name__ == "__main__":

@@ -26,8 +26,9 @@ class EmbeddingSyncReport:
 async def embed_pending(session: AsyncSession, *, embedder: Embedder, limit: int = EMBED_BATCH) -> EmbeddingSyncReport:
     """Embed at most one bounded batch of globally queued content.
 
-    Source rows stay committed even when this fails. Retrying later reads the same missing rows;
-    conflict-safe insertion makes an overlapping worker harmless if leadership changes mid-call.
+    The batch is claimed ``FOR UPDATE SKIP LOCKED`` for this session's transaction, so any number
+    of concurrent drains take disjoint batches. Source rows stay committed even when this fails:
+    the claim dies with the transaction and a retry reads the same missing rows.
     """
     pending = await pending_content(session, model_key=embedder.model_key, limit=limit)
     if not pending:

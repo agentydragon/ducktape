@@ -145,8 +145,9 @@ Built-ins are assembled in `in_process_servers.py`:
   calls may read every configured index. In the console it is a database reader over the committed
   index state (`recall_index_reader.py`). Source materialization and embedding are the separate
   maintenance stages of `recall_index_sync.py`, run by the independently deployed `haku-indexer`
-  worker (`indexer.py`) — which is also what holds the `haku-state` Git credential (Haku's Forgejo
-  account, capable of writes but used read-only; public Ducktape is anonymous), so this API pod
+  worker (`indexer.py`) as two role-flagged Deployments. The chunk role is what holds the
+  `haku-state` Git credential (Haku's Forgejo account, capable of writes but used read-only;
+  public Ducktape is anonymous), the embed role the batch embedder endpoint — so this API pod
   carries no Git credential. <../recall_index/README.md> owns the index design.
 - `haku_conversations` exposes actor-scoped reads over the console's chat records; the runtime and
   record vocabulary are documented under <x/README.md>.

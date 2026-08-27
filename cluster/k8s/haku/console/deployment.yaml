@@ -145,24 +145,24 @@ spec:
               value: mailto:agentydragon@gmail.com
             # Where `haku_index.search` embeds its queries: Ollama's OpenAI-compatible
             # endpoint, in its own namespace. The console is outside the haku-egress-proxy
-            # fence, so this is ordinary cluster egress. Index maintenance (source sweeps +
-            # batch embedding) runs in the separate haku-indexer Deployment, which carries the
-            # same embedder wiring and the index Git credentials; this pod holds neither the
-            # sync loops nor any Git credential.
+            # fence, so this is ordinary cluster egress. Index maintenance runs in the two
+            # role-flagged haku-indexer Deployments — source sweeps with the index Git
+            # credentials on the chunk pod, batch embedding with its own embedder wiring on
+            # the embed pod; this pod holds neither the sync loops nor any Git credential.
             - name: HAKU_CONSOLE_EMBEDDER__BASE_URL
               value: "http://ollama.ollama.svc.cluster.local:11434/v1"
             # Also the index's `model_key`, so it must be exactly what Ollama reports — the
             # client fails closed on a mismatch rather than reading a second vector space out
-            # of the corpus. Keep it equal to the haku-indexer Deployment's value: search joins
-            # `content_embeddings` on this key, so a mismatch searches a space the worker never
-            # writes.
+            # of the corpus. Keep it equal to the haku-indexer-embed Deployment's value: search
+            # joins `content_embeddings` on this key, so a mismatch searches a space the worker
+            # never writes.
             - name: HAKU_CONSOLE_EMBEDDER__MODEL
               value: "qwen3-embedding:4b"
             # Query-side only, which is why it stays on this pod after the indexer split:
             # Qwen3-Embedding is instruction-aware — queries carry a task instruction,
             # documents do not — and only `search` embeds queries (`embed_query`, request
-            # path). The haku-indexer worker embeds documents plain and deliberately has no
-            # counterpart to this variable. Check the wording against the tag Ollama
+            # path). The haku-indexer-embed worker embeds documents plain and deliberately
+            # has no counterpart to this variable. Check the wording against the tag Ollama
             # actually serves.
             - name: HAKU_CONSOLE_EMBEDDER__QUERY_INSTRUCTION
               value: "Instruct: Given a search query, retrieve relevant passages\nQuery: "

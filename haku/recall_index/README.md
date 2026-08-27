@@ -279,15 +279,18 @@ comparable thing in reach and has had far more exposure to real sessions than th
   version serving — so a change to either side wants the `Database` CR reconciled first.
 
 - **Sync.** `haku/console/recall_index_sync.py` sweeps every configured index from the
-  separately deployed `haku-indexer` worker (`haku/console/indexer.py`,
-  `cluster/k8s/haku/console/indexer-deployment.yaml`) — the console process only reads the
+  separately deployed `haku-indexer` worker (`haku/console/indexer.py`) in its `chunk` role
+  (`cluster/k8s/haku/console/indexer-deployment.yaml`); the same image's `embed` role drains the
+  shared embedding queue (`indexer-embed-deployment.yaml`). The console process only reads the
   committed index state for search and status, so index maintenance failing or rolling never
   touches the console's own availability. The current chat index runs every minute over the
   console's tables (which the worker's narrow database role may only read); each configured
-  Git index runs every thirty seconds against its own bare mirror on the worker pod's `/tmp`.
+  Git index runs every thirty seconds against its own bare mirror on the chunk pod's `/tmp`.
   Each logical index takes its own Postgres advisory lock, so exactly one replica — of either
   deployment, during a rollout that still has a loop-carrying console — syncs it and a slow
-  fetch never delays another index.
+  fetch never delays another index. The embedding drain needs no such leadership: every batch is
+  claimed `FOR UPDATE SKIP LOCKED`, so concurrent drains split the queue instead of electing one
+  worker.
 
   **The git tick is an `ls-remote`, not a fetch.** One round trip returns refs and no objects, so
   the common case — nothing moved — costs almost nothing and can be asked often. The gate is

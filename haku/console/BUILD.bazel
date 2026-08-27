@@ -122,13 +122,16 @@ py_test(
     data = [
         "//cluster/k8s:haku_console_config",
         "//cluster/k8s:haku_console_deployment",
+        "//cluster/k8s:haku_indexer_deployments",
     ],
     deps = [
         ":config",
+        ":indexer",
         ":mcp_config",
         "//:conftest",
         "//haku/console/x/codex_app_server:config",
         "//util/bazel:runfiles",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

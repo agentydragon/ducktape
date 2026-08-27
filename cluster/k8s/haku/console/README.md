@@ -79,23 +79,30 @@ vocabulary policy remains in <../../../../haku/console/README.md> § Vocabularie
 
 ## haku-indexer — recall-index maintenance, separately deployed
 
-`haku-indexer` (`indexer-deployment.yaml`, image `ghcr.io/agentydragon/haku-indexer` from
-`//haku/console:indexer_image`) runs both maintenance stages of
-`haku/console/recall_index_sync.py` — source sweeps and embedding — against the `recall_indexes`
-registry in the shared `haku-console-config` ConfigMap. The API pod keeps only the database
-readers behind `haku_index.search`/`index_status`, so index maintenance failing or rolling leaves
-search serving the last committed index state, with staleness visible in `index_status`.
+`haku-indexer` (image `ghcr.io/agentydragon/haku-indexer` from `//haku/console:indexer_image`)
+runs the two maintenance stages of `haku/console/recall_index_sync.py` as one binary in two
+role-flagged Deployments: `haku-indexer` (`indexer-deployment.yaml`, `--role=chunk`) sweeps every
+source in the `recall_indexes` registry of the shared `haku-console-config` ConfigMap, and
+`haku-indexer-embed` (`indexer-embed-deployment.yaml`, `--role=embed`) drains the shared embedding
+queue. The API pod keeps only the database readers behind `haku_index.search`/`index_status`, so
+either role failing or rolling leaves search serving the last committed index state, with
+staleness visible in `index_status`.
 
-Replica counts are free on both sides: every logical index is maintained under its per-index
-Postgres advisory lock, so indexer replicas — and, during a rollout window, console replicas of a
-release that still ran the loop — only contend for the lock, never double-sync.
+Replica counts are free on every side, by two mechanisms. Source sweeps: every logical index is
+maintained under its per-index Postgres advisory lock, so chunk replicas — and, during a rollout
+window, console replicas of a release that still ran the loop — only contend for the lock, never
+double-sync. The embedding drain: each batch is claimed `FOR UPDATE SKIP LOCKED` for the draining
+transaction, so concurrent embed replicas take disjoint batches, and conflict-safe vector
+insertion keeps even a claimless legacy reader from publishing a conflicting vector.
 
-Identity is deliberately narrow. The pod mounts no ServiceAccount token and none of the console's
-operator/agent auth, approval-ledger, connector, or Web Push credentials; it holds only the
-`haku-forgejo-git` read slots named by the registry and the `haku_indexer` database role. The role
-is declared on the CNPG Cluster (`db/postgres-cluster.yaml` `managed.roles`; password from the
-ESO-generated `haku-console-db-indexer` Secret). Its object grants are `indexer-role.sql` —
-recall-index tables read/write plus `SELECT` on `conversation_item`, nothing else — applied by the
+Identity is deliberately narrow, and split to match the roles. Neither pod mounts a ServiceAccount
+token or any of the console's operator/agent auth, approval-ledger, connector, or Web Push
+credentials. The chunk pod holds the `haku-forgejo-git` read slots named by the registry and no
+embedder endpoint; the embed pod holds the embedder endpoint and mounts nothing at all — not even
+the registry ConfigMap. Both share exactly the `haku_indexer` database role. The role is declared
+on the CNPG Cluster (`db/postgres-cluster.yaml` `managed.roles`; password from the ESO-generated
+`haku-console-db-indexer` Secret). Its object grants are `indexer-role.sql` — recall-index tables
+read/write plus `SELECT` on `conversation_item`, nothing else — applied by the
 `haku-console-db-indexer-provisioner` Job in this app layer rather than `db/`, because the
 `recall_index` schema exists only after the migration Job.
 

@@ -208,8 +208,8 @@ async def synchronize_and_embed(
     *indexes: GitRecallIndexDefinition | ChatRecallIndexDefinition,
 ) -> None:
     await maintenance(engine, sessions, *indexes).sync_all_once()
-    worker = RecallEmbeddingMaintenance(engine, sessions, embedder=embedder)
-    while (report := await worker.embed_once()) is not None and report.contents_embedded:
+    worker = RecallEmbeddingMaintenance(sessions, embedder=embedder)
+    while (await worker.embed_once()).contents_embedded:
         pass
 
 
@@ -278,7 +278,7 @@ async def test_source_current_but_embedding_pending_reports_the_remote_tip_and_p
 ) -> None:
     indexes = (haku_state,)
     await maintenance(migrated_engine, migrated_sessions, *indexes).sync_index_once(haku_state)
-    worker = RecallEmbeddingMaintenance(migrated_engine, migrated_sessions, embedder=ExplodingEmbedder())
+    worker = RecallEmbeddingMaintenance(migrated_sessions, embedder=ExplodingEmbedder())
     with pytest.raises(RuntimeError):
         await worker.embed_once()
 

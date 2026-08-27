@@ -963,56 +963,83 @@ def _secret_refs(container: dict[str, Any]) -> set[str]:
 
 
 def test_haku_indexer_worker_contract(k8s_dir: Path) -> None:
-    """The indexer worker shares the console's registry and vector space but none of its authority."""
+    """The indexer roles share the console's registry and vector space but none of its authority."""
     console_dir = k8s_dir / "haku" / "console"
     deployment = yaml.safe_load((console_dir / "deployment.yaml").read_text(encoding="utf-8"))
-    indexer_raw = (console_dir / "indexer-deployment.yaml").read_text(encoding="utf-8")
-    indexer = yaml.safe_load(indexer_raw)
-    pod = indexer["spec"]["template"]["spec"]
-    container = one(pod["containers"])
+    chunk_raw = (console_dir / "indexer-deployment.yaml").read_text(encoding="utf-8")
+    chunk = yaml.safe_load(chunk_raw)
+    embed_raw = (console_dir / "indexer-embed-deployment.yaml").read_text(encoding="utf-8")
+    embed = yaml.safe_load(embed_raw)
+    chunk_pod = chunk["spec"]["template"]["spec"]
+    embed_pod = embed["spec"]["template"]["spec"]
+    chunk_container = one(chunk_pod["containers"])
+    embed_container = one(embed_pod["containers"])
     server = one(c for c in deployment["spec"]["template"]["spec"]["containers"] if c["name"] == "server")
 
-    # A replacement that cannot start (schema-incompatible image) crash-loops while the previous
-    # replica keeps maintaining the index.
-    assert indexer["spec"]["strategy"]["rollingUpdate"]["maxUnavailable"] == 0
+    # One binary, two roles: the same image with a role flag, both rewritten by the one Flux
+    # policy. A replacement that cannot start (schema-incompatible image) crash-loops while the
+    # previous replica keeps maintaining the index.
+    assert chunk_container["args"] == ["--role=chunk"]
+    assert embed_container["args"] == ["--role=embed"]
+    assert chunk_container["image"] == embed_container["image"]
+    assert chunk_raw.count('# {"$imagepolicy": "flux-system:haku-indexer"}') == 1
+    assert embed_raw.count('# {"$imagepolicy": "flux-system:haku-indexer"}') == 1
+    for worker in (chunk, embed):
+        assert worker["spec"]["strategy"]["rollingUpdate"]["maxUnavailable"] == 0
 
     # Narrow identity: no ServiceAccount token, and no secret shared with the console API pod — in
-    # particular the API pod no longer holds any index Git credential.
-    assert pod["automountServiceAccountToken"] is False
-    assert _secret_refs(server).isdisjoint(_secret_refs(container))
+    # particular the API pod holds no index Git credential. Between the roles, exactly the narrow
+    # database role is shared: Git credential slots stay on the chunk pod, the embedder endpoint
+    # on the embed pod.
+    chunk_env = {entry["name"]: entry for entry in chunk_container["env"]}
+    embed_env = {entry["name"]: entry for entry in embed_container["env"]}
+    db_secret = chunk_env["HAKU_INDEXER_DATABASE_URL"]["valueFrom"]["secretKeyRef"]["name"]
+    assert embed_env["HAKU_INDEXER_DATABASE_URL"]["valueFrom"]["secretKeyRef"]["name"] == db_secret
+    for pod, container in ((chunk_pod, chunk_container), (embed_pod, embed_container)):
+        assert pod["automountServiceAccountToken"] is False
+        assert _secret_refs(server).isdisjoint(_secret_refs(container))
+    assert _secret_refs(chunk_container) & _secret_refs(embed_container) == {db_secret}
+    assert not any(name.startswith("HAKU_INDEXER_EMBEDDER__") for name in chunk_env)
 
-    # Both deployments read the one deploy-owned registry: the shared ConfigMap, mounted at the
-    # path the worker's config-file setting names.
-    env = {entry["name"]: entry for entry in container["env"]}
-    config_volume = one(volume for volume in pod["volumes"] if volume["name"] == "config")
+    # The chunk role reads the one deploy-owned registry the console reads: the shared ConfigMap,
+    # mounted at the path the role's config-file setting names. The embed role works off the
+    # database queue alone — no registry, and nothing else mounted either.
+    config_volume = one(volume for volume in chunk_pod["volumes"] if volume["name"] == "config")
     server_config_volume = one(
         volume for volume in deployment["spec"]["template"]["spec"]["volumes"] if volume["name"] == "config"
     )
     assert config_volume["configMap"]["name"] == server_config_volume["configMap"]["name"]
-    config_mount = one(mount for mount in container["volumeMounts"] if mount["name"] == "config")
-    assert env["HAKU_INDEXER_CONFIG_FILE"]["value"] == f"{config_mount['mountPath']}/config.yaml"
+    config_mount = one(mount for mount in chunk_container["volumeMounts"] if mount["name"] == "config")
+    assert chunk_env["HAKU_INDEXER_CONFIG_FILE"]["value"] == f"{config_mount['mountPath']}/config.yaml"
+    assert "HAKU_INDEXER_CONFIG_FILE" not in embed_env
+    assert "volumes" not in embed_pod
 
-    # Search joins `content_embeddings` on the model key this worker writes, so reader and writer
-    # must name the same model. (The endpoint address may legitimately differ; the model may not.)
+    # Search joins `content_embeddings` on the model key the embed role writes, so reader and
+    # writer must name the same model. (The endpoint address may legitimately differ; the model
+    # may not.)
     server_env = {entry["name"]: entry for entry in server["env"]}
-    assert server_env["HAKU_CONSOLE_EMBEDDER__MODEL"]["value"] == env["HAKU_INDEXER_EMBEDDER__MODEL"]["value"]
+    assert server_env["HAKU_CONSOLE_EMBEDDER__MODEL"]["value"] == embed_env["HAKU_INDEXER_EMBEDDER__MODEL"]["value"]
 
-    # Every credential slot the registry names must be provided on the worker pod, from a Secret.
+    # Every credential slot the registry names must be provided on the chunk pod, from a Secret —
+    # and must not leak onto the embed pod.
     config = yaml.safe_load((console_dir / "config.yaml").read_text(encoding="utf-8"))
     for index in config["recall_indexes"]:
         for slot in ("username_env_var", "password_env_var"):
             if (var := index.get(slot)) is not None:
-                assert "secretKeyRef" in env[var]["valueFrom"], f"registry slot {var} unbound on haku-indexer"
+                assert "secretKeyRef" in chunk_env[var]["valueFrom"], f"registry slot {var} unbound on haku-indexer"
+                assert var not in embed_env
 
-    # Reloader watches exactly what the pod mounts.
-    annotations = indexer["metadata"]["annotations"]
-    assert annotations["configmap.reloader.stakater.com/reload"] == config_volume["configMap"]["name"]
-    assert set(annotations["secret.reloader.stakater.com/reload"].split(",")) == _secret_refs(container)
+    # Reloader watches exactly what each pod mounts.
+    chunk_annotations = chunk["metadata"]["annotations"]
+    assert chunk_annotations["configmap.reloader.stakater.com/reload"] == config_volume["configMap"]["name"]
+    assert set(chunk_annotations["secret.reloader.stakater.com/reload"].split(",")) == _secret_refs(chunk_container)
+    embed_annotations = embed["metadata"]["annotations"]
+    assert "configmap.reloader.stakater.com/reload" not in embed_annotations
+    assert set(embed_annotations["secret.reloader.stakater.com/reload"].split(",")) == _secret_refs(embed_container)
 
-    # The narrow database role, wired end to end: the Deployment consumes the ESO-generated
+    # The narrow database role, wired end to end: both Deployments consume the ESO-generated
     # Secret, CNPG syncs that Secret's password onto the managed role of the same name, and the
     # provisioner SQL grants to that role.
-    db_secret = env["HAKU_INDEXER_DATABASE_URL"]["valueFrom"]["secretKeyRef"]["name"]
     role_secret_docs = list(
         yaml.safe_load_all((console_dir / "db" / "indexer-role-secret.yaml").read_text(encoding="utf-8"))
     )
@@ -1023,8 +1050,6 @@ def test_haku_indexer_worker_contract(k8s_dir: Path) -> None:
     assert external_secret["spec"]["target"]["template"]["data"]["username"] == role["name"]
     sql = (console_dir / "indexer-role.sql").read_text(encoding="utf-8")
     assert f"TO {role['name']}" in sql
-
-    assert indexer_raw.count('# {"$imagepolicy": "flux-system:haku-indexer"}') == 1
 
 
 def test_haku_console_migration_release_gate(k8s_dir: Path) -> None:

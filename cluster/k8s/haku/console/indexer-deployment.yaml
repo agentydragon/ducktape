@@ -1,8 +1,9 @@
-# The haku-indexer worker: recall-index maintenance (source sweeps + embedding),
-# extracted from the console API pod so index churn, embedder failures, and
-# index-code releases never roll or disrupt the Console perimeter. The console
-# keeps serving `haku_index.search`/`index_status` as database readers over the
-# last committed index state; staleness shows in `index_status`.
+# The haku-indexer worker, chunk role: per-index source sweeps, extracted from
+# the console API pod so index churn and index-code releases never roll or
+# disrupt the Console perimeter. The embedding drain is the same image's embed
+# role (indexer-embed-deployment.yaml). The console keeps serving
+# `haku_index.search`/`index_status` as database readers over the last committed
+# index state; staleness shows in `index_status`.
 #
 # Replicas may overlap freely — with each other, and with console replicas of a
 # release that still ran the loop: every logical index is maintained under its
@@ -13,7 +14,8 @@
 # approval ledger, connector credentials, or Web Push identity. It holds only the
 # index Git-read credential slots named by the recall_indexes registry and the
 # haku_indexer database role (recall-index read/write + read-only chat source,
-# see indexer-role.sql).
+# see indexer-role.sql). The embedder endpoint lives only on the embed pod: this
+# role writes chunks, never vectors.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -45,8 +47,7 @@ spec:
       labels:
         app.kubernetes.io/name: haku-indexer
     spec:
-      # Same zone as the console's Postgres (cnpg_conventions R5). The embedder hop to
-      # Ollama on wyrm2 stays cross-zone either way; batch embedding tolerates it.
+      # Same zone as the console's Postgres (cnpg_conventions R5).
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       automountServiceAccountToken: false
@@ -59,6 +60,7 @@ spec:
         - name: indexer
           image: ghcr.io/agentydragon/haku-indexer:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:haku-indexer"}
           imagePullPolicy: Always
+          args: ["--role=chunk"]
           env:
             - name: HAKU_INDEXER_CONFIG_FILE
               value: /etc/haku-console/config/config.yaml
@@ -70,15 +72,6 @@ spec:
                 secretKeyRef:
                   name: haku-console-db-indexer
                   key: DATABASE_URL
-            # Where the shared embedding worker computes vectors: Ollama's
-            # OpenAI-compatible endpoint, ordinary cluster egress. `model` is the index's
-            # `model_key` and must equal the console API's — search joins vectors on it, so
-            # a mismatch writes a space search never reads. No query instruction here: the
-            # worker embeds documents, which instruction-aware models take plain.
-            - name: HAKU_INDEXER_EMBEDDER__BASE_URL
-              value: "http://ollama.ollama.svc.cluster.local:11434/v1"
-            - name: HAKU_INDEXER_EMBEDDER__MODEL
-              value: "qwen3-embedding:4b"
             # The haku-state index's Git-read credential slots, named by the
             # recall_indexes registry entries in config.yaml (username_env_var /
             # password_env_var). This is Haku's own Forgejo account (operator,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator, Generator
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
 from haku.recall_index.fake_embedder import FakeEmbedder
@@ -24,24 +24,30 @@ def pgvector_container() -> Generator[PostgresContainer]:
 
 
 @pytest.fixture
-async def session(pgvector_container: PostgresContainer) -> AsyncGenerator[AsyncSession]:
-    """A session on a schema created fresh for each test."""
+async def engine(pgvector_container: PostgresContainer) -> AsyncGenerator[AsyncEngine]:
+    """An engine on a schema created fresh for each test."""
     host = pgvector_container.get_container_host_ip()
     port = int(pgvector_container.get_exposed_port(5432))
-    engine = create_async_engine(f"postgresql+asyncpg://postgres:postgres@{host}:{port}/postgres")
+    opened = create_async_engine(f"postgresql+asyncpg://postgres:postgres@{host}:{port}/postgres")
     try:
-        async with engine.begin() as connection:
+        async with opened.begin() as connection:
             await connection.exec_driver_sql("DROP SCHEMA IF EXISTS recall_index CASCADE")
             # `public` holds the console tables the chat corpus reads, and the `vector`
             # extension. Both are reset here, before `ensure_schema` puts the extension back —
             # dropping it afterwards would take the vector columns with it.
             await connection.exec_driver_sql("DROP SCHEMA IF EXISTS public CASCADE")
             await connection.exec_driver_sql("CREATE SCHEMA public")
-        await ensure_schema(engine)
-        async with async_sessionmaker(engine, expire_on_commit=False)() as opened:
-            yield opened
+        await ensure_schema(opened)
+        yield opened
     finally:
-        await engine.dispose()
+        await opened.dispose()
+
+
+@pytest.fixture
+async def session(engine: AsyncEngine) -> AsyncGenerator[AsyncSession]:
+    """A session on the per-test schema, for the tests that need only one."""
+    async with async_sessionmaker(engine, expire_on_commit=False)() as opened:
+        yield opened
 
 
 @pytest.fixture

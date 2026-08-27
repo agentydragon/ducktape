@@ -13,6 +13,7 @@ resources:
   - node-daemon-wyrm2.sops.yaml
   - httproute.yaml
   - indexer-deployment.yaml
+  - indexer-embed-deployment.yaml
   - indexer-role-provisioner-job.yaml
   - kube-api-proxy.yaml
   - kubernetes-authorization-rbac.yaml

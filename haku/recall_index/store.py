@@ -201,12 +201,16 @@ async def register_index(session: AsyncSession, index_id: str, *, index_type: In
 
 
 async def pending_content(session: AsyncSession, *, model_key: str, limit: int) -> list[ContentRow]:
-    """Return globally queued content with no vector for ``model_key`` yet.
+    """Claim one batch of globally queued content with no vector for ``model_key`` yet.
 
     Sources populate ``contents`` independently of an embedding endpoint. This is therefore the
     shared work queue across Git and chat sources, and across every configured logical index.
-    The caller owns no durable claim: vector insertion is conflict-safe, so a rare competing
-    worker can at worst repeat an embedding request rather than publish a conflicting result.
+    ``FOR UPDATE OF contents SKIP LOCKED`` makes the batch a claim for the lifetime of the
+    caller's transaction: concurrent claimers take disjoint batches instead of embedding the
+    same rows, and a crashed claimer's rows return to the queue with its rollback. Conflict-safe
+    vector insertion stays the backstop for a claimless reader — a replica of a release that
+    still selected without locking can at worst repeat an embedding request, never publish a
+    conflicting result.
     """
     result = await session.execute(
         select(Content.content_sha, Content.content)
@@ -217,6 +221,9 @@ async def pending_content(session: AsyncSession, *, model_key: str, limit: int) 
         .where(ContentEmbedding.content_sha.is_(None))
         .order_by(Content.created_at, Content.content_sha)
         .limit(limit)
+        # `of=Content`: only the queue side may be locked — `content_embeddings` is the nullable
+        # side of the anti-join, which Postgres refuses to lock.
+        .with_for_update(of=Content, skip_locked=True)
     )
     return [ContentRow(content_sha=content_sha, content=content) for content_sha, content in result]
 

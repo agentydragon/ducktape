@@ -116,6 +116,7 @@ filegroup(
         "haku/console/haku_system_prompt.md.j2",
         "haku/console/httproute.yaml",
         "haku/console/indexer-deployment.yaml",
+        "haku/console/indexer-embed-deployment.yaml",
         "haku/console/indexer-role.sql",
         "haku/console/kube-api-proxy.yaml",
         "haku/console/kubernetes-authorization-rbac.yaml",
@@ -241,6 +242,17 @@ filegroup(
 filegroup(
     name = "haku_console_deployment",
     srcs = ["haku/console/deployment.yaml"],
+    visibility = ["//haku/console:__pkg__"],
+)
+
+# Both role Deployments of the one indexer binary, so the test that parses their `--role`
+# flags exercises the manifests the cluster actually runs rather than fixtures.
+filegroup(
+    name = "haku_indexer_deployments",
+    srcs = [
+        "haku/console/indexer-deployment.yaml",
+        "haku/console/indexer-embed-deployment.yaml",
+    ],
     visibility = ["//haku/console:__pkg__"],
 )
 

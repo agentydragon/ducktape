@@ -278,3 +278,26 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_embedding_sync",
+    size = "medium",
+    srcs = ["test_embedding_sync.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":content",
+        ":embedding_sync",
+        ":fake_embedder",
+        ":schema",
+        ":store",
+        "//:conftest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

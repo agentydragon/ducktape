@@ -1,5 +1,9 @@
 """Keep every configured recall index current, from the haku-indexer worker (``indexer.py``).
 
+The worker runs the two maintenance stages as separate roles: `RecallIndexMaintenance` (the
+``chunk`` role) materializes source chunks, `RecallEmbeddingMaintenance` (the ``embed`` role)
+drains the shared embedding queue.
+
 The deploy-owned recall-index registry says both *what* is indexed and how it is sourced.  A
 logical index is the unit of synchronization, advisory leadership, status, and — later — read
 authorization.  There are no implicit ``haku-state`` or conversations indexes in this module.
@@ -198,20 +202,22 @@ class RecallIndexMaintenance:
 
 
 class RecallEmbeddingMaintenance:
-    """Drain one model's globally shared content queue off the source-sync path."""
+    """Drain one model's globally shared content queue off the source-sync path.
 
-    def __init__(self, engine: AsyncEngine, sessions: async_sessionmaker[AsyncSession], *, embedder: Embedder) -> None:
-        self._engine = engine
+    Unlike the source sweeps there is no advisory leadership here: `embed_pending` claims each
+    batch ``FOR UPDATE SKIP LOCKED``, so any number of drains — replicas of this worker, or a
+    console replica of a release that still carried the loop — share the queue in disjoint
+    batches rather than electing one leader and idling the rest.
+    """
+
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], *, embedder: Embedder) -> None:
         self._sessions = sessions
         self._embedder = embedder
 
-    async def embed_once(self) -> EmbeddingSyncReport | None:
-        async with _leading(self._engine, f"embedding:{self._embedder.model_key}") as leading:
-            if not leading:
-                return None
-            async with self._sessions() as session:
-                report = await embed_pending(session, embedder=self._embedder)
-                await session.commit()
+    async def embed_once(self) -> EmbeddingSyncReport:
+        async with self._sessions() as session:
+            report = await embed_pending(session, embedder=self._embedder)
+            await session.commit()
         if report.contents_embedded:
             logger.info(
                 "Recall embedding model %s: %d content values embedded",
