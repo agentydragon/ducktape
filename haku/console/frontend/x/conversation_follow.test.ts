@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import type { Conversation, ConversationEntry, ConversationUpdate } from "../client";
 import { followed } from "./conversation_follow";
 
-function message(seq: number, text: string): ConversationEntry {
+function message(opened: number, text: string, status: ConversationEntry["status"] = "complete"): ConversationEntry {
   return {
     kind: "message",
-    seq,
+    opened_seq: opened,
+    closed_seq: status === "open" ? null : opened + 1,
+    status,
     provenance: { kind: "authored" },
     text,
     backend_item_id: null,
@@ -20,7 +22,6 @@ function conversation(entries: ConversationEntry[]): Conversation {
     created_at: "2026-08-18T00:00:00Z",
     attachments: [],
     entries,
-    streaming: [],
     session: {
       session_id: "s1",
       status: "ready",
@@ -48,7 +49,6 @@ function update(fields: Partial<ConversationUpdate>): ConversationUpdate {
     attachments: [],
     earlier_sessions: [],
     entries: [],
-    streaming: [],
     ...fields,
   };
 }
@@ -66,45 +66,41 @@ describe("followed", () => {
     ).toEqual(fresh);
   });
 
-  it("unions arriving entries with the ones held, keyed by position", () => {
+  it("merges arriving rows over the ones held, keyed by opening position", () => {
     const held = conversation([message(1, "first")]);
 
-    const next = followed(held, update({ entries: [message(1, "first"), message(2, "second")] }));
+    const next = followed(held, update({ entries: [message(1, "first"), message(5, "second")] }));
 
-    expect(next.entries.map((entry) => entry.seq)).toEqual([1, 2]);
+    expect(next.entries.map((entry) => entry.opened_seq)).toEqual([1, 5]);
   });
 
-  it("puts an arriving entry in stream order, not arrival order", () => {
+  it("replaces a row it already holds rather than repeating it", () => {
+    // A message being written arrives once per coalescing window carrying the prose so far, so
+    // the same row lands again and again — newer state, same position.
+    const held = conversation([message(1, "half an ans", "open")]);
+
+    const next = followed(held, update({ entries: [message(1, "half an answer")] }));
+
+    expect(next.entries.map((entry) => [entry.opened_seq, "text" in entry ? entry.text : "", entry.status])).toEqual([
+      [1, "half an answer", "complete"],
+    ]);
+  });
+
+  it("puts an arriving row in opening order, not arrival order", () => {
     const held = conversation([message(5, "answer")]);
 
     const next = followed(held, update({ entries: [message(2, "prompt")] }));
 
-    expect(next.entries.map((entry) => entry.seq)).toEqual([2, 5]);
+    expect(next.entries.map((entry) => entry.opened_seq)).toEqual([2, 5]);
   });
 
   it("applying one update twice is applying it once", () => {
     // Delivery is not exactly-once by design: re-reading from an older position is always correct,
     // which is only true if the merge is.
     const held = conversation([message(1, "first")]);
-    const arriving = update({ entries: [message(2, "second")] });
+    const arriving = update({ entries: [message(5, "second")] });
 
     expect(followed(followed(held, arriving), arriving)).toEqual(followed(held, arriving));
-  });
-
-  it("replaces the streaming tail rather than merging it", () => {
-    // The open prose has no position and its text only grows, so what arrives is the tail now —
-    // including an empty one, which is how a finished message leaves the tail.
-    const held = {
-      ...conversation([]),
-      streaming: [{ item_type: "message" as const, text: "half an ans" }],
-    };
-
-    const grown = followed(held, update({ streaming: [{ item_type: "message", text: "half an answer" }] }));
-    expect(grown.streaming).toEqual([{ item_type: "message", text: "half an answer" }]);
-
-    const finished = followed(grown, update({ entries: [message(9, "half an answer, whole")], streaming: [] }));
-    expect(finished.streaming).toEqual([]);
-    expect(finished.entries.map((entry) => entry.seq)).toEqual([9]);
   });
 
   it("takes the whole live session row, so nothing describes a replaced session", () => {

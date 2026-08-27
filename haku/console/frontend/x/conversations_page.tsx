@@ -1,4 +1,4 @@
-import { Badge, Box, Button, Code, Divider, Group, Loader, Paper, Select, Stack, Text, Title } from "@mantine/core";
+import { Badge, Box, Button, Code, Group, Loader, Paper, Select, Stack, Text, Title } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -13,8 +13,6 @@ import {
   type ConversationEntry,
   type ConversationSession,
   type ConversationSummary,
-  type StreamingItem,
-  type ToolResultEntry,
 } from "../client";
 import { useCoalescedRefresh } from "../coalesced_refresh";
 import {
@@ -35,8 +33,6 @@ import { SandboxProvisioning } from "./sandbox_provisioning";
 
 /** A session that has ended takes no more prompts, so it gets no composer. */
 const SETTLED = new Set<ConversationSession["status"]>(["closing", "closed", "failed"]);
-
-type EntryOf<K extends ConversationEntry["kind"]> = Extract<ConversationEntry, { kind: K }>;
 
 function openConversation(conversationId: string): void {
   navigateToConsolePath(conversationPath(conversationId));
@@ -77,47 +73,6 @@ function Attachments({ attachments }: { attachments: ConversationSummary["attach
           {attachment.surface}: {attachment.address}
         </Badge>
       ))}
-    </Group>
-  );
-}
-
-/** Where one exchange began, drawn across the transcript.
- *
- * No start time and no outcome: the boundary's own position already says when, and how the
- * exchange went is the stream's `turn_end` entry, rendered where it happened.
- */
-function TurnBoundary({ number }: { number: number }) {
-  return (
-    <Divider
-      className="haku-conversation-turn-boundary"
-      labelPosition="center"
-      label={
-        <Text fw={600} size="xs">
-          Turn {number}
-        </Text>
-      }
-    />
-  );
-}
-
-/** How an exchange ended, at the stream position it ended at.
- *
- * Nothing for the answered case: the next turn's boundary already separates the exchanges, and a
- * badge per normal answer would be noise. What must not pass silently is a turn that ended any
- * other way.
- */
-function TurnEndView({ entry }: { entry: EntryOf<"turn_end"> }) {
-  if (entry.end.outcome === "answered") return null;
-  return (
-    <Group gap={6} className="haku-conversation-turn-end">
-      <Badge size="xs" color={entry.end.outcome === "failed" ? "red" : "gray"} variant="light">
-        turn {entry.end.outcome}
-      </Badge>
-      {entry.end.outcome === "failed" && (
-        <Text size="xs" c="red" style={{ whiteSpace: "pre-wrap" }}>
-          {entry.end.failure}
-        </Text>
-      )}
     </Group>
   );
 }
@@ -179,73 +134,18 @@ function Thinking({ text, open }: { text: string; open: boolean }) {
   );
 }
 
-/** A prose item a dead session never finished: what had been said, marked as cut short. */
-function CutOffView({ entry }: { entry: EntryOf<"cut_off"> }) {
-  return (
-    <div className="haku-chat-assistant">
-      <Badge size="xs" variant="light" color="red" mb={4}>
-        cut off
-      </Badge>
-      {entry.item_type === "reasoning" ? (
-        <Thinking text={entry.text} open={false} />
-      ) : (
-        <Markdown source={entry.text.trim()} className="haku-chat-markdown" />
-      )}
-    </div>
-  );
-}
-
-/** One row of the rendered conversation: an entry, with what only the render joins onto it. */
-export type ConversationRow =
-  | { kind: "call"; call: EntryOf<"tool_call">; result: ToolResultEntry | null }
-  | { kind: "boundary"; seq: number; number: number }
-  | { kind: "spoken"; entry: EntryOf<"prompt" | "message" | "reasoning" | "turn_end" | "cut_off"> };
-
-export function conversationRowSeq(row: ConversationRow): number {
-  switch (row.kind) {
-    case "call":
-      return row.call.seq;
-    case "boundary":
-      return row.seq;
-    case "spoken":
-      return row.entry.seq;
-  }
-}
-
-/** The stream as the page renders it: results joined onto their calls, boundaries numbered.
- *
- * The one join the page makes — a call's answer is a separate entry keyed by `call_id`, and
- * showing them apart would make the reader do it. A result rides with its call, so it emits no row
- * of its own.
- */
-export function conversationRows(entries: readonly ConversationEntry[]): ConversationRow[] {
-  const results = new Map<string, ToolResultEntry>();
-  for (const entry of entries) if (entry.kind === "tool_result") results.set(entry.call_id, entry);
-  const rows: ConversationRow[] = [];
-  let turns = 0;
-  for (const entry of entries) {
-    if (entry.kind === "tool_result") continue;
-    if (entry.kind === "tool_call")
-      rows.push({ kind: "call", call: entry, result: results.get(entry.call_id) ?? null });
-    else if (entry.kind === "turn_started") rows.push({ kind: "boundary", seq: entry.seq, number: (turns += 1) });
-    else rows.push({ kind: "spoken", entry });
-  }
-  return rows;
-}
-
-/** One settled entry of the conversation, in chat shape: the operator's prompts as right-side
- * bubbles, the agent's prose flush left with no chrome of its own, thinking folded to one line,
- * and a tool call as a sibling of the message rather than a field on it. Who is speaking is
- * carried by the layout — a bubble on the right is the operator, everything on the left is the
- * agent — so no line is spent saying so. */
-function SpokenEntryView({ entry }: { entry: EntryOf<"prompt" | "message" | "reasoning" | "turn_end" | "cut_off"> }) {
+/** One entry of the conversation, in chat shape: the operator's prompts as right-side bubbles, the
+ * agent's prose flush left with no chrome of its own, thinking folded to one line, and a tool call
+ * as a sibling of the message rather than a field on it. Who is speaking is carried by the layout —
+ * a bubble on the right is the operator, everything on the left is the agent — so no line is spent
+ * saying so. An entry is one item row in its current state: `status` is what marks a message still
+ * arriving ("…") or one its session died around. */
+function EntryView({ entry }: { entry: ConversationEntry }) {
   switch (entry.kind) {
-    case "turn_end":
-      return <TurnEndView entry={entry} />;
-    case "cut_off":
-      return <CutOffView entry={entry} />;
+    case "tool_call":
+      return <ToolCallView call={entry} />;
     case "reasoning":
-      return <Thinking text={entry.summary ?? ""} open={false} />;
+      return <Thinking text={entry.disclosure === "withheld" ? "" : entry.text} open={entry.status === "open"} />;
     case "prompt": {
       const text = entry.text.trim();
       // A harness-origin prompt is the session waking itself — a background command's notification,
@@ -267,8 +167,13 @@ function SpokenEntryView({ entry }: { entry: EntryOf<"prompt" | "message" | "rea
       const text = entry.text.trim();
       return (
         <div className="haku-chat-assistant">
-          <Markdown source={text} className="haku-chat-markdown" />
-          {!text && (
+          {entry.status === "failed" && (
+            <Badge size="xs" variant="light" color="red" mb={4}>
+              cut off
+            </Badge>
+          )}
+          <Markdown source={text || (entry.status === "open" ? "…" : "")} className="haku-chat-markdown" />
+          {!text && entry.status === "complete" && (
             <Text c="dimmed" size="xs">
               Nothing was captured for this.
             </Text>
@@ -277,17 +182,6 @@ function SpokenEntryView({ entry }: { entry: EntryOf<"prompt" | "message" | "rea
       );
     }
   }
-}
-
-/** The live turn's still-open prose, rendered after everything settled: the tail that is still
- * being written, replaced whole by every update rather than merged. */
-function StreamingView({ item }: { item: StreamingItem }) {
-  if (item.item_type === "reasoning") return <Thinking text={item.text} open />;
-  return (
-    <div className="haku-chat-assistant">
-      <Markdown source={item.text.trim() || "…"} className="haku-chat-markdown" />
-    </div>
-  );
 }
 
 /** Every conversation this operator has, newest activity first, and the button that starts one.
@@ -584,9 +478,11 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
   }
 
   const { session } = conversation;
-  const conversationEmpty = conversation.entries.length === 0 && conversation.streaming.length === 0;
+  const conversationEmpty = conversation.entries.length === 0;
   const narration = bootstrapNarration(session, conversationEmpty);
-  const rows = conversationRows(conversation.entries);
+  // In opening order — the row's position for its whole life, so the transcript is stable while
+  // its newest items are still being written.
+  const rows = [...conversation.entries].sort((left, right) => left.opened_seq - right.opened_seq);
 
   const close = async (sessionId: string) => {
     setClosing(true);
@@ -667,17 +563,8 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
                 Nothing was recorded for this conversation.
               </Text>
             )}
-            {rows.map((row) =>
-              row.kind === "call" ? (
-                <ToolCallView key={conversationRowSeq(row)} call={row.call} result={row.result} />
-              ) : row.kind === "boundary" ? (
-                <TurnBoundary key={conversationRowSeq(row)} number={row.number} />
-              ) : (
-                <SpokenEntryView key={conversationRowSeq(row)} entry={row.entry} />
-              )
-            )}
-            {conversation.streaming.map((item) => (
-              <StreamingView key={`streaming-${item.item_type}`} item={item} />
+            {rows.map((entry) => (
+              <EntryView key={entry.opened_seq} entry={entry} />
             ))}
           </div>
         </div>

@@ -1263,7 +1263,7 @@ class Session(Base):
         One derivation for Python reads and, via the expression below, SQL filters — so no writer
         maintains a summary that could disagree with the facts it summarizes. `RESPONDING` is
         deliberately not derived here: whether a turn is open is `conversation_turn`'s fact, and
-        `session_views.live_status` layers it on top of this member.
+        `conversation_views.live_status` layers it on top of this member.
         """
         if self.ended_at is not None:
             return SessionStatus.FAILED if self.error is not None else SessionStatus.CLOSED

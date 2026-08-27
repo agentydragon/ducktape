@@ -31,9 +31,9 @@ def test_a_message_carries_the_components_a_read_returns() -> None:
     }
     for surface in ("ConversationUpdate", "ConversationView"):
         assert published[surface]["properties"]["entries"]["items"] == {
-            "$ref": "#/components/schemas/ConversationViewEntry"
+            "$ref": "#/components/schemas/ConversationEntry"
         }
-    union = published["ConversationViewEntry"]
+    union = published["ConversationEntry"]
     assert all(str(branch["$ref"]).startswith("#/components/schemas/") for branch in union["oneOf"])
     assert union["discriminator"]["propertyName"] == "kind"
 

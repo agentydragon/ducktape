@@ -25,6 +25,7 @@ from haku.console.config import RuntimeRegistrationConfig
 from haku.console.database_schema import ChatAttachment, ConversationItem, Session
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.claude_code.client import cli_over_websocket
+from haku.console.x.conversation_views import SessionView
 from haku.console.x.launch_identity import LaunchAuthorizer
 from haku.console.x.runtime import RuntimeClientFactory, RuntimeRegistry
 from haku.console.x.runtime_catalog import execution_registry, projection_registry, runtime_registration
@@ -32,7 +33,6 @@ from haku.console.x.sandbox_allocation import SandboxAllocator
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import SessionStore
-from haku.console.x.session_views import SessionView
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.console.x.testing.recording_claims import RecordingClaims
 

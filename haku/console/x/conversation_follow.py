@@ -62,15 +62,15 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from haku.console import operator_auth
 from haku.console.chat_models import SessionStatus
 from haku.console.console_events import OPERATOR_SESSION_EXPIRED_CLOSE_CODE
-from haku.console.x.sandbox_claims import SandboxProvisioningView
-from haku.console.x.session_notifications import ConversationWakeEvent, RecheckHeld, SessionNotifications
-from haku.console.x.session_store import PositionUnusableError, SessionStore
-from haku.console.x.session_views import (
+from haku.console.x.conversation_views import (
     UPDATE_ROW_LIMIT,
     ConversationFollowMessage,
     ConversationSnapshot,
     ConversationView,
 )
+from haku.console.x.sandbox_claims import SandboxProvisioningView
+from haku.console.x.session_notifications import ConversationWakeEvent, RecheckHeld, SessionNotifications
+from haku.console.x.session_store import PositionUnusableError, SessionStore
 
 router = APIRouter(tags=["conversations"])
 

@@ -67,12 +67,12 @@ py_library(
     deps = [
         ":conversation_events",
         ":conversation_history",
+        ":conversation_views",
         ":launch_identity",
         ":runtime",
         ":sandbox_claims",
         ":session_notifications",
         ":session_store",
-        ":session_views",
         ":setup_output",
         ":system_prompt",
         "//haku/console:chat_models",
@@ -155,13 +155,13 @@ py_library(
         ":conversation_events",
         ":conversation_log",
         ":conversation_reads",
+        ":conversation_views",
         ":item_entries",
         ":launch_identity",
         ":runtime",
         ":runtime_catalog",
         ":session_events",
         ":session_notifications",
-        ":session_views",
         ":setup_output",
         ":subscription",
         "//haku/cli_protocol:frame_identity",
@@ -222,8 +222,8 @@ py_library(
 )
 
 py_library(
-    name = "session_views",
-    srcs = ["session_views.py"],
+    name = "conversation_views",
+    srcs = ["conversation_views.py"],
     deps = [
         ":conversation_reads",
         ":sandbox_claims",
@@ -272,10 +272,10 @@ py_library(
     name = "conversation_follow",
     srcs = ["conversation_follow.py"],
     deps = [
+        ":conversation_views",
         ":sandbox_claims",
         ":session_notifications",
         ":session_store",
-        ":session_views",
         "//haku/console:chat_models",
         "//haku/console:console_events",
         "//haku/console:operator_auth",
@@ -387,15 +387,16 @@ py_test(
         ":conversation_events",
         ":conversation_follow",
         ":conversation_reads",
+        ":conversation_views",
         ":session_notifications",
         ":session_runtime",
         ":session_store",
-        ":session_views",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console/x/claude_code:frames",
         "//haku/console/x/testing:recording_claims",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
@@ -625,14 +626,14 @@ py_test(
 )
 
 py_test(
-    name = "test_session_views",
+    name = "test_conversation_views",
     size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_session_views.py"],
+    srcs = ["test_conversation_views.py"],
     deps = [
         ":conftest",
         ":conversation_reads",
+        ":conversation_views",
         ":session_store",
-        ":session_views",
         ":setup_output",
         "//:conftest",
         "//haku/console:chat_models",

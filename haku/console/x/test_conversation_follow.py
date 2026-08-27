@@ -15,30 +15,24 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
+from more_itertools import one
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection, ItemType, SessionStatus
+from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection, ItemStatus, ItemType, SessionStatus
 from haku.console.x.conftest import attach_channel
 from haku.console.x.conversation_events import FrameRange, ItemSegment, MessageCompleted, MessageStarted, OpenRef
 from haku.console.x.conversation_follow import ConversationFollow
-from haku.console.x.conversation_reads import (
-    ConversationViewEntry,
-    MessageEntry,
-    PromptEntry,
-    StreamingItem,
-    TurnAnsweredEnd,
-    TurnEndEntry,
-)
-from haku.console.x.session_events import TurnAnsweredBody
-from haku.console.x.session_notifications import SessionNotifications
-from haku.console.x.session_runtime import SessionService
-from haku.console.x.session_store import SessionStore
-from haku.console.x.session_views import (
+from haku.console.x.conversation_reads import ConversationEntry, MessageEntry, PromptEntry
+from haku.console.x.conversation_views import (
     ConversationFollowMessage,
     ConversationSnapshot,
     ConversationUpdate,
     ConversationView,
 )
+from haku.console.x.session_events import TurnAnsweredBody
+from haku.console.x.session_notifications import SessionNotifications
+from haku.console.x.session_runtime import SessionService
+from haku.console.x.session_store import SessionStore
 from haku.console.x.testing.recording_claims import RecordingClaims
 
 # Long enough that several writes land inside one window on a loaded machine, short enough that
@@ -69,7 +63,7 @@ async def _nothing_more(messages: AsyncIterator[ConversationFollowMessage]) -> N
             await anext(messages)
 
 
-def _prose(entries: list[ConversationViewEntry]) -> list[str]:
+def _prose(entries: list[ConversationEntry]) -> list[str]:
     """The spoken texts of a stream, in order — what most follow assertions care about."""
     return [entry.text for entry in entries if isinstance(entry, PromptEntry | MessageEntry)]
 
@@ -132,7 +126,6 @@ async def test_what_moves_after_the_snapshot_arrives_as_an_update(
 
     assert isinstance(update, ConversationUpdate)
     assert _prose(update.entries) == ["second", "two"]
-    assert [entry.end for entry in update.entries if isinstance(entry, TurnEndEntry)] == [TurnAnsweredEnd()]
     await messages.aclose()
 
 
@@ -219,7 +212,8 @@ async def test_a_streaming_turns_segments_become_one_update(
     update = await _next(messages)
 
     assert isinstance(update, ConversationUpdate)
-    assert update.streaming == [StreamingItem(item_type=ItemType.MESSAGE, text="the answer so far")]
+    writing = one(entry for entry in update.entries if isinstance(entry, MessageEntry))
+    assert (writing.status, writing.text) == (ItemStatus.OPEN, "the answer so far")
     assert update.status == SessionStatus.RESPONDING
     await _nothing_more(messages)
     await messages.aclose()

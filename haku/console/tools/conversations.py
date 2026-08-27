@@ -235,20 +235,25 @@ def build_mcp(
             int | None,
             Field(
                 default=None,
-                description="A previous page's `next_cursor` — the stream position (`seq`) of the first entry "
-                "not yet returned, inclusively. Omit to start at the beginning.",
+                description="A previous page's `next_cursor` — the `opened_seq` of the first entry not yet "
+                "returned, inclusively. Omit to start at the beginning.",
             ),
         ] = None,
         limit: Annotated[int, Field(default=DEFAULT_PAGE, ge=1, le=MAX_PAGE)] = DEFAULT_PAGE,
         execution: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
     ) -> ItemPage:
-        """Read the conversation's prompts, messages, reasoning, tool calls, and results oldest first.
+        """Read the conversation's prompts, messages, reasoning, and tool calls oldest first.
 
-        The whole thread, across replaced sessions: a conversation outlives its runners, and this
-        read does not stop where a sandbox died. Entries use the console's neutral vocabulary and
-        carry `provenance`; follow it into `read_frames` when a normalization needs checking. Tool
-        calls and results are separate entries joined by `call_id`. A `prompt` entry says who asked
-        in its `origin`: `harness` is the agent resuming its own session, which nobody typed.
+        The whole thread, across replaced sessions, faithfully as stored: one entry per item row
+        in its current state, and this read does not stop where a sandbox died. Entries use the
+        console's neutral vocabulary and carry `provenance`; follow it into `read_frames` when a
+        normalization needs checking. A `tool_call` entry is the ask and the answer together —
+        `outcome` is null exactly while no answer has arrived. `status` is the row's lifecycle:
+        an `open` entry is still being written and its text is as of this read (its `opened_seq` never
+        moves, so re-reading a cursor serves the settled row at the same position); `failed` was
+        cut off by its session dying, kept with whatever had been said. A `prompt` entry says who
+        asked in its `origin`: `harness` is the agent resuming its own session, which nobody
+        typed. Exchanges are `list_turns`' business, not entries.
         """
         scope = read_scope(execution)
         try:
@@ -256,7 +261,7 @@ def build_mcp(
         except ConversationAccessDeniedError:
             raise ToolError("conversation access denied") from None
         entries, more = split_page(rows, limit=limit)
-        return ItemPage(items=entries, next_cursor=more.seq if more is not None else None)
+        return ItemPage(items=entries, next_cursor=more.opened_seq if more is not None else None)
 
     @mcp.tool
     async def read_frames(

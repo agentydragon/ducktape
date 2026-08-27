@@ -1414,7 +1414,7 @@ py_library(
         ":app",
         ":config",
         "//haku/console/agents:authorization",
-        "//haku/console/x:session_views",
+        "//haku/console/x:conversation_views",
         "@pypi//pydantic",
     ],
 )
@@ -1897,7 +1897,7 @@ py_test(
         ":database_schema",
         ":operator_identity_store",
         "//:conftest",
-        "//haku/console/x:session_views",
+        "//haku/console/x:conversation_views",
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

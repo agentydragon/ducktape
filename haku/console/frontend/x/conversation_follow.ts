@@ -16,28 +16,30 @@ const OPERATOR_SESSION_EXPIRED_CLOSE_CODE = 4001;
  */
 export type FollowStatus = "connecting" | "live" | "offline";
 
-/** Union *held* with the entries an update carries, in stream order.
+/** Merge the rows an update carries over the ones held, replacing by position.
  *
- * A union by `seq` rather than an append: an entry never changes once defined, so a duplicate —
- * a message delivered twice, a re-read from an older position — lands on the entry already held,
- * and an entry that arrives out of order still lands at its position.
+ * Replace rather than append: a row arrives whole in its current state, and arrives again when it
+ * changes — a message being written once per coalescing window with the prose so far — so the
+ * newest copy wins, a duplicate costs nothing, and an entry that arrives out of order still lands
+ * at its position.
  */
 function mergedEntries(
   held: readonly ConversationEntry[],
   arriving: readonly ConversationEntry[]
 ): ConversationEntry[] {
-  const bySeq = new Map<number, ConversationEntry>(held.map((entry) => [entry.seq, entry]));
-  for (const entry of arriving) bySeq.set(entry.seq, entry);
-  return [...bySeq.values()].sort((left, right) => left.seq - right.seq);
+  const byPosition = new Map<number, ConversationEntry>(held.map((entry) => [entry.opened_seq, entry]));
+  for (const entry of arriving) byPosition.set(entry.opened_seq, entry);
+  return [...byPosition.values()].sort((left, right) => left.opened_seq - right.opened_seq);
 }
 
 /** The conversation a follower holds after one message: a snapshot replaces, an update merges.
  *
  * The whole client half of the follow contract, in one pure function — there is no gap to detect
  * and no repair read to issue, because the server sends a snapshot itself whenever it cannot serve
- * a position. Only the entries merge; everything else the update carries arrives whole and
- * replaces what is held, the session block included, so nothing a follower shows can belong to a
- * session it has just been told was replaced.
+ * a position. Only the entries merge — by replacement, since a row re-arrives whole when it
+ * changes; everything else the update carries arrives whole and replaces what is held, the
+ * session block included, so nothing a follower shows can belong to a session it has just been
+ * told was replaced.
  *
  * An update with nothing to merge into is a protocol violation rather than a state to render: a
  * position is only ever sent back after a snapshot established what it addresses.
@@ -50,7 +52,6 @@ export function followed(held: Conversation | null, message: ConversationFollowM
     attachments: message.attachments,
     earlier_sessions: message.earlier_sessions,
     entries: mergedEntries(held.entries, message.entries),
-    streaming: message.streaming,
     session: {
       session_id: message.session_id,
       status: message.status,

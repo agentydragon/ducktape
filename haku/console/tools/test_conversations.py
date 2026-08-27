@@ -12,7 +12,7 @@ from fastmcp import Client
 from fastmcp.client.client import CallToolResult
 from more_itertools import one
 
-from haku.console.chat_models import BridgeFrameKind, RuntimeKind
+from haku.console.chat_models import BridgeFrameKind, ItemStatus, RuntimeKind
 from haku.console.conversation_read_access import (
     ConversationAccessDeniedError,
     ConversationReadAccessPolicy,
@@ -37,10 +37,8 @@ from haku.console.x.conversation_reads import (
     FromFrames,
     HarnessFrameRecord,
     MessageEntry,
-    Outcome,
     SessionCursor,
     SessionRecord,
-    ToolResultEntry,
     TurnAnsweredEnd,
     TurnCursor,
     TurnRecord,
@@ -121,23 +119,14 @@ def _frame(seq: int, kind: str = "assistant", payload: dict | None = None) -> Ha
 
 def _message(seq: int, *, first_frame_seq: int, last_frame_seq: int | None = None) -> MessageEntry:
     return MessageEntry(
-        seq=seq,
+        opened_seq=seq,
+        closed_seq=seq + 1,
+        status=ItemStatus.COMPLETE,
         provenance=FromFrames(
             session_id=SESSION, first_frame_seq=first_frame_seq, last_frame_seq=last_frame_seq or first_frame_seq
         ),
         text=f"answer {seq}",
         backend_item_id=f"msg_{seq}",
-    )
-
-
-def _tool_result(seq: int, *, structured: object) -> ToolResultEntry:
-    return ToolResultEntry(
-        seq=seq,
-        provenance=FromFrames(session_id=SESSION, first_frame_seq=seq + 1, last_frame_seq=seq + 1),
-        call_id=f"toolu_{seq}",
-        content="ok",
-        structured=structured,
-        outcome=Outcome.UNKNOWN,
     )
 
 
@@ -202,7 +191,7 @@ class _Reader:
     ) -> list[ConversationEntry]:
         self._point_read(scope)
         self.queries.append({"conversation_id": conversation_id, "cursor": cursor, "limit": limit})
-        selected = self._entries if cursor is None else [entry for entry in self._entries if entry.seq >= cursor]
+        selected = self._entries if cursor is None else [entry for entry in self._entries if entry.opened_seq >= cursor]
         return selected[:limit]
 
 
@@ -473,9 +462,9 @@ async def test_an_item_cursor_resumes_where_the_page_stopped() -> None:
             client, "read_conversation_items", {"conversation_id": str(CONVERSATION), "limit": 2, "cursor": 6}
         )
 
-    assert [entry.seq for entry in _items(first).items] == [2, 4]
+    assert [entry.opened_seq for entry in _items(first).items] == [2, 4]
     assert _items(first).next_cursor == 6
-    assert [entry.seq for entry in _items(second).items] == [6, 8]
+    assert [entry.opened_seq for entry in _items(second).items] == [6, 8]
     assert _items(second).next_cursor is None
 
 

@@ -79,10 +79,7 @@ from haku.console.x.conversation_reads import (
     PromptEntry,
     SessionCursor,
     ToolCallEntry,
-    ToolResultEntry,
-    TurnAnsweredEnd,
     TurnCursor,
-    TurnEndEntry,
 )
 from haku.console.x.item_entries import entry_of
 from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
@@ -1028,9 +1025,8 @@ async def test_the_items_read_as_the_conversation_rather_than_the_protocol(chat_
 
     entries = await _conversation_entries(chat_store, conversation_id, limit=10)
 
-    assert [entry.kind for entry in entries] == ["prompt", "message", "turn_end"]
-    said = entries[1]
-    assert isinstance(said, MessageEntry)
+    assert [entry.kind for entry in entries] == ["prompt", "message"]
+    said = one(entry for entry in entries if isinstance(entry, MessageEntry))
     assert said.text == "a bad config"
     assert isinstance(said.provenance, FromFrames)
     assert said.provenance.session_id == view.session_id, "frames are session-level, so the appeal names whose"
@@ -1075,10 +1071,12 @@ async def test_an_item_page_resumes_at_its_cursor_without_refolding_the_thread(c
 
     whole = await _conversation_entries(chat_store, conversation_id)
     first = await _conversation_entries(chat_store, conversation_id, limit=3)
-    rest = await _conversation_entries(chat_store, conversation_id, after_seq=whole[3].seq)
+    rest = await _conversation_entries(chat_store, conversation_id, after_seq=whole[3].opened_seq)
 
     assert first + rest == whole
-    assert [entry.seq for entry in whole] == sorted({entry.seq for entry in whole}), "defining positions are unique"
+    assert [entry.opened_seq for entry in whole] == sorted({entry.opened_seq for entry in whole}), (
+        "opening positions are unique"
+    )
 
 
 async def test_a_frame_the_fold_never_committed_is_not_an_item(chat_store, operator_id) -> None:
@@ -1098,9 +1096,9 @@ async def test_a_frame_the_fold_never_committed_is_not_an_item(chat_store, opera
     assert len(frames) == 1, "the frame is recorded and readable; it just never became a fact"
 
 
-async def test_a_call_and_its_answer_are_separate_entries_at_their_own_positions(chat_store, operator_id) -> None:
-    """A call's entry is written where the call opens — its arguments are whole by then — and its
-    answer where the call completes, joined by the id the protocol gave the ask."""
+async def test_a_call_and_its_answer_are_one_entry(chat_store, operator_id) -> None:
+    """The ask and the answer are one row and so one entry — the answer fields fill in when it
+    arrives, and `status` is what says whether it has."""
     view, token = await chat_store.create(operator_id)
     conversation_id = await chat_store.conversation_of(view.session_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -1147,14 +1145,15 @@ async def test_a_call_and_its_answer_are_separate_entries_at_their_own_positions
 
     entries = await _conversation_entries(chat_store, conversation_id, limit=10)
 
-    assert [entry.kind for entry in entries] == ["prompt", "tool_call", "tool_result"]
-    call, result_entry = entries[1], entries[2]
-    assert isinstance(call, ToolCallEntry)
+    assert [entry.kind for entry in entries] == ["prompt", "tool_call"]
+    call = one(entry for entry in entries if isinstance(entry, ToolCallEntry))
     assert (call.tool_name, call.arguments) == ("Bash", {"command": "ls"})
-    assert isinstance(result_entry, ToolResultEntry)
-    assert result_entry.call_id == call.call_id
-    assert (result_entry.content, result_entry.structured) == ("a.txt", {"exit_code": 0})
-    assert call.seq < result_entry.seq, "the ask and the answer sit at their own stream positions"
+    assert (call.status, call.content, call.structured, call.outcome) == (
+        ItemStatus.COMPLETE,
+        "a.txt",
+        {"exit_code": 0},
+        "succeeded",
+    )
 
 
 async def test_the_items_read_spans_replaced_sessions(chat_store, migrated_sessions, operator_id) -> None:
@@ -1229,7 +1228,6 @@ async def test_operator_conversation_read_surface_keeps_inventory_and_transcript
     assert detail.session.session_id == matrix.session_id
     asked = one(entry for entry in detail.entries if isinstance(entry, PromptEntry))
     assert asked.text == "What is happening?"
-    assert detail.streaming == []
     assert detail.earlier_sessions == []
 
 
@@ -2103,20 +2101,15 @@ async def test_an_update_carries_the_rows_the_events_after_a_position_name(chat_
     await _exchange(chat_store, operator_id, session_id, "second", "two")
     changes = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=held, limit=50)
 
-    # The prompt precedes the boundary in the stream: it is admitted into the queue before the
-    # turn that answers it opens.
-    assert [entry.kind for entry in changes.entries] == ["prompt", "turn_started", "message", "turn_end"]
-    assert [entry.text for entry in changes.entries if isinstance(entry, PromptEntry | MessageEntry)] == [
-        "second",
-        "two",
+    assert [(entry.kind, entry.text) for entry in changes.entries if isinstance(entry, PromptEntry | MessageEntry)] == [
+        ("prompt", "second"),
+        ("message", "two"),
     ]
-    ended = one(entry for entry in changes.entries if isinstance(entry, TurnEndEntry))
-    assert ended.end == TurnAnsweredEnd()
     assert changes.position > held
-    # Re-reading the same position is the same answer: the merge is a union keyed on `seq`, so a
+    # Re-reading the same position is the same answer: the merge replaces by `opened_seq`, so a
     # duplicate costs nothing and nothing about delivery has to be exactly-once.
     again = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=held, limit=50)
-    assert [entry.seq for entry in again.entries] == [entry.seq for entry in changes.entries]
+    assert [entry.opened_seq for entry in again.entries] == [entry.opened_seq for entry in changes.entries]
 
 
 async def test_an_update_carries_what_a_replaced_session_wrote_after_the_position(chat_store, operator_id) -> None:
@@ -2143,9 +2136,10 @@ async def test_an_update_carries_what_a_replaced_session_wrote_after_the_positio
     assert changes.session_id == second.session_id
 
 
-async def test_a_claimed_prompt_reaches_a_reader_as_the_turn_it_opened(chat_store, operator_id) -> None:
-    """`next_prompt` takes the operator's question off the queue; the `turn_started` boundary it
-    writes is what tells a tab the thread started working."""
+async def test_a_claimed_prompt_reaches_a_reader_as_the_responding_status(chat_store, operator_id) -> None:
+    """`next_prompt` takes the operator's question off the queue and touches no item row; what
+    tells a tab the thread started working is the session's derived status, and the exchange
+    itself is `list_turns`' business."""
     view, token = await chat_store.create(operator_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     conversation_id = await chat_store.conversation_of(view.session_id)
@@ -2160,7 +2154,7 @@ async def test_a_claimed_prompt_reaches_a_reader_as_the_turn_it_opened(chat_stor
         operator_id, conversation_id, after=enqueued.position, limit=50
     )
 
-    assert [entry.kind for entry in claimed.entries] == ["turn_started"], "the turn that opened is what says so"
+    assert claimed.entries == []
     assert claimed.status == SessionStatus.RESPONDING
 
 
@@ -2194,8 +2188,8 @@ async def test_an_update_over_its_limit_is_refused_rather_than_shortened(chat_st
         await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=0, limit=2)
 
     whole = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=0, limit=50)
-    # Two exchanges of four entries each: the boundary, the prompt, the answer, and the end.
-    assert len(whole.entries) == 8
+    # Two exchanges of two rows each: the prompt and the answer.
+    assert len(whole.entries) == 4
 
 
 async def test_the_update_refuses_a_conversation_another_operator_owns(chat_store, operator_id) -> None:

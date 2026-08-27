@@ -31,28 +31,28 @@ or not at all" (`apply_frame` is the one to read first), and `session_runtime.py
 turn against a CLI — the turn loop, the runner's websocket bridge, the sandbox lifecycle, and
 the SPA chat surface's own HTTP routes. Around them:
 
-| Module                         | Role                                                                                                                                   |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `conversation_events.py`       | The provider-neutral vocabulary a conversation is read as; every surface renders it, every backend adapter produces it.                |
-| `conversation_log.py`          | The only writer of `conversation_event`/`conversation_item`/`conversation_turn`: the log first, the entities from it, one transaction. |
-| `session_events.py`            | The stream's two categories as stored rows — the one place the vocabularies meet the table.                                            |
-| `subscription.py`              | Reading a conversation from a position; where the position lives is the subscriber's own (`Cursor`).                                   |
-| `conversation_follow.py`       | `WS /api/conversations/{id}/follow`: a conversation's state and the changes to it, as one operation.                                   |
-| `conversation_live_updates.py` | Conversation changes as console-socket invalidations for open tabs.                                                                    |
-| `conversation_history.py`      | The finished conversation tail handed to a replacement session.                                                                        |
-| `conversation_reads.py`        | What a conversation read hands back, and the cursors that page them (see below).                                                       |
-| `item_entries.py`              | The one place materialised rows fold onto `conversation_reads.py`'s wire models — the MCP entry stream and the SPA views' superset.    |
-| `reprojection.py`              | Re-project a recorded session's frames and report where the stored log disagrees.                                                      |
-| `session_notifications.py`     | The runtime's `LISTEN`/`NOTIFY` wake channels (roll gotcha below); the console's other LISTEN consumer is <../console_events.py>.      |
-| `conversation_runtime.py`      | Elected reconciler (`CRUN`): conversation-owned prompt demand into sessions, plus global lease/claim maintenance.                      |
-| `sandbox_allocation.py`        | Elected reconciler (`SBOX`): durable prompt demand into sandbox allocation, independent of every channel.                              |
-| `sandbox_claims.py`            | The declarative `SandboxClaim` one session runs in, and the claim/Sandbox/Pod/runner progress view.                                    |
-| `session_views.py`             | The SPA's wire shapes — inventory, conversation detail, follow messages — as projections over `conversation_reads.py`.                 |
-| `setup_output.py`              | The bridge envelope's `kind`; the setup-narration compatibility frame.                                                                 |
-| `system_prompt.py`             | The system prompt a chat session is started with (the template is deploy config).                                                      |
-| `launch_identity.py`           | Neutral launch-identity types shared by channel and runtime stores.                                                                    |
-| `runtime.py`                   | Backend-neutral runtime catalog: provider adapters plus per-Agent execution resources.                                                 |
-| `runtime_catalog.py`           | Application composition of the runtime implementations linked into the console.                                                        |
+| Module                         | Role                                                                                                                                                        |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `conversation_events.py`       | The provider-neutral vocabulary a conversation is read as; every surface renders it, every backend adapter produces it.                                     |
+| `conversation_log.py`          | The only writer of `conversation_event`/`conversation_item`/`conversation_turn`: the log first, the entities from it, one transaction.                      |
+| `session_events.py`            | The stream's two categories as stored rows — the one place the vocabularies meet the table.                                                                 |
+| `subscription.py`              | Reading a conversation from a position; where the position lives is the subscriber's own (`Cursor`).                                                        |
+| `conversation_follow.py`       | `WS /api/conversations/{id}/follow`: a conversation's state and the changes to it, as one operation.                                                        |
+| `conversation_live_updates.py` | Conversation changes as console-socket invalidations for open tabs.                                                                                         |
+| `conversation_history.py`      | The finished conversation tail handed to a replacement session.                                                                                             |
+| `conversation_reads.py`        | What a conversation read hands back, and the cursors that page them (see below).                                                                            |
+| `item_entries.py`              | The one place a materialised item row folds onto `conversation_reads.py`'s entry union — one entry per row, identical for the MCP reader and the SPA views. |
+| `reprojection.py`              | Re-project a recorded session's frames and report where the stored log disagrees.                                                                           |
+| `session_notifications.py`     | The runtime's `LISTEN`/`NOTIFY` wake channels (roll gotcha below); the console's other LISTEN consumer is <../console_events.py>.                           |
+| `conversation_runtime.py`      | Elected reconciler (`CRUN`): conversation-owned prompt demand into sessions, plus global lease/claim maintenance.                                           |
+| `sandbox_allocation.py`        | Elected reconciler (`SBOX`): durable prompt demand into sandbox allocation, independent of every channel.                                                   |
+| `sandbox_claims.py`            | The declarative `SandboxClaim` one session runs in, and the claim/Sandbox/Pod/runner progress view.                                                         |
+| `conversation_views.py`        | The SPA's wire shapes — inventory, conversation detail, follow messages — as projections over `conversation_reads.py`.                                      |
+| `setup_output.py`              | The bridge envelope's `kind`; the setup-narration compatibility frame.                                                                                      |
+| `system_prompt.py`             | The system prompt a chat session is started with (the template is deploy config).                                                                           |
+| `launch_identity.py`           | Neutral launch-identity types shared by channel and runtime stores.                                                                                         |
+| `runtime.py`                   | Backend-neutral runtime catalog: provider adapters plus per-Agent execution resources.                                                                      |
+| `runtime_catalog.py`           | Application composition of the runtime implementations linked into the console.                                                                             |
 
 The elected loops — Matrix sync (`MXSY`), runtime supervision (`CRUN`), allocation (`SBOX`) —
 hold independent advisory locks and can land on different replicas, so a stalled claim cannot
@@ -81,7 +81,7 @@ about half the time. `SessionStore.request_abort` is the shape to copy.
   `session_frames`, and a projection nobody can appeal is a projection nobody can debug. It is
   the one surface that shows a backend's own wire, and it stays safe by being addressed
   separately, never load-bearing, and labelled as one backend's wire everywhere a reader sees
-  it (`session_views.SessionFrameView`, `SessionStore.read_operator_frames`).
+  it (`conversation_views.SessionFrameView`, `SessionStore.read_operator_frames`).
 - **Provisioning** — `GET /api/sessions/{session_id}/provisioning`: the claim/Sandbox/Pod/runner
   graph for one session in whatever state it is now (`SessionService.sandbox_provisioning`).
 - **Composer** — the conversation detail view carries <../frontend/x/conversation_composer.tsx>

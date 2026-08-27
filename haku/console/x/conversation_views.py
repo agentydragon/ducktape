@@ -1,4 +1,4 @@
-"""What the console's chat API returns for a session or a conversation.
+"""What the console's conversation API returns, and the session shapes beside it.
 
 The SPA's wire shapes — the inventory, the conversation detail, and the follow socket's messages.
 Projections, not a read model: the conversation entries they carry are the shared vocabulary of
@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.chat_models import BridgeFrameKind, FrameDirection, RuntimeKind, SessionStatus
 from haku.console.database_schema import Session, SessionFrame
-from haku.console.x.conversation_reads import ChannelAttachment, ConversationViewEntry, SetupOutputRecord, StreamingItem
+from haku.console.x.conversation_reads import ChannelAttachment, ConversationEntry, SetupOutputRecord
 from haku.console.x.sandbox_claims import SandboxProvisioningView
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 
@@ -145,8 +145,7 @@ class ConversationView(BaseModel):
     """One conversation as the browser reads it.
 
     No terminal state and no `ended_at`: a conversation is an id, and what ends is the session
-    under it. `entries` is the same stream the MCP read pages, plus the lifecycle
-    members only this surface carries; `streaming` is the live tail nothing has defined yet.
+    under it. `entries` is the same item-row read the MCP surface pages, whole.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -157,12 +156,9 @@ class ConversationView(BaseModel):
     runtime_kind: RuntimeKind
     created_at: datetime
     attachments: list[ChannelAttachment]
-    entries: list[ConversationViewEntry] = Field(
-        description="The conversation's settled entries, oldest first, keyed by `seq`. Append-only: an entry never changes "
-        "once read, so a follower merges updates by position."
-    )
-    streaming: list[StreamingItem] = Field(
-        description="The live turn's still-open prose, in the order it opened — replace what is held, never merge."
+    entries: list[ConversationEntry] = Field(
+        description="The conversation's item rows as entries, in opening order — each in its current "
+        "state, an item still being written included."
     )
     session: ConversationSessionView
     earlier_sessions: list[EarlierSession]
@@ -187,12 +183,14 @@ class ConversationSnapshot(BaseModel):
 class ConversationUpdate(BaseModel):
     """What moved in a conversation since a position, for a follower that already holds the rest.
 
-    **The entries arrive incrementally and everything else arrives whole.** The entries are
-    exactly the ones defined after the follower's position — the same keyset read that pages the
-    MCP surface — and merging them is a union by `seq`, idempotent because an entry never changes
-    once defined. Everything else a conversation shows is a handful of rows, and sending them every
-    time is what keeps a follower from holding a copy nothing can correct: `streaming` and
-    `narration` replace what is held, and so do the attachments and the session block.
+    **The entries arrive incrementally and everything else arrives whole.** The entries are the
+    rows the log's events since the follower's position are about, each re-sent whole in its
+    current state — a message being written arrives once per coalescing window with the prose so
+    far — and merging them is a replace by `opened_seq`, idempotent, so a message delivered twice or
+    re-read from an older position lands on the same conversation. Everything else a conversation
+    shows is a handful of rows, and sending them every time is what keeps a follower from holding
+    a copy nothing can correct: `narration` replaces what is held, and so do the attachments and
+    the session block.
 
     That extends to the live session's own row, timestamps included, so that a follower merging
     this can hold no field belonging to a session it has just been told was replaced. What a
@@ -221,11 +219,10 @@ class ConversationUpdate(BaseModel):
     earlier_sessions: list[EarlierSession] = Field(
         description="The sessions this conversation ran before `session_id`, newest first — replaces what is held."
     )
-    entries: list[ConversationViewEntry] = Field(
-        description="The entries defined since the follower's position, oldest first — union them by `seq` "
-        "over the ones already held."
+    entries: list[ConversationEntry] = Field(
+        description="The rows that moved since the follower's position, whole and in their current state — "
+        "merge them by `opened_seq` over the ones already held, replacing."
     )
-    streaming: list[StreamingItem] = Field(description="The live turn's still-open prose now — replaces what is held.")
 
 
 # The browser's types for these come from here: `haku.console.export_schema` publishes this union

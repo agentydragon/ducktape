@@ -35,12 +35,10 @@ export type OAuthConnectionResult =
   | components["schemas"]["OAuthConnectionSucceeded"]
   | components["schemas"]["OAuthConnectionFailed"];
 export type AgentView = components["schemas"]["AgentView"];
-// The conversation-entry vocabulary the SPA shares with the MCP conversation reads: the settled
-// stream (keyed by `seq`), and the live turn's still-open prose beside it.
-export type ConversationEntry = components["schemas"]["ConversationViewEntry"];
-export type StreamingItem = components["schemas"]["StreamingItem"];
+// The one conversation-entry vocabulary, shared with the MCP conversation reads: one entry per
+// item row, keyed by the position it opened at, its lifecycle carried as `status`.
+export type ConversationEntry = components["schemas"]["ConversationEntry"];
 export type ToolCallEntry = components["schemas"]["ToolCallEntry"];
-export type ToolResultEntry = components["schemas"]["ToolResultEntry"];
 export type ConversationSummary = components["schemas"]["ConversationSummary"];
 export type ConversationPage = components["schemas"]["ConversationPage"];
 export type ConversationCursor = components["schemas"]["ConversationCursor"];

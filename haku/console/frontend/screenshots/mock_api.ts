@@ -14,8 +14,6 @@ import {
   SAMPLE_TOOL_CALLS,
 } from "./sample_data";
 import type { Conversation, ConversationEntry, ConversationPage, SessionFramePage } from "../client";
-
-type EntryOf<K extends ConversationEntry["kind"]> = Extract<ConversationEntry, { kind: K }>;
 import { mockOperatorMcpFetch } from "../tool_rendering/screenshot/mcp_mock";
 import { ensureLedger, recordViolation, tracked } from "../tool_rendering/screenshot/visual_network_ledger";
 import { GOOGLE_CALENDAR_MCP_FIXTURES } from "../tool_rendering/google_calendar/fixtures";
@@ -33,7 +31,7 @@ function jsonResponse(body: unknown): Response {
 
 const scene = (window as unknown as { __SCENE__?: string }).__SCENE__;
 
-/** Entry builders over a running stream position, so a fixture reads in transcript order. */
+/** Entry builders over a running stream position, so a fixture reads in opening order. */
 let seq = 0;
 function next(): number {
   seq += 10;
@@ -42,39 +40,83 @@ function next(): number {
 
 const AUTHORED = { kind: "authored" } as const;
 
-function turnStarted(): ConversationEntry {
-  return { kind: "turn_started", seq: next(), provenance: AUTHORED };
-}
-
-function turnEnded(end: EntryOf<"turn_end">["end"]): ConversationEntry {
-  return { kind: "turn_end", seq: next(), provenance: AUTHORED, end };
-}
+type Lifecycle = ConversationEntry["status"];
 
 /** The session waking itself — a prompt nobody typed, whose text says what woke it. */
 function woke(text: string): ConversationEntry {
-  return { kind: "prompt", seq: next(), provenance: AUTHORED, text, origin: "harness" };
+  const opened = next();
+  return {
+    kind: "prompt",
+    opened_seq: opened,
+    closed_seq: opened + 2,
+    status: "complete",
+    provenance: AUTHORED,
+    text,
+    origin: "harness",
+  };
 }
 
 function asked(text: string): ConversationEntry {
-  return { kind: "prompt", seq: next(), provenance: AUTHORED, text, origin: "spa" };
+  const opened = next();
+  return {
+    kind: "prompt",
+    opened_seq: opened,
+    closed_seq: opened + 2,
+    status: "complete",
+    provenance: AUTHORED,
+    text,
+    origin: "spa",
+  };
 }
 
-function spoke(text: string): ConversationEntry {
-  return { kind: "message", seq: next(), provenance: AUTHORED, text, backend_item_id: null };
+function spoke(text: string, status: Lifecycle = "complete"): ConversationEntry {
+  const opened = next();
+  return {
+    kind: "message",
+    opened_seq: opened,
+    closed_seq: status === "open" ? null : opened + 1,
+    status,
+    provenance: AUTHORED,
+    text,
+    backend_item_id: null,
+  };
 }
 
-/** A call's ask; its answer is a separate `answered` entry the transcript joins by `call_id`. */
-function called(call_id: string, tool_name: string, args: Record<string, unknown>): ConversationEntry {
-  return { kind: "tool_call", seq: next(), provenance: AUTHORED, call_id, tool_name, arguments: args };
+/** One call, whole: the ask, and the answer where one has arrived. */
+function called(
+  call_id: string,
+  tool_name: string,
+  args: Record<string, unknown>,
+  answer?: { text: string; outcome: "succeeded" | "failed" }
+): ConversationEntry {
+  const opened = next();
+  return {
+    kind: "tool_call",
+    opened_seq: opened,
+    closed_seq: answer ? opened + 1 : null,
+    status: answer ? "complete" : "open",
+    provenance: AUTHORED,
+    call_id,
+    tool_name,
+    arguments: args,
+    content: answer?.text ?? "",
+    structured: null,
+    outcome: answer?.outcome ?? null,
+  };
 }
 
-function answered(call_id: string, content: string, outcome: "succeeded" | "failed"): ConversationEntry {
-  return { kind: "tool_result", seq: next(), provenance: AUTHORED, call_id, content, structured: null, outcome };
-}
-
-/** A thought: dimmed to a line while withheld, folded behind "Thinking" once it has a summary. */
-function thought(summary: string | null): ConversationEntry {
-  return { kind: "reasoning", seq: next(), provenance: AUTHORED, summary };
+/** A thought: dimmed to a line while withheld, folded behind "Thinking" once it has text. */
+function thought(text: string): ConversationEntry {
+  const opened = next();
+  return {
+    kind: "reasoning",
+    opened_seq: opened,
+    closed_seq: opened + 1,
+    status: "complete",
+    provenance: AUTHORED,
+    text,
+    disclosure: text ? "summary" : "withheld",
+  };
 }
 
 const EDIT_ARGUMENTS = {
@@ -91,17 +133,31 @@ const CATALOG_ANSWER =
   '{"servers": [{"server_id": "gmail", "status": "alive"}, {"server_id": "tana", "status": "degraded"}]}';
 
 const boundaryEntries: ConversationEntry[] = [
-  turnStarted(),
   asked("Try the Haku Console MCP tools."),
   spoke("I'll start with the catalog, then try a read-only query."),
-  called("toolu_01HakuConsoleRead", "mcp__haku-console__haku-console__list_mcp_servers", {}),
-  answered("toolu_01HakuConsoleRead", CATALOG_ANSWER, "succeeded"),
-  called("toolu_01EditTranscript", "Edit", EDIT_ARGUMENTS),
-  answered("toolu_01EditTranscript", "Updated /workspace/src/renderer.ts", "succeeded"),
-  called("toolu_02BashTranscript", "Bash", { command: "git diff --check" }),
-  answered("toolu_02BashTranscript", DIFF_CHECK_OUTPUT, "succeeded"),
+  called(
+    "toolu_01HakuConsoleRead",
+    "mcp__haku-console__haku-console__list_mcp_servers",
+    {},
+    {
+      text: CATALOG_ANSWER,
+      outcome: "succeeded",
+    }
+  ),
+  called("toolu_01EditTranscript", "Edit", EDIT_ARGUMENTS, {
+    text: "Updated /workspace/src/renderer.ts",
+    outcome: "succeeded",
+  }),
+  called(
+    "toolu_02BashTranscript",
+    "Bash",
+    { command: "git diff --check" },
+    {
+      text: DIFF_CHECK_OUTPUT,
+      outcome: "succeeded",
+    }
+  ),
   spoke("The Haku Console catalog is available. Next I'll try the read-only query."),
-  turnEnded({ outcome: "answered" }),
 ];
 const standardEntries: ConversationEntry[] = [
   asked("Create a **short note** in the sandbox and tell me what you wrote."),
@@ -119,33 +175,56 @@ const overflowingEntries: ConversationEntry[] = Array.from({ length: 8 }, (_unus
 ]).flat();
 
 // The same transcript with every state a tool call can be in: answered, failed, still running, and
-// one long enough to need its own scroll.
+// one long enough to need its own scroll — plus a message still being written, which is what
+// `status: "open"` renders as.
 const toolUsingEntries: ConversationEntry[] = [
   ...standardEntries,
   // One of each thinking shape: withheld folds to the one-liner, disclosed to an openable fold.
-  thought(null),
+  thought(""),
   thought(
     "The note should live in the sandbox workspace, so `/workspace` is the right root; a failed write there is worth surfacing verbatim."
   ),
-  called("toolu_01HakuConsoleRead", "mcp__haku-console__haku-console__list_mcp_servers", {}),
-  answered("toolu_01HakuConsoleRead", CATALOG_ANSWER, "succeeded"),
-  called("toolu_06BashDescribed", "Bash", {
-    command: 'find / -maxdepth 4 -iname "*haku-state*" 2>/dev/null',
-    description: "Search for the haku-state checkout",
-  }),
-  answered("toolu_06BashDescribed", "/workspace/haku-state", "succeeded"),
-  called("toolu_02WriteNote", "Write", {
-    file_path: "/workspace/note.txt",
-    content: "Hello from the disposable Haku sandbox.",
-  }),
-  answered("toolu_02WriteNote", "EACCES: permission denied, open '/workspace/note.txt'", "failed"),
+  called(
+    "toolu_01HakuConsoleRead",
+    "mcp__haku-console__haku-console__list_mcp_servers",
+    {},
+    {
+      text: CATALOG_ANSWER,
+      outcome: "succeeded",
+    }
+  ),
+  called(
+    "toolu_06BashDescribed",
+    "Bash",
+    {
+      command: 'find / -maxdepth 4 -iname "*haku-state*" 2>/dev/null',
+      description: "Search for the haku-state checkout",
+    },
+    { text: "/workspace/haku-state", outcome: "succeeded" }
+  ),
+  called(
+    "toolu_02WriteNote",
+    "Write",
+    { file_path: "/workspace/note.txt", content: "Hello from the disposable Haku sandbox." },
+    { text: "EACCES: permission denied, open '/workspace/note.txt'", outcome: "failed" }
+  ),
   called("toolu_03StillRunning", "Bash", { command: "rg --files | wc -l" }),
-  called("toolu_04Edit", "Edit", EDIT_ARGUMENTS),
-  answered("toolu_04Edit", "Updated /workspace/src/renderer.ts", "succeeded"),
-  called("toolu_05BashOutput", "Bash", { command: "git diff --check" }),
-  answered("toolu_05BashOutput", DIFF_CHECK_OUTPUT, "succeeded"),
+  called("toolu_04Edit", "Edit", EDIT_ARGUMENTS, {
+    text: "Updated /workspace/src/renderer.ts",
+    outcome: "succeeded",
+  }),
+  called(
+    "toolu_05BashOutput",
+    "Bash",
+    { command: "git diff --check" },
+    {
+      text: DIFF_CHECK_OUTPUT,
+      outcome: "succeeded",
+    }
+  ),
   woke('Background command "Retry unshallow fetch with longer timeout" completed (exit code 0)'),
   spoke("The background fetch finished — the repo is fully unshallowed now."),
+  spoke("Checking whether the fetch left the tree clean", "open"),
 ];
 const conversationId = "70000000-0000-4000-8000-000000000001";
 const conversationSessionId = "70000000-0000-4000-8000-000000000011";
@@ -231,17 +310,12 @@ const conversationPage = {
   // Not the last page, so the keyset's "Load older conversations" control renders.
   next_cursor: { last_activity_at: "2026-07-29T22:05:00Z", conversation_id: "70000000-0000-4000-8000-0000000000a4" },
 } satisfies ConversationPage;
-// Two exchanges, so the detail scene shows a turn boundary landing between them — and the second
-// ends failed, which is what the in-stream `turn_end` entry exists to show.
+// Two exchanges; the second's answer was cut off by the runner dying, which is what
+// `status: "failed"` renders as.
 const conversationEntries: ConversationEntry[] = [
   ...boundaryEntries,
-  turnStarted(),
   asked("Now check whether the degraded server recovered."),
-  spoke("The reflection call timed out before I could answer."),
-  turnEnded({
-    outcome: "failed",
-    failure: "We're currently experiencing high demand, which may cause temporary errors.",
-  }),
+  { ...spoke("The reflection call timed out before I could ans"), status: "failed" },
 ];
 const conversationSession = {
   session_id: conversationSessionId,
@@ -258,7 +332,6 @@ const conversationDetail = {
   created_at: "2026-08-01T03:00:00Z",
   attachments: [{ surface: "matrix", address: "!ops:example.org", attached_at: "2026-08-01T03:00:00Z" }],
   entries: conversationEntries,
-  streaming: [],
   session: conversationSession,
   // The thread ran one session before this one: what a sandbox dying looks like from the
   // conversation's side, and the only place its frame log stays reachable from.
@@ -319,12 +392,11 @@ const conversationOverflow = {
   entries: overflowingEntries,
   session: { ...conversationSession, narration: [] },
 } satisfies Conversation;
-// Tool calls with their results, which is what the transcript's card rendering exists for — and
-// the live tail beside them: a message still being streamed rides in `streaming`, not `entries`.
+// Tool calls with their results, which is what the transcript's card rendering exists for — with
+// a message still being written at the tail.
 const conversationToolUse = {
   ...conversationDetail,
   entries: toolUsingEntries,
-  streaming: [{ item_type: "message", text: "Checking whether the fetch left the tree clean" }],
   session: { ...conversationSession, narration: [] },
 } satisfies Conversation;
 const conversationDetailForScene = scene?.startsWith("conversation-bootstrap")

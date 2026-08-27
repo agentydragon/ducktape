@@ -2,13 +2,13 @@
 
 The store produces these — a session, a frame, a turn, a conversation entry — and two surfaces
 serialise them: <../tools/conversations.py> over MCP, and the SPA's wire shapes in
-<session_views.py>. They live at the runtime level because the store is their only producer.
+<conversation_views.py>. They live at the runtime level because the store is their only producer.
 
-**One vocabulary, two projections.** `ConversationEntry` is the settled stream both surfaces
-share. The SPA's projection additionally carries the lifecycle the MCP read deliberately excludes —
-where an exchange began (`TurnStartedEntry`), prose a dead session never finished
-(`CutOffItemEntry`), and the live turn's still-open prose (`StreamingItem`) — as members defined
-here beside the shared ones, so a conversation-schema change still lands in one place.
+**One vocabulary, faithfully what the rows hold.** A `ConversationEntry` is one
+`conversation_item` row, minimally wrapped: its kind is the row's `item_type`, its `status` the
+row's lifecycle, and an item still open or cut off appears exactly as the row does — nothing is a
+member of one surface and not the other, and the read does not editorialise the record. Turns are
+`list_turns`' business, not entries.
 
 **What one read produced, not a page.** How reads are handed out — the `Page` envelope every
 listing shares — belongs to the tool.
@@ -27,7 +27,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from haku.console.chat_models import FrameDirection, ItemType, PromptOriginKind, RuntimeKind
+from haku.console.chat_models import FrameDirection, ItemStatus, PromptOriginKind, ReasoningDisclosure, RuntimeKind
 
 
 class ChannelAttachment(BaseModel):
@@ -196,12 +196,26 @@ class Outcome(StrEnum):
 
 
 class _EntryBase(BaseModel):
-    """What every conversation entry carries: where it sits, and where it came from."""
+    """What every conversation entry carries: one `conversation_item` row, minimally wrapped.
 
-    seq: int = Field(
-        description="The position in the conversation's event stream of the row that defines this entry. "
-        "`read_conversation_items`'s `cursor` names one; entries are sparse in it, since most stream rows build an "
-        "entry rather than being one."
+    `opened_seq` is the row's opening position in the conversation's event stream — its position
+    for its whole life, however its state settles — so paging is stable while an item is still
+    being written. `status` is the row's lifecycle exactly as stored: `open` is still being
+    written and its prose fields are as of this read; `failed` is an item its session died
+    around, kept with whatever had been said.
+    """
+
+    opened_seq: int = Field(
+        description="The stream position the item was opened at — the row's position for its whole life, "
+        "and what `read_conversation_items`'s `cursor` names. Entries are sparse in the stream, since most "
+        "stream rows build an entry rather than opening one."
+    )
+    closed_seq: int | None = Field(
+        description="The stream position the item settled at; absent exactly while it is still open."
+    )
+    status: ItemStatus = Field(
+        description="The row's lifecycle as stored: `open` is still being written (prose as of this read), "
+        "`failed` was cut off by its session dying, `complete` is settled."
     )
     provenance: EntryProvenance
 
@@ -209,9 +223,8 @@ class _EntryBase(BaseModel):
 class PromptEntry(_EntryBase):
     """What the session was asked, and in whose voice.
 
-    On the transcript because a conversation without its questions is half a record. Console
-    authored, always: a prompt is admitted before it crosses any wire, so re-reading the frames
-    could only preserve one of these and never re-derive it.
+    On the record because a conversation without its questions is half of one. Console authored,
+    always, and complete from admission: a prompt's whole text is known when it is accepted.
     """
 
     kind: Literal["prompt"] = "prompt"
@@ -223,10 +236,10 @@ class PromptEntry(_EntryBase):
 
 
 class MessageEntry(_EntryBase):
-    """One agent message, finished: the concatenation of the prose that arrived for it.
+    """One agent message: the concatenation of the prose that has arrived for it.
 
     `backend_item_id` is provenance, not identity: it is what the frames called this message, and it
-    is absent whenever the wire did not supply one.
+    is absent whenever the wire did not supply one — including while the message is still open.
     """
 
     kind: Literal["message"] = "message"
@@ -235,48 +248,42 @@ class MessageEntry(_EntryBase):
 
 
 class ReasoningEntry(_EntryBase):
-    """The agent thought, with a summary where the backend disclosed one.
+    """The agent thought, as the row records it.
 
     Its own entry rather than part of a message: only Claude nests thinking inside an assistant
     message, and a shape that nested it would be one backend's promoted upward.
 
-    `summary` is absent where the backend disclosed nothing at all — Claude's `redacted_thinking`,
-    `ReasoningDisclosure.WITHHELD`. One field rather than a summary beside a disclosure enum, so
-    the two cannot come to disagree.
+    `disclosure` is what the backend let the record keep: `withheld` means `text` is not the
+    thought (Claude's `redacted_thinking` discloses nothing); absent while the row is still open.
     """
 
     kind: Literal["reasoning"] = "reasoning"
-    summary: str | None
+    text: str
+    disclosure: ReasoningDisclosure | None
 
 
 class ToolCallEntry(_EntryBase):
-    """A tool was called. Its answer is a separate `tool_result` entry, joined by `call_id`."""
+    """One tool call, whole: the ask, and the answer where one has arrived.
+
+    The ask and the answer are one row and so one entry — `status` says whether the answer has
+    arrived, rather than a separate result entry a reader would have to join back.
+    """
 
     kind: Literal["tool_call"] = "tool_call"
     call_id: str
     tool_name: str
     arguments: dict[str, Any]
-
-
-class ToolResultEntry(_EntryBase):
-    """What a call answered: the part a transcript can print, and the part it cannot.
-
-    **`content` is the result rendered, not the result.** `structured` is the exit code, the patch,
-    the MCP `structuredContent` — an open set of per-tool shapes no string carries. Both are
-    carried because neither is derivable from the other, and `structured` is absent when the
-    provider carried none.
-    """
-
-    kind: Literal["tool_result"] = "tool_result"
-    call_id: str
     content: str = Field(
-        description="The result as text: what the provider sent where it sent prose, and its JSON otherwise. "
-        "`provenance` names the frames to read the original blocks from."
+        description="The answer as text — what the provider sent where it sent prose, and its JSON otherwise. "
+        "Empty until the call is answered; `provenance` names the frames to read the original blocks from."
     )
     structured: Any = Field(
         default=None, description="The call's structured output, verbatim; absent when it had none."
     )
-    outcome: Outcome
+    outcome: Outcome | None = Field(
+        description="How the call went, once answered: `unknown` where the provider reported neither way. "
+        "None exactly while no answer has arrived — a call still running, or one its session died around."
+    )
 
 
 class TurnAnsweredEnd(BaseModel):
@@ -295,75 +302,11 @@ class TurnFailedEnd(BaseModel):
     )
 
 
-class TurnEndEntry(_EntryBase):
-    kind: Literal["turn_end"] = "turn_end"
-    end: TurnAnsweredEnd | TurnAbortedEnd | TurnFailedEnd = Field(
-        discriminator="outcome", description="How the exchange ended. `outcome` is the same value `list_turns` reports."
-    )
-
-
 type TurnEnd = TurnAnsweredEnd | TurnAbortedEnd | TurnFailedEnd
 
 type ConversationEntry = Annotated[
-    PromptEntry | MessageEntry | ReasoningEntry | ToolCallEntry | ToolResultEntry | TurnEndEntry,
-    Field(discriminator="kind"),
+    PromptEntry | MessageEntry | ReasoningEntry | ToolCallEntry, Field(discriminator="kind")
 ]
-
-
-class TurnStartedEntry(_EntryBase):
-    """An exchange began here — the boundary the conversation view draws between one turn and the next.
-
-    In the SPA's stream and not the MCP read: `list_turns` already serves an agent the exchange
-    index with cost and outcome, while the conversation view wants the boundary in position. Authored, like
-    the `turn_started` row it stands for. Its end, when it comes, is the stream's next
-    `turn_end` entry; the two are paired by order, because at most one turn is ever open.
-    """
-
-    kind: Literal["turn_started"] = "turn_started"
-
-
-class CutOffItemEntry(_EntryBase):
-    """Prose a session died around: what had been said when nothing more could be.
-
-    In the SPA's stream and not the MCP read, whose contract is that an item that never completed
-    is not an entry. The operator asking why a session failed wants the half-said answer where it
-    stopped; an agent re-reading its past does not. A cut-off tool call has no entry of its own —
-    its ask is already in the stream, and the missing `tool_result` plus the failed `turn_end` are
-    the account.
-
-    **Reaches a follower only in a snapshot.** Failing a session closes its open items at their
-    opening position without writing an event for them, so no update's position window ever names
-    one; the streaming tail it replaces just stops arriving.
-    """
-
-    kind: Literal["cut_off"] = "cut_off"
-    item_type: Literal[ItemType.MESSAGE, ItemType.REASONING]
-    text: str
-
-
-type ConversationViewEntry = Annotated[
-    PromptEntry
-    | MessageEntry
-    | ReasoningEntry
-    | ToolCallEntry
-    | ToolResultEntry
-    | TurnEndEntry
-    | TurnStartedEntry
-    | CutOffItemEntry,
-    Field(discriminator="kind"),
-]
-
-
-class StreamingItem(BaseModel):
-    """A prose item the live turn is still writing, and what it has said so far.
-
-    Not an entry: nothing has defined it yet, so it has no stream position and its text grows.
-    A reader holds at most one of each type — the fold streams into one open message and one open
-    reasoning at a time — and replaces what it holds wholesale, never merges.
-    """
-
-    item_type: Literal[ItemType.MESSAGE, ItemType.REASONING]
-    text: str
 
 
 # The item read's cursor is the plain stream position (`ConversationEntry.seq`): `event_seq` is

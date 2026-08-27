@@ -21,7 +21,7 @@ class SessionStatus(StrEnum):
     PROVISIONING = "provisioning"
     READY = "ready"
     # The one member the row cannot spell: whether a turn is open is `conversation_turn`'s fact,
-    # and `session_views.live_status` derives it on top of the row's member.
+    # and `conversation_views.live_status` derives it on top of the row's member.
     RESPONDING = "responding"
     CLOSING = "closing"
     CLOSED = "closed"

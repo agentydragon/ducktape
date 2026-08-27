@@ -1,6 +1,6 @@
 import { Badge, Code, Stack, Text } from "@mantine/core";
 import type { ReactNode } from "react";
-import type { ToolCallEntry, ToolResultEntry } from "../client";
+import type { ToolCallEntry } from "../client";
 
 import { CodeBlock } from "../code_block";
 
@@ -190,28 +190,29 @@ function toolCallSummary(call: ToolCallEntry): ReactNode {
   return mono(previewText(toolPayloadText(args)));
 }
 
-/** One call, whole: what was asked, and what it answered where the answer has arrived.
+/** One call, whole: what was asked, what it printed, and what it produced that no string carries.
  *
- * The ask and the answer are two entries joined by `call_id` — the join the conversation view makes once,
- * here — so a `result` still missing is what says the call is running.
+ * The ask and the answer are one entry — `outcome` still null is what says no answer has arrived,
+ * and `status` whether one ever will: an `open` call is running, a `failed` one was cut off by its
+ * session dying.
  *
  * **Folded to one line by default.** In a transcript the calls are the agent's working, not its
  * answer, and an open card per call buried the prose between them. The folded line carries the
  * name, the argument that identifies the call, and its state; everything else — full arguments,
  * output, structured result — is behind the fold.
  */
-export function ToolCallView({ call, result }: { call: ToolCallEntry; result: ToolResultEntry | null }) {
+export function ToolCallView({ call }: { call: ToolCallEntry }) {
   return (
     <details className="haku-chat-tool-call">
       <summary className="haku-chat-tool-call-summary">
         <span className="haku-chat-tool-call-name">{call.tool_name}</span>
         <span className="haku-chat-tool-call-snippet">{toolCallSummary(call)}</span>
-        {result?.outcome === "failed" && (
+        {(call.outcome === "failed" || call.status === "failed") && (
           <Badge variant="light" color="red">
             failed
           </Badge>
         )}
-        {result === null && (
+        {call.status === "open" && (
           <Badge variant="light" color="blue">
             running
           </Badge>
@@ -219,18 +220,18 @@ export function ToolCallView({ call, result }: { call: ToolCallEntry; result: To
       </summary>
       <Stack gap="xs" className="haku-chat-tool-call-body">
         <ToolPayload label="Arguments" value={call.arguments} emptyLabel="No arguments." emptyWhenNoKeys />
-        {result !== null ? (
+        {call.outcome !== null ? (
           <>
             <ToolPayload
               label="Output"
-              value={result.content}
-              emptyLabel={result.outcome === "failed" ? "No error details captured." : "Empty result."}
+              value={call.content}
+              emptyLabel={call.outcome === "failed" ? "No error details captured." : "Empty result."}
             />
-            {result.structured != null && <ToolPayload label="Structured" value={result.structured} emptyLabel="" />}
+            {call.structured != null && <ToolPayload label="Structured" value={call.structured} emptyLabel="" />}
           </>
         ) : (
           <Text c="dimmed" size="xs">
-            No result yet.
+            {call.status === "failed" ? "The session ended before this call was answered." : "No result yet."}
           </Text>
         )}
       </Stack>

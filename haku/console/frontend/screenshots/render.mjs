@@ -174,7 +174,7 @@ const SCENES = [
     viewport: { width: 390, height: 1000 },
     closeApprovals: true,
     // The newest message, since the transcript opens scrolled to it.
-    expectVisible: "::-p-text(The reflection call timed out before I could answer.)",
+    expectVisible: "::-p-text(The reflection call timed out before I could ans)",
     frame: true,
   },
   // A session still coming up: the bootstrap narration is the whole view, since there is no

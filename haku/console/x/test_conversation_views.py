@@ -10,11 +10,11 @@ import pytest_bazel
 
 from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection, RuntimeKind
 from haku.console.database_schema import SessionFrame
-from haku.console.x import session_views
+from haku.console.x import conversation_views
 from haku.console.x.claude_code import projection
 from haku.console.x.claude_code.testing.fold import whole_capture
 from haku.console.x.claude_code.testing.wire import assistant, tool_result, tool_use_block
-from haku.console.x.conversation_reads import ToolResultEntry
+from haku.console.x.conversation_reads import ToolCallEntry
 from haku.console.x.session_store import BridgeAuthentication
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 
@@ -102,9 +102,9 @@ async def test_a_calls_output_reads_back_as_the_items_text(chat_store, operator_
         )
 
     detail = await _detail(chat_store, operator_id, view.session_id)
-    results = [entry for entry in detail.entries if isinstance(entry, ToolResultEntry)]
+    calls = [entry for entry in detail.entries if isinstance(entry, ToolCallEntry)]
 
-    assert {entry.call_id: entry.content for entry in results} == {"toolu_text": "a.py\nb.py", "toolu_empty": ""}
+    assert {entry.call_id: entry.content for entry in calls} == {"toolu_text": "a.py\nb.py", "toolu_empty": ""}
 
 
 def _frame(frame_seq: int, kind: BridgeFrameKind, payload: dict[str, Any]) -> SessionFrame:
@@ -132,7 +132,7 @@ _INSPECTED = [
 
 
 def test_the_inspector_keeps_native_payloads_opaque() -> None:
-    page = session_views.frame_page(
+    page = conversation_views.frame_page(
         _INSPECTED, limit=len(_INSPECTED), conversation_id=uuid4(), runtime_kind=RuntimeKind.CLAUDE_CODE
     )
 
