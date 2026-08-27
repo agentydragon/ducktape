@@ -123,11 +123,7 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
 
 ### Still down
 
-`atlas` is back up and proxmox-proxy is running again; what remains:
-
 - **sdr** — suspended pending the radio re-set-up post-relocation.
-- Not suspended in git, but non-functional while `wyrm2` (GPU) is down: **ollama**,
-  **nvidia-device-plugin**.
 
 ## Next Actions
 
@@ -311,8 +307,8 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       See <kimsufi_provisioning.md> §5 (path B already executed for worker_1 from
       the same order — `ns103711.ip-147-135-39.us` joined as
       `talos-kimsufi-worker-1` on 2026-05-15).
-- [ ] **Re-key admin-only SOPS files to include user keys** — admin age key currently
-      lives only on wyrm2, which is offline in a SF storage unit. `.sops.yaml` rules say
+- [ ] **Re-key admin-only SOPS files to include user keys** — admin age key
+      lives only on wyrm2. `.sops.yaml` rules say
       `secrets/nebula/ca.sops.key` and `k8s/tofu-state/db/credentials.sops.yaml` (among
       others) should be encrypted to admin + 4 user keys, but the files in git still have
       only admin. Discovered 2026-05-13 trying to provision the Kimsufi node from rugged.
@@ -320,7 +316,7 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       Tofu applies. The PG backend credentials still block `tofu init` in
       `tofu-state/db/credentials.sops.yaml`). - Partial workaround for PG backend: fetch creds from k8s instead of SOPS in
       `cluster/.envrc` — `kubectl -n tofu-state get secret tofu-state-db-credentials`
-      works with current agent RBAC base/user kubeconfig. - Real fix when wyrm2 is back: `sops updatekeys` on every file where `.sops.yaml`
+      works with current agent RBAC base/user kubeconfig. - Real fix (wyrm2 is up): `sops updatekeys` on every file where `.sops.yaml`
       lists more recipients than the file actually has. Audit with
       `for f in $(git ls-files '*.sops.*'); do jq -r '.sops.age[]?.recipient' $f; done`
       and compare to expected recipients per rule.
