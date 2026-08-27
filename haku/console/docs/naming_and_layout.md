@@ -371,7 +371,10 @@ conversation-domain quiet gap.
 - **C4 · de-"chat" sweep** _(mixed, split three ways)_: **C4a** code-only `chat_models.py` module rename
   - `chat_store` param _(mechanical)_; **C4b** `ChatSurface` → `ChannelSurface` member-drop +
     `chat_attachment` → `channel_attachment` table/ORM _(semantic — CHECK + table migration)_; **C4c**
-    `chat_runtimes` config key _(semantic — deploy-coordinated, ConfigMap ahead of image)_.
+    `chat_runtimes` → `harnesses` config key _(semantic — deploy-coordinated, ConfigMap ahead of
+    image)_: expand landed (#4977 — loader canonical field `harnesses`, `chat_runtimes` a tombstoned
+    alias, both-set rejected); contract = flip the ConfigMap key + drop the alias + loud-reject
+    `chat_runtimes`, after the expand image is rolled out.
 - **C4d · `runtime_kind` → `harness_kind`** _(semantic — coordinated stored + wire + OpenAPI)_ — the
   harness-kind discriminator (§3.1). #4431 made it a closed, published, read-only wire field, so the
   rename rides expand/contract with its schema consumers, same care as C4b/C4c. The console harness
