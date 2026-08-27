@@ -28,6 +28,7 @@ function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
+const realFetch = globalThis.fetch;
 const scene = (window as unknown as { __SCENE__?: string }).__SCENE__;
 
 /** The session waking itself — a prompt nobody typed, whose text says what woke it. */
@@ -712,9 +713,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
       next_cursor: toolCalls.length === limit ? toolCalls[toolCalls.length - 1].tool_call_id : null,
     });
   }
-  // Unmatched routes answer empty JSON rather than falling through to the real fetch: in the
-  // hermetic test sandbox a network request can only reject, and its rejection racing the capture
-  // is exactly how a transient "Failed to fetch" banner ended up in a published baseline shot.
+  if (realFetch) return realFetch(input, init);
   return jsonResponse({});
 }) as typeof fetch;
 
